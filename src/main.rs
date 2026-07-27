@@ -1,11 +1,14 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::fs;
 use std::io::{self, Write};
+use std::process::Command;
+use std::hash::{Hash, Hasher};
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -175,18 +178,31 @@ impl Interpreter {
         {
             let mut g = globals.borrow_mut();
             g.define("clock".to_string(), Value::NativeFunction(native_clock));
+            g.define("now".to_string(), Value::NativeFunction(native_clock));
             g.define("len".to_string(), Value::NativeFunction(native_len));
             g.define("push".to_string(), Value::NativeFunction(native_push));
             g.define("pop".to_string(), Value::NativeFunction(native_pop));
             g.define("range".to_string(), Value::NativeFunction(native_range));
             g.define("str".to_string(), Value::NativeFunction(native_str));
+            g.define("spawn".to_string(), Value::NativeFunction(native_spawn));
+            g.define("join".to_string(), Value::NativeFunction(native_join));
+            g.define("join_all".to_string(), Value::NativeFunction(native_join_all));
+            g.define("task_status".to_string(), Value::NativeFunction(native_task_status));
+            g.define("yield_now".to_string(), Value::NativeFunction(native_yield_now));
+            g.define("read_text".to_string(), Value::NativeFunction(native_read_text));
+            g.define("write_text".to_string(), Value::NativeFunction(native_write_text));
+            g.define("exists".to_string(), Value::NativeFunction(native_exists));
+            g.define("env".to_string(), Value::NativeFunction(native_env));
+            g.define("cwd".to_string(), Value::NativeFunction(native_cwd));
+            g.define("list_dir".to_string(), Value::NativeFunction(native_list_dir));
+            g.define("sleep".to_string(), Value::NativeFunction(native_sleep));
+            g.define("sleep_ms".to_string(), Value::NativeFunction(native_sleep));
             g.define("c_len".to_string(), Value::NativeFunction(native_c_len));
             g.define("c_hash".to_string(), Value::NativeFunction(native_c_hash));
             g.define("cpp_len".to_string(), Value::NativeFunction(native_cpp_len));
             g.define("cpp_hash".to_string(), Value::NativeFunction(native_cpp_hash));
             g.define("assert".to_string(), Value::NativeFunction(native_assert));
             g.define("type_of".to_string(), Value::NativeFunction(native_type_of));
-            g.define("sleep".to_string(), Value::NativeFunction(native_sleep));
         }
         Self { globals, loaded_modules: HashSet::new(), consts: HashSet::new() }
     }
@@ -1419,11 +1435,48 @@ fn is_alpha_numeric(c: char) -> bool {
 
 fn resolve_path(base_dir: &Path, text: &str) -> PathBuf {
     let candidate = Path::new(text);
+
     if candidate.is_absolute() {
-        candidate.to_path_buf()
-    } else {
-        base_dir.join(candidate)
+        return candidate.to_path_buf();
     }
+
+    let mut search_roots = vec![
+        base_dir.to_path_buf(),
+        base_dir.join("src"),
+        base_dir.join("stdlib"),
+        base_dir.join("modules"),
+        base_dir.join("deps"),
+        base_dir.join("vendor"),
+    ];
+
+    if let Ok(paths) = env::var("OXID_PATH") {
+        for part in env::split_paths(&paths) {
+            search_roots.push(part);
+        }
+    }
+
+    for root in search_roots {
+        let candidate_path = root.join(candidate);
+        if candidate_path.exists() {
+            return candidate_path;
+        }
+
+        if candidate.extension().is_none() {
+            let ox_path = candidate_path.with_extension("ox");
+            if ox_path.exists() {
+                return ox_path;
+            }
+        }
+    }
+
+    let fallback = base_dir.join(candidate);
+    if fallback.extension().is_none() {
+        let ox_fallback = fallback.with_extension("ox");
+        if ox_fallback.exists() {
+            return ox_fallback;
+        }
+    }
+    fallback
 }
 
 fn native_clock(_: Vec<Value>) -> Result<Value, RuntimeError> {
@@ -1607,6 +1660,154 @@ fn native_c_hash(args: Vec<Value>) -> Result<Value, RuntimeError> {
     Ok(Value::String(format!("{:016x}", hash)))
 }
 
+fn native_spawn(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.is_empty() {
+        return Err(RuntimeError::Message("spawn requires at least 1 argument.".to_string()));
+    }
+    match &args[0] {
+        Value::Function(func) => Ok(Value::Task(Rc::new(TaskValue {
+            function: func.clone(),
+            args: args[1..].to_vec(),
+        }))),
+        Value::Task(task) => Ok(Value::Task(task.clone())),
+        _ => Err(RuntimeError::Message("spawn requires a function or task value.".to_string())),
+    }
+}
+
+fn native_join(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("join requires 1 task argument.".to_string()));
+    }
+    match &args[0] {
+        Value::Task(task) => {
+            let mut interp = Interpreter::new();
+            interp.execute_task(task.clone()).map_err(RuntimeError::Message)
+        }
+        Value::Function(func) => {
+            let task = Rc::new(TaskValue { function: func.clone(), args: Vec::new() });
+            let mut interp = Interpreter::new();
+            interp.execute_task(task).map_err(RuntimeError::Message)
+        }
+        _ => Err(RuntimeError::Message("join requires a task or function value.".to_string())),
+    }
+}
+
+fn native_join_all(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("join_all requires 1 array argument.".to_string()));
+    }
+    let items = match &args[0] {
+        Value::Array(items) => items.borrow().clone(),
+        _ => return Err(RuntimeError::Message("join_all requires an array of tasks or functions.".to_string())),
+    };
+
+    let mut interp = Interpreter::new();
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+        let result = match item {
+            Value::Task(task) => interp.execute_task(task).map_err(RuntimeError::Message)?,
+            Value::Function(func) => {
+                let task = Rc::new(TaskValue { function: func, args: Vec::new() });
+                interp.execute_task(task).map_err(RuntimeError::Message)?
+            }
+            _ => return Err(RuntimeError::Message("join_all accepts only task or function values.".to_string())),
+        };
+        results.push(result);
+    }
+
+    Ok(Value::Array(Rc::new(RefCell::new(results))))
+}
+
+fn native_yield_now(_: Vec<Value>) -> Result<Value, RuntimeError> {
+    thread::yield_now();
+    Ok(Value::Null)
+}
+
+fn native_task_status(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("task_status requires 1 argument.".to_string()));
+    }
+    match &args[0] {
+        Value::Task(_) => Ok(Value::String("pending".to_string())),
+        Value::Function(_) => Ok(Value::String("ready".to_string())),
+        _ => Ok(Value::String("not-a-task".to_string())),
+    }
+}
+
+fn native_read_text(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("read_text requires 1 path argument.".to_string()));
+    }
+    let path = match &args[0] {
+        Value::String(s) => s,
+        _ => return Err(RuntimeError::Message("read_text requires a string path.".to_string())),
+    };
+    let text = fs::read_to_string(path).map_err(|e| RuntimeError::Message(format!("Failed to read {}: {}", path, e)))?;
+    Ok(Value::String(text))
+}
+
+fn native_write_text(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 2 {
+        return Err(RuntimeError::Message("write_text requires 2 arguments.".to_string()));
+    }
+    let path = match &args[0] {
+        Value::String(s) => s,
+        _ => return Err(RuntimeError::Message("write_text requires a string path.".to_string())),
+    };
+    let text = match &args[1] {
+        Value::String(s) => s,
+        other => other.to_string(),
+    };
+    fs::write(path, text).map_err(|e| RuntimeError::Message(format!("Failed to write {}: {}", path, e)))?;
+    Ok(Value::Null)
+}
+
+fn native_exists(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("exists requires 1 path argument.".to_string()));
+    }
+    let path = match &args[0] {
+        Value::String(s) => s,
+        _ => return Err(RuntimeError::Message("exists requires a string path.".to_string())),
+    };
+    Ok(Value::Bool(Path::new(path).exists()))
+}
+
+fn native_env(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("env requires 1 key argument.".to_string()));
+    }
+    let key = match &args[0] {
+        Value::String(s) => s,
+        _ => return Err(RuntimeError::Message("env requires a string key.".to_string())),
+    };
+    Ok(Value::String(env::var(key).unwrap_or_default()))
+}
+
+fn native_cwd(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if !args.is_empty() {
+        return Err(RuntimeError::Message("cwd takes no arguments.".to_string()));
+    }
+    let cwd = env::current_dir().map_err(|e| RuntimeError::Message(format!("Failed to get current directory: {}", e)))?;
+    Ok(Value::String(cwd.display().to_string()))
+}
+
+fn native_list_dir(args: Vec<Value>) -> Result<Value, RuntimeError> {
+    if args.len() != 1 {
+        return Err(RuntimeError::Message("list_dir requires 1 path argument.".to_string()));
+    }
+    let path = match &args[0] {
+        Value::String(s) => s,
+        _ => return Err(RuntimeError::Message("list_dir requires a string path.".to_string())),
+    };
+    let mut items = Vec::new();
+    for entry in fs::read_dir(path).map_err(|e| RuntimeError::Message(format!("Failed to list {}: {}", path, e)))? {
+        let entry = entry.map_err(|e| RuntimeError::Message(format!("Failed to read directory entry: {}", e)))?;
+        items.push(Value::String(entry.path().display().to_string()));
+    }
+    Ok(Value::Array(Rc::new(RefCell::new(items))))
+}
+
 extern "C" {
     fn oxid_c_strlen(s: *const c_char) -> usize;
     fn oxid_c_hash(s: *const c_char) -> u64;
@@ -1614,8 +1815,9 @@ extern "C" {
     fn oxid_cpp_hash(s: *const c_char) -> u64;
 }
 
+
 fn run_source(source: &str, base_dir: &Path, interp: &mut Interpreter) -> Result<(), String> {
-    let source = preprocess_source(source)?;
+    let source = cached_preprocess(source, base_dir)?;
     let mut parser = Parser::new(&source);
     let program = parser.parse_program()?;
     interp.execute_program(&program, base_dir)
@@ -1628,6 +1830,97 @@ fn run_file(path: &Path, interp: &mut Interpreter) -> Result<(), String> {
         .map_err(|e| format!("Cannot read file: {} ({})", canonical.display(), e))?;
     let base_dir = canonical.parent().unwrap_or(Path::new("."));
     run_source(&source, base_dir, interp)
+}
+
+fn run_manifest_script(root: &Path, script_name: &str, extra_args: &[String]) -> Result<(), String> {
+    let manifest_path = root.join("oxid.toml");
+    let manifest = load_manifest(&manifest_path)?;
+    let script = manifest
+        .scripts
+        .get(script_name)
+        .cloned()
+        .ok_or_else(|| format!("Script `{}` was not found in oxid.toml.", script_name))?;
+
+    let final_command = if extra_args.is_empty() {
+        script
+    } else {
+        format!("{} {}", script, extra_args.join(" "))
+    };
+
+    let status = if cfg!(windows) {
+        Command::new("cmd")
+            .args(["/C", &final_command])
+            .current_dir(root)
+            .status()
+            .map_err(|e| format!("Failed to launch script: {}", e))?
+    } else {
+        Command::new("sh")
+            .args(["-lc", &final_command])
+            .current_dir(root)
+            .status()
+            .map_err(|e| format!("Failed to launch script: {}", e))?
+    };
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Script `{}` exited with status {}.", script_name, status))
+    }
+}
+
+fn clear_cache(root: &Path) -> Result<(), String> {
+    let cache = root.join(".oxid");
+    if cache.exists() {
+        fs::remove_dir_all(&cache).map_err(|e| format!("Cannot clear cache: {}", e))?;
+    }
+    println!("cache cleared: {}", cache.display());
+    Ok(())
+}
+
+fn add_dependency(root: &Path, name: &str, target: &str) -> Result<(), String> {
+    let manifest_path = root.join("oxid.toml");
+    let manifest_text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Cannot read manifest: {} ({})", manifest_path.display(), e))?;
+
+    let mut lines: Vec<String> = manifest_text.lines().map(|line| line.to_string()).collect();
+    let mut next_section = None;
+    let mut in_dependencies = false;
+
+    for (idx, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if trimmed == "[dependencies]" {
+                in_dependencies = true;
+                continue;
+            }
+            if in_dependencies {
+                next_section = Some(idx);
+                break;
+            }
+        }
+    }
+
+    if !lines.iter().any(|line| line.trim() == "[dependencies]") {
+        lines.push(String::from(""));
+        lines.push(String::from("[dependencies]"));
+    }
+
+    let entry = format!("{} = \"{}\"", name, target);
+    if lines.iter().any(|line| line.trim_start().starts_with(&format!("{} =", name))) {
+        return Err(format!("Dependency `{}` already exists.", name));
+    }
+
+    let insert_at = next_section.unwrap_or(lines.len());
+    if insert_at == lines.len() {
+        lines.push(entry);
+    } else {
+        lines.insert(insert_at, entry);
+    }
+
+    let updated = lines.join("\n") + "\n";
+    fs::write(&manifest_path, updated)
+        .map_err(|e| format!("Cannot update manifest: {} ({})", manifest_path.display(), e))?;
+    Ok(())
 }
 
 fn repl(interp: &mut Interpreter) -> Result<(), String> {
@@ -1655,13 +1948,14 @@ fn repl(interp: &mut Interpreter) -> Result<(), String> {
     Ok(())
 }
 
-
-
 #[derive(Clone, Debug, Default)]
 struct ProjectManifest {
     name: Option<String>,
     version: Option<String>,
     entry: Option<String>,
+    scripts: HashMap<String, String>,
+    dependencies: HashMap<String, String>,
+    features: HashMap<String, bool>,
 }
 
 fn parse_manifest_value(raw: &str) -> Option<String> {
@@ -1699,6 +1993,16 @@ fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
             ("project", "name") | ("", "name") => manifest.name = Some(value),
             ("project", "version") | ("", "version") => manifest.version = Some(value),
             ("project", "entry") | ("build", "entry") | ("", "entry") => manifest.entry = Some(value),
+            ("features", _) => {
+                let enabled = matches!(value.as_str(), "true" | "yes" | "on" | "1");
+                manifest.features.insert(key.to_string(), enabled);
+            }
+            ("scripts", _) => {
+                manifest.scripts.insert(key.to_string(), value);
+            }
+            ("dependencies", _) => {
+                manifest.dependencies.insert(key.to_string(), value);
+            }
             _ => {}
         }
     }
@@ -1769,6 +2073,14 @@ fn build_project(root: &Path) -> Result<(), String> {
         return Err(format!("Manifest not found: {}", manifest_path.display()));
     }
     let manifest = load_manifest(&manifest_path)?;
+
+    for (name, target) in &manifest.dependencies {
+        let path = Path::new(target);
+        if (target.starts_with("./") || target.starts_with("../") || path.is_absolute()) && !path.exists() {
+            return Err(format!("Dependency `{}` points to missing path: {}", name, target));
+        }
+    }
+
     let entry = manifest
         .entry
         .clone()
@@ -1789,26 +2101,168 @@ fn build_project(root: &Path) -> Result<(), String> {
 
     let source = fs::read_to_string(&entry_path)
         .map_err(|e| format!("Cannot read file: {} ({})", entry_path.display(), e))?;
-    let source = preprocess_source(&source)?;
+    let source = cached_preprocess(&source, root)?;
     let mut parser = Parser::new(&source);
     parser.parse_program()?;
 
     let project_name = manifest.name.clone().unwrap_or_else(|| "unknown".to_string());
     let project_version = manifest.version.clone().unwrap_or_else(|| "unknown".to_string());
-    println!("build ok: {} ({} {})", entry_path.display(), project_name, project_version);
+    println!(
+        "build ok: {} ({} {}, {} scripts, {} deps, {} features)",
+        entry_path.display(),
+        project_name,
+        project_version,
+        manifest.scripts.len(),
+        manifest.dependencies.len(),
+        manifest.features.len(),
+    );
     Ok(())
 }
 
 
+
+fn format_source(source: &str) -> String {
+    let mut out = String::new();
+    let mut indent = 0usize;
+
+    for raw_line in source.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            continue;
+        }
+
+        if line.starts_with('}') {
+            indent = indent.saturating_sub(1);
+        }
+
+        out.push_str(&"    ".repeat(indent));
+        out.push_str(line);
+        out.push('\n');
+
+        let opens = line.chars().filter(|&c| c == '{').count();
+        let closes = line.chars().filter(|&c| c == '}').count();
+        if opens > closes {
+            indent += opens - closes;
+        } else if closes > opens {
+            indent = indent.saturating_sub(closes - opens);
+        }
+    }
+
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+fn cache_root(base_dir: &Path) -> PathBuf {
+    base_dir.join(".oxid").join("cache")
+}
+
+fn source_fingerprint(source: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    source.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn cached_preprocess(source: &str, base_dir: &Path) -> Result<String, String> {
+    let cache_dir = cache_root(base_dir).join("preprocess");
+    fs::create_dir_all(&cache_dir).map_err(|e| format!("Cannot create cache directory: {}", e))?;
+    let key = source_fingerprint(source);
+    let cache_file = cache_dir.join(format!("{}.oxp", key));
+
+    if let Ok(existing) = fs::read_to_string(&cache_file) {
+        return Ok(existing);
+    }
+
+    let processed = preprocess_source(source)?;
+    let _ = fs::write(&cache_file, &processed);
+    Ok(processed)
+}
+
+fn doctor_project(root: &Path) -> Result<(), String> {
+    let manifest = root.join("oxid.toml");
+    let readme = root.join("README.md");
+    let src = root.join("src/main.ox");
+    let mut report = Vec::new();
+
+    report.push(format!("manifest: {}", if manifest.exists() { "ok" } else { "missing" }));
+    report.push(format!("readme: {}", if readme.exists() { "ok" } else { "missing" }));
+    report.push(format!("entry: {}", if src.exists() { "ok" } else { "missing" }));
+    report.push(format!("native ffi: {}", if root.join("native").exists() { "ok" } else { "missing" }));
+    report.push(format!("docs: {}", if root.join("docs").exists() { "ok" } else { "missing" }));
+    report.push(format!("examples: {}", if root.join("examples").exists() { "ok" } else { "missing" }));
+
+    for line in report {
+        println!("{}", line);
+    }
+    Ok(())
+}
+
+fn document_project(root: &Path) -> Result<(), String> {
+    let docs_dir = root.join("docs");
+    fs::create_dir_all(&docs_dir).map_err(|e| format!("Cannot create docs dir: {}", e))?;
+    let api = docs_dir.join("API.md");
+    let content = r#"# Oxid API
+
+## Built-ins
+
+- clock / now
+- len / push / pop / range / str
+- spawn / join / join_all / task_status / yield_now
+- read_text / write_text / exists / env / cwd / list_dir
+- sleep / sleep_ms
+- assert / type_of
+- c_len / c_hash / cpp_len / cpp_hash
+
+## Commands
+
+- oxid run
+- oxid repl
+- oxid check
+- oxid watch
+- oxid build
+- oxid fmt
+- oxid test
+- oxid doctor
+- oxid new
+- oxid init
+
+## Language focus
+
+- fast script execution
+- ergonomic async tasks
+- macro pre-expansion
+- local module loading
+- C and C++ interoperability
+"#;
+    fs::write(&api, content).map_err(|e| format!("Cannot write docs: {}", e))?;
+    Ok(())
+}
+
+fn init_project(name: &str) -> Result<(), String> {
+    scaffold_project(name)
+}
+
 fn help() {
-    println!("Oxid 0.3.0");
+    println!("Oxid 0.5.0");
     println!("Usage:");
     println!("  oxid run <file.ox>");
+    println!("  oxid script <name> [args...]");
     println!("  oxid check <file.ox>");
     println!("  oxid repl");
     println!("  oxid new <project-name>");
+    println!("  oxid init <project-name>");
+    println!("  oxid add <name> <path-or-target>");
     println!("  oxid watch <file.ox>");
     println!("  oxid build");
+    println!("  oxid clean");
+    println!("  oxid fmt [path]");
+    println!("  oxid test");
+    println!("  oxid doctor");
+    println!("  oxid doc");
     println!("  oxid help");
 }
 
@@ -1838,6 +2292,7 @@ Generated by `oxid new`.
 - Edit `src/main.ox`
 - Run `oxid build`
 - Run `oxid run src/main.ox`
+- Run `oxid script run`
 "#,
     )
     .map_err(|e| format!("Failed to create README.md: {}", e))?;
@@ -1847,6 +2302,15 @@ Generated by `oxid new`.
 name = "demo"
 version = "0.1.0"
 entry = "src/main.ox"
+
+[scripts]
+run = "oxid run src/main.ox"
+test = "oxid test"
+fmt = "oxid fmt"
+doc = "oxid doc"
+clean = "oxid clean"
+
+[dependencies]
 
 [build]
 mode = "script-first"
@@ -1884,7 +2348,7 @@ fn main() {
                 Err("`oxid check` requires a file path.".to_string())
             };
             match fs::read_to_string(file) {
-                Ok(source) => match preprocess_source(&source) {
+                Ok(source) => match cached_preprocess(&source, Path::new(".")) {
                     Ok(source) => {
                         let mut parser = Parser::new(&source);
                         match parser.parse_program() {
@@ -1903,11 +2367,24 @@ fn main() {
             };
             run_file(Path::new(file), &mut interp)
         }
+        Some("script") => {
+            let Some(name) = args.get(2) else {
+                Err("`oxid script` requires a script name.".to_string())
+            };
+            let cwd = Path::new(".");
+            run_manifest_script(cwd, name, &args[3..])
+        }
         Some("new") => {
             let Some(name) = args.get(2) else {
                 Err("`oxid new` requires a project name.".to_string())
             };
             scaffold_project(name)
+        }
+        Some("init") => {
+            let Some(name) = args.get(2) else {
+                Err("`oxid init` requires a project name.".to_string())
+            };
+            init_project(name)
         }
         Some("watch") => {
             let Some(file) = args.get(2) else {
@@ -1918,6 +2395,45 @@ fn main() {
         Some("build") => {
             let cwd = Path::new(".");
             build_project(cwd)
+        }
+        Some("clean") => {
+            let cwd = Path::new(".");
+            clear_cache(cwd)
+        }
+        Some("add") => {
+            let Some(name) = args.get(2) else {
+                Err("`oxid add` requires a dependency name.".to_string())
+            };
+            let Some(target) = args.get(3) else {
+                Err("`oxid add` requires a dependency target.".to_string())
+            };
+            add_dependency(Path::new("."), name, target)
+        }
+        Some("fmt") => {
+            let cwd = Path::new(".");
+            let target = args.get(2).map(PathBuf::from).unwrap_or_else(|| cwd.to_path_buf());
+            if target.is_dir() {
+                format_project(&target)
+            } else {
+                let source = fs::read_to_string(&target)
+                    .map_err(|e| format!("Cannot read file: {} ({})", target.display(), e))?;
+                let formatted = format_source(&source);
+                fs::write(&target, formatted)
+                    .map_err(|e| format!("Cannot write file: {} ({})", target.display(), e))?;
+                Ok(())
+            }
+        }
+        Some("test") => {
+            let cwd = Path::new(".");
+            run_test_suite(cwd)
+        }
+        Some("doctor") => {
+            let cwd = Path::new(".");
+            doctor_project(cwd)
+        }
+        Some("doc") => {
+            let cwd = Path::new(".");
+            document_project(cwd)
         }
         Some(other) => {
             let path = Path::new(other);

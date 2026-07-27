@@ -19,3 +19,6 @@
 - Keep syntax compact.
 - Make error messages actionable.
 - Favor readability before extreme optimization.
+
+
+Prefer cache-aware commands such as `oxid script`, `oxid clean`, and `oxid add` when working on the toolchain.

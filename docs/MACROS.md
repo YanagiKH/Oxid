@@ -12,4 +12,5 @@ Limits:
 
 - Expansion currently happens as string replacement.
 - This is suitable for boilerplate reduction and fixed syntax fragments.
+- The preprocessor result is cached under `.oxid/cache` for faster repeat runs.
 - It can later be replaced with a real token-level macro system.
