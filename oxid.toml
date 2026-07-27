@@ -1,0 +1,20 @@
+name = "oxid"
+version = "0.3.0"
+language = "oxid"
+edition = "2026"
+
+[package]
+description = "Oxid experimental language prototype"
+license = "MIT"
+
+[build]
+mode = "script-first"
+incremental = true
+ffi = true
+
+[features]
+async = true
+macros = true
+const_eval = true
+c_interop = true
+cpp_interop = true

@@ -1,0 +1,12 @@
+[package]
+name = "oxid"
+version = "0.2.0"
+edition = "2021"
+build = "build.rs"
+description = "Oxid: experimental Rust/C language runtime"
+license = "MIT"
+
+[dependencies]
+
+[build-dependencies]
+cc = "1"
