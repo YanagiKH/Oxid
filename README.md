@@ -1,10 +1,10 @@
 # Oxid
 
-Oxid is an experimental language prototype based on Rust + C/C++.
+Oxid is an experimental language prototype built around a Rust bootstrap runtime and a growing Oxid-written surface area.
 
-Its goal is not to be a thin wrapper. It is to turn the language core, development workflow, macros, modules, native interoperability, and learning path into a runnable project.
+The goal is not to stay as a thin wrapper. The project is organized so that everyday development work gradually moves into Oxid source files: standard library modules, examples, tooling scripts, package workflows, and project documentation.
 
-## Implemented so far
+## What is already available
 
 - `oxid run <file.ox>`: run a script
 - `oxid script <name> [args...]`: execute a manifest script
@@ -19,57 +19,48 @@ Its goal is not to be a thin wrapper. It is to turn the language core, developme
 - `oxid test`: run smoke tests and examples
 - `oxid doctor`: verify project health
 - `oxid doc`: generate API docs
-- `let` / `const` / `print` / `if` / `while` / `fn` / `async fn` / `await` / `return` / `use`
-- arrays, indexing, and indexed assignment
-- `len` / `push` / `pop` / `range` / `str` / `sleep`
-- `c_len` / `c_hash` / `cpp_len` / `cpp_hash` native interop
-- module cache, preprocess cache, and recursive loading
-- single-line `macro` preprocessing expansion
-- package manifest support (`oxid.toml` scripts / dependencies / features)
-- developer tooling commands (`fmt`, `test`, `doctor`, `doc`, `script`, `add`, `clean`)
-- GitHub Actions scaffold
 
 ## Language features
 
-- variables and constants
-- functions and async functions
-- arrays and indexing
-- conditions and loops
-- function calls and task-style awaiting
-- source preprocessing macros
-- module loading with search paths
-- C and C++ interoperability
+- `let` / `const`
+- `print` / `if` / `while` / `fn` / `async fn` / `await` / `return` / `use`
+- arrays, indexing, and indexed assignment
+- `len` / `push` / `pop` / `range` / `str` / `sleep`
+- `c_len` / `c_hash` / `cpp_len` / `cpp_hash`
+- module cache, preprocess cache, and recursive loading
+- single-line `macro` preprocessing expansion
+- package manifest support (`oxid.toml` scripts / dependencies / features)
 
 ## Repository layout
 
-- `src/` contains the Rust bootstrap runtime
-- `native/` contains the C and C++ bridge code
+- `src/` contains the Rust bootstrap runtime and entry script
 - `stdlib/` contains Oxid standard library modules
 - `examples/` contains runnable Oxid examples
 - `tools/` contains Oxid tooling previews
-- `docs/` contains English documentation
+- `packages/demo/` contains a user-facing package layout
+- `docs/` contains workflow and architecture notes
 - `tests/` contains smoke tests
 
-## Workflow
+## Recommended first run
 
 ```bash
 cargo run -- run examples/hello.ox
-cargo run -- run examples/library.ox
-cargo run -- script run
+cargo run -- run examples/stdlib_smoke.ox
 cargo run -- build
-cargo run -- fmt examples/hello.ox
 cargo run -- test
 cargo run -- doctor
 cargo run -- doc
 ```
 
-## Project direction
+## Package-first workflow
 
-The goal is to move more and more of the everyday language surface into Oxid source files:
+The intended user experience is:
 
-- Oxid standard library modules
-- Oxid examples
-- Oxid tooling scripts
-- Oxid package workflow previews
+1. Create a project with `oxid new`.
+2. Put reusable modules in `src/` and `stdlib/`.
+3. Define scripts in `oxid.toml`.
+4. Use `oxid script <name>` for repeatable tasks.
+5. Keep examples and smoke tests alongside the package.
+6. Use `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc` before release.
 
-The Rust core remains the bootstrap layer for parsing, execution, caching, and native interop.
+For a full walkthrough, read `docs/QUICKSTART.md` and `docs/PACKAGE_WORKFLOW.md`.

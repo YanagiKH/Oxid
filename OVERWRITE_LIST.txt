@@ -1,0 +1,25 @@
+OVERWRITE / ADD FILES IN THIS PACKAGE
+
+Overwrite:
+- README.md
+- docs/PACKAGES.md
+- docs/PACKAGE_WORKFLOW.md
+- docs/ARCHITECTURE.md
+- docs/SCRIPTS.md
+- stdlib/strings.ox
+- examples/stdlib_smoke.ox
+- examples/workflow_preview.ox
+- examples/package_workflow.ox
+- examples/hello.ox
+- examples/library.ox
+- examples/modules.ox
+- tests/smoke.ox
+- packages/demo/README.md
+- packages/demo/oxid.toml
+- packages/demo/src/lib.ox
+- packages/demo/src/main.ox
+- packages/demo/tests/smoke.ox
+- packages/demo/package.ox
+
+Add:
+- docs/QUICKSTART.md

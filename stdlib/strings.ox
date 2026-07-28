@@ -97,3 +97,7 @@ fn pad_left(text, width, fill) {
     }
     return repeat_char(fill, width - len(text)) + text;
 }
+
+fn quote(text) {
+    return """ + text + """;
+}

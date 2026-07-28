@@ -5,3 +5,7 @@ fn greet(name) {
 fn describe_package(name, version) {
     return name + " v" + version;
 }
+
+fn package_banner(name, version) {
+    return "[" + describe_package(name, version) + "]";
+}

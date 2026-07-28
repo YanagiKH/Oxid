@@ -2,8 +2,7 @@ use "../stdlib/package.ox";
 use "../stdlib/cache.ox";
 
 fn main() {
-    print package_summary("name = "demo"
-version = "0.5.3"
-entry = "src/main.ox"");
+    let manifest = "[project]\nname = \"demo\"\nversion = \"0.5.3\"\nentry = \"src/main.ox\"\n";
+    print package_summary(manifest);
     print cache_label("demo", "0.5.3");
 }

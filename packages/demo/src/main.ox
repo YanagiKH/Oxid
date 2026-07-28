@@ -1,7 +1,9 @@
+use "lib.ox";
 use "../../stdlib/core.ox";
-use "../../stdlib/math.ox";
 
 fn main() {
-    print "demo package";
-    print square(9);
+    print package_banner("demo", "0.5.2");
+    print greet("world");
+    print describe_package("demo", "0.5.2");
+    print repeat("-", 12);
 }

@@ -122,7 +122,7 @@ struct Program {
     stmts: Vec<Stmt>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum Value {
     Null,
     Bool(bool),
