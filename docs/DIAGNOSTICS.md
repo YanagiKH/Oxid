@@ -1,8 +1,8 @@
 # Diagnostics
 
-Oxid should report errors in one consistent shape.
+Oxid error messages should stay short, precise, and source-linked.
 
-## Standard fields
+## Preferred structure
 
 - `kind`
 - `message`
@@ -11,19 +11,8 @@ Oxid should report errors in one consistent shape.
 - `column`
 - `hint`
 - `snippet`
-- `stage`
 
-## Desired style
-
-A good error should be:
-
-- short
-- specific
-- actionable
-- tied to a source location
-- easy to read in a terminal
-
-## Suggested format
+## Example
 
 ```text
 error: unexpected token
@@ -31,13 +20,12 @@ error: unexpected token
   |
 12 | print(1 + )
   |        ^
-  = help: remove the trailing operator or add the right-hand expression
+  = help: remove the trailing operator or add the missing expression
 ```
 
-## Reporting rules
+## Rules
 
 - show the most relevant location first
-- keep the original message short
-- prefer one direct hint over many vague hints
-- avoid exposing internal runtime jargon to users
-- if recovery is possible, continue parsing and show follow-up notes instead of stopping immediately
+- prefer one clear hint
+- avoid internal implementation jargon
+- keep parser and runtime messages visually consistent

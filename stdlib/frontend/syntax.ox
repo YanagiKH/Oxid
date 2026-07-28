@@ -1,52 +1,37 @@
-use "../core.ox";
+use "../strings.ox";
 
-fn syntax_profile_name() {
-    return "oxid-short";
+fn short_fn(name) {
+    return "fn " + name + "()";
 }
 
-fn syntax_feature_list() {
-    return ["pub fn", "mod", "use as", "match", "try", "defer", "pipe"];
+fn exported_fn(name) {
+    return "pub fn " + name + "()";
 }
 
-fn syntax_rule(feature) {
-    if (feature == "pub fn") {
-        return "exported declaration";
-    }
-    if (feature == "mod") {
-        return "module grouping";
-    }
-    if (feature == "use as") {
-        return "short alias import";
-    }
-    if (feature == "match") {
-        return "pattern matching";
-    }
-    if (feature == "try") {
-        return "error propagation";
-    }
-    if (feature == "defer") {
-        return "cleanup hook";
-    }
-    if (feature == "pipe") {
-        return "pipeline chaining";
-    }
-    return "syntax proposal";
+fn local_group(name) {
+    return "mod " + name;
 }
 
-fn syntax_summary() {
-    let out = "";
-    let items = syntax_feature_list();
-    let i = 0;
-    while (i < len(items)) {
-        if (i > 0) {
-            out = out + ", ";
-        }
-        out = out + items[i];
-        i = i + 1;
-    }
-    return out;
+fn import_alias(path_text, alias) {
+    return "use " + path_text + " as " + alias;
 }
 
-fn syntax_note(feature) {
-    return feature + " => " + syntax_rule(feature);
+fn match_preview(value_name) {
+    return "match " + value_name + " { ... }";
+}
+
+fn try_preview(expr) {
+    return "try " + expr;
+}
+
+fn defer_preview(expr) {
+    return "defer " + expr;
+}
+
+fn pipe_preview(left, right) {
+    return left + " |> " + right;
+}
+
+fn one_line_helper(name, expr) {
+    return "fn " + name + "() = " + expr;
 }

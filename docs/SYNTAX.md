@@ -1,52 +1,22 @@
-# Syntax direction
+# Oxid-first syntax direction
 
-This file separates the current syntax from planned simplifications.
+This file describes the planned simplifications for the authoring surface.
 
-## Current syntax already supported by the runtime
+## Target forms
 
-- `fn`
-- `let`
-- `const`
-- `if`
-- `while`
-- `return`
-- `use`
-- arrays
-- indexing
-- function calls
-- `async fn`
-- `await`
-- `print`
-
-## Planned Oxid-first simplifications
-
-These are proposals for future language growth.
-
-- shorter function declarations
-- lighter module import forms
-- pipeline-style chaining
-- pattern matching
-- typed record literals
-- clearer error propagation syntax
-- optional one-line forms for tiny helpers
-
-## Proposed direction
-
-- `pub fn` for exported declarations
+- `pub fn` for exported functions
 - `mod name` for local module grouping
-- `use path as alias` for shorter imports
+- `use path as alias` for concise imports
 - `match value { ... }`
 - `try expr`
 - `defer expr`
 - `pipe value |> step`
+- short one-line helper forms for tiny functions
 
-These examples are roadmap targets, not parser guarantees yet.
+## Design rule
 
-## Compatibility rule
+Every new form should be shorter than the equivalent verbose form, easy to read aloud, and easy to format consistently.
 
-Only add syntax when it is:
+## Notes
 
-- shorter than the equivalent old form
-- obvious to read at a glance
-- easy to format consistently
-- safe to parse without making the grammar brittle
+The repository now includes preview files that organize these ideas into front-end modules, command tools, and documentation. Full parser-level support still belongs to the compiler migration path.

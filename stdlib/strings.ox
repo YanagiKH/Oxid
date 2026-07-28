@@ -106,7 +106,7 @@ fn pad_right(text, width, fill) {
 }
 
 fn quote(text) {
-    return "\"" + text + "\"";
+    return """ + text + """;
 }
 
 fn join_lines(lines, separator) {
@@ -120,21 +120,4 @@ fn join_lines(lines, separator) {
         i = i + 1;
     }
     return out;
-}
-
-fn repeat_line(line, count, separator) {
-    let out = "";
-    let i = 0;
-    while (i < count) {
-        if (i > 0) {
-            out = out + separator;
-        }
-        out = out + line;
-        i = i + 1;
-    }
-    return out;
-}
-
-fn wrap(prefix, body, suffix) {
-    return prefix + body + suffix;
 }

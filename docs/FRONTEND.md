@@ -1,36 +1,25 @@
-# Frontend layer
+# Front-end split
 
-This document defines the Oxid-written frontend shape used by the pack.
+This repository is moving toward a formal compiler front-end layout.
 
-## Suggested layers
+## Layers
 
-- lexer
-- parser
-- diagnostics
-- module resolution
-- pipeline
-- syntax planning
+- `lexer` turns source text into tokens
+- `parser` turns tokens into an AST or syntax tree
+- `diagnostics` turns errors into readable source-linked messages
+- `modules` resolves imports, aliases, and module groups
+- `pipeline` coordinates the front-end stages
+- `syntax` documents the intended Oxid-first syntax direction
 
-## Purpose of each layer
+## Files
 
-### Lexer
-Turns source text into a token stream.
+- `stdlib/frontend/lexer.ox`
+- `stdlib/frontend/parser.ox`
+- `stdlib/frontend/diagnostics.ox`
+- `stdlib/frontend/modules.ox`
+- `stdlib/frontend/pipeline.ox`
+- `stdlib/frontend/syntax.ox`
 
-### Parser
-Turns tokens into declarations, statements, and expressions.
+## Goal
 
-### Diagnostics
-Formats errors with file, line, column, snippet, and hint text.
-
-### Module resolution
-Turns a module import path into a resolved source path and cache key.
-
-### Pipeline
-Combines lexer, parser, diagnostics, and module resolution into one flow.
-
-### Syntax planning
-Tracks short forms and future language features separately from the runtime.
-
-## Working rule
-
-The frontend should stay simple enough that the compiler can be explained without Rust-specific knowledge.
+The long-term goal is to keep the top-level compiler workflow readable, Oxid-owned, and easy to extend without Rust-style boilerplate.

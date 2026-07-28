@@ -52,13 +52,14 @@ Oxid は、Rust のブートストラップランタイムと、Oxid で記述�
 ## 推奨される初回実行手順
 
 ```bash
-cargo run -- run examples/hello.ox
-cargo run -- run examples/frontend_preview.ox
-cargo run -- run examples/module_resolution.ox
-cargo run -- build
-cargo run -- test
-cargo run -- doctor
-cargo run -- doc
+oxid bootstrap
+oxid frontend
+oxid diagnose
+oxid lint
+oxid emit
+oxid module
+oxid syntax
+oxid self-host
 ```
 
 ## パッケージファーストのワークフロー
@@ -70,18 +71,6 @@ cargo run -- doc
 5. コンパイラやワークフローのプレビューは `tools/` に配置します。
 6. 実行可能なサンプルは `examples/` に配置します。
 7. リリース前に `oxid build`、`oxid test`、`oxid doctor`、`oxid doc` を実行します。
-
-## セルフホスティングの方向性
-
-現在の計画は段階的に進めることになっています：
-
-1. Rustのブートストラップランタイムを一時的なランチャーとして維持する
-2. フロントエンドのヘルパーロジックをOxidモジュールに移行する
-3. 診断情報のフォーマット処理をOxidモジュールに移行する
-4. モジュール解決処理をOxidモジュールに移行する
-5. Oxidに高レベルの構文解析ヘルパーを追加する
-6. コンパイラのワークフローを統合する機能をさらにOxidに移行する
-7. Rustの使用をブートストラップ専用へと段階的に縮小する
 
 参照：
 

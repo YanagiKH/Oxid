@@ -1,33 +1,17 @@
 use "../strings.ox";
-use "../errors.ox";
 
-fn diagnostic_header(stage, file_path, line, column) {
-    return "[" + stage + "] " + source_header(file_path, line, column);
+fn diag_line(kind, file_path, line, column) {
+    return kind + " --> " + file_path + ":" + str(line) + ":" + str(column);
 }
 
-fn diagnostic_hint(stage, hint) {
-    if (hint == "") {
-        return "";
-    }
-    return "[" + stage + "] " + hint;
+fn diag_hint(text) {
+    return "help: " + text;
 }
 
-fn render_diagnostic(stage, file_path, line, column, message, hint) {
-    let out = diagnostic_header(stage, file_path, line, column) + "\n" + message;
+fn diag_message(kind, file_path, line, column, message, hint) {
+    let out = kind + ": " + message + "\n" + diag_line(kind, file_path, line, column);
     if (hint != "") {
-        out = out + "\n" + diagnostic_hint(stage, hint);
+        out = out + "\n  = " + diag_hint(hint);
     }
     return out;
-}
-
-fn render_parse_error(file_path, line, column, message, hint) {
-    return render_diagnostic("parse", file_path, line, column, message, hint);
-}
-
-fn render_module_error(file_path, line, column, message, hint) {
-    return render_diagnostic("module", file_path, line, column, message, hint);
-}
-
-fn render_frontend_error(file_path, line, column, message, hint) {
-    return render_diagnostic("frontend", file_path, line, column, message, hint);
 }

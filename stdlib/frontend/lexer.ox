@@ -1,35 +1,18 @@
 use "../strings.ox";
-use "../core.ox";
+use "../errors.ox";
 
-fn keyword_list() {
-    return ["fn", "async", "await", "let", "const", "if", "else", "while", "return", "use", "print", "true", "false", "null", "macro", "and", "or"];
-}
-
-fn is_keyword(word) {
-    return contains(keyword_list(), word);
-}
-
-fn token_group(kind) {
-    if (kind == "keyword") {
-        return "token:keyword";
-    }
-    if (kind == "identifier") {
-        return "token:identifier";
-    }
-    if (kind == "literal") {
-        return "token:literal";
-    }
-    return "token:operator";
-}
-
-fn token_summary(kind, lexeme) {
-    return token_group(kind) + ":" + lexeme;
+fn token_summary(kind, text) {
+    return kind + ":" + text;
 }
 
 fn lexer_stage_name() {
     return "lexer";
 }
 
-fn lexer_hint(source_name) {
-    return "scan source: " + source_name;
+fn lex_preview(source) {
+    return token_summary(lexer_stage_name(), source);
+}
+
+fn lex_failure(file_path, line, column, token_text) {
+    return parse_error(file_path, line, column, "unexpected token `" + token_text + "`", "check the syntax preview or simplify the expression");
 }

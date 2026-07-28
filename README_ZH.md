@@ -52,13 +52,14 @@ Oxid 是一個以 Rust 啟動運行時為核心，並逐步擴展由 Oxid 編寫
 ## 建議的首次執行步驟
 
 ```bash
-cargo run -- run examples/hello.ox
-cargo run -- run examples/frontend_preview.ox
-cargo run -- run examples/module_resolution.ox
-cargo run -- build
-cargo run -- test
-cargo run -- doctor
-cargo run -- doc
+oxid bootstrap
+oxid frontend
+oxid diagnose
+oxid lint
+oxid emit
+oxid module
+oxid syntax
+oxid self-host
 ```
 
 ## 以套件為先的工作流程
@@ -70,18 +71,6 @@ cargo run -- doc
 5. 將編譯器及工作流程預覽程式置於 `tools/` 目錄下。
 6. 將可執行的範例置於 `examples/` 目錄下。
 7. 發布前請執行 `oxid build`、`oxid test`、`oxid doctor` 及 `oxid doc`。
-
-## 自主架設方向
-
-目前的計畫分階段進行：
-
-1. 將 Rust 啟動運行時保留為臨時啟動器
-2. 將前端輔助邏輯移入 Oxid 模組
-3. 將診斷格式化功能移入 Oxid 模組
-4. 將模組解析功能移入 Oxid 模組
-5. 在 Oxid 中新增更高層級的語法規劃輔助程式
-6. 將更多編譯器工作流程的串接邏輯移入 Oxid
-7. 逐步減少 Rust 的使用，最終僅保留啟動用途
 
 請參閱：
 

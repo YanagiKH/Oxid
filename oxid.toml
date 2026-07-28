@@ -1,6 +1,6 @@
 [project]
 name = "oxid"
-version = "0.5.2"
+version = "0.7.0"
 entry = "src/main.ox"
 
 [scripts]

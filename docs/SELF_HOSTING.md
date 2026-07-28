@@ -1,38 +1,25 @@
 # Self-hosting plan
 
-Oxid does not become Rust-free in one step. The practical path is staged.
+## Stage 1
 
-## What should move out of Rust first
+- keep the Rust bootstrap runtime
+- move command orchestration into Oxid-facing scripts
+- centralize diagnostics formatting
+- centralize module resolution logic
 
-- command orchestration
-- source preprocessing
-- module loading helpers
-- diagnostics formatting
-- parser stage helpers
-- cache metadata handling
+## Stage 2
 
-## Frontend split
+- move parser helpers into Oxid-owned modules
+- move syntax preview / validation into Oxid-owned modules
+- add structured front-end stages
 
-- `stdlib/frontend/lexer.ox`
-- `stdlib/frontend/parser.ox`
-- `stdlib/frontend/diagnostics.ox`
-- `stdlib/frontend/modules.ox`
-- `stdlib/frontend/pipeline.ox`
-- `stdlib/frontend/syntax.ox`
+## Stage 3
 
-## Bootstrap sequence
+- move more of the compiler workflow into Oxid
+- keep Rust as a temporary bootstrap only
+- reduce the amount of Rust-specific project logic
 
-1. keep the current Rust binary as the launcher
-2. move frontend helper logic into Oxid modules
-3. move error formatting and package utilities into Oxid
-4. move parser-stage helpers into Oxid
-5. move command dispatch into Oxid
-6. replace bootstrap internals only after the Oxid path is complete
+## Stage 4
 
-## What this pack focuses on
-
-- short and readable helper modules
-- clearer error reporting
-- source-driven tool scripts
-- copyable package templates
-- a path for future self-hosting
+- make Oxid the primary development language for the compiler toolchain
+- keep the Rust layer as a bootstrap compatibility fallback only

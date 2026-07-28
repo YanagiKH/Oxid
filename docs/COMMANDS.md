@@ -1,6 +1,6 @@
 # Commands
 
-## Current commands
+## Existing direct commands
 
 - `oxid run`
 - `oxid script`
@@ -17,7 +17,7 @@
 - `oxid doctor`
 - `oxid doc`
 
-## Planned additions
+## Added command surface
 
 - `oxid bootstrap`
 - `oxid frontend`
@@ -28,19 +28,19 @@
 - `oxid syntax`
 - `oxid self-host`
 
-## Script convention
+## Purpose
 
-Use `oxid.toml` scripts for repeatable workflows. Keep the script names short and the command bodies explicit.
+These commands split the future compiler front-end into smaller Oxid-owned workflows:
 
-Example:
+- `bootstrap` validates the boot path
+- `frontend` previews the lexer/parser pipeline
+- `diagnose` renders errors
+- `lint` checks style and structural rules
+- `emit` previews code emission
+- `module` previews module resolution
+- `syntax` previews syntax rules
+- `self-host` assembles the self-host migration plan
 
-```toml
-[scripts]
-run = "oxid run src/main.ox"
-test = "oxid test"
-doctor = "oxid doctor"
-doc = "oxid doc"
-bootstrap = "oxid run tools/bootstrap.ox"
-frontend = "oxid run tools/frontend_preview.ox"
-diagnose = "oxid run tools/diagnose.ox"
-```
+## Fallback mode
+
+If the binary has not been rebuilt with the CLI patch yet, run the corresponding Oxid script from `tools/` through `oxid script` or `oxid run`.

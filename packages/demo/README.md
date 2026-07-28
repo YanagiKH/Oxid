@@ -1,27 +1,19 @@
 # Demo Oxid Package
 
-This folder shows a user-facing Oxid package layout.
+This package is a copyable starting point for Oxid-first development.
 
-## Layout
+## Scripts
 
-- `src/main.ox` contains the application entry.
-- `src/lib.ox` contains reusable package helpers.
-- `tests/smoke.ox` contains a smoke test.
-- `oxid.toml` contains package metadata and scripts.
-
-## Useful commands
-
-```bash
-oxid script run
-oxid script test
-oxid script fmt
-oxid script doctor
-oxid script doc
-oxid script bootstrap
-oxid script frontend
-oxid script diagnose
-```
-
-## Goal
-
-This package is designed to be copied, edited, and used as the starting point for Oxid-based development.
+- `oxid script run`
+- `oxid script test`
+- `oxid script fmt`
+- `oxid script doctor`
+- `oxid script doc`
+- `oxid script bootstrap`
+- `oxid script frontend`
+- `oxid script diagnose`
+- `oxid script lint`
+- `oxid script emit`
+- `oxid script module`
+- `oxid script syntax`
+- `oxid script self-host`

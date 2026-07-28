@@ -1,7 +1,8 @@
 use "../stdlib/prelude.ox";
 
 fn main() {
-    print frontend_pipeline_name();
-    print frontend_plan("oxid", "0.7.0", "src/main.ox");
-    print frontend_bootstrap_hint("oxid", "0.7.0", "src/main.ox");
+    print frontend_pipeline("examples/frontend_preview.ox");
+    print lex_preview("pub fn run()");
+    print parser_preview("demo");
+    print diag_message("note", "examples/frontend_preview.ox", 1, 1, "preview only", "replace with real parsing rules later");
 }
