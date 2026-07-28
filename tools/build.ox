@@ -1,4 +1,6 @@
+# Oxid tool-script preview
+# This file demonstrates how project automation can live in Oxid source files.
+
 fn main() {
-    print "Oxid build workflow preview";
-    print "Use `oxid build` for validation and cache generation.";
+    print "tooling preview";
 }

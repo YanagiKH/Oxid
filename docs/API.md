@@ -29,4 +29,4 @@
 
 ## Notes
 
-The Rust bootstrap runtime is intentionally small relative to the Oxid standard library, tooling previews, examples, and generated helper modules.
+Rust remains the bootstrap layer. Most language-facing functionality is expected to move into Oxid source modules, scripts, and package workflows.
