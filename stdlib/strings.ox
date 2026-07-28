@@ -106,7 +106,7 @@ fn pad_right(text, width, fill) {
 }
 
 fn quote(text) {
-    return """ + text + """;
+    return "\"" + text + "\"";
 }
 
 fn join_lines(lines, separator) {

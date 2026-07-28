@@ -1,6 +1,7 @@
 use "../stdlib/prelude.ox";
 
 fn main() {
-    print parse_error("src/main.ox", 12, 8, "unexpected token", "remove the extra operator or finish the expression");
-    print runtime_error("examples/hello.ox", 4, 3, "value is not callable", "call a function or import the module that defines it");
+    print render_parse_error("src/main.ox", 12, 8, "unexpected token", "remove the extra operator or finish the expression");
+    print render_module_error("src/main.ox", 4, 1, "module not found", "check the path and the current file directory");
+    print render_frontend_error("src/main.ox", 1, 1, "frontend preview only", "move parser helpers into Oxid modules");
 }

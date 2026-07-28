@@ -1,8 +1,8 @@
 use "../stdlib/prelude.ox";
-use "../stdlib/compiler.ox";
 
 fn main() {
-    let manifest = "[project]\nname = \"demo\"\nversion = \"0.5.3\"\nentry = \"src/main.ox\"\n";
+    let manifest = package_manifest_header("demo", "0.7.0", "src/main.ox");
     print package_summary(manifest);
-    print compile_plan("demo", "0.5.3", "native");
+    print package_scripts_hint();
+    print package_load_hint("demo", "src/main.ox");
 }

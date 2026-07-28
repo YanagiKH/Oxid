@@ -41,3 +41,7 @@ fn runtime_error(file_path, line, column, message, hint) {
 fn note(message) {
     return "  = note: " + message;
 }
+
+fn multi_error(file_path, line, column, message, hint, stage) {
+    return "[" + stage + "] " + make_error("error", file_path, line, column, message, hint);
+}

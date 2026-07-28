@@ -22,7 +22,7 @@ project/
 1. create the project
 2. import `stdlib/prelude.ox`
 3. keep reusable helpers in `stdlib/`
-4. keep executable entry logic in `src/main.ox`
+4. keep app code in `src/main.ox`
 5. keep workflow previews in `tools/`
 6. keep demonstrations in `examples/`
 7. keep smoke tests in `tests/`

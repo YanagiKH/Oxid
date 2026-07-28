@@ -9,3 +9,7 @@ fn cache_path(project_name, fingerprint) {
 fn cache_label(project_name, version) {
     return "cache(" + cache_key(project_name, version) + ")";
 }
+
+fn cache_scope(project_name, version, stage) {
+    return project_name + ":" + version + ":" + stage;
+}

@@ -18,6 +18,7 @@ oxid script fmt
 oxid script doctor
 oxid script doc
 oxid script bootstrap
+oxid script frontend
 oxid script diagnose
 ```
 

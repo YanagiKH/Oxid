@@ -34,3 +34,15 @@ fn package_entry(manifest_text) {
 fn package_summary(manifest_text) {
     return package_name(manifest_text) + " " + package_version(manifest_text) + " -> " + package_entry(manifest_text);
 }
+
+fn package_manifest_header(name, version, entry) {
+    return "[project]\\nname = \"" + name + "\"\\nversion = \"" + version + "\"\\nentry = \"" + entry + "\"\\n";
+}
+
+fn package_scripts_hint() {
+    return "run, test, doctor, doc, bootstrap, frontend, diagnose";
+}
+
+fn package_load_hint(name, entry) {
+    return "load " + name + " from " + entry;
+}

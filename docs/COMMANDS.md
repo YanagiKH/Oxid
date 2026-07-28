@@ -20,11 +20,12 @@
 ## Planned additions
 
 - `oxid bootstrap`
+- `oxid frontend`
 - `oxid diagnose`
 - `oxid lint`
 - `oxid emit`
-- `oxid package`
-- `oxid release`
+- `oxid module`
+- `oxid syntax`
 - `oxid self-host`
 
 ## Script convention
@@ -40,5 +41,6 @@ test = "oxid test"
 doctor = "oxid doctor"
 doc = "oxid doc"
 bootstrap = "oxid run tools/bootstrap.ox"
+frontend = "oxid run tools/frontend_preview.ox"
 diagnose = "oxid run tools/diagnose.ox"
 ```

@@ -1,6 +1,6 @@
 # Diagnostics
 
-Oxid should report errors in a consistent shape.
+Oxid should report errors in one consistent shape.
 
 ## Standard fields
 
@@ -11,6 +11,7 @@ Oxid should report errors in a consistent shape.
 - `column`
 - `hint`
 - `snippet`
+- `stage`
 
 ## Desired style
 
@@ -38,5 +39,5 @@ error: unexpected token
 - show the most relevant location first
 - keep the original message short
 - prefer one direct hint over many vague hints
-- avoid dumping internal Rust terminology to users
+- avoid exposing internal runtime jargon to users
 - if recovery is possible, continue parsing and show follow-up notes instead of stopping immediately

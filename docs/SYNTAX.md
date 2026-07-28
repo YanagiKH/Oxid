@@ -1,8 +1,8 @@
 # Syntax direction
 
-This file separates the current language surface from planned simplifications.
+This file separates the current syntax from planned simplifications.
 
-## Current syntax already in the runtime
+## Current syntax already supported by the runtime
 
 - `fn`
 - `let`
@@ -16,36 +16,37 @@ This file separates the current language surface from planned simplifications.
 - function calls
 - `async fn`
 - `await`
+- `print`
 
-## Planned simplifications
+## Planned Oxid-first simplifications
 
-These are targets for future language growth.
+These are proposals for future language growth.
 
-- shorter function declaration forms
+- shorter function declarations
 - lighter module import forms
 - pipeline-style chaining
 - pattern matching
 - typed record literals
 - clearer error propagation syntax
-- optional block-less one-line forms for tiny helpers
+- optional one-line forms for tiny helpers
 
-## Recommended compatibility rule
+## Proposed direction
 
-Add new syntax only when it is:
-
-- shorter than the equivalent old form
-- obvious to read at a glance
-- easy to format consistently
-- possible to explain in one sentence
-- safe to parse without making the grammar brittle
-
-## Proposal examples
-
-- `let x = expr`
-- `fn name(args) -> result`
+- `pub fn` for exported declarations
+- `mod name` for local module grouping
+- `use path as alias` for shorter imports
 - `match value { ... }`
 - `try expr`
 - `defer expr`
 - `pipe value |> step`
 
-These examples are proposals for the roadmap, not parser guarantees yet.
+These examples are roadmap targets, not parser guarantees yet.
+
+## Compatibility rule
+
+Only add syntax when it is:
+
+- shorter than the equivalent old form
+- obvious to read at a glance
+- easy to format consistently
+- safe to parse without making the grammar brittle

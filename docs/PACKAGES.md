@@ -16,7 +16,7 @@ test = "oxid test"
 doctor = "oxid doctor"
 doc = "oxid doc"
 bootstrap = "oxid run tools/bootstrap.ox"
-diagnose = "oxid run tools/diagnose.ox"
+frontend = "oxid run tools/frontend_preview.ox"
 
 [dependencies]
 

@@ -3,7 +3,7 @@ fn main() {
 }
 
 fn version() {
-    return "0.5.2";
+    return "0.7.0";
 }
 
 fn summary() {
