@@ -8,34 +8,36 @@
 
 # Oxid
 
-Oxid is a language project that is being pushed toward a self-hosted, faster, and simpler developer experience.
+Oxid is an experimental language prototype built around a Rust bootstrap runtime and a growing Oxid-written surface area.
 
-The current repository still uses a Rust bootstrap runtime, but the project layout is now organized to move more work into Oxid source files, shared modules, package workflows, tooling scripts, and diagnostics helpers.
+The goal is not to stay as a thin wrapper. The project is organized so that everyday development work gradually moves into Oxid source files: standard library modules, examples, tooling scripts, package workflows, and project documentation.
 
-## What this pack adds
+## What is already available
 
-- a tighter standard-library front door through `stdlib/prelude.ox`
-- better string helpers for common authoring tasks
-- reusable diagnostic helpers for parser/runtime errors
-- a self-hosting roadmap that explains how Rust is phased out
-- package and script examples that are easier to copy into real projects
-- example files that show how users should structure Oxid-first development
+- `oxid run <file.ox>`: run a script
+- `oxid script <name> [args...]`: execute a manifest script
+- `oxid repl`: interactive REPL
+- `oxid check <file.ox>`: syntax check
+- `oxid new <project-name>` / `oxid init <project-name>`: scaffold a project
+- `oxid add <name> <path-or-target>`: add a dependency entry
+- `oxid watch <file.ox>`: watch files and rerun
+- `oxid build`: validate the project
+- `oxid clean`: clear build cache
+- `oxid fmt [path]`: format Oxid source files
+- `oxid test`: run smoke tests and examples
+- `oxid doctor`: verify project health
+- `oxid doc`: generate API docs
 
-## Current commands already in the project
+## Language features
 
-- `oxid run <file.ox>`
-- `oxid script <name> [args...]`
-- `oxid repl`
-- `oxid check <file.ox>`
-- `oxid new <project-name>` / `oxid init <project-name>`
-- `oxid add <name> <path-or-target>`
-- `oxid watch <file.ox>`
-- `oxid build`
-- `oxid clean`
-- `oxid fmt [path]`
-- `oxid test`
-- `oxid doctor`
-- `oxid doc`
+- `let` / `const`
+- `print` / `if` / `while` / `fn` / `async fn` / `await` / `return` / `use`
+- arrays, indexing, and indexed assignment
+- `len` / `push` / `pop` / `range` / `str` / `sleep`
+- `c_len` / `c_hash` / `cpp_len` / `cpp_hash`
+- module cache, preprocess cache, and recursive loading
+- single-line `macro` preprocessing expansion
+- package manifest support (`oxid.toml` scripts / dependencies / features)
 
 ## Repository layout
 
@@ -68,10 +70,6 @@ cargo run -- doc
 5. Keep compiler and workflow previews in `tools/`.
 6. Keep runnable examples in `examples/`.
 7. Use `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc` before release.
-
-## Self-hosting direction
-
-The runtime is still bootstrapped by Rust today. The goal is to move parsing, diagnostics, command orchestration, package workflow, and later code generation into Oxid modules in stages.
 
 Read:
 

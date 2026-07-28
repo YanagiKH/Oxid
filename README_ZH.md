@@ -46,7 +46,7 @@ Oxid 是一個以 Rust 啟動運行時為核心，並逐步擴展由 Oxid 編寫
 - `examples/` 包含可執行的 Oxid 範例
 - `tools/` 包含 Oxid 工具預覽版
 - `packages/demo/` 包含面向使用者的套件佈局
-- `docs/` 包含工作流程與架構說明
+- `docs/` 包含工作流程、編譯器及診斷說明
 - `tests/` 包含煙霧測試
 
 ## 建議的首次執行步驟
@@ -54,6 +54,7 @@ Oxid 是一個以 Rust 啟動運行時為核心，並逐步擴展由 Oxid 編寫
 ```bash
 cargo run -- run examples/hello.ox
 cargo run -- run examples/stdlib_smoke.ox
+cargo run -- run examples/self_host_preview.ox
 cargo run -- build
 cargo run -- test
 cargo run -- doctor
@@ -62,13 +63,18 @@ cargo run -- doc
 
 ## 以套件為先的工作流程
 
-預期的使用者體驗如下：
-
 1. 使用 `oxid new` 建立專案。
-2. 將可重複使用的模組放置於 `src/` 和 `stdlib/` 目錄中。
-3. 在 `oxid.toml` 中定義腳本。
-4. 針對可重複執行的任務，使用 `oxid script <名稱>`。
-5. 將範例程式碼和煙霧測試與套件一併存放。
-6. 發佈前執行 `oxid build`、`oxid test`、`oxid doctor` 及 `oxid doc`。
+2. 在新腳本中導入 `stdlib/prelude.ox`。
+3. 將可重複使用的輔助函式置於 `stdlib/` 目錄下。
+4. 將應用程式程式碼置於 `src/` 目錄下。
+5. 將編譯器及工作流程預覽程式置於 `tools/` 目錄下。
+6. 將可執行的範例置於 `examples/` 目錄下。
+7. 發布前請執行 `oxid build`、`oxid test`、`oxid doctor` 及 `oxid doc`。
 
-如需完整操作指南，請參閱 `docs/QUICKSTART.md` 及 `docs/PACKAGE_WORKFLOW.md`。
+參考文件：
+
+- `docs/SELF_HOSTING.md`
+- `docs/SYNTAX.md`
+- `docs/DIAGNOSTICS.md`
+- `docs/PACKAGE_WORKFLOW.md`
+- `docs/ROADMAP.md`

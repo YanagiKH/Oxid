@@ -46,7 +46,7 @@ Oxid は、Rust のブートストラップランタイムと、Oxid で記述�
 - `examples/` には、実行可能な Oxid のサンプルが含まれています
 - `tools/` には、Oxid ツールのプレビュー版が含まれています
 - `packages/demo/` には、ユーザー向けのパッケージ構成が含まれています
-- `docs/` には、ワークフローおよびアーキテクチャに関する説明が含まれています
+- `docs/` には、ワークフロー、コンパイラ、および診断に関する注意事項が含まれています
 - `tests/` には、スモークテストが含まれています
 
 ## 推奨される初回実行手順
@@ -54,6 +54,7 @@ Oxid は、Rust のブートストラップランタイムと、Oxid で記述�
 ```bash
 cargo run -- run examples/hello.ox
 cargo run -- run examples/stdlib_smoke.ox
+cargo run -- run examples/self_host_preview.ox
 cargo run -- build
 cargo run -- test
 cargo run -- doctor
@@ -62,13 +63,18 @@ cargo run -- doc
 
 ## パッケージファーストのワークフロー
 
-想定されるユーザー体験は以下の通りです：
-
 1. `oxid new` でプロジェクトを作成します。
-2. 再利用可能なモジュールを `src/` および `stdlib/` に配置します。
-3. `oxid.toml` でスクリプトを定義します。
-4. 繰り返し実行するタスクには `oxid script <name>` を使用します。
-5. サンプルやスモークテストはパッケージと一緒に保管します。
-6. リリース前に `oxid build`、`oxid test`、`oxid doctor`、および `oxid doc` を実行する。
+2. 新規スクリプトで `stdlib/prelude.ox` をインポートします。
+3. 再利用可能なヘルパー関数は `stdlib/` に配置します。
+4. アプリケーションのコードは `src/` に配置します。
+5. コンパイラやワークフローのプレビューは `tools/` に配置します。
+6. 実行可能なサンプルは `examples/` に配置します。
+7. リリース前に `oxid build`、`oxid test`、`oxid doctor`、`oxid doc` を実行します。
 
-詳細な手順については、`docs/QUICKSTART.md` および `docs/PACKAGE_WORKFLOW.md` を参照してください。
+参照：
+
+- `docs/SELF_HOSTING.md`
+- `docs/SYNTAX.md`
+- `docs/DIAGNOSTICS.md`
+- `docs/PACKAGE_WORKFLOW.md`
+- `docs/ROADMAP.md`
