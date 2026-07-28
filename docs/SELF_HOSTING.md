@@ -2,24 +2,24 @@
 
 ## Stage 1
 
-- keep the Rust bootstrap runtime
-- move command orchestration into Oxid-facing scripts
+- keep Rust only as a temporary compatibility fallback
+- move command orchestration into Oxid scripts
 - centralize diagnostics formatting
-- centralize module resolution logic
+- centralize module resolution
 
 ## Stage 2
 
 - move parser helpers into Oxid-owned modules
-- move syntax preview / validation into Oxid-owned modules
+- move syntax preview and validation into Oxid-owned modules
 - add structured front-end stages
 
 ## Stage 3
 
-- move more of the compiler workflow into Oxid
-- keep Rust as a temporary bootstrap only
-- reduce the amount of Rust-specific project logic
+- move more compiler workflow code into Oxid
+- reduce Rust-specific project logic
+- keep native and bootstrap logic isolated
 
 ## Stage 4
 
 - make Oxid the primary development language for the compiler toolchain
-- keep the Rust layer as a bootstrap compatibility fallback only
+- keep Rust only as an optional compatibility backstop

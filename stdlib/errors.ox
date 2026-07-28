@@ -1,12 +1,5 @@
 use "strings.ox";
 
-fn caret(column) {
-    if (column <= 0) {
-        return "^";
-    }
-    return pad_left("^", column, " ");
-}
-
 fn source_header(file_path, line, column) {
     return file_path + ":" + str(line) + ":" + str(column);
 }
@@ -16,9 +9,7 @@ fn error_line(kind, file_path, line, column, message) {
 }
 
 fn hint_line(hint) {
-    if (hint == "") {
-        return "";
-    }
+    if (hint == "") { return ""; }
     return "  = help: " + hint;
 }
 
@@ -38,10 +29,4 @@ fn runtime_error(file_path, line, column, message, hint) {
     return make_error("runtime error", file_path, line, column, message, hint);
 }
 
-fn note(message) {
-    return "  = note: " + message;
-}
-
-fn multi_error(file_path, line, column, message, hint, stage) {
-    return "[" + stage + "] " + make_error("error", file_path, line, column, message, hint);
-}
+fn note(message) { return "  = note: " + message; }

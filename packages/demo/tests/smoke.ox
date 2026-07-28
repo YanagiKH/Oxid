@@ -3,6 +3,6 @@ use "../src/lib.ox";
 
 fn main() {
     print greet("world");
-    print describe_package("demo", "0.6.1");
-    print package_banner("demo", "0.6.1");
+    print describe_package("demo", "0.9.0");
+    print package_banner("demo", "0.9.0");
 }

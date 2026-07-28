@@ -6,32 +6,22 @@
 - keep resolution predictable
 - keep cache keys cheap
 - keep module loading readable
-- make module boundaries obvious for users
+- keep module grouping obvious
 
-## Proposed resolution rules
+## Resolution flow
 
-- resolve relative imports from the current file directory
-- normalize repeated separators
-- canonicalize file paths before caching
-- skip duplicate loads by canonical path
-- use a stable cache key per resolved module
+1. normalize the import string
+2. resolve relative imports from the current file directory
+3. build a stable module key
+4. load the file once
+5. register exported names
+6. reuse cached results when the same canonical path is seen again
 
-## Suggested module layers
+## Files
 
-- `stdlib/frontend/modules.ox` for resolution helpers
-- `stdlib/frontend/pipeline.ox` for module load flow
-- `stdlib/cache.ox` for cache metadata
-- `tools/modules_preview.ox` for user-facing previews
+- `stdlib/frontend/modules.ox`
+- `stdlib/frontend/pipeline.ox`
 
-## Example workflow
+## Notes
 
-1. resolve the module path
-2. build or reuse a cache key
-3. load the source once
-4. preprocess or expand macros
-5. parse the module
-6. register exported names
-
-## Design target
-
-The user should be able to understand module loading without reading the Rust bootstrap first.
+Module aliases, local `mod` groups, and explicit front-end module summaries are used to reduce boilerplate and keep project code easier to scan.

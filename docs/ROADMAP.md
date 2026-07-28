@@ -1,38 +1,27 @@
 # Roadmap
 
-## Phase 0 - stabilize the bootstrap
+## Phase 0
 
-- keep the Rust runtime as a temporary boot layer
-- standardize parser and runtime error formatting
-- move reusable compiler helpers into Oxid modules
-- keep package and tool scripts source-driven
+- remove Rust-specific execution dependence as far as the current project shape allows
+- keep a compatibility fallback only where necessary
 
-## Phase 1 - Oxid-first frontend helpers
+## Phase 1
 
-- add an Oxid lexer module
-- add an Oxid parser module
-- add an Oxid diagnostics module
-- add an Oxid module resolution module
-- add a single prelude for common imports
-- add example-driven frontend previews
+- complete front-end modules in Oxid
+- wire command orchestration to Oxid scripts
+- standardize diagnostics and module resolution
 
-## Phase 2 - frontend orchestration
+## Phase 2
 
-- move parsing stage wiring into Oxid
-- move source recovery logic into Oxid
-- move module graph construction into Oxid
-- expose a clearer pipeline for syntax, diagnostics, and loading
+- move parser helpers and syntax validation into Oxid
+- add recovery helpers and AST helpers
+- expand syntax previews
 
-## Phase 3 - self-hosting scaffolding
+## Phase 3
 
-- define a stable compiler data model in Oxid
-- split parse, check, and emit stages
-- add cache-aware rebuild metadata
-- keep error formatting and notes readable in the terminal
+- move more compiler workflow and emission logic into Oxid
+- keep Rust only as a bootstrap compatibility layer
 
-## Phase 4 - bootstrap reduction
+## Phase 4
 
-- compile Oxid source with more Oxid-written tooling
-- keep Rust only as a bootstrap fallback
-- expand syntax while preserving readability
-- keep import and module resolution cheap to understand
+- keep the Rust layer minimal enough that day-to-day compiler work happens in Oxid

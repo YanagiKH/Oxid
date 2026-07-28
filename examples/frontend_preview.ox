@@ -4,5 +4,9 @@ fn main() {
     print frontend_pipeline("examples/frontend_preview.ox");
     print lex_preview("pub fn run()");
     print parser_preview("demo");
-    print diag_message("note", "examples/frontend_preview.ox", 1, 1, "preview only", "replace with real parsing rules later");
+    print parse_public_function("run");
+    print parse_match_preview("value");
+    print parse_try_preview("expr");
+    print parse_defer_preview("cleanup()");
+    print parse_pipe_preview("value", "step()");
 }

@@ -1,10 +1,11 @@
 use "../stdlib/prelude.ox";
 
 fn main() {
-    print "Oxid self-host command";
-    print "Phase 1: bootstrap";
-    print "Phase 2: frontend";
-    print "Phase 3: diagnostics";
-    print "Phase 4: module system";
-    print "Phase 5: syntax and emission";
+    print "Oxid self-host";
+    print "Stage 1: bootstrap removal path";
+    print "Stage 2: frontend modules";
+    print "Stage 3: diagnostics";
+    print "Stage 4: module resolution";
+    print "Stage 5: syntax growth";
+    print "Stage 6: compiler workflow migration";
 }

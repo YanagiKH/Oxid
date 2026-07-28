@@ -1,12 +1,9 @@
-use "core.ox";
 use "strings.ox";
 
 fn package_name(manifest_text) {
     let marker = "name = \"";
     let start = index_of(manifest_text, marker);
-    if (start < 0) {
-        return "unknown";
-    }
+    if (start < 0) { return "unknown"; }
     let rest = slice(manifest_text, start + len(marker));
     return take_until(rest, "\"");
 }
@@ -14,9 +11,7 @@ fn package_name(manifest_text) {
 fn package_version(manifest_text) {
     let marker = "version = \"";
     let start = index_of(manifest_text, marker);
-    if (start < 0) {
-        return "unknown";
-    }
+    if (start < 0) { return "unknown"; }
     let rest = slice(manifest_text, start + len(marker));
     return take_until(rest, "\"");
 }
@@ -24,9 +19,7 @@ fn package_version(manifest_text) {
 fn package_entry(manifest_text) {
     let marker = "entry = \"";
     let start = index_of(manifest_text, marker);
-    if (start < 0) {
-        return "src/main.ox";
-    }
+    if (start < 0) { return "src/main.ox"; }
     let rest = slice(manifest_text, start + len(marker));
     return take_until(rest, "\"");
 }
@@ -36,11 +29,11 @@ fn package_summary(manifest_text) {
 }
 
 fn package_manifest_header(name, version, entry) {
-    return "[project]\\nname = \"" + name + "\"\\nversion = \"" + version + "\"\\nentry = \"" + entry + "\"\\n";
+    return "[project]\nname = \"" + name + "\"\nversion = \"" + version + "\"\nentry = \"" + entry + "\"\n";
 }
 
 fn package_scripts_hint() {
-    return "run, test, doctor, doc, bootstrap, frontend, diagnose";
+    return "bootstrap, frontend, diagnose, lint, emit, module, syntax, self-host";
 }
 
 fn package_load_hint(name, entry) {

@@ -1,8 +1,8 @@
 use "../stdlib/prelude.ox";
 
 fn main() {
-    print "Oxid frontend command";
-    print frontend_pipeline("frontend.ox");
-    print exported_fn("compile");
-    print local_group("parser");
+    print "Oxid frontend";
+    print frontend_pipeline("frontend");
+    print frontend_compile_plan("oxid", "0.9.0", "src/main.ox");
+    print ast_module_summary("frontend");
 }

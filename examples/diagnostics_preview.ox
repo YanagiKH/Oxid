@@ -1,6 +1,6 @@
 use "../stdlib/prelude.ox";
 
 fn main() {
-    print render_parse_error("examples/diagnostics_preview.ox", 3, 9, "unexpected token", "finish the expression before the semicolon");
-    print render_module_error("examples/diagnostics_preview.ox", 8, 2, "module not found", "verify the relative import path");
+    print diag_message("note", "examples/diagnostics_preview.ox", 1, 1, "preview only", "replace with real parsing rules later");
+    print diag_frame("examples/diagnostics_preview.ox", 2, 4, "print(1 + )");
 }

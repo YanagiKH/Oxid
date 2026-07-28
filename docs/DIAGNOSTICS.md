@@ -1,8 +1,8 @@
 # Diagnostics
 
-Oxid error messages should stay short, precise, and source-linked.
+Oxid diagnostics should be short, source-linked, and easy to read aloud.
 
-## Preferred structure
+## Preferred fields
 
 - `kind`
 - `message`
@@ -11,8 +11,9 @@ Oxid error messages should stay short, precise, and source-linked.
 - `column`
 - `hint`
 - `snippet`
+- `stage`
 
-## Example
+## Format
 
 ```text
 error: unexpected token
@@ -20,12 +21,13 @@ error: unexpected token
   |
 12 | print(1 + )
   |        ^
-  = help: remove the trailing operator or add the missing expression
+  = help: remove the extra operator or finish the expression
 ```
 
 ## Rules
 
 - show the most relevant location first
-- prefer one clear hint
-- avoid internal implementation jargon
-- keep parser and runtime messages visually consistent
+- keep the main message short
+- prefer one hint over many
+- avoid internal runtime jargon
+- continue parsing when recovery is possible

@@ -2,18 +2,32 @@ Overwrite:
 - README.md
 - docs/COMMANDS.md
 - docs/FRONTEND.md
-- docs/SELF_HOSTING.md
-- docs/SYNTAX.md
+- docs/MODULES.md
 - docs/DIAGNOSTICS.md
+- docs/SYNTAX.md
+- docs/SELF_HOSTING.md
+- docs/ROADMAP.md
+- docs/PACKAGE_WORKFLOW.md
 - stdlib/prelude.ox
+- stdlib/core.ox
+- stdlib/math.ox
 - stdlib/strings.ox
+- stdlib/errors.ox
+- stdlib/package.ox
+- stdlib/cache.ox
+- stdlib/debug.ox
 - stdlib/frontend/lexer.ox
+- stdlib/frontend/ast.ox
+- stdlib/frontend/recovery.ox
 - stdlib/frontend/parser.ox
 - stdlib/frontend/diagnostics.ox
 - stdlib/frontend/modules.ox
 - stdlib/frontend/pipeline.ox
 - stdlib/frontend/syntax.ox
+- stdlib/frontend/emit.ox
+- stdlib/frontend/lint.ox
 - stdlib/frontend/README.md
+- src/main.ox
 - tools/bootstrap.ox
 - tools/frontend.ox
 - tools/diagnose.ox
@@ -23,6 +37,10 @@ Overwrite:
 - tools/syntax.ox
 - tools/self_host.ox
 - examples/frontend_preview.ox
+- examples/diagnostics_preview.ox
+- examples/module_resolution.ox
+- examples/syntax_preview.ox
+- examples/self_host_preview.ox
 - examples/command_preview.ox
 - tests/frontend_smoke.ox
 - packages/demo/README.md
@@ -30,6 +48,3 @@ Overwrite:
 - packages/demo/src/lib.ox
 - packages/demo/src/main.ox
 - packages/demo/tests/smoke.ox
-
-Add:
-- PATCHES/src_main_rs_commands.patch

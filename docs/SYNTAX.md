@@ -1,22 +1,28 @@
 # Oxid-first syntax direction
 
-This file describes the planned simplifications for the authoring surface.
+Each new form should be shorter than the equivalent verbose form, easy to read aloud, and easy to format consistently.
 
 ## Target forms
 
-- `pub fn` for exported functions
-- `mod name` for local module grouping
-- `use path as alias` for concise imports
+- `pub fn` for exported declarations
+- `mod name` for local grouping
+- `use path as alias` for shorter imports
 - `match value { ... }`
 - `try expr`
 - `defer expr`
 - `pipe value |> step`
-- short one-line helper forms for tiny functions
+- compact one-line helpers
+- typed record literals
+- clearer error propagation forms
 
-## Design rule
+## Example direction
 
-Every new form should be shorter than the equivalent verbose form, easy to read aloud, and easy to format consistently.
+- `pub fn run()`
+- `mod parser`
+- `use stdlib/frontend/parser.ox as parse`
+- `match token { ... }`
+- `try load()`
+- `defer close()`
+- `value |> step()`
 
-## Notes
-
-The repository now includes preview files that organize these ideas into front-end modules, command tools, and documentation. Full parser-level support still belongs to the compiler migration path.
+These are preview targets for the migration path.

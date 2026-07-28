@@ -1,6 +1,6 @@
 # Commands
 
-## Existing direct commands
+## Existing commands
 
 - `oxid run`
 - `oxid script`
@@ -17,7 +17,7 @@
 - `oxid doctor`
 - `oxid doc`
 
-## Added command surface
+## Added commands
 
 - `oxid bootstrap`
 - `oxid frontend`
@@ -30,17 +30,15 @@
 
 ## Purpose
 
-These commands split the future compiler front-end into smaller Oxid-owned workflows:
-
-- `bootstrap` validates the boot path
-- `frontend` previews the lexer/parser pipeline
-- `diagnose` renders errors
-- `lint` checks style and structural rules
-- `emit` previews code emission
-- `module` previews module resolution
-- `syntax` previews syntax rules
-- `self-host` assembles the self-host migration plan
+- `bootstrap`: validate the bootstrap path
+- `frontend`: preview lex / parse / AST / recovery / module / syntax flow
+- `diagnose`: render source-linked diagnostics
+- `lint`: preview style and structural rules
+- `emit`: preview emission
+- `module`: preview module resolution
+- `syntax`: preview the shorter syntax forms
+- `self-host`: summarize the migration path away from Rust
 
 ## Fallback mode
 
-If the binary has not been rebuilt with the CLI patch yet, run the corresponding Oxid script from `tools/` through `oxid script` or `oxid run`.
+If a binary has not yet been rebuilt with the Oxid-first command routing, these commands can still be executed through the matching Oxid scripts in `tools/`.

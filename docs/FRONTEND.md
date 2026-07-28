@@ -1,25 +1,33 @@
 # Front-end split
 
-This repository is moving toward a formal compiler front-end layout.
+This repository is organized around Oxid-owned front-end modules.
 
 ## Layers
 
-- `lexer` turns source text into tokens
-- `parser` turns tokens into an AST or syntax tree
-- `diagnostics` turns errors into readable source-linked messages
-- `modules` resolves imports, aliases, and module groups
-- `pipeline` coordinates the front-end stages
-- `syntax` documents the intended Oxid-first syntax direction
+- lexer
+- parser
+- AST helpers
+- recovery helpers
+- diagnostics
+- module resolution
+- pipeline orchestration
+- syntax previews
+- emit previews
+- lint previews
 
 ## Files
 
 - `stdlib/frontend/lexer.ox`
 - `stdlib/frontend/parser.ox`
+- `stdlib/frontend/ast.ox`
+- `stdlib/frontend/recovery.ox`
 - `stdlib/frontend/diagnostics.ox`
 - `stdlib/frontend/modules.ox`
 - `stdlib/frontend/pipeline.ox`
 - `stdlib/frontend/syntax.ox`
+- `stdlib/frontend/emit.ox`
+- `stdlib/frontend/lint.ox`
 
 ## Goal
 
-The long-term goal is to keep the top-level compiler workflow readable, Oxid-owned, and easy to extend without Rust-style boilerplate.
+The front-end should remain readable without Rust-specific project logic, and each stage should be small enough to move independently.
