@@ -1,28 +1,29 @@
-# Oxid-first syntax direction
+# Syntax
 
-Each new form should be shorter than the equivalent verbose form, easy to read aloud, and easy to format consistently.
+Oxid should optimize for short, direct forms.
 
-## Target forms
+## Existing preview forms
 
-- `pub fn` for exported declarations
-- `mod name` for local grouping
-- `use path as alias` for shorter imports
+- `fn name()`
+- `pub fn name()`
+- `mod name`
+- `use path as alias`
 - `match value { ... }`
 - `try expr`
 - `defer expr`
-- `pipe value |> step`
-- compact one-line helpers
-- typed record literals
-- clearer error propagation forms
-
-## Example direction
-
-- `pub fn run()`
-- `mod parser`
-- `use stdlib/frontend/parser.ox as parse`
-- `match token { ... }`
-- `try load()`
-- `defer close()`
 - `value |> step()`
 
-These are preview targets for the migration path.
+## Compact forms to emphasize
+
+- one-line helpers for tiny functions
+- short import aliases
+- short module summaries
+- short diagnostic hints
+- short build and workflow commands
+
+## Recommended style
+
+- prefer one idea per line
+- prefer short helper names
+- prefer simple module boundaries
+- prefer readable defaults over hidden magic

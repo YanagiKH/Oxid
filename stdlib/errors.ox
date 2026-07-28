@@ -30,3 +30,7 @@ fn runtime_error(file_path, line, column, message, hint) {
 }
 
 fn note(message) { return "  = note: " + message; }
+
+fn recoverable_error(file_path, line, column, message, hint) {
+    return make_error("warning", file_path, line, column, message, hint);
+}

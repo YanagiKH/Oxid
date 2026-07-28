@@ -1,11 +1,24 @@
 # Package workflow
 
-1. create a project
-2. import `stdlib/prelude.ox`
-3. keep reusable helpers in `stdlib/`
-4. keep executable code in `src/`
-5. keep tool workflows in `tools/`
-6. keep demonstrations in `examples/`
-7. keep smoke tests in `tests/`
+## Suggested flow
 
-The workflow stays Oxid-first so users do not need to touch Rust for day-to-day development.
+1. create a project with `oxid new`
+2. put reusable code in `src/`
+3. put shared helpers in `stdlib/`
+4. preview commands through `tools/`
+5. keep runnable examples in `examples/`
+6. keep smoke tests in `tests/`
+7. validate with `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc`
+
+## Package layout
+
+```text
+project/
+├── oxid.toml
+├── README.md
+├── src/
+├── stdlib/
+├── tools/
+├── examples/
+└── tests/
+```

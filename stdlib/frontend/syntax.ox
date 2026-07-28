@@ -26,3 +26,13 @@ fn syntax_summary() {
         one_line_helper("id", "value")
     ], ", ");
 }
+
+fn syntax_shortcuts() {
+    return join_lines([
+        "compact imports",
+        "compact pattern matching",
+        "compact error paths",
+        "compact pipeline chaining",
+        "compact helper definitions"
+    ], ", ");
+}

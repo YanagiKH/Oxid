@@ -17,6 +17,24 @@ fn diag_message(kind, file_path, line, column, message, hint) {
     return out;
 }
 
+fn diag_code(code) { return "OXD" + code; }
+
+fn diag_with_code(code, kind, file_path, line, column, message, hint) {
+    return diag_code(code) + "\n" + diag_message(kind, file_path, line, column, message, hint);
+}
+
+fn diag_suggestion(action, target) {
+    return "try " + action + " " + target;
+}
+
 fn recoverable_diag(file_path, line, column, message, hint) {
     return diag_message("warning", file_path, line, column, message, hint);
+}
+
+fn fatal_diag(file_path, line, column, message, hint) {
+    return diag_message("error", file_path, line, column, message, hint);
+}
+
+fn diag_context(file_path, line, column, snippet, hint) {
+    return diag_frame(file_path, line, column, snippet) + "\n" + diag_hint(hint);
 }

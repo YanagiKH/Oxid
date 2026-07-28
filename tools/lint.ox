@@ -5,4 +5,5 @@ fn main() {
     print lint_suite();
     print lint_preview("source");
     print pipe_preview("source", "check");
+    print lint_checklist();
 }

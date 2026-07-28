@@ -15,3 +15,5 @@ use "frontend/pipeline.ox";
 use "frontend/syntax.ox";
 use "frontend/emit.ox";
 use "frontend/lint.ox";
+use "commands.ox";
+use "self_host.ox";

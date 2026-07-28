@@ -29,3 +29,11 @@ fn frontend_bootstrap(project_name, entry_point) {
 fn frontend_compile_plan(project_name, version, entry_point) {
     return frontend_bootstrap(project_name, entry_point) + " | " + version + " | " + module_key(project_name, entry_point);
 }
+
+fn frontend_stage_list() {
+    return join_lines(["lex", "parse", "ast", "recover", "diagnose", "module", "syntax", "emit"], ", ");
+}
+
+fn frontend_stage_banner(source_name) {
+    return "pipeline " + source_name + " :: " + frontend_stage_list();
+}

@@ -1,4 +1,5 @@
 fn trim(text) { return text; }
+
 fn starts_with(text, prefix) {
     if (len(prefix) > len(text)) { return false; }
     let i = 0;
@@ -8,6 +9,7 @@ fn starts_with(text, prefix) {
     }
     return true;
 }
+
 fn ends_with(text, suffix) {
     if (len(suffix) > len(text)) { return false; }
     let offset = len(text) - len(suffix);
@@ -18,6 +20,7 @@ fn ends_with(text, suffix) {
     }
     return true;
 }
+
 fn index_of(text, needle) {
     if (len(needle) == 0) { return 0; }
     if (len(needle) > len(text)) { return 0 - 1; }
@@ -34,6 +37,7 @@ fn index_of(text, needle) {
     }
     return 0 - 1;
 }
+
 fn slice(text, start) {
     let out = "";
     let i = start;
@@ -43,6 +47,7 @@ fn slice(text, start) {
     }
     return out;
 }
+
 fn take_until(text, needle) {
     let idx = index_of(text, needle);
     if (idx < 0) { return text; }
@@ -54,6 +59,7 @@ fn take_until(text, needle) {
     }
     return out;
 }
+
 fn repeat_char(ch, count) {
     let out = "";
     let i = 0;
@@ -63,15 +69,19 @@ fn repeat_char(ch, count) {
     }
     return out;
 }
+
 fn pad_left(text, width, fill) {
     if (len(text) >= width) { return text; }
     return repeat_char(fill, width - len(text)) + text;
 }
+
 fn pad_right(text, width, fill) {
     if (len(text) >= width) { return text; }
     return text + repeat_char(fill, width - len(text));
 }
-fn quote(text) { return """ + text + """; }
+
+fn quote(text) { return "\"" + text + "\""; }
+
 fn join_lines(lines, separator) {
     if (len(lines) == 0) { return ""; }
     let out = lines[0];
@@ -82,6 +92,7 @@ fn join_lines(lines, separator) {
     }
     return out;
 }
+
 fn repeat_line(line, count, separator) {
     let out = "";
     let i = 0;
@@ -92,4 +103,5 @@ fn repeat_line(line, count, separator) {
     }
     return out;
 }
+
 fn wrap(prefix, body, suffix) { return prefix + body + suffix; }

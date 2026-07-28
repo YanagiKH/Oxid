@@ -9,4 +9,5 @@ fn main() {
     print parse_try_preview("expr");
     print parse_defer_preview("cleanup()");
     print parse_pipe_preview("value", "step()");
+    print syntax_summary();
 }

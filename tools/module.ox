@@ -6,4 +6,5 @@ fn main() {
     print import_alias("stdlib/frontend/parser.ox", "parse");
     print module_preview("frontend", "stdlib/frontend/parser.ox");
     print module_key("src", "frontend/parser.ox");
+    print module_catalog();
 }

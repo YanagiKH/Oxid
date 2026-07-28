@@ -1,12 +1,12 @@
 use "../strings.ox";
-use "../errors.ox";
 
 fn lexer_stage_name() { return "lexer"; }
-fn token_summary(kind, text) { return kind + ":" + text; }
-fn lex_preview(source) { return token_summary(lexer_stage_name(), source); }
-fn lex_failure(file_path, line, column, token_text) {
-    return parse_error(file_path, line, column, "unexpected token `" + token_text + "`", "simplify the expression or split it into smaller steps");
-}
-fn lex_keywords() {
-    return ["fn", "pub", "mod", "use", "match", "try", "defer", "pipe", "let", "const", "return", "if", "else", "while", "async", "await"];
+fn lex_preview(source_text) { return "lex:" + source_text; }
+fn lex_token(kind, value) { return kind + ":" + value; }
+fn lex_preview_tokens() {
+    return join_lines([
+        lex_token("ident", "main"),
+        lex_token("symbol", "("),
+        lex_token("symbol", ")")
+    ], ", ");
 }

@@ -12,3 +12,12 @@ fn lint_suite() {
     ], ", ");
 }
 fn lint_preview(target_name) { return lint_stage_name() + ":" + target_name; }
+fn lint_checklist() {
+    return join_lines([
+        "short names",
+        "clear imports",
+        "clear diagnostics",
+        "clear module paths",
+        "clear bootstrap layers"
+    ], ", ");
+}

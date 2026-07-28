@@ -1,33 +1,31 @@
 # Diagnostics
 
-Oxid diagnostics should be short, source-linked, and easy to read aloud.
+Oxid diagnostics should be compact, structured, and actionable.
 
-## Preferred fields
+## Required parts
 
-- `kind`
-- `message`
-- `file`
-- `line`
-- `column`
-- `hint`
-- `snippet`
-- `stage`
+- severity
+- file path
+- line
+- column
+- message
+- hint
+- recovery suggestion when possible
 
-## Format
+## Output shape
+
+A diagnostic should read like:
 
 ```text
-error: unexpected token
- --> src/main.ox:12:8
-  |
-12 | print(1 + )
-  |        ^
-  = help: remove the extra operator or finish the expression
+error: message
+ --> file.ox:12:8
+  = help: small hint
 ```
 
-## Rules
+## Better-than-minimum behavior
 
-- show the most relevant location first
-- keep the main message short
-- prefer one hint over many
-- avoid internal runtime jargon
-- continue parsing when recovery is possible
+- include a snippet when available
+- include a suggestion when a parse shape can be simplified
+- classify recoverable warnings separately from hard errors
+- keep the wording short
+- keep the fix close to the source of the issue

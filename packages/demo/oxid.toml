@@ -1,6 +1,6 @@
 [project]
 name = "demo"
-version = "0.9.0"
+version = "0.5.2"
 entry = "src/main.ox"
 
 [scripts]
@@ -11,14 +11,6 @@ doctor = "oxid doctor"
 doc = "oxid doc"
 clean = "oxid clean"
 check = "oxid check src/main.ox"
-bootstrap = "oxid run ../../tools/bootstrap.ox"
-frontend = "oxid run ../../tools/frontend.ox"
-diagnose = "oxid run ../../tools/diagnose.ox"
-lint = "oxid run ../../tools/lint.ox"
-emit = "oxid run ../../tools/emit.ox"
-module = "oxid run ../../tools/module.ox"
-syntax = "oxid run ../../tools/syntax.ox"
-self-host = "oxid run ../../tools/self_host.ox"
 
 [dependencies]
 

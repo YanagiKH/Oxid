@@ -1,27 +1,21 @@
 # Roadmap
 
-## Phase 0
+## Now
 
-- remove Rust-specific execution dependence as far as the current project shape allows
-- keep a compatibility fallback only where necessary
+- keep expanding Oxid-written modules
+- keep command previews in Oxid source files
+- keep diagnostics readable
+- keep package workflow explicit
 
-## Phase 1
+## Next
 
-- complete front-end modules in Oxid
-- wire command orchestration to Oxid scripts
-- standardize diagnostics and module resolution
+- reduce bootstrap responsibilities
+- move more workflow logic into Oxid
+- add richer syntax previews
+- add more command shims and docs
 
-## Phase 2
+## Later
 
-- move parser helpers and syntax validation into Oxid
-- add recovery helpers and AST helpers
-- expand syntax previews
-
-## Phase 3
-
-- move more compiler workflow and emission logic into Oxid
-- keep Rust only as a bootstrap compatibility layer
-
-## Phase 4
-
-- keep the Rust layer minimal enough that day-to-day compiler work happens in Oxid
+- self-host the compiler workflow by default
+- keep Rust as a fallback boundary only
+- make Oxid the main language used by contributors

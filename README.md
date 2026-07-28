@@ -8,17 +8,26 @@
 
 # Oxid
 
-Oxid is an experimental language prototype built around a Rust bootstrap runtime and a growing Oxid-written surface area.
+Oxid is a derivative of Rust and features its own self-hosted language toolchain. Its goal is to create a language that is faster, more concise, and easier to read than Rust, with its own syntax, modules, command-line workflow, and diagnostic model.
 
 The goal is not to stay as a thin wrapper. The project is organized so that everyday development work gradually moves into Oxid source files: standard library modules, examples, tooling scripts, package workflows, and project documentation.
 
-## What is already available
+## Current command surface
 
+- `oxid bootstrap`: validate the bootstrap path
+- `oxid frontend`: preview lex / parse / AST / recovery / module / syntax flow
+- `oxid diagnose`: render source-linked diagnostics
+- `oxid lint`: preview style and structural rules
+- `oxid emit`: preview emission
+- `oxid module`: preview module resolution
+- `oxid syntax`: preview the shorter syntax forms
+- `oxid self-host`: summarize the migration path away from Rust
 - `oxid run <file.ox>`: run a script
 - `oxid script <name> [args...]`: execute a manifest script
 - `oxid repl`: interactive REPL
 - `oxid check <file.ox>`: syntax check
 - `oxid new <project-name>` / `oxid init <project-name>`: scaffold a project
+- `oxid init <project-name>`: preview style and structural rules
 - `oxid add <name> <path-or-target>`: add a dependency entry
 - `oxid watch <file.ox>`: watch files and rerun
 - `oxid build`: validate the project
@@ -31,11 +40,11 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 ## Repository layout
 
 - `src/` contains the Rust bootstrap runtime and entry script
-- `stdlib/` contains Oxid standard library modules
+- `stdlib/` contains Oxid standard library modules and tool workflows
 - `examples/` contains runnable Oxid examples
-- `tools/` contains Oxid tooling previews
+- `tools/` contains Oxid workflow previews
 - `packages/demo/` contains a user-facing package layout
-- `docs/` contains workflow, compiler, and diagnostics notes
+- `docs/` contains workflow, compiler, syntax, and diagnostics notes
 - `tests/` contains smoke tests
 
 ## Recommended first run
@@ -61,6 +70,16 @@ oxid self-host
 6. Keep runnable examples in `examples/`.
 7. Use `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc` before release.
 
+## Design intent
+
+Oxid should feel shorter than Rust for everyday work:
+
+- fewer explicit scaffolding steps
+- compact module and import forms
+- lightweight command-driven workflows
+- readable diagnostics with line, column, hint, and recovery context
+- reusable preview modules that can later become first-class compiler features
+
 Read:
 
 - `docs/SELF_HOSTING.md`
@@ -69,4 +88,5 @@ Read:
 - `docs/DIAGNOSTICS.md`
 - `docs/MODULES.md`
 - `docs/PACKAGE_WORKFLOW.md`
+- `docs/COMMANDS.md`
 - `docs/ROADMAP.md`
