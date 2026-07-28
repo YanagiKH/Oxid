@@ -3,5 +3,5 @@ fn main() {
 }
 
 fn version() {
-    return "0.5.1";
+    return "0.5.2";
 }
