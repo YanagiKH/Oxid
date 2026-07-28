@@ -1,3 +1,5 @@
+[English](README.md) / [繁體中文](README_ZH.md) / [日本語](README_JP.md)
+
 # Oxid
 
 Oxid is an experimental language prototype built around a Rust bootstrap runtime and a growing Oxid-written surface area.
