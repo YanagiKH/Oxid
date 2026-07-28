@@ -1,4 +1,10 @@
+<div align="center">
+  <picture>
+    <img width="304" height="281.5" alt="Oxid" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
+  </picture>
+
 [English](README.md) / [繁體中文](README_ZH.md) / [日本語](README_JP.md)
+</div>
 
 # Oxid
 
