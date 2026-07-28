@@ -17,7 +17,8 @@ oxid script test
 oxid script fmt
 oxid script doctor
 oxid script doc
-oxid script clean
+oxid script bootstrap
+oxid script diagnose
 ```
 
 ## Goal

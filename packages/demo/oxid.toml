@@ -1,6 +1,6 @@
 [project]
 name = "demo"
-version = "0.5.2"
+version = "0.6.0"
 entry = "src/main.ox"
 
 [scripts]
@@ -11,6 +11,8 @@ doctor = "oxid doctor"
 doc = "oxid doc"
 clean = "oxid clean"
 check = "oxid check src/main.ox"
+bootstrap = "oxid run ../../tools/bootstrap.ox"
+diagnose = "oxid run ../../tools/diagnose.ox"
 
 [dependencies]
 

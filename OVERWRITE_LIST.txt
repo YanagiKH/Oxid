@@ -1,25 +1,26 @@
-OVERWRITE / ADD FILES IN THIS PACKAGE
-
 Overwrite:
 - README.md
-- docs/PACKAGES.md
+- docs/ROADMAP.md
+- docs/SELF_HOSTING.md
+- docs/DIAGNOSTICS.md
+- docs/SYNTAX.md
+- docs/COMMANDS.md
 - docs/PACKAGE_WORKFLOW.md
-- docs/ARCHITECTURE.md
-- docs/SCRIPTS.md
+- docs/PACKAGES.md
 - stdlib/strings.ox
-- examples/stdlib_smoke.ox
-- examples/workflow_preview.ox
-- examples/package_workflow.ox
+- stdlib/errors.ox
+- stdlib/prelude.ox
+- stdlib/compiler.ox
+- tools/bootstrap.ox
+- tools/diagnose.ox
+- tools/package.ox
 - examples/hello.ox
-- examples/library.ox
-- examples/modules.ox
+- examples/stdlib_smoke.ox
+- examples/self_host_preview.ox
+- examples/package_workflow.ox
 - tests/smoke.ox
 - packages/demo/README.md
 - packages/demo/oxid.toml
 - packages/demo/src/lib.ox
 - packages/demo/src/main.ox
 - packages/demo/tests/smoke.ox
-- packages/demo/package.ox
-
-Add:
-- docs/QUICKSTART.md

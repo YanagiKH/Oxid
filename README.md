@@ -8,36 +8,34 @@
 
 # Oxid
 
-Oxid is an experimental language prototype built around a Rust bootstrap runtime and a growing Oxid-written surface area.
+Oxid is a language project that is being pushed toward a self-hosted, faster, and simpler developer experience.
 
-The goal is not to stay as a thin wrapper. The project is organized so that everyday development work gradually moves into Oxid source files: standard library modules, examples, tooling scripts, package workflows, and project documentation.
+The current repository still uses a Rust bootstrap runtime, but the project layout is now organized to move more work into Oxid source files, shared modules, package workflows, tooling scripts, and diagnostics helpers.
 
-## What is already available
+## What this pack adds
 
-- `oxid run <file.ox>`: run a script
-- `oxid script <name> [args...]`: execute a manifest script
-- `oxid repl`: interactive REPL
-- `oxid check <file.ox>`: syntax check
-- `oxid new <project-name>` / `oxid init <project-name>`: scaffold a project
-- `oxid add <name> <path-or-target>`: add a dependency entry
-- `oxid watch <file.ox>`: watch files and rerun
-- `oxid build`: validate the project
-- `oxid clean`: clear build cache
-- `oxid fmt [path]`: format Oxid source files
-- `oxid test`: run smoke tests and examples
-- `oxid doctor`: verify project health
-- `oxid doc`: generate API docs
+- a tighter standard-library front door through `stdlib/prelude.ox`
+- better string helpers for common authoring tasks
+- reusable diagnostic helpers for parser/runtime errors
+- a self-hosting roadmap that explains how Rust is phased out
+- package and script examples that are easier to copy into real projects
+- example files that show how users should structure Oxid-first development
 
-## Language features
+## Current commands already in the project
 
-- `let` / `const`
-- `print` / `if` / `while` / `fn` / `async fn` / `await` / `return` / `use`
-- arrays, indexing, and indexed assignment
-- `len` / `push` / `pop` / `range` / `str` / `sleep`
-- `c_len` / `c_hash` / `cpp_len` / `cpp_hash`
-- module cache, preprocess cache, and recursive loading
-- single-line `macro` preprocessing expansion
-- package manifest support (`oxid.toml` scripts / dependencies / features)
+- `oxid run <file.ox>`
+- `oxid script <name> [args...]`
+- `oxid repl`
+- `oxid check <file.ox>`
+- `oxid new <project-name>` / `oxid init <project-name>`
+- `oxid add <name> <path-or-target>`
+- `oxid watch <file.ox>`
+- `oxid build`
+- `oxid clean`
+- `oxid fmt [path]`
+- `oxid test`
+- `oxid doctor`
+- `oxid doc`
 
 ## Repository layout
 
@@ -46,7 +44,7 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 - `examples/` contains runnable Oxid examples
 - `tools/` contains Oxid tooling previews
 - `packages/demo/` contains a user-facing package layout
-- `docs/` contains workflow and architecture notes
+- `docs/` contains workflow, compiler, and diagnostics notes
 - `tests/` contains smoke tests
 
 ## Recommended first run
@@ -54,6 +52,7 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 ```bash
 cargo run -- run examples/hello.ox
 cargo run -- run examples/stdlib_smoke.ox
+cargo run -- run examples/self_host_preview.ox
 cargo run -- build
 cargo run -- test
 cargo run -- doctor
@@ -62,13 +61,22 @@ cargo run -- doc
 
 ## Package-first workflow
 
-The intended user experience is:
-
 1. Create a project with `oxid new`.
-2. Put reusable modules in `src/` and `stdlib/`.
-3. Define scripts in `oxid.toml`.
-4. Use `oxid script <name>` for repeatable tasks.
-5. Keep examples and smoke tests alongside the package.
-6. Use `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc` before release.
+2. Import `stdlib/prelude.ox` in new scripts.
+3. Keep reusable helpers in `stdlib/`.
+4. Keep app code in `src/`.
+5. Keep compiler and workflow previews in `tools/`.
+6. Keep runnable examples in `examples/`.
+7. Use `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc` before release.
 
-For a full walkthrough, read `docs/QUICKSTART.md` and `docs/PACKAGE_WORKFLOW.md`.
+## Self-hosting direction
+
+The runtime is still bootstrapped by Rust today. The goal is to move parsing, diagnostics, command orchestration, package workflow, and later code generation into Oxid modules in stages.
+
+Read:
+
+- `docs/SELF_HOSTING.md`
+- `docs/SYNTAX.md`
+- `docs/DIAGNOSTICS.md`
+- `docs/PACKAGE_WORKFLOW.md`
+- `docs/ROADMAP.md`

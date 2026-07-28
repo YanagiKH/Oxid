@@ -98,6 +98,43 @@ fn pad_left(text, width, fill) {
     return repeat_char(fill, width - len(text)) + text;
 }
 
+fn pad_right(text, width, fill) {
+    if (len(text) >= width) {
+        return text;
+    }
+    return text + repeat_char(fill, width - len(text));
+}
+
 fn quote(text) {
     return """ + text + """;
+}
+
+fn join_lines(lines, separator) {
+    if (len(lines) == 0) {
+        return "";
+    }
+    let out = lines[0];
+    let i = 1;
+    while (i < len(lines)) {
+        out = out + separator + lines[i];
+        i = i + 1;
+    }
+    return out;
+}
+
+fn repeat_line(line, count, separator) {
+    let out = "";
+    let i = 0;
+    while (i < count) {
+        if (i > 0) {
+            out = out + separator;
+        }
+        out = out + line;
+        i = i + 1;
+    }
+    return out;
+}
+
+fn wrap(prefix, body, suffix) {
+    return prefix + body + suffix;
 }
