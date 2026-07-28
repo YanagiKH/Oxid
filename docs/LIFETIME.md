@@ -1,8 +1,8 @@
-# Lifetime and Borrowing Experience
+# Lifetime and borrowing
 
-The prototype currently prioritizes low learning cost:
+Oxid is designed to keep the surface syntax approachable.
 
-- `const`, `use`, `async fn`, `await`, and `macro` are directly usable.
-- Real lifetime inference and borrow checking belong to the next stage.
-- Today the runtime stays ownership-light at the surface level so scripts remain easy to write.
-- This page exists to keep the language direction and future syntax targets fixed.
+- constants and functions are the first step
+- async and module workflows are explicit but readable
+- deeper lifetime inference is a future compiler-stage feature
+- the current runtime keeps the day-to-day language experience compact

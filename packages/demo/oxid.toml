@@ -1,0 +1,14 @@
+[project]
+name = "demo"
+version = "0.1.0"
+entry = "src/main.ox"
+
+[scripts]
+run = "oxid run src/main.ox"
+
+[dependencies]
+
+[build]
+mode = "script-first"
+incremental = true
+ffi = true

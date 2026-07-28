@@ -29,79 +29,47 @@ Its goal is not to be a thin wrapper. It is to turn the language core, developme
 - developer tooling commands (`fmt`, `test`, `doctor`, `doc`, `script`, `add`, `clean`)
 - GitHub Actions scaffold
 
-## Implemented expansion directions
+## Language features
 
-### 1. Fast development experience
+- variables and constants
+- functions and async functions
+- arrays and indexing
+- conditions and loops
+- function calls and task-style awaiting
+- source preprocessing macros
+- module loading with search paths
+- C and C++ interoperability
 
-- `oxid run` executes scripts directly.
-- `oxid watch` monitors changes with polling.
-- Module caching avoids repeated loads.
-- `check`, `build`, `fmt`, `test`, `doctor`, `doc`, `script`, `add`, and `clean` provide a fuller toolchain.
-- local cache under `.oxid/cache` avoids repeated preprocessing work.
+## Repository layout
 
-### 2. Syntax and development experience
+- `src/` contains the Rust bootstrap runtime
+- `native/` contains the C and C++ bridge code
+- `stdlib/` contains Oxid standard library modules
+- `examples/` contains runnable Oxid examples
+- `tools/` contains Oxid tooling previews
+- `docs/` contains English documentation
+- `tests/` contains smoke tests
 
-- `const` supports early evaluation.
-- `async fn` + `await` use a task-style async model.
-- `sleep()` makes demos and scripts easier to write.
-- task helpers and manifest scripts reduce ceremony for everyday work.
-
-### 3. Macro and compile-time system
-
-- `macro name(a, b) => ...;` single-line macros.
-- Preprocessing expands before lexing and parsing.
-- `const` provides a small compile-time evaluation entry point.
-
-### 4. Module and build system
-
-- `use "../stdlib/math.ox";` module loading.
-- `oxid.toml` project configuration with scripts, dependencies, and features.
-- `build.rs` compiles the C and C++ bridges.
-- `resolve_path` searches local project roots plus `OXID_PATH`.
-
-### 5. Lower learning curve
-
-- `README`, `docs/`, `examples/`, `stdlib/`, and `tests/` are included.
-- `hello.ox`, `arrays.ox`, `modules.ox`, `smoke.ox`, and `future/` guide beginners.
-
-## Usage
+## Workflow
 
 ```bash
 cargo run -- run examples/hello.ox
-cargo run -- run examples/modules.ox
-cargo run -- run examples/arrays.ox
-cargo run -- watch examples/hello.ox
+cargo run -- run examples/library.ox
+cargo run -- script run
+cargo run -- build
 cargo run -- fmt examples/hello.ox
 cargo run -- test
 cargo run -- doctor
 cargo run -- doc
-cargo run -- script run
-cargo run -- clean
-cargo run -- repl
 ```
 
-## Syntax sample
+## Project direction
 
-```oxid
-const app_name = "Oxid";
+The goal is to move more and more of the everyday language surface into Oxid source files:
 
-macro greet(name) => print "Hello, " + name;
+- Oxid standard library modules
+- Oxid examples
+- Oxid tooling scripts
+- Oxid package workflow previews
 
-async fn load_message(name) {
-    return "Welcome " + name;
-}
-
-fn main() {
-    greet(app_name);
-    let task = load_message("Master");
-    print await task;
-}
-```
-
-## Notes
-
-This is still a prototype. The current focus is:
-- clearer syntax
-- better developer feedback
-- stronger build and package conventions
-- future compiler backend work
+The Rust core remains the bootstrap layer for parsing, execution, caching, and native interop.

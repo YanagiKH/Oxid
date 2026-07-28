@@ -1,6 +1,6 @@
 # Scripts
 
-Scripts are declared in `oxid.toml`:
+`oxid.toml` can define scripts:
 
 ```toml
 [scripts]

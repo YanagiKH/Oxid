@@ -1,11 +1,16 @@
+[project]
 name = "oxid"
-version = "0.5.0"
-language = "oxid"
-edition = "2026"
+version = "0.5.1"
+entry = "src/main.ox"
 
-[package]
-description = "Oxid experimental language prototype"
-license = "MIT"
+[scripts]
+run = "oxid run src/main.ox"
+test = "oxid test"
+fmt = "oxid fmt"
+doc = "oxid doc"
+clean = "oxid clean"
+
+[dependencies]
 
 [build]
 mode = "script-first"

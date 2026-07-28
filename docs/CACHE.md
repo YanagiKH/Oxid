@@ -2,4 +2,4 @@
 
 Oxid stores preprocessing output under `.oxid/cache/preprocess/`.
 
-This cache keeps repeated `run`, `check`, `watch`, and `build` cycles responsive when source text does not change.
+The cache helps `run`, `check`, `watch`, `build`, and `script` cycles stay responsive when source text is unchanged.

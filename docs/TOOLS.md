@@ -17,5 +17,4 @@ Oxid ships with:
 - `init`
 - `add`
 
-These commands are intended to cover the full everyday workflow without external tools.
-The runtime also keeps a local preprocess cache under `.oxid/cache` for faster repeat runs.
+These commands cover the everyday workflow without external tooling.

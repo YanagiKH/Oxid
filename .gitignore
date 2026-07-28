@@ -1,3 +1,4 @@
 target/
+.oxid/
 *.log
 .DS_Store

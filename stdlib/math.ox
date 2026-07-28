@@ -35,11 +35,5 @@ fn average(xs) {
     if (len(xs) == 0) {
         return 0;
     }
-    let total = 0;
-    let i = 0;
-    while (i < len(xs)) {
-        total = total + xs[i];
-        i = i + 1;
-    }
-    return total / len(xs);
+    return sum(xs) / len(xs);
 }

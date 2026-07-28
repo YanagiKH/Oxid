@@ -1,16 +1,8 @@
-# Macros and Compile-Time System
+# Macros and compile-time behavior
 
-The current `macro` feature is a single-line source-level preprocessor.
+Oxid currently supports source preprocessing macros.
 
-Format:
-
-```oxid
-macro greet(name) => print "Hello, " + name;
-```
-
-Limits:
-
-- Expansion currently happens as string replacement.
-- This is suitable for boilerplate reduction and fixed syntax fragments.
-- The preprocessor result is cached under `.oxid/cache` for faster repeat runs.
-- It can later be replaced with a real token-level macro system.
+- `macro name(a, b) => body;`
+- expansion runs before lexing and parsing
+- the preprocessor is cache-backed under `.oxid/cache`
+- the feature is intentionally small so it can evolve into a token-level system later

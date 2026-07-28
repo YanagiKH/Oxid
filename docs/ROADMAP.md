@@ -4,19 +4,18 @@
 - Full script execution
 - Module system
 - Native interoperability
-- `watch` / `build` / `check`
+- `watch`, `build`, and `check`
 - Cache-backed preprocessing
 
 ## Phase 2
 - Real token-level macros
 - Proper borrow checking and lifetime inference
-- Async runtime / scheduler
+- Async runtime and scheduler
 - Package manager
-- Tooling commands (`fmt`, `test`, `doctor`, `doc`, `script`, `add`, `clean`)
+- Tooling commands
 
 ## Phase 3
 - Compiler backend
 - Standard library expansion
-- IDE / language server
+- IDE and language server support
 - Cross-platform release pipeline
-- Real borrow checking and lifetime inference

@@ -51,10 +51,34 @@ fn reduce(xs, f, initial) {
     return acc;
 }
 
+fn add(a, b) {
+    return a + b;
+}
+
 fn sum(xs) {
     return reduce(xs, add, 0);
 }
 
-fn add(a, b) {
-    return a + b;
+fn join_strings(xs, separator) {
+    if (len(xs) == 0) {
+        return "";
+    }
+    let out = str(xs[0]);
+    let i = 1;
+    while (i < len(xs)) {
+        out = out + separator + str(xs[i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn contains(xs, value) {
+    let i = 0;
+    while (i < len(xs)) {
+        if (xs[i] == value) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
 }

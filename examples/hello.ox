@@ -1,10 +1,10 @@
-const app_name = "Oxid";
+use "../stdlib/core.ox";
+use "../stdlib/math.ox";
 
 fn main() {
     print "Oxid startup confirmed";
-    print "c_len(Oxid) = " + c_len("Oxid");
-    print "c_hash(Oxid) = " + c_hash("Oxid");
-    print "cpp_len(Oxid) = " + cpp_len("Oxid");
-    print "cpp_hash(Oxid) = " + cpp_hash("Oxid");
-    print range(0, 5);
+    print clamp(15, 0, 10);
+    print square(7);
+    print cube(3);
+    print repeat("ox", 3);
 }

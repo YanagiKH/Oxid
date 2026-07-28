@@ -1,9 +1,9 @@
 # FFI
 
-Provided today:
+Oxid ships with both C and C++ bridge samples.
 
-- `c_len` / `c_hash`: C examples
-- `cpp_len` / `cpp_hash`: C++ bridge
-- `build.rs` compiles `native/oxid_ffi.c` and `native/oxid_cpp_bridge.cpp` together.
+- `c_len` and `c_hash`
+- `cpp_len` and `cpp_hash`
+- `build.rs` compiles the native bridge sources together
 
-This makes Oxid usable with existing native code while the language core continues to evolve.
+This keeps the project open to existing native code while the Oxid surface continues to grow.

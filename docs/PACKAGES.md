@@ -8,7 +8,5 @@
 - `[scripts]`
 - `[dependencies]`
 - `[features]`
-- `oxid add <name> <target>` for quick manifest editing
-- `oxid script <name>` for script-first workflows
 
-This keeps the project manifest usable for future dependency resolution and publishing.
+`oxid add <name> <target>` updates the dependency section automatically.

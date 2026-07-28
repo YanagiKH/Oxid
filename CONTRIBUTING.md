@@ -2,23 +2,22 @@
 
 ## Direction
 
-- Keep the prototype runnable at all times.
-- Split the frontend, compile-time layer, and runtime gradually.
-- Every new feature must include an example and documentation.
+- Keep the runtime runnable.
+- Grow the Oxid surface area first.
+- Keep documentation in English.
+- Every new feature should include Oxid examples.
 
 ## Good contributions
 
-- Syntax expansion
-- Error message improvements
-- Native interoperability
-- Standard library functions
-- Documentation and examples
+- syntax expansion
+- error handling improvements
+- native interoperability
+- standard library modules
+- tooling scripts written in Oxid
+- documentation and examples
 
 ## Implementation principles
 
 - Keep syntax compact.
 - Make error messages actionable.
 - Favor readability before extreme optimization.
-
-
-Prefer cache-aware commands such as `oxid script`, `oxid clean`, and `oxid add` when working on the toolchain.
