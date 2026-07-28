@@ -1,2 +1,4 @@
-# Oxid build workflow preview
-# These files are intentionally written in Oxid to show the intended toolchain direction.
+fn main() {
+    print "Oxid build workflow preview";
+    print "Use `oxid build` for validation and cache generation.";
+}

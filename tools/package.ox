@@ -1,2 +1,4 @@
-# Oxid package workflow preview
-# Future versions can turn these scripts into first-class package and release automation.
+fn main() {
+    print "Oxid package workflow preview";
+    print "Use `oxid script`, `oxid add`, and manifest scripts for package automation.";
+}

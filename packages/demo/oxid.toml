@@ -5,6 +5,11 @@ entry = "src/main.ox"
 
 [scripts]
 run = "oxid run src/main.ox"
+test = "oxid test"
+fmt = "oxid fmt"
+doc = "oxid doc"
+doctor = "oxid doctor"
+clean = "oxid clean"
 
 [dependencies]
 
@@ -12,3 +17,10 @@ run = "oxid run src/main.ox"
 mode = "script-first"
 incremental = true
 ffi = true
+
+[features]
+async = true
+macros = true
+const_eval = true
+c_interop = true
+cpp_interop = true

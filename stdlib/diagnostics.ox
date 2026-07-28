@@ -1,3 +1,5 @@
+use "files.ox";
+
 fn ensure(condition, message) {
     if (condition) {
         return true;

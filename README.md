@@ -1,33 +1,23 @@
 # Oxid
 
-Oxid is an experimental language prototype based on Rust + C/C++.
+Oxid is an experimental language runtime based on Rust + C/C++.
+The bootstrap runtime is written in Rust, while the higher-level project structure, standard library, examples, and tooling previews are written in Oxid source files.
 
-Its goal is not to be a thin wrapper. It is to turn the language core, development workflow, macros, modules, native interoperability, and learning path into a runnable project.
+## What works today
 
-## Implemented so far
-
-- `oxid run <file.ox>`: run a script
-- `oxid script <name> [args...]`: execute a manifest script
-- `oxid repl`: interactive REPL
-- `oxid check <file.ox>`: syntax check
-- `oxid new <project-name>` / `oxid init <project-name>`: scaffold a project
-- `oxid add <name> <path-or-target>`: add a dependency entry
-- `oxid watch <file.ox>`: watch files and rerun
-- `oxid build`: validate the project
-- `oxid clean`: clear build cache
-- `oxid fmt [path]`: format Oxid source files
-- `oxid test`: run smoke tests and examples
-- `oxid doctor`: verify project health
-- `oxid doc`: generate API docs
-- `let` / `const` / `print` / `if` / `while` / `fn` / `async fn` / `await` / `return` / `use`
-- arrays, indexing, and indexed assignment
-- `len` / `push` / `pop` / `range` / `str` / `sleep`
-- `c_len` / `c_hash` / `cpp_len` / `cpp_hash` native interop
-- module cache, preprocess cache, and recursive loading
-- single-line `macro` preprocessing expansion
-- package manifest support (`oxid.toml` scripts / dependencies / features)
-- developer tooling commands (`fmt`, `test`, `doctor`, `doc`, `script`, `add`, `clean`)
-- GitHub Actions scaffold
+- `oxid run <file.ox>`
+- `oxid script <name> [args...]`
+- `oxid check <file.ox>`
+- `oxid repl`
+- `oxid new <project-name>` / `oxid init <project-name>`
+- `oxid add <name> <path-or-target>`
+- `oxid watch <file.ox>`
+- `oxid build`
+- `oxid clean`
+- `oxid fmt [path]`
+- `oxid test`
+- `oxid doctor`
+- `oxid doc`
 
 ## Language features
 
@@ -73,3 +63,8 @@ The goal is to move more and more of the everyday language surface into Oxid sou
 - Oxid package workflow previews
 
 The Rust core remains the bootstrap layer for parsing, execution, caching, and native interop.
+
+
+## Repository language weighting
+
+The repository is configured so GitHub Linguist treats `*.ox` as Oxid and the Rust bootstrap files as generated. That makes the Oxid source tree the visible primary language for the project.

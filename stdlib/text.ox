@@ -7,7 +7,7 @@ fn lower(text) {
 }
 
 fn quote(text) {
-    return """ + text + """;
+    return "\"" + text + "\"";
 }
 
 fn surround(text, left, right) {

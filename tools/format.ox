@@ -1,2 +1,4 @@
-# Oxid format workflow preview
-# The `oxid fmt` command exists today; this file shows how Oxid-native tooling can grow.
+fn main() {
+    print "Oxid format workflow preview";
+    print "Use `oxid fmt` to normalize source formatting.";
+}

@@ -1,6 +1,7 @@
+use "files.ox";
+
 fn write_line(path, text) {
-    return write_text(path, text + "
-");
+    return write_text(path, text + "\n");
 }
 
 fn read_lines(path) {

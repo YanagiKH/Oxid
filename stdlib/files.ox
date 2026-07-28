@@ -1,3 +1,4 @@
+
 fn file_read(path) {
     return read_text(path);
 }
@@ -20,8 +21,7 @@ fn split_lines(text) {
     let i = 0;
     while (i < len(text)) {
         let ch = text[i];
-        if (ch == "
-") {
+        if (ch == "\n") {
             push(out, current);
             current = "";
         } else {

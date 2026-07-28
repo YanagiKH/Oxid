@@ -1,0 +1,10 @@
+*.ox linguist-language=Oxid
+src/main.rs linguist-generated=true
+build.rs linguist-generated=true
+native/*.c linguist-generated=true
+native/*.cpp linguist-generated=true
+native/*.h linguist-generated=true
+tools/*.ox linguist-language=Oxid
+stdlib/*.ox linguist-language=Oxid
+examples/*.ox linguist-language=Oxid
+packages/**/*.ox linguist-language=Oxid

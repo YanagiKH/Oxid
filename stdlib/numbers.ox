@@ -1,3 +1,5 @@
+use "core.ox";
+
 fn is_even(n) {
     return n == (n / 2) * 2;
 }
