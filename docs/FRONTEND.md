@@ -12,6 +12,7 @@ The frontend is organized as a visible pipeline rather than a hidden compiler mo
 6. module
 7. syntax
 8. emit
+9. lint
 
 ## Goals
 
@@ -19,13 +20,12 @@ The frontend is organized as a visible pipeline rather than a hidden compiler mo
 - make stage names explicit
 - keep preview modules reusable from examples and tooling
 - make error recovery and suggestions visible to users
+- keep interop and self-host previews adjacent to the frontend view
 
 ## Entry helpers
 
 - `frontend_bootstrap(project_name, entry_point)`
 - `frontend_pipeline(source_name)`
 - `frontend_compile_plan(project_name, version, entry_point)`
-
-## Why this matters
-
-A user should be able to see how a file moves through the toolchain, and the toolchain should be able to show useful stage-level messages without requiring Rust-specific knowledge.
+- `frontend_stage_banner(source_name)`
+- `frontend_bridge_plan(project_name, entry_point)`

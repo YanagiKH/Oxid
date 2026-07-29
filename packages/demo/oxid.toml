@@ -11,6 +11,7 @@ doctor = "oxid doctor"
 doc = "oxid doc"
 clean = "oxid clean"
 check = "oxid check src/main.ox"
+interop = "oxid run src/interop.ox"
 
 [dependencies]
 
@@ -25,3 +26,5 @@ macros = true
 const_eval = true
 c_interop = true
 cpp_interop = true
+java_interop = true
+python_interop = true

@@ -22,6 +22,8 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 - `oxid module`：預覽模組解析
 - `oxid syntax`：預覽簡化語法形式
 - `oxid self-host`：彙整從 Rust 遷移的途徑
+- `oxid interop` 新增橋接預覽功能
+- `oxid bridge` 新增橋接預覽功能
 - `oxid run <file.ox>`：執行腳本
 - `oxid script <name> [args...]`：執行清單腳本
 - `oxid repl`：互動式 REPL
@@ -55,7 +57,7 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 - `examples/` 包含可執行的 Oxid 範例
 - `tools/` 包含 Oxid 工作流程預覽
 - `packages/demo/` 包含面向使用者的套件結構
-- `docs/` 包含工作流程、編譯器、語法及診斷說明
+- `docs/` 包含工作流程、編譯器、語法、診斷及互通性說明
 - `tests/` 包含煙霧測試
 
 ## 建議的首次執行步驟
@@ -68,6 +70,7 @@ oxid lint
 oxid emit
 oxid module
 oxid syntax
+oxid interop
 oxid self-host
 ```
 
@@ -89,6 +92,7 @@ oxid self-host
 - 簡潔的模組與匯入語法
 - 輕量級的命令驅動工作流程
 - 包含行號、欄位、提示及恢復上下文的可讀性高的診斷訊息
+- 透過 Oxid 端的橋接輔助程式，可輕鬆與 C/C++、Java 及 Python 整合
 - 可重複使用的預覽模組，日後可成為一級編譯器功能
 
 請參閱：
@@ -98,6 +102,7 @@ oxid self-host
 - `docs/SYNTAX.md`
 - `docs/DIAGNOSTICS.md`
 - `docs/MODULES.md`
+- `docs/INTEROP.md`
 - `docs/PACKAGE_WORKFLOW.md`
 - `docs/COMMANDS.md`
 - `docs/ROADMAP.md`

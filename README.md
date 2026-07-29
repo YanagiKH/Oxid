@@ -22,6 +22,8 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 - `oxid module`: preview module resolution
 - `oxid syntax`: preview the shorter syntax forms
 - `oxid self-host`: summarize the migration path away from Rust
+- `oxid interop`add bridge previews
+- `oxid bridge`add bridge previews
 - `oxid run <file.ox>`: run a script
 - `oxid script <name> [args...]`: execute a manifest script
 - `oxid repl`: interactive REPL
@@ -44,7 +46,7 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 - `examples/` contains runnable Oxid examples
 - `tools/` contains Oxid workflow previews
 - `packages/demo/` contains a user-facing package layout
-- `docs/` contains workflow, compiler, syntax, and diagnostics notes
+- `docs/` contains workflow, compiler, syntax, diagnostics, and interop notes
 - `tests/` contains smoke tests
 
 ## Recommended first run
@@ -57,6 +59,7 @@ oxid lint
 oxid emit
 oxid module
 oxid syntax
+oxid interop
 oxid self-host
 ```
 
@@ -78,6 +81,7 @@ Oxid should feel shorter than Rust for everyday work:
 - compact module and import forms
 - lightweight command-driven workflows
 - readable diagnostics with line, column, hint, and recovery context
+- easy integration with C/C++, Java, and Python through Oxid-side bridge helpers
 - reusable preview modules that can later become first-class compiler features
 
 Read:
@@ -87,6 +91,7 @@ Read:
 - `docs/SYNTAX.md`
 - `docs/DIAGNOSTICS.md`
 - `docs/MODULES.md`
+- `docs/INTEROP.md`
 - `docs/PACKAGE_WORKFLOW.md`
 - `docs/COMMANDS.md`
 - `docs/ROADMAP.md`

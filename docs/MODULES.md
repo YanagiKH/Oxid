@@ -18,7 +18,7 @@ Oxid module handling should stay simple enough to predict.
 - support explicit aliases
 - support predictable relative resolution
 - keep module summaries readable
-- keep the frontend and package layout aligned
+- keep the frontend, interop, and package layout aligned
 
 ## Recommended form
 

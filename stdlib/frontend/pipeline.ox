@@ -6,6 +6,8 @@ use "recovery.ox";
 use "diagnostics.ox";
 use "modules.ox";
 use "syntax.ox";
+use "emit.ox";
+use "lint.ox";
 
 fn pipeline_stage(name) { return "[" + name + "]"; }
 
@@ -18,7 +20,8 @@ fn frontend_pipeline(source_name) {
         pipeline_stage("diagnose"),
         pipeline_stage("module"),
         pipeline_stage("syntax"),
-        pipeline_stage("emit")
+        pipeline_stage("emit"),
+        pipeline_stage("lint")
     ], " -> ") + " :: " + source_name;
 }
 
@@ -31,9 +34,13 @@ fn frontend_compile_plan(project_name, version, entry_point) {
 }
 
 fn frontend_stage_list() {
-    return join_lines(["lex", "parse", "ast", "recover", "diagnose", "module", "syntax", "emit"], ", ");
+    return join_lines(["lex", "parse", "ast", "recover", "diagnose", "module", "syntax", "emit", "lint"], ", ");
 }
 
 fn frontend_stage_banner(source_name) {
     return "pipeline " + source_name + " :: " + frontend_stage_list();
+}
+
+fn frontend_bridge_plan(project_name, entry_point) {
+    return frontend_bootstrap(project_name, entry_point) + " | bridge-ready";
 }

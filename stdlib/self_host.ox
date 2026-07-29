@@ -3,6 +3,7 @@ use "frontend/pipeline.ox";
 use "frontend/syntax.ox";
 use "frontend/diagnostics.ox";
 use "frontend/modules.ox";
+use "interop.ox";
 
 fn self_host_stage(name) {
     return "self-host:" + name;
@@ -20,7 +21,9 @@ fn self_host_status() {
         self_host_stage("lint"),
         self_host_stage("emit"),
         self_host_stage("module"),
-        self_host_stage("syntax")
+        self_host_stage("syntax"),
+        self_host_stage("interop"),
+        self_host_stage("bridge")
     ], ", ");
 }
 
@@ -34,8 +37,10 @@ fn self_host_plan(project_name, entry_point) {
         frontend_pipeline(entry_point),
         syntax_shortcuts(),
         module_catalog(),
+        interop_catalog(),
         diag_suggestion("run", "oxid self-host")
-    ], "\n");
+    ], "
+");
 }
 
 fn self_host_command_list() {
@@ -47,6 +52,12 @@ fn self_host_command_list() {
         "oxid emit",
         "oxid module",
         "oxid syntax",
+        "oxid interop",
+        "oxid bridge",
         "oxid self-host"
     ], ", ");
+}
+
+fn self_host_boundary_note() {
+    return "keep Rust only as the fallback boundary";
 }

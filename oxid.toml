@@ -9,6 +9,16 @@ test = "oxid test"
 fmt = "oxid fmt"
 doc = "oxid doc"
 clean = "oxid clean"
+bootstrap = "oxid bootstrap"
+frontend = "oxid frontend"
+diagnose = "oxid diagnose"
+lint = "oxid lint"
+emit = "oxid emit"
+module = "oxid module"
+syntax = "oxid syntax"
+interop = "oxid interop"
+bridge = "oxid bridge"
+self-host = "oxid self-host"
 
 [dependencies]
 
@@ -23,3 +33,5 @@ macros = true
 const_eval = true
 c_interop = true
 cpp_interop = true
+java_interop = true
+python_interop = true

@@ -11,6 +11,7 @@ Oxid diagnostics should be compact, structured, and actionable.
 - message
 - hint
 - recovery suggestion when possible
+- stable error code when possible
 
 ## Output shape
 
@@ -29,3 +30,4 @@ error: message
 - classify recoverable warnings separately from hard errors
 - keep the wording short
 - keep the fix close to the source of the issue
+- include code families for parse, module, and interop problems

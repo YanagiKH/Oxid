@@ -1,6 +1,6 @@
 # Commands
 
-This repository now treats commands as a first-class language surface.
+This repository treats commands as a first-class language surface.
 
 ## Core commands
 
@@ -11,6 +11,8 @@ This repository now treats commands as a first-class language surface.
 - `oxid emit`
 - `oxid module`
 - `oxid syntax`
+- `oxid interop`
+- `oxid bridge`
 - `oxid self-host`
 
 ## Project commands
@@ -32,4 +34,4 @@ This repository now treats commands as a first-class language surface.
 
 ## Intent
 
-The command surface should stay short, obvious, and scriptable.
+The command surface should stay short, obvious, and scriptable. Bridge commands should make foreign-language integration feel like a normal Oxid workflow rather than a separate ecosystem.

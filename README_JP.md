@@ -22,6 +22,8 @@ Oxid は Rust の派生言語であり、独自のセルフホスト型言語ツ
 - `oxid module`: モジュール解決のプレビュー
 - `oxid syntax`: 短縮構文形式をプレビュー
 - `oxid self-host`: Rustからの移行パスを要約
+- `oxid interop`：ブリッジのプレビューを追加
+- `oxid bridge`：ブリッジのプレビューを追加
 - `oxid run <file.ox>`: スクリプトを実行
 - `oxid script <name> [args...]`: マニフェストスクリプトを実行
 - `oxid repl`: 対話型REPL
@@ -55,7 +57,7 @@ Oxid は Rust の派生言語であり、独自のセルフホスト型言語ツ
 - `examples/` には、実行可能な Oxid のサンプルが含まれています
 - `tools/` には、Oxid ワークフローのプレビューが含まれています
 - `packages/demo/` には、ユーザー向けのパッケージ構成が含まれています
-- `docs/` には、ワークフロー、コンパイラ、構文、および診断に関する説明が含まれています
+- `docs/` には、ワークフロー、コンパイラ、構文、診断、および相互運用に関する注意事項が含まれています
 - `tests/` には、スモークテストが含まれています
 
 ## 推奨される初回実行手順
@@ -68,6 +70,7 @@ oxid lint
 oxid emit
 oxid module
 oxid syntax
+oxid interop
 oxid self-host
 ```
 
@@ -89,6 +92,7 @@ Oxidは、日常的な作業においてRustよりも短く感じられるよう
 - コンパクトなモジュールおよびインポート形式
 - 軽量なコマンド駆動型ワークフロー
 - 行、列、ヒント、および復旧コンテキストを含む読みやすい診断情報
+- Oxid側のブリッジヘルパーを通じて、C/C++、Java、Pythonとの統合が容易
 - 後で第一級のコンパイラ機能となり得る、再利用可能なプレビューモジュール
 
 参照：
@@ -98,6 +102,7 @@ Oxidは、日常的な作業においてRustよりも短く感じられるよう
 - `docs/SYNTAX.md`
 - `docs/DIAGNOSTICS.md`
 - `docs/MODULES.md`
+- `docs/INTEROP.md`
 - `docs/PACKAGE_WORKFLOW.md`
 - `docs/COMMANDS.md`
 - `docs/ROADMAP.md`

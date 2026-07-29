@@ -13,13 +13,16 @@ Oxid should optimize for short, direct forms.
 - `defer expr`
 - `value |> step()`
 
-## Compact forms to emphasize
+## Additional preview forms
 
-- one-line helpers for tiny functions
-- short import aliases
-- short module summaries
-- short diagnostic hints
-- short build and workflow commands
+- `enum Status { A, B, C }`
+- `trait Readable { ... }`
+- `impl Readable for File { ... }`
+- `async fn fetch()`
+- `await request()`
+- `unsafe { raw_call() }`
+- `Result<Value>`
+- `ffi symbol -> target`
 
 ## Recommended style
 
@@ -27,3 +30,4 @@ Oxid should optimize for short, direct forms.
 - prefer short helper names
 - prefer simple module boundaries
 - prefer readable defaults over hidden magic
+- prefer short bridges over wrapper-heavy integration code

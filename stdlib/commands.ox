@@ -4,6 +4,7 @@ use "frontend/diagnostics.ox";
 use "frontend/syntax.ox";
 use "frontend/modules.ox";
 use "self_host.ox";
+use "interop.ox";
 
 fn command_entry(name, summary) {
     return name + " :: " + summary;
@@ -18,8 +19,11 @@ fn command_catalog() {
         command_entry("emit", "preview lowering and emission"),
         command_entry("module", "preview module resolution"),
         command_entry("syntax", "preview compact forms"),
+        command_entry("interop", "preview cross-language bridges"),
+        command_entry("bridge", "preview export and import shims"),
         command_entry("self-host", "move work into Oxid")
-    ], "\n");
+    ], "
+");
 }
 
 fn command_help(command_name) {
@@ -33,10 +37,21 @@ fn command_preview(project_name, entry_point) {
         frontend_stage_banner(entry_point),
         syntax_summary(),
         module_catalog(),
-        lint_suite()
-    ], "\n");
+        lint_suite(),
+        interop_catalog()
+    ], "
+");
 }
 
 fn command_error(file_path, line, column, message) {
     return fatal_diag(file_path, line, column, message, "use a shorter form or split the command");
+}
+
+fn command_bridge_help() {
+    return join_lines([
+        "oxid interop",
+        "oxid bridge",
+        "oxid self-host",
+        "oxid frontend"
+    ], ", ");
 }

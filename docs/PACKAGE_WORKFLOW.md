@@ -9,6 +9,7 @@
 5. keep runnable examples in `examples/`
 6. keep smoke tests in `tests/`
 7. validate with `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc`
+8. add bridge previews with `oxid interop` and `oxid bridge`
 
 ## Package layout
 
