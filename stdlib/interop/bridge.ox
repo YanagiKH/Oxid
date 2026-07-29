@@ -1,39 +1,14 @@
 use "../strings.ox";
-use "c.ox";
-use "cpp.ox";
-use "java.ox";
-use "python.ox";
 
-fn bridge_target(name) {
-    return "bridge target: " + name;
-}
-
-fn bridge_summary() {
+fn bridge_stub(name) { return "bridge stub: " + name; }
+fn bridge_export(name) { return "export " + name; }
+fn bridge_import(name) { return "import " + name; }
+fn bridge_roundtrip(name) { return bridge_import(name) + " <-> " + bridge_export(name); }
+fn bridge_plan(name) {
     return join_lines([
-        bridge_target("C"),
-        bridge_target("C++"),
-        bridge_target("Java"),
-        bridge_target("Python")
+        bridge_stub(name),
+        bridge_roundtrip(name),
+        "keep the Oxid side readable",
+        "keep the foreign shim minimal"
     ], ", ");
-}
-
-fn bridge_steps() {
-    return join_lines([
-        "generate a stub",
-        "compile the foreign library or runtime",
-        "bind symbols",
-        "run a smoke test",
-        "call Oxid back from the host"
-    ], "
-");
-}
-
-fn bridge_catalog() {
-    return join_lines([
-        c_bridge_summary(),
-        cpp_bridge_summary(),
-        java_bridge_summary(),
-        python_bridge_summary()
-    ], "
-");
 }

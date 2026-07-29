@@ -6,7 +6,6 @@ This folder shows a user-facing Oxid package layout.
 
 - `src/main.ox` contains the application entry.
 - `src/lib.ox` contains reusable package helpers.
-- `src/interop.ox` contains a bridge preview entry.
 - `tests/smoke.ox` contains a smoke test.
 - `oxid.toml` contains package metadata and scripts.
 

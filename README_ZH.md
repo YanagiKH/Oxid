@@ -15,21 +15,20 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 ## 現有功能
 
 - `oxid bootstrap`：驗證啟動路徑
-- `oxid frontend`：預覽詞法分析／語法分析／抽象語法樹／恢復／模組／語法流程
+- `oxid frontend`：預覽詞法分析／語法分析／抽象語法樹／恢復機制／模組／語法流程
 - `oxid diagnose`：渲染與原始碼關聯的診斷資訊
 - `oxid lint`：預覽風格與結構規則
 - `oxid emit`：預覽發行結果
 - `oxid module`：預覽模組解析
 - `oxid syntax`：預覽簡化語法形式
-- `oxid self-host`：彙整從 Rust 遷移的途徑
-- `oxid interop` 新增橋接預覽功能
-- `oxid bridge` 新增橋接預覽功能
+- `oxid interop`：預覽 C/C++/Java/Python 橋接支援範圍
+- `oxid bridge`：預覽雙向橋接輔助函式
+- `oxid self-host`：彙總從 Rust 遷移的途徑
 - `oxid run <file.ox>`：執行腳本
 - `oxid script <name> [args...]`：執行清單腳本
 - `oxid repl`：互動式 REPL
 - `oxid check <file.ox>`：語法檢查
 - `oxid new <專案名稱>` / `oxid init <專案名稱>`：建立專案骨架
-- `oxid init <專案名稱>`：預覽風格與結構規則
 - `oxid add <名稱> <路徑或目標>`：新增依賴項條目
 - `oxid watch <file.ox>`：監控檔案並重新執行
 - `oxid build`：驗證專案
@@ -71,6 +70,7 @@ oxid emit
 oxid module
 oxid syntax
 oxid interop
+oxid bridge
 oxid self-host
 ```
 

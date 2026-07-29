@@ -5,4 +5,5 @@ fn main() {
     print interop_catalog();
     print interop_bridge_summary();
     print interop_quickstart();
+    print interop_goal();
 }

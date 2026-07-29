@@ -1,33 +1,17 @@
 # Diagnostics
 
-Oxid diagnostics should be compact, structured, and actionable.
+Oxid diagnostics are intended to be readable and source-linked.
 
-## Required parts
+## Desired shape
 
-- severity
+- error or warning kind
+- code
 - file path
-- line
-- column
-- message
-- hint
+- line and column
+- human-readable message
+- short hint
 - recovery suggestion when possible
-- stable error code when possible
 
-## Output shape
+## Intent
 
-A diagnostic should read like:
-
-```text
-error: message
- --> file.ox:12:8
-  = help: small hint
-```
-
-## Better-than-minimum behavior
-
-- include a snippet when available
-- include a suggestion when a parse shape can be simplified
-- classify recoverable warnings separately from hard errors
-- keep the wording short
-- keep the fix close to the source of the issue
-- include code families for parse, module, and interop problems
+The diagnostics layer should be usable from Oxid-owned preview modules before the Rust bootstrap layer is reduced further.

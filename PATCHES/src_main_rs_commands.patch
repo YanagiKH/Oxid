@@ -2,7 +2,7 @@
 --- b/src/main.rs
 @@
  fn help() {
-     println!("Oxid 0.5.2");
+     println!("Oxid 0.7.0");
      println!("Usage:");
      println!("  oxid run <file.ox>");
      println!("  oxid script <name> [args...]");
@@ -13,9 +13,13 @@
 +    println!("  oxid emit");
 +    println!("  oxid module");
 +    println!("  oxid syntax");
++    println!("  oxid interop");
++    println!("  oxid bridge");
 +    println!("  oxid self-host");
      println!("  oxid check <file.ox>");
      println!("  oxid repl");
+     println!("  oxid new <project-name>");
+     println!("  oxid init <project-name>");
 @@
          Some("script") => match args.get(2) {
              Some(name) => run_manifest_script(Path::new("."), name, &args[3..]),
@@ -28,7 +32,10 @@
 +        Some("emit") => run_file(Path::new("tools/emit.ox"), &mut interp),
 +        Some("module") => run_file(Path::new("tools/module.ox"), &mut interp),
 +        Some("syntax") => run_file(Path::new("tools/syntax.ox"), &mut interp),
++        Some("interop") => run_file(Path::new("tools/interop.ox"), &mut interp),
++        Some("bridge") => run_file(Path::new("tools/bridge.ox"), &mut interp),
 +        Some("self-host") => run_file(Path::new("tools/self_host.ox"), &mut interp),
          Some("check") => match args.get(2) {
              Some(file) => {
                  let path = Path::new(file);
+                 let source = fs::read_to_string(path).map_err(|e| format!("cannot read file: {} ({})", path.display(), e));

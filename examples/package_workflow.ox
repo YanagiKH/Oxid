@@ -1,8 +1,8 @@
-use "../stdlib/prelude.ox";
+use "../stdlib/package.ox";
+use "../stdlib/workflow.ox";
 
 fn main() {
-    let manifest = package_manifest_header("demo", "0.7.0", "src/main.ox");
+    let manifest = "[project]\nname = \"demo\"\nversion = \"0.5.3\"\nentry = \"src/main.ox\"\n\n[scripts]\nrun = \"oxid run src/main.ox\"\ntest = \"oxid test\"\n";
     print package_summary(manifest);
-    print package_scripts_hint();
-    print package_load_hint("demo", "src/main.ox");
+    print workflow_preview("demo");
 }

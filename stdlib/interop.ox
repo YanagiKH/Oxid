@@ -10,8 +10,7 @@ fn interop_catalog() {
         "C++: cpp_namespace, cpp_class, cpp_method",
         "Java: java_package, java_class, java_method",
         "Python: python_module, python_function, python_script"
-    ], "
-");
+    ], "\n");
 }
 
 fn interop_bridge_summary() {
@@ -20,8 +19,7 @@ fn interop_bridge_summary() {
         cpp_bridge_summary(),
         java_bridge_summary(),
         python_bridge_summary()
-    ], "
-");
+    ], "\n");
 }
 
 fn interop_quickstart() {
@@ -31,8 +29,7 @@ fn interop_quickstart() {
         "3. link the native library or runtime",
         "4. call it from Oxid",
         "5. expose Oxid back to the foreign host"
-    ], "
-");
+    ], "\n");
 }
 
 fn interop_goal() {

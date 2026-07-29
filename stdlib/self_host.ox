@@ -39,8 +39,7 @@ fn self_host_plan(project_name, entry_point) {
         module_catalog(),
         interop_catalog(),
         diag_suggestion("run", "oxid self-host")
-    ], "
-");
+    ], "\n");
 }
 
 fn self_host_command_list() {

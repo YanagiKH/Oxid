@@ -22,8 +22,7 @@ fn command_catalog() {
         command_entry("interop", "preview cross-language bridges"),
         command_entry("bridge", "preview export and import shims"),
         command_entry("self-host", "move work into Oxid")
-    ], "
-");
+    ], "\n");
 }
 
 fn command_help(command_name) {
@@ -39,8 +38,7 @@ fn command_preview(project_name, entry_point) {
         module_catalog(),
         lint_suite(),
         interop_catalog()
-    ], "
-");
+    ], "\n");
 }
 
 fn command_error(file_path, line, column, message) {

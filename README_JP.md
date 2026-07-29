@@ -21,23 +21,22 @@ Oxid は Rust の派生言語であり、独自のセルフホスト型言語ツ
 - `oxid emit`: エミッションのプレビュー
 - `oxid module`: モジュール解決のプレビュー
 - `oxid syntax`: 短縮構文形式をプレビュー
-- `oxid self-host`: Rustからの移行パスを要約
-- `oxid interop`：ブリッジのプレビューを追加
-- `oxid bridge`：ブリッジのプレビューを追加
+- `oxid interop`: C/C++/Java/Python ブリッジの対応範囲をプレビュー
+- `oxid bridge`: 双方向ブリッジヘルパーをプレビュー
+- `oxid self-host`: Rust からの移行パスを要約
 - `oxid run <file.ox>`: スクリプトを実行
 - `oxid script <name> [args...]`: マニフェストスクリプトを実行
 - `oxid repl`: 対話型REPL
 - `oxid check <file.ox>`: 構文チェック
-- `oxid new <プロジェクト名>` / `oxid init <プロジェクト名>`: プロジェクトのスケルトンを作成
-- `oxid init <プロジェクト名>`: スタイルおよび構造ルールをプレビュー
-- `oxid add <名前> <パスまたはターゲット>`: 依存関係エントリを追加
-- `oxid watch <file.ox>`: ファイルを監視し、再実行する
-- `oxid build`: プロジェクトを検証する
-- `oxid clean`: ビルドキャッシュをクリアする
-- `oxid fmt [path]`: Oxidソースファイルをフォーマットする
-- `oxid test`: スモークテストとサンプルを実行する
-- `oxid doctor`: プロジェクトの状態を確認する
-- `oxid doc`: APIドキュメントを生成する
+- `oxid new <project-name>` / `oxid init <project-name>`: プロジェクトのスケルトン生成
+- `oxid add <name> <path-or-target>`: 依存関係エントリの追加
+- `oxid watch <file.ox>`: ファイルを監視し、変更時に再実行
+- `oxid build`: プロジェクトの検証
+- `oxid clean`: ビルドキャッシュのクリア
+- `oxid fmt [path]`: Oxidソースファイルのフォーマット
+- `oxid test`: スモークテストとサンプルを実行
+- `oxid doctor`: プロジェクトの状態を確認
+- `oxid doc`: APIドキュメントを生成
 
 ## 言語機能
 
@@ -71,6 +70,7 @@ oxid emit
 oxid module
 oxid syntax
 oxid interop
+oxid bridge
 oxid self-host
 ```
 

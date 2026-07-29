@@ -1,6 +1,6 @@
 # Self-hosting plan
 
-Oxid is still bootstraped by Rust, but the codebase now treats that as a temporary boundary instead of a permanent design.
+Oxid is still bootstrapped by Rust, but the codebase now treats that as a temporary boundary instead of a permanent design.
 
 ## Stage 1: isolate Rust
 

@@ -21,15 +21,14 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 - `oxid emit`: preview emission
 - `oxid module`: preview module resolution
 - `oxid syntax`: preview the shorter syntax forms
+- `oxid interop`: preview C/C++/Java/Python bridge coverage
+- `oxid bridge`: preview bidirectional bridge helpers
 - `oxid self-host`: summarize the migration path away from Rust
-- `oxid interop`add bridge previews
-- `oxid bridge`add bridge previews
 - `oxid run <file.ox>`: run a script
 - `oxid script <name> [args...]`: execute a manifest script
 - `oxid repl`: interactive REPL
 - `oxid check <file.ox>`: syntax check
 - `oxid new <project-name>` / `oxid init <project-name>`: scaffold a project
-- `oxid init <project-name>`: preview style and structural rules
 - `oxid add <name> <path-or-target>`: add a dependency entry
 - `oxid watch <file.ox>`: watch files and rerun
 - `oxid build`: validate the project
@@ -60,6 +59,7 @@ oxid emit
 oxid module
 oxid syntax
 oxid interop
+oxid bridge
 oxid self-host
 ```
 
