@@ -91,12 +91,6 @@ Oxid should feel shorter than Rust for everyday work:
 - reusable preview modules that can later become first-class compiler features
 - a clear path for modern network services, web APIs, Discord bots, and other event-driven applications
 
-## Module families
-
-- `stdlib/event.ox` for event-driven orchestration helpers
-- `stdlib/web.ox` for web-service planning helpers
-- `stdlib/bots/discord.ox` for Discord bot planning helpers
-
 ## Read
 
 - `docs/SELF_HOSTING.md`

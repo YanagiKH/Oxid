@@ -60,7 +60,7 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 - `examples/` 包含可執行的 Oxid 範例
 - `tools/` 包含 Oxid 工作流程預覽
 - `packages/demo/` 包含面向使用者的套件結構
-- `docs/` 包含工作流程、編譯器、語法、診斷及互通性說明
+- `docs/` 包含工作流程、編譯器、語法、診斷、互通性、安全性及網路應用相關說明
 - `tests/` 包含煙霧測試
 
 ## 建議的首次執行步驟
@@ -100,10 +100,12 @@ oxid self-host
 - 包含行號、欄位、提示及恢復上下文的可讀性高的診斷訊息
 - 透過 Oxid 端的橋接輔助程式，可輕鬆與 C/C++、Java 及 Python 整合
 - 可重複使用的預覽模組，日後可成為一級編譯器功能
+- 為現代網路服務、Web API、Discord 機器人及其他事件驅動型應用程式提供明確的發展路徑
 
 請參閱：
 
 - `docs/SELF_HOSTING.md`
+- `docs/WEB_AND_BOTS.md`
 - `docs/FRONTEND.md`
 - `docs/SYNTAX.md`
 - `docs/DIAGNOSTICS.md`
@@ -112,3 +114,4 @@ oxid self-host
 - `docs/PACKAGE_WORKFLOW.md`
 - `docs/COMMANDS.md`
 - `docs/ROADMAP.md`
+- `SECURITY.md`
