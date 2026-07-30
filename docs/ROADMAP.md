@@ -15,6 +15,7 @@
 - add richer syntax previews
 - add more command shims and docs
 - add dedicated interop bridge generators
+- add web-service, Discord-bot, and event-driven module families
 
 ## Later
 
@@ -22,3 +23,4 @@
 - keep Rust as a fallback boundary only
 - make Oxid the main language used by contributors
 - make foreign-language calling feel like a single-step Oxid workflow
+- make Oxid a practical systems language for modern network services
