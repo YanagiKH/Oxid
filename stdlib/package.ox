@@ -33,7 +33,7 @@ fn package_manifest_header(name, version, entry) {
 }
 
 fn package_scripts_hint() {
-    return "bootstrap, frontend, diagnose, lint, emit, module, syntax, self-host";
+    return "bootstrap, compile, self-compile, frontend, diagnose, lint, emit, module, syntax, self-host";
 }
 
 fn package_load_hint(name, entry) {
