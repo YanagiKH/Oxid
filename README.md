@@ -56,6 +56,8 @@ The bootstrap, compile, and self-compile workflows are also exposed as Oxid scri
 
 ```bash
 oxid bootstrap
+oxid compile
+oxid self-compile
 oxid frontend
 oxid diagnose
 oxid lint
