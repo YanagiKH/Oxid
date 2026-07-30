@@ -3,6 +3,7 @@ use "math.ox";
 use "strings.ox";
 use "errors.ox";
 use "package.ox";
+use "bootstrap.ox";
 use "compiler.ox";
 use "cache.ox";
 use "debug.ox";
