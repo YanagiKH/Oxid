@@ -40,7 +40,7 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 - `oxid doctor`: verify project health
 - `oxid doc`: generate API docs
 
-The bootstrap, compile, and self-compile workflows are also exposed as Oxid scripts in `oxid.toml`, so the repository can run those previews directly from the source tree.
+The bootstrap, compile, and self-compile workflows are available as native commands and mirrored as Oxid scripts in `oxid.toml`, so the repository can run those previews directly from the source tree.
 
 ## Repository layout
 
