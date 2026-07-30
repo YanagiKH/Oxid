@@ -7,6 +7,8 @@
      println!("  oxid run <file.ox>");
      println!("  oxid script <name> [args...]");
 +    println!("  oxid bootstrap");
++    println!("  oxid compile");
++    println!("  oxid self-compile");
 +    println!("  oxid frontend");
 +    println!("  oxid diagnose");
 +    println!("  oxid lint");
@@ -26,14 +28,9 @@
              None => Err("`oxid script` requires a script name".to_string()),
          },
 +        Some("bootstrap") => run_file(Path::new("tools/bootstrap.ox"), &mut interp),
-+        Some("frontend") => run_file(Path::new("tools/frontend.ox"), &mut interp),
-+        Some("diagnose") => run_file(Path::new("tools/diagnose.ox"), &mut interp),
-+        Some("lint") => run_file(Path::new("tools/lint.ox"), &mut interp),
-+        Some("emit") => run_file(Path::new("tools/emit.ox"), &mut interp),
-+        Some("module") => run_file(Path::new("tools/module.ox"), &mut interp),
-+        Some("syntax") => run_file(Path::new("tools/syntax.ox"), &mut interp),
-+        Some("interop") => run_file(Path::new("tools/interop.ox"), &mut interp),
-+        Some("bridge") => run_file(Path::new("tools/bridge.ox"), &mut interp),
++        Some("compile") => run_file(Path::new("tools/compile.ox"), &mut interp),
++        Some("self-compile") => run_file(Path::new("tools/self_compile.ox"), &mut interp),
++        Some("frontend") => run_file(Path::new("tools/frontend_preview.ox"), &mut interp),
 +        Some("self-host") => run_file(Path::new("tools/self_host.ox"), &mut interp),
          Some("check") => match args.get(2) {
              Some(file) => {
