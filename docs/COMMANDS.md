@@ -1,26 +1,26 @@
 # Commands
 
-This repository treats commands as a first-class language surface.
+This repository treats scripts as a first-class language surface.
 
-## Core commands
+## Core script entry points
 
-- `oxid bootstrap`
-- `oxid frontend`
-- `oxid diagnose`
-- `oxid lint`
-- `oxid emit`
-- `oxid module`
-- `oxid syntax`
-- `oxid interop`
-- `oxid bridge`
-- `oxid self-host`
+- `oxid script bootstrap`
+- `oxid script compile`
+- `oxid script frontend`
+- `oxid script diagnose`
+- `oxid script lint`
+- `oxid script emit`
+- `oxid script module`
+- `oxid script syntax`
+- `oxid script interop`
+- `oxid script bridge`
+- `oxid script self-host`
 
 ## Project commands
 
 - `oxid run`
-- `oxid script`
-- `oxid repl`
 - `oxid check`
+- `oxid repl`
 - `oxid new`
 - `oxid init`
 - `oxid add`
@@ -34,4 +34,4 @@ This repository treats commands as a first-class language surface.
 
 ## Intent
 
-The command surface should stay short, obvious, and scriptable. Bridge commands should make foreign-language integration feel like a normal Oxid workflow rather than a separate ecosystem.
+The command surface should stay short, obvious, and scriptable. Bootstrap and compiler previews should live in Oxid source files, while the Rust runtime stays as the minimal execution boundary.
