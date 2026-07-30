@@ -1,4 +1,5 @@
 *.ox linguist-language=Oxid
+*.rs linguist-language=Oxid
 src/main.rs linguist-generated=true
 build.rs linguist-generated=true
 native/*.c linguist-generated=true
