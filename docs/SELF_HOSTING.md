@@ -1,41 +1,38 @@
 # Self-hosting plan
 
-Oxid is still bootstrapped by Rust, but the codebase now treats that as a temporary boundary instead of a permanent design.
+Oxid is still bootstrapped by Rust, but the repository now treats that boundary as a thin compatibility layer instead of the permanent design.
 
-## Stage 1: isolate Rust
+## Stage 1: bootstrap preview
 
-- keep Rust only for the minimal bootstrap/runtime boundary
-- move command orchestration into Oxid source files
-- centralize diagnostics formatting in Oxid modules
-- centralize module resolution in Oxid modules
-- keep all preview logic in reusable Oxid helpers
+- keep the bootstrap story in Oxid source files
+- expose the bootstrap view through `tools/bootstrap.ox`
+- keep the Rust runtime focused on loading and running Oxid scripts
+- keep bootstrap output short and readable
 
-## Stage 2: move compiler-facing previews into Oxid
+## Stage 2: compiler preview
 
-- move parser helpers into Oxid-owned modules
-- move syntax preview and validation into Oxid-owned modules
-- add structured front-end stages
-- add diagnostic categories and suggestion helpers
-- add command catalog helpers for the CLI
+- keep compiler-facing snapshots in Oxid source files
+- expose the compiler view through `tools/compile.ox`
+- centralize phase, command, and hint text in `stdlib/compiler.ox`
+- make the compiler preview consumable from `oxid script compile`
 
-## Stage 3: make Oxid the working language of the toolchain
+## Stage 3: self-host preview
 
-- move more compiler workflow code into Oxid
-- reduce Rust-specific project logic
-- keep native and bootstrap logic isolated
-- keep the Rust layer small and stable
-- let Oxid define the visible workflow surface
+- keep the self-host story in Oxid source files
+- expose the migration summary through `tools/self_host.ox`
+- keep the Rust layer as the fallback execution boundary
+- make the visible toolchain surface readable from Oxid code first
 
-## Stage 4: self-host by default
+## Stage 4: regression coverage
 
-- make Oxid the primary development language for the compiler toolchain
-- keep Rust only as an optional compatibility backstop
-- preserve bootstrap scripts for recovery
-- preserve a small native layer for platform-specific entry points
+- `tests/bootstrap_smoke.ox`
+- `tests/compiler_smoke.ox`
+- `tests/self_host_smoke.ox`
+- GitHub Actions should run the same script entry points used locally
 
 ## Success criteria
 
-- build and workflow helpers are written in Oxid where possible
-- syntax and diagnostics are described by Oxid modules first
-- examples, packages, and scripts are Oxid-native
-- the bootstrap path becomes a thin compatibility layer only
+- bootstrap, compiler, and self-host previews are all runnable from Oxid scripts
+- the compiler snapshot is produced from `stdlib/compiler.ox`
+- the manifest exposes the same entry points used in local development
+- CI fails if the preview scripts stop running
