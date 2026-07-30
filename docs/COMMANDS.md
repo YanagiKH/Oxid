@@ -5,6 +5,8 @@ This repository treats commands as a first-class language surface.
 ## Core commands
 
 - `oxid bootstrap`
+- `oxid compile`
+- `oxid self-compile`
 - `oxid frontend`
 - `oxid diagnose`
 - `oxid lint`
@@ -34,4 +36,4 @@ This repository treats commands as a first-class language surface.
 
 ## Intent
 
-The command surface should stay short, obvious, and scriptable. Bridge commands should make foreign-language integration feel like a normal Oxid workflow rather than a separate ecosystem.
+The command surface should stay short, obvious, and scriptable. The bootstrap, compile, and self-compile workflows are now exposed as Oxid tool scripts in `oxid.toml`, keeping the repository runnable before the native command surface is fully self-hosted.
