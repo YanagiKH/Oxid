@@ -1,29 +1,40 @@
 use "strings.ox";
-use "errors.ox";
 use "package.ox";
+use "frontend/pipeline.ox";
+use "frontend/modules.ox";
 
-fn stage_name(name) {
-    return "[" + name + "]";
+fn compile_goal() {
+    return "Oxid compiles Oxid source without leaving the language surface";
 }
 
-fn backend_name(name) {
-    return "backend:" + name;
+fn compile_command_list() {
+    return join_lines([
+        "oxid bootstrap",
+        "oxid compile",
+        "oxid self-compile",
+        "oxid self-host"
+    ], ", ");
 }
 
-fn target_name(name, profile) {
-    return name + ":" + profile;
+fn compiler_banner(project_name, version, entry_point) {
+    return package_summary(package_manifest_header(project_name, version, entry_point));
 }
 
-fn compiler_banner(project_name, version) {
-    return package_name("name = "" + project_name + ""\nversion = "" + version + ""\nentry = "src/main.ox"\n");
+fn compile_plan(project_name, version, entry_point) {
+    return compile_snapshot(project_name, version, entry_point);
 }
 
-fn compile_plan(project_name, version, backend) {
-    let out = "";
-    out = out + stage_name("parse") + "\n";
-    out = out + stage_name("check") + "\n";
-    out = out + stage_name("lower") + "\n";
-    out = out + backend_name(backend) + "\n";
-    out = out + compiler_banner(project_name, version);
-    return out;
+fn compile_snapshot(project_name, version, entry_point) {
+    return join_lines([
+        compile_goal(),
+        compiler_banner(project_name, version, entry_point),
+        frontend_compile_plan(project_name, version, entry_point),
+        frontend_pipeline(entry_point),
+        module_catalog(),
+        compile_command_list()
+    ], "\n");
+}
+
+fn compile_summary(project_name, version, entry_point) {
+    return compile_snapshot(project_name, version, entry_point);
 }
