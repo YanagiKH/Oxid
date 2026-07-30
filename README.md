@@ -10,23 +10,24 @@
 
 Oxid is a derivative of Rust and features its own self-hosted language toolchain. Its goal is to create a language that is faster, more concise, and easier to read than Rust, with its own syntax, modules, command-line workflow, and diagnostic model.
 
-The goal is not to stay as a thin wrapper. The project is organized so that everyday development work gradually moves into Oxid source files: standard library modules, examples, tooling scripts, package workflows, and project documentation.
+The repository is organized so that the visible toolchain surface lives in Oxid source files first: bootstrap previews, compiler previews, standard library modules, examples, tooling scripts, package workflows, and project documentation.
 
-## Current command surface
+## Current tool surface
 
-- `oxid bootstrap`: validate the bootstrap path
-- `oxid frontend`: preview lex / parse / AST / recovery / module / syntax flow
-- `oxid diagnose`: render source-linked diagnostics
-- `oxid lint`: preview style and structural rules
-- `oxid emit`: preview emission
-- `oxid module`: preview module resolution
-- `oxid syntax`: preview the shorter syntax forms
-- `oxid interop`: preview C/C++/Java/Python bridge coverage
-- `oxid bridge`: preview bidirectional bridge helpers
-- `oxid self-host`: summarize the migration path away from Rust
+Run these through manifest scripts while developing from the repository root:
+
+- `oxid script bootstrap`: preview the bootstrap path
+- `oxid script compile`: preview the compile path
+- `oxid script frontend`: preview lex / parse / AST / recovery / module / syntax flow
+- `oxid script diagnose`: preview source-linked diagnostics
+- `oxid script lint`: preview style and structural rules
+- `oxid script emit`: preview emission
+- `oxid script module`: preview module resolution
+- `oxid script syntax`: preview the shorter syntax forms
+- `oxid script interop`: preview C/C++/Java/Python bridge coverage
+- `oxid script bridge`: preview bidirectional bridge helpers
+- `oxid script self-host`: summarize the migration path away from Rust
 - `oxid run <file.ox>`: run a script
-- `oxid script <name> [args...]`: execute a manifest script
-- `oxid repl`: interactive REPL
 - `oxid check <file.ox>`: syntax check
 - `oxid new <project-name>` / `oxid init <project-name>`: scaffold a project
 - `oxid add <name> <path-or-target>`: add a dependency entry
@@ -51,16 +52,12 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 ## Recommended first run
 
 ```bash
-oxid bootstrap
-oxid frontend
-oxid diagnose
-oxid lint
-oxid emit
-oxid module
-oxid syntax
-oxid interop
-oxid bridge
-oxid self-host
+oxid script bootstrap
+oxid script compile
+oxid script frontend
+oxid script self-host
+oxid run src/main.ox
+oxid test
 ```
 
 ## Package-first workflow
@@ -87,6 +84,7 @@ Oxid should feel shorter than Rust for everyday work:
 Read:
 
 - `docs/SELF_HOSTING.md`
+- `docs/COMPILER.md`
 - `docs/FRONTEND.md`
 - `docs/SYNTAX.md`
 - `docs/DIAGNOSTICS.md`
