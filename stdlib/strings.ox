@@ -28,8 +28,8 @@ fn index_of(text, needle) {
     while (i <= len(text) - len(needle)) {
         let j = 0;
         let matched = true;
-        while (j < len(needle)) {
-            if (text[i + j] != needle[j]) { matched = false; break; }
+        while (matched and j < len(needle)) {
+            if (text[i + j] != needle[j]) { matched = false; }
             j = j + 1;
         }
         if (matched) { return i; }
