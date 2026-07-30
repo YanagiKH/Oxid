@@ -17,6 +17,7 @@ use "frontend/emit.ox";
 use "frontend/lint.ox";
 use "commands.ox";
 use "self_host.ox";
+use "self_compile.ox";
 use "interop.ox";
 use "interop/c.ox";
 use "interop/cpp.ox";
