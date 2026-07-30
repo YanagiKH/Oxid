@@ -18,9 +18,10 @@ Oxid bootstrap should keep the native edge as small as possible while still desc
 
 ## Entry point
 
-The repository now exposes bootstrap through the Oxid tool scripts in `oxid.toml` so users can run the workflow directly from the source tree:
+The repository exposes bootstrap as a native command and keeps the Oxid script as a mirrored entry point for convenience:
 
 ```bash
+oxid bootstrap
 oxid script bootstrap
 ```
 
