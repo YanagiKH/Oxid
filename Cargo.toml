@@ -3,8 +3,13 @@ name = "oxid"
 version = "0.7.0"
 edition = "2021"
 build = "build.rs"
+autobins = false
 description = "Oxid experimental language runtime"
 license = "MIT"
+
+[[bin]]
+name = "oxid"
+path = "src/cli.rs"
 
 [dependencies]
 
