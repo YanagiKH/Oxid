@@ -1,0 +1,31 @@
+name: self-host
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  preview-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust build smoke
+        run: cargo test --quiet
+
+      - name: Bootstrap preview
+        run: cargo run --quiet -- script bootstrap
+
+      - name: Compiler preview
+        run: cargo run --quiet -- script compile
+
+      - name: Self-host preview
+        run: cargo run --quiet -- script self-host
+
+      - name: Oxid test suite
+        run: cargo run --quiet -- test
