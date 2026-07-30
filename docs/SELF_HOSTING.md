@@ -17,6 +17,7 @@ Oxid is still bootstrapped by Rust, but the codebase now treats that as a tempor
 - add structured front-end stages
 - add diagnostic categories and suggestion helpers
 - add command catalog helpers for the CLI
+- add compile and self-compile snapshots
 
 ## Stage 3: make Oxid the working language of the toolchain
 
@@ -39,3 +40,4 @@ Oxid is still bootstrapped by Rust, but the codebase now treats that as a tempor
 - syntax and diagnostics are described by Oxid modules first
 - examples, packages, and scripts are Oxid-native
 - the bootstrap path becomes a thin compatibility layer only
+- the self-compile path can describe itself from Oxid code
