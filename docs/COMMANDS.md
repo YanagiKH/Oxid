@@ -36,4 +36,4 @@ This repository treats commands as a first-class language surface.
 
 ## Intent
 
-The command surface should stay short, obvious, and scriptable. The bootstrap, compile, and self-compile workflows are now exposed as Oxid tool scripts in `oxid.toml`, keeping the repository runnable before the native command surface is fully self-hosted.
+The command surface should stay short, obvious, and scriptable. The bootstrap, compile, and self-compile workflows are now available as native commands and are mirrored by the scripts in `oxid.toml` for users who prefer manifest-driven entry points.
