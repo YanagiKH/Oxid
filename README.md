@@ -14,18 +14,18 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 
 ## Current command surface
 
-- `oxid bootstrap`
-- `oxid compile`
-- `oxid self-compile`
-- `oxid frontend`
-- `oxid diagnose`
-- `oxid lint`
-- `oxid emit`
-- `oxid module`
-- `oxid syntax`
-- `oxid interop`
-- `oxid bridge`
-- `oxid self-host`
+- `oxid bootstrap`: validate the bootstrap path
+- `oxid compile`: validate the compile path
+- `oxid self-compile`: validate the self-compile path
+- `oxid frontend`: preview lex / parse / AST / recovery / module / syntax flow
+- `oxid diagnose`: render source-linked diagnostics
+- `oxid lint`: preview style and structural rules
+- `oxid emit`: preview emission
+- `oxid module`: preview module resolution
+- `oxid syntax`: preview the shorter syntax forms
+- `oxid interop`: preview C/C++/Java/Python bridge coverage
+- `oxid bridge`: preview bidirectional bridge helpers
+- `oxid self-host`: summarize the migration path away from Rust
 - `oxid run <file.ox>`: run a script
 - `oxid script <name> [args...]`: execute a manifest script
 - `oxid repl`: interactive REPL

@@ -15,6 +15,8 @@ Oxid は Rust の派生言語であり、独自のセルフホスト型言語ツ
 ## 現在利用可能な機能
 
 - `oxid bootstrap`: ブートストラップパスの検証
+- `oxid compile`: コンパイルパスを検証する
+- `oxid self-compile`: セルフコンパイルパスを検証する
 - `oxid frontend`: レキシカル解析／構文解析／AST／リカバリ／モジュール／構文フローのプレビュー
 - `oxid diagnose`: ソースにリンクされた診断情報の表示
 - `oxid lint`: スタイルおよび構造に関するルールのプレビュー
@@ -37,6 +39,8 @@ Oxid は Rust の派生言語であり、独自のセルフホスト型言語ツ
 - `oxid test`: スモークテストとサンプルを実行
 - `oxid doctor`: プロジェクトの状態を確認
 - `oxid doc`: APIドキュメントを生成
+
+「bootstrap」、「compile」、「self-compile」の各ワークフローは、ネイティブコマンドとして利用可能であり、`oxid.toml` 内に Oxid スクリプトとしても反映されているため、リポジトリはソースツリーから直接これらのプレビューを実行できます。
 
 ## 言語機能
 
@@ -63,6 +67,8 @@ Oxid は Rust の派生言語であり、独自のセルフホスト型言語ツ
 
 ```bash
 oxid bootstrap
+oxid compile
+oxid self-compile
 oxid frontend
 oxid diagnose
 oxid lint

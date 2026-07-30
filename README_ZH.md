@@ -15,6 +15,8 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 ## 現有功能
 
 - `oxid bootstrap`：驗證啟動路徑
+- `oxid compile`：驗證編譯路徑
+- `oxid self-compile`：驗證自編譯路徑
 - `oxid frontend`：預覽詞法分析／語法分析／抽象語法樹／恢復機制／模組／語法流程
 - `oxid diagnose`：渲染與原始碼關聯的診斷資訊
 - `oxid lint`：預覽風格與結構規則
@@ -37,6 +39,8 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 - `oxid test`：執行煙霧測試與範例
 - `oxid doctor`：驗證專案健康狀態
 - `oxid doc`：產生 API 文件
+
+「bootstrap」、「compile」和「self-compile」工作流程皆以原生指令的形式提供，並在 `oxid.toml` 中以 Oxid 腳本的形式對應，因此該儲存庫可直接從原始碼樹執行這些預覽功能。
 
 ## 語言特性
 
@@ -63,6 +67,8 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 
 ```bash
 oxid bootstrap
+oxid compile
+oxid self-compile
 oxid frontend
 oxid diagnose
 oxid lint
