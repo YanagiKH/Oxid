@@ -49,7 +49,7 @@ The bootstrap, compile, and self-compile workflows are available as native comma
 - `examples/` contains runnable Oxid examples
 - `tools/` contains Oxid workflow previews
 - `packages/demo/` contains a user-facing package layout
-- `docs/` contains workflow, compiler, syntax, diagnostics, and interop notes
+- `docs/` contains workflow, compiler, syntax, diagnostics, interop, security, and network-app notes
 - `tests/` contains smoke tests
 
 ## Recommended first run
@@ -89,10 +89,18 @@ Oxid should feel shorter than Rust for everyday work:
 - readable diagnostics with line, column, hint, and recovery context
 - easy integration with C/C++, Java, and Python through Oxid-side bridge helpers
 - reusable preview modules that can later become first-class compiler features
+- a clear path for modern network services, web APIs, Discord bots, and other event-driven applications
 
-Read:
+## Module families
+
+- `stdlib/event.ox` for event-driven orchestration helpers
+- `stdlib/web.ox` for web-service planning helpers
+- `stdlib/bots/discord.ox` for Discord bot planning helpers
+
+## Read
 
 - `docs/SELF_HOSTING.md`
+- `docs/WEB_AND_BOTS.md`
 - `docs/FRONTEND.md`
 - `docs/SYNTAX.md`
 - `docs/DIAGNOSTICS.md`
@@ -101,3 +109,4 @@ Read:
 - `docs/PACKAGE_WORKFLOW.md`
 - `docs/COMMANDS.md`
 - `docs/ROADMAP.md`
+- `SECURITY.md`
