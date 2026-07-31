@@ -6,7 +6,7 @@ Security fixes are provided on the current main branch and the latest release li
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a security vulnerability.
+Please report security issues through GitHub Security Advisories for this repository. If that is not available, open a private security report instead of a public issue whenever possible.
 
 Send a private report that includes:
 
