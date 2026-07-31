@@ -12,6 +12,9 @@ Oxid is a derivative of Rust and features its own self-hosted language toolchain
 
 The goal is not to stay as a thin wrapper. The project is organized so that everyday development work gradually moves into Oxid source files: standard library modules, examples, tooling scripts, package workflows, and project documentation.
 
+> [!CAUTION]
+> Currently, this repository still treats Rust as a fallback boundary, so you need to install [Rust](https://github.com/rust-lang/rust) as a dependency.
+
 ## Current command surface
 
 - `oxid bootstrap`: validate the bootstrap path
@@ -40,7 +43,8 @@ The goal is not to stay as a thin wrapper. The project is organized so that ever
 - `oxid doctor`: verify project health
 - `oxid doc`: generate API docs
 
-The bootstrap, compile, and self-compile workflows are available as native commands and mirrored as Oxid scripts in `oxid.toml`, so the repository can run those previews directly from the source tree.
+> [!NOTE]
+> The bootstrap, compile, and self-compile workflows are available as native commands and mirrored as Oxid scripts in `oxid.toml`, so the repository can run those previews directly from the source tree.
 
 ## Repository layout
 

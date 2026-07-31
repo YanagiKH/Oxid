@@ -12,6 +12,9 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 
 其目標並非僅止於作為一個輕量級的封裝層。該專案的組織架構旨在讓日常開發工作逐步轉移至 Oxid 原始碼檔案中，包括標準函式庫模組、範例、工具腳本、套件工作流程以及專案文件。
 
+> [!CAUTION]
+> 目前該儲存庫仍把 Rust 定位成 fallback boundary, 所以需要安裝 [Rust](https://github.com/rust-lang/rust) 作為依賴項
+
 ## 現有功能
 
 - `oxid bootstrap`：驗證啟動路徑
@@ -40,7 +43,8 @@ Oxid 是 Rust 的衍生語言，並具備專屬的自宿主式語言工具鏈。
 - `oxid doctor`：驗證專案健康狀態
 - `oxid doc`：產生 API 文件
 
-「bootstrap」、「compile」和「self-compile」工作流程皆以原生指令的形式提供，並在 `oxid.toml` 中以 Oxid 腳本的形式對應，因此該儲存庫可直接從原始碼樹執行這些預覽功能。
+> [!NOTE]
+> 「bootstrap」、「compile」和「self-compile」工作流程皆以原生指令的形式提供，並在 `oxid.toml` 中以 Oxid 腳本的形式對應，因此該儲存庫可直接從原始碼樹執行這些預覽功能。
 
 ## 語言特性
 
