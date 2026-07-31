@@ -1,0 +1,39 @@
+{
+  "project": "Oxid",
+  "copyright": {
+    "holder": "Oxid Project",
+    "year": 2026
+  },
+  "licenses": [
+    {
+      "id": "MIT",
+      "spdx": "MIT",
+      "path": "LICENSE"
+    },
+    {
+      "id": "Apache-2.0",
+      "spdx": "Apache-2.0",
+      "path": "LICENSE-APACHE"
+    }
+  ],
+  "license_expression": "MIT OR Apache-2.0",
+  "language_overrides": [
+    {
+      "pattern": "*.ox",
+      "language": "Oxid",
+      "detectable": true
+    },
+    {
+      "pattern": "*.rs",
+      "generated": true
+    },
+    {
+      "pattern": "native/*",
+      "generated": true
+    }
+  ],
+  "notes": [
+    "GitHub language statistics are driven by .gitattributes and may take time to refresh after a push.",
+    "Oxid is the primary repository language for source files ending in .ox."
+  ]
+}
