@@ -31,9 +31,5 @@
       "pattern": "native/*",
       "generated": true
     }
-  ],
-  "notes": [
-    "GitHub language statistics are driven by .gitattributes and may take time to refresh after a push.",
-    "Oxid is the primary repository language for source files ending in .ox."
   ]
 }
