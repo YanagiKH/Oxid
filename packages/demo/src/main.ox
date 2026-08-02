@@ -1,5 +1,5 @@
 use "lib.ox";
-use "../../stdlib/core.ox";
+use "../../../stdlib/core.ox";
 
 fn main() {
     print package_banner("demo", "0.5.2");

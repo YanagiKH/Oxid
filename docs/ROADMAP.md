@@ -1,26 +1,26 @@
 # Roadmap
 
-## Now
+## Oxid 0.8
 
-- keep expanding Oxid-written modules
-- keep command previews in Oxid source files
-- keep diagnostics readable
-- keep package workflow explicit
-- keep bridge workflows readable for C, C++, Java, and Python
+- standalone checksummed releases without a user-side Rust dependency;
+- concise syntax, for-in loops, loop control, pipelines, and short functions;
+- single-file `.oxb` bundles and project compilation;
+- generated Python, Java, Go, C, and C++ bridges;
+- Web routing/HTTP response serving and Discord interaction dispatch;
+- exhaustive source/example/tool/package CI.
 
 ## Next
 
-- reduce bootstrap responsibilities
-- move more workflow logic into Oxid
-- add richer syntax previews
-- add more command shims and docs
-- add dedicated interop bridge generators
-- add web-service, Discord-bot, and event-driven module families
+- versioned bytecode and serialized AST;
+- long-running async network adapter API;
+- structured maps/records and JSON parsing;
+- source spans across imported modules;
+- package lockfile and remote dependency resolver;
+- benchmark harness covering cold start, parser throughput, bundle time, and runtime operations.
 
-## Later
+## Self-hosting
 
-- self-host the compiler workflow by default
-- keep Rust as a fallback boundary only
-- make Oxid the main language used by contributors
-- make foreign-language calling feel like a single-step Oxid workflow
-- make Oxid a practical systems language for modern network services
+- Oxid-authored bytecode emitter;
+- deterministic stage-0/stage-1 artifact comparison;
+- incremental replacement of frontend components;
+- self-hosted compiler as the default release path after cross-platform equivalence is proven.

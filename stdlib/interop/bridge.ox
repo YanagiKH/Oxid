@@ -12,3 +12,6 @@ fn bridge_plan(name) {
         "keep the foreign shim minimal"
     ], ", ");
 }
+
+fn bridge_summary() { return "Oxid bidirectional process bridge"; }
+fn bridge_catalog() { return "Python, Java, Go, C, C++"; }

@@ -19,12 +19,31 @@ fn discord_gateway_plan() {
     ], ", ");
 }
 
+fn discord_command(name, description, handler) {
+    return [name, description, handler];
+}
+
+fn discord_dispatch(commands, name, payload) {
+    for command in commands {
+        if command[0] == name { return command[2](payload); }
+    }
+    return discord_reply("Unknown command: " + name);
+}
+
+fn discord_reply(content) {
+    return "{\"type\":4,\"data\":{\"content\":" + json_escape(content) + "}}";
+}
+
+fn discord_run_adapter(program, arguments) {
+    return process_output(program, arguments);
+}
+
 fn discord_bot_summary(bot_name, version, entry_point) {
     return join_lines([
         "discord bot: " + bot_name,
         "version: " + version,
         "entry: " + entry_point,
-        "surface: gateway handlers, commands, and background tasks"
+        "surface: gateway handlers, command dispatch, interaction replies, adapters, and background tasks"
     ], "\n");
 }
 

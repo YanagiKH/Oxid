@@ -6,7 +6,7 @@ use "compiler.ox";
 use "self_compile.ox";
 
 fn bootstrap_goal() {
-    return "Rust is only the fallback boundary";
+    return "release users need only the standalone Oxid runtime; Rust remains the stage-0 source-build boundary";
 }
 
 fn bootstrap_command_list() {

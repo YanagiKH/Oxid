@@ -6,6 +6,9 @@ fn import_alias(path_text, alias) { return "use " + path_text + " as " + alias; 
 fn module_key(root, path_text) { return root + "::" + normalize_module_path(path_text); }
 fn module_resolve(root, path_text) { return root + "/" + normalize_module_path(path_text); }
 fn module_preview(name, path_text) { return module_group(name) + " -> " + module_resolve(".", path_text); }
+fn module_graph_edge(source, target) { return source + " -> " + target; }
+fn module_load_hint(root, path_text) { return "load " + module_resolve(root, path_text); }
+fn module_cache_key(root, path_text) { return "module:" + module_key(root, path_text); }
 
 fn resolve_relative(base_dir, import_path) {
     if (starts_with(import_path, ".")) { return base_dir + "/" + import_path; }

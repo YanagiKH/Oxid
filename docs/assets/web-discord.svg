@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Web and Discord modules</title>
+  <desc id="desc">Oxid routes HTTP requests and Discord interactions to Oxid handlers.</desc>
+  <rect width="1200" height="560" rx="28" fill="#0b1020"/>
+  <text x="600" y="62" text-anchor="middle" fill="#f5f7ff" font-family="sans-serif" font-size="34" font-weight="700">Web and Discord application modules</text>
+  <g font-family="sans-serif">
+    <rect x="60" y="120" width="500" height="370" rx="24" fill="#111c35" stroke="#38bdf8" stroke-width="3"/>
+    <text x="310" y="170" text-anchor="middle" fill="#7dd3fc" font-size="29" font-weight="700">Web</text>
+    <text x="105" y="230" fill="#e5efff" font-family="monospace" font-size="21">route("GET", "/health", health)</text>
+    <text x="105" y="275" fill="#e5efff" font-family="monospace" font-size="21">dispatch(routes, method, path, body)</text>
+    <text x="105" y="320" fill="#e5efff" font-family="monospace" font-size="21">web_json(200, body)</text>
+    <text x="105" y="365" fill="#e5efff" font-family="monospace" font-size="21">web_serve_once(host, port, response)</text>
+    <text x="105" y="430" fill="#93c5fd" font-size="19">Routing, HTTP response building and TCP serving</text>
+    <rect x="640" y="120" width="500" height="370" rx="24" fill="#191633" stroke="#a78bfa" stroke-width="3"/>
+    <text x="890" y="170" text-anchor="middle" fill="#c4b5fd" font-size="29" font-weight="700">Discord</text>
+    <text x="685" y="230" fill="#f0ebff" font-family="monospace" font-size="21">command("ping", "Reply", ping)</text>
+    <text x="685" y="275" fill="#f0ebff" font-family="monospace" font-size="21">discord_dispatch(commands, name, data)</text>
+    <text x="685" y="320" fill="#f0ebff" font-family="monospace" font-size="21">discord_reply("Pong")</text>
+    <text x="685" y="365" fill="#f0ebff" font-family="monospace" font-size="21">discord_run_adapter(program, args)</text>
+    <text x="685" y="430" fill="#ddd6fe" font-size="19">Commands, interaction JSON and gateway adapters</text>
+  </g>
+</svg>

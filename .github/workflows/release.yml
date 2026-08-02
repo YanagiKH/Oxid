@@ -1,0 +1,85 @@
+name: Release standalone binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    name: Package ${{ matrix.asset }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary: target/release/oxid
+            asset: oxid-linux-x86_64.tar.gz
+          - os: windows-latest
+            binary: target/release/oxid.exe
+            asset: oxid-windows-x86_64.zip
+          - os: macos-13
+            binary: target/release/oxid
+            asset: oxid-macos-x86_64.tar.gz
+          - os: macos-14
+            binary: target/release/oxid
+            asset: oxid-macos-aarch64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build optimized runtime
+        run: cargo build --release --locked
+
+      - name: Package runtime and checksum
+        run: python scripts/package_release.py "${{ matrix.binary }}" "${{ matrix.asset }}"
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            dist/${{ matrix.asset }}
+            dist/${{ matrix.asset }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish checksummed standalone binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256

@@ -1,4 +1,4 @@
-use "../../stdlib/core.ox";
+use "../../../stdlib/core.ox";
 use "../src/lib.ox";
 
 fn main() {
