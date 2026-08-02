@@ -1,4 +1,7 @@
 target/
+*.oxb
+oxid_io_demo.txt
 .oxid/
 *.log
 *.tmp
+__pycache__/

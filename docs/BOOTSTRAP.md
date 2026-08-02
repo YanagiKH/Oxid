@@ -3,7 +3,7 @@
 Oxid bootstrap should keep the native edge as small as possible while still describing the full build and toolchain workflow.
 
 ## Goals
-- keep Rust isolated to the fallback boundary
+- keep Rust isolated to the stage-0 source-build boundary
 - move project orchestration into Oxid modules
 - keep bootstrap output readable
 - include compile and self-compile snapshots in the bootstrap path

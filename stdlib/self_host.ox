@@ -71,5 +71,5 @@ fn self_host_command_list() {
 }
 
 fn self_host_boundary_note() {
-    return "keep Rust only as the fallback boundary";
+    return "end users run standalone Oxid binaries; Rust is only a stage-0 source-build implementation detail";
 }

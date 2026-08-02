@@ -1,43 +1,28 @@
 # Self-hosting plan
 
-Oxid is still bootstrapped by Rust, but the codebase now treats that as a temporary boundary instead of a permanent design.
+Oxid 0.8 separates user-facing language use from the stage-0 implementation. Release users do not install Rust; they install a standalone Oxid binary and work with `.ox` and `.oxb` files.
 
-## Stage 1: isolate Rust
+## Completed boundary work
 
-- keep Rust only for the minimal bootstrap/runtime boundary
-- move command orchestration into Oxid source files
-- centralize diagnostics formatting in Oxid modules
-- centralize module resolution in Oxid modules
-- keep all preview logic in reusable Oxid helpers
+- standalone release binaries and checksums;
+- Oxid-authored standard library, examples, tools, package workflows, Web, Discord, and interop modules;
+- real parser support for concise Oxid syntax;
+- deterministic import bundling and syntax validation;
+- unit and repository-wide bootstrap verification;
+- isolated native C/C++ ABI code.
 
-## Stage 2: move compiler-facing previews into Oxid
+## Next bootstrap stages
 
-- move parser helpers into Oxid-owned modules
-- move syntax preview and validation into Oxid-owned modules
-- add structured front-end stages
-- add diagnostic categories and suggestion helpers
-- add command catalog helpers for the CLI
-- add compile and self-compile snapshots
-
-## Stage 3: make Oxid the working language of the toolchain
-
-- move more compiler workflow code into Oxid
-- reduce Rust-specific project logic
-- keep native and bootstrap logic isolated
-- keep the Rust layer small and stable
-- let Oxid define the visible workflow surface
-
-## Stage 4: self-host by default
-
-- make Oxid the primary development language for the compiler toolchain
-- keep Rust only as an optional compatibility backstop
-- preserve bootstrap scripts for recovery
-- preserve a small native layer for platform-specific entry points
+1. Define a versioned serialized AST and bytecode format.
+2. Implement the emitter and deterministic serializer in Oxid.
+3. Compile the Oxid frontend with stage-0 and execute it on the runtime VM.
+4. Compare stage-0 and stage-1 artifacts byte-for-byte where deterministic.
+5. Replace lexer, parser, diagnostics, and module resolution one verified component at a time.
+6. Keep a small recovery bootstrap and native platform boundary.
 
 ## Success criteria
 
-- build and workflow helpers are written in Oxid where possible
-- syntax and diagnostics are described by Oxid modules first
-- examples, packages, and scripts are Oxid-native
-- the bootstrap path becomes a thin compatibility layer only
-- the self-compile path can describe itself from Oxid code
+- a clean checkout reproduces the same stage-1 compiler artifact;
+- stage-1 compiles every repository source and its own source;
+- cross-platform CI compares bootstrap outputs;
+- normal development and release builds no longer compile the stage-0 frontend.

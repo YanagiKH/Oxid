@@ -1,55 +1,34 @@
-# Web, bots, and event-driven applications
+# Web, Discord, and event-driven applications
 
-Oxid is intended to be useful beyond scripts and compiler tooling. The language surface is being shaped so it can describe web services, Discord bots, and other event-driven systems with a small core and thin adapters.
+Oxid includes executable application modules rather than documentation-only previews.
 
-## Design goals
+## Web
 
-- keep the app core event-driven
-- keep I/O behind adapter modules
-- keep async task orchestration simple
-- keep the module surface readable for services and bots
-- keep the native boundary small and replaceable
+`stdlib/web.ox` provides route entries, method/path dispatch, text and JSON responses, and one-request TCP HTTP serving through the native runtime.
 
-## Current module families
+```bash
+oxid web new my-api
+cd my-api
+oxid run src/main.ox
+```
 
-- `stdlib/event.ox` for service and event-loop patterns
-- `stdlib/web.ox` for web-oriented service planning helpers
-- `stdlib/bots/discord.ox` for Discord bot and gateway planning helpers
+The module keeps routing and handler logic in Oxid. Production TLS, connection pooling, and deployment remain replaceable adapter concerns.
 
-## Example entry points
+## Discord
+
+`stdlib/bots/discord.ox` provides command registration, interaction dispatch, valid interaction response JSON, and a process adapter entry point.
+
+```bash
+oxid discord new my-bot
+cd my-bot
+oxid run src/main.ox
+```
+
+Set `DISCORD_TOKEN` for the generated profile. HTTPS/WebSocket gateway transport belongs in an adapter so that command logic remains independently testable in Oxid.
+
+## Executable examples
 
 - `examples/web_service.ox`
 - `examples/discord_bot.ox`
 
-## Intended usage model
-
-The current repository keeps the runtime lightweight and uses Oxid modules to describe application structure, routing, handlers, command dispatch, and background tasks. Real network adapters can be supplied through the native layer or FFI-backed modules while the application logic stays in Oxid.
-
-That means the same language can express:
-
-- web APIs and JSON services
-- Discord command bots
-- background workers
-- event-driven daemons
-- queue consumers
-- webhook handlers
-
-## Recommended structure
-
-```text
-project/
-├── src/
-├── stdlib/
-│   ├── event.ox
-│   ├── web.ox
-│   └── bots/
-│       └── discord.ox
-├── examples/
-│   ├── web_service.ox
-│   └── discord_bot.ox
-└── docs/
-```
-
-## Practical note
-
-Oxid is strongest when the service core is written in Oxid and platform-specific network details are isolated in a tiny adapter layer.
+Both examples are executed during full repository CI.

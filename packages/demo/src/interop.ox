@@ -1,4 +1,4 @@
-use "../../stdlib/prelude.ox";
+use "../../../stdlib/prelude.ox";
 
 fn main() {
     print interop_catalog();

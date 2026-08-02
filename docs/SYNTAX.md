@@ -1,12 +1,36 @@
 # Syntax
 
-The syntax preview files describe the direction Oxid is taking:
+Oxid accepts familiar classical spelling and concise Oxid-native aliases in the same parser.
 
-- shorter function forms
-- compact imports
-- pattern matching previews
-- async / await previews
-- bridge-friendly FFI previews
-- concise helper definitions
+```oxid
+fun double(value) => value * 2;
 
-These are preview modules for the language surface and are expected to become more complete over time.
+work fun fetch(name) => "ready: " + name;
+
+fun main() {
+    var values = range(1, 8);
+    for value in values {
+        when value % 2 == 0 { continue; }
+        say value |> double |> str;
+    }
+    say await fetch("Oxid");
+}
+```
+
+Implemented aliases:
+
+- `fun/fn`, `var/let`, `say/print`, `give/return`
+- `when/if`, `otherwise/else`, `loop/while`
+- `import/use`, `yes/true`, `no/false`, `none/null`
+- `all/and`, `any/or`, `work/async`
+
+Implemented concise constructs:
+
+- `fun name(args) => expression;`
+- `for item in array_or_string { ... }`
+- `break;` and `continue;`
+- pipeline insertion with `value |> function` and `value |> function(extra)`
+- modulo with `%`
+- optional parentheses around `when` and `loop` conditions
+
+See `examples/oxid_shortcuts.ox` and the parser unit tests for executable coverage.

@@ -1,6 +1,6 @@
 [project]
 name = "oxid"
-version = "0.7.0"
+version = "0.8.0"
 entry = "src/main.ox"
 
 [scripts]
@@ -37,3 +37,6 @@ c_interop = true
 cpp_interop = true
 java_interop = true
 python_interop = true
+go_interop = true
+web = true
+discord = true

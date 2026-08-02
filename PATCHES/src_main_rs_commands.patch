@@ -2,7 +2,7 @@
 --- b/src/main.rs
 @@
  fn help() {
-     println!("Oxid 0.7.0");
+     println!("Oxid 0.8.0");
      println!("Usage:");
      println!("  oxid run <file.ox>");
      println!("  oxid script <name> [args...]");

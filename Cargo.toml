@@ -1,10 +1,10 @@
 [package]
 name = "oxid"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 build = "build.rs"
 autobins = false
-description = "Oxid experimental language runtime"
+description = "Fast standalone Oxid language runtime and toolchain"
 license = "MIT"
 
 [[bin]]

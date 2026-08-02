@@ -1,5 +1,25 @@
 use "core.ox";
 
+fn map(xs, transform) {
+    let out = [];
+    for value in xs { push(out, transform(value)); }
+    return out;
+}
+
+fn filter(xs, predicate) {
+    let out = [];
+    for value in xs {
+        if predicate(value) { push(out, value); }
+    }
+    return out;
+}
+
+fn reduce(xs, combine, initial) {
+    let result = initial;
+    for value in xs { result = combine(result, value); }
+    return result;
+}
+
 fn first(xs) {
     return xs[0];
 }

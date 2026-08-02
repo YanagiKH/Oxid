@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Oxid architecture</title>
+  <desc id="desc">Oxid source passes through preprocessing, parsing and execution or bundling, with standard and bridge modules.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6ee7ff"/></marker></defs>
+  <rect width="1200" height="640" rx="28" fill="#0b1020"/>
+  <text x="600" y="64" text-anchor="middle" fill="#f5f7ff" font-family="sans-serif" font-size="34" font-weight="700">Oxid toolchain architecture</text>
+  <g font-family="sans-serif" font-size="23" text-anchor="middle">
+    <rect x="55" y="145" width="210" height="92" rx="16" fill="#172554" stroke="#60a5fa" stroke-width="2"/><text x="160" y="183" fill="#fff">.ox source</text><text x="160" y="213" fill="#93c5fd" font-size="18">concise syntax</text>
+    <rect x="345" y="145" width="210" height="92" rx="16" fill="#1e293b" stroke="#67e8f9" stroke-width="2"/><text x="450" y="183" fill="#fff">Frontend</text><text x="450" y="213" fill="#a5f3fc" font-size="18">lex · parse · macros</text>
+    <rect x="635" y="145" width="210" height="92" rx="16" fill="#1e293b" stroke="#a78bfa" stroke-width="2"/><text x="740" y="183" fill="#fff">Runtime</text><text x="740" y="213" fill="#c4b5fd" font-size="18">scripts · tasks · FFI</text>
+    <rect x="925" y="145" width="210" height="92" rx="16" fill="#14532d" stroke="#4ade80" stroke-width="2"/><text x="1030" y="183" fill="#fff">.oxb bundle</text><text x="1030" y="213" fill="#86efac" font-size="18">single module artifact</text>
+    <path d="M265 191H345M555 191H635M845 191H925" stroke="#6ee7ff" stroke-width="4" marker-end="url(#arrow)"/>
+    <rect x="150" y="360" width="280" height="110" rx="18" fill="#292524" stroke="#fbbf24" stroke-width="2"/><text x="290" y="405" fill="#fff">Standard library</text><text x="290" y="437" fill="#fde68a" font-size="18">collections · web · Discord</text>
+    <rect x="770" y="360" width="280" height="110" rx="18" fill="#3b174f" stroke="#e879f9" stroke-width="2"/><text x="910" y="405" fill="#fff">Bridge layer</text><text x="910" y="437" fill="#f5d0fe" font-size="18">Python · Java · Go · C/C++</text>
+    <path d="M430 415H635" stroke="#6ee7ff" stroke-width="4" marker-end="url(#arrow)"/><path d="M770 415H565" stroke="#6ee7ff" stroke-width="4" marker-end="url(#arrow)"/>
+    <text x="600" y="565" fill="#aab8dc" font-size="21">End users install one release binary; Rust is not required to write, run, bundle, or bridge Oxid programs.</text>
+  </g>
+</svg>
