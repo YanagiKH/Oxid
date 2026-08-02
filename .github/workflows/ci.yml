@@ -72,7 +72,7 @@ jobs:
             os: windows-latest
             binary: target/release/oxid.exe
           - name: macOS x86_64
-            os: macos-13
+            os: macos-15-intel
             binary: target/release/oxid
           - name: macOS arm64
             os: macos-14
