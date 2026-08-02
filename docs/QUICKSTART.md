@@ -1,48 +1,41 @@
 # Quickstart
 
-## 1. Run the sample scripts
+## Install
+
+Use `install.sh`, `install.ps1`, a portable release archive, Cargo, source/Make, or Docker as documented in the three top-level READMEs.
+
+## Create and run
 
 ```bash
-cargo run -- run examples/hello.ox
-cargo run -- run examples/arrays.ox
-cargo run -- run examples/package_workflow.ox
+oxid new my-project
+cd my-project
+oxid run src/main.ox
+oxid build
+oxid test
+oxid doctor
 ```
 
-## 2. Explore the standard library
+## Compile a bundle
 
 ```bash
-cargo run -- run examples/stdlib_smoke.ox
-cargo run -- run examples/modules.ox
-cargo run -- run examples/library.ox
+oxid compile src/main.ox -o app.oxb
+oxid run app.oxb
 ```
 
-## 3. Build and check the project
+## Create an application profile
 
 ```bash
-cargo run -- build
-cargo run -- test
-cargo run -- doctor
-cargo run -- doc
+oxid web new my-api
+oxid discord new my-bot
 ```
 
-## 4. Scaffold a new project
+## Generate language bridges
 
 ```bash
-cargo run -- new my_project
-cd my_project
-cargo run -- build
-cargo run -- script run
+oxid bridge all bridges
 ```
 
-## 5. Add a local dependency entry
-
-```bash
-cargo run -- add demo ./packages/demo
-```
-
-## 6. Use manifest scripts
-
-Define scripts in `oxid.toml`:
+## Use manifest scripts
 
 ```toml
 [scripts]
@@ -50,10 +43,7 @@ run = "oxid run src/main.ox"
 test = "oxid test"
 fmt = "oxid fmt"
 doctor = "oxid doctor"
-doc = "oxid doc"
 ```
-
-Then run them with:
 
 ```bash
 oxid script run

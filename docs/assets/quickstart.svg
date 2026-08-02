@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Oxid quick start terminal</title>
+  <desc id="desc">Create, run, compile and test an Oxid project.</desc>
+  <rect width="1200" height="560" rx="28" fill="#0b1020"/>
+  <rect x="32" y="32" width="1136" height="496" rx="20" fill="#11182d" stroke="#334268" stroke-width="2"/>
+  <circle cx="72" cy="72" r="10" fill="#ff6b6b"/><circle cx="104" cy="72" r="10" fill="#ffd166"/><circle cx="136" cy="72" r="10" fill="#42d392"/>
+  <text x="600" y="80" text-anchor="middle" fill="#91a4d2" font-family="monospace" font-size="22">Oxid 0.8 — standalone workflow</text>
+  <g font-family="monospace" font-size="27">
+    <text x="70" y="145" fill="#61dafb">$</text><text x="105" y="145" fill="#f3f6ff">oxid new hello</text>
+    <text x="70" y="195" fill="#61dafb">$</text><text x="105" y="195" fill="#f3f6ff">cd hello &amp;&amp; oxid run src/main.ox</text>
+    <text x="105" y="240" fill="#42d392">Hello from Oxid</text>
+    <text x="70" y="305" fill="#61dafb">$</text><text x="105" y="305" fill="#f3f6ff">oxid compile src/main.ox -o hello.oxb</text>
+    <text x="105" y="350" fill="#42d392">compiled: src/main.ox → hello.oxb</text>
+    <text x="70" y="415" fill="#61dafb">$</text><text x="105" y="415" fill="#f3f6ff">oxid test &amp;&amp; oxid doctor</text>
+    <text x="105" y="460" fill="#42d392">tests: ok   repository: healthy</text>
+  </g>
+</svg>

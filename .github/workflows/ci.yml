@@ -1,32 +1,116 @@
-name: ci
+name: Repository CI
 
 on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
+  schedule:
+    - cron: "17 3 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: oxid-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build:
+  quality-and-repository:
+    name: Full repository verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust quality components
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy with warnings denied
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Rust and native bridge tests
+        run: cargo test --all-targets --all-features --locked
+
+      - name: Build optimized standalone runtime
+        run: cargo build --release --locked
+
+      - name: Verify every Oxid source, runnable program, README, SVG, build, and doctor check
+        run: python3 scripts/verify_repo.py target/release/oxid
+
+      - name: Test source installation
+        run: |
+          cargo install --path . --locked --root "$RUNNER_TEMP/oxid-install"
+          "$RUNNER_TEMP/oxid-install/bin/oxid" --version
+
+      - name: Build container image
+        run: docker build --tag oxid:ci .
+
+      - name: Smoke-test container image
+        run: docker run --rm oxid:ci --version
+
+  cross-platform:
+    name: ${{ matrix.name }} runtime
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            binary: target/release/oxid
+          - name: Windows x86_64
+            os: windows-latest
+            binary: target/release/oxid.exe
+          - name: macOS x86_64
+            os: macos-15-intel
+            binary: target/release/oxid
+          - name: macOS arm64
+            os: macos-14
+            binary: target/release/oxid
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: cargo build --release
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
 
-      - name: Test
-        run: cargo test --release
+      - name: Build optimized runtime
+        run: cargo build --release --locked
+
+      - name: Run unit and native bridge tests
+        run: cargo test --all-targets --locked
+
+      - name: Run Oxid language tests
+        run: cargo run --release --locked -- test
+
+      - name: Run concise syntax example
+        run: cargo run --release --locked -- run examples/oxid_shortcuts.ox
+
+      - name: Build the repository bundle
+        run: cargo run --release --locked -- build
+
+      - name: Check runtime version
+        run: cargo run --release --locked -- --version
+
+  workflow-lint:
+    name: Workflow and metadata audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow YAML
+        uses: docker://rhysd/actionlint:latest
+      - name: Validate manifest metadata
+        run: python3 -c "import json, tomllib; json.load(open('license-metadata.json')); tomllib.load(open('Cargo.toml','rb')); tomllib.load(open('oxid.toml','rb'))"

@@ -1,39 +1,23 @@
 # Commands
 
-This repository treats commands as a first-class language surface.
+## Language and project commands
 
-## Core commands
-
-- `oxid bootstrap`
-- `oxid compile`
-- `oxid self-compile`
-- `oxid frontend`
-- `oxid diagnose`
-- `oxid lint`
-- `oxid emit`
-- `oxid module`
-- `oxid syntax`
-- `oxid interop`
-- `oxid bridge`
-- `oxid self-host`
-
-## Project commands
-
-- `oxid run`
-- `oxid script`
+- `oxid run <file.ox|file.oxb>`
+- `oxid check <file.ox>`
+- `oxid compile <file.ox> [-o output.oxb]`
 - `oxid repl`
-- `oxid check`
-- `oxid new`
-- `oxid init`
-- `oxid add`
-- `oxid watch`
-- `oxid build`
-- `oxid clean`
-- `oxid fmt`
-- `oxid test`
-- `oxid doctor`
-- `oxid doc`
+- `oxid new <name>` / `oxid init <name>`
+- `oxid web new <name>` / `oxid discord new <name>`
+- `oxid bridge <python|java|go|c|cpp|all> [output]`
+- `oxid script <name> [args...]`
+- `oxid add <name> <target>`
+- `oxid watch <file.ox>`
+- `oxid build`, `oxid test`, `oxid fmt`, `oxid clean`, `oxid doctor`, `oxid doc`
 
-## Intent
+## Toolchain inspection commands
 
-The command surface should stay short, obvious, and scriptable. The bootstrap, compile, and self-compile workflows are now available as native commands and are mirrored by the scripts in `oxid.toml` for users who prefer manifest-driven entry points.
+- `oxid bootstrap`, `oxid self-compile`, `oxid self-host`
+- `oxid frontend`, `oxid diagnose`, `oxid lint`, `oxid emit`
+- `oxid module`, `oxid syntax`, `oxid interop`
+
+Running `oxid compile` without a file and `oxid bridge` without a target keeps the Oxid-authored inspection scripts available. Supplying arguments invokes the real bundler or SDK generator.

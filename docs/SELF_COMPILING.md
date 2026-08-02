@@ -15,7 +15,7 @@ Oxid is designed to keep the Rust edge as small as possible while moving workflo
 
 ## Goal
 
-The self-compiling path should make the tooling surface build, inspect, and describe itself through Oxid code first, with Rust acting only as the fallback boundary.
+The self-compiling path should make the tooling surface build, inspect, and describe itself through Oxid code first, with Rust isolated to the stage-0 source-build boundary.
 
 ## Practical entry points
 

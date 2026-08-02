@@ -10,6 +10,7 @@ use "emit.ox";
 use "lint.ox";
 
 fn pipeline_stage(name) { return "[" + name + "]"; }
+fn frontend_pipeline_name() { return "Oxid lex -> parse -> AST -> emit pipeline"; }
 
 fn frontend_pipeline(source_name) {
     return join_lines([
@@ -31,6 +32,10 @@ fn frontend_bootstrap(project_name, entry_point) {
 
 fn frontend_compile_plan(project_name, version, entry_point) {
     return frontend_bootstrap(project_name, entry_point) + " | " + version + " | " + module_key(project_name, entry_point);
+}
+
+fn frontend_plan(project_name, version, entry_point) {
+    return frontend_compile_plan(project_name, version, entry_point) + " | " + frontend_pipeline(entry_point);
 }
 
 fn frontend_stage_list() {
