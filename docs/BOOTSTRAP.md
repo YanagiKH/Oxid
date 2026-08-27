@@ -1,28 +1,13 @@
 # Bootstrap
 
-Oxid bootstrap should keep the native edge as small as possible while still describing the full build and toolchain workflow.
-
-## Goals
-- keep Rust isolated to the stage-0 source-build boundary
-- move project orchestration into Oxid modules
-- keep bootstrap output readable
-- include compile and self-compile snapshots in the bootstrap path
-
-## Helpers
-- `bootstrap_plan(project_name, version, entry_point)`
-- `bootstrap_snapshot(project_name, version, entry_point)`
-- `bootstrap_summary(project_name, version, entry_point)`
-- `bootstrap_manifest(project_name, version, entry_point)`
-- `bootstrap_command_list()`
-- `bootstrap_boundary_note()`
-
-## Entry point
-
-The repository exposes bootstrap as a native command and keeps the Oxid script as a mirrored entry point for convenience:
+Bootstrap validates the versioned compiler artifact and the frontend provider boundary.
 
 ```bash
-oxid bootstrap
-oxid script bootstrap
+oxid bootstrap          # verify and write .oxid/bootstrap artifacts
+oxid bootstrap --check  # verify without writing artifacts
 ```
 
-The same preview is also available as `tools/bootstrap.ox` for direct execution through the interpreter.
+The command compiles the repository compiler sources when available and falls back to the same sources embedded in the release binary. It verifies the provider manifest, produces OXBC stage artifacts, requires byte equality at the stage-0/stage-1 and stage-1/stage-2 boundaries, and executes the decoded compiler program.
+
+Deterministic output depends on normalized module ordering, stable record ordering, versioned AST serialization, and platform-independent integer encoding. Cross-platform CI comparison is the release gate required before the remaining stage-0 providers can be retired.
+

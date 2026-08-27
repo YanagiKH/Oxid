@@ -2,6 +2,8 @@ use "core.ox";
 use "math.ox";
 use "strings.ox";
 use "errors.ox";
+use "records.ox";
+use "json.ox";
 use "package.ox";
 use "cache.ox";
 use "debug.ox";

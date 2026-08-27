@@ -48,6 +48,9 @@ jobs:
       - name: Build optimized runtime
         run: cargo build --release --locked
 
+      - name: Generate and verify compiler bootstrap artifacts
+        run: cargo run --release --locked -- bootstrap
+
       - name: Package runtime and checksum
         run: python scripts/package_release.py "${{ matrix.binary }}" "${{ matrix.asset }}"
 

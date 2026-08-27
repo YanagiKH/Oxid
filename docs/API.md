@@ -1,46 +1,43 @@
-# Oxid API
+# Oxid runtime API
+
+## Core values
+
+Oxid supports numbers, strings, booleans, null, arrays, records, functions, task values, TCP listeners, and TCP connections. Records use deterministic key ordering and support literals, property access, string-key indexing, and assignment.
+
+```oxid
+var user = {name: "Ada", active: yes};
+user.name = "Grace";
+user["visits"] = 1;
+```
 
 ## Built-ins
 
-- clock / now
-- len / push / pop / range / str
-- spawn / join / join_all / task_status / yield_now
-- read_text / write_text / exists / env / cwd / list_dir
-- sleep / sleep_ms
-- assert / type_of
-- number / split / join_text / replace / json_escape
-- process / process_output / python / java / go
-- web_response / web_serve_once
-- c_len / c_hash / cpp_len / cpp_hash
+- time: `clock`, `now`, `sleep`, `sleep_ms`, `yield_now`
+- values: `len`, `push`, `pop`, `range`, `str`, `number`, `type_of`, `assert`
+- text: `split`, `join_text`, `replace`
+- tasks: `spawn`, `join`, `join_all`, `task_status`
+- records: `record`, `keys`, `has_key`, `get`, `set`, `remove`
+- JSON: `json_parse`, `json_stringify`, `json_escape`
+- files/environment: `read_text`, `write_text`, `exists`, `env`, `cwd`, `list_dir`
+- processes: `process`, `process_output`, `python`, `java`, `go`
+- networking: `net_listen`, `net_local_addr`, `net_accept`, `net_try_accept`, `net_read`, `net_write`, `net_close`, `http_read_request`, `http_write_response`
+- Web: `web_response`, `web_serve_once`
+- native ABI: `c_len`, `c_hash`, `cpp_len`, `cpp_hash`
 
-## Commands
+## Network signatures
 
-- oxid run
-- oxid script
-- oxid repl
-- oxid check
-- oxid compile
-- oxid watch
-- oxid build
-- oxid clean
-- oxid fmt
-- oxid test
-- oxid doctor
-- oxid doc
-- oxid new
-- oxid init
-- oxid add
-- oxid bridge
-- oxid web new
-- oxid discord new
+```text
+net_listen(host, port) -> listener
+net_local_addr(listener) -> {host, port}
+net_accept(listener, timeout_ms) -> connection
+net_try_accept(listener) -> connection | null
+net_read(connection, max_bytes, timeout_ms) -> string
+net_write(connection, text[, timeout_ms]) -> byte_count
+http_read_request(connection[, timeout_ms]) -> record
+http_write_response(connection, response[, timeout_ms]) -> byte_count
+net_close(listener_or_connection) -> null
+web_serve_once(listener, response[, timeout_ms])
+web_serve_once(host, port, response[, timeout_ms])
+```
 
-## Language focus
-
-- fast script execution
-- ergonomic async tasks
-- concise fun / var / say / give / when / for syntax
-- single-pass module bundles and pipeline expressions
-- macro pre-expansion
-- local module loading
-- Python, Java, Go, C, and C++ interoperability
-- Web routing and Discord interaction modules
+`net_try_accept` returns immediately with a connection or `null`, allowing an idle-resilient loop to perform other work. `http_read_request` returns structured request data and applies limits to request lines, headers, and body. `http_write_response` safely encodes either a raw HTTP string or a `{status, headers, body}` response record before writing it. Network and JSON functions reject oversized or malformed input rather than allocating without bounds.

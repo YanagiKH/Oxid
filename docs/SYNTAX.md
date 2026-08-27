@@ -1,36 +1,24 @@
 # Syntax
 
-Oxid accepts familiar classical spelling and concise Oxid-native aliases in the same parser.
+Oxid accepts classical spelling and concise aliases in the same parser: `fun/fn`, `var/let`, `say/print`, `give/return`, `when/if`, `otherwise/else`, `loop/while`, `import/use`, `yes/true`, `no/false`, `none/null`, `all/and`, `any/or`, and `work/async`.
 
 ```oxid
 fun double(value) => value * 2;
 
-work fun fetch(name) => "ready: " + name;
+work fun fetch(name) => {name: name, ready: yes};
 
 fun main() {
-    var values = range(1, 8);
-    for value in values {
+    var state = {items: [1, 2, 3], owner: "Oxid"};
+    state.count = len(state.items);
+    for value in state.items {
         when value % 2 == 0 { continue; }
         say value |> double |> str;
     }
-    say await fetch("Oxid");
+    say json_stringify(await fetch(state.owner));
 }
 ```
 
-Implemented aliases:
+Implemented constructs include short expression functions, `for … in`, `break`, `continue`, pipelines, modulo, optional condition parentheses, arrays, deterministic records, property access, string-key indexing, assignment, `async`/`await`, comments, and one-line macros.
 
-- `fun/fn`, `var/let`, `say/print`, `give/return`
-- `when/if`, `otherwise/else`, `loop/while`
-- `import/use`, `yes/true`, `no/false`, `none/null`
-- `all/and`, `any/or`, `work/async`
+Record literal keys may be identifiers or strings. Duplicate literal keys are rejected. `value.name` is equivalent to string-key access for records, and both forms support assignment.
 
-Implemented concise constructs:
-
-- `fun name(args) => expression;`
-- `for item in array_or_string { ... }`
-- `break;` and `continue;`
-- pipeline insertion with `value |> function` and `value |> function(extra)`
-- modulo with `%`
-- optional parentheses around `when` and `loop` conditions
-
-See `examples/oxid_shortcuts.ox` and the parser unit tests for executable coverage.

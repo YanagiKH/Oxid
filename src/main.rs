@@ -1,14 +1,11 @@
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::ffi::CString;
 use std::fmt;
 use std::fs;
-use std::hash::{Hash, Hasher};
-use std::io::{self, Read, Write};
-use std::net::TcpListener;
+use std::io::{self, Write};
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,11 +13,44 @@ use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
+#[path = "runtime/artifact.rs"]
+mod artifact;
+#[path = "runtime/data.rs"]
+mod data;
+#[path = "runtime/network.rs"]
+mod network;
+#[path = "runtime/packages.rs"]
+mod packages;
+#[path = "runtime/benchmark.rs"]
+mod benchmark;
+
+const OXID_VERSION: &str = "0.9.0";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SourceSpan {
+    source: String,
+    start_line: usize,
+    start_col: usize,
+    end_line: usize,
+    end_col: usize,
+}
+
+impl SourceSpan {
+    fn render(&self) -> String {
+        format!(
+            "{}:{}:{}-{}:{}",
+            self.source, self.start_line, self.start_col, self.end_line, self.end_col
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Token {
     kind: TokenKind,
     line: usize,
     col: usize,
+    end_line: usize,
+    end_col: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +62,7 @@ enum TokenKind {
     LeftBracket,
     RightBracket,
     Comma,
+    Colon,
     Dot,
     Minus,
     Plus,
@@ -96,12 +127,16 @@ enum Expr {
     Call(Box<Expr>, Vec<Expr>),
     Index(Box<Expr>, Box<Expr>),
     Array(Vec<Expr>),
+    Record(Vec<(String, Expr)>),
+    Property(Box<Expr>, String),
+    AssignProperty(Box<Expr>, String, Box<Expr>),
     Await(Box<Expr>),
     Grouping(Box<Expr>),
 }
 
 #[derive(Clone, Debug)]
 enum Stmt {
+    Located(SourceSpan, Box<Stmt>),
     Let(String, Expr),
     Const(String, Expr),
     Print(Expr),
@@ -145,8 +180,11 @@ enum Value {
     Number(f64),
     String(String),
     Array(Rc<RefCell<Vec<Value>>>),
+    Record(Rc<RefCell<BTreeMap<String, Value>>>),
     Function(Rc<FunctionValue>),
     Task(Rc<TaskValue>),
+    Listener(Rc<network::ListenerHandle>),
+    Connection(Rc<network::ConnectionHandle>),
     NativeFunction(NativeFunction),
 }
 
@@ -159,12 +197,21 @@ struct FunctionValue {
     body: Vec<Stmt>,
     closure: EnvRef,
     is_async: bool,
+    source_dir: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 struct TaskValue {
     function: Rc<FunctionValue>,
     args: Vec<Value>,
+    state: RefCell<TaskState>,
+}
+
+#[derive(Clone, Debug)]
+enum TaskState {
+    Pending,
+    Running,
+    Completed(Result<Value, String>),
 }
 
 type EnvRef = Rc<RefCell<Environment>>;
@@ -178,13 +225,25 @@ struct Environment {
 #[derive(Debug, Clone)]
 enum RuntimeError {
     Message(String),
+    Located(SourceSpan, String),
     Return(Value),
     Break,
     Continue,
 }
 
+fn runtime_error_to_string(error: RuntimeError) -> String {
+    match error {
+        RuntimeError::Message(message) => message,
+        RuntimeError::Located(span, message) => format!("{}: {}", span.render(), message),
+        RuntimeError::Return(_) => "return used outside a function".to_string(),
+        RuntimeError::Break => "break used outside a loop".to_string(),
+        RuntimeError::Continue => "continue used outside a loop".to_string(),
+    }
+}
+
 struct Interpreter {
     globals: EnvRef,
+    loading_modules: HashSet<PathBuf>,
     loaded_modules: HashSet<PathBuf>,
     consts: HashSet<String>,
 }
@@ -213,8 +272,11 @@ impl fmt::Debug for Value {
             Value::Number(v) => write!(f, "Number({v})"),
             Value::String(v) => write!(f, "String({v:?})"),
             Value::Array(v) => write!(f, "Array(len={})", v.borrow().len()),
+            Value::Record(v) => write!(f, "Record(len={})", v.borrow().len()),
             Value::Function(v) => write!(f, "Function({})", v.name),
             Value::Task(v) => write!(f, "Task({})", v.function.name),
+            Value::Listener(v) => write!(f, "Listener({})", v.local_addr()),
+            Value::Connection(v) => write!(f, "Connection({})", v.peer_addr()),
             Value::NativeFunction(_) => write!(f, "NativeFunction"),
         }
     }
@@ -233,8 +295,19 @@ impl fmt::Display for Value {
                 let rendered = v.borrow().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
                 write!(f, "[{}]", rendered)
             }
+            Value::Record(v) => {
+                let rendered = v
+                    .borrow()
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", key, value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{{{}}}", rendered)
+            }
             Value::Function(v) => write!(f, "<fn {}>", v.name),
             Value::Task(v) => write!(f, "<task {}>", v.function.name),
+            Value::Listener(v) => write!(f, "<listener {}>", v.local_addr()),
+            Value::Connection(v) => write!(f, "<connection {}>", v.peer_addr()),
             Value::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
@@ -243,13 +316,23 @@ impl fmt::Display for Value {
 impl Interpreter {
     fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new(None)));
-        let mut interp = Self { globals, loaded_modules: HashSet::new(), consts: HashSet::new() };
+        let mut interp = Self {
+            globals,
+            loading_modules: HashSet::new(),
+            loaded_modules: HashSet::new(),
+            consts: HashSet::new(),
+        };
         interp.install_builtins();
         interp
     }
 
     fn fork_from_root(root: EnvRef) -> Self {
-        Self { globals: root, loaded_modules: HashSet::new(), consts: HashSet::new() }
+        Self {
+            globals: root,
+            loading_modules: HashSet::new(),
+            loaded_modules: HashSet::new(),
+            consts: HashSet::new(),
+        }
     }
 
     fn install_builtins(&mut self) {
@@ -290,6 +373,23 @@ impl Interpreter {
         g.define("java".into(), Value::NativeFunction(native_java));
         g.define("go".into(), Value::NativeFunction(native_go));
         g.define("json_escape".into(), Value::NativeFunction(native_json_escape));
+        g.define("json_parse".into(), Value::NativeFunction(data::json_parse));
+        g.define("json_stringify".into(), Value::NativeFunction(data::json_stringify));
+        g.define("keys".into(), Value::NativeFunction(data::keys));
+        g.define("has_key".into(), Value::NativeFunction(data::has_key));
+        g.define("get".into(), Value::NativeFunction(data::get));
+        g.define("set".into(), Value::NativeFunction(data::set));
+        g.define("remove".into(), Value::NativeFunction(data::remove));
+        g.define("record".into(), Value::NativeFunction(data::record));
+        g.define("net_listen".into(), Value::NativeFunction(network::net_listen));
+        g.define("net_local_addr".into(), Value::NativeFunction(network::net_local_addr));
+        g.define("net_accept".into(), Value::NativeFunction(network::net_accept));
+        g.define("net_try_accept".into(), Value::NativeFunction(network::net_try_accept));
+        g.define("net_read".into(), Value::NativeFunction(network::net_read));
+        g.define("net_write".into(), Value::NativeFunction(network::net_write));
+        g.define("net_close".into(), Value::NativeFunction(network::net_close));
+        g.define("http_read_request".into(), Value::NativeFunction(network::http_read_request));
+        g.define("http_write_response".into(), Value::NativeFunction(network::http_write_response));
         g.define("web_response".into(), Value::NativeFunction(native_web_response));
         g.define("web_serve_once".into(), Value::NativeFunction(native_web_serve_once));
     }
@@ -297,12 +397,7 @@ impl Interpreter {
     fn execute_program(&mut self, program: &Program, base_dir: &Path) -> Result<(), String> {
         for stmt in &program.stmts {
             if let Err(err) = self.execute_stmt(stmt, self.globals.clone(), base_dir) {
-                return match err {
-                    RuntimeError::Message(msg) => Err(msg),
-                    RuntimeError::Return(_) => Err("return used outside a function".to_string()),
-                    RuntimeError::Break => Err("break used outside a loop".to_string()),
-                    RuntimeError::Continue => Err("continue used outside a loop".to_string()),
-                };
+                return Err(runtime_error_to_string(err));
             }
         }
 
@@ -335,7 +430,11 @@ impl Interpreter {
                     return Err(format!("function `{}` expected {} arguments but received {}", func.name, func.params.len(), args.len()));
                 }
                 if func.is_async {
-                    Ok(Value::Task(Rc::new(TaskValue { function: func.clone(), args })))
+                    Ok(Value::Task(Rc::new(TaskValue {
+                        function: func.clone(),
+                        args,
+                        state: RefCell::new(TaskState::Pending),
+                    })))
                 } else {
                     self.invoke_function(func, args)
                 }
@@ -343,6 +442,7 @@ impl Interpreter {
             Value::Task(task) => self.execute_task(task),
             Value::NativeFunction(f) => f(args).map_err(|e| match e {
                 RuntimeError::Message(msg) => msg,
+                RuntimeError::Located(span, msg) => format!("{}: {}", span.render(), msg),
                 RuntimeError::Return(_) => "native return".to_string(),
                 RuntimeError::Break | RuntimeError::Continue => "native loop control".to_string(),
             }),
@@ -358,21 +458,34 @@ impl Interpreter {
         for (name, value) in func.params.iter().cloned().zip(args) {
             env.borrow_mut().define(name, value);
         }
-        match self.execute_block(&func.body, env, Path::new(".")) {
+        match self.execute_block(&func.body, env, &func.source_dir) {
             Ok(()) => Ok(Value::Null),
             Err(RuntimeError::Return(v)) => Ok(v),
             Err(RuntimeError::Message(msg)) => Err(msg),
+            Err(RuntimeError::Located(span, msg)) => Err(format!("{}: {}", span.render(), msg)),
             Err(RuntimeError::Break) => Err("break used outside a loop".to_string()),
             Err(RuntimeError::Continue) => Err("continue used outside a loop".to_string()),
         }
     }
 
     fn execute_task(&mut self, task: Rc<TaskValue>) -> Result<Value, String> {
-        self.invoke_function(task.function.clone(), task.args.clone())
+        match &*task.state.borrow() {
+            TaskState::Completed(result) => return result.clone(),
+            TaskState::Running => return Err(format!("task `{}` is already running", task.function.name)),
+            TaskState::Pending => {}
+        }
+        *task.state.borrow_mut() = TaskState::Running;
+        let result = self.invoke_function(task.function.clone(), task.args.clone());
+        *task.state.borrow_mut() = TaskState::Completed(result.clone());
+        result
     }
 
     fn execute_stmt(&mut self, stmt: &Stmt, env: EnvRef, base_dir: &Path) -> Result<(), RuntimeError> {
         match stmt {
+            Stmt::Located(span, inner) => match self.execute_stmt(inner, env, base_dir) {
+                Err(RuntimeError::Message(message)) => Err(RuntimeError::Located(span.clone(), message)),
+                other => other,
+            },
             Stmt::Let(name, expr) => {
                 let value = self.evaluate(expr, env.clone(), base_dir).map_err(RuntimeError::Message)?;
                 env.borrow_mut().define(name.clone(), value);
@@ -437,7 +550,14 @@ impl Interpreter {
                 Ok(())
             }
             Stmt::Function { name, params, body, is_async } => {
-                let func = FunctionValue { name: name.clone(), params: params.clone(), body: body.clone(), closure: env.clone(), is_async: *is_async };
+                let func = FunctionValue {
+                    name: name.clone(),
+                    params: params.clone(),
+                    body: body.clone(),
+                    closure: env.clone(),
+                    is_async: *is_async,
+                    source_dir: base_dir.to_path_buf(),
+                };
                 env.borrow_mut().define(name.clone(), Value::Function(Rc::new(func)));
                 Ok(())
             }
@@ -469,21 +589,25 @@ impl Interpreter {
         let path = resolve_path(base_dir, path_text);
         let canonical = fs::canonicalize(&path).map_err(|e| format!("cannot open module {}: {}", path.display(), e))?;
         if self.loaded_modules.contains(&canonical) { return Ok(()); }
-        self.loaded_modules.insert(canonical.clone());
-        let source = fs::read_to_string(&canonical).map_err(|e| format!("cannot read module {}: {}", canonical.display(), e))?;
-        let source = cached_preprocess(&source, canonical.parent().unwrap_or(base_dir))?;
-        let mut parser = Parser::new(&source);
-        let program = parser.parse_program()?;
-        let parent = canonical.parent().unwrap_or(base_dir);
-        for stmt in &program.stmts {
-            self.execute_stmt(stmt, self.globals.clone(), parent).map_err(|e| match e {
-                RuntimeError::Message(msg) => msg,
-                RuntimeError::Return(_) => "return used outside a function".to_string(),
-                RuntimeError::Break => "break used outside a loop".to_string(),
-                RuntimeError::Continue => "continue used outside a loop".to_string(),
-            })?;
+        if !self.loading_modules.insert(canonical.clone()) {
+            return Err(format!("cyclic module import detected at {}", canonical.display()));
         }
-        Ok(())
+        let result = (|| {
+            let source = fs::read_to_string(&canonical).map_err(|e| format!("cannot read module {}: {}", canonical.display(), e))?;
+            let source = cached_preprocess(&source, canonical.parent().unwrap_or(base_dir))?;
+            let mut parser = Parser::new_with_source(&source, canonical.to_string_lossy());
+            let program = parser.parse_program()?;
+            let parent = canonical.parent().unwrap_or(base_dir);
+            for stmt in &program.stmts {
+                self.execute_stmt(stmt, self.globals.clone(), parent).map_err(runtime_error_to_string)?;
+            }
+            Ok(())
+        })();
+        self.loading_modules.remove(&canonical);
+        if result.is_ok() {
+            self.loaded_modules.insert(canonical);
+        }
+        result
     }
 
     fn evaluate(&mut self, expr: &Expr, env: EnvRef, base_dir: &Path) -> Result<Value, String> {
@@ -506,6 +630,17 @@ impl Interpreter {
                 self.assign_index(target_value, index_value, value.clone())?;
                 Ok(value)
             }
+            Expr::AssignProperty(target, name, value_expr) => {
+                let target_value = self.evaluate(target, env.clone(), base_dir)?;
+                let value = self.evaluate(value_expr, env, base_dir)?;
+                match target_value {
+                    Value::Record(record) => {
+                        record.borrow_mut().insert(name.clone(), value.clone());
+                        Ok(value)
+                    }
+                    _ => Err("property assignment requires a record".to_string()),
+                }
+            }
             Expr::Grouping(inner) => self.evaluate(inner, env, base_dir),
             Expr::Array(items) => {
                 let mut values = Vec::with_capacity(items.len());
@@ -513,6 +648,16 @@ impl Interpreter {
                     values.push(self.evaluate(item, env.clone(), base_dir)?);
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            Expr::Record(fields) => {
+                let mut values = BTreeMap::new();
+                for (name, expression) in fields {
+                    if values.contains_key(name) {
+                        return Err(format!("duplicate record field `{}`", name));
+                    }
+                    values.insert(name.clone(), self.evaluate(expression, env.clone(), base_dir)?);
+                }
+                Ok(Value::Record(Rc::new(RefCell::new(values))))
             }
             Expr::Await(inner) => {
                 let value = self.evaluate(inner, env, base_dir)?;
@@ -525,6 +670,17 @@ impl Interpreter {
                 let target_value = self.evaluate(target, env.clone(), base_dir)?;
                 let index_value = self.evaluate(index, env, base_dir)?;
                 self.index_value(target_value, index_value)
+            }
+            Expr::Property(target, name) => {
+                let target_value = self.evaluate(target, env, base_dir)?;
+                match target_value {
+                    Value::Record(record) => record
+                        .borrow()
+                        .get(name)
+                        .cloned()
+                        .ok_or_else(|| format!("record has no property `{}`", name)),
+                    _ => Err("property access requires a record".to_string()),
+                }
             }
             Expr::Unary(op, right) => {
                 let right = self.evaluate(right, env, base_dir)?;
@@ -591,24 +747,38 @@ impl Interpreter {
     }
 
     fn index_value(&self, target: Value, index: Value) -> Result<Value, String> {
-        let idx = as_index(&index)?;
         match target {
-            Value::Array(items) => items.borrow().get(idx).cloned().ok_or_else(|| format!("array index {} is out of bounds", idx)),
-            Value::String(text) => text.chars().nth(idx).map(|c| Value::String(c.to_string())).ok_or_else(|| format!("string index {} is out of bounds", idx)),
-            _ => Err("index access can only be used on arrays or strings".to_string()),
+            Value::Array(items) => {
+                let idx = as_index(&index)?;
+                items.borrow().get(idx).cloned().ok_or_else(|| format!("array index {} is out of bounds", idx))
+            }
+            Value::String(text) => {
+                let idx = as_index(&index)?;
+                text.chars().nth(idx).map(|c| Value::String(c.to_string())).ok_or_else(|| format!("string index {} is out of bounds", idx))
+            }
+            Value::Record(record) => {
+                let key = value_string_arg(&index, "record index").map_err(runtime_error_to_string)?;
+                record.borrow().get(&key).cloned().ok_or_else(|| format!("record has no key `{}`", key))
+            }
+            _ => Err("index access can only be used on arrays, strings, or records".to_string()),
         }
     }
 
     fn assign_index(&self, target: Value, index: Value, value: Value) -> Result<(), String> {
-        let idx = as_index(&index)?;
         match target {
             Value::Array(items) => {
+                let idx = as_index(&index)?;
                 let mut items = items.borrow_mut();
                 if idx >= items.len() { return Err(format!("array index {} is out of bounds", idx)); }
                 items[idx] = value;
                 Ok(())
             }
-            _ => Err("indexed assignment can only be used on arrays".to_string()),
+            Value::Record(record) => {
+                let key = value_string_arg(&index, "record index").map_err(runtime_error_to_string)?;
+                record.borrow_mut().insert(key, value);
+                Ok(())
+            }
+            _ => Err("indexed assignment can only be used on arrays or records".to_string()),
         }
     }
 
@@ -619,7 +789,12 @@ impl Interpreter {
             Value::Number(v) => *v != 0.0,
             Value::String(v) => !v.is_empty(),
             Value::Array(v) => !v.borrow().is_empty(),
-            Value::Function(_) | Value::Task(_) | Value::NativeFunction(_) => true,
+            Value::Record(v) => !v.borrow().is_empty(),
+            Value::Function(_)
+            | Value::Task(_)
+            | Value::Listener(_)
+            | Value::Connection(_)
+            | Value::NativeFunction(_) => true,
         }
     }
 
@@ -673,11 +848,16 @@ impl Environment {
 struct Parser {
     tokens: Vec<Token>,
     current: usize,
+    source: String,
 }
 
 impl Parser {
     fn new(source: &str) -> Self {
-        Self { tokens: Lexer::new(source).lex(), current: 0 }
+        Self::new_with_source(source, "<memory>")
+    }
+
+    fn new_with_source(source: &str, source_name: impl Into<String>) -> Self {
+        Self { tokens: Lexer::new(source).lex(), current: 0, source: source_name.into() }
     }
 
     fn parse_program(&mut self) -> Result<Program, String> {
@@ -689,12 +869,18 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Stmt, String> {
+        let start = self.current;
+        let statement = self.declaration_inner()?;
+        Ok(Stmt::Located(self.span_from(start), Box::new(statement)))
+    }
+
+    fn declaration_inner(&mut self) -> Result<Stmt, String> {
         let is_async = self.match_simple(&[TokenKind::Async]);
         if self.match_simple(&[TokenKind::Fn]) { return self.function_decl(is_async); }
         if self.match_simple(&[TokenKind::Const]) { return self.const_decl(); }
         if self.match_simple(&[TokenKind::Let]) { return self.let_decl(); }
         if self.match_simple(&[TokenKind::Use]) { return self.use_decl(); }
-        if is_async { return Err("`async` must be followed by `fn`".to_string()); }
+        if is_async { return Err(self.error_here("`async` must be followed by `fn`")); }
         self.statement()
     }
 
@@ -738,7 +924,7 @@ impl Parser {
     fn use_decl(&mut self) -> Result<Stmt, String> {
         let path = match self.advance().kind.clone() {
             TokenKind::String(s) => s,
-            other => return Err(format!("`use` requires a string path, found {:?}", other)),
+            other => return Err(self.error_here(&format!("`use` requires a string path, found {:?}", other))),
         };
         self.consume_simple(TokenKind::Semicolon, "`use` must end with `;`")?;
         Ok(Stmt::Use(path))
@@ -819,7 +1005,8 @@ impl Parser {
             return match expr {
                 Expr::Variable(name) => Ok(Expr::Assign(name, Box::new(value))),
                 Expr::Index(target, index) => Ok(Expr::AssignIndex(target, index, Box::new(value))),
-                _ => Err("assignment target must be an identifier or array index".to_string()),
+                Expr::Property(target, name) => Ok(Expr::AssignProperty(target, name, Box::new(value))),
+                _ => Err(self.error_here("assignment target must be an identifier, index, or property")),
             };
         }
         Ok(expr)
@@ -931,6 +1118,11 @@ impl Parser {
                 expr = Expr::Index(Box::new(expr), Box::new(index));
                 continue;
             }
+            if self.match_simple(&[TokenKind::Dot]) {
+                let name = self.consume_identifier("property name is required after `.`")?;
+                expr = Expr::Property(Box::new(expr), name);
+                continue;
+            }
             break;
         }
         Ok(expr)
@@ -960,13 +1152,42 @@ impl Parser {
             self.consume_simple(TokenKind::RightBracket, "array requires `]`")?;
             return Ok(Expr::Array(items));
         }
+        if self.match_simple(&[TokenKind::LeftBrace]) {
+            let mut fields = Vec::new();
+            if !self.check_simple(&TokenKind::RightBrace) {
+                loop {
+                    let key_token = self.advance().clone();
+                    let key = match key_token.kind.clone() {
+                        TokenKind::Identifier(name) | TokenKind::String(name) => name,
+                        other => return Err(self.error_at(&key_token, &format!(
+                            "record key must be an identifier or string, found {:?}",
+                            other
+                        ))),
+                    };
+                    self.consume_simple(TokenKind::Colon, "record field requires `:`")?;
+                    let value = self.expression()?;
+                    fields.push((key, value));
+                    if !self.match_simple(&[TokenKind::Comma]) {
+                        break;
+                    }
+                    if self.check_simple(&TokenKind::RightBrace) {
+                        break;
+                    }
+                }
+            }
+            self.consume_simple(TokenKind::RightBrace, "record requires `}`")?;
+            return Ok(Expr::Record(fields));
+        }
         if self.match_simple(&[TokenKind::LeftParen]) {
             let expr = self.expression()?;
             self.consume_simple(TokenKind::RightParen, "grouping requires `)`")?;
             return Ok(Expr::Grouping(Box::new(expr)));
         }
-        if self.match_simple(&[TokenKind::Eof]) { return Err("unexpected end of file".to_string()); }
-        Err(format!("token cannot be parsed as an expression: {:?}", self.peek().kind))
+        if let TokenKind::Invalid(message) = &self.peek().kind {
+            return Err(self.error_here(message));
+        }
+        if self.match_simple(&[TokenKind::Eof]) { return Err(self.error_here("unexpected end of file")); }
+        Err(self.error_here(&format!("token cannot be parsed as an expression: {:?}", self.peek().kind)))
     }
 
     fn consume_identifier(&mut self, message: &str) -> Result<String, String> {
@@ -981,8 +1202,27 @@ impl Parser {
     }
 
     fn error_here(&self, message: &str) -> String {
-        let t = self.peek();
-        format!("{} (line {}, col {})", message, t.line, t.col)
+        self.error_at(self.peek(), message)
+    }
+
+    fn error_at(&self, token: &Token, message: &str) -> String {
+        format!(
+            "{}:{}:{}-{}:{}: {}",
+            self.source, token.line, token.col, token.end_line, token.end_col, message
+        )
+    }
+
+    fn span_from(&self, start: usize) -> SourceSpan {
+        let first = self.tokens.get(start).unwrap_or_else(|| self.peek());
+        let last_index = self.current.saturating_sub(1).max(start);
+        let last = self.tokens.get(last_index).unwrap_or(first);
+        SourceSpan {
+            source: self.source.clone(),
+            start_line: first.line,
+            start_col: first.col,
+            end_line: last.end_line,
+            end_col: last.end_col,
+        }
     }
 
     fn match_simple(&mut self, kinds: &[TokenKind]) -> bool {
@@ -1005,6 +1245,7 @@ impl Parser {
             | (LeftBracket, LeftBracket)
             | (RightBracket, RightBracket)
             | (Comma, Comma)
+            | (Colon, Colon)
             | (Dot, Dot)
             | (Minus, Minus)
             | (Plus, Plus)
@@ -1072,7 +1313,13 @@ impl<'a> Lexer<'a> {
         while !self.is_at_end() {
             if let Some(token) = self.scan_token() { tokens.push(token); }
         }
-        tokens.push(Token { kind: TokenKind::Eof, line: self.line, col: self.col });
+        tokens.push(Token {
+            kind: TokenKind::Eof,
+            line: self.line,
+            col: self.col,
+            end_line: self.line,
+            end_col: self.col,
+        });
         tokens
     }
 
@@ -1089,13 +1336,20 @@ impl<'a> Lexer<'a> {
             '[' => LeftBracket,
             ']' => RightBracket,
             ',' => Comma,
+            ':' => Colon,
             '.' => Dot,
             '-' => Minus,
             '+' => Plus,
             ';' => Semicolon,
             '*' => Star,
             '%' => Percent,
-            '|' => if self.match_char('>') { PipeGreater } else { panic!("`|` must be followed by `>` (line {}, col {})", line, col) },
+            '|' => {
+                if self.match_char('>') {
+                    PipeGreater
+                } else {
+                    Invalid("`|` must be followed by `>`".to_string())
+                }
+            }
             '!' => if self.match_char('=') { BangEqual } else { Bang },
             '=' => if self.match_char('=') { EqualEqual } else if self.match_char('>') { FatArrow } else { Equal },
             '<' => if self.match_char('=') { LessEqual } else { Less },
@@ -1120,9 +1374,9 @@ impl<'a> Lexer<'a> {
             '"' => return Some(self.string_token(line, col)),
             c if c.is_ascii_digit() => return Some(self.number_token(c, line, col)),
             c if is_alpha(c) => return Some(self.identifier_token(c, line, col)),
-            _ => Invalid(format!("unknown character `{}` at line {}, col {}", c, line, col)),
+            _ => Invalid(format!("unknown character `{}`", c)),
         };
-        Some(Token { kind, line, col })
+        Some(Token { kind, line, col, end_line: self.line, end_col: self.col })
     }
 
     fn block_comment(&mut self) {
@@ -1150,10 +1404,16 @@ impl<'a> Lexer<'a> {
             }
         }
         if self.is_at_end() {
-            Token { kind: TokenKind::Invalid(format!("unterminated string at line {}, col {}", line, col)), line, col }
+            Token {
+                kind: TokenKind::Invalid("unterminated string".to_string()),
+                line,
+                col,
+                end_line: self.line,
+                end_col: self.col,
+            }
         } else {
             self.advance();
-            Token { kind: TokenKind::String(value), line, col }
+            Token { kind: TokenKind::String(value), line, col, end_line: self.line, end_col: self.col }
         }
     }
 
@@ -1165,7 +1425,17 @@ impl<'a> Lexer<'a> {
             text.push(self.advance());
             while self.peek().is_ascii_digit() { text.push(self.advance()); }
         }
-        Token { kind: TokenKind::Number(text.parse::<f64>().unwrap_or(0.0)), line, col }
+        let kind = match text.parse::<f64>() {
+            Ok(number) if number.is_finite() => TokenKind::Number(number),
+            _ => TokenKind::Invalid("number literal is outside the finite numeric range".to_string()),
+        };
+        Token {
+            kind,
+            line,
+            col,
+            end_line: self.line,
+            end_col: self.col,
+        }
     }
 
     fn identifier_token(&mut self, first: char, line: usize, col: usize) -> Token {
@@ -1195,7 +1465,7 @@ impl<'a> Lexer<'a> {
             "or" | "any" => TokenKind::Or,
             _ => TokenKind::Identifier(text),
         };
-        Token { kind, line, col }
+        Token { kind, line, col, end_line: self.line, end_col: self.col }
     }
 
     fn is_at_end(&self) -> bool { self.current >= self.chars.len() }
@@ -1219,14 +1489,62 @@ fn root_env(env: &EnvRef) -> EnvRef {
     }
 }
 
+fn existing_module_path(path: &Path) -> Option<PathBuf> {
+    if path.is_file() {
+        return Some(path.to_path_buf());
+    }
+    if path.is_dir() {
+        let manifest = path.join("oxid.toml");
+        if manifest.is_file() {
+            if let Ok(project) = load_manifest(&manifest) {
+                if let Some(entry) = project.entry {
+                    let entry = path.join(entry);
+                    if entry.is_file() {
+                        return Some(entry);
+                    }
+                }
+            }
+        }
+        for candidate in ["src/lib.ox", "src/main.ox", "lib.ox", "main.ox", "package.ox"] {
+            let candidate = path.join(candidate);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 fn resolve_path(base_dir: &Path, text: &str) -> PathBuf {
     let candidate = Path::new(text);
     if candidate.is_absolute() { return candidate.to_path_buf(); }
+    let project_root = project_root_for(base_dir);
+    if let Ok(manifest) = load_manifest(&project_root.join("oxid.toml")) {
+        if let Some(first) = candidate.components().next().and_then(|part| match part {
+            std::path::Component::Normal(name) => name.to_str(),
+            _ => None,
+        }) {
+            if let Some(spec) = manifest.dependencies.get(first) {
+                let dependency_root = if spec.starts_with("git+") || spec.starts_with("https://") {
+                    project_root.join(".oxid").join("deps").join(first)
+                } else {
+                    project_root.join(spec)
+                };
+                let remainder = candidate.strip_prefix(first).unwrap_or(Path::new(""));
+                if let Some(module) = existing_module_path(&dependency_root.join(remainder)) {
+                    return module;
+                }
+            }
+        }
+    }
     let mut roots = vec![base_dir.to_path_buf(), base_dir.join("src"), base_dir.join("stdlib"), base_dir.join("modules"), base_dir.join("deps"), base_dir.join("vendor")];
+    roots.push(project_root.join(".oxid").join("deps"));
+    roots.push(project_root.join("deps"));
+    roots.push(project_root.join("vendor"));
     if let Ok(extra) = env::var("OXID_PATH") { for p in env::split_paths(&extra) { roots.push(p); } }
     for root in roots {
         let joined = root.join(candidate);
-        if joined.exists() { return joined; }
+        if let Some(module) = existing_module_path(&joined) { return module; }
         if candidate.extension().is_none() {
             let with_ox = joined.with_extension("ox");
             if with_ox.exists() { return with_ox; }
@@ -1241,12 +1559,20 @@ fn resolve_path(base_dir: &Path, text: &str) -> PathBuf {
 }
 
 fn source_fingerprint(text: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{:016x}", hash)
 }
 
 fn cache_root(base_dir: &Path) -> PathBuf {
+    if let Ok(path) = env::var("OXID_CACHE_DIR") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
     base_dir.join(".oxid").join("cache")
 }
 
@@ -1258,6 +1584,7 @@ fn preprocess_source(source: &str) -> Result<String, String> {
         if line.starts_with("macro ") {
             let (name, def) = parse_macro_def(line)?;
             macros.insert(name, def);
+            body_lines.push(String::new());
         } else {
             body_lines.push(raw.to_string());
         }
@@ -1365,7 +1692,9 @@ fn expand_macro_body(def: &MacroDef, args: &[String]) -> Result<String, String> 
 fn cached_preprocess(source: &str, base_dir: &Path) -> Result<String, String> {
     let key = source_fingerprint(source);
     let cache_dir = cache_root(base_dir).join("preprocess");
-    fs::create_dir_all(&cache_dir).map_err(|e| format!("cannot create cache directory: {}", e))?;
+    if fs::create_dir_all(&cache_dir).is_err() {
+        return preprocess_source(source);
+    }
     let cache_file = cache_dir.join(format!("{}.oxp", key));
     if let Ok(existing) = fs::read_to_string(&cache_file) { return Ok(existing); }
     let processed = preprocess_source(source)?;
@@ -1399,28 +1728,109 @@ fn repl(interp: &mut Interpreter) -> Result<(), String> {
 }
 
 fn run_source(source: &str, base_dir: &Path, interp: &mut Interpreter) -> Result<(), String> {
+    run_source_named(source, base_dir, "<memory>", interp)
+}
+
+fn run_source_named(source: &str, base_dir: &Path, source_name: &str, interp: &mut Interpreter) -> Result<(), String> {
     let processed = cached_preprocess(source, base_dir)?;
-    let mut parser = Parser::new(&processed);
+    let mut parser = Parser::new_with_source(&processed, source_name);
     let program = parser.parse_program()?;
     interp.execute_program(&program, base_dir)
 }
 
 fn run_file(path: &Path, interp: &mut Interpreter) -> Result<(), String> {
     let canonical = fs::canonicalize(path).map_err(|e| format!("cannot open file: {} ({})", path.display(), e))?;
-    let source = fs::read_to_string(&canonical).map_err(|e| format!("cannot read file: {} ({})", canonical.display(), e))?;
     let base_dir = canonical.parent().unwrap_or(Path::new("."));
-    run_source(&source, base_dir, interp)
+    let bytes = fs::read(&canonical).map_err(|e| format!("cannot read file: {} ({})", canonical.display(), e))?;
+    if artifact::is_artifact(&bytes) {
+        let decoded = artifact::decode(&bytes)?;
+        interp.execute_program(&decoded.program, base_dir)
+    } else {
+        let source = String::from_utf8(bytes).map_err(|_| format!("source is not valid UTF-8: {}", canonical.display()))?;
+        run_source_named(&source, base_dir, &canonical.to_string_lossy(), interp)
+    }
+}
+
+fn split_script_command(script: &str) -> Result<Vec<String>, String> {
+    let mut arguments = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut has_content = false;
+    let mut characters = script.chars().peekable();
+
+    while let Some(character) = characters.next() {
+        if character.is_control() && !character.is_whitespace() {
+            return Err("script command contains a control character".to_string());
+        }
+        if let Some(active_quote) = quote {
+            if character == active_quote {
+                quote = None;
+                has_content = true;
+            } else if character == '\\' && active_quote == '"' {
+                match characters.peek().copied() {
+                    Some('"' | '\\') => {
+                        current.push(characters.next().expect("peeked script character"));
+                        has_content = true;
+                    }
+                    _ => current.push(character),
+                }
+            } else {
+                current.push(character);
+                has_content = true;
+            }
+            continue;
+        }
+
+        match character {
+            '\'' | '"' => {
+                quote = Some(character);
+                has_content = true;
+            }
+            character if character.is_whitespace() => {
+                if has_content {
+                    arguments.push(std::mem::take(&mut current));
+                    has_content = false;
+                }
+            }
+            '\\' => match characters.peek().copied() {
+                Some(next) if next.is_whitespace() || matches!(next, '\'' | '"' | '\\') => {
+                    current.push(characters.next().expect("peeked script character"));
+                    has_content = true;
+                }
+                _ => {
+                    current.push(character);
+                    has_content = true;
+                }
+            },
+            _ => {
+                current.push(character);
+                has_content = true;
+            }
+        }
+    }
+
+    if let Some(active_quote) = quote {
+        return Err(format!("unterminated {} quote in script command", active_quote));
+    }
+    if has_content {
+        arguments.push(current);
+    }
+    if arguments.first().is_none_or(String::is_empty) {
+        return Err("script command is empty".to_string());
+    }
+    Ok(arguments)
 }
 
 fn run_manifest_script(root: &Path, script_name: &str, extra_args: &[String]) -> Result<(), String> {
     let manifest = load_manifest(&root.join("oxid.toml"))?;
     let script = manifest.scripts.get(script_name).cloned().ok_or_else(|| format!("script `{}` was not found in oxid.toml", script_name))?;
-    let command_line = if extra_args.is_empty() { script } else { format!("{} {}", script, extra_args.join(" ")) };
-    let status = if cfg!(windows) {
-        Command::new("cmd").args(["/C", &command_line]).current_dir(root).status().map_err(|e| format!("failed to launch script: {}", e))?
-    } else {
-        Command::new("sh").args(["-lc", &command_line]).current_dir(root).status().map_err(|e| format!("failed to launch script: {}", e))?
-    };
+    let arguments = split_script_command(&script)?;
+    let status = Command::new(&arguments[0])
+        .args(&arguments[1..])
+        .args(extra_args)
+        .current_dir(root)
+        .status()
+        .map_err(|e| format!("failed to launch script `{}`: {}", script_name, e))?;
     if status.success() { Ok(()) } else { Err(format!("script `{}` exited with status {}", script_name, status)) }
 }
 
@@ -1501,13 +1911,69 @@ fn watch_file(path: &Path, interp: &mut Interpreter) -> Result<(), String> {
     }
 }
 
-fn parse_manifest_value(raw: &str) -> Option<String> {
+fn parse_manifest_value(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim().trim_end_matches(',').trim();
-    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-        Some(trimmed[1..trimmed.len() - 1].to_string())
-    } else {
-        None
+    if !trimmed.starts_with('"') {
+        return Ok(trimmed.split('#').next().unwrap_or("").trim().to_string());
     }
+    let mut output = String::new();
+    let mut index = 1usize;
+    while index < trimmed.len() {
+        let character = trimmed[index..].chars().next().ok_or_else(|| "unterminated manifest string".to_string())?;
+        index += character.len_utf8();
+        match character {
+            '"' => {
+                let suffix = trimmed[index..].trim();
+                if suffix.is_empty() || suffix.starts_with('#') {
+                    return Ok(output);
+                }
+                return Err(format!("unexpected text after manifest string: {}", suffix));
+            }
+            '\\' => {
+                let escaped = trimmed[index..].chars().next().ok_or_else(|| "unterminated manifest string escape".to_string())?;
+                index += escaped.len_utf8();
+                match escaped {
+                    '"' => output.push('"'),
+                    '\\' => output.push('\\'),
+                    'n' => output.push('\n'),
+                    'r' => output.push('\r'),
+                    't' => output.push('\t'),
+                    'u' => {
+                        let end = index.checked_add(4).ok_or_else(|| "manifest Unicode escape overflow".to_string())?;
+                        let digits = trimmed.get(index..end).ok_or_else(|| "incomplete manifest Unicode escape".to_string())?;
+                        if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                            return Err("manifest Unicode escapes require four hexadecimal digits".to_string());
+                        }
+                        let value = u32::from_str_radix(digits, 16).map_err(|_| "invalid manifest Unicode escape".to_string())?;
+                        output.push(char::from_u32(value).ok_or_else(|| "invalid manifest Unicode scalar".to_string())?);
+                        index = end;
+                    }
+                    other => return Err(format!("unsupported manifest string escape `\\{}`", other)),
+                }
+            }
+            character if character.is_control() => return Err("manifest string contains an unescaped control character".to_string()),
+            _ => output.push(character),
+        }
+    }
+    Err("unterminated manifest string".to_string())
+}
+
+fn quote_manifest_string(value: &str) -> String {
+    let mut output = String::with_capacity(value.len() + 2);
+    output.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character if character.is_control() => output.push_str(&format!("\\u{:04x}", u32::from(character))),
+            _ => output.push(character),
+        }
+    }
+    output.push('"');
+    output
 }
 
 fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
@@ -1521,74 +1987,130 @@ fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
             section = line.trim_start_matches('[').trim_end_matches(']').to_string();
             continue;
         }
-        let Some((key, value_raw)) = line.split_once('=') else { continue; };
-        let key = key.trim();
-        let value = parse_manifest_value(value_raw).unwrap_or_else(|| value_raw.trim().trim_matches('"').to_string());
-        match (section.as_str(), key) {
+        let Some((key_raw, value_raw)) = line.split_once('=') else { continue; };
+        let key_raw = key_raw.trim();
+        let key = if key_raw.starts_with('"') {
+            parse_manifest_value(key_raw).map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?
+        } else {
+            key_raw.to_string()
+        };
+        let value = parse_manifest_value(value_raw).map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?;
+        match (section.as_str(), key.as_str()) {
             ("project", "name") | ("", "name") => manifest.name = Some(value),
             ("project", "version") | ("", "version") => manifest.version = Some(value),
             ("project", "entry") | ("build", "entry") | ("", "entry") => manifest.entry = Some(value),
             ("features", _) => {
                 let enabled = matches!(value.as_str(), "true" | "yes" | "on" | "1");
-                manifest.features.insert(key.to_string(), enabled);
+                manifest.features.insert(key, enabled);
             }
-            ("scripts", _) => { manifest.scripts.insert(key.to_string(), value); }
-            ("dependencies", _) => { manifest.dependencies.insert(key.to_string(), value); }
+            ("scripts", _) => { manifest.scripts.insert(key, value); }
+            ("dependencies", _) => { manifest.dependencies.insert(key, value); }
             _ => {}
         }
     }
     Ok(manifest)
 }
 
-fn bundle_file(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<String, String> {
-    let canonical = fs::canonicalize(path).map_err(|e| format!("cannot open source {}: {}", path.display(), e))?;
-    if !visited.insert(canonical.clone()) { return Ok(String::new()); }
-    let source = fs::read_to_string(&canonical).map_err(|e| format!("cannot read source {}: {}", canonical.display(), e))?;
-    let base_dir = canonical.parent().unwrap_or(Path::new("."));
-    let mut bundled = String::new();
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("use \"") {
-            if let Some(module_path) = rest.strip_suffix("\";") {
-                bundled.push_str(&bundle_file(&resolve_path(base_dir, module_path), visited)?);
-                continue;
-            }
+fn project_root_for(path: &Path) -> PathBuf {
+    let start = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
+    for ancestor in start.ancestors() {
+        if ancestor.join("oxid.toml").is_file() {
+            return ancestor.to_path_buf();
         }
-        if let Some(rest) = trimmed.strip_prefix("import \"") {
-            if let Some(module_path) = rest.strip_suffix("\";") {
-                bundled.push_str(&bundle_file(&resolve_path(base_dir, module_path), visited)?);
-                continue;
-            }
-        }
-        bundled.push_str(line);
-        bundled.push('\n');
     }
-    Ok(bundled)
+    start.to_path_buf()
+}
+
+fn portable_source_name(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn compile_module_graph(
+    path: &Path,
+    root: &Path,
+    loading: &mut HashSet<PathBuf>,
+    loaded: &mut HashSet<PathBuf>,
+    statements: &mut Vec<Stmt>,
+) -> Result<(), String> {
+    let canonical = fs::canonicalize(path).map_err(|e| format!("cannot open source {}: {}", path.display(), e))?;
+    if loaded.contains(&canonical) {
+        return Ok(());
+    }
+    if !loading.insert(canonical.clone()) {
+        return Err(format!(
+            "cyclic module import detected while compiling {}",
+            portable_source_name(root, &canonical)
+        ));
+    }
+    let result = (|| {
+        let source = fs::read_to_string(&canonical).map_err(|e| format!("cannot read source {}: {}", canonical.display(), e))?;
+        let processed = preprocess_source(&source)?;
+        let source_name = portable_source_name(root, &canonical);
+        let mut parser = Parser::new_with_source(&processed, source_name);
+        let program = parser.parse_program()?;
+        let base_dir = canonical.parent().unwrap_or(root);
+        let mut local = Vec::new();
+        for statement in program.stmts {
+            let import = match &statement {
+                Stmt::Located(_, inner) => match inner.as_ref() {
+                    Stmt::Use(module) => Some(module.clone()),
+                    _ => None,
+                },
+                Stmt::Use(module) => Some(module.clone()),
+                _ => None,
+            };
+            if let Some(module) = import {
+                let resolved = resolve_path(base_dir, &module);
+                compile_module_graph(&resolved, root, loading, loaded, statements)?;
+            } else {
+                local.push(statement);
+            }
+        }
+        statements.extend(local);
+        Ok(())
+    })();
+    loading.remove(&canonical);
+    if result.is_ok() {
+        loaded.insert(canonical);
+    }
+    result
+}
+
+fn compile_program(input: &Path) -> Result<(Program, u32), String> {
+    let canonical = fs::canonicalize(input).map_err(|e| format!("cannot open source {}: {}", input.display(), e))?;
+    let root = project_root_for(&canonical);
+    let mut loading = HashSet::new();
+    let mut loaded = HashSet::new();
+    let mut statements = Vec::new();
+    compile_module_graph(&canonical, &root, &mut loading, &mut loaded, &mut statements)?;
+    Ok((Program { stmts: statements }, loaded.len() as u32))
 }
 
 fn compile_file(input: &Path, output: &Path) -> Result<(), String> {
-    let mut visited = HashSet::new();
-    let bundled = bundle_file(input, &mut visited)?;
-    let processed = preprocess_source(&bundled)?;
-    let mut parser = Parser::new(&processed);
-    parser.parse_program()?;
+    let (program, module_count) = compile_program(input)?;
     if let Some(parent) = output.parent() { fs::create_dir_all(parent).map_err(|e| format!("cannot create output directory: {}", e))?; }
-    let artifact = format!("// Oxid bundle v0.8\n{}", processed);
-    fs::write(output, artifact).map_err(|e| format!("cannot write bundle {}: {}", output.display(), e))?;
-    println!("compiled: {} -> {} ({} modules)", input.display(), output.display(), visited.len());
+    artifact::write(output, &program, module_count)?;
+    println!("compiled: {} -> {} ({} modules, bytecode v1)", input.display(), output.display(), module_count);
     Ok(())
 }
 
-fn build_project(root: &Path) -> Result<(), String> {
+fn sorted_map_text<T: ToString>(values: &HashMap<String, T>) -> String {
+    if values.is_empty() {
+        return "none".to_string();
+    }
+    let mut entries = values.iter().map(|(key, value)| format!("{}={}", key, value.to_string())).collect::<Vec<_>>();
+    entries.sort();
+    entries.join(", ")
+}
+
+fn build_project(root: &Path, options: packages::ResolveOptions) -> Result<(), String> {
     let manifest_path = root.join("oxid.toml");
     if !manifest_path.exists() { return Err(format!("manifest not found: {}", manifest_path.display())); }
     let manifest = load_manifest(&manifest_path)?;
-    for (name, target) in &manifest.dependencies {
-        let path = Path::new(target);
-        if (target.starts_with("./") || target.starts_with("../") || path.is_absolute()) && !path.exists() {
-            return Err(format!("dependency `{}` points to missing path: {}", name, target));
-        }
-    }
+    let locked_packages = packages::resolve_dependencies(root, &manifest.dependencies, options)?;
     let entry = manifest.entry.clone().or_else(|| {
         let src_main = root.join("src/main.ox");
         if src_main.exists() { Some("src/main.ox".to_string()) } else { None }
@@ -1607,9 +2129,13 @@ fn build_project(root: &Path) -> Result<(), String> {
         manifest.name.clone().unwrap_or_else(|| "unknown".to_string()),
         manifest.version.clone().unwrap_or_else(|| "unknown".to_string()),
         entry,
-        if manifest.features.is_empty() { "none".to_string() } else { manifest.features.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", ") },
-        if manifest.scripts.is_empty() { "none".to_string() } else { manifest.scripts.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", ") },
-        if manifest.dependencies.is_empty() { "none".to_string() } else { manifest.dependencies.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", ") },
+        sorted_map_text(&manifest.features),
+        sorted_map_text(&manifest.scripts),
+        if locked_packages.is_empty() {
+            "none".to_string()
+        } else {
+            locked_packages.iter().map(|package| format!("{}@{}", package.name, package.checksum)).collect::<Vec<_>>().join(", ")
+        },
     );
     let oxid_dir = root.join(".oxid");
     fs::create_dir_all(&oxid_dir).map_err(|e| format!("cannot create build directory: {}", e))?;
@@ -1617,6 +2143,41 @@ fn build_project(root: &Path) -> Result<(), String> {
     let artifact_name = manifest.name.as_deref().unwrap_or("app");
     compile_file(&entry_path, &oxid_dir.join("bin").join(format!("{}.oxb", artifact_name)))?;
     println!("build ok: {}", entry_path.display());
+    Ok(())
+}
+
+fn resolve_project_dependencies(root: &Path, options: packages::ResolveOptions) -> Result<(), String> {
+    let manifest = load_manifest(&root.join("oxid.toml"))?;
+    let resolved = packages::resolve_dependencies(root, &manifest.dependencies, options)?;
+    if resolved.is_empty() {
+        println!("dependencies resolved: none");
+    } else {
+        for package in &resolved {
+            println!("{} {} {}", package.name, package.revision.as_deref().unwrap_or("path"), package.checksum);
+        }
+        println!("dependencies resolved: {}", resolved.len());
+    }
+    Ok(())
+}
+
+fn list_project_dependencies(root: &Path) -> Result<(), String> {
+    let dependencies = packages::list_dependencies(&root.join("oxid.toml"))?;
+    if dependencies.is_empty() {
+        println!("dependencies: none");
+    } else {
+        for (name, source) in dependencies {
+            println!("{} = {}", name, source);
+        }
+    }
+    Ok(())
+}
+
+fn remove_project_dependency(root: &Path, name: &str) -> Result<(), String> {
+    if !packages::remove_dependency_from_manifest(&root.join("oxid.toml"), name)? {
+        return Err(format!("dependency `{}` is not declared", name));
+    }
+    resolve_project_dependencies(root, packages::ResolveOptions::default())?;
+    println!("removed dependency: {}", name);
     Ok(())
 }
 
@@ -1648,27 +2209,50 @@ fn run_test_suite(root: &Path) -> Result<(), String> {
 }
 
 fn doctor_project(root: &Path) -> Result<(), String> {
-    let checks = [
-        ("manifest", root.join("oxid.toml")),
-        ("readme-en", root.join("README.md")),
-        ("readme-zh", root.join("README_ZH.md")),
-        ("readme-jp", root.join("README_JP.md")),
-        ("entry", root.join("src/main.ox")),
-        ("native", root.join("native")),
-        ("docs", root.join("docs")),
-        ("examples", root.join("examples")),
-        ("stdlib", root.join("stdlib")),
-        ("tests", root.join("tests")),
-        ("ci", root.join(".github/workflows/ci.yml")),
-        ("release", root.join(".github/workflows/release.yml")),
-        ("unix-installer", root.join("install.sh")),
-        ("windows-installer", root.join("install.ps1")),
+    let manifest_path = root.join("oxid.toml");
+    println!("manifest: {}", if manifest_path.is_file() { "ok" } else { "missing" });
+    if !manifest_path.is_file() {
+        return Err(format!("project health check failed; missing: {}", manifest_path.display()));
+    }
+    let manifest = load_manifest(&manifest_path)?;
+    let entry = manifest
+        .entry
+        .as_deref()
+        .map(|path| root.join(path))
+        .or_else(|| [root.join("src/main.ox"), root.join("main.ox")].into_iter().find(|path| path.is_file()))
+        .ok_or_else(|| "project health check failed; no project entry is configured".to_string())?;
+    let repository_mode = root.join("Cargo.toml").is_file() && root.join("native").is_dir();
+    let mut checks = vec![
+        ("entry", entry, true),
+        ("readme", root.join("README.md"), false),
+        ("examples", root.join("examples"), false),
+        ("stdlib", root.join("stdlib"), false),
+        ("tests", root.join("tests"), false),
+        ("lockfile", root.join("oxid.lock"), !manifest.dependencies.is_empty()),
     ];
+    if repository_mode {
+        checks.extend([
+            ("readme-zh", root.join("README_ZH.md"), true),
+            ("readme-jp", root.join("README_JP.md"), true),
+            ("native", root.join("native"), true),
+            ("docs", root.join("docs"), true),
+            ("compiler", root.join("compiler/main.ox"), true),
+            ("ci", root.join(".github/workflows/ci.yml"), true),
+            ("release", root.join(".github/workflows/release.yml"), true),
+            ("unix-installer", root.join("install.sh"), true),
+            ("windows-installer", root.join("install.ps1"), true),
+        ]);
+    }
     let mut missing = Vec::new();
-    for (name, path) in checks {
+    for (name, path, required) in checks {
         let exists = path.exists();
-        println!("{}: {}", name, if exists { "ok" } else { "missing" });
-        if !exists { missing.push(name); }
+        println!("{}: {}", name, if exists { "ok" } else if required { "missing" } else { "optional" });
+        if required && !exists { missing.push(name); }
+    }
+    let lockfile = root.join("oxid.lock");
+    if lockfile.is_file() {
+        packages::read_lockfile(&lockfile)?;
+        println!("lockfile-format: ok");
     }
     if missing.is_empty() { Ok(()) } else { Err(format!("project health check failed; missing: {}", missing.join(", "))) }
 }
@@ -1687,7 +2271,11 @@ fn document_project(root: &Path) -> Result<(), String> {
 - sleep / sleep_ms
 - assert / type_of
 - number / split / join_text / replace / json_escape
+- json_parse / json_stringify
+- record / keys / has_key / get / set / remove
 - process / process_output / python / java / go
+- net_listen / net_local_addr / net_accept / net_try_accept / net_read / net_write / net_close
+- http_read_request / http_write_response
 - web_response / web_serve_once
 - c_len / c_hash / cpp_len / cpp_hash
 
@@ -1698,8 +2286,12 @@ fn document_project(root: &Path) -> Result<(), String> {
 - oxid repl
 - oxid check
 - oxid compile
+- oxid ast
+- oxid inspect
 - oxid watch
-- oxid build
+- oxid build / install
+- oxid lock / fetch / update
+- oxid list / remove
 - oxid clean
 - oxid fmt
 - oxid test
@@ -1708,6 +2300,9 @@ fn document_project(root: &Path) -> Result<(), String> {
 - oxid new
 - oxid init
 - oxid add
+- oxid bench
+- oxid bootstrap / self-compile / self-host
+- oxid frontend / lint
 - oxid bridge
 - oxid web new
 - oxid discord new
@@ -1717,9 +2312,11 @@ fn document_project(root: &Path) -> Result<(), String> {
 - fast script execution
 - ergonomic async tasks
 - concise fun / var / say / give / when / for syntax
-- single-pass module bundles and pipeline expressions
+- deterministic versioned bytecode and serialized AST artifacts
+- cross-module source spans and pipeline expressions
 - macro pre-expansion
-- local module loading
+- local and locked Git module loading
+- records, canonical JSON, and nonblocking network adapters
 - Python, Java, Go, C, and C++ interoperability
 - Web routing and Discord interaction modules
 "#;
@@ -1730,6 +2327,11 @@ fn document_project(root: &Path) -> Result<(), String> {
 fn scaffold_project(name: &str) -> Result<(), String> {
     let root = Path::new(name);
     if root.exists() { return Err(format!("already exists: {}", root.display())); }
+    let project_name = root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "project name must end with a valid UTF-8 directory name".to_string())?;
     fs::create_dir_all(root.join("src")).map_err(|e| format!("failed to create project: {}", e))?;
     fs::create_dir_all(root.join("stdlib")).map_err(|e| format!("failed to create project: {}", e))?;
     fs::create_dir_all(root.join("examples")).map_err(|e| format!("failed to create project: {}", e))?;
@@ -1768,8 +2370,8 @@ Generated by `oxid new`.
 - Use the standard Oxid modules under `stdlib/`
 "#).map_err(|e| format!("failed to create README.md: {}", e))?;
     let manifest = format!(r#"[project]
-name = "{}"
-version = "0.8.0"
+name = {}
+version = {}
 entry = "src/main.ox"
 
 [scripts]
@@ -1797,8 +2399,9 @@ python_interop = true
 go_interop = true
 web = true
 discord = true
-"#, name);
+"#, quote_manifest_string(project_name), quote_manifest_string(OXID_VERSION));
     fs::write(root.join("oxid.toml"), manifest).map_err(|e| format!("failed to create oxid.toml: {}", e))?;
+    packages::write_lockfile(root, &[]).map_err(|e| format!("failed to create oxid.lock: {}", e))?;
     fs::write(root.join("tests/smoke.ox"), r#"fn main() {
     print "smoke";
 }
@@ -1981,12 +2584,20 @@ inline std::string run(const std::string& source) {
 }
 
 fn add_dependency(root: &Path, name: &str, target: &str) -> Result<(), String> {
+    if name.is_empty()
+        || !name.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err("dependency name may contain only ASCII letters, digits, '-', and '_'".to_string());
+    }
+    if target.trim().is_empty() || target.chars().any(|character| character.is_control() || character == '"') {
+        return Err("dependency target is empty or contains unsafe TOML characters".to_string());
+    }
     let path = root.join("oxid.toml");
     let text = fs::read_to_string(&path).map_err(|e| format!("cannot read manifest: {} ({})", path.display(), e))?;
     let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
     let dep_section = lines.iter().position(|line| line.trim() == "[dependencies]");
-    let entry = format!("{} = \"{}\"", name, target);
-    if lines.iter().any(|line| line.trim_start().starts_with(&format!("{} =", name))) {
+    let entry = format!("{} = {}", quote_manifest_string(name), quote_manifest_string(target));
+    if packages::list_dependencies(&path)?.iter().any(|(existing, _)| existing == name) {
         return Err(format!("dependency `{}` already exists", name));
     }
     if let Some(dep_idx) = dep_section {
@@ -2018,7 +2629,8 @@ fn native_len(args: Vec<Value>) -> Result<Value, RuntimeError> {
     match &args[0] {
         Value::String(s) => Ok(Value::Number(s.chars().count() as f64)),
         Value::Array(items) => Ok(Value::Number(items.borrow().len() as f64)),
-        _ => Err(RuntimeError::Message("len can only be used with strings or arrays".to_string())),
+        Value::Record(fields) => Ok(Value::Number(fields.borrow().len() as f64)),
+        _ => Err(RuntimeError::Message("len can only be used with strings, arrays, or records".to_string())),
     }
 }
 
@@ -2059,7 +2671,11 @@ fn native_spawn(args: Vec<Value>) -> Result<Value, RuntimeError> {
             if extra.len() != func.params.len() {
                 return Err(RuntimeError::Message(format!("spawn arity mismatch for `{}`", func.name)));
             }
-            Ok(Value::Task(Rc::new(TaskValue { function: func.clone(), args: extra })))
+            Ok(Value::Task(Rc::new(TaskValue {
+                function: func.clone(),
+                args: extra,
+                state: RefCell::new(TaskState::Pending),
+            })))
         }
         Value::Task(task) => Ok(Value::Task(task.clone())),
         _ => Err(RuntimeError::Message("spawn requires a function or task".to_string())),
@@ -2080,7 +2696,11 @@ fn native_join(args: Vec<Value>) -> Result<Value, RuntimeError> {
             }
             let root = root_env(&func.closure);
             let mut interp = Interpreter::fork_from_root(root);
-            let task = Rc::new(TaskValue { function: func.clone(), args: Vec::new() });
+            let task = Rc::new(TaskValue {
+                function: func.clone(),
+                args: Vec::new(),
+                state: RefCell::new(TaskState::Pending),
+            });
             interp.execute_task(task).map_err(RuntimeError::Message)
         }
         _ => Err(RuntimeError::Message("join requires a task or function value".to_string())),
@@ -2103,7 +2723,11 @@ fn native_join_all(args: Vec<Value>) -> Result<Value, RuntimeError> {
     for item in items {
         let value = match item {
             Value::Task(task) => interp.execute_task(task).map_err(RuntimeError::Message)?,
-            Value::Function(func) => interp.execute_task(Rc::new(TaskValue { function: func, args: Vec::new() })).map_err(RuntimeError::Message)?,
+            Value::Function(func) => interp.execute_task(Rc::new(TaskValue {
+                function: func,
+                args: Vec::new(),
+                state: RefCell::new(TaskState::Pending),
+            })).map_err(RuntimeError::Message)?,
             _ => return Err(RuntimeError::Message("join_all accepts only tasks or functions".to_string())),
         };
         results.push(value);
@@ -2114,7 +2738,15 @@ fn native_join_all(args: Vec<Value>) -> Result<Value, RuntimeError> {
 fn native_task_status(args: Vec<Value>) -> Result<Value, RuntimeError> {
     if args.len() != 1 { return Err(RuntimeError::Message("task_status requires 1 argument".to_string())); }
     match &args[0] {
-        Value::Task(_) => Ok(Value::String("pending".to_string())),
+        Value::Task(task) => {
+            let status = match &*task.state.borrow() {
+                TaskState::Pending => "pending",
+                TaskState::Running => "running",
+                TaskState::Completed(Ok(_)) => "completed",
+                TaskState::Completed(Err(_)) => "failed",
+            };
+            Ok(Value::String(status.to_string()))
+        }
         Value::Function(_) => Ok(Value::String("ready".to_string())),
         _ => Ok(Value::String("not-a-task".to_string())),
     }
@@ -2236,8 +2868,11 @@ fn native_type_of(args: Vec<Value>) -> Result<Value, RuntimeError> {
         Value::Number(_) => "number",
         Value::String(_) => "string",
         Value::Array(_) => "array",
+        Value::Record(_) => "record",
         Value::Function(_) => "function",
         Value::Task(_) => "task",
+        Value::Listener(_) => "listener",
+        Value::Connection(_) => "connection",
         Value::NativeFunction(_) => "native_function",
     };
     Ok(Value::String(t.to_string()))
@@ -2358,25 +2993,20 @@ fn native_json_escape(args: Vec<Value>) -> Result<Value, RuntimeError> {
 fn native_web_response(args: Vec<Value>) -> Result<Value, RuntimeError> {
     if args.len() != 3 { return Err(RuntimeError::Message("web_response requires status, content type, and body".to_string())); }
     let status = as_index(&args[0]).map_err(RuntimeError::Message)?;
+    if !(100..=599).contains(&status) {
+        return Err(RuntimeError::Message("web status must be between 100 and 599".to_string()));
+    }
     let content_type = value_string_arg(&args[1], "content type")?;
+    if content_type.is_empty() || content_type.len() > 255 || content_type.chars().any(char::is_control) {
+        return Err(RuntimeError::Message("content type is empty, too long, or contains control characters".to_string()));
+    }
     let body = value_string_arg(&args[2], "response body")?;
     let reason = match status { 200 => "OK", 201 => "Created", 204 => "No Content", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found", 500 => "Internal Server Error", _ => "Response" };
     Ok(Value::String(format!("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", status, reason, content_type, body.len(), body)))
 }
 
 fn native_web_serve_once(args: Vec<Value>) -> Result<Value, RuntimeError> {
-    if args.len() != 3 { return Err(RuntimeError::Message("web_serve_once requires host, port, and response".to_string())); }
-    let host = value_string_arg(&args[0], "web host")?;
-    let port = as_index(&args[1]).map_err(RuntimeError::Message)?;
-    if port > u16::MAX as usize { return Err(RuntimeError::Message("web port must be between 0 and 65535".to_string())); }
-    let response = value_string_arg(&args[2], "web response")?;
-    let listener = TcpListener::bind((host.as_str(), port as u16)).map_err(|e| RuntimeError::Message(format!("cannot bind web listener: {}", e)))?;
-    let (mut stream, _) = listener.accept().map_err(|e| RuntimeError::Message(format!("cannot accept web request: {}", e)))?;
-    let mut request = [0u8; 8192];
-    let _ = stream.read(&mut request);
-    stream.write_all(response.as_bytes()).map_err(|e| RuntimeError::Message(format!("cannot write web response: {}", e)))?;
-    stream.flush().map_err(|e| RuntimeError::Message(format!("cannot flush web response: {}", e)))?;
-    Ok(Value::Null)
+    network::web_serve_once(args)
 }
 
 fn truthy(v: &Value) -> bool {
@@ -2386,7 +3016,12 @@ fn truthy(v: &Value) -> bool {
         Value::Number(v) => *v != 0.0,
         Value::String(v) => !v.is_empty(),
         Value::Array(v) => !v.borrow().is_empty(),
-        Value::Function(_) | Value::Task(_) | Value::NativeFunction(_) => true,
+        Value::Record(v) => !v.borrow().is_empty(),
+        Value::Function(_)
+        | Value::Task(_)
+        | Value::Listener(_)
+        | Value::Connection(_)
+        | Value::NativeFunction(_) => true,
     }
 }
 
@@ -2422,8 +3057,136 @@ fn values_equal(a: &Value, b: &Value) -> bool {
             let b = b.borrow();
             a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| values_equal(x, y))
         }
+        (Value::Record(a), Value::Record(b)) => {
+            let a = a.borrow();
+            let b = b.borrow();
+            a.len() == b.len()
+                && a.iter().all(|(key, value)| b.get(key).is_some_and(|other| values_equal(value, other)))
+        }
+        (Value::Function(a), Value::Function(b)) => Rc::ptr_eq(a, b),
+        (Value::Task(a), Value::Task(b)) => Rc::ptr_eq(a, b),
+        (Value::Listener(a), Value::Listener(b)) => Rc::ptr_eq(a, b),
+        (Value::Connection(a), Value::Connection(b)) => Rc::ptr_eq(a, b),
+        (Value::NativeFunction(a), Value::NativeFunction(b)) => std::ptr::fn_addr_eq(*a, *b),
         _ => false,
     }
+}
+
+fn strip_top_level_imports(program: Program) -> Program {
+    Program {
+        stmts: program
+            .stmts
+            .into_iter()
+            .filter(|statement| match statement {
+                Stmt::Use(_) => false,
+                Stmt::Located(_, inner) => !matches!(inner.as_ref(), Stmt::Use(_)),
+                _ => true,
+            })
+            .collect(),
+    }
+}
+
+fn embedded_compiler_program() -> Result<(Program, u32), String> {
+    const EMITTER_SOURCE: &str = include_str!("../stdlib/frontend/bytecode.ox");
+    const COMPILER_SOURCE: &str = include_str!("../compiler/main.ox");
+    let mut emitter = Parser::new_with_source(EMITTER_SOURCE, "stdlib/frontend/bytecode.ox");
+    let mut compiler = Parser::new_with_source(COMPILER_SOURCE, "compiler/main.ox");
+    let mut statements = emitter.parse_program()?.stmts;
+    statements.extend(strip_top_level_imports(compiler.parse_program()?).stmts);
+    Ok((Program { stmts: statements }, 2))
+}
+
+fn bootstrap_compiler_program(root: &Path) -> Result<(Program, u32), String> {
+    let entry = root.join("compiler/main.ox");
+    if entry.is_file() {
+        compile_program(&entry)
+    } else {
+        embedded_compiler_program()
+    }
+}
+
+fn atomic_write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("cannot create {}: {}", parent.display(), error))?;
+    }
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("artifact");
+    let temporary = path.with_file_name(format!(".{}.{}.tmp", file_name, std::process::id()));
+    fs::write(&temporary, bytes).map_err(|error| format!("cannot write {}: {}", temporary.display(), error))?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| format!("cannot replace {}: {}", path.display(), error))?;
+    }
+    fs::rename(&temporary, path).map_err(|error| format!("cannot publish {}: {}", path.display(), error))
+}
+
+fn verify_provider_manifest(text: &str) -> Result<(), String> {
+    for required in [
+        "schema_version = 1",
+        "[providers]",
+        "emitter = \"oxid\"",
+        "lexer = \"stage0\"",
+        "parser = \"stage0\"",
+        "diagnostics = \"stage0\"",
+        "modules = \"stage0\"",
+        "[parity]",
+        "gate = \"byte-for-byte\"",
+        "required_before_each_switch = true",
+        "[components.emitter]",
+        "entry = \"stdlib/frontend/bytecode.ox\"",
+    ] {
+        if !text.contains(required) {
+            return Err(format!("compiler provider manifest is missing `{}`", required));
+        }
+    }
+    Ok(())
+}
+
+fn bootstrap_project(root: &Path, write_artifacts: bool) -> Result<(), String> {
+    const EMBEDDED_PROVIDERS: &str = include_str!("../compiler/providers.toml");
+    let provider_path = root.join("compiler/providers.toml");
+    let provider_text = fs::read_to_string(&provider_path).unwrap_or_else(|_| EMBEDDED_PROVIDERS.to_string());
+    verify_provider_manifest(&provider_text)?;
+
+    let (program, module_count) = bootstrap_compiler_program(root)?;
+    let stage0 = artifact::encode(&program, module_count)?;
+    let decoded0 = artifact::decode(&stage0)?;
+    let stage1 = artifact::encode(&decoded0.program, decoded0.module_count)?;
+    let decoded1 = artifact::decode(&stage1)?;
+    let stage2 = artifact::encode(&decoded1.program, decoded1.module_count)?;
+    if stage0 != stage1 {
+        return Err("Stage-0/Stage-1 compiler artifacts differ".to_string());
+    }
+    if stage1 != stage2 {
+        return Err("Stage-1/Stage-2 compiler fixed point failed".to_string());
+    }
+
+    let mut interpreter = Interpreter::new();
+    interpreter.execute_program(&decoded1.program, root)?;
+    let checksum = artifact::checksum_hex(&stage1);
+    if write_artifacts {
+        let output = root.join(".oxid/bootstrap");
+        atomic_write_file(&output.join("stage0.oxb"), &stage0)?;
+        atomic_write_file(&output.join("stage1.oxb"), &stage1)?;
+        atomic_write_file(&output.join("stage2.oxb"), &stage2)?;
+        atomic_write_file(&output.join("compiler.oxb"), &stage1)?;
+        let manifest = format!(
+            "{{\n  \"schema_version\": 1,\n  \"artifact_format\": 1,\n  \"ast_format\": 1,\n  \"compiler_version\": \"{}\",\n  \"modules\": {},\n  \"checksum\": \"{}\",\n  \"stage0_stage1_equal\": true,\n  \"stage1_stage2_equal\": true\n}}\n",
+            OXID_VERSION, module_count, checksum
+        );
+        atomic_write_file(&output.join("manifest.json"), manifest.as_bytes())?;
+    }
+    println!("bootstrap verified: stage0 == stage1 == stage2 ({})", checksum);
+    Ok(())
+}
+
+fn inspect_artifact(path: &Path) -> Result<(), String> {
+    let decoded = artifact::read(path)?;
+    println!("artifact: {}", path.display());
+    println!("format: OXBC 1.0");
+    println!("ast: 1");
+    println!("modules: {}", decoded.module_count);
+    println!("statements: {}", decoded.program.stmts.len());
+    println!("checksum: {:016x}", decoded.checksum);
+    Ok(())
 }
 
 extern "C" {
@@ -2434,27 +3197,147 @@ extern "C" {
 }
 
 fn help() {
-    println!("Oxid 0.8.0");
+    println!("Oxid {}", OXID_VERSION);
     println!("Usage:");
-    println!("  oxid run <file.ox>");
+    println!("  oxid run <file.ox|file.oxb>");
     println!("  oxid script <name> [args...]");
     println!("  oxid check <file.ox>");
     println!("  oxid compile <file.ox> [-o app.oxb]");
+    println!("  oxid ast <file.ox> [-o app.oxa]");
+    println!("  oxid inspect <file.oxb>");
     println!("  oxid repl");
     println!("  oxid new <project-name>");
     println!("  oxid init <project-name>");
     println!("  oxid add <name> <path-or-target>");
+    println!("  oxid remove <name>");
+    println!("  oxid lock [--offline|--locked]");
+    println!("  oxid fetch [--offline|--locked]");
+    println!("  oxid update");
+    println!("  oxid install [--offline|--locked]");
+    println!("  oxid list");
     println!("  oxid bridge <python|java|go|c|cpp|all> [output]");
     println!("  oxid web new <project-name>");
     println!("  oxid discord new <project-name>");
     println!("  oxid watch <file.ox>");
-    println!("  oxid build");
+    println!("  oxid build [--offline|--locked|--frozen]");
     println!("  oxid clean");
     println!("  oxid fmt [path]");
     println!("  oxid test");
     println!("  oxid doctor");
     println!("  oxid doc");
+    println!("  oxid bench [--iterations N] [--json report.json]");
+    println!("  oxid bootstrap [--check]");
+    println!("  oxid emit [--check]");
+    println!("  oxid self-compile [--check]");
+    println!("  oxid self-host [--check]");
+    println!("  oxid frontend");
+    println!("  oxid diagnose");
+    println!("  oxid lint");
+    println!("  oxid module");
+    println!("  oxid syntax");
+    println!("  oxid interop");
     println!("  oxid help");
+}
+
+fn check_file(path: &Path) -> Result<(), String> {
+    let bytes = fs::read(path).map_err(|error| format!("cannot read file: {} ({})", path.display(), error))?;
+    if artifact::is_artifact(&bytes) {
+        artifact::decode(&bytes)?;
+        println!("artifact ok: {}", path.display());
+        return Ok(());
+    }
+    let source = String::from_utf8(bytes).map_err(|_| format!("source is not valid UTF-8: {}", path.display()))?;
+    let base_dir = path.parent().unwrap_or(Path::new("."));
+    let source = cached_preprocess(&source, base_dir)?;
+    let mut parser = Parser::new_with_source(&source, path.to_string_lossy());
+    parser.parse_program()?;
+    println!("syntax ok: {}", path.display());
+    Ok(())
+}
+
+fn compile_command(arguments: &[String], ast_only: bool) -> Result<(), String> {
+    let input = arguments.first().ok_or_else(|| {
+        if ast_only { "`oxid ast` requires a source file" } else { "`oxid compile` requires a source file" }.to_string()
+    })?;
+    let mut output = Path::new(input).with_extension(if ast_only { "oxa" } else { "oxb" });
+    let mut index = 1usize;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "-o" | "--output" => {
+                let value = arguments.get(index + 1).ok_or_else(|| "`-o` requires an output path".to_string())?;
+                output = PathBuf::from(value);
+                index += 2;
+            }
+            unknown => return Err(format!("unknown compile option: {}", unknown)),
+        }
+    }
+    compile_file(Path::new(input), &output)?;
+    if ast_only {
+        println!("serialized AST: {}", output.display());
+    }
+    Ok(())
+}
+
+fn dependency_options(arguments: &[String]) -> Result<packages::ResolveOptions, String> {
+    let mut options = packages::ResolveOptions::default();
+    for argument in arguments {
+        match argument.as_str() {
+            "--locked" => options.locked = true,
+            "--offline" => options.offline = true,
+            "--frozen" => {
+                options.locked = true;
+                options.offline = true;
+            }
+            "--update" => options.update = true,
+            unknown => return Err(format!("unknown dependency option: {}", unknown)),
+        }
+    }
+    Ok(options)
+}
+
+fn benchmark_command(arguments: &[String]) -> Result<(), String> {
+    let mut iterations = 20usize;
+    let mut output = None;
+    let mut index = 0usize;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--iterations" | "-n" => {
+                let value = arguments.get(index + 1).ok_or_else(|| "--iterations requires a value".to_string())?;
+                iterations = value.parse::<usize>().map_err(|_| "benchmark iterations must be an integer".to_string())?;
+                index += 2;
+            }
+            "--json" => {
+                let value = arguments.get(index + 1).ok_or_else(|| "--json requires an output path".to_string())?;
+                output = Some(PathBuf::from(value));
+                index += 2;
+            }
+            unknown => return Err(format!("unknown benchmark option: {}", unknown)),
+        }
+    }
+    benchmark::run(Path::new("."), iterations, output.as_deref())
+}
+
+fn lint_project(root: &Path) -> Result<(), String> {
+    let files = collect_oxid_files(root)
+        .into_iter()
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("ox"))
+        .collect::<Vec<_>>();
+    if files.is_empty() {
+        return Err("no Oxid source files found".to_string());
+    }
+    for file in &files {
+        check_file(file)?;
+    }
+    println!("lint ok: {} Oxid sources", files.len());
+    Ok(())
+}
+
+fn print_frontend_status(root: &Path) -> Result<(), String> {
+    const EMBEDDED_PROVIDERS: &str = include_str!("../compiler/providers.toml");
+    let manifest = fs::read_to_string(root.join("compiler/providers.toml")).unwrap_or_else(|_| EMBEDDED_PROVIDERS.to_string());
+    verify_provider_manifest(&manifest)?;
+    print!("{}", manifest);
+    Ok(())
 }
 
 fn main() {
@@ -2462,6 +3345,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let result = match args.get(1).map(|s| s.as_str()) {
         None | Some("help") | Some("--help") | Some("-h") => { help(); Ok(()) }
+        Some("--version") | Some("-V") => { println!("Oxid {}", OXID_VERSION); Ok(()) }
         Some("run") => match args.get(2) {
             Some(file) => run_file(Path::new(file), &mut interp),
             None => Err("`oxid run` requires a file path".to_string()),
@@ -2470,49 +3354,31 @@ fn main() {
             Some(name) => run_manifest_script(Path::new("."), name, &args[3..]),
             None => Err("`oxid script` requires a script name".to_string()),
         },
-        Some("check") => match args.get(2) {
-            Some(file) => {
-                let path = Path::new(file);
-                let source = fs::read_to_string(path).map_err(|e| format!("cannot read file: {} ({})", path.display(), e));
-                match source {
-                    Ok(source) => {
-                        let base_dir = path.parent().unwrap_or(Path::new("."));
-                        match cached_preprocess(&source, base_dir) {
-                            Ok(source) => {
-                                let mut parser = Parser::new(&source);
-                                parser.parse_program().map(|_| { println!("syntax ok: {}", file); })
-                            }
-                            Err(err) => Err(err),
-                        }
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            None => Err("`oxid check` requires a file path".to_string()),
-        },
-        Some("compile") => match args.get(2) {
-            Some(file) => {
-                let input = Path::new(file);
-                if args.get(3).map(String::as_str) == Some("-o") && args.get(4).is_none() {
-                    Err("`-o` requires an output path".to_string())
-                } else {
-                    let output = if args.get(3).map(String::as_str) == Some("-o") {
-                        PathBuf::from(&args[4])
-                    } else {
-                        input.with_extension("oxb")
-                    };
-                    compile_file(input, &output)
-                }
-            }
-            None => Err("`oxid compile` requires a source file".to_string()),
-        },
+        Some("check") => args.get(2).map(|file| check_file(Path::new(file))).unwrap_or_else(|| Err("`oxid check` requires a file path".to_string())),
+        Some("compile") => compile_command(&args[2..], false),
+        Some("ast") => compile_command(&args[2..], true),
+        Some("inspect") => args.get(2).map(|file| inspect_artifact(Path::new(file))).unwrap_or_else(|| Err("`oxid inspect` requires an artifact path".to_string())),
         Some("repl") => repl(&mut interp),
         Some("new") => match args.get(2) { Some(name) => scaffold_project(name), None => Err("`oxid new` requires a project name".to_string()) },
         Some("init") => match args.get(2) { Some(name) => scaffold_project(name), None => Err("`oxid init` requires a project name".to_string()) },
         Some("add") => match (args.get(2), args.get(3)) {
-            (Some(name), Some(target)) => add_dependency(Path::new("."), name, target),
+            (Some(name), Some(target)) => add_dependency(Path::new("."), name, target)
+                .and_then(|_| resolve_project_dependencies(Path::new("."), packages::ResolveOptions::default())),
             _ => Err("`oxid add` requires a dependency name and target".to_string()),
         },
+        Some("remove") => args
+            .get(2)
+            .map(|name| remove_project_dependency(Path::new("."), name))
+            .unwrap_or_else(|| Err("`oxid remove` requires a dependency name".to_string())),
+        Some("list") => list_project_dependencies(Path::new(".")),
+        Some("lock") | Some("fetch") => dependency_options(&args[2..])
+            .and_then(|options| resolve_project_dependencies(Path::new("."), options)),
+        Some("update") => resolve_project_dependencies(
+            Path::new("."),
+            packages::ResolveOptions { locked: false, offline: false, update: true },
+        ),
+        Some("install") => dependency_options(&args[2..])
+            .and_then(|options| build_project(Path::new("."), options)),
         Some("bridge") => match args.get(2) {
             Some(target) => scaffold_bridge(target, args.get(3).map(String::as_str)),
             None => Err("`oxid bridge` requires python, java, go, c, cpp, or all".to_string()),
@@ -2526,7 +3392,8 @@ fn main() {
             _ => Err("usage: oxid discord new <project-name>".to_string()),
         },
         Some("watch") => match args.get(2) { Some(file) => watch_file(Path::new(file), &mut interp), None => Err("`oxid watch` requires a file path".to_string()) },
-        Some("build") => build_project(Path::new(".")),
+        Some("build") => dependency_options(&args[2..])
+            .and_then(|options| build_project(Path::new("."), options)),
         Some("clean") => clear_cache(Path::new(".")),
         Some("fmt") => {
             let target = args.get(2).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
@@ -2540,6 +3407,40 @@ fn main() {
         Some("test") => run_test_suite(Path::new(".")),
         Some("doctor") => doctor_project(Path::new(".")),
         Some("doc") => document_project(Path::new(".")),
+        Some("bench") => benchmark_command(&args[2..]),
+        Some("bootstrap") | Some("self-compile") | Some("emit") => {
+            let write_artifacts = !args[2..].iter().any(|argument| argument == "--check");
+            if args[2..].iter().any(|argument| argument != "--check") {
+                Err("bootstrap accepts only --check".to_string())
+            } else {
+                bootstrap_project(Path::new("."), write_artifacts)
+            }
+        }
+        Some("self-host") => {
+            let write_artifacts = !args[2..].iter().any(|argument| argument == "--check");
+            if args[2..].iter().any(|argument| argument != "--check") {
+                Err("self-host accepts only --check".to_string())
+            } else {
+                bootstrap_project(Path::new("."), write_artifacts)
+            }
+        }
+        Some("frontend") => print_frontend_status(Path::new(".")),
+        Some("diagnose") => doctor_project(Path::new(".")),
+        Some("lint") => lint_project(Path::new(".")),
+        Some("module") => {
+            println!("module roots: source, src, stdlib, modules, .oxid/deps, deps, vendor, OXID_PATH");
+            Ok(())
+        }
+        Some("syntax") => {
+            println!("syntax: classic fn/let/print/return and concise fun/var/say/give are interchangeable");
+            println!("data: arrays, records, property access, indexing, and JSON");
+            Ok(())
+        }
+        Some("interop") => {
+            println!("interop: process, Python, Java, Go, C, and C++ bridges");
+            Ok(())
+        }
+        Some(file) if Path::new(file).is_file() => run_file(Path::new(file), &mut interp),
         Some(other) => Err(format!("unknown subcommand: {}", other)),
     };
     if let Err(err) = result {
@@ -2613,12 +3514,131 @@ const answer = choose(true);
         fs::write(root.join("main.ox"), "import \"lib.ox\";\nconst result = twice(21);\n").expect("entry");
         let output = root.join("app.oxb");
         compile_file(&root.join("main.ox"), &output).expect("compile bundle");
-        let bundle = fs::read_to_string(&output).expect("bundle output");
-        assert!(bundle.contains("fun twice"));
-        assert!(!bundle.contains("import \"lib.ox\""));
+        let bundle = fs::read(&output).expect("bundle output");
+        assert!(artifact::is_artifact(&bundle));
+        let decoded = artifact::decode(&bundle).expect("decode bundle");
+        assert_eq!(decoded.module_count, 2);
+        assert_eq!(artifact::encode(&decoded.program, decoded.module_count).expect("re-encode"), bundle);
         let mut interpreter = Interpreter::new();
         run_file(&output, &mut interpreter).expect("run bundle");
         assert!(matches!(interpreter.get_var("result"), Ok(Value::Number(number)) if number == 42.0));
+        fs::remove_dir_all(&root).expect("remove temp project");
+    }
+
+    #[test]
+    fn record_json_property_roundtrip_is_deterministic() {
+        let mut interpreter = Interpreter::new();
+        run_source(
+            r#"
+const payload = {z: [1, true, null], profile: {name: "Oxid", count: 2}};
+payload.profile.count = 3;
+const encoded = json_stringify(payload);
+const decoded = json_parse(encoded);
+const answer = decoded.profile.name + ":" + str(decoded.profile.count);
+"#,
+            Path::new("."),
+            &mut interpreter,
+        )
+        .expect("record and JSON program");
+        assert!(matches!(interpreter.get_var("answer"), Ok(Value::String(value)) if value == "Oxid:3"));
+        assert!(matches!(
+            interpreter.get_var("encoded"),
+            Ok(Value::String(value)) if value == r#"{"profile":{"count":3,"name":"Oxid"},"z":[1,true,null]}"#
+        ));
+    }
+
+    #[test]
+    fn compiled_import_errors_preserve_module_source_ranges() {
+        let root = unique_temp_dir("source-spans");
+        fs::create_dir_all(&root).expect("temp project");
+        fs::write(root.join("lib.ox"), "const valid = 1;\nconst failure = 1 / 0;\n").expect("module");
+        fs::write(root.join("main.ox"), "import \"lib.ox\";\n").expect("entry");
+        let output = root.join("app.oxb");
+        compile_file(&root.join("main.ox"), &output).expect("compile bundle");
+        let error = run_file(&output, &mut Interpreter::new()).expect_err("module runtime error");
+        assert!(error.contains("lib.ox:2:1-2:"), "unexpected diagnostic: {error}");
+        assert!(error.contains("division by zero"), "unexpected diagnostic: {error}");
+        fs::remove_dir_all(&root).expect("remove temp project");
+    }
+
+    #[test]
+    fn compile_rejects_cyclic_module_graphs() {
+        let root = unique_temp_dir("compile-cycle");
+        fs::create_dir_all(&root).expect("temp project");
+        fs::write(root.join("a.ox"), "import \"b.ox\";\n").expect("module a");
+        fs::write(root.join("b.ox"), "import \"a.ox\";\n").expect("module b");
+        let error = compile_program(&root.join("a.ox")).expect_err("cycle must fail");
+        assert!(error.contains("cyclic module import detected"));
+        fs::remove_dir_all(&root).expect("remove temp project");
+    }
+
+    #[test]
+    fn tasks_transition_once_and_memoize_results() {
+        let mut interpreter = Interpreter::new();
+        run_source(
+            r#"
+async fun compute() { give 42; }
+const task = spawn(compute);
+const before = task_status(task);
+const first = join(task);
+const after = task_status(task);
+const second = join(task);
+"#,
+            Path::new("."),
+            &mut interpreter,
+        )
+        .expect("task lifecycle");
+        assert!(matches!(interpreter.get_var("before"), Ok(Value::String(value)) if value == "pending"));
+        assert!(matches!(interpreter.get_var("after"), Ok(Value::String(value)) if value == "completed"));
+        assert!(matches!(interpreter.get_var("first"), Ok(Value::Number(value)) if value == 42.0));
+        assert!(matches!(interpreter.get_var("second"), Ok(Value::Number(value)) if value == 42.0));
+    }
+
+    #[test]
+    fn script_commands_are_tokenized_without_a_shell() {
+        let arguments = split_script_command(r#"tool "two words" 'three words' C:\temp escaped\ value && next"#)
+            .expect("script command");
+        assert_eq!(
+            arguments,
+            ["tool", "two words", "three words", r#"C:\temp"#, "escaped value", "&&", "next"]
+        );
+        assert!(split_script_command("tool \"unterminated").is_err());
+    }
+
+    #[test]
+    fn generated_project_has_a_valid_lockfile_and_health_check() {
+        let root = unique_temp_dir("new-project");
+        scaffold_project(root.to_string_lossy().as_ref()).expect("scaffold project");
+        assert_eq!(packages::read_lockfile(&root).expect("lockfile"), Vec::new());
+        doctor_project(&root).expect("generated project health");
+        fs::remove_dir_all(&root).expect("remove generated project");
+    }
+
+    #[test]
+    fn dependency_edits_preserve_toml_keys_and_windows_paths() {
+        let root = unique_temp_dir("manifest-quoting");
+        fs::create_dir_all(&root).expect("temp project");
+        fs::write(
+            root.join("oxid.toml"),
+            "[project]\nname = \"manifest-test\"\nentry = \"main.ox\"\n\n[dependencies]\n",
+        )
+        .expect("manifest");
+        fs::write(root.join("main.ox"), "const ready = true;\n").expect("entry");
+        add_dependency(&root, "windows_path", r"C:\dev\oxid").expect("add dependency");
+        let manifest = load_manifest(&root.join("oxid.toml")).expect("load manifest");
+        assert_eq!(manifest.dependencies.get("windows_path").map(String::as_str), Some(r"C:\dev\oxid"));
+        assert_eq!(
+            packages::list_dependencies(&root).expect("list dependencies"),
+            vec![("windows_path".to_string(), r"C:\dev\oxid".to_string())]
+        );
+        fs::remove_dir_all(&root).expect("remove temp project");
+    }
+
+    #[test]
+    fn embedded_self_host_pipeline_reaches_a_deterministic_fixed_point() {
+        let root = unique_temp_dir("bootstrap");
+        fs::create_dir_all(&root).expect("temp project");
+        bootstrap_project(&root, false).expect("bootstrap parity");
         fs::remove_dir_all(&root).expect("remove temp project");
     }
 

@@ -1,28 +1,39 @@
-# Self-hosting plan
+# Self-hosting
 
-Oxid 0.8 separates user-facing language use from the stage-0 implementation. Release users do not install Rust; they install a standalone Oxid binary and work with `.ox` and `.oxb` files.
+Oxid 0.9 establishes a deterministic, incrementally replaceable bootstrap path. Release users install a standalone `oxid` binary and do not need Rust to write, interpret, compile, inspect, package, or run Oxid programs. Building the stage-0 implementation itself from source still requires Rust and a C/C++ compiler.
 
-## Completed boundary work
+## Implemented path
 
-- standalone release binaries and checksums;
-- Oxid-authored standard library, examples, tools, package workflows, Web, Discord, and interop modules;
-- real parser support for concise Oxid syntax;
-- deterministic import bundling and syntax validation;
-- unit and repository-wide bootstrap verification;
-- isolated native C/C++ ABI code.
+1. The stage-0 frontend compiles `stdlib/frontend/bytecode.ox` and `compiler/main.ox` into OXBC 1.0.
+2. The Oxid-authored emitter accepts normalized instruction records and emits a canonical bytecode stream.
+3. Bootstrap decodes and re-encodes the compiler artifact for stage 1 and stage 2.
+4. Stage 0, stage 1, and stage 2 must be byte-identical.
+5. The decoded compiler surface is executed by the runtime.
+6. `compiler/providers.toml` must declare the Oxid emitter, stage-0 frontend providers, and required parity.
 
-## Next bootstrap stages
+Running without `--check` writes:
 
-1. Define a versioned serialized AST and bytecode format.
-2. Implement the emitter and deterministic serializer in Oxid.
-3. Compile the Oxid frontend with stage-0 and execute it on the runtime VM.
-4. Compare stage-0 and stage-1 artifacts byte-for-byte where deterministic.
-5. Replace lexer, parser, diagnostics, and module resolution one verified component at a time.
-6. Keep a small recovery bootstrap and native platform boundary.
+```text
+.oxid/bootstrap/stage0.oxb
+.oxid/bootstrap/stage1.oxb
+.oxid/bootstrap/stage2.oxb
+.oxid/bootstrap/compiler.oxb
+.oxid/bootstrap/manifest.json
+```
 
-## Success criteria
+The manifest records artifact/AST versions, compiler version, module count, checksum, and parity results.
 
-- a clean checkout reproduces the same stage-1 compiler artifact;
-- stage-1 compiles every repository source and its own source;
-- cross-platform CI compares bootstrap outputs;
-- normal development and release builds no longer compile the stage-0 frontend.
+## Commands
+
+```bash
+oxid bootstrap
+oxid bootstrap --check
+oxid self-compile --check
+oxid emit --check
+oxid self-host --check
+oxid frontend
+```
+
+## Current limitation
+
+The equality check proves deterministic serialization and a stage artifact fixed point using the current bootstrap codec. CI additionally requires those artifacts to be byte-identical across Linux, Windows, macOS x86_64, and macOS arm64 before release packaging. This is not yet proof that an independently implemented Oxid lexer/parser produced the same compiler. The emitter is Oxid-authored; lexer, parser, diagnostics, and module providers remain stage-0. The self-hosted path must not become the default compiler until those providers are replaced and independent compiler parity is demonstrated across release platforms.

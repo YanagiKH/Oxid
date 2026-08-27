@@ -1,0 +1,38 @@
+schema_version = 1
+
+[providers]
+emitter = "oxid"
+lexer = "stage0"
+parser = "stage0"
+diagnostics = "stage0"
+modules = "stage0"
+
+[parity]
+gate = "byte-for-byte"
+required_before_each_switch = true
+
+[components.emitter]
+owner = "oxid"
+entry = "stdlib/frontend/bytecode.ox"
+parity_gate = "byte-for-byte"
+required_before_switch = true
+
+[components.lexer]
+owner = "stage0"
+parity_gate = "byte-for-byte"
+required_before_switch = true
+
+[components.parser]
+owner = "stage0"
+parity_gate = "byte-for-byte"
+required_before_switch = true
+
+[components.diagnostics]
+owner = "stage0"
+parity_gate = "byte-for-byte"
+required_before_switch = true
+
+[components.modules]
+owner = "stage0"
+parity_gate = "byte-for-byte"
+required_before_switch = true

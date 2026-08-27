@@ -1,69 +1,51 @@
-# Packages
+# Packages and dependency locking
 
-`oxid.toml` supports the following project-level fields:
+`oxid.toml` supports `project.name`, `project.version`, `project.entry`, `[scripts]`, `[dependencies]`, `[build]`, and `[features]`.
 
-- `project.name`
-- `project.version`
-- `project.entry`
-- `[scripts]`
-- `[dependencies]`
-- `[features]`
+## Dependency sources
 
-## Minimal manifest
+Path dependencies may be absolute or relative to the manifest that declares them:
 
 ```toml
-[project]
-name = "demo"
-version = "0.1.0"
-entry = "src/main.ox"
-
-[scripts]
-run = "oxid run src/main.ox"
-test = "oxid test"
-fmt = "oxid fmt"
-doctor = "oxid doctor"
-doc = "oxid doc"
-
 [dependencies]
-
-[features]
-async = true
-macros = true
+shared = "../shared"
 ```
 
-## Script entries
+Remote dependencies use HTTPS Git and must pin a complete 40- or 64-character commit hash:
 
-Scripts are plain command strings. They are meant for repeatable tasks such as running the entry file, formatting sources, or generating docs.
-
-## Dependency entries
-
-`oxid add <name> <target>` updates the dependency section automatically.
-
-Typical targets are:
-
-- local paths such as `./packages/demo`
-- sibling repositories checked out locally
-- future package registry identifiers
-
-## Entry resolution
-
-If `project.entry` is missing, the runtime falls back to:
-
-1. `src/main.ox`
-2. `main.ox`
-
-That makes the package layout simple for new projects while still supporting custom entry points.
-
-## Recommended package layout
-
-```text
-project/
-├── oxid.toml
-├── README.md
-├── src/
-│   ├── main.ox
-│   └── lib.ox
-├── stdlib/
-├── examples/
-└── tests/
+```toml
+[dependencies]
+codec = "https://github.com/example/oxid-codec.git#0123456789012345678901234567890123456789"
 ```
+
+`git+https://` is also accepted. `git+file://` is available for absolute local Git repositories and testing. Branch names, tags, credentials in URLs, query strings, unpinned revisions, and non-HTTPS remote schemes are rejected.
+
+## `oxid.lock`
+
+Resolution writes deterministic `oxid.lock` version 1. Entries are sorted and contain the package name, normalized source, pinned Git revision when applicable, package-tree checksum, and sorted nested dependencies. Git checkouts live in `.oxid/deps/<name>`; modules can import a dependency by its manifest alias.
+
+Nested manifests are resolved recursively. The resolver rejects cycles, conflicting sources for one name, unsafe names, checksum changes without an explicit update, and lockfile fields or versions it does not understand.
+
+## Commands
+
+```bash
+oxid add codec https://github.com/example/oxid-codec.git#<full-commit>
+oxid remove codec
+oxid list
+oxid lock
+oxid fetch
+oxid update
+oxid install
+oxid build --locked
+oxid build --offline
+oxid build --frozen
+```
+
+- `--locked` requires an existing matching lockfile and does not access the network.
+- `--offline` allows only local paths and already cached Git commits.
+- `--frozen` combines locked and offline behavior.
+- `update` allows an intentional revision or checksum transition and rewrites the lockfile.
+- `install` resolves dependencies and builds the project.
+
+Commit `oxid.lock` for applications. Libraries may commit it when reproducible repository tooling is important, while consumers still resolve from their own manifest.
+

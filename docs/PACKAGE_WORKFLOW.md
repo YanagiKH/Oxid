@@ -1,25 +1,25 @@
-# Package Workflow Preview
+# Package workflow
 
-Oxid package projects are intended to feel like a normal project workspace with a lightweight manifest and reusable source modules.
+1. Create a project with `oxid new <name>` or `oxid init <name>`; the scaffold includes an empty valid `oxid.lock`.
+2. Interpret `src/main.ox` directly while developing.
+3. Add local or pinned Git dependencies with `oxid add`.
+4. Resolve and write `oxid.lock` with `oxid lock`.
+5. Use `oxid build --locked` in reproducible environments or `--frozen` when network access is also forbidden.
+6. Run `oxid test`, `oxid lint`, and `oxid doctor`.
+7. Measure representative changes with `oxid bench --json <path>`.
+8. Distribute `.oxid/bin/<project>.oxb` to a compatible Oxid 0.9 runtime.
 
-## Suggested flow
+Recommended layout:
 
-1. Create a package with `oxid new` or `oxid init`.
-2. Put the application entry in `src/main.ox`.
-3. Put reusable helpers in `src/lib.ox`.
-4. Put Oxid modules shared across projects in `stdlib/`.
-5. Add scripts in `oxid.toml`.
-6. Preview dependency edits with `oxid add <name> <target>`.
-7. Use `oxid build`, `oxid test`, `oxid doctor`, and `oxid doc` during release preparation.
+```text
+project/
+├── oxid.toml
+├── oxid.lock
+├── src/
+│   ├── main.ox
+│   └── lib.ox
+├── examples/
+└── tests/
+```
 
-## Why this structure works
-
-- `src/main.ox` gives you a stable app entry.
-- `src/lib.ox` gives you a reusable local module.
-- `stdlib/` gives you shared language-level helpers.
-- `tests/` gives you smoke coverage for package behavior.
-- `examples/` gives you runnable demonstrations for users.
-
-## Demo package
-
-The `packages/demo/` folder is the reference layout for a user-facing Oxid project.
+Manifest scripts provide reusable project commands through `oxid script <name> [args...]`. Dependency resolution reads nested manifests and detects cycles, while application source can import installed dependencies by their declared alias.

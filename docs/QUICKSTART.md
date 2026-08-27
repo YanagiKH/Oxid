@@ -1,51 +1,45 @@
 # Quickstart
 
-## Install
-
-Use `install.sh`, `install.ps1`, a portable release archive, Cargo, source/Make, or Docker as documented in the three top-level READMEs.
-
-## Create and run
+## Create, interpret, and compile
 
 ```bash
 oxid new my-project
 cd my-project
 oxid run src/main.ox
-oxid build
-oxid test
-oxid doctor
-```
-
-## Compile a bundle
-
-```bash
+oxid check src/main.ox
 oxid compile src/main.ox -o app.oxb
+oxid inspect app.oxb
 oxid run app.oxb
+oxid test
 ```
 
-## Create an application profile
+The generated project includes an empty valid `oxid.lock`. Interpret source while iterating; use the versioned artifact when a single deterministic program file is more convenient.
+
+## Add data
+
+```oxid
+const config = json_parse("{\"port\":8080}");
+config.host = "127.0.0.1";
+say json_stringify(config);
+```
+
+## Lock dependencies
 
 ```bash
-oxid web new my-api
-oxid discord new my-bot
+oxid add shared ../shared
+oxid lock
+oxid build --locked
+oxid list
 ```
 
-## Generate language bridges
+Remote Git entries require an HTTPS URL and full commit hash. Use `--offline` for cached-only resolution or `--frozen` for both locked and offline behavior.
+
+## Measure and verify bootstrap
 
 ```bash
-oxid bridge all bridges
+oxid bench --iterations 20 --json target/benchmark.json
+oxid bootstrap --check
+oxid frontend
 ```
 
-## Use manifest scripts
-
-```toml
-[scripts]
-run = "oxid run src/main.ox"
-test = "oxid test"
-fmt = "oxid fmt"
-doctor = "oxid doctor"
-```
-
-```bash
-oxid script run
-oxid script test
-```
+See the top-level README for release, source, Cargo, and Docker installation paths.

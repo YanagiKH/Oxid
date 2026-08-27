@@ -12,17 +12,17 @@
   [English](README.md) · [繁體中文](README_ZH.md) · [日本語](README_JP.md)
 </div>
 
-Oxid 0.8 將專案變成可直接使用的語言環境：精簡語法、直譯器與套件編譯器、專案工具、真正的 C/C++ 原生函式、Python／Java／Go 程序橋接、可運作的 Web 與 Discord 模組，以及附帶校驗碼的獨立版本。一般使用者只需安裝一個執行檔，**不需要 Rust**。
+Oxid 0.9 是可直接使用的語言工具鏈，具備精簡與傳統語法、原始碼直譯、確定性的版本化成品、記錄與 JSON、可持續使用的網路轉接器、鎖定的路徑／Git 依賴、專案工具、原生 C/C++ 函式，以及 Python／Java／Go 程序橋接。一般使用者只需安裝一個執行檔，**不需要 Rust**。
 
 ## 專案狀態
 
-Oxid 現在可用於腳本、自動化、教學、原型、本機 HTTP 處理器、Discord 互動邏輯以及混合語言程序整合。發行執行檔內含解析器、執行環境、套件工具、C/C++ 橋接、套件編譯器、格式化工具、測試執行器、健康檢查及專案產生指令。
+Oxid 現在可用於腳本、自動化、教學、原型、本機 HTTP 服務、Discord 互動邏輯以及混合語言程序整合。發行執行檔內含解析器、執行環境、OXBC 編譯器／讀取器、套件解析器、效能測試框架、C/C++ 橋接、格式化工具、測試執行器、健康檢查及專案產生指令。
 
-編譯器實作目前是 Rust stage-0 啟動層，並包含原生 C/C++ 元件。只有從原始碼建置 Oxid 本身時才需要 Rust；使用發行執行檔撰寫、執行、檢查、打包或橋接 Oxid 程式時不需要 Rust。完整的 Oxid 自宿主仍是明確的發展項目，因此本專案不會將預覽程式碼宣稱成已完成的自宿主編譯器。
+字節碼發射器已由 Oxid 編寫，啟動流程會檢查 stage-0／stage-1／stage-2 成品是否確定性相等。詞法分析器、解析器、診斷及模組提供者仍使用 Rust stage-0 啟動層，因此目前不宣稱已完成獨立自宿主。只有從原始碼建置該啟動層時才需要 Rust；使用發行執行檔撰寫、執行、檢查、編譯、管理套件或橋接 Oxid 程式時不需要 Rust。
 
 ## 為什麼選擇 Oxid
 
-| 日常工作 | Rust 式繁瑣寫法 | Oxid 0.8 |
+| 日常工作 | Rust 式繁瑣寫法 | Oxid 0.9 |
 |---|---|---|
 | 可變數值 | `let mut total = 0;` | `var total = 0;` |
 | 輸出 | `println!("{value}");` | `say value;` |
@@ -33,19 +33,22 @@ Oxid 現在可用於腳本、自動化、教學、原型、本機 HTTP 處理器
 | 非同步宣告 | 執行環境與 trait 設定 | `work fun fetch() => await request();` |
 | 執行腳本 | 專案編譯流程 | `oxid run app.ox` |
 | 單一成品 | 設定套件目標 | `oxid compile app.ox -o app.oxb` |
+| 鎖定依賴 | 選擇並接入套件用戶端 | `oxid add codec <pinned-git-url>` |
+| 結構化資料 | 加入序列化套件 | `{name: "Oxid"}`／`json_parse(text)` |
 | 外部語言橋接 | 手動編寫主機端膠合程式 | `oxid bridge all bridges` |
 
-Oxid 透過小型語言核心、一般腳本不需要依賴圖、預處理快取、遞迴模組快取，以及單次處理便將匯入內容編成一個 `.oxb` 套件來提升開發速度。效能會隨工作負載改變；請以儲存庫或應用程式的實際基準為準，不應假設相對 Rust 存在通用固定倍率。
+Oxid 透過小型語言核心、預處理快取、單次解析模組，以及讓同一程式可直接執行或編成單一 `.oxb` 成品來提升開發效率。效能會隨工作負載改變；請使用 `oxid bench` 或應用程式專屬測量，不應假設相對 Rust 存在通用固定倍率。
 
 ## 架構
 
 ![Oxid 架構，顯示原始碼、前端、執行環境、套件、標準函式庫與橋接](docs/assets/architecture.svg)
 
 - 詞法分析器與解析器同時理解傳統關鍵字及 Oxid 簡寫。
-- 執行環境支援數字、字串、布林、null、陣列、函式、任務、模組、常數、檔案、程序、C/C++ 原生呼叫及 HTTP 回應服務。
-- 套件編譯器會遞迴內嵌匯入、展開巨集、驗證語法，並輸出單一 `.oxb` 成品。
+- 執行環境支援數字、字串、布林、null、陣列、確定性記錄、JSON、任務、可持續使用的 TCP 控制代碼、模組、檔案、程序、C/C++ 原生呼叫及具有限制的 HTTP 解析。
+- 編譯器以確定順序解析匯入，並輸出含序列化 AST 版本 1、原始碼範圍、大小限制與負載校驗碼的 OXBC 1.0。
 - 標準函式庫以 `.ox` 模組編寫，提供集合、文字、工作流程、Web 路由、Discord 分派及語言橋接說明。
 - 自動產生的橋接 SDK 可讓外部主機一致地啟動 Oxid，而不必嵌入編譯器內部結構。
+- `oxid.lock` 會記錄遞迴路徑依賴與固定 commit 的 Git 依賴，並附上套件樹校驗碼。
 
 ## 快速開始
 
@@ -59,7 +62,7 @@ oxid build
 oxid test
 ```
 
-產生的專案包含清單、原始碼入口、最小 prelude、範例、測試及建置腳本。`oxid build` 會驗證專案並產生 `.oxid/bin/hello.oxb`。
+產生的專案包含清單、空白且有效的 `oxid.lock`、原始碼入口、最小 prelude、範例、測試及建置腳本。`oxid build` 會驗證專案並產生 `.oxid/bin/hello.oxb`。
 
 ## 語言語法
 
@@ -97,7 +100,7 @@ fun main() {
 }
 ```
 
-這些簡寫是相容別名，而不是另一套不相容文法：`fun/fn`、`var/let`、`say/print`、`give/return`、`when/if`、`otherwise/else`、`loop/while`、`import/use`、`yes/true`、`no/false`、`none/null`、`all/and` 及 `any/or`。Oxid 也實作 `for … in`、`break`、`continue`、`%`、`|>`、`=>`、`async`、`await`、陣列、索引、賦值、註解與單行巨集。
+這些簡寫是相容別名，而不是另一套不相容文法：`fun/fn`、`var/let`、`say/print`、`give/return`、`when/if`、`otherwise/else`、`loop/while`、`import/use`、`yes/true`、`no/false`、`none/null`、`all/and` 及 `any/or`。Oxid 也實作 `for … in`、`break`、`continue`、`%`、`|>`、`=>`、`async`、`await`、陣列、確定性記錄、屬性與字串鍵存取、賦值、註解與單行巨集。
 
 ## 安裝
 
@@ -111,7 +114,7 @@ export PATH="$HOME/.local/bin:$PATH"
 oxid --version
 ```
 
-可設定 `OXID_INSTALL_DIR` 改變目錄，或設定 `OXID_VERSION=v0.8.0` 固定版本。已發布的 Unix 成品涵蓋 Linux x86_64、macOS x86_64 及 macOS arm64。
+可設定 `OXID_INSTALL_DIR` 改變目錄，或設定 `OXID_VERSION=<release-tag>` 固定版本。已發布的 Unix 成品涵蓋 Linux x86_64、macOS x86_64 及 macOS arm64。
 
 ### Windows PowerShell 安裝程式
 
@@ -159,12 +162,14 @@ docker run --rm -v "$PWD:/workspace" oxid run /workspace/examples/hello.ox
 ```bash
 oxid check src/main.ox
 oxid compile src/main.ox -o app.oxb
+oxid inspect app.oxb
 oxid run app.oxb
-oxid build
+oxid lock
+oxid build --locked
 oxid clean
 ```
 
-`.oxb` 是 Oxid 套件：匯入模組會去重並內嵌、巨集會展開，組合後的原始碼會經過語法驗證。它可以在執行相同或相容 Oxid 執行環境的系統間移動。`oxid build` 也會驗證清單依賴項，並在 `.oxid/` 下記錄建置報告。
+`.oxb` 是 OXBC 1.0 成品，包含序列化 AST 版本 1、模組數、跨模組原始碼範圍及確定性負載校驗碼。執行環境會在執行前拒絕不相容、格式錯誤、過大、截斷或損壞的成品。`oxid ast` 會以 `.oxa` 副檔名寫出相同表示法。`oxid build` 會解析清單、驗證 `oxid.lock`，並在 `.oxid/` 下寫入應用程式成品與建置報告。
 
 ## 跨語言橋接
 
@@ -218,7 +223,7 @@ fun main() {
 }
 ```
 
-`stdlib/web.ox` 提供路由項目、本機分派、文字／JSON 回應及單次請求 TCP HTTP 服務。使用 `oxid web new my-api` 產生可執行的 Web 設定檔。正式環境 TLS、長時間連線及框架專屬部署仍由轉接器負責。
+`stdlib/web.ox` 提供路由項目、本機分派及文字／JSON 回應。原生 `net_listen`、`net_accept`、`net_try_accept`、`net_read`、`net_write`、`http_read_request`、`http_write_response` 與 `net_close` 提供可重複使用、具有資料與逾時限制的非阻塞 socket；`web_serve_once` 仍適合簡單的單次請求程式。TLS、身分驗證、流量限制及正式環境排程仍由轉接器負責。
 
 ## Discord 模組
 
@@ -239,30 +244,35 @@ fun main() {
 
 | 指令 | 用途 |
 |---|---|
-| `oxid run <file>` | 執行 `.ox` 或 `.oxb` 原始碼 |
+| `oxid run <file>` | 執行 `.ox` 原始碼或已驗證的 `.oxb`／`.oxa` 成品 |
 | `oxid check <file>` | 只進行詞法、預處理與解析，不執行 |
-| `oxid compile <file> [-o output]` | 產生去重後的單一套件 |
+| `oxid compile <file> [-o output]` | 產生確定性的 OXBC 成品 |
+| `oxid ast <file> [-o output]` | 輸出版本化的序列化 AST |
+| `oxid inspect <artifact>` | 顯示成品版本、數量及校驗碼 |
 | `oxid repl` | 啟動互動式直譯器 |
 | `oxid new/init <name>` | 建立一般專案骨架 |
 | `oxid web new <name>` | 建立 Web 專案骨架 |
 | `oxid discord new <name>` | 建立 Discord bot 專案骨架 |
 | `oxid bridge <target> [output]` | 產生 Python／Java／Go／C／C++ 主機 SDK |
-| `oxid build` | 驗證清單並建立 `.oxid/bin/*.oxb` |
+| `oxid build [依賴旗標]` | 解析、鎖定並建立 `.oxid/bin/*.oxb` |
 | `oxid test` | 執行語言煙霧測試與核心範例 |
 | `oxid fmt [path]` | 格式化單一原始碼或整個專案 |
 | `oxid watch <file>` | 專案檔案變更後重新執行 |
 | `oxid script <name> [args]` | 執行 `oxid.toml` 腳本 |
 | `oxid add <name> <target>` | 新增依賴項目 |
+| `oxid remove/list/lock/fetch/update/install` | 管理路徑與固定 commit 的 Git 依賴 |
+| `oxid bench [選項]` | 測量冷啟動、解析、打包及執行操作 |
 | `oxid doctor` | 檢查專案結構 |
 | `oxid doc` | 產生內建 API 文件 |
 | `oxid clean` | 移除 `.oxid` 快取／建置目錄 |
-| `oxid bootstrap/frontend/...` | 執行以 Oxid 編寫的工具鏈檢查 |
+| `oxid bootstrap/self-host [--check]` | 驗證或寫入確定性的編譯器階段成品 |
 
 ## 儲存庫結構
 
 ```text
 Oxid/
 ├── src/                  # stage-0 解析器、執行環境、CLI、套件器
+├── compiler/             # Oxid 編譯器入口與前端提供者清單
 ├── stdlib/               # 以 Oxid 編寫的標準模組
 │   ├── interop/          # C、C++、Python、Java、Go 橋接輔助
 │   └── bots/discord.ox   # Discord 指令與回應模組
@@ -280,22 +290,22 @@ Oxid/
 每次 push 與 pull request 都會執行：
 
 - Rust 格式檢查，以及將警告視為錯誤的 Clippy；
-- 語法、迴圈、管線、套件、橋接產生、JSON／Web 輔助與原生 C/C++ 連結單元測試；
+- 語法、OXBC 往返、原始碼範圍、記錄／JSON、網路限制、套件鎖定、啟動比對、橋接及原生 C/C++ 連結單元測試；
 - 對每個 `.ox` 檔案進行語法檢查；
 - 執行所有測試、範例、工具、應用程式與套件 demo；
 - 在 Linux x86_64、Windows x86_64、macOS x86_64 及 macOS arm64 進行最佳化建置；
 - README 內容對齊、SVG XML、TOML、JSON、workflow、原始碼安裝及 Docker 檢查；
-- 執行專案 `test`、`build` 及 `doctor` 指令。
+- 執行專案 `test`、鎖定 `build`、啟動比對、效能報告結構及 `doctor` 指令。
 
 版本標籤只會在可重用 CI 工作流程成功後，才打包獨立壓縮檔、產生 SHA-256 檔案並發布至 GitHub Releases。
 
 ## 獨立性與發展路線
 
-Oxid 0.8 已達成使用者端與 Rust 分離：發行版使用者只接觸 `oxid` 與 `.ox/.oxb` 檔案。內部 stage-0 實作目前仍以 Rust 為基礎，同時持續把更多編譯器與工具行為移至 Oxid 模組。下一階段自宿主里程碑包括序列化 AST／bytecode 格式、以 Oxid 編寫的 bytecode emitter、可重現的啟動比較，以及逐項驗證並替換 stage-0 前端元件。
+Oxid 0.9 已提供版本化成品、Oxid 編寫的發射器、確定性啟動比對及明確的提供者清單。發行版使用者不需安裝 Rust 即可使用 `oxid`、`.ox`、`.oxb` 與 `.oxa`。詞法分析器、解析器、診斷及模組提供者仍屬 stage-0；這些元件會逐項驗證後替換，只有在獨立的跨平台等效性得到證實後，自宿主路徑才會成為預設發行路徑。
 
 ## 安全性
 
-程序橋接會執行 Oxid 應用程式指定的程式。請勿把不受信任的執行檔路徑或 shell 片段交給自動產生的 C/C++ 轉接器。Web 服務刻意保持最小化且不提供 TLS。請依 [SECURITY.md](SECURITY.md) 私下回報漏洞。
+程序橋接會執行 Oxid 應用程式指定的程式。請勿把不受信任的執行檔路徑或 shell 片段交給自動產生的 C/C++ 轉接器。Git 依賴必須使用 HTTPS 與完整 commit，並應審查鎖定檔的校驗碼變更。網路與 JSON 解析器具有限制，但不提供 TLS 或應用程式身分驗證。請依 [SECURITY.md](SECURITY.md) 私下回報漏洞。
 
 ## 貢獻與授權
 

@@ -68,15 +68,19 @@ jobs:
           - name: Linux x86_64
             os: ubuntu-latest
             binary: target/release/oxid
+            artifact: linux-x86_64
           - name: Windows x86_64
             os: windows-latest
             binary: target/release/oxid.exe
+            artifact: windows-x86_64
           - name: macOS x86_64
             os: macos-15-intel
             binary: target/release/oxid
+            artifact: macos-x86_64
           - name: macOS arm64
             os: macos-14
             binary: target/release/oxid
+            artifact: macos-aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -105,12 +109,49 @@ jobs:
       - name: Check runtime version
         run: cargo run --release --locked -- --version
 
+      - name: Bootstrap and verify the self-hosted compiler
+        run: cargo run --release --locked -- bootstrap
+
+      - name: Recheck the deterministic bootstrap without rewriting artifacts
+        run: cargo run --release --locked -- bootstrap --check
+
+      - name: Run the bounded performance framework
+        run: cargo run --release --locked -- bench --iterations 3 --json target/oxid-benchmark.json
+
+      - name: Validate the benchmark JSON schema
+        run: python scripts/verify_benchmark_report.py target/oxid-benchmark.json 3
+
+      - name: Upload the bootstrap compiler artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiler-${{ matrix.artifact }}
+          path: .oxid/bootstrap/compiler.oxb
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  compiler-artifact-equivalence:
+    name: Cross-platform compiler artifact equivalence
+    needs: cross-platform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform compiler artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: compiler-*
+          path: compiler-artifacts
+
+      - name: Verify byte-identical compiler artifacts
+        run: python3 scripts/verify_bootstrap_artifacts.py compiler-artifacts 4
+
   workflow-lint:
     name: Workflow and metadata audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate workflow YAML
-        uses: docker://rhysd/actionlint:latest
+        uses: docker://rhysd/actionlint:1.7.12
       - name: Validate manifest metadata
         run: python3 -c "import json, tomllib; json.load(open('license-metadata.json')); tomllib.load(open('Cargo.toml','rb')); tomllib.load(open('oxid.toml','rb'))"

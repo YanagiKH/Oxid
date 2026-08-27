@@ -19,4 +19,4 @@ oxid script fmt
 oxid script doctor
 ```
 
-Scripts are intended for repeatable project operations and package workflow previews.
+Scripts are intended for repeatable project operations and package workflow previews. Oxid parses quotes and supported backslash escapes, then starts the declared executable with a direct argument vector. It does not invoke a command shell, so operators such as `|`, `&&`, redirection, and command substitution are passed literally rather than expanded. Arguments supplied after the script name are appended unchanged.

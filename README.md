@@ -12,17 +12,17 @@
   [English](README.md) · [繁體中文](README_ZH.md) · [日本語](README_JP.md)
 </div>
 
-Oxid 0.8 turns the project into a directly usable language surface: concise syntax, an interpreter and bundle compiler, project tooling, real C/C++ native functions, process bridges for Python/Java/Go, functional Web and Discord modules, and checksummed standalone releases. Normal users install one binary and do **not** need Rust.
+Oxid 0.9 is a directly usable language toolchain with concise and classical syntax, source interpretation, deterministic versioned artifacts, records and JSON, persistent network adapters, locked path/Git dependencies, project tooling, native C/C++ functions, and process bridges for Python/Java/Go. Normal users install one binary and do **not** need Rust.
 
 ## Project status
 
-Oxid is usable today for scripts, automation, teaching, prototypes, local HTTP handlers, Discord interaction logic, and mixed-language process integration. The release binary contains the parser, runtime, package tools, C/C++ bridge, compiler bundle writer, formatter, test runner, doctor, and scaffolding commands.
+Oxid is usable today for scripts, automation, teaching, prototypes, local HTTP services, Discord interaction logic, and mixed-language process integration. The release binary contains the parser, runtime, OXBC compiler/reader, package resolver, benchmark harness, C/C++ bridge, formatter, test runner, doctor, and scaffolding commands.
 
-The compiler implementation is currently a stage-0 Rust bootstrap with native C/C++ components. Rust is required only when building Oxid itself from source; it is not required to write, run, check, bundle, or bridge Oxid programs from a release binary. Full Oxid-authored self-hosting remains an explicit roadmap item, so the project does not present preview code as a finished self-hosted compiler.
+The bytecode emitter is written in Oxid and bootstrap artifacts are checked for deterministic stage-0/stage-1/stage-2 equality. The lexer, parser, diagnostics, and module providers still use the stage-0 Rust bootstrap; full independent self-hosting is therefore not claimed. Rust is required only when building that bootstrap from source, not when writing, running, checking, compiling, packaging, or bridging Oxid programs with a release binary.
 
 ## Why Oxid
 
-| Daily task | Rust-style ceremony | Oxid 0.8 |
+| Daily task | Rust-style ceremony | Oxid 0.9 |
 |---|---|---|
 | Mutable value | `let mut total = 0;` | `var total = 0;` |
 | Output | `println!("{value}");` | `say value;` |
@@ -33,19 +33,22 @@ The compiler implementation is currently a stage-0 Rust bootstrap with native C/
 | Async declaration | runtime and trait setup | `work fun fetch() => await request();` |
 | Script run | project compilation workflow | `oxid run app.ox` |
 | Single artifact | configure a package target | `oxid compile app.ox -o app.oxb` |
+| Locked dependency | select and wire a package client | `oxid add codec <pinned-git-url>` |
+| Structured data | add a serialization crate | `{name: "Oxid"}` / `json_parse(text)` |
 | Foreign bridge | write host glue manually | `oxid bridge all bridges` |
 
-Oxid optimizes development speed by keeping the language small, avoiding a dependency graph for ordinary scripts, caching preprocessing, recursively caching modules, and compiling imports into one `.oxb` bundle in a single pass. Performance depends on the workload; use repository or application benchmarks instead of assuming a universal speed ratio against Rust.
+Oxid optimizes development speed by keeping the language small, caching preprocessing, resolving modules once, and allowing the same program to run directly or compile into one `.oxb` artifact. Performance depends on the workload; use `oxid bench` or application-specific measurements instead of assuming a universal speed ratio against Rust.
 
 ## Architecture
 
 ![Oxid architecture showing source, frontend, runtime, bundles, standard library, and bridges](docs/assets/architecture.svg)
 
 - The lexer and parser understand both classical keywords and Oxid shortcuts.
-- The runtime supports numbers, strings, booleans, nulls, arrays, functions, tasks, modules, constants, files, processes, C/C++ native calls, and HTTP response serving.
-- The bundle compiler recursively inlines imports, expands macros, validates syntax, and emits one `.oxb` artifact.
+- The runtime supports numbers, strings, booleans, nulls, arrays, deterministic records, JSON, tasks, persistent TCP handles, modules, files, processes, C/C++ native calls, and bounded HTTP parsing.
+- The compiler resolves imports deterministically and emits OXBC 1.0 with serialized AST version 1, source ranges, size limits, and a payload checksum.
 - The standard library is written in `.ox` modules and supplies collections, text, workflows, Web routing, Discord dispatch, and language bridge descriptions.
 - Generated bridge SDKs let foreign hosts launch Oxid consistently without embedding compiler internals.
+- `oxid.lock` records recursive path and commit-pinned Git dependencies with package-tree checksums.
 
 ## Quick start
 
@@ -59,7 +62,7 @@ oxid build
 oxid test
 ```
 
-The generated project includes a manifest, source entry point, minimal prelude, example, test, and build script. `oxid build` validates the project and writes `.oxid/bin/hello.oxb`.
+The generated project includes a manifest, empty valid `oxid.lock`, source entry point, minimal prelude, example, test, and build script. `oxid build` validates the project and writes `.oxid/bin/hello.oxb`.
 
 ## Language syntax
 
@@ -97,7 +100,7 @@ fun main() {
 }
 ```
 
-Supported shortcuts are aliases, not a second incompatible grammar: `fun/fn`, `var/let`, `say/print`, `give/return`, `when/if`, `otherwise/else`, `loop/while`, `import/use`, `yes/true`, `no/false`, `none/null`, `all/and`, and `any/or`. Oxid also implements `for … in`, `break`, `continue`, `%`, `|>`, `=>`, `async`, `await`, arrays, indexing, assignment, comments, and one-line macros.
+Supported shortcuts are aliases, not a second incompatible grammar: `fun/fn`, `var/let`, `say/print`, `give/return`, `when/if`, `otherwise/else`, `loop/while`, `import/use`, `yes/true`, `no/false`, `none/null`, `all/and`, and `any/or`. Oxid also implements `for … in`, `break`, `continue`, `%`, `|>`, `=>`, `async`, `await`, arrays, deterministic records, property and string-key access, assignment, comments, and one-line macros.
 
 ## Installation
 
@@ -111,7 +114,7 @@ export PATH="$HOME/.local/bin:$PATH"
 oxid --version
 ```
 
-Set `OXID_INSTALL_DIR` for another directory or `OXID_VERSION=v0.8.0` for a pinned release. Published Unix assets cover Linux x86_64, macOS x86_64, and macOS arm64.
+Set `OXID_INSTALL_DIR` for another directory or `OXID_VERSION=<release-tag>` for a pinned release. Published Unix assets cover Linux x86_64, macOS x86_64, and macOS arm64.
 
 ### Windows PowerShell installer
 
@@ -159,12 +162,14 @@ The container builds an optimized runtime and executes as a non-root user.
 ```bash
 oxid check src/main.ox
 oxid compile src/main.ox -o app.oxb
+oxid inspect app.oxb
 oxid run app.oxb
-oxid build
+oxid lock
+oxid build --locked
 oxid clean
 ```
 
-`.oxb` is an Oxid bundle: imported modules are deduplicated and inlined, macros are expanded, and the combined source is syntax-validated. It is portable across systems running the same or a compatible Oxid runtime. `oxid build` also validates manifest dependencies and records a build report under `.oxid/`.
+`.oxb` is an OXBC 1.0 artifact containing serialized AST version 1, module count, cross-module source ranges, and a deterministic payload checksum. The runtime rejects incompatible, malformed, oversized, truncated, or corrupt artifacts before execution. `oxid ast` writes the same representation with an `.oxa` extension. `oxid build` resolves the manifest, validates `oxid.lock`, and writes the application artifact and build report under `.oxid/`.
 
 ## Cross-language bridges
 
@@ -218,7 +223,7 @@ fun main() {
 }
 ```
 
-`stdlib/web.ox` supplies route entries, local dispatch, text/JSON responses, and one-request TCP HTTP serving. Use `oxid web new my-api` to generate a runnable Web profile. Production TLS, long-running sockets, and framework-specific deployment remain adapter responsibilities.
+`stdlib/web.ox` supplies route entries, local dispatch, and text/JSON responses. Native `net_listen`, `net_accept`, `net_try_accept`, `net_read`, `net_write`, `http_read_request`, `http_write_response`, and `net_close` expose reusable nonblocking sockets with bounded data and timeouts; `web_serve_once` remains available for simple one-request programs. TLS, authentication, rate limiting, and production scheduling remain adapter responsibilities.
 
 ## Discord module
 
@@ -239,30 +244,35 @@ The module builds Discord interaction responses, registers commands, dispatches 
 
 | Command | Purpose |
 |---|---|
-| `oxid run <file>` | Execute `.ox` or `.oxb` source |
+| `oxid run <file>` | Execute `.ox` source or a validated `.oxb`/`.oxa` artifact |
 | `oxid check <file>` | Lex, preprocess, and parse without running |
-| `oxid compile <file> [-o output]` | Produce a deduplicated bundle |
+| `oxid compile <file> [-o output]` | Produce a deterministic OXBC artifact |
+| `oxid ast <file> [-o output]` | Emit the versioned serialized AST |
+| `oxid inspect <artifact>` | Show artifact versions, counts, and checksum |
 | `oxid repl` | Start the interactive interpreter |
 | `oxid new/init <name>` | Scaffold a normal project |
 | `oxid web new <name>` | Scaffold a Web project |
 | `oxid discord new <name>` | Scaffold a Discord bot project |
 | `oxid bridge <target> [output]` | Generate Python/Java/Go/C/C++ host SDKs |
-| `oxid build` | Validate manifest and create `.oxid/bin/*.oxb` |
+| `oxid build [dependency flags]` | Resolve, lock, and create `.oxid/bin/*.oxb` |
 | `oxid test` | Run language smoke tests and core examples |
 | `oxid fmt [path]` | Format one source or an entire project |
 | `oxid watch <file>` | Re-run after project file changes |
 | `oxid script <name> [args]` | Run an `oxid.toml` script |
 | `oxid add <name> <target>` | Add a dependency entry |
+| `oxid remove/list/lock/fetch/update/install` | Manage path and pinned Git dependencies |
+| `oxid bench [options]` | Measure cold start, parsing, packaging, and runtime operations |
 | `oxid doctor` | Check project structure |
 | `oxid doc` | Generate built-in API documentation |
 | `oxid clean` | Remove the `.oxid` cache/build directory |
-| `oxid bootstrap/frontend/...` | Run Oxid-authored toolchain inspections |
+| `oxid bootstrap/self-host [--check]` | Verify or write deterministic compiler stage artifacts |
 
 ## Repository layout
 
 ```text
 Oxid/
 ├── src/                  # stage-0 parser, runtime, CLI, bundler
+├── compiler/             # Oxid compiler entry and frontend provider manifest
 ├── stdlib/               # Oxid-authored standard modules
 │   ├── interop/          # C, C++, Python, Java, Go bridge helpers
 │   └── bots/discord.ox   # Discord command and response module
@@ -280,22 +290,22 @@ Oxid/
 Every push and pull request performs:
 
 - Rust formatting and Clippy with warnings denied;
-- unit tests for syntax, loops, pipelines, bundling, bridge generation, JSON/Web helpers, and native C/C++ linkage;
+- unit tests for syntax, OXBC round trips, source ranges, records/JSON, network limits, package locking, bootstrap parity, bridges, and native C/C++ linkage;
 - syntax checking for every `.ox` file;
 - execution of all tests, examples, tools, apps, and package demos;
 - optimized builds on Linux x86_64, Windows x86_64, macOS x86_64, and macOS arm64;
 - README parity, SVG XML, TOML, JSON, workflow, source-install, and Docker checks;
-- project `test`, `build`, and `doctor` commands.
+- project `test`, locked `build`, bootstrap parity, benchmark schema, and `doctor` commands.
 
 Version tags package standalone archives, generate SHA-256 files, and publish them to GitHub Releases only after the reusable CI workflow succeeds.
 
 ## Independence and roadmap
 
-Oxid 0.8 achieves user-facing independence from Rust: release users work exclusively with `oxid` and `.ox/.oxb` files. The internal stage-0 implementation remains Rust-based while more compiler and tooling behavior moves into Oxid modules. The next self-hosting milestones are a serialized AST/bytecode format, an Oxid-authored bytecode emitter, deterministic bootstrap comparison, and replacing the stage-0 frontend one verified component at a time.
+Oxid 0.9 delivers versioned artifacts, an Oxid-authored emitter, deterministic bootstrap comparison, and an explicit provider manifest. Release users work with `oxid`, `.ox`, `.oxb`, and `.oxa` without installing Rust. Lexer, parser, diagnostics, and module providers remain stage-0; they will be replaced one verified component at a time, and the self-hosted path will become the release default only after independent cross-platform equivalence is demonstrated.
 
 ## Security
 
-Process bridges execute programs requested by the Oxid application. Do not pass untrusted executable paths or shell fragments to generated C/C++ adapters. Web serving is intentionally minimal and does not provide TLS. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+Process bridges execute programs requested by the Oxid application. Do not pass untrusted executable paths or shell fragments to generated C/C++ adapters. Git dependencies require HTTPS and full commit pins; review lockfile checksum changes. Network and JSON parsers enforce limits but do not provide TLS or application authentication. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 ## Contributing and license
 

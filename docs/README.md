@@ -1,14 +1,28 @@
 # Oxid Documentation Index
 
-- `API.md`
-- `CACHE.md`
-- `SCRIPTS.md`
-- `TOOLS.md`
-- `PACKAGES.md`
-- `QUICKSTART.md`
-- `ROADMAP.md`
-- `ARCHITECTURE.md`
-- `ASYNC.md`
-- `MACROS.md`
-- `LIFETIME.md`
-- `FFI.md`
+- [Overview](OVERVIEW.md)
+- [Quickstart](QUICKSTART.md)
+- [Syntax](SYNTAX.md)
+- [API](API.md)
+- [Commands](COMMANDS.md)
+- [Compiler and OXBC artifacts](COMPILER.md)
+- [Frontend](FRONTEND.md)
+- [Architecture](ARCHITECTURE.md)
+- [Modules and diagnostics](MODULES.md)
+- [Packages and lockfiles](PACKAGES.md)
+- [Package workflow](PACKAGE_WORKFLOW.md)
+- [Async tasks](ASYNC.md)
+- [Web and network adapters](WEB_AND_BOTS.md)
+- [Benchmarks](BENCHMARKS.md)
+- [Self-hosting](SELF_HOSTING.md)
+- [Self-compiling workflow](SELF_COMPILING.md)
+- [Bootstrap](BOOTSTRAP.md)
+- [Cache](CACHE.md)
+- [Tooling](TOOLS.md)
+- [Roadmap](ROADMAP.md)
+- [Macros](MACROS.md)
+- [Lifetime](LIFETIME.md)
+- [FFI](FFI.md)
+- [Interop](INTEROP.md)
+- [Scripts](SCRIPTS.md)
+
