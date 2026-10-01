@@ -14,7 +14,9 @@ Default execution still uses the legacy interpreter, module loader and CLI. Runt
 Source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
 ownership checker, or `.ox` native machine-code backend in this path. Typed HIR
-exists only in the independent, opt-in bool/unit checker; it is not executable.
+and structurally verified straight-line OIR exist only in the independent, opt-in
+bool/unit checker; neither is executable. OIR calls have explicit normal
+continuations, but branches, joins and ownership analysis remain deferred.
 The linked C/C++ helpers accelerate selected host operations; their existence
 does not mean Oxid source is compiled to native machine code.
 

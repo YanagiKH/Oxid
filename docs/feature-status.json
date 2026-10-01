@@ -211,7 +211,7 @@
       "implementation": [],
       "tests": [],
       "evidence": [],
-      "limitations": "No OIR/CFG or ownership checker. The separate experimental bool/unit typed-preview checker does not establish a memory model or static memory safety."
+      "limitations": "No ownership checker or established memory model. The separate experimental bool/unit checker and structural straight-line OIR verifier do not establish static memory safety."
     },
     {
       "id": "llvm-native-backend",
@@ -328,7 +328,42 @@
       "evidence": [
         "docs/architecture/typed-preview-validation.md"
       ],
-      "limitations": "Experimental check only; no OIR, ownership, numbers, modules, execution, native compilation or typed artifacts. Default legacy semantics are unchanged."
+      "limitations": "Experimental check only; no ownership, numbers, modules, execution, native compilation or typed artifacts. Straight-line OIR is tracked separately. Default legacy semantics are unchanged."
+    },
+    {
+      "id": "typed-preview-verified-oir",
+      "summary": "Mandatory typed-HIR lowering to typed local slots, assignments, direct-call continuations and returns, with an independent iterative structural verifier",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "check-only",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; publication CI and other hosts not claimed by this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0002-verified-straight-line-oir.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/source.rs",
+        "src/frontend/driver.rs"
+      ],
+      "tests": [
+        "src/frontend/oir/tests.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/driver.rs",
+        "tests/typed_frontend.rs",
+        "tests/edition_boundary.rs"
+      ],
+      "evidence": [
+        "docs/architecture/oir-validation.md"
+      ],
+      "limitations": "Structural intraprocedural return completeness assumes calls return normally. No program termination, branches/joins, ownership, memory safety, execution, native output or typed artifact claim. Recursive call graphs remain legal."
     }
   ]
 }

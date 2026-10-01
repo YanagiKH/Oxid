@@ -4,6 +4,7 @@ mod diagnostic;
 mod driver;
 mod hir;
 mod lexer;
+mod oir;
 mod options;
 mod parser;
 mod source;
