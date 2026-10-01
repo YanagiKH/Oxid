@@ -12,6 +12,8 @@ pub enum Kind {
     Fn,
     Let,
     Return,
+    If,
+    Else,
     True,
     False,
     LParen,
@@ -91,13 +93,14 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                     "fn" => Kind::Fn,
                     "let" => Kind::Let,
                     "return" => Kind::Return,
+                    "if" => Kind::If,
+                    "else" => Kind::Else,
                     "true" => Kind::True,
                     "false" => Kind::False,
-                    "use" | "import" | "macro" | "macro_rules" | "mut" | "const" | "if"
-                    | "else" | "while" | "for" | "loop" | "match" | "break" | "continue"
-                    | "async" | "await" | "move" | "ref" | "unsafe" | "extern" | "struct"
-                    | "enum" | "trait" | "impl" | "type" | "mod" | "pub" | "null" | "and"
-                    | "or" => Kind::Unsupported,
+                    "use" | "import" | "macro" | "macro_rules" | "mut" | "const" | "while"
+                    | "for" | "loop" | "match" | "break" | "continue" | "async" | "await"
+                    | "move" | "ref" | "unsafe" | "extern" | "struct" | "enum" | "trait"
+                    | "impl" | "type" | "mod" | "pub" | "null" | "and" | "or" => Kind::Unsupported,
                     _ => Kind::Ident,
                 }
             }

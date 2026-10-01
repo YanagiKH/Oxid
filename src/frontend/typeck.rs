@@ -9,6 +9,7 @@ pub struct TypedProgram {
 struct TypedBody {
     expressions: Vec<Ty>,
     locals: Vec<Ty>,
+    block_returns: Vec<bool>,
 }
 /// Immutable frontend-only view; successful construction remains in this pass.
 pub(super) struct TypedFunction<'a> {
@@ -32,6 +33,8 @@ impl TypedProgram {
                 assert_eq!(function.id, DefId(index));
                 assert_eq!(function.expressions.len(), body.expressions.len());
                 assert_eq!(function.locals.len(), body.locals.len());
+                assert_eq!(function.blocks.len(), body.block_returns.len());
+                assert!(body.block_returns[function.body.0]);
                 assert!(signature.params.len() <= body.locals.len());
                 assert_eq!(&body.locals[..signature.params.len()], &signature.params);
                 TypedFunction {
@@ -54,6 +57,9 @@ impl<'a> TypedFunction<'a> {
     }
     pub(super) fn local_ty(&self, id: LocalId) -> Ty {
         self.body.locals[id.0]
+    }
+    pub(super) fn block_returns(&self, id: BodyBlockId) -> bool {
+        self.body.block_returns[id.0]
     }
 }
 
@@ -86,13 +92,55 @@ pub fn check(program: Program) -> Result<TypedProgram, Vec<Diagnostic>> {
 fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<Diagnostic>> {
     let signature = &program.signatures[function.id.0];
     let mut locals = vec![None; function.locals.len()];
-    for (slot, ty) in locals.iter_mut().zip(&signature.params) {
-        *slot = Some(*ty);
+    for (index, ty) in signature.params.iter().enumerate() {
+        locals[index] = Some(*ty);
     }
     let mut expressions = Vec::with_capacity(function.expressions.len());
     let mut next_expr = 0;
-    let mut returned = false;
-    for statement in &function.body {
+    // A continuation frame records each statement-list result without Rust
+    // recursion. Both children complete before their parent's flow is resumed.
+    enum Frame {
+        Block {
+            block: BodyBlockId,
+            index: usize,
+            returned: bool,
+        },
+        Join {
+            block: BodyBlockId,
+            index: usize,
+            then_block: BodyBlockId,
+            else_block: Option<BodyBlockId>,
+        },
+    }
+    let mut block_returns = vec![None; function.blocks.len()];
+    let mut frames = vec![Frame::Block {
+        block: function.body,
+        index: 0,
+        returned: false,
+    }];
+    while let Some(frame) = frames.pop() {
+        let (block, index, mut returned) = match frame {
+            Frame::Block {
+                block,
+                index,
+                returned,
+            } => (block, index, returned),
+            Frame::Join {
+                block,
+                index,
+                then_block,
+                else_block,
+            } => {
+                let then_returns = block_returns[then_block.0].expect("then arm was checked");
+                let else_returns =
+                    else_block.is_some_and(|id| block_returns[id.0].expect("else arm was checked"));
+                (block, index, then_returns && else_returns)
+            }
+        };
+        let Some(statement) = function.blocks[block.0].body.get(index) else {
+            block_returns[block.0] = Some(returned);
+            continue;
+        };
         if returned {
             return Err(Diagnostic::new(
                 "E0303",
@@ -104,6 +152,7 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
         let root = match statement.kind {
             StmtKind::Let { init, .. } | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
+            StmtKind::If { condition, .. } => Some(condition),
         };
         // Resolver emits children before parents and statement roots in source order.
         if let Some(root) = root {
@@ -177,9 +226,47 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                 }
                 returned = true;
             }
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                let actual = expressions[condition.0];
+                if actual != Ty::Bool {
+                    return Err(mismatch(
+                        Ty::Bool,
+                        actual,
+                        function.expressions[condition.0].span,
+                    ));
+                }
+                frames.push(Frame::Join {
+                    block,
+                    index: index + 1,
+                    then_block,
+                    else_block,
+                });
+                if let Some(otherwise) = else_block {
+                    frames.push(Frame::Block {
+                        block: otherwise,
+                        index: 0,
+                        returned: false,
+                    });
+                }
+                frames.push(Frame::Block {
+                    block: then_block,
+                    index: 0,
+                    returned: false,
+                });
+                continue;
+            }
         }
+        frames.push(Frame::Block {
+            block,
+            index: index + 1,
+            returned,
+        });
     }
-    if !returned {
+    if !block_returns[function.body.0].expect("function body was checked") {
         return Err(Diagnostic::new(
             "E0302",
             "type",
@@ -191,9 +278,15 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
         .into_iter()
         .map(|ty| ty.expect("all resolved locals have typed initializers"))
         .collect();
+    assert_eq!(next_expr, function.expressions.len());
+    let block_returns = block_returns
+        .into_iter()
+        .map(|flow| flow.expect("all resolved blocks have checked flow"))
+        .collect();
     Ok(TypedBody {
         expressions,
         locals,
+        block_returns,
     })
 }
 
@@ -232,7 +325,7 @@ mod tests {
     }
     #[test]
     fn view_boundary_never_silently_truncates_internal_tables() {
-        for mutation in 0..6 {
+        for mutation in 0..9 {
             let mut typed = checked("fn f(x: bool) -> bool { return x; }");
             match mutation {
                 0 => {
@@ -250,8 +343,17 @@ mod tests {
                 4 => {
                     typed.program.functions[0].id = DefId(9);
                 }
-                _ => {
+                5 => {
                     typed.bodies[0].locals[0] = Ty::Unit;
+                }
+                6 => {
+                    typed.bodies[0].block_returns.pop();
+                }
+                7 => {
+                    typed.program.functions[0].body = BodyBlockId(99);
+                }
+                _ => {
+                    typed.bodies[0].block_returns[0] = false;
                 }
             }
             assert!(std::panic::catch_unwind(|| typed.functions().for_each(|_| {})).is_err());
@@ -291,3 +393,7 @@ mod tests {
         assert_eq!(format!("{typed:?}"), format!("{:?}", checked(text)));
     }
 }
+
+#[cfg(test)]
+#[path = "branch_tests.rs"]
+mod branch_tests;

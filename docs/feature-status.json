@@ -328,7 +328,7 @@
       "evidence": [
         "docs/architecture/typed-preview-validation.md"
       ],
-      "limitations": "Experimental check only; no ownership, numbers, modules, execution, native compilation or typed artifacts. Straight-line OIR is tracked separately. Default legacy semantics are unchanged."
+      "limitations": "Experimental check only; no ownership, numbers, modules, execution, native compilation or typed artifacts. OIR and branch CFG increments are tracked separately. Default legacy semantics are unchanged."
     },
     {
       "id": "typed-preview-verified-oir",
@@ -363,7 +363,43 @@
       "evidence": [
         "docs/architecture/oir-validation.md"
       ],
-      "limitations": "Structural intraprocedural return completeness assumes calls return normally. No program termination, branches/joins, ownership, memory safety, execution, native output or typed artifact claim. Recursive call graphs remain legal."
+      "limitations": "This entry records the straight-line predecessor; branch CFGs are tracked separately. Structural return completeness assumes calls return normally. No termination, ownership, memory safety, execution, native output or typed artifact claim. Recursive calls remain legal."
+    },
+    {
+      "id": "typed-preview-boolean-cfg",
+      "summary": "Statement-form bool if/else, lexical arm scopes and all-path returns lowered to verified acyclic Branch/Goto joins with definition dominance",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "check-only",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; publication CI and other hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0003-boolean-branch-cfg.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/ast.rs",
+        "src/frontend/lexer.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs"
+      ],
+      "tests": [
+        "src/frontend/branch_tests.rs",
+        "src/frontend/oir/tests.rs",
+        "src/frontend/oir/cfg_tests.rs",
+        "tests/typed_frontend.rs",
+        "tests/edition_boundary.rs"
+      ],
+      "evidence": [
+        "docs/architecture/boolean-cfg-validation.md"
+      ],
+      "limitations": "Restricted provisional bool/unit checking only. Canonical globally unique immutable definitions; no phi or merge values. Calls assumed to return normally. No loops, numeric semantics, ownership, memory safety, execution, native output, stable edition or completed roadmap milestone."
     }
   ]
 }

@@ -25,6 +25,8 @@ pub struct DefId(pub usize);
 pub struct LocalId(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExprId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BodyBlockId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
     Bool(bool),
@@ -45,9 +47,17 @@ pub struct Local {
 }
 #[derive(Debug)]
 pub enum StmtKind {
-    Let { local: LocalId, init: ExprId },
+    Let {
+        local: LocalId,
+        init: ExprId,
+    },
     Expr(ExprId),
     Return(Option<ExprId>),
+    If {
+        condition: ExprId,
+        then_block: BodyBlockId,
+        else_block: Option<BodyBlockId>,
+    },
 }
 #[derive(Debug)]
 pub struct Stmt {
@@ -61,11 +71,18 @@ pub struct Signature {
     pub span: Span,
 }
 #[derive(Debug)]
+pub struct BodyBlock {
+    pub body: Vec<Stmt>,
+    pub span: Span,
+    pub end: Span,
+}
+#[derive(Debug)]
 pub struct Function {
     pub id: DefId,
     pub locals: Vec<Local>,
     pub expressions: Vec<Expr>,
-    pub body: Vec<Stmt>,
+    pub body: BodyBlockId,
+    pub blocks: Vec<BodyBlock>,
     pub end: Span,
 }
 #[derive(Debug)]
@@ -198,8 +215,45 @@ impl<'a> Resolver<'a> {
         for param in &function.params {
             self.bind(param.name, Some(type_syntax(self.source, param.ty)?))?;
         }
-        let mut body = Vec::new();
-        for statement in &function.body {
+        // Keep block IDs stable while resolving statements depth first. Only
+        // currently active names stay in the lookup table; each scope removes
+        // its own names on exit, so neither cloning nor ancestor scans are needed.
+        enum Frame {
+            Enter(ast::BodyBlockId),
+            Next(ast::BodyBlockId, usize),
+            Leave,
+        }
+        let mut blocks: Vec<_> = function
+            .blocks
+            .iter()
+            .map(|block| BodyBlock {
+                body: Vec::with_capacity(block.body.len()),
+                span: block.span,
+                end: block.end,
+            })
+            .collect();
+        let mut scopes: Vec<Vec<&'a str>> = Vec::new();
+        let mut frames = vec![Frame::Enter(function.body)];
+        while let Some(frame) = frames.pop() {
+            let (block, index) = match frame {
+                Frame::Enter(block) => {
+                    scopes.push(Vec::new());
+                    frames.push(Frame::Leave);
+                    frames.push(Frame::Next(block, 0));
+                    continue;
+                }
+                Frame::Leave => {
+                    for name in scopes.pop().expect("entered scope") {
+                        self.scope.remove(name);
+                    }
+                    continue;
+                }
+                Frame::Next(block, index) => (block, index),
+            };
+            let Some(statement) = function.blocks[block.0].body.get(index) else {
+                continue;
+            };
+            frames.push(Frame::Next(block, index + 1));
             let kind = match &statement.kind {
                 ast::StmtKind::Let {
                     name,
@@ -210,17 +264,35 @@ impl<'a> Resolver<'a> {
                     let annotation = annotation
                         .map(|ty| type_syntax(self.source, ty))
                         .transpose()?;
-                    StmtKind::Let {
-                        local: self.bind(*name, annotation)?,
-                        init,
-                    }
+                    let local = self.bind(*name, annotation)?;
+                    scopes
+                        .last_mut()
+                        .expect("active body scope")
+                        .push(self.text(*name));
+                    StmtKind::Let { local, init }
                 }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
                 }
+                ast::StmtKind::If {
+                    condition,
+                    then_block,
+                    else_block,
+                } => {
+                    let condition = self.expression(*condition)?;
+                    if let Some(otherwise) = else_block {
+                        frames.push(Frame::Enter(*otherwise));
+                    }
+                    frames.push(Frame::Enter(*then_block));
+                    StmtKind::If {
+                        condition,
+                        then_block: BodyBlockId(then_block.0),
+                        else_block: else_block.map(|id| BodyBlockId(id.0)),
+                    }
+                }
             };
-            body.push(Stmt {
+            blocks[block.0].body.push(Stmt {
                 kind,
                 span: statement.span,
             });
@@ -229,7 +301,8 @@ impl<'a> Resolver<'a> {
             id,
             locals: std::mem::take(&mut self.locals),
             expressions: std::mem::take(&mut self.expressions),
-            body,
+            body: BodyBlockId(function.body.0),
+            blocks,
             end: function.end,
         })
     }
