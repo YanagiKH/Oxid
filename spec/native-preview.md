@@ -49,8 +49,8 @@ Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0008](../rfcs/0008-native-checked-i32.md). Comparisons follow
 [RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
 [RFC 0010](../rfcs/0010-boolean-logical-operators.md), and mutable scalar storage
-follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). There are no source I/O operations,
-pointers, containers, break/continue, indirect calls, modules or implicit legacy adapters
+follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. There are no source I/O operations,
+pointers, containers, indirect calls, modules or implicit legacy adapters
 in this subset.
 
 The entire call graph must be acyclic, including dead declarations and calls in
@@ -231,3 +231,5 @@ See [RFC 0007](../rfcs/0007-llvm-scalar-native.md),
 and [mutable-local evidence](../docs/architecture/mutable-locals-validation.md).
 
 [While validation](../docs/architecture/while-validation.md) covers the cyclic/guarded extension and its qualification limits.
+
+[Loop-control validation](../docs/architecture/loop-control-validation.md) covers exact transfer fuel and real native execution.

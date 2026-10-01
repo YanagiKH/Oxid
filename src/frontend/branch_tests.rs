@@ -233,7 +233,7 @@ fn boolean_block_spans_and_complete_flow_tables_cover_every_arm() {
     assert_eq!(function.blocks.len(), 5);
     assert_eq!(
         (0..5)
-            .map(|id| view.block_returns(BodyBlockId(id)))
+            .map(|id| view.block_flow(BodyBlockId(id)).returns_only())
             .collect::<Vec<_>>(),
         [true, true, true, true, false]
     );

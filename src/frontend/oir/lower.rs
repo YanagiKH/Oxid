@@ -6,13 +6,18 @@ enum BindingLocation {
     Value(LocalId),
     Place(PlaceId),
 }
+#[derive(Clone, Copy)]
+struct LoopTargets {
+    header: BlockId,
+    exit: BlockId,
+}
 fn failure(kind: FailureKind, span: Span) -> OirFailure {
     OirFailure::new(kind, STAGE, Some(span))
 }
 
 /// Exact aggregate expansion, before allocating OIR storage/maps. One condition
 /// creates a then entry, an optional else entry and only a reachable join.
-fn preflight(typed: &typeck::TypedProgram) -> Result<(), OirFailure> {
+fn preflight(typed: &typeck::TypedProgram) -> Result<Budget, OirFailure> {
     let mut budget = Budget::default();
     for view in typed.functions() {
         let function = view.hir();
@@ -109,8 +114,8 @@ fn preflight(typed: &typeck::TypedProgram) -> Result<(), OirFailure> {
                     ..
                 } = statement.kind
                 {
-                    let joins = !view.block_returns(then_block)
-                        || else_block.is_none_or(|id| !view.block_returns(id));
+                    let joins = view.block_flow(then_block).falls_through()
+                        || else_block.is_none_or(|id| view.block_flow(id).falls_through());
                     let count = 1 + usize::from(else_block.is_some()) + usize::from(joins);
                     Budget::add(
                         &mut budget.blocks,
@@ -124,7 +129,7 @@ fn preflight(typed: &typeck::TypedProgram) -> Result<(), OirFailure> {
             }
         }
     }
-    Ok(())
+    Ok(budget)
 }
 
 struct BlockBuilder {
@@ -227,6 +232,11 @@ enum Frame {
     },
     Join {
         id: Option<BlockId>,
+        span: Span,
+    },
+    FinishLoop {
+        loop_id: hir::LoopId,
+        exit: BlockId,
         span: Span,
     },
 }
@@ -480,6 +490,8 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
             span: function.expressions[id.0].span,
         };
         let mut builder = BlockBuilder::new(signature.span);
+        let mut loop_targets = vec![None; function.blocks.len()];
+        let mut active_loops = Vec::new();
         let mut next_expr = 0;
         let mut frames = vec![Frame::Body {
             id: function.body,
@@ -516,11 +528,34 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                     builder.enter(id, span)?;
                     continue;
                 }
+                Frame::FinishLoop {
+                    loop_id,
+                    exit,
+                    span,
+                } => {
+                    assert_eq!(active_loops.pop(), Some(loop_id));
+                    assert!(loop_targets[loop_id.0].take().is_some());
+                    builder.enter(Some(exit), span)?;
+                    continue;
+                }
             };
-            if let hir::StmtKind::While { condition, body } = statement.kind {
+            if let hir::StmtKind::While {
+                loop_id,
+                condition,
+                body,
+            } = statement.kind
+            {
                 let header = builder.reserve(statement.span);
                 let body_entry = builder.reserve(function.blocks[body.0].span);
                 let exit = builder.reserve(statement.span);
+                assert_eq!(
+                    loop_id.0, body.0,
+                    "resolved loop ID is its unique body block"
+                );
+                assert!(loop_targets[loop_id.0]
+                    .replace(LoopTargets { header, exit })
+                    .is_none());
+                active_loops.push(loop_id);
                 builder.close(Terminator {
                     span: statement.span,
                     kind: TerminatorKind::Goto { target: header },
@@ -542,8 +577,9 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                         else_block: exit,
                     },
                 })?;
-                frames.push(Frame::Join {
-                    id: Some(exit),
+                frames.push(Frame::FinishLoop {
+                    loop_id,
+                    exit,
                     span: statement.span,
                 });
                 frames.push(Frame::EnterArm {
@@ -558,6 +594,7 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                 | hir::StmtKind::Assign { value: init, .. }
                 | hir::StmtKind::Expr(init) => Some(init),
                 hir::StmtKind::Return(value) => value,
+                hir::StmtKind::Break { .. } | hir::StmtKind::Continue { .. } => None,
                 hir::StmtKind::If { condition, .. } => Some(condition),
                 hir::StmtKind::While { .. } => unreachable!("while lowered above"),
             };
@@ -607,6 +644,23 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                     })?;
                 }
                 hir::StmtKind::While { .. } => unreachable!("while lowered above"),
+                hir::StmtKind::Break { target } | hir::StmtKind::Continue { target } => {
+                    assert_eq!(
+                        active_loops.last(),
+                        Some(&target),
+                        "resolved transfer targets the nearest active loop"
+                    );
+                    let targets = loop_targets[target.0].expect("resolved loop target is active");
+                    let target = if matches!(statement.kind, hir::StmtKind::Break { .. }) {
+                        targets.exit
+                    } else {
+                        targets.header
+                    };
+                    builder.close(Terminator {
+                        kind: TerminatorKind::Goto { target },
+                        span: statement.span,
+                    })?;
+                }
                 hir::StmtKind::Expr(_) => {}
                 hir::StmtKind::Return(value) => {
                     let value = match value {
@@ -642,8 +696,8 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                     let then_entry = builder.reserve(function.blocks[then_block.0].span);
                     let else_entry =
                         else_block.map(|id| builder.reserve(function.blocks[id.0].span));
-                    let joins = !view.block_returns(then_block)
-                        || else_block.is_none_or(|id| !view.block_returns(id));
+                    let joins = view.block_flow(then_block).falls_through()
+                        || else_block.is_none_or(|id| view.block_flow(id).falls_through());
                     let join = joins.then(|| builder.reserve(statement.span));
                     let false_entry = else_entry
                         .or(join)
@@ -671,6 +725,8 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                 }
             }
         }
+        assert!(active_loops.is_empty());
+        assert!(loop_targets.iter().all(Option::is_none));
         if next_expr != function.expressions.len() {
             return Err(failure(FailureKind::IncompleteBody, signature.span));
         }
@@ -753,6 +809,42 @@ mod branch_builder_tests {
     }
 
     #[test]
+    fn explicit_loop_transfers_close_paths_without_synthetic_edges() {
+        for (text, count) in [
+            ("fn f() -> () { while true { break; } return; }", 4),
+            ("fn f() -> () { while true { continue; } return; }", 4),
+            (
+                "fn f(c: bool) -> () { while c { if c { break; } else { continue; } } return; }",
+                6,
+            ),
+            (
+                "fn f(c: bool) -> () { while c { if c { return; } else { break; } } return; }",
+                6,
+            ),
+            (
+                "fn f(c: bool) -> () { while c { if c { continue; } else { return; } } return; }",
+                6,
+            ),
+            (
+                "fn f(c: bool) -> () { while c { if c { break; } } return; }",
+                6,
+            ),
+        ] {
+            let mut sources = SourceMap::new();
+            let id = sources.add("input.ox".into(), text.into());
+            let source = sources.get(id);
+            let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+            let typed = typeck::check(hir::resolve(source, &ast).unwrap()).unwrap();
+            let raw = lower(&typed).unwrap();
+            assert_eq!(raw.functions[0].blocks.len(), count, "{text}");
+            assert!(raw.functions[0]
+                .blocks
+                .iter()
+                .all(|b| b.terminator.is_some()));
+        }
+    }
+
+    #[test]
     fn reserved_blocks_cannot_be_entered_over_an_open_or_closed_path() {
         let span = Span {
             file: crate::frontend::source::SourceFileId(0),
@@ -780,5 +872,175 @@ mod branch_builder_tests {
             builder.finish(span).unwrap_err().kind,
             FailureKind::IncompleteBody
         );
+    }
+}
+
+#[cfg(test)]
+mod loop_transfer_tests {
+    use super::*;
+    use crate::frontend::{lexer, parser};
+
+    fn fixture(text: &str) -> (SourceMap, typeck::TypedProgram) {
+        let mut sources = SourceMap::new();
+        let id = sources.add("loop-targets.ox".into(), text.into());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let typed = typeck::check(hir::resolve(source, &ast).unwrap()).unwrap();
+        (sources, typed)
+    }
+
+    fn goto_at(function: &Function, text: &str, statement: &str) -> BlockId {
+        let start = text.find(statement).unwrap();
+        let matching: Vec<_> = function
+            .blocks
+            .iter()
+            .filter_map(|block| {
+                let terminator = block.terminator.as_ref().unwrap();
+                (terminator.span.start == start && terminator.span.end == start + statement.len())
+                    .then_some(terminator)
+            })
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "exactly one full-span transfer: {statement}"
+        );
+        let TerminatorKind::Goto { target } = matching[0].kind else {
+            panic!("transfer must lower directly to one Goto");
+        };
+        target
+    }
+
+    #[test]
+    fn nested_transfers_target_the_nearest_loop_and_restore_later_siblings() {
+        let text = "fn f(c: bool) -> () { while c { while c { if c { continue /* inner 雪 */; } else { break /* inner */; } } continue /* outer */; } while c { break /* sibling */; } return; }";
+        let (sources, typed) = fixture(text);
+        let raw = lower(&typed).unwrap();
+        let function = &raw.functions[0];
+        assert_eq!(function.blocks.len(), 12);
+        assert_eq!(
+            goto_at(function, text, "continue /* inner 雪 */;"),
+            BlockId(4)
+        );
+        assert_eq!(goto_at(function, text, "break /* inner */;"), BlockId(6));
+        assert_eq!(goto_at(function, text, "continue /* outer */;"), BlockId(1));
+        assert_eq!(goto_at(function, text, "break /* sibling */;"), BlockId(11));
+        // Every loop-body/arm path ends in its explicit transfer, so no closing
+        // brace acquires a redundant charged edge.
+        assert!(function.blocks.iter().all(|block| {
+            let span = block.terminator.as_ref().unwrap().span;
+            &text[span.start..span.end] != "}"
+        }));
+        verify::verify(raw, &sources).unwrap();
+    }
+
+    #[test]
+    fn continue_reenters_the_full_condition_before_calls_and_lazy_merges() {
+        let text = "fn f(c: bool) -> () { while pred(c) && !pred(false) { continue /* all condition */; } return; } fn pred(c: bool) -> bool { return c; }";
+        let (sources, typed) = fixture(text);
+        let raw = lower(&typed).unwrap();
+        let function = &raw.functions[0];
+        let header = goto_at(function, text, "continue /* all condition */;");
+        assert_eq!(header, BlockId(1));
+        assert!(matches!(
+            function.blocks[header.0].terminator.as_ref().unwrap().kind,
+            TerminatorKind::Call {
+                target: hir::DefId(1),
+                ..
+            }
+        ));
+        assert!(function.blocks[header.0].merge.is_none());
+        let merged_condition = function
+            .blocks
+            .iter()
+            .position(|block| block.merge.is_some())
+            .unwrap();
+        assert_ne!(header.0, merged_condition);
+        assert!(matches!(
+            function.blocks[merged_condition]
+                .terminator
+                .as_ref()
+                .unwrap()
+                .kind,
+            TerminatorKind::Branch {
+                then_block: BlockId(2),
+                else_block: BlockId(3),
+                ..
+            }
+        ));
+        verify::verify(raw, &sources).unwrap();
+    }
+
+    #[test]
+    fn preflight_matches_exact_emission_for_all_terminal_and_fallthrough_combinations() {
+        for left in ["", "return;", "break;", "continue;"] {
+            for right in [
+                None,
+                Some(""),
+                Some("return;"),
+                Some("break;"),
+                Some("continue;"),
+            ] {
+                let otherwise = right.map_or(String::new(), |body| format!("else {{ {body} }}"));
+                let text = format!(
+                    "fn f(c: bool) -> () {{ while c {{ if c {{ {left} }} {otherwise} }} return; }}"
+                );
+                let (sources, typed) = fixture(&text);
+                let budget = preflight(&typed).unwrap();
+                let raw = lower(&typed).unwrap();
+                let expected = if right.is_none() || left.is_empty() || right == Some("") {
+                    4 + 1 + usize::from(right.is_some()) + 1
+                } else {
+                    4 + 2
+                };
+                assert_eq!(budget.blocks, expected, "{text}");
+                assert_eq!(raw.functions[0].blocks.len(), expected, "{text}");
+                assert_eq!(
+                    budget.locals,
+                    raw.functions
+                        .iter()
+                        .map(Function::slot_count)
+                        .sum::<usize>()
+                );
+                assert_eq!(
+                    budget.assignments,
+                    raw.functions
+                        .iter()
+                        .flat_map(|function| &function.blocks)
+                        .map(|block| block.statements.len() + usize::from(block.merge.is_some()))
+                        .sum::<usize>()
+                );
+                verify::verify(raw, &sources).unwrap();
+            }
+        }
+        // Calls, laziness, mutable slots, implicit unit returns and nested loops
+        // use the same exact aggregate accounting in combination with transfers.
+        let text = "fn f(c: bool) -> () { let mut n = 0; while pred(c) && c { if c { n = n + 1; continue; } while c { break; } return; } return; } fn pred(c: bool) -> bool { return c; }";
+        let (sources, typed) = fixture(text);
+        let budget = preflight(&typed).unwrap();
+        let raw = lower(&typed).unwrap();
+        assert_eq!(
+            budget.blocks,
+            raw.functions
+                .iter()
+                .map(|function| function.blocks.len())
+                .sum::<usize>()
+        );
+        assert_eq!(
+            budget.locals,
+            raw.functions
+                .iter()
+                .map(Function::slot_count)
+                .sum::<usize>()
+        );
+        assert_eq!(
+            budget.assignments,
+            raw.functions
+                .iter()
+                .flat_map(|function| &function.blocks)
+                .map(|block| block.statements.len() + usize::from(block.merge.is_some()))
+                .sum::<usize>()
+        );
+        verify::verify(raw, &sources).unwrap();
     }
 }

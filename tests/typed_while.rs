@@ -142,10 +142,13 @@ fn loop_conditions_and_dead_bodies_are_fully_checked() {
             "fn main()->() { while false { let x=1; } x; return; }",
             "E0200",
         ),
-        ("fn main()->() { while false { break; } return; }", "E0101"),
         (
-            "fn main()->() { while false { continue; } return; }",
-            "E0101",
+            "fn main()->() { while false { break 1; } return; }",
+            "E0100",
+        ),
+        (
+            "fn main()->() { while false { continue 1; } return; }",
+            "E0100",
         ),
         ("fn main()->() { return; while false {} }", "E0303"),
     ] {

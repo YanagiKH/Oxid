@@ -13,6 +13,8 @@ pub enum Kind {
     Let,
     Mut,
     Return,
+    Break,
+    Continue,
     If,
     While,
     Else,
@@ -108,15 +110,17 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                     "let" => Kind::Let,
                     "mut" => Kind::Mut,
                     "return" => Kind::Return,
+                    "break" => Kind::Break,
+                    "continue" => Kind::Continue,
                     "if" => Kind::If,
                     "while" => Kind::While,
                     "else" => Kind::Else,
                     "true" => Kind::True,
                     "false" => Kind::False,
                     "use" | "import" | "macro" | "macro_rules" | "const" | "for" | "loop"
-                    | "match" | "break" | "continue" | "async" | "await" | "move" | "ref"
-                    | "unsafe" | "extern" | "struct" | "enum" | "trait" | "impl" | "type"
-                    | "mod" | "pub" | "null" | "and" | "or" => Kind::Unsupported,
+                    | "match" | "async" | "await" | "move" | "ref" | "unsafe" | "extern"
+                    | "struct" | "enum" | "trait" | "impl" | "type" | "mod" | "pub" | "null"
+                    | "and" | "or" => Kind::Unsupported,
                     _ => Kind::Ident,
                 }
             }

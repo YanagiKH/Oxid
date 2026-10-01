@@ -693,7 +693,42 @@
       "evidence": [
         "docs/architecture/while-validation.md"
       ],
-      "limitations": "Provisional while only, with shared 1,000,000 abstract-operation budget, not a wall-clock or final-performance mode. No break/continue, loop expressions, for, native recursion, ownership or new scalar types. Transitively acyclic native functions retain static 100,000 admission; guarded modules add 16 MiB diagnostic/64MiB LLVM representation caps. Linux x86_64 LLVM 19.1.7 O0 only; no O2, stable ABI, safety certification or completed roadmap milestone."
+      "limitations": "This entry records the ordinary-while predecessor; loop transfers are tracked separately. Provisional while only, with shared 1,000,000 abstract-operation budget, not a wall-clock or final-performance mode. No break/continue, loop expressions, for, native recursion, ownership or new scalar types. Transitively acyclic native functions retain static 100,000 admission; guarded modules add 16 MiB diagnostic/64MiB LLVM representation caps. Linux x86_64 LLVM 19.1.7 O0 only; no O2, stable ABI, safety certification or completed roadmap milestone."
+    },
+    {
+      "id": "typed-preview-loop-control",
+      "summary": "Unlabeled innermost while break/continue with precise terminal flow, lexical targets and exact charged transfer edges",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence; native supports Linux x86_64 only. Hosted CI and other reference hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0013-loop-control.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/lower.rs"
+      ],
+      "tests": [
+        "tests/typed_loop_control.rs",
+        "src/frontend/oir/loop_control_tests.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/lower.rs",
+        "scripts/verify_loop_control.py"
+      ],
+      "evidence": [
+        "docs/architecture/loop-control-validation.md"
+      ],
+      "limitations": "Statement-only unlabeled transfers within the same function; no values, labels, for/loop expressions, never inference, ownership or new types. Existing scalar/reference/native resource and fuel policy remains, with actual CFG cycles deciding native guards. Linux x86_64 LLVM19.1.7 O0 only; no stable ABI, completed milestone or safety certification."
     }
   ]
 }

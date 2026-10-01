@@ -271,6 +271,10 @@ impl Parser<'_> {
                 annotation,
                 init: self.expression(0)?,
             }
+        } else if self.take(Kind::Break).is_some() {
+            StmtKind::Break
+        } else if self.take(Kind::Continue).is_some() {
+            StmtKind::Continue
         } else if self.take(Kind::Return).is_some() {
             StmtKind::Return(if self.peek().kind == Kind::Semi {
                 None
@@ -293,6 +297,14 @@ impl Parser<'_> {
         } else {
             StmtKind::Expr(self.expression(0)?)
         };
+        if matches!(kind, StmtKind::Break | StmtKind::Continue) && self.peek().kind != Kind::Semi {
+            return Err(Diagnostic::new(
+                "E0100",
+                "parse",
+                "loop transfer requires `;`; values and labels are unavailable",
+                Some(self.peek().span),
+            ));
+        }
         let end = self.expect(Kind::Semi, "statement requires `;`")?.span.end;
         Ok(Stmt {
             kind,

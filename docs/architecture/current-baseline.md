@@ -87,6 +87,12 @@ Ordinary bool-condition while is an experimental end-to-end extension with cycli
 OIR dominance and shared one-million-operation reference/native fuel. Guarded
 native modules retain static call-depth/storage bounds and add explicit 16 MiB
 human-diagnostic/64 MiB LLVM-text ceilings. Existing acyclic native admission is
-preserved; no break/continue, native recursion or final-performance claim follows.
+preserved; no native recursion or final-performance claim follows.
 See [RFC 0012](../../rfcs/0012-while-runtime-fuel.md) and
 [while validation](while-validation.md).
+
+Unlabeled break/continue extend the while subset end to end. Four-outcome typed
+flow summaries separate return from loop transfers; lexical targets lower to
+existing charged Goto edges without unreachable joins. No ownership or new type
+is implied. See [RFC 0013](../../rfcs/0013-loop-control.md) and
+[loop-control evidence](loop-control-validation.md).

@@ -65,6 +65,8 @@ statement  := "let" "mut"? name (":" type)? "=" expression ";"
             | name "=" expression ";"
             | expression ";"
             | "return" expression? ";"
+            | "break" ";"
+            | "continue" ";"
             | "if" expression block ("else" block)?
             | "while" expression block
 expression := logical_or
@@ -238,7 +240,7 @@ execution, using reusable activation slots. Outer mutable places persist and
 immutable snapshots remain values. Conditions and bodies are fully checked even
 when never executed. Return exits the function, but while itself never proves a
 terminal return, even for literal true. No trailing semicolon, while-else,
-break/continue, loop expression or implicit truthiness is introduced.
+loop expression or implicit truthiness is introduced.
 
 Reference and guarded native invocations share a total 1,000,000-operation budget
 across loops/calls, with E0601 before the next charged operation. This is not a
@@ -247,11 +249,29 @@ remain; loop execution does not accumulate frame storage. See
 [RFC 0012](../rfcs/0012-while-runtime-fuel.md) for exact costs, origins, cyclic
 verification and native guarded-only representation bounds.
 
+### Unlabeled loop transfers
+
+`break;` exits the nearest enclosing while in the same function. `continue;`
+reevaluates its full condition, including calls and lazy logic. Both are
+semicolon-only statements, with no values or labels. Statements after any
+unconditional transfer, or an if whose arms all transfer, fail E0303 even when
+arm outcomes differ. All source paths remain statically checked. Nested while
+consumes its own transfers; conservative while false edges and explicit function
+return requirements remain unchanged.
+
+Typed block summaries distinguish fallthrough, return, break and continue.
+Only falling paths create join edges. Each transfer lowers to one existing,
+precharged Goto at its full statement span, without a subsequent closing-brace
+edge. No value/place slots, OIR blocks, runtime frame allocation, new verifier
+algorithm or resource limit is added. Out-of-loop transfers give E0204/resolve;
+malformed/value/labeled transfer statements give E0100/parse. See
+[RFC 0013](../rfcs/0013-loop-control.md).
+
 Strings, null, imports/modules, macros, borrowing, ownership,
-containers, for/loop/break/continue and other control flow, other operators, async, closures, generics, FFI, host I/O,
+containers, for/loop and other control flow, other operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
-silent approximation or legacy execution of these features. Now-recognized if/else/while
+silent approximation or legacy execution of these features. Now-recognized if/else/while/break/continue
 keywords in invalid positions produce ordinary syntax errors (E0100), replacing
 the predecessor's unsupported-keyword E0101 for those newly enabled keywords.
 
@@ -417,10 +437,11 @@ characters instead of emitting source-controlled terminal commands.
 | E0201 | Duplicate binding or unsupported shadowing |
 | E0202 | Unknown type |
 | E0203 | Exact decimal literal outside i32 range (resolve stage) |
+| E0204 | Loop transfer outside a while in the same function (resolve stage) |
 | E0300 | Binding, argument, scalar/logical operand, condition or return type mismatch |
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
-| E0303 | Statement after terminal return |
+| E0303 | Statement after terminal return or loop control transfer |
 | E0304 | Assignment to an immutable binding or parameter |
 | E0400 | Frontend/lowering resource limit |
 | E0500 | Internal OIR lowering/verification/execution invariant failure |
@@ -586,3 +607,5 @@ reference/native/Python checks. No generalized equality or later operator is imp
 short-circuit value joins, exact path costs and reference/native differential checks.
 
 [While evidence](../docs/architecture/while-validation.md) records cyclic verifier, shared fuel and actual LLVM gates.
+
+[Loop-control evidence](../docs/architecture/loop-control-validation.md) records source transfers and precise fallthrough/exit qualification.
