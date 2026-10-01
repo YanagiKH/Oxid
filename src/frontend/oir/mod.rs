@@ -19,6 +19,18 @@ const MAX_ASSIGNMENTS: usize = super::parser::MAX_NODES;
 struct LocalId(usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BlockId(usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PlaceId(usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Place {
+    id: PlaceId,
+    span: Span,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PlaceDecl {
+    ty: hir::Ty,
+    span: Span,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Program {
     functions: Vec<Function>,
@@ -30,6 +42,7 @@ struct Function {
     result: hir::Ty,
     param_count: usize,
     locals: Vec<LocalDecl>,
+    places: Vec<PlaceDecl>,
     entry: BlockId,
     blocks: Vec<BasicBlock>,
 }
@@ -49,7 +62,7 @@ enum LocalKind {
 struct BasicBlock {
     merge: Option<BoolMerge>,
     span: Span,
-    statements: Vec<Assign>,
+    statements: Vec<Statement>,
     terminator: Option<Terminator>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +83,51 @@ struct Operand {
     span: Span,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+enum Statement {
+    Assign(Assign),
+    Initialize {
+        place: Place,
+        value: Operand,
+        span: Span,
+    },
+    Store {
+        place: Place,
+        value: Operand,
+        operator_span: Span,
+        span: Span,
+    },
+}
+impl Statement {
+    fn span(&self) -> Span {
+        match self {
+            Self::Assign(assign) => assign.span,
+            Self::Initialize { span, .. } | Self::Store { span, .. } => *span,
+        }
+    }
+    fn as_assignment(&self) -> Option<&Assign> {
+        match self {
+            Self::Assign(assign) => Some(assign),
+            _ => None,
+        }
+    }
+    #[cfg(test)]
+    fn assignment(&self) -> &Assign {
+        self.as_assignment().expect("expected SSA assignment")
+    }
+    #[cfg(test)]
+    fn assignment_mut(&mut self) -> &mut Assign {
+        match self {
+            Self::Assign(assign) => assign,
+            _ => panic!("expected SSA assignment"),
+        }
+    }
+}
+impl Function {
+    fn slot_count(&self) -> usize {
+        self.locals.len() + self.places.len()
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Assign {
     destination: LocalId,
     value: Rvalue,
@@ -77,6 +135,7 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    Load(Place),
     NotBool {
         operand: Operand,
         operator_span: Span,
@@ -165,6 +224,7 @@ enum FailureKind {
     InvalidMerge,
     MissingTerminator,
     InvalidLocal,
+    InvalidPlace,
     InvalidTarget,
     TypeMismatch,
     Arity,
@@ -318,3 +378,6 @@ mod comparison_tests;
 
 #[cfg(test)]
 mod logical_tests;
+
+#[cfg(test)]
+mod mutable_tests;

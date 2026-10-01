@@ -213,6 +213,9 @@ fn compare(model: Model) -> Vec<String> {
     let mut actual_trace = vec![];
     let actual = execute(&verified, entry, &[], Limits::default(), &mut |event| {
         actual_trace.push(match event {
+            Event::Initialize(..) | Event::Store(..) => {
+                panic!("immutable source model emitted mutation")
+            }
             Event::Enter(id) => format!("enter {}", model.functions[id.0].name),
             Event::Branch(id, value) => format!("branch {} {value}", model.functions[id.0].name),
             Event::Return(id, value) => format!("return {} {value}", model.functions[id.0].name),

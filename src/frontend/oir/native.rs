@@ -79,24 +79,29 @@ impl VerifiedProgram {
         for f in functions {
             limit(f.param_count, MAX_PARAMS, "parameter count", f.span)?;
             limit(
-                f.locals.len(),
+                f.slot_count(),
                 MAX_FUNCTION_LOCALS,
                 "locals per function",
                 f.span,
             )?;
-            locals += f.locals.len();
+            locals += f.slot_count();
             blocks += f.blocks.len();
             for b in &f.blocks {
                 // The only entry operation is the independently verified,
                 // fixed two-input bool merge; no generic phi types are admitted.
                 // Closed native allowlist: future reference operations stay unsupported.
-                for a in &b.statements {
+                for statement in &b.statements {
+                    let a = match statement {
+                        Statement::Assign(a) => a,
+                        Statement::Initialize { .. } | Statement::Store { .. } => continue,
+                    };
                     #[allow(unreachable_patterns)]
                     match a.value {
                         Rvalue::Bool(_)
                         | Rvalue::I32(_)
                         | Rvalue::Unit
                         | Rvalue::Copy(_)
+                        | Rvalue::Load(_)
                         | Rvalue::NotBool { .. }
                         | Rvalue::CheckedI32 { .. }
                         | Rvalue::CompareScalar { .. } => {}
@@ -129,9 +134,9 @@ impl VerifiedProgram {
             visited += 1;
             let f = &functions[i];
             let mut bound = Bound {
-                cost: f.locals.len(),
+                cost: f.slot_count(),
                 depth: 1,
-                slots: f.locals.len(),
+                slots: f.slot_count(),
             };
             // Summing every block (including both branch arms) overestimates any
             // path through the verified acyclic CFG. Repeated call sites count
@@ -149,7 +154,7 @@ impl VerifiedProgram {
                         .saturating_add(args.len())
                         .saturating_add(child.cost);
                     bound.depth = bound.depth.max(1 + child.depth);
-                    bound.slots = bound.slots.max(f.locals.len() + child.slots);
+                    bound.slots = bound.slots.max(f.slot_count() + child.slots);
                 }
             }
             // Root allocation's extra fuel unit is included even for non-main
@@ -198,7 +203,7 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
     // byte is escaped as LLVM constant data; no source path can become syntax.
     for f in &program.functions {
         for b in &f.blocks {
-            for a in &b.statements {
+            for a in b.statements.iter().filter_map(Statement::as_assignment) {
                 if let Rvalue::CheckedI32 { operator_span, .. } = a.value {
                     let message = overflow_message(operator_span, sources);
                     write!(
@@ -234,6 +239,9 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
             write!(out, "{} %v{i}", ty(p.ty)).unwrap();
         }
         out.push_str(") noinline {\nentry:\n");
+        for (i, place) in f.places.iter().enumerate() {
+            writeln!(out, "  %p{i} = alloca {}", ty(place.ty)).unwrap();
+        }
         writeln!(out, "  br label %b{}", f.entry.0).unwrap();
         // Checked arithmetic splits an OIR block. Phi edges depart from its
         // last successful LLVM block, not necessarily the original bN label.
@@ -245,6 +253,7 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                 b.statements
                     .iter()
                     .rev()
+                    .filter_map(Statement::as_assignment)
                     .find(|a| matches!(a.value, Rvalue::CheckedI32 { .. }))
                     .map_or_else(
                         || format!("b{i}"),
@@ -267,10 +276,34 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                 )
                 .unwrap();
             }
-            for a in &b.statements {
+            for statement in &b.statements {
+                let a = match statement {
+                    Statement::Assign(a) => a,
+                    Statement::Initialize { place, value, .. }
+                    | Statement::Store { place, value, .. } => {
+                        writeln!(
+                            out,
+                            "  store {} %v{}, ptr %p{}",
+                            ty(f.places[place.id.0].ty),
+                            value.local.0,
+                            place.id.0
+                        )
+                        .unwrap();
+                        continue;
+                    }
+                };
                 let t = ty(f.locals[a.destination.0].ty);
                 #[allow(unreachable_patterns)]
                 let rhs = match a.value {
+                    Rvalue::Load(place) => {
+                        writeln!(
+                            out,
+                            "  %v{} = load {t}, ptr %p{}",
+                            a.destination.0, place.id.0
+                        )
+                        .unwrap();
+                        continue;
+                    }
                     Rvalue::Bool(v) => {
                         if v {
                             "true".into()
@@ -522,7 +555,11 @@ mod tests {
             );
         }
         assert_eq!(ir.matches("  call void @__oxid_overflow(").count(), 3);
-        for a in &p.program.functions[0].blocks[0].statements {
+        for a in p.program.functions[0].blocks[0]
+            .statements
+            .iter()
+            .filter_map(Statement::as_assignment)
+        {
             if matches!(a.value, Rvalue::CheckedI32 { .. }) {
                 let n = a.destination.0;
                 assert!(ir.contains(&format!(
@@ -656,6 +693,7 @@ mod tests {
                     let checked = pred
                         .statements
                         .iter()
+                        .filter_map(Statement::as_assignment)
                         .rfind(|a| matches!(a.value, Rvalue::CheckedI32 { .. }));
                     let label = match checked {
                         Some(a) => {
@@ -673,5 +711,39 @@ mod tests {
         }
         assert_eq!(merged, 2);
         assert_eq!(split, 2);
+    }
+    #[test]
+    fn mutable_native_bounds_count_places_and_all_storage_operations() {
+        let p = verified("fn main() -> i32 { let mut x = 1; x = 2; return x; }");
+        let bound = p.admit().unwrap()[0];
+        assert_eq!(bound.slots, 4);
+        assert_eq!(1 + bound.cost, 11);
+        let p = verified(
+            "fn main() -> i32 { let mut x = 1; if false { x = 2; } else { x = 3; } return x; }",
+        );
+        let f = &p.program.functions[0];
+        let own = f.slot_count()
+            + f.blocks
+                .iter()
+                .map(|b| b.statements.len() + 1 + usize::from(b.merge.is_some()))
+                .sum::<usize>();
+        assert_eq!(p.admit().unwrap()[0].cost, own);
+    }
+    #[test]
+    fn mutable_native_storage_is_private_typed_and_does_not_replace_snapshots() {
+        for (ty, initial, next, llvm) in [
+            ("bool", "true", "false", "i1"),
+            ("i32", "1", "2", "i32"),
+            ("()", "()", "()", "i8"),
+        ] {
+            let (p, sources) = verified_with_sources(&format!("fn main() -> {ty} {{ let mut x = {initial}; let saved = x; x = {next}; return saved; }}"));
+            let module = p.native_module(Some(hir::DefId(0)), &sources).unwrap();
+            assert_eq!(module.matches(&format!("alloca {llvm}")).count(), 1);
+            assert_eq!(module.matches(&format!("load {llvm}, ptr %p0")).count(), 1);
+            assert_eq!(module.matches(&format!("store {llvm}")).count(), 2);
+            assert_eq!(module.matches("ptr %p0").count(), 3);
+            assert!(!module.contains(" undef"));
+            assert!(!module.contains(" poison"));
+        }
     }
 }

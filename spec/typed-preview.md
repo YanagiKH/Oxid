@@ -59,7 +59,8 @@ function   := "fn" name "(" parameters? ")" "->" type block
 block      := "{" statement* "}"
 parameters := name ":" type ("," name ":" type)*
 type       := "bool" | "i32" | "(" ")"
-statement  := "let" name (":" type)? "=" expression ";"
+statement  := "let" "mut"? name (":" type)? "=" expression ";"
+            | name "=" expression ";"
             | expression ";"
             | "return" expression? ";"
             | "if" expression block ("else" block)?
@@ -87,8 +88,9 @@ The supported types and values are `bool`, `i32` and unit `()`. A file may conta
 functions and does not require `main`; checking is not execution.
 
 - Function parameters and return types must be explicit
-- Locals are immutable and initialized immediately, with an optional annotation
-  or inferred bool/i32/unit type; the initializer sees only earlier locals
+- Locals are initialized immediately, with an optional annotation or inferred
+  bool/i32/unit type; the initializer sees only earlier locals. Ordinary `let` and
+  parameters are immutable; `let mut` enables later same-type statement assignment
 - Functions are collected before resolving bodies, so forward direct calls and
   recursive calls resolve. Run uses isolated iterative activations; no termination
   claim follows and recursive programs can exhaust execution limits
@@ -208,7 +210,24 @@ operators and textual `and`/`or` are unavailable. Newly recognized `!` in invali
 grammar positions receives ordinary E0100 rather than unsupported E0101.
 See [RFC 0010](../rfcs/0010-boolean-logical-operators.md).
 
-Strings, null, imports/modules, macros, mutation, borrowing, ownership,
+### Initialized mutable scalar locals
+
+`let mut x (: type)? = expression;` introduces an initialized mutable bool/i32/unit
+local with a fixed type. `x = expression;` is a statement, not an expression, and
+requires an existing mutable bare-name target. Evaluate the RHS completely once
+before storing; errors or exhausted store fuel perform no write. Existing if
+branches can mutate outer places. Reads, immutable copies and call arguments are
+scalar snapshots, and each activation has independent state. Both branches and
+all RHSs remain statically checked. Existing lexical scope/shadowing rules apply.
+
+No uninitialized declaration, mutable parameter, compound assignment, field/index
+assignment, parenthesized target or assignment expression is introduced. Invalid
+positions for `mut` and `=` now receive E0100; immutable targets receive E0304 at
+the name with a declaration label, unknown targets E0200, and fixed-type mismatch
+E0300 at the RHS with a declaration label. See
+[RFC 0011](../rfcs/0011-mutable-scalar-locals.md).
+
+Strings, null, imports/modules, macros, borrowing, ownership,
 containers, loops and other control flow, other operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
@@ -251,11 +270,16 @@ the immutable witness used by the driver. No public IR loader, dump, stable
 serialization, optimization or ownership contract is added. The bounded reference
 consumer below accepts only that immutable verified witness.
 
-Function-local slots contain bool, i32 or unit and are classified as parameters,
-bindings or expression temporaries. Assign evaluates a bool/i32/unit constant or
+Function-local value slots contain bool, i32 or unit and are classified as
+parameters, immutable bindings or expression temporaries. Mutable places have a
+separate typed declaration table and PlaceId namespace. A mutable binding uses
+one place, without also allocating an immutable binding slot. Assign evaluates a bool/i32/unit constant or
 copies a typed operand, computes CheckedI32 from two ordered i32 operands, or
 computes CompareScalar from the explicit scalar comparison type table, or
-computes NotBool from a bool operand into a bool destination.
+computes NotBool from a bool operand into a bool destination, or snapshots a
+mutable place through Load. Ordered block statements distinguish SSA Assign,
+Initialize(place, value) and Store(place, value); stores define no SSA value.
+Lowering completes the whole initializer/RHS before its initialization/store.
 CheckedI32 retains its operator origin separately from the full assignment span.
 Both arithmetic operands must have dominating initialized definitions; its
 destination must be i32. CompareScalar independently checks each operand ID,
@@ -298,6 +322,13 @@ and availability of each input on its own predecessor edge. A call result is
 available on that call's normal edge into a merge, never in its own arguments.
 The merge destination is available from block entry and in dominated blocks.
 
+Every place has exactly one canonical initialization in its separate table,
+including unused places. Initializer/store inputs must be available SSA values.
+Each load/store requires earlier same-block or dominating cross-block
+initialization. Opposite-arm, self-initialization and pre-init access fail;
+stores never establish initialization or weaken unique SSA definitions.
+All place IDs/types/origins and store operator spans are checked structurally.
+
 The verifier computes a dominator tree in topological order using predecessor
 lowest-common-ancestor queries and bounded binary lifting, then iterative tree
 intervals for constant-time dominance queries. There is no blocks-by-locals
@@ -315,7 +346,10 @@ closing braces. Synthetic joins use the full if statement. Exact Unicode/CRLF
 provenance is tested separately from valid file/range/UTF-8 boundaries. For logical
 expressions, Branch, RHS-ending Goto, merge and join block use the full expression;
 RHS entry uses its operand expression, and both input operands retain their spans.
-NotBool and BoolMerge also retain their exact operator origins.
+NotBool and BoolMerge also retain their exact operator origins. Place declarations
+and targets retain name spans; Load uses its name-expression span. Initialize
+and Store use full statement spans, Store also retains `=`, and their input
+operands retain complete initializer/RHS spans.
 
 See [RFC 0003](../rfcs/0003-boolean-branch-cfg.md) for the bounded decision and
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) for its predecessor.
@@ -368,6 +402,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return |
+| E0304 | Assignment to an immutable binding or parameter |
 | E0400 | Frontend/lowering resource limit |
 | E0500 | Internal OIR lowering/verification/execution invariant failure |
 | E0600 | Missing or invalid zero-argument main for run |
@@ -409,7 +444,9 @@ validating global edition/format options retain the existing check-summary;
 once valid global options select explicit typed run, command-option/operand,
 compile, entry and execution errors use run-summary. Check records are unchanged.
 
-Each activation has isolated optional bool/i32/unit slots. Assign reads before
+Each activation has isolated optional bool/i32/unit value and place arrays.
+Initialize writes a place once, Store requires an initialized place, and Load
+snapshots it into a fresh SSA value. A failed RHS performs no store. Assign reads before
 writing; Branch executes exactly one arm; Goto uses its explicit target.
 Calls copy arguments in recorded order and suspend callers until normal return,
 then initialize the call result and resume at the explicit continuation. Bare
@@ -422,8 +459,10 @@ The execution ceilings are 1,000,000 fuel units, 1,024 live frames and 200,000 l
 slots. An i32 counts as one slot, with the same instruction costs as bool/unit.
 These are slot counts, not bytes; host scalar sizes are measured in the
 [i32 validation report](../docs/architecture/i32-literal-validation.md).
-Main counts as a frame and every activation counts its complete local table.
-Root allocation costs 1 + local count. Assign/Branch/Goto/Return cost 1 each;
+Main counts as a frame and every activation counts its complete value+place tables,
+including places declared in unchosen arms. Root allocation costs 1 + combined
+slot count. Assign/Initialize/Store/Branch/Goto/Return cost 1 each; a Load is one
+assignment. `let mut x = 1; x = 2; return x;` has four slots and eleven fuel;
 a unary/arithmetic/comparison assignment or block-entry bool merge costs one
 (in addition to operand evaluation), charged before reading any operand or
 checking overflow. A merge reads only its selected incoming operand and needs
@@ -433,7 +472,7 @@ Ungrouped `return !true;` costs 6; `return false && true;` / `return true || fal
 cost 8; `return true && false;` / `return false || true;` cost 10.
 For example, `return 1 + 2;`, `return 1 < 2;` and `return true == false;` each
 cost exactly eight including root allocation/return;
-Call costs 1 + argument count + callee local count. Costs are charged before work.
+Call costs 1 + argument count + callee combined value/place slot count. Costs are charged before work.
 Checked cost/fuel, frame count and live-slot count are checked in that order,
 before allocation. Returning releases the callee's slots. Argument scratch is
 bounded by 256 scalar entries; frame-header capacity by the fixed frame cap.
@@ -458,7 +497,7 @@ sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution
 | Parameters or call arguments | 256 each |
 | Emitted diagnostics | 100 |
 | Active statement block frames | 64, counting the function body as frame 1 |
-| OIR locals and assignments | 100,000 of each, aggregate per program |
+| OIR combined value/place slots and instructions (including merges) | 100,000 of each, aggregate per program |
 | OIR blocks | 300,000, aggregate per program |
 | OIR successor edges | At most 600,000, two per block |
 | Dominator ancestor cells | At most 5,700,000 usize entries (19 levels) |
@@ -471,8 +510,10 @@ and 65 terms fail E0400. Height tracking uses one usize per expression, at most
 ownership avoids recursive block-drop chains; later block/CFG passes are iterative.
 
 Lowering preflights exact aggregate expansion before IR/maps are allocated. For
-F functions, C calls, I if statements, S logical expressions, P parameters, L lets, X expressions and
-Rb bare returns: locals = P + L + X + Rb; assignments (including merges) = X - C + L + Rb;
+F functions, C calls, I if statements, S logical expressions, P parameters,
+L lets (including M mutable), A reassignment statements, X expressions and Rb bare
+returns: values = P + (L - M) + X + Rb; places = M; combined slots = P + L + X + Rb;
+instructions (including merges/init/store/load) = X - C + L + A + Rb;
 blocks <= F + C + 3I + 2S. These are bounded by the existing parser nodes, with only
 the block budget raised to three times that limit. Old accepted source programs
 are not excluded by a tighter unrelated cap. Call vectors stay capped at 256.
@@ -485,7 +526,7 @@ alone is at most 45.6 MB on a 64-bit host. At peak dominator construction,
 ancestor cells plus offsets, predecessor edges, topological order, depth, child/
 sibling links and entry/exit intervals occupy B*levels + 7B + E + 1 usize cells.
 At the maxima that is 67,200,008 bytes, plus about 2,400,000 bytes for 100,000
-three-word optional definition records on this host: about 69.6 MB, excluding
+three-word optional value-definition/place-initialization records together on this host: about 69.6 MB, excluding
 small vector headers, allocator overhead and raw IR/source storage. Earlier
 reachability/indegree and predecessor-construction cursor arrays are already freed. Verification time is
 O(functions + locals + assignments + operands + (blocks + edges) log blocks).

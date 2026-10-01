@@ -41,13 +41,15 @@ required, carried by its resolved DefId rather than reconstructed from spans.
 Supported operations are exact bool/unit/i32 constants, immutable copies, checked
 i32 addition/subtraction/multiplication, same-type i32/bool equality and i32-only
 signed ordering comparisons, bool negation and explicit short-circuit bool merges,
+initialized mutable scalar places with explicit load/store,
 explicit direct nonrecursive calls,
 Branch, Goto and Return. Native compilation rejects all other OIR operations.
 Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
 [RFC 0008](../rfcs/0008-native-checked-i32.md). Comparisons follow
 [RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
-[RFC 0010](../rfcs/0010-boolean-logical-operators.md). There are no source I/O operations,
+[RFC 0010](../rfcs/0010-boolean-logical-operators.md), and mutable scalar storage
+follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). There are no source I/O operations,
 pointers, containers, loops, indirect calls, modules or implicit legacy adapters
 in this subset.
 
@@ -59,14 +61,14 @@ The following inclusive bounds are additional native restrictions:
 | --- | ---: |
 | Functions in the file | 256 |
 | Parameters per function | 64 |
-| Locals per function, including parameters and temporaries | 256 |
+| Combined slots per function, including parameters, values and places | 256 |
 | Aggregate locals / maximum live slots | 8,192 |
 | Aggregate basic blocks | 4,096 |
 | Call depth, including main | 32 |
 | Conservative reference fuel upper bound | 100,000 |
 
 All declarations must meet the bounds. For a function F, compute
-`C(F) = locals(F) + sum(ordinary_assignments(block) + merge_count(block) + 1 for all blocks) +
+`C(F) = slots(F) + sum(statements(block) + merge_count(block) + 1 for all blocks) +
 sum(argument_count(call) + C(callee) for all calls)` in callee-first order.
 Require `1 + C(F) <= 100,000`. Calls at distinct sites are counted separately;
 there is no memoization discount. Since verified intraprocedural CFGs are
@@ -79,10 +81,13 @@ admission can reject programs that run successfully in the reference interpreter
 A bool negation or join merge costs one. `return !true;` has bound 6; ungrouped
 `return a && b;` / `return a || b;` with literal operands have bound 10, counting
 both paths even if the reference runtime short-circuits in 8. Whole-function
-local-slot allocation still includes skipped RHS temporaries.
+slot allocation still includes skipped RHS temporaries and unchosen mutable
+places. `slots(F)` is the sum of the value and place declaration tables; each
+Initialize/Store/Load costs one statement. `let mut x = 1; x = 2; return x;` has
+four slots and an inclusive bound of eleven fuel.
 
 Depth is `1 + max(callee_depth)` and live slots are
-`locals(F) + max(callee_live_slots)`, with zero for an empty maximum. These bounds
+`slots(F) + max(callee_live_slots)`, with zero for an empty maximum. These bounds
 are below the runner's 1,000,000 fuel / 1,024 frame / 200,000 slot limits. Thus
 admitted scalar computations cannot fail a reference execution budget. They do
 not equate OS stack bytes to slots or bound compiler time, tool execution,
@@ -94,7 +99,12 @@ this is evidence, not an all-environments stack-safety theorem.
 
 Native ABI version 1 is private and provisional. LLVM values are `i1` for bool,
 `i8` containing zero for unit, and exact `i32`. Definitions use the verifier's
-single-assignment local IDs as LLVM SSA names. Copies/constants use bitwise OR
+single-assignment local IDs as LLVM SSA names. Each mutable place uses a private
+typed alloca in the LLVM entry prologue, before branching to the possibly nonzero
+OIR entry. Initialize/Store emit typed stores; Load produces a fresh SSA snapshot.
+The verifier establishes initialization dominance before emission. No source
+pointers, aliases or mutation of earlier copied values are exposed.
+Copies/constants use bitwise OR
 with zero, with no numeric conversion, `undef`, `poison`, `nsw`, or `nuw`.
 Checked arithmetic uses LLVM `sadd`, `ssub` and `smul` signed-overflow intrinsics.
 Each operation branches on the overflow bit, extracts its i32 result only on the
@@ -189,4 +199,5 @@ See [RFC 0007](../rfcs/0007-llvm-scalar-native.md),
 [scalar predecessor evidence](../docs/architecture/native-preview-validation.md),
 [checked-arithmetic evidence](../docs/architecture/native-arithmetic-validation.md),
 [comparison evidence](../docs/architecture/scalar-comparison-validation.md),
-and [boolean logic evidence](../docs/architecture/boolean-logic-validation.md).
+[boolean logic evidence](../docs/architecture/boolean-logic-validation.md),
+and [mutable-local evidence](../docs/architecture/mutable-locals-validation.md).

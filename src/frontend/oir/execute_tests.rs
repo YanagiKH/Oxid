@@ -40,6 +40,7 @@ fn constant() -> (SourceMap, Program) {
         sources,
         Program {
             functions: vec![Function {
+                places: vec![],
                 id: hir::DefId(0),
                 span: entry,
                 result: hir::Ty::Bool,
@@ -53,11 +54,11 @@ fn constant() -> (SourceMap, Program) {
                 blocks: vec![BasicBlock {
                     merge: None,
                     span: entry,
-                    statements: vec![Assign {
+                    statements: vec![Statement::Assign(Assign {
                         destination: LocalId(0),
                         value: Rvalue::Bool(true),
                         span: assign,
-                    }],
+                    })],
                     terminator: Some(Terminator {
                         kind: TerminatorKind::Return(Operand {
                             local: LocalId(0),
@@ -103,7 +104,7 @@ fn recursive() -> (SourceMap, VerifiedProgram) {
 fn constant_cost_is_four_and_every_next_unperformed_origin_is_exact() {
     let (sources, raw) = constant();
     let origin = raw.functions[0].span;
-    let assign = raw.functions[0].blocks[0].statements[0].span;
+    let assign = raw.functions[0].blocks[0].statements[0].assignment().span;
     let ret = raw.functions[0].blocks[0].terminator.as_ref().unwrap().span;
     let verified = verify::verify(raw, &sources).unwrap();
     for (fuel, span) in [(0, origin), (1, origin), (2, assign), (3, ret)] {
@@ -598,7 +599,7 @@ fn checked_arithmetic_costs_one_and_fuel_precedes_overflow_without_writing() {
         let (sources, program, entry) = compiled(&text);
         let function = &program.program.functions[entry.0];
         assert_eq!(function.locals.len(), 3);
-        let binary = &function.blocks[0].statements[2];
+        let binary = function.blocks[0].statements[2].assignment();
         let Rvalue::CheckedI32 { operator_span, .. } = binary.value else {
             panic!("binary")
         };
@@ -668,7 +669,7 @@ fn comparison_assignments_charge_one_fuel_before_reading_for_each_type() {
         let (_, p, entry) = compiled(&format!("fn main() -> bool {{ return {expression}; }}"));
         let f = &p.program.functions[entry.0];
         assert_eq!(f.locals.len(), 3);
-        let a = &f.blocks[0].statements[2];
+        let a = f.blocks[0].statements[2].assignment();
         assert!(matches!(a.value, Rvalue::CompareScalar { .. }));
         assert_eq!(
             invoke(&p, entry, &[], limits(6, 1, 3)),
@@ -829,4 +830,122 @@ fn short_circuit_skips_recursive_activation_and_preserves_full_checking() {
         invoke(&p, entry, &[], limits(50, 1, 8)),
         Err(RunFailure::Frames(_))
     ));
+}
+
+#[test]
+fn mutable_place_allocation_init_store_and_load_have_exact_bounded_costs() {
+    let (_, program, entry) = compiled("fn main() -> i32 { let mut x = 1; x = 2; return x; }");
+    let f = &program.program.functions[entry.0];
+    assert_eq!((f.locals.len(), f.places.len()), (3, 1));
+    // Root + four allocated slots + literal/init/literal/store/load + return.
+    assert_eq!(
+        invoke(&program, entry, &[], limits(11, 1, 4)),
+        Ok(Scalar::I32(2))
+    );
+    for (fuel, instruction) in [(6, 1), (8, 3), (9, 4)] {
+        assert_eq!(
+            invoke(&program, entry, &[], limits(fuel, 1, 4)),
+            Err(RunFailure::Fuel(f.blocks[0].statements[instruction].span()))
+        );
+    }
+    assert!(matches!(
+        invoke(&program, entry, &[], limits(11, 1, 3)),
+        Err(RunFailure::Slots(_))
+    ));
+    let (_, p, entry) = compiled("fn bump(n: i32) -> i32 { let mut x = n; x = x + 1; return x; } fn main() -> i32 { let mut x = 1; x = bump(x); return x; }");
+    assert_eq!(p.program.functions[0].slot_count(), 7);
+    assert_eq!(p.program.functions[1].slot_count(), 5);
+    assert_eq!(
+        invoke(&p, entry, &[], limits(29, 2, 12)),
+        Ok(Scalar::I32(2))
+    );
+    assert!(matches!(
+        invoke(&p, entry, &[], limits(28, 2, 12)),
+        Err(RunFailure::Fuel(_))
+    ));
+    assert!(matches!(
+        invoke(&p, entry, &[], limits(29, 2, 11)),
+        Err(RunFailure::Slots(_))
+    ));
+    assert!(matches!(
+        invoke(&p, entry, &[], limits(29, 1, 12)),
+        Err(RunFailure::Frames(_))
+    ));
+}
+
+#[test]
+fn rhs_failure_or_exhausted_store_fuel_never_updates_the_place() {
+    for rhs in ["2147483647 + 1", "bad()", "good() + bad()"] {
+        let source = format!("fn main() -> i32 {{ let mut x = 7; x = {rhs}; return x; }} fn good() -> i32 {{ return 1; }} fn bad() -> i32 {{ return -2147483648 - 1; }}");
+        let (_, p, entry) = compiled(&source);
+        let mut events = vec![];
+        let result = execute(&p, entry, &[], Limits::default(), &mut |event| {
+            events.push(event)
+        });
+        assert!(matches!(result, Err(RunFailure::Overflow(_))));
+        let writes: Vec<_> = events
+            .iter()
+            .filter(|event| matches!(event, Event::Initialize(..) | Event::Store(..)))
+            .collect();
+        assert_eq!(
+            writes,
+            [&Event::Initialize(entry, PlaceId(0), Scalar::I32(7))]
+        );
+    }
+    let (_, p, entry) = compiled("fn main() -> i32 { let mut x = 7; x = 9; return x; }");
+    let mut events = vec![];
+    let result = execute(&p, entry, &[], limits(8, 1, 4), &mut |event| {
+        events.push(event)
+    });
+    assert!(matches!(result, Err(RunFailure::Fuel(_))));
+    assert_eq!(
+        events,
+        [
+            Event::Enter(entry),
+            Event::Initialize(entry, PlaceId(0), Scalar::I32(7))
+        ]
+    );
+    // The runtime storage seam independently preserves the old value on failed
+    // type checks, duplicate initialization and invalid IDs.
+    let f = &p.program.functions[entry.0];
+    let place = Place {
+        id: PlaceId(0),
+        span: f.span,
+    };
+    let mut frame = frame(f, &[], None).unwrap();
+    assert!(store(&mut frame, f, place, Scalar::I32(3), false).is_err());
+    store(&mut frame, f, place, Scalar::I32(7), true).unwrap();
+    for (value, initialize) in [(Scalar::Bool(true), false), (Scalar::I32(9), true)] {
+        assert!(store(&mut frame, f, place, value, initialize).is_err());
+        assert_eq!(load(&frame, place), Ok(Scalar::I32(7)));
+    }
+}
+
+#[test]
+fn mutable_events_preserve_selected_branch_and_call_result_store_order() {
+    for flag in [false, true] {
+        let (_, p, entry) = compiled(&format!("fn main() -> i32 {{ let mut x = 1; if {flag} {{ x = id(x + 2); }} else {{ x = id(x + 4); }} return x; }} fn id(n: i32) -> i32 {{ let mut own = n; own = own + 8; return own; }}"));
+        let before = if flag { 3 } else { 5 };
+        let expected = before + 8;
+        let mut events = vec![];
+        assert_eq!(
+            execute(&p, entry, &[], Limits::default(), &mut |event| events
+                .push(event)),
+            Ok(Scalar::I32(expected))
+        );
+        assert_eq!(
+            events,
+            [
+                Event::Enter(entry),
+                Event::Initialize(entry, PlaceId(0), Scalar::I32(1)),
+                Event::Branch(entry, flag),
+                Event::Enter(hir::DefId(1)),
+                Event::Initialize(hir::DefId(1), PlaceId(0), Scalar::I32(before)),
+                Event::Store(hir::DefId(1), PlaceId(0), Scalar::I32(expected)),
+                Event::Return(hir::DefId(1), Scalar::I32(expected)),
+                Event::Store(entry, PlaceId(0), Scalar::I32(expected)),
+                Event::Return(entry, Scalar::I32(expected)),
+            ]
+        );
+    }
 }

@@ -392,7 +392,11 @@ fn adjacent_tokens_are_required_and_unrelated_operators_remain_unsupported() {
         let source = format!("{prefix}{expression}; }}");
         reject(
             &source,
-            if origin == "!" { "E0100" } else { "E0101" },
+            if matches!(origin, "!" | "=") {
+                "E0100"
+            } else {
+                "E0101"
+            },
             "parse",
             prefix.len() + expression.find(origin).unwrap(),
             origin.len(),

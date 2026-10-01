@@ -31,10 +31,12 @@ fn diamond() -> (SourceMap, Program) {
         statements,
         terminator: Some(Terminator { kind, span }),
     };
-    let assign = |destination, value| Assign {
-        destination: LocalId(destination),
-        value,
-        span,
+    let assign = |destination, value| {
+        Statement::Assign(Assign {
+            destination: LocalId(destination),
+            value,
+            span,
+        })
     };
     let mut blocks = vec![
         block(
@@ -85,6 +87,7 @@ fn diamond() -> (SourceMap, Program) {
         sources,
         Program {
             functions: vec![Function {
+                places: vec![],
                 id: hir::DefId(0),
                 span,
                 result: hir::Ty::Bool,
@@ -160,11 +163,13 @@ fn merge_global_definitions_and_each_incoming_read_remain_strict() {
     }
     let (s, mut p) = diamond();
     let m = merge(&mut p).clone();
-    p.functions[0].blocks[3].statements.push(Assign {
-        destination: m.destination,
-        value: Rvalue::Bool(true),
-        span: m.span,
-    });
+    p.functions[0].blocks[3]
+        .statements
+        .push(Statement::Assign(Assign {
+            destination: m.destination,
+            value: Rvalue::Bool(true),
+            span: m.span,
+        }));
     rejects(p, &s, FailureKind::AlreadyInitialized);
     let (s, mut p) = diamond();
     let m = merge(&mut p).clone();
@@ -173,17 +178,19 @@ fn merge_global_definitions_and_each_incoming_read_remain_strict() {
         kind: LocalKind::Temporary,
         span: m.span,
     });
-    p.functions[0].blocks[3].statements.push(Assign {
-        destination: LocalId(4),
-        value: Rvalue::NotBool {
-            operand: Operand {
-                local: m.destination,
-                span: m.span,
+    p.functions[0].blocks[3]
+        .statements
+        .push(Statement::Assign(Assign {
+            destination: LocalId(4),
+            value: Rvalue::NotBool {
+                operand: Operand {
+                    local: m.destination,
+                    span: m.span,
+                },
+                operator_span: m.span,
             },
-            operator_span: m.span,
-        },
-        span: m.span,
-    });
+            span: m.span,
+        }));
     verify::verify(p, &s).unwrap(); // entry definition precedes the first ordinary assignment
 }
 #[test]
@@ -195,7 +202,9 @@ fn merge_checks_bool_types_all_ids_and_all_origins_before_cfg_analysis() {
         for side in 0..2 {
             let (s, mut p) = diamond();
             p.functions[0].locals[side + 1].ty = ty;
-            p.functions[0].blocks[side + 1].statements[0].value = if ty == hir::Ty::I32 {
+            p.functions[0].blocks[side + 1].statements[0]
+                .assignment_mut()
+                .value = if ty == hir::Ty::I32 {
                 Rvalue::I32(1)
             } else {
                 Rvalue::Unit
@@ -255,14 +264,16 @@ fn merge_call_results_are_available_only_on_their_normal_incoming_edge() {
     }
     rejects(p, &s, FailureKind::Uninitialized);
     let mut p = base;
-    p.functions[0].blocks[1].statements.push(Assign {
-        destination: LocalId(2),
-        value: Rvalue::Copy(Operand {
-            local: LocalId(1),
+    p.functions[0].blocks[1]
+        .statements
+        .push(Statement::Assign(Assign {
+            destination: LocalId(2),
+            value: Rvalue::Copy(Operand {
+                local: LocalId(1),
+                span,
+            }),
             span,
-        }),
-        span,
-    });
+        }));
     p.functions[0].blocks[2].statements.clear();
     rejects(p, &s, FailureKind::Uninitialized);
 }
@@ -296,7 +307,7 @@ fn logical_operator_and_merge_origins_survive_unicode_crlf_lowering() {
             assert!(text[m.span.start..m.span.end].starts_with("!false"));
         }
         for a in &b.statements {
-            if let Rvalue::NotBool { operator_span, .. } = a.value {
+            if let Rvalue::NotBool { operator_span, .. } = a.assignment().value {
                 ops.push(&text[operator_span.start..operator_span.end]);
             }
         }
@@ -315,7 +326,7 @@ fn bool_negation_independently_checks_types_ids_origins_and_read_order() {
         // Keep a single block and one ordinary bool destination, independent of merges.
         f.blocks.truncate(1);
         f.locals.truncate(2);
-        f.blocks[0].statements = vec![Assign {
+        f.blocks[0].statements = vec![Statement::Assign(Assign {
             destination: LocalId(1),
             value: Rvalue::NotBool {
                 operand: Operand {
@@ -325,12 +336,12 @@ fn bool_negation_independently_checks_types_ids_origins_and_read_order() {
                 operator_span: span,
             },
             span,
-        }];
+        })];
         f.blocks[0].terminator.as_mut().unwrap().kind = TerminatorKind::Return(Operand {
             local: LocalId(1),
             span,
         });
-        let a = &mut f.blocks[0].statements[0];
+        let a = f.blocks[0].statements[0].assignment_mut();
         let Rvalue::NotBool {
             operand,
             operator_span,
@@ -390,11 +401,11 @@ fn direct_call_merge() -> (SourceMap, Program) {
         span,
     }];
     callee.blocks.truncate(1);
-    callee.blocks[0].statements = vec![Assign {
+    callee.blocks[0].statements = vec![Statement::Assign(Assign {
         destination: LocalId(0),
         value: Rvalue::Bool(true),
         span,
-    }];
+    })];
     callee.blocks[0].terminator.as_mut().unwrap().kind = TerminatorKind::Return(Operand {
         local: LocalId(0),
         span,
@@ -403,11 +414,11 @@ fn direct_call_merge() -> (SourceMap, Program) {
     let f = &mut raw.functions[0];
     f.param_count = 0;
     f.locals[0].kind = LocalKind::Temporary;
-    f.blocks[0].statements = vec![Assign {
+    f.blocks[0].statements = vec![Statement::Assign(Assign {
         destination: LocalId(0),
         value: Rvalue::Bool(true),
         span,
-    }];
+    })];
     f.blocks[1].statements.clear();
     f.blocks[1].terminator.as_mut().unwrap().kind = TerminatorKind::Call {
         target: hir::DefId(1),
@@ -422,7 +433,9 @@ fn direct_call_return_into_merge_executes_the_selected_incoming_value() {
     let (sources, raw) = direct_call_merge();
     for chosen in [true, false] {
         let mut p = raw.clone();
-        p.functions[0].blocks[0].statements[0].value = Rvalue::Bool(chosen);
+        p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .value = Rvalue::Bool(chosen);
         let verified = verify::verify(p, &sources).unwrap();
         assert_eq!(verified.run(Some(hir::DefId(0))), Ok(Scalar::Bool(chosen)));
         let module = verified
@@ -459,7 +472,7 @@ fn raw_bool_merge_uses_real_llvm() {
                 let mut raw = base.clone();
                 let f = &mut raw.functions[0];
                 let span = f.span;
-                f.blocks[0].statements[0].value = Rvalue::Bool(chosen);
+                f.blocks[0].statements[0].assignment_mut().value = Rvalue::Bool(chosen);
                 if split {
                     for _ in 0..3 {
                         f.locals.push(LocalDecl {
@@ -469,17 +482,17 @@ fn raw_bool_merge_uses_real_llvm() {
                         });
                     }
                     f.blocks[1].statements = vec![
-                        Assign {
+                        Statement::Assign(Assign {
                             destination: LocalId(4),
                             value: Rvalue::I32(1),
                             span,
-                        },
-                        Assign {
+                        }),
+                        Statement::Assign(Assign {
                             destination: LocalId(5),
                             value: Rvalue::I32(2),
                             span,
-                        },
-                        Assign {
+                        }),
+                        Statement::Assign(Assign {
                             destination: LocalId(6),
                             value: Rvalue::CheckedI32 {
                                 op: hir::ArithmeticOp::Add,
@@ -494,7 +507,7 @@ fn raw_bool_merge_uses_real_llvm() {
                                 operator_span: span,
                             },
                             span,
-                        },
+                        }),
                     ];
                 }
                 if reversed {

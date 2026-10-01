@@ -150,7 +150,9 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
             ));
         }
         let root = match statement.kind {
-            StmtKind::Let { init, .. } | StmtKind::Expr(init) => Some(init),
+            StmtKind::Let { init, .. }
+            | StmtKind::Assign { value: init, .. }
+            | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
             StmtKind::If { condition, .. } => Some(condition),
         };
@@ -290,6 +292,32 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                     }
                 }
                 locals[local.0] = Some(actual);
+            }
+            StmtKind::Assign {
+                local,
+                target_span,
+                value,
+                ..
+            } => {
+                let declaration = &function.locals[local.0];
+                if !declaration.mutable {
+                    return Err(Diagnostic::new(
+                        "E0304",
+                        "type",
+                        "assignment requires a mutable local",
+                        Some(target_span),
+                    )
+                    .secondary(declaration.span, "immutable binding declared here"));
+                }
+                let expected =
+                    locals[local.0].expect("resolved assignment target has an initializer");
+                let actual = expressions[value.0];
+                if actual != expected {
+                    return Err(
+                        mismatch(expected, actual, function.expressions[value.0].span)
+                            .secondary(declaration.span, "binding declared here"),
+                    );
+                }
             }
             StmtKind::Expr(_) => {}
             StmtKind::Return(value) => {

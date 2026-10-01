@@ -188,9 +188,12 @@ jobs:
           cargo build --release --locked
           cargo test --locked --bin oxid frontend::oir::logical_tests::raw_bool_merge_uses_real_llvm -- --ignored --exact
           cargo test --release --locked --bin oxid frontend::oir::logical_tests::raw_bool_merge_uses_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::mutable_tests::raw_mutable_places_use_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::mutable_tests::raw_mutable_places_use_real_llvm -- --ignored --exact
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: |
           python3 scripts/verify_native_preview.py target/release/oxid
           python3 scripts/verify_native_arithmetic.py target/debug/oxid target/release/oxid
           python3 scripts/verify_scalar_comparisons.py target/debug/oxid target/release/oxid
           python3 scripts/verify_boolean_logic.py target/debug/oxid target/release/oxid
+          python3 scripts/verify_mutable_locals.py target/debug/oxid target/release/oxid

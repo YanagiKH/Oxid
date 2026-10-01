@@ -20,6 +20,7 @@ fn minimal() -> (SourceMap, Program) {
         sources,
         Program {
             functions: vec![Function {
+                places: vec![],
                 id: hir::DefId(0),
                 span,
                 result: hir::Ty::Bool,
@@ -388,14 +389,14 @@ malformed!(
 fn assignment_program() -> (SourceMap, Program) {
     let (sources, mut p) = call_program();
     let f = &mut p.functions[0];
-    f.blocks[0].statements.push(Assign {
+    f.blocks[0].statements.push(Statement::Assign(Assign {
         destination: LocalId(1),
         value: Rvalue::Copy(Operand {
             local: LocalId(0),
             span: f.span,
         }),
         span: f.span,
-    });
+    }));
     f.blocks[0].terminator = f.blocks[1].terminator.clone();
     f.blocks.pop();
     (sources, p)
@@ -405,7 +406,9 @@ malformed!(
     assignment_program,
     FailureKind::InvalidLocal,
     |p| {
-        p.functions[0].blocks[0].statements[0].destination = LocalId(usize::MAX);
+        p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .destination = LocalId(usize::MAX);
     }
 );
 malformed!(
@@ -413,7 +416,10 @@ malformed!(
     assignment_program,
     FailureKind::InvalidLocal,
     |p| {
-        if let Rvalue::Copy(op) = &mut p.functions[0].blocks[0].statements[0].value {
+        if let Rvalue::Copy(op) = &mut p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .value
+        {
             op.local = LocalId(usize::MAX);
         }
     }
@@ -431,7 +437,9 @@ malformed!(
     assignment_program,
     FailureKind::TypeMismatch,
     |p| {
-        p.functions[0].blocks[0].statements[0].value = Rvalue::Unit;
+        p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .value = Rvalue::Unit;
     }
 );
 malformed!(
@@ -441,7 +449,7 @@ malformed!(
     |p| {
         let f = &mut p.functions[0];
         f.locals[1].ty = hir::Ty::Unit;
-        f.blocks[0].statements[0].value = Rvalue::Bool(true);
+        f.blocks[0].statements[0].assignment_mut().value = Rvalue::Bool(true);
     }
 );
 malformed!(
@@ -449,7 +457,10 @@ malformed!(
     assignment_program,
     FailureKind::Uninitialized,
     |p| {
-        if let Rvalue::Copy(op) = &mut p.functions[0].blocks[0].statements[0].value {
+        if let Rvalue::Copy(op) = &mut p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .value
+        {
             op.local = LocalId(1);
         }
     }
@@ -461,7 +472,7 @@ malformed!(
     |p| {
         let f = &mut p.functions[0];
         f.locals.push(f.locals[1].clone());
-        if let Rvalue::Copy(op) = &mut f.blocks[0].statements[0].value {
+        if let Rvalue::Copy(op) = &mut f.blocks[0].statements[0].assignment_mut().value {
             op.local = LocalId(2);
         }
     }
@@ -471,7 +482,9 @@ malformed!(
     assignment_program,
     FailureKind::AlreadyInitialized,
     |p| {
-        p.functions[0].blocks[0].statements[0].destination = LocalId(0);
+        p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .destination = LocalId(0);
     }
 );
 malformed!(
@@ -501,11 +514,11 @@ malformed!(
     FailureKind::AlreadyInitialized,
     |p| {
         let f = &mut p.functions[0];
-        f.blocks[0].statements.push(Assign {
+        f.blocks[0].statements.push(Statement::Assign(Assign {
             destination: LocalId(1),
             value: Rvalue::Bool(false),
             span: f.span,
-        });
+        }));
     }
 );
 malformed!(
@@ -514,11 +527,11 @@ malformed!(
     FailureKind::AlreadyInitialized,
     |p| {
         let f = &mut p.functions[0];
-        f.blocks[1].statements.push(Assign {
+        f.blocks[1].statements.push(Statement::Assign(Assign {
             destination: LocalId(1),
             value: Rvalue::Bool(false),
             span: f.span,
-        });
+        }));
     }
 );
 malformed!(
@@ -528,14 +541,14 @@ malformed!(
     |p| {
         let f = &mut p.functions[0];
         f.locals.push(f.locals[1].clone());
-        f.blocks[0].statements.push(Assign {
+        f.blocks[0].statements.push(Statement::Assign(Assign {
             destination: LocalId(2),
             value: Rvalue::Copy(Operand {
                 local: LocalId(1),
                 span: f.span,
             }),
             span: f.span,
-        });
+        }));
     }
 );
 
@@ -588,10 +601,13 @@ fn invalid_spans_are_rejected_without_rendering_untrusted_offsets() {
             reject(&sources, p, FailureKind::InvalidSpan);
         }
         let (_, mut p) = assignment_program();
-        p.functions[0].blocks[0].statements[0].span = span;
+        p.functions[0].blocks[0].statements[0].assignment_mut().span = span;
         reject(&sources, p, FailureKind::InvalidSpan);
         let (_, mut p) = assignment_program();
-        if let Rvalue::Copy(op) = &mut p.functions[0].blocks[0].statements[0].value {
+        if let Rvalue::Copy(op) = &mut p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .value
+        {
             op.span = span;
         }
         reject(&sources, p, FailureKind::InvalidSpan);
@@ -607,10 +623,22 @@ fn nested_distinct_calls_have_exact_left_to_right_continuations() {
     let f = &verified.program.functions[0];
     assert_eq!(f.blocks.len(), 4);
     assert_eq!(f.locals.len(), 5);
-    assert_eq!(f.blocks[0].statements[0].destination, LocalId(0));
-    assert_eq!(f.blocks[0].statements[0].value, Rvalue::Bool(true));
-    assert_eq!(f.blocks[1].statements[0].destination, LocalId(2));
-    assert_eq!(f.blocks[1].statements[0].value, Rvalue::Bool(false));
+    assert_eq!(
+        f.blocks[0].statements[0].assignment().destination,
+        LocalId(0)
+    );
+    assert_eq!(
+        f.blocks[0].statements[0].assignment().value,
+        Rvalue::Bool(true)
+    );
+    assert_eq!(
+        f.blocks[1].statements[0].assignment().destination,
+        LocalId(2)
+    );
+    assert_eq!(
+        f.blocks[1].statements[0].assignment().value,
+        Rvalue::Bool(false)
+    );
     assert!(f.blocks[2].statements.is_empty());
     assert!(f.blocks[3].statements.is_empty());
     for (block, target, args, destination, continuation, spelling) in [
@@ -688,7 +716,7 @@ fn groups_bindings_uses_and_synthetic_unit_keep_exact_provenance() {
         f.blocks[0]
             .statements
             .iter()
-            .map(|a| slice(a.span))
+            .map(|a| slice(a.span()))
             .collect::<Vec<_>>(),
         ["x", "(x)", "((x))", "let copied: bool = ((x));", "copied"]
     );
@@ -697,7 +725,7 @@ fn groups_bindings_uses_and_synthetic_unit_keep_exact_provenance() {
         .iter()
         .zip(["x", "x", "(x)", "((x))", "copied"])
     {
-        if let Rvalue::Copy(op) = assign.value {
+        if let Rvalue::Copy(op) = assign.assignment().value {
             assert_eq!(slice(op.span), expected);
         } else {
             panic!("expected copy");
@@ -715,7 +743,7 @@ fn groups_bindings_uses_and_synthetic_unit_keep_exact_provenance() {
         panic!("expected discarded unit call");
     }
     assert_eq!(f.blocks[1].span, end.span);
-    let unit = &f.blocks[1].statements[0];
+    let unit = f.blocks[1].statements[0].assignment();
     assert_eq!(unit.value, Rvalue::Unit);
     assert_eq!(slice(unit.span), "return;");
     assert_eq!(slice(f.locals[7].span), "return;");
@@ -761,9 +789,18 @@ fn same_numeric_local_ids_stay_body_local_with_different_types() {
     {
         assert_eq!(f.locals.len(), 4);
         assert!(f.locals.iter().all(|local| local.ty == ty));
-        assert_eq!(f.blocks[0].statements[0].destination, LocalId(2));
-        assert_eq!(f.blocks[0].statements[1].destination, LocalId(1));
-        assert_eq!(f.blocks[0].statements[2].destination, LocalId(3));
+        assert_eq!(
+            f.blocks[0].statements[0].assignment().destination,
+            LocalId(2)
+        );
+        assert_eq!(
+            f.blocks[0].statements[1].assignment().destination,
+            LocalId(1)
+        );
+        assert_eq!(
+            f.blocks[0].statements[2].assignment().destination,
+            LocalId(3)
+        );
     }
 }
 
@@ -913,11 +950,11 @@ fn raw_aggregate_resource_limits_apply_before_traversal() {
     reject(&sources, p, FailureKind::ResourceLimit("blocks"));
     let (_, mut p) = minimal();
     p.functions[0].blocks[0].statements = vec![
-        Assign {
+        Statement::Assign(Assign {
             destination: LocalId(0),
             value: Rvalue::Bool(true),
             span
-        };
+        });
         MAX_ASSIGNMENTS + 1
     ];
     reject(&sources, p, FailureKind::ResourceLimit("assignments"));
@@ -1136,7 +1173,10 @@ fn branch_origins_preserve_exact_unicode_crlf_source_bytes() {
     assert_eq!(slice(f.blocks[2].span), "{ false; }");
     assert_eq!(slice(f.blocks[3].span), slice(branch.span));
     for (block, literal) in [(1, "true"), (2, "false")] {
-        assert_eq!(slice(f.blocks[block].statements[0].span), literal);
+        assert_eq!(
+            slice(f.blocks[block].statements[0].assignment().span),
+            literal
+        );
         let end = f.blocks[block].terminator.as_ref().unwrap();
         assert_eq!(slice(end.span), "}");
         assert!(matches!(
