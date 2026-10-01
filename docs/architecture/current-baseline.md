@@ -15,8 +15,11 @@ Legacy source execution parses into the dynamic `Value` interpreter. Numbers are
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
 ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified cyclic
 Branch/Goto OIR, explicit bool value merges, initialized typed scalar places and calls/returns. Check remains non-executing; explicit
-typed run uses bounded iterative scalar reference execution. Ownership analysis
-remains deferred. A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
+typed run uses bounded iterative scalar reference execution. Source-facing ownership
+analysis remains unavailable; a private sealed ownership verifier and its reference
+and LLVM consumers are implemented and qualified through raw OIR fixtures. See
+[owned-consumer validation](owned-consumers-validation.md) for their evidence and limits.
+A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
 [RFC 0006](../../rfcs/0006-checked-i32-arithmetic.md) adds ordinary checked i32
@@ -100,10 +103,14 @@ is implied. See [RFC 0013](../../rfcs/0013-loop-control.md) and
 The private owned-type declaration facade supplies nominal record/field IDs and
 checked fixed scalar layouts to a private raw ownership/loan verifier. That verifier
 checks whole-owner availability, explicit argument preparation and exact loan/call
-regions, and constructs a sealed immutable witness without execution methods.
-Struct/borrow source syntax and source-facing ownership checking remain unavailable,
-as do aggregate reference execution and native lowering. Existing scalar and legacy
-behavior remains unchanged, and the public feature inventory is unchanged. See
+regions, and constructs a sealed immutable witness. Private bounded reference
+execution and LLVM lowering consume that same witness through a sealed immutable
+execution plan. Raw OIR fixtures qualify aggregate storage, argument snapshots,
+ownership transfers, call-bounded loans and checked resource/fuel accounting.
+Struct/borrow source syntax and source-facing ownership checking and execution
+remain unavailable. Existing scalar and legacy behavior remains unchanged, and
+the public feature inventory is unchanged. See
 [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
-[groundwork validation](owned-types-validation.md) and
-[raw verifier validation](owned-verifier-validation.md).
+[groundwork validation](owned-types-validation.md),
+[raw verifier validation](owned-verifier-validation.md), and
+[owned-consumer validation](owned-consumers-validation.md).

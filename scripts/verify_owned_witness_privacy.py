@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile actual sibling consumers against the private owned witness boundary.
 
-The positive sibling can inspect immutable accessors. Negative siblings must fail
+Positive siblings can inspect immutable witness/plan accessors. Negative siblings must fail
 for private fields or mutability, not because a marker/type/import is missing.
 A temporary source checkout and target directory leave the candidate untouched.
 """
@@ -14,6 +14,38 @@ import tempfile
 
 
 PROBES = [
+    ("raw-program-cannot-enter-reference", False, ("E0308",), """
+        fn run_raw(raw: &RawOwnedProgram) {
+            let _ = execute::run(raw, Some(hir::DefId(0)));
+        }
+    """),
+    ("raw-program-cannot-enter-native", False, ("E0308",), """
+        fn compile_raw(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = native::native_module(raw, Some(hir::DefId(0)), sources);
+        }
+    """),
+    ("immutable-plan-access", True, (), """
+        fn inspect_plan(w: &VerifiedOwnedProgram) {
+            let plan = plan::ExecutionPlan::build(w).unwrap();
+            let _ = (plan.witness(), plan.functions(), plan.metadata_bytes());
+        }
+    """),
+    ("rebind-plan-using-struct-update", False, ("E0451",), """
+        fn rebind<'a>(base: plan::ExecutionPlan<'a>, replacement: &'a VerifiedOwnedProgram)
+            -> plan::ExecutionPlan<'a> {
+            plan::ExecutionPlan { witness: replacement, ..base }
+        }
+    """),
+    ("mutate-private-plan-witness", False, ("E0616",), """
+        fn rebind<'a>(p: &mut plan::ExecutionPlan<'a>, replacement: &'a VerifiedOwnedProgram) {
+            p.witness = replacement;
+        }
+    """),
+    ("mutate-through-immutable-plan-accessor", False, ("E0596",), """
+        fn mutate(p: &mut plan::ExecutionPlan<'_>) {
+            p.functions().swap(0, 0);
+        }
+    """),
     ("immutable-access", True, (), """
         fn inspect(w: &VerifiedOwnedProgram) {
             let _ = (w.functions(), w.declarations(), w.usage());

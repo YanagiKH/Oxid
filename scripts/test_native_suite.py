@@ -1,4 +1,5 @@
 """Exercise the dispatcher with real, isolated tiny subprocesses, never LLVM."""
+import errno
 import io
 import json
 import os
@@ -77,11 +78,24 @@ class NativeSuiteTests(unittest.TestCase):
                 try:
                     if status.read_text().split()[2] == "Z":
                         break
-                except FileNotFoundError:
+                except (FileNotFoundError, ProcessLookupError):
                     break
                 time.sleep(.01)
             else:
                 self.fail(f"worker descendant {pid} remains running")
+
+    def test_stopped_probe_accepts_process_disappearing_during_stat_read(self):
+        with mock.patch.object(Path, "read_text", side_effect=[
+                "123456", ProcessLookupError(errno.ESRCH, "process disappeared")]):
+            self.assert_stopped(self.root / "simulated.pids")
+
+    def test_stopped_probe_propagates_unrelated_io_failures(self):
+        for error in [PermissionError(errno.EACCES, "denied"), OSError(errno.EIO, "I/O failure")]:
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(Path, "read_text", side_effect=["123456", error]):
+                    with self.assertRaises(type(error)) as caught:
+                        self.assert_stopped(self.root / "simulated.pids")
+                self.assertIs(caught.exception, error)
 
     def test_exact_seven_commands_and_profile_arguments(self):
         jobs = build_jobs(Path("/repo/scripts"), "/debug", "/release")
