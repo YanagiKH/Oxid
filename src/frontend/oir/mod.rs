@@ -230,7 +230,6 @@ enum FailureKind {
     Arity,
     Uninitialized,
     AlreadyInitialized,
-    Cycle,
     Unreachable,
     InvalidSpan,
     BuilderClosed,

@@ -212,6 +212,22 @@ impl Parser<'_> {
     ) -> Result<Stmt, Box<Diagnostic>> {
         self.node()?;
         let start = self.peek().span.start;
+        if self.take(Kind::While).is_some() {
+            let condition = self.expression(0)?;
+            if depth >= MAX_BLOCK_NESTING {
+                return Err(Diagnostic::new(
+                    "E0400",
+                    "parse",
+                    "statement block nesting limit exceeded",
+                    Some(self.peek().span),
+                ));
+            }
+            let body = self.block(blocks, depth, "expected while body `{`")?;
+            return Ok(Stmt {
+                kind: StmtKind::While { condition, body },
+                span: self.source.span(start, blocks[body.0].end.end),
+            });
+        }
         if self.take(Kind::If).is_some() {
             let condition = self.expression(0)?;
             // `depth` is the number of active statement blocks. Check before

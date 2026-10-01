@@ -27,6 +27,7 @@ fn limit(value: usize, maximum: usize, name: &str, span: Span) -> Result<(), Box
 #[derive(Clone, Copy, Default, Debug)]
 struct Bound {
     cost: usize,
+    cyclic: bool,
     depth: usize,
     slots: usize,
 }
@@ -36,6 +37,42 @@ impl VerifiedProgram {
         &self,
         entry: Option<hir::DefId>,
         sources: &SourceMap,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_fuel(entry, sources, execute::MAX_FUEL)
+    }
+
+    #[cfg(test)]
+    pub(super) fn native_module_with_fuel(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        fuel: usize,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_fuel(Some(entry), sources, fuel.min(execute::MAX_FUEL))
+    }
+
+    fn native_module_fuel(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_limits(
+            entry,
+            sources,
+            fuel,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+        )
+    }
+
+    fn native_module_limits(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
     ) -> Result<String, Box<Diagnostic>> {
         let id = entry.ok_or_else(|| {
             reject(
@@ -62,8 +99,38 @@ impl VerifiedProgram {
                 Some(root.span),
             ));
         }
-        self.admit()?;
-        Ok(emit(&self.program, id, sources))
+        let bounds = self.admit()?;
+        let guarded = bounds.iter().any(|bound| bound.cyclic);
+        let diagnostics = guarded
+            .then(|| GuardedDiagnostics::new(&self.program, id, sources, diagnostic_limit))
+            .transpose()?;
+        // Count the exact emitted UTF-8 bytes without allocating LLVM text.
+        let mut count = Emission::default();
+        emit(
+            &self.program,
+            id,
+            sources,
+            diagnostics.as_ref(),
+            fuel,
+            &mut count,
+        );
+        if guarded {
+            limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
+        }
+        let mut output = Emission {
+            len: 0,
+            text: Some(String::with_capacity(count.len)),
+        };
+        emit(
+            &self.program,
+            id,
+            sources,
+            diagnostics.as_ref(),
+            fuel,
+            &mut output,
+        );
+        debug_assert_eq!(output.len, count.len);
+        Ok(output.text.expect("render pass"))
     }
 
     fn admit(&self) -> Result<Vec<Bound>, Box<Diagnostic>> {
@@ -135,12 +202,13 @@ impl VerifiedProgram {
             let f = &functions[i];
             let mut bound = Bound {
                 cost: f.slot_count(),
+                cyclic: has_cycle(f),
                 depth: 1,
                 slots: f.slot_count(),
             };
-            // Summing every block (including both branch arms) overestimates any
-            // path through the verified acyclic CFG. Repeated call sites count
-            // separately; sharing a callee does not hide exponential execution.
+            // Summing blocks bounds execution only when this CFG and all
+            // transitive callees are acyclic. Unknown cyclic cost propagates
+            // separately; it is never mistaken for this static sum.
             for b in &f.blocks {
                 bound.cost = bound
                     .cost
@@ -149,6 +217,7 @@ impl VerifiedProgram {
                     &b.terminator.as_ref().expect("verified terminator").kind
                 {
                     let child = bounds[target.0];
+                    bound.cyclic |= child.cyclic;
                     bound.cost = bound
                         .cost
                         .saturating_add(args.len())
@@ -157,14 +226,17 @@ impl VerifiedProgram {
                     bound.slots = bound.slots.max(f.slot_count() + child.slots);
                 }
             }
-            // Root allocation's extra fuel unit is included even for non-main
-            // functions. No executable path admitted here can hit runner limits.
-            limit(
-                bound.cost.saturating_add(1),
-                MAX_COST,
-                "reference fuel upper bound",
-                f.span,
-            )?;
+            // Preserve the old inclusive static bound for every function whose
+            // transitive CFG is acyclic. Cyclic costs require a shared runtime
+            // guard, while depth/live storage remain statically bounded.
+            if !bound.cyclic {
+                limit(
+                    bound.cost.saturating_add(1),
+                    MAX_COST,
+                    "reference fuel upper bound",
+                    f.span,
+                )?;
+            }
             limit(bound.depth, MAX_DEPTH, "call depth", f.span)?;
             limit(bound.slots, MAX_NATIVE_LOCALS, "live local slots", f.span)?;
             bounds[i] = bound;
@@ -185,6 +257,182 @@ impl VerifiedProgram {
         Ok(bounds)
     }
 }
+// Guarded modules retain all old OIR/source/native dimensions, and additionally
+// bound their expanded representation. Loop-free modules keep old admission.
+const MAX_GUARDED_DIAGNOSTIC_BYTES: usize = 16 * 1024 * 1024;
+const MAX_GUARDED_IR_BYTES: usize = 64 * 1024 * 1024;
+
+fn has_cycle(function: &Function) -> bool {
+    let mut incoming = vec![0usize; function.blocks.len()];
+    for block in &function.blocks {
+        for target in successors(&block.terminator.as_ref().expect("verified terminator").kind) {
+            incoming[target.0] += 1;
+        }
+    }
+    let mut ready: Vec<_> = incoming
+        .iter()
+        .enumerate()
+        .filter_map(|(id, &n)| (n == 0).then_some(id))
+        .collect();
+    let mut visited = 0;
+    while let Some(id) = ready.pop() {
+        visited += 1;
+        for target in successors(
+            &function.blocks[id]
+                .terminator
+                .as_ref()
+                .expect("verified terminator")
+                .kind,
+        ) {
+            incoming[target.0] -= 1;
+            if incoming[target.0] == 0 {
+                ready.push(target.0);
+            }
+        }
+    }
+    visited != function.blocks.len()
+}
+fn successors(kind: &TerminatorKind) -> impl Iterator<Item = BlockId> {
+    let targets = match kind {
+        TerminatorKind::Return(_) => [None, None],
+        TerminatorKind::Goto { target } => [Some(*target), None],
+        TerminatorKind::Call { continuation, .. } => [Some(*continuation), None],
+        TerminatorKind::Branch {
+            then_block,
+            else_block,
+            ..
+        } => [Some(*then_block), Some(*else_block)],
+    };
+    targets.into_iter().flatten()
+}
+
+#[derive(Default)]
+struct Emission {
+    len: usize,
+    text: Option<String>,
+}
+impl Emission {
+    fn push_str(&mut self, text: &str) {
+        // Saturation cannot admit an overflow: the guarded count is compared
+        // with 64MiB before allocation, and unguarded inputs retain old bounds.
+        self.len = self.len.saturating_add(text.len());
+        if let Some(buffer) = &mut self.text {
+            buffer.push_str(text);
+        }
+    }
+}
+impl Write for Emission {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.push_str(text);
+        Ok(())
+    }
+}
+struct LimitedCount {
+    len: usize,
+    maximum: usize,
+}
+impl Write for LimitedCount {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.len = self
+            .len
+            .checked_add(text.len())
+            .filter(|&n| n <= self.maximum)
+            .ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+type DiagnosticKey = (bool, usize, usize, usize);
+struct GuardedDiagnostics {
+    messages: Vec<String>,
+    ids: std::collections::BTreeMap<DiagnosticKey, usize>,
+}
+impl GuardedDiagnostics {
+    fn new(
+        program: &Program,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        maximum: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let mut result = Self {
+            messages: Vec::new(),
+            ids: std::collections::BTreeMap::new(),
+        };
+        let mut count = LimitedCount { len: 0, maximum };
+        let mut add = |overflow: bool, span: Span| -> Result<(), Box<Diagnostic>> {
+            let key = (overflow, span.file.0, span.start, span.end);
+            if result.ids.contains_key(&key) {
+                return Ok(());
+            }
+            let diagnostic = if overflow {
+                RunFailure::Overflow(span)
+            } else {
+                RunFailure::Fuel(span)
+            }
+            .diagnostic(sources);
+            // The renderer streams escaped paths while counting: no oversize
+            // intermediate diagnostic is allocated before this preflight.
+            diagnostic.write_human(sources, &mut count).map_err(|_| {
+                reject(
+                    format!("native preview guarded diagnostic bytes limit exceeded ({maximum})"),
+                    Some(span),
+                )
+            })?;
+            result.ids.insert(key, result.messages.len());
+            result.messages.push(diagnostic.render_human(sources));
+            Ok(())
+        };
+        add(false, program.functions[entry.0].span)?;
+        for function in &program.functions {
+            for block in &function.blocks {
+                if let Some(merge) = &block.merge {
+                    add(false, merge.span)?;
+                }
+                for statement in &block.statements {
+                    add(false, statement.span())?;
+                    if let Some(Assign {
+                        value: Rvalue::CheckedI32 { operator_span, .. },
+                        ..
+                    }) = statement.as_assignment()
+                    {
+                        add(true, *operator_span)?;
+                    }
+                }
+                add(
+                    false,
+                    block.terminator.as_ref().expect("verified terminator").span,
+                )?;
+            }
+        }
+        Ok(result)
+    }
+    fn get(&self, overflow: bool, span: Span) -> (usize, &str) {
+        let id = self.ids[&(overflow, span.file.0, span.start, span.end)];
+        (id, &self.messages[id])
+    }
+}
+fn emit_guard(
+    out: &mut Emission,
+    diagnostics: &GuardedDiagnostics,
+    name: &str,
+    cost: usize,
+    span: Span,
+) {
+    let (id, message) = diagnostics.get(false, span);
+    writeln!(out, "  %{name}_remaining = load i64, ptr %fuel").unwrap();
+    writeln!(
+        out,
+        "  %{name}_exhausted = icmp ult i64 %{name}_remaining, {cost}"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  br i1 %{name}_exhausted, label %{name}_error, label %{name}_ok"
+    )
+    .unwrap();
+    writeln!(out, "{name}_error:\n  call void @__oxid_overflow(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable", message.len()).unwrap();
+    writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
+}
+
 fn ty(ty: hir::Ty) -> &'static str {
     match ty {
         hir::Ty::Bool => "i1",
@@ -197,14 +445,38 @@ fn overflow_message(span: Span, sources: &SourceMap) -> String {
         .diagnostic(sources)
         .render_human(sources)
 }
-fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
-    let mut out = String::from("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
+fn emit(
+    program: &Program,
+    entry: hir::DefId,
+    sources: &SourceMap,
+    guarded: Option<&GuardedDiagnostics>,
+    fuel: usize,
+    out: &mut Emission,
+) {
+    out.push_str("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
     // Diagnostics are pre-rendered with the reference renderer. Every UTF-8
     // byte is escaped as LLVM constant data; no source path can become syntax.
+    if let Some(diagnostics) = guarded {
+        for (id, message) in diagnostics.messages.iter().enumerate() {
+            write!(
+                out,
+                "@__oxid_guard_error_{id} = private unnamed_addr constant [{} x i8] c\"",
+                message.len()
+            )
+            .unwrap();
+            for byte in message.bytes() {
+                write!(out, "\\{byte:02X}").unwrap();
+            }
+            out.push_str("\"\n");
+        }
+    }
     for f in &program.functions {
         for b in &f.blocks {
             for a in b.statements.iter().filter_map(Statement::as_assignment) {
                 if let Rvalue::CheckedI32 { operator_span, .. } = a.value {
+                    if guarded.is_some() {
+                        continue;
+                    }
                     let message = overflow_message(operator_span, sources);
                     write!(
                         out,
@@ -232,8 +504,11 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
             f.id.0
         )
         .unwrap();
+        if guarded.is_some() {
+            out.push_str("ptr %fuel");
+        }
         for (i, p) in f.locals.iter().take(f.param_count).enumerate() {
-            if i != 0 {
+            if i != 0 || guarded.is_some() {
                 out.push_str(", ");
             }
             write!(out, "{} %v{i}", ty(p.ty)).unwrap();
@@ -250,6 +525,9 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
             .iter()
             .enumerate()
             .map(|(i, b)| {
+                if guarded.is_some() {
+                    return format!("g{i}_{}_ok", b.statements.len() + 1);
+                }
                 b.statements
                     .iter()
                     .rev()
@@ -276,7 +554,19 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                 )
                 .unwrap();
             }
-            for statement in &b.statements {
+            if let (Some(diagnostics), Some(merge)) = (guarded, &b.merge) {
+                emit_guard(out, diagnostics, &format!("g{i}_0"), 1, merge.span);
+            }
+            for (j, statement) in b.statements.iter().enumerate() {
+                if let Some(diagnostics) = guarded {
+                    emit_guard(
+                        out,
+                        diagnostics,
+                        &format!("g{i}_{}", j + 1),
+                        1,
+                        statement.span(),
+                    );
+                }
                 let a = match statement {
                     Statement::Assign(a) => a,
                     Statement::Initialize { place, value, .. }
@@ -372,13 +662,18 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                         )
                         .unwrap();
                         writeln!(out, "overflow{n}_error:").unwrap();
-                        writeln!(
-                            out,
-                            "  call void @__oxid_overflow(ptr @__oxid_error_{}_{n}, i64 {})",
-                            f.id.0,
-                            overflow_message(operator_span, sources).len()
-                        )
-                        .unwrap();
+                        if let Some(diagnostics) = guarded {
+                            let (id, message) = diagnostics.get(true, operator_span);
+                            writeln!(out, "  call void @__oxid_overflow(ptr @__oxid_guard_error_{id}, i64 {})", message.len()).unwrap();
+                        } else {
+                            writeln!(
+                                out,
+                                "  call void @__oxid_overflow(ptr @__oxid_error_{}_{n}, i64 {})",
+                                f.id.0,
+                                overflow_message(operator_span, sources).len()
+                            )
+                            .unwrap();
+                        }
                         writeln!(out, "  unreachable\nchecked{n}_ok:").unwrap();
                         writeln!(out, "  %v{n} = extractvalue {{ i32, i1 }} %checked{n}, 0")
                             .unwrap();
@@ -388,7 +683,23 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                 };
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
             }
-            match &b.terminator.as_ref().expect("verified terminator").kind {
+            let terminator = b.terminator.as_ref().expect("verified terminator");
+            if let Some(diagnostics) = guarded {
+                let cost = match &terminator.kind {
+                    TerminatorKind::Call { target, args, .. } => {
+                        1 + args.len() + program.functions[target.0].slot_count()
+                    }
+                    _ => 1,
+                };
+                emit_guard(
+                    out,
+                    diagnostics,
+                    &format!("g{i}_{}", b.statements.len() + 1),
+                    cost,
+                    terminator.span,
+                );
+            }
+            match &terminator.kind {
                 TerminatorKind::Return(v) => {
                     writeln!(out, "  ret {} %v{}", ty(f.result), v.local.0).unwrap();
                 }
@@ -421,8 +732,11 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                         target.0
                     )
                     .unwrap();
+                    if guarded.is_some() {
+                        out.push_str("ptr %fuel");
+                    }
                     for (j, arg) in args.iter().enumerate() {
-                        if j != 0 {
+                        if j != 0 || guarded.is_some() {
                             out.push_str(", ");
                         }
                         write!(out, "{} %v{}", ty(f.locals[arg.local.0].ty), arg.local.0).unwrap();
@@ -434,11 +748,18 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
         out.push_str("}\n");
     }
     let result = program.functions[entry.0].result;
+    out.push_str("\ndefine i32 @main() {\nentry:\n");
+    if let Some(diagnostics) = guarded {
+        writeln!(out, "  %fuel = alloca i64\n  store i64 {}, ptr %fuel", fuel).unwrap();
+        let root = &program.functions[entry.0];
+        emit_guard(out, diagnostics, "root", 1 + root.slot_count(), root.span);
+    }
     writeln!(
         out,
-        "\ndefine i32 @main() {{\nentry:\n  %value = call {} @__oxid_fn_{}()",
+        "  %value = call {} @__oxid_fn_{}({})",
         ty(result),
-        entry.0
+        entry.0,
+        if guarded.is_some() { "ptr %fuel" } else { "" }
     )
     .unwrap();
     match result {
@@ -449,7 +770,6 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
         hir::Ty::Unit => out.push_str("  %status = call i32 @__oxid_print_unit()\n"),
     }
     out.push_str("  ret i32 %status\n}\n");
-    out
 }
 
 #[cfg(test)]
@@ -744,6 +1064,196 @@ mod tests {
             assert_eq!(module.matches("ptr %p0").count(), 3);
             assert!(!module.contains(" undef"));
             assert!(!module.contains(" poison"));
+        }
+    }
+    #[test]
+    fn guarded_representation_limits_are_exact_and_preflighted() {
+        let (program, sources) = verified_at(
+            "path\n雪\t.ox",
+            "fn unused()->() { while true {} return; } fn main()->i32 { return 1+2; }",
+        );
+        let entry = hir::DefId(1);
+        let diagnostics = GuardedDiagnostics::new(
+            &program.program,
+            entry,
+            &sources,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+        )
+        .unwrap();
+        let size: usize = diagnostics.messages.iter().map(String::len).sum();
+        let module = program.native_module(Some(entry), &sources).unwrap();
+        assert_eq!(
+            program
+                .native_module_limits(Some(entry), &sources, execute::MAX_FUEL, size, module.len())
+                .unwrap(),
+            module
+        );
+        for (data, ir, marker) in [
+            (size - 1, module.len(), "diagnostic bytes"),
+            (size, module.len() - 1, "LLVM bytes"),
+        ] {
+            let error = program
+                .native_module_limits(Some(entry), &sources, execute::MAX_FUEL, data, ir)
+                .unwrap_err();
+            assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+            assert!(error.message.contains(marker));
+        }
+        for cap in [MAX_GUARDED_DIAGNOSTIC_BYTES, MAX_GUARDED_IR_BYTES] {
+            let mut count = LimitedCount {
+                len: cap - 1,
+                maximum: cap,
+            };
+            count.write_str("x").unwrap();
+            assert_eq!(count.len, cap);
+            assert!(count.write_str("x").is_err());
+            assert_eq!(count.len, cap);
+        }
+        // Old unguarded modules do not acquire the guarded representation caps.
+        let (acyclic, sources) = verified_with_sources("fn main()->i32 { return 1+2; }");
+        assert!(acyclic
+            .native_module_limits(Some(hir::DefId(0)), &sources, execute::MAX_FUEL, 0, 0)
+            .is_ok());
+    }
+
+    #[test]
+    fn cyclic_cost_is_unknown_and_propagates_without_weakening_known_costs() {
+        let (program, sources) = verified_with_sources(
+            "fn leaf()->() { while false {} return; } fn main()->() { leaf(); return; }",
+        );
+        let bounds = program.admit().unwrap();
+        assert!(bounds.iter().all(|b| b.cyclic));
+        let module = program
+            .native_module(Some(hir::DefId(1)), &sources)
+            .unwrap();
+        assert!(module.contains("define internal i8 @__oxid_fn_0(ptr %fuel)"));
+        assert!(module.contains("store i64 1000000, ptr %fuel"));
+        assert_eq!(module.matches("%fuel = alloca i64").count(), 1);
+        assert!(!module.contains(" sub nsw "));
+        let (returning, sources) =
+            verified_with_sources("fn main()->() { while true { return; } return; }");
+        assert!(!returning.admit().unwrap()[0].cyclic);
+        assert!(!returning
+            .native_module(Some(hir::DefId(0)), &sources)
+            .unwrap()
+            .contains("ptr %fuel"));
+        let mut text =
+            String::from("fn cycle()->() { while false {} return; } fn f0()->() { return; }");
+        for n in 1..18 {
+            text.push_str(&format!(
+                " fn f{n}()->() {{ f{}(); f{}(); return; }}",
+                n - 1,
+                n - 1
+            ));
+        }
+        text.push_str(" fn main()->() { return; }");
+        assert!(verified(&text)
+            .admit()
+            .unwrap_err()
+            .message
+            .contains("reference fuel upper bound"));
+    }
+
+    #[test]
+    fn guarded_phi_uses_terminator_success_labels_and_messages_deduplicate() {
+        let (program, sources) = verified_with_sources(
+            "fn main()->bool { let mut n=0; while n<2 && (n+1<4) { n=n+1; } return true; }",
+        );
+        let f = &program.program.functions[0];
+        let module = program
+            .native_module(Some(hir::DefId(0)), &sources)
+            .unwrap();
+        for block in &f.blocks {
+            if let Some(merge) = &block.merge {
+                for input in merge.incoming {
+                    let predecessor = &f.blocks[input.predecessor.0];
+                    assert!(module.contains(&format!(
+                        "[ %v{}, %g{}_{}_ok ]",
+                        input.value.local.0,
+                        input.predecessor.0,
+                        predecessor.statements.len() + 1
+                    )));
+                }
+            }
+        }
+        let messages = GuardedDiagnostics::new(
+            &program.program,
+            hir::DefId(0),
+            &sources,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+        )
+        .unwrap();
+        assert_eq!(messages.ids.len(), messages.messages.len());
+        assert!(
+            messages.ids.len()
+                < 1 + f
+                    .blocks
+                    .iter()
+                    .map(|b| b.statements.len()
+                        + 1
+                        + usize::from(b.merge.is_some())
+                        + b.statements
+                            .iter()
+                            .filter(|s| matches!(
+                                s.as_assignment(),
+                                Some(Assign {
+                                    value: Rvalue::CheckedI32 { .. },
+                                    ..
+                                })
+                            ))
+                            .count())
+                    .sum::<usize>()
+        );
+    }
+    #[test]
+    fn actual_guarded_representation_caps_reject_large_verified_raw_modules() {
+        let (verified, _) =
+            verified_with_sources("fn main()->i32 { let mut n=0; while true { n=n; } return n; }");
+        let mut raw = verified.program;
+        let f = &mut raw.functions[0];
+        let used: usize = f
+            .blocks
+            .iter()
+            .map(|b| b.statements.len() + usize::from(b.merge.is_some()))
+            .sum();
+        let body = f
+            .blocks
+            .iter_mut()
+            .find(|b| {
+                b.statements
+                    .iter()
+                    .any(|s| matches!(s, Statement::Store { .. }))
+            })
+            .unwrap();
+        let template = body
+            .statements
+            .iter()
+            .find(|s| matches!(s, Statement::Store { .. }))
+            .unwrap()
+            .clone();
+        for offset in 0..MAX_ASSIGNMENTS - used {
+            let mut statement = template.clone();
+            if let Statement::Store { span, .. } = &mut statement {
+                span.start = offset;
+                span.end = offset + 1;
+            }
+            body.statements.push(statement);
+        }
+        for (path, expected) in [
+            ("x".repeat(40), "guarded LLVM bytes"),
+            ("x".repeat(200), "guarded diagnostic bytes"),
+        ] {
+            let mut sources = SourceMap::new();
+            sources.add(path, "a".repeat(MAX_ASSIGNMENTS));
+            let verified = verify::verify(raw.clone(), &sources).unwrap();
+            let error = match verified.native_module(Some(hir::DefId(0)), &sources) {
+                Err(error) => error,
+                Ok(module) => panic!(
+                    "expected {expected} rejection, actual LLVM bytes {}",
+                    module.len()
+                ),
+            };
+            assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+            assert!(error.message.contains(expected), "{}", error.message);
         }
     }
 }

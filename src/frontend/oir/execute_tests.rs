@@ -906,7 +906,7 @@ fn rhs_failure_or_exhausted_store_fuel_never_updates_the_place() {
         ]
     );
     // The runtime storage seam independently preserves the old value on failed
-    // type checks, duplicate initialization and invalid IDs.
+    // type checks and invalid IDs; repeated canonical initialization resets storage.
     let f = &p.program.functions[entry.0];
     let place = Place {
         id: PlaceId(0),
@@ -915,10 +915,12 @@ fn rhs_failure_or_exhausted_store_fuel_never_updates_the_place() {
     let mut frame = frame(f, &[], None).unwrap();
     assert!(store(&mut frame, f, place, Scalar::I32(3), false).is_err());
     store(&mut frame, f, place, Scalar::I32(7), true).unwrap();
-    for (value, initialize) in [(Scalar::Bool(true), false), (Scalar::I32(9), true)] {
+    for (value, initialize) in [(Scalar::Bool(true), false), (Scalar::Bool(true), true)] {
         assert!(store(&mut frame, f, place, value, initialize).is_err());
         assert_eq!(load(&frame, place), Ok(Scalar::I32(7)));
     }
+    store(&mut frame, f, place, Scalar::I32(9), true).unwrap();
+    assert_eq!(load(&frame, place), Ok(Scalar::I32(9)));
 }
 
 #[test]
@@ -948,4 +950,130 @@ fn mutable_events_preserve_selected_branch_and_call_result_store_order() {
             ]
         );
     }
+}
+
+#[test]
+fn while_exact_fuel_origin_and_frame_storage_are_iteration_stable() {
+    let text = "fn main() -> i32 { let mut x=0; while x<3 { x=x+1; } return x; }";
+    let (_, program, entry) = compiled(text);
+    assert_eq!(program.program.functions[entry.0].slot_count(), 9);
+    let at = |needle: &str| {
+        let start = text.find(needle).unwrap();
+        (start, start + needle.len())
+    };
+    let body_close = text.find("} return").unwrap();
+    let while_start = text.find("while").unwrap();
+    let while_span = (while_start, body_close + 1);
+    let cond = text.find("x<3").unwrap();
+    let rhs = text.find("x+1").unwrap();
+    let return_start = text.find("return").unwrap();
+    // Independent source-operation schedule: allocation10, setup3,
+    // three (condition4 + body5), final condition4, result load/return2.
+    let mut charges = vec![
+        (10, at("main")),
+        (1, at("0")),
+        (1, at("let mut x=0;")),
+        (1, while_span),
+    ];
+    for iteration in 0..4 {
+        charges.extend([
+            (1, (cond, cond + 1)),
+            (1, (cond + 2, cond + 3)),
+            (1, (cond, cond + 3)),
+            (1, while_span),
+        ]);
+        if iteration != 3 {
+            charges.extend([
+                (1, (rhs, rhs + 1)),
+                (1, (rhs + 2, rhs + 3)),
+                (1, (rhs, rhs + 3)),
+                (1, at("x=x+1;")),
+                (1, (body_close, body_close + 1)),
+            ]);
+        }
+    }
+    charges.extend([
+        (1, (return_start + 7, return_start + 8)),
+        (1, at("return x;")),
+    ]);
+    assert_eq!(charges.iter().map(|x| x.0).sum::<usize>(), 46);
+    for budget in 0..46 {
+        let mut remaining = budget;
+        let expected = charges
+            .iter()
+            .find_map(|&(cost, span)| {
+                if remaining < cost {
+                    Some(span)
+                } else {
+                    remaining -= cost;
+                    None
+                }
+            })
+            .unwrap();
+        let failure = invoke(&program, entry, &[], limits(budget, 1, 9)).unwrap_err();
+        let RunFailure::Fuel(span) = failure else {
+            panic!("{failure:?}")
+        };
+        assert_eq!((span.start, span.end), expected, "budget {budget}");
+    }
+    assert_eq!(
+        invoke(&program, entry, &[], limits(46, 1, 9)),
+        Ok(Scalar::I32(3))
+    );
+    assert!(matches!(
+        invoke(&program, entry, &[], limits(46, 1, 8)),
+        Err(RunFailure::Slots(_))
+    ));
+}
+
+#[test]
+fn while_iteration_initializers_reset_but_outer_places_and_snapshots_persist() {
+    let (_, program, entry) = compiled("fn main()->i32 { let mut n=0; let mut sum=0; while n<3 { let old=n; let mut fresh=10; fresh=fresh+old; n=n+1; sum=sum+fresh+old; } return sum; }");
+    let mut events = Vec::new();
+    assert_eq!(
+        execute(&program, entry, &[], Limits::default(), &mut |e| events
+            .push(e)),
+        Ok(Scalar::I32(36))
+    );
+    let initializers: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Initialize(_, PlaceId(2), value) => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(initializers, vec![Scalar::I32(10); 3]);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::Store(_, _, _)))
+            .count(),
+        9
+    );
+}
+
+#[test]
+fn guarded_fuel_is_charged_before_overflow_and_failed_store_has_no_effect() {
+    let text = "fn main()->i32 { let mut x=7; while true { x=2147483647+1; } return x; }";
+    let (_, program, entry) = compiled(text);
+    let mut before_overflow = None;
+    for fuel in 0..100 {
+        let mut events = Vec::new();
+        let result = execute(&program, entry, &[], limits(fuel, 1, 100), &mut |e| {
+            events.push(e)
+        });
+        assert!(!events.iter().any(|e| matches!(e, Event::Store(_, _, _))));
+        if let Err(RunFailure::Overflow(span)) = result {
+            assert_eq!(&text[span.start..span.end], "+");
+            before_overflow = Some(fuel - 1);
+            break;
+        }
+        assert!(matches!(result, Err(RunFailure::Fuel(_))));
+    }
+    let fuel = before_overflow.expect("overflow reached");
+    let failure = invoke(&program, entry, &[], limits(fuel, 1, 100)).unwrap_err();
+    let RunFailure::Fuel(span) = failure else {
+        panic!("{failure:?}")
+    };
+    assert_eq!(&text[span.start..span.end], "2147483647+1");
 }

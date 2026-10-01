@@ -89,6 +89,10 @@ pub enum StmtKind {
     },
     Expr(ExprId),
     Return(Option<ExprId>),
+    While {
+        condition: ExprId,
+        body: BodyBlockId,
+    },
     If {
         condition: ExprId,
         then_block: BodyBlockId,
@@ -373,6 +377,14 @@ impl<'a> Resolver<'a> {
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
+                }
+                ast::StmtKind::While { condition, body } => {
+                    let condition = self.expression(*condition)?;
+                    frames.push(Frame::Enter(*body));
+                    StmtKind::While {
+                        condition,
+                        body: BodyBlockId(body.0),
+                    }
                 }
                 ast::StmtKind::If {
                     condition,

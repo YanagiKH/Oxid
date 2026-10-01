@@ -154,7 +154,7 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
             | StmtKind::Assign { value: init, .. }
             | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
-            StmtKind::If { condition, .. } => Some(condition),
+            StmtKind::If { condition, .. } | StmtKind::While { condition, .. } => Some(condition),
         };
         // Resolver emits children before parents and statement roots in source order.
         if let Some(root) = root {
@@ -330,6 +330,29 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                     ));
                 }
                 returned = true;
+            }
+            StmtKind::While { condition, body } => {
+                let actual = expressions[condition.0];
+                if actual != Ty::Bool {
+                    return Err(mismatch(
+                        Ty::Bool,
+                        actual,
+                        function.expressions[condition.0].span,
+                    ));
+                }
+                // The false edge always exists. A returning body does not prove
+                // that the containing statement list returns.
+                frames.push(Frame::Block {
+                    block,
+                    index: index + 1,
+                    returned: false,
+                });
+                frames.push(Frame::Block {
+                    block: body,
+                    index: 0,
+                    returned: false,
+                });
+                continue;
             }
             StmtKind::If {
                 condition,

@@ -9,7 +9,9 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0005](../rfcs/0005-exact-i32-literals.md) and
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
 [RFC 0009](../rfcs/0009-scalar-comparisons.md) and
-[RFC 0010](../rfcs/0010-boolean-logical-operators.md).
+[RFC 0010](../rfcs/0010-boolean-logical-operators.md),
+[RFC 0011](../rfcs/0011-mutable-scalar-locals.md) and
+[RFC 0012](../rfcs/0012-while-runtime-fuel.md).
 
 ## Command and compatibility boundary
 
@@ -64,6 +66,7 @@ statement  := "let" "mut"? name (":" type)? "=" expression ";"
             | expression ";"
             | "return" expression? ";"
             | "if" expression block ("else" block)?
+            | "while" expression block
 expression := logical_or
 logical_or := logical_and ("||" logical_and)*
 logical_and := comparison ("&&" comparison)*
@@ -94,7 +97,7 @@ functions and does not require `main`; checking is not execution.
 - Functions are collected before resolving bodies, so forward direct calls and
   recursive calls resolve. Run uses isolated iterative activations; no termination
   claim follows and recursive programs can exhaust execution limits
-- Function names are unique. Parameters, function bodies and branch arms have
+- Function names are unique. Parameters, function bodies, branch arms and while bodies have
   lexical scopes. Bindings cannot duplicate a name in the same scope, shadow an
   active ancestor, or shadow a top-level function. Sibling arms and declarations
   following a closed child scope may reuse names; every declaration has its own ID
@@ -227,11 +230,28 @@ the name with a declaration label, unknown targets E0200, and fixed-type mismatc
 E0300 at the RHS with a declaration label. See
 [RFC 0011](../rfcs/0011-mutable-scalar-locals.md).
 
+### Ordinary while and operation budget
+
+`while condition { statements }` reevaluates a bool condition before each iteration;
+false skips its body. Body-local declarations initialize freshly on every dynamic
+execution, using reusable activation slots. Outer mutable places persist and
+immutable snapshots remain values. Conditions and bodies are fully checked even
+when never executed. Return exits the function, but while itself never proves a
+terminal return, even for literal true. No trailing semicolon, while-else,
+break/continue, loop expression or implicit truthiness is introduced.
+
+Reference and guarded native invocations share a total 1,000,000-operation budget
+across loops/calls, with E0601 before the next charged operation. This is not a
+wall-clock limit or final performance mode. Existing costs and frame/slot limits
+remain; loop execution does not accumulate frame storage. See
+[RFC 0012](../rfcs/0012-while-runtime-fuel.md) for exact costs, origins, cyclic
+verification and native guarded-only representation bounds.
+
 Strings, null, imports/modules, macros, borrowing, ownership,
-containers, loops and other control flow, other operators, async, closures, generics, FFI, host I/O,
+containers, for/loop/break/continue and other control flow, other operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
-silent approximation or legacy execution of these features. Now-recognized if/else
+silent approximation or legacy execution of these features. Now-recognized if/else/while
 keywords in invalid positions produce ordinary syntax errors (E0100), replacing
 the predecessor's unsupported-keyword E0101 for those newly enabled keywords.
 
@@ -260,7 +280,7 @@ The old AST, parser, lexer and lexical helpers now live in
 `src/legacy/syntax.rs`. The extraction preserves their behavior and OXBC 1.0
 encoding. The existing single-binary Cargo package and Rust edition are unchanged.
 
-## Verified acyclic OIR
+## Verified scalar OIR with cyclic control flow
 
 Every successful production check or run lowers actual typed bodies and passes an
 independent OIR verifier before returning success. Immutable typed views expose
@@ -303,8 +323,8 @@ The existing expression temporary is the result; no opposite-arm writes occur.
 
 Verification validates aggregate bounds, every signature/reference/type/span and
 terminator before following graph edges, including unreachable raw blocks.
-Reachability and deterministic topological traversal reject unreachable blocks
-and cycles. Equal Branch targets are legal and their edge multiplicity is handled
+Reachability rejects unreachable blocks; arbitrary reachable cycles, including
+irreducible raw graphs, are independently verified. Equal Branch targets are legal and their edge multiplicity is handled
 consistently for non-merge targets. A BoolMerge requires exactly two distinct
 incoming edges matching its input predecessors and is forbidden at function entry.
 Direct and mutual recursive call graphs remain legal because calls
@@ -329,13 +349,12 @@ initialization. Opposite-arm, self-initialization and pre-init access fail;
 stores never establish initialization or weaken unique SSA definitions.
 All place IDs/types/origins and store operator spans are checked structurally.
 
-The verifier computes a dominator tree in topological order using predecessor
-lowest-common-ancestor queries and bounded binary lifting, then iterative tree
-intervals for constant-time dominance queries. There is no blocks-by-locals
+The verifier uses iterative Lengauer–Tarjan simple link/eval with path compression,
+then iterative dominator-tree intervals for constant-time dominance queries. There is no blocks-by-locals
 matrix, per-block initialization-set cloning or recursive graph traversal.
 
-This proves structural intraprocedural return completeness assuming calls return
-normally. It does not establish termination, user-stack safety, executable call
+Every block has a valid terminator; the source checker separately enforces its
+conservative return rule. Cyclic raw IR need not reach any Return. It does not establish termination, user-stack safety, executable call
 safety, ownership, memory safety or source-to-IR equivalence merely from spans.
 
 All declarations, blocks, assignments, operands and terminators retain original
@@ -445,11 +464,13 @@ once valid global options select explicit typed run, command-option/operand,
 compile, entry and execution errors use run-summary. Check records are unchanged.
 
 Each activation has isolated optional bool/i32/unit value and place arrays.
-Initialize writes a place once, Store requires an initialized place, and Load
-snapshots it into a fresh SSA value. A failed RHS performs no store. Assign reads before
+Initialize executes a place's unique static declaration and resets its reused
+storage on reexecution; Store requires an initialized place and Load snapshots it
+into a unique static SSA value. Nonparameter definitions can execute repeatedly;
+parameters remain immutable. A merge reads its input before replacing its result. A failed RHS performs no store. Assign reads before
 writing; Branch executes exactly one arm; Goto uses its explicit target.
 Calls copy arguments in recorded order and suspend callers until normal return,
-then initialize the call result and resume at the explicit continuation. Bare
+then replace that static call result's current value and resume at the explicit continuation. Bare
 returns contain explicit unit. Discarded calls still run. There is no folding,
 tail-call elimination, memoization or execution of an unchosen arm. Fresh calls
 and repeated invocations share no mutable execution state. The activation stack
@@ -510,26 +531,22 @@ and 65 terms fail E0400. Height tracking uses one usize per expression, at most
 ownership avoids recursive block-drop chains; later block/CFG passes are iterative.
 
 Lowering preflights exact aggregate expansion before IR/maps are allocated. For
-F functions, C calls, I if statements, S logical expressions, P parameters,
+F functions, C calls, I if statements, W while statements, S logical expressions, P parameters,
 L lets (including M mutable), A reassignment statements, X expressions and Rb bare
 returns: values = P + (L - M) + X + Rb; places = M; combined slots = P + L + X + Rb;
 instructions (including merges/init/store/load) = X - C + L + A + Rb;
-blocks <= F + C + 3I + 2S. These are bounded by the existing parser nodes, with only
+blocks <= F + C + 3I + 3W + 2S. These are bounded by the existing parser nodes, with only
 the block budget raised to three times that limit. Old accepted source programs
 are not excluded by a tighter unrelated cap. Call vectors stay capped at 256.
 
 Verification independently checks these limits for arbitrary private raw IR and
-checks graph/scratch arithmetic before allocation. A flat predecessor array and
-binary-lifting ancestor table need O(locals + blocks log blocks + edges) scratch
-per function; only one function's scratch is live at a time. The ancestor table
-alone is at most 45.6 MB on a 64-bit host. At peak dominator construction,
-ancestor cells plus offsets, predecessor edges, topological order, depth, child/
-sibling links and entry/exit intervals occupy B*levels + 7B + E + 1 usize cells.
-At the maxima that is 67,200,008 bytes, plus about 2,400,000 bytes for 100,000
-three-word optional value-definition/place-initialization records together on this host: about 69.6 MB, excluding
-small vector headers, allocator overhead and raw IR/source storage. Earlier
-reachability/indegree and predecessor-construction cursor arrays are already freed. Verification time is
-O(functions + locals + assignments + operands + (blocks + edges) log blocks).
+checks graph/scratch arithmetic before allocation. Iterative cyclic dominance
+uses O(locals + blocks + edges) scratch and O((blocks + edges) log blocks) graph
+work. Peak dominator/predecessor tables use 11B + E + 1 usize cells, 31,200,008
+bytes at B=300,000/E=600,000 on a 64-bit host, plus about 2.4MB for at most 100,000
+combined optional value-definition/place-initialization records. This excludes
+raw IR/source, vector headers and allocator costs; only one function's scratch
+is live at once. Full verification also walks functions/slots/instructions/operands.
 No host allocation-success, OS-sandbox or blocking-I/O guarantee follows.
 
 Errors stop later compiler phases, and diagnostics beyond the cap are omitted.
@@ -567,3 +584,5 @@ reference/native/Python checks. No generalized equality or later operator is imp
 
 [Boolean logic evidence](../docs/architecture/boolean-logic-validation.md) records
 short-circuit value joins, exact path costs and reference/native differential checks.
+
+[While evidence](../docs/architecture/while-validation.md) records cyclic verifier, shared fuel and actual LLVM gates.

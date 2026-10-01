@@ -326,7 +326,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -652,7 +652,48 @@
       "evidence": [
         "docs/architecture/mutable-locals-validation.md"
       ],
-      "limitations": "Only initialized let mut and bare-name same-type statement assignment through existing acyclic control flow. Ordinary lets and parameters remain immutable. No uninitialized declarations, mut parameters, assignment expressions, compound/field/index assignment, loops, borrows, new types or native recursion. Typed scalar places prepare state analysis but do not implement non-Copy ownership, a stable ABI, safety certification, optimization beyond native O0 or a completed roadmap milestone. Existing reference/native caps, legacy semantics and OXBC remain independent."
+      "limitations": "This entry records the mutable-local predecessor; while and cyclic execution are tracked separately. Only initialized let mut and bare-name same-type statement assignment through existing acyclic control flow. Ordinary lets and parameters remain immutable. No uninitialized declarations, mut parameters, assignment expressions, compound/field/index assignment, loops, borrows, new types or native recursion. Typed scalar places prepare state analysis but do not implement non-Copy ownership, a stable ABI, safety certification, optimization beyond native O0 or a completed roadmap milestone. Existing reference/native caps, legacy semantics and OXBC remain independent."
+    },
+    {
+      "id": "typed-preview-while-runtime-fuel",
+      "summary": "Ordinary bool-condition while with independently verified cyclic dominance, reusable scalar storage and exact shared reference/native operation budgets",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence; native supports Linux x86_64 only. Hosted CI and other reference hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0012-while-runtime-fuel.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/diagnostic.rs"
+      ],
+      "tests": [
+        "tests/typed_while.rs",
+        "tests/typed_native.rs",
+        "src/frontend/oir/cyclic_tests.rs",
+        "src/frontend/oir/execute_tests.rs",
+        "src/frontend/oir/native.rs",
+        "scripts/verify_while_loops.py"
+      ],
+      "evidence": [
+        "docs/architecture/while-validation.md"
+      ],
+      "limitations": "Provisional while only, with shared 1,000,000 abstract-operation budget, not a wall-clock or final-performance mode. No break/continue, loop expressions, for, native recursion, ownership or new scalar types. Transitively acyclic native functions retain static 100,000 admission; guarded modules add 16 MiB diagnostic/64MiB LLVM representation caps. Linux x86_64 LLVM 19.1.7 O0 only; no O2, stable ABI, safety certification or completed roadmap milestone."
     }
   ]
 }
