@@ -48,7 +48,7 @@ jobs:
       - name: Build optimized runtime
         run: cargo build --release --locked
 
-      - name: Generate and verify compiler bootstrap artifacts
+      - name: Generate and verify compiler-demo round-trip artifacts
         run: cargo run --release --locked -- bootstrap
 
       - name: Package runtime and checksum

@@ -1,29 +1,28 @@
-# Self-hosting
+# Self-hosting status and artifact round-trip
 
-Oxid 0.9 establishes a deterministic, incrementally replaceable bootstrap path. Release users install a standalone `oxid` binary and do not need Rust to write, interpret, compile, inspect, package, or run Oxid programs. Building the stage-0 implementation itself from source still requires Rust and a C/C++ compiler.
+Oxid 0.9 does not independently compile its compiler. Release users can run the
+standalone Rust-built `oxid` executable without installing Rust; rebuilding that
+host implementation still requires Rust and a C/C++ compiler. These are separate
+capabilities.
 
-## Implemented path
+## What the existing command verifies
 
-1. The stage-0 frontend compiles `stdlib/frontend/bytecode.ox` and `compiler/main.ox` into OXBC 1.0.
-2. The Oxid-authored emitter accepts normalized instruction records and emits a canonical bytecode stream.
-3. Bootstrap decodes and re-encodes the compiler artifact for stage 1 and stage 2.
-4. Stage 0, stage 1, and stage 2 must be byte-identical.
-5. The decoded compiler surface is executed by the runtime.
-6. `compiler/providers.toml` must declare the Oxid emitter, stage-0 frontend providers, and required parity.
+1. The Rust frontend parses `stdlib/frontend/bytecode.ox` and `compiler/main.ox`.
+2. Rust's OXBC writer serializes that AST to the file historically called stage 0.
+3. The same Rust codec decodes and re-encodes it twice, producing stages 1 and 2.
+4. All three serialized artifacts must be byte-identical.
+5. The runtime interprets the decoded compiler demonstration, which checks a
+   fixed representative textual instruction sequence.
+6. Required text is checked in `compiler/providers.toml`; this does not dispatch
+   compiler providers or prove that a declared provider was used.
 
-Running without `--check` writes:
+The Oxid-authored textual emitter is not connected to `compile_file`'s binary
+OXBC writer. Neither the demonstration nor serialization equality proves that
+an Oxid compiler can compile arbitrary supported source or rebuild itself.
 
-```text
-.oxid/bootstrap/stage0.oxb
-.oxid/bootstrap/stage1.oxb
-.oxid/bootstrap/stage2.oxb
-.oxid/bootstrap/compiler.oxb
-.oxid/bootstrap/manifest.json
-```
+## Compatible commands and files
 
-The manifest records artifact/AST versions, compiler version, module count, checksum, and parity results.
-
-## Commands
+Existing command names and outputs are retained:
 
 ```bash
 oxid bootstrap
@@ -34,6 +33,32 @@ oxid self-host --check
 oxid frontend
 ```
 
-## Current limitation
+`bootstrap`, `self-compile`, `emit`, and `self-host` all enter the same artifact
+round-trip path. Without `--check`, that path writes:
 
-The equality check proves deterministic serialization and a stage artifact fixed point using the current bootstrap codec. CI additionally requires those artifacts to be byte-identical across Linux, Windows, macOS x86_64, and macOS arm64 before release packaging. This is not yet proof that an independently implemented Oxid lexer/parser produced the same compiler. The emitter is Oxid-authored; lexer, parser, diagnostics, and module providers remain stage-0. The self-hosted path must not become the default compiler until those providers are replaced and independent compiler parity is demonstrated across release platforms.
+```text
+.oxid/bootstrap/stage0.oxb
+.oxid/bootstrap/stage1.oxb
+.oxid/bootstrap/stage2.oxb
+.oxid/bootstrap/compiler.oxb
+.oxid/bootstrap/manifest.json
+```
+
+The manifest's version/count/checksum and equality fields describe serialized
+artifacts. They are not compiler provenance or independent self-hosting evidence.
+`--check` skips writing those output artifacts; repository source preprocessing
+may still use its ordinary cache.
+
+CI compares the serialized compiler demonstration across its configured host
+matrix. This is useful portable-format regression coverage. It is distinct from
+comparing native binaries built for the same target.
+
+## Required future self-hosting evidence
+
+Real self-hosting requires production provider dispatch with execution tracing
+and no hidden stage-0 fallback; a compiler capable of arbitrary supported inputs;
+a seed producing C1; C1 rebuilding the same compiler source as C2; and C2
+producing C3. C2/C3 comparison must hold with the same target, dependencies, and
+options. A clean environment without Rust/Cargo must rebuild the designated
+compiler and standard library from a published Oxid seed. None of those gates
+is satisfied by the current serialization round-trip.

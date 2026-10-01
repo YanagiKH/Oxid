@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "7e681d25fa58828b817d66a8701a6913a7158932",
+  "scope": "Initial, non-exhaustive M0 evidence inventory. No milestone or release certification is complete.",
+  "features": [
+    {
+      "id": "legacy-dynamic-semantics",
+      "summary": "Selected existing numeric, equality, aliasing, evaluation, task, module and runtime-error behavior",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "spec/legacy-0.9.md"
+      ],
+      "implementation": [
+        "src/main.rs"
+      ],
+      "tests": [
+        "tests/legacy_semantics.rs"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Partial characterization only; no static ownership or complete language specification."
+    },
+    {
+      "id": "oxbc-ast-container",
+      "summary": "Production OXBC 1.0 serialized-AST writer and reader",
+      "status": "implemented",
+      "classification": "production-path",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/COMPILER.md"
+      ],
+      "implementation": [
+        "src/runtime/artifact.rs",
+        "src/main.rs"
+      ],
+      "tests": [
+        "src/runtime/artifact.rs",
+        "tests/legacy_semantics.rs"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Interpreted AST, not native machine code or executable bytecode ISA; FNV is not cryptographic integrity."
+    },
+    {
+      "id": "artifact-roundtrip",
+      "summary": "Encode/decode/re-encode equality for the compiler demonstration",
+      "status": "implemented",
+      "classification": "production-path",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/SELF_HOSTING.md"
+      ],
+      "implementation": [
+        "src/main.rs"
+      ],
+      "tests": [
+        "src/main.rs",
+        "scripts/verify_bootstrap_artifacts.py"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Legacy bootstrap/self-host names do not imply compiler self-rebuild or C2/C3 fixed point."
+    },
+    {
+      "id": "textual-emitter-demo",
+      "summary": "Oxid-authored textual instruction emitter demonstration",
+      "status": "experimental",
+      "classification": "demo",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/architecture/current-baseline.md"
+      ],
+      "implementation": [
+        "stdlib/frontend/bytecode.ox",
+        "compiler/main.ox"
+      ],
+      "tests": [
+        "tests/bytecode_emitter.ox"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Not used by production artifact::write and not a compiler for arbitrary supported source."
+    },
+    {
+      "id": "provider-dispatch",
+      "summary": "Production component dispatch, trace and no-fallback enforcement",
+      "status": "proposed",
+      "classification": "planned",
+      "edition": "legacy-0.9",
+      "backend": "planned",
+      "target_scope": "Proposed scope; no target validated",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/architecture/current-baseline.md"
+      ],
+      "implementation": [],
+      "tests": [],
+      "evidence": [],
+      "limitations": "Current manifest is declaration-only with substring validation; no actual provider dispatch."
+    },
+    {
+      "id": "lazy-tasks",
+      "summary": "Pending tasks with memoized results and ordered join_all",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "spec/legacy-0.9.md"
+      ],
+      "implementation": [
+        "src/main.rs"
+      ],
+      "tests": [
+        "tests/legacy_semantics.rs",
+        "tests/task_network_adapter.ox"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Sequential execution; no concurrent executor, reactor or cancellation contract."
+    },
+    {
+      "id": "path-git-packages",
+      "summary": "Recursive path and pinned Git dependency resolution",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/architecture/current-baseline.md"
+      ],
+      "implementation": [
+        "src/runtime/packages.rs"
+      ],
+      "tests": [
+        "src/runtime/packages.rs"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Name-based identity, FNV tree checksum; no multi-version registry or cryptographic trust guarantee."
+    },
+    {
+      "id": "synthetic-source-corpus",
+      "summary": "Generated identity functions checked as source",
+      "status": "experimental",
+      "classification": "synthetic",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "Local evidence: x86_64-unknown-linux-gnu only; other hosts unverified in this report",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/architecture/current-baseline.md"
+      ],
+      "implementation": [
+        "stdlib/mega.ox"
+      ],
+      "tests": [
+        "scripts/verify_repo.py"
+      ],
+      "evidence": [
+        "docs/architecture/baseline-validation.md"
+      ],
+      "limitations": "Not a broad standard library; existing path remains for compatibility."
+    },
+    {
+      "id": "static-memory-model",
+      "summary": "Typed core and ownership/borrowing safety rules",
+      "status": "proposed",
+      "classification": "planned",
+      "edition": "proposed-static-core",
+      "backend": "planned",
+      "target_scope": "Proposed scope; no target validated",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/README.md"
+      ],
+      "implementation": [],
+      "tests": [],
+      "evidence": [],
+      "limitations": "No implemented typed HIR/OIR or ownership checker in the production path."
+    },
+    {
+      "id": "llvm-native-backend",
+      "summary": "First planned native backend for the static core",
+      "status": "proposed",
+      "classification": "planned",
+      "edition": "proposed-static-core",
+      "backend": "llvm-planned",
+      "target_scope": "Proposed scope; no target validated",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/README.md"
+      ],
+      "implementation": [],
+      "tests": [],
+      "evidence": [],
+      "limitations": "Host binary and C/C++ helpers do not establish native compilation of .ox programs."
+    },
+    {
+      "id": "independent-self-hosting",
+      "summary": "Compiler self-rebuild and same-target C2/C3 fixed point without Rust",
+      "status": "proposed",
+      "classification": "planned",
+      "edition": "proposed-static-core",
+      "backend": "planned",
+      "target_scope": "Proposed scope; no target validated",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/SELF_HOSTING.md"
+      ],
+      "implementation": [],
+      "tests": [],
+      "evidence": [],
+      "limitations": "Current artifacts only prove serialization round-trip; no independent compiler rebuild."
+    },
+    {
+      "id": "native-ai-training",
+      "summary": "Native tensor, autograd and optimizer training path",
+      "status": "proposed",
+      "classification": "planned",
+      "edition": "proposed-static-core",
+      "backend": "planned",
+      "target_scope": "Proposed scope; no target validated",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/architecture/current-baseline.md"
+      ],
+      "implementation": [],
+      "tests": [],
+      "evidence": [],
+      "limitations": "Process bridges and generic dynamic arrays are not native AI training."
+    }
+  ]
+}

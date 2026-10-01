@@ -1,14 +1,15 @@
-# Self-compiling workflow
+# Self-compiling command compatibility
 
-The repository contains an executable Oxid compiler surface in `compiler/main.ox` and `stdlib/frontend/bytecode.ox`, with provider selection in `compiler/providers.toml`.
+`oxid self-compile`, `oxid emit`, and `oxid self-host` are retained aliases for the
+current [artifact round-trip](BOOTSTRAP.md) implementation. They do not compile
+the compiler using an independently implemented Oxid compiler.
 
-Use `oxid bootstrap` to generate deterministic artifacts, or add `--check` in validation environments where no output should be written. `oxid self-compile`, `oxid emit`, and `oxid self-host` currently enter the same parity-gated bootstrap implementation.
+`compiler/main.ox` checks a representative textual emitter sequence from
+`stdlib/frontend/bytecode.ox`. `compiler/providers.toml` records planned ownership,
+but does not dispatch the production frontend or binary artifact writer. Its
+parity declarations are checked as text; they do not enforce independent provider
+execution or prevent fallback.
 
-The provider manifest makes replacement explicit:
-
-- `emitter = "oxid"` is active;
-- lexer, parser, diagnostics, and module providers remain `stage0`;
-- `parity_required = true` prevents an unchecked provider transition.
-
-Incremental frontend replacement should change one provider at a time, add behavior and artifact parity coverage, and keep the stage-0 recovery path until independent cross-platform builds agree.
-
+Future replacement requires real provider APIs, execution evidence, no-fallback
+checks, and [compiler rebuild/fixed-point verification](SELF_HOSTING.md). Keep the
+current aliases and recovery implementation compatible while that work proceeds.

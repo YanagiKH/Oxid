@@ -1,0 +1,25 @@
+# Oxid RFCs
+
+Use an RFC to propose a language or toolchain contract before changing its
+semantics. Record the acceptance decision explicitly; an implementation alone
+does not imply approval.
+
+A behavior-changing RFC should record:
+
+1. Motivation, bounded scope, owner, and reviewer
+2. Grammar/API and exact semantic rules, including errors and resource limits
+3. Legacy compatibility, edition/artifact/ABI version impact, and migration
+4. Alternatives, safety/trust boundaries, and performance/memory costs
+5. Positive, negative, boundary, and regression acceptance cases
+6. Supported host/target matrix and required hardware evidence
+7. Implementation entry points, evidence, open questions, and acceptance decision
+
+The initial implementation direction is a static, ownership-based core with
+HIR and an analyzable OIR/CFG, followed by a first LLVM native backend. Existing
+dynamic behavior remains a separately characterized legacy contract. This
+states a design direction, not an accepted complete memory model or implemented
+backend.
+
+Small independently reviewable changes should link their affected specifications
+and tests. Claims of production readiness or safety need evidence for the declared scope
+and targets, beyond an accepted design or a passing unit test.

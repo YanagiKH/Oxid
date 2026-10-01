@@ -1,13 +1,19 @@
-# Bootstrap
+# Artifact round-trip (legacy bootstrap commands)
 
-Bootstrap validates the versioned compiler artifact and the frontend provider boundary.
+`oxid bootstrap` currently validates serialized compiler-demonstration artifacts.
+It does not run an Oxid compiler rebuilding itself.
 
 ```bash
-oxid bootstrap          # verify and write .oxid/bootstrap artifacts
-oxid bootstrap --check  # verify without writing artifacts
+oxid bootstrap          # round-trip check and write .oxid/bootstrap artifacts
+oxid bootstrap --check  # skip writing the output artifacts
 ```
 
-The command compiles the repository compiler sources when available and falls back to the same sources embedded in the release binary. It verifies the provider manifest, produces OXBC stage artifacts, requires byte equality at the stage-0/stage-1 and stage-1/stage-2 boundaries, and executes the decoded compiler program.
+The command uses repository compiler-demonstration sources when available and
+otherwise uses sources embedded in the Rust-built release binary. It checks
+required provider-manifest text, serializes the parsed AST, decodes/re-encodes it
+twice with the same codec, checks byte equality, and interprets the demonstration.
 
-Deterministic output depends on normalized module ordering, stable record ordering, versioned AST serialization, and platform-independent integer encoding. Cross-platform CI comparison is the release gate required before the remaining stage-0 providers can be retired.
-
+Deterministic output depends on normalized module ordering, stable record
+ordering, versioned AST serialization, and platform-independent encoding.
+Cross-platform artifact comparison is a format regression gate; it is not
+sufficient to retire stage-0 providers. See [self-hosting requirements](SELF_HOSTING.md).
