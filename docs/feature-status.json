@@ -215,7 +215,7 @@
     },
     {
       "id": "llvm-native-backend",
-      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked arithmetic and typed scalar comparisons",
+      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked arithmetic and typed scalar comparisons and bool short-circuit value joins",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -227,7 +227,8 @@
         "spec/native-preview.md",
         "rfcs/0007-llvm-scalar-native.md",
         "rfcs/0008-native-checked-i32.md",
-        "rfcs/0009-scalar-comparisons.md"
+        "rfcs/0009-scalar-comparisons.md",
+        "rfcs/0010-boolean-logical-operators.md"
       ],
       "implementation": [
         "src/frontend/oir/native.rs",
@@ -242,14 +243,17 @@
         "tests/edition_boundary.rs",
         "scripts/verify_native_preview.py",
         "scripts/verify_native_arithmetic.py",
-        "scripts/verify_scalar_comparisons.py"
+        "scripts/verify_scalar_comparisons.py",
+        "tests/typed_logical.rs",
+        "scripts/verify_boolean_logic.py"
       ],
       "evidence": [
         "docs/architecture/native-preview-validation.md",
         "docs/architecture/native-arithmetic-validation.md",
-        "docs/architecture/scalar-comparison-validation.md"
+        "docs/architecture/scalar-comparison-validation.md",
+        "docs/architecture/boolean-logic-validation.md"
       ],
-      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. Same-type i32/bool equality and signed i32 ordering are also supported. No coercion, unit equality, bool ordering, other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
+      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. Same-type i32/bool equality and signed i32 ordering and bool !/&&/|| are also supported; skipped RHS calls remain in native admission. No coercion, unit equality, bool ordering, other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
     },
     {
       "id": "independent-self-hosting",
@@ -563,7 +567,48 @@
       "evidence": [
         "docs/architecture/scalar-comparison-validation.md"
       ],
-      "limitations": "Only == and != for matching i32 or bool, and < <= > >= for i32. No coercion, unit equality, bool ordering, generic equality, unparenthesized comparison chains, logical operators, loops or mutation. Existing reference budgets and stricter native limits remain unchanged. No stable ABI, ownership, safety certification, completed milestone or optimization beyond native O0 is claimed. Legacy dynamic semantics and OXBC stay independent."
+      "limitations": "This entry records the comparison predecessor; boolean logic is tracked separately. Only == and != for matching i32 or bool, and < <= > >= for i32. No coercion, unit equality, bool ordering, generic equality, unparenthesized comparison chains, logical operators, loops or mutation. Existing reference budgets and stricter native limits remain unchanged. No stable ABI, ownership, safety certification, completed milestone or optimization beyond native O0 is claimed. Legacy dynamic semantics and OXBC stay independent."
+    },
+    {
+      "id": "typed-preview-boolean-logic",
+      "summary": "Bool-only !, && and || with fully checked RHSs, lazy runtime paths and independently verified explicit bool value joins",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence; native supports Linux x86_64 only. Hosted CI and other reference hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0010-boolean-logical-operators.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/native.rs"
+      ],
+      "tests": [
+        "tests/typed_logical.rs",
+        "src/frontend/oir/logical_tests.rs",
+        "src/frontend/oir/cfg_tests.rs",
+        "src/frontend/oir/execute_tests.rs",
+        "src/frontend/oir/native.rs",
+        "tests/typed_native.rs",
+        "scripts/verify_boolean_logic.py"
+      ],
+      "evidence": [
+        "docs/architecture/boolean-logic-validation.md"
+      ],
+      "limitations": "Restricted acyclic bool-only logic with explicit two-input bool merges, no truthiness, bitwise operators, general unary negation, if-expressions, mutation or loops. Full-file checking and native admission include statically skipped RHSs. Existing reference budgets and stricter native limits remain; no native recursion, generic phi types, ownership, stable ABI, safety certification, completed milestone or optimization beyond native O0. Legacy dynamic semantics and OXBC remain independent."
     }
   ]
 }

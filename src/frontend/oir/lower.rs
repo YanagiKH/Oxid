@@ -24,6 +24,16 @@ fn preflight(typed: &typeck::TypedProgram) -> Result<(), OirFailure> {
         }
         Budget::add(&mut budget.blocks, 1, MAX_BLOCKS, "blocks", STAGE, span)?;
         for expr in &function.expressions {
+            if matches!(expr.kind, hir::ExprKind::Logical { .. }) {
+                Budget::add(
+                    &mut budget.blocks,
+                    2,
+                    MAX_BLOCKS,
+                    "blocks",
+                    STAGE,
+                    Some(expr.span),
+                )?;
+            }
             match &expr.kind {
                 hir::ExprKind::Call { args, .. } => {
                     if args.len() > super::super::parser::MAX_PARAMS {
@@ -108,6 +118,7 @@ impl BlockBuilder {
     fn new(span: Span) -> Self {
         Self {
             blocks: vec![BasicBlock {
+                merge: None,
                 span,
                 statements: vec![],
                 terminator: None,
@@ -118,6 +129,7 @@ impl BlockBuilder {
     fn reserve(&mut self, span: Span) -> BlockId {
         let id = BlockId(self.blocks.len());
         self.blocks.push(BasicBlock {
+            merge: None,
             span,
             statements: vec![],
             terminator: None,
@@ -193,6 +205,206 @@ enum Frame {
         id: Option<BlockId>,
         span: Span,
     },
+}
+
+// Expression structure, not the flat HIR tape, chooses execution paths. The
+// HIR tape remains postorder and is checked exactly once as nodes are completed.
+enum ExprFrame {
+    Visit(hir::ExprId),
+    Emit(hir::ExprId),
+    LogicalLeft(hir::ExprId),
+    LogicalRight {
+        id: hir::ExprId,
+        predecessor: BlockId,
+        join: BlockId,
+    },
+}
+fn complete_expression(id: hir::ExprId, next: &mut usize, span: Span) -> Result<(), OirFailure> {
+    if id.0 != *next {
+        return Err(failure(FailureKind::IncompleteBody, span));
+    }
+    *next += 1; // Bounded by the preflighted HIR expression table.
+    Ok(())
+}
+fn lower_expression(
+    function: &hir::Function,
+    local_map: &[LocalId],
+    expression_map: &[LocalId],
+    root: hir::ExprId,
+    builder: &mut BlockBuilder,
+    next: &mut usize,
+) -> Result<(), OirFailure> {
+    let operand = |id: hir::ExprId| Operand {
+        local: expression_map[id.0],
+        span: function.expressions[id.0].span,
+    };
+    let mut frames = vec![ExprFrame::Visit(root)];
+    while let Some(frame) = frames.pop() {
+        match frame {
+            ExprFrame::Visit(id) => {
+                let expr = &function.expressions[id.0];
+                if let hir::ExprKind::Logical { left, .. } = expr.kind {
+                    frames.push(ExprFrame::LogicalLeft(id));
+                    frames.push(ExprFrame::Visit(left));
+                    continue;
+                }
+                frames.push(ExprFrame::Emit(id));
+                match &expr.kind {
+                    hir::ExprKind::Not { operand: inner, .. } | hir::ExprKind::Group(inner) => {
+                        frames.push(ExprFrame::Visit(*inner))
+                    }
+                    hir::ExprKind::Arithmetic { left, right, .. }
+                    | hir::ExprKind::Comparison { left, right, .. } => {
+                        frames.push(ExprFrame::Visit(*right));
+                        frames.push(ExprFrame::Visit(*left));
+                    }
+                    hir::ExprKind::Call { args, .. } => {
+                        for &arg in args.iter().rev() {
+                            frames.push(ExprFrame::Visit(arg));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            ExprFrame::LogicalLeft(id) => {
+                let expr = &function.expressions[id.0];
+                let hir::ExprKind::Logical {
+                    op, left, right, ..
+                } = expr.kind
+                else {
+                    return Err(failure(FailureKind::IncompleteBody, expr.span));
+                };
+                let predecessor = builder
+                    .current
+                    .ok_or_else(|| failure(FailureKind::BuilderClosed, expr.span))?;
+                let rhs = builder.reserve(function.expressions[right.0].span);
+                let join = builder.reserve(expr.span);
+                let (then_block, else_block) = match op {
+                    hir::LogicalOp::And => (rhs, join),
+                    hir::LogicalOp::Or => (join, rhs),
+                };
+                builder.close(Terminator {
+                    kind: TerminatorKind::Branch {
+                        condition: operand(left),
+                        then_block,
+                        else_block,
+                    },
+                    span: expr.span,
+                })?;
+                builder.enter(Some(rhs), expr.span)?;
+                frames.push(ExprFrame::LogicalRight {
+                    id,
+                    predecessor,
+                    join,
+                });
+                frames.push(ExprFrame::Visit(right));
+            }
+            ExprFrame::LogicalRight {
+                id,
+                predecessor,
+                join,
+            } => {
+                let expr = &function.expressions[id.0];
+                let hir::ExprKind::Logical {
+                    left,
+                    right,
+                    operator_span,
+                    ..
+                } = expr.kind
+                else {
+                    return Err(failure(FailureKind::IncompleteBody, expr.span));
+                };
+                let rhs_end = builder
+                    .current
+                    .ok_or_else(|| failure(FailureKind::BuilderClosed, expr.span))?;
+                builder.close(Terminator {
+                    kind: TerminatorKind::Goto { target: join },
+                    span: expr.span,
+                })?;
+                builder.enter(Some(join), expr.span)?;
+                builder.blocks[join.0].merge = Some(BoolMerge {
+                    operator_span,
+                    destination: expression_map[id.0],
+                    incoming: [
+                        MergeInput {
+                            predecessor,
+                            value: operand(left),
+                        },
+                        MergeInput {
+                            predecessor: rhs_end,
+                            value: operand(right),
+                        },
+                    ],
+                    span: expr.span,
+                });
+                complete_expression(id, next, expr.span)?;
+            }
+            ExprFrame::Emit(id) => {
+                let expr = &function.expressions[id.0];
+                let destination = expression_map[id.0];
+                let value = match &expr.kind {
+                    hir::ExprKind::Bool(value) => Some(Rvalue::Bool(*value)),
+                    hir::ExprKind::I32(value) => Some(Rvalue::I32(*value)),
+                    hir::ExprKind::Unit => Some(Rvalue::Unit),
+                    hir::ExprKind::Local(id) => Some(Rvalue::Copy(Operand {
+                        local: local_map[id.0],
+                        span: expr.span,
+                    })),
+                    hir::ExprKind::Group(inner) => Some(Rvalue::Copy(operand(*inner))),
+                    hir::ExprKind::Not {
+                        operand: inner,
+                        operator_span,
+                    } => Some(Rvalue::NotBool {
+                        operand: operand(*inner),
+                        operator_span: *operator_span,
+                    }),
+                    hir::ExprKind::Comparison {
+                        op,
+                        left,
+                        right,
+                        operator_span,
+                    } => Some(Rvalue::CompareScalar {
+                        op: *op,
+                        left: operand(*left),
+                        right: operand(*right),
+                        operator_span: *operator_span,
+                    }),
+                    hir::ExprKind::Arithmetic {
+                        op,
+                        left,
+                        right,
+                        operator_span,
+                    } => Some(Rvalue::CheckedI32 {
+                        op: *op,
+                        left: operand(*left),
+                        right: operand(*right),
+                        operator_span: *operator_span,
+                    }),
+                    hir::ExprKind::Call { target, args } => {
+                        builder.call(
+                            *target,
+                            args.iter().map(|id| operand(*id)).collect(),
+                            destination,
+                            expr.span,
+                        )?;
+                        None
+                    }
+                    hir::ExprKind::Logical { .. } => {
+                        return Err(failure(FailureKind::IncompleteBody, expr.span))
+                    }
+                };
+                if let Some(value) = value {
+                    builder.assign(Assign {
+                        destination,
+                        value,
+                        span: expr.span,
+                    })?;
+                }
+                complete_expression(id, next, expr.span)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure> {
@@ -272,59 +484,14 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                 hir::StmtKind::If { condition, .. } => Some(condition),
             };
             if let Some(root) = root {
-                while next_expr <= root.0 {
-                    let expr = &function.expressions[next_expr];
-                    let destination = expression_map[next_expr];
-                    let value = match &expr.kind {
-                        hir::ExprKind::Bool(value) => Some(Rvalue::Bool(*value)),
-                        hir::ExprKind::I32(value) => Some(Rvalue::I32(*value)),
-                        hir::ExprKind::Unit => Some(Rvalue::Unit),
-                        hir::ExprKind::Local(id) => Some(Rvalue::Copy(Operand {
-                            local: local_map[id.0],
-                            span: expr.span,
-                        })),
-                        hir::ExprKind::Group(inner) => Some(Rvalue::Copy(operand(*inner))),
-                        hir::ExprKind::Comparison {
-                            op,
-                            left,
-                            right,
-                            operator_span,
-                        } => Some(Rvalue::CompareScalar {
-                            op: *op,
-                            left: operand(*left),
-                            right: operand(*right),
-                            operator_span: *operator_span,
-                        }),
-                        hir::ExprKind::Arithmetic {
-                            op,
-                            left,
-                            right,
-                            operator_span,
-                        } => Some(Rvalue::CheckedI32 {
-                            op: *op,
-                            left: operand(*left),
-                            right: operand(*right),
-                            operator_span: *operator_span,
-                        }),
-                        hir::ExprKind::Call { target, args } => {
-                            builder.call(
-                                *target,
-                                args.iter().map(|id| operand(*id)).collect(),
-                                destination,
-                                expr.span,
-                            )?;
-                            None
-                        }
-                    };
-                    if let Some(value) = value {
-                        builder.assign(Assign {
-                            destination,
-                            value,
-                            span: expr.span,
-                        })?;
-                    }
-                    next_expr += 1;
-                }
+                lower_expression(
+                    function,
+                    &local_map,
+                    &expression_map,
+                    root,
+                    &mut builder,
+                    &mut next_expr,
+                )?;
             }
             match statement.kind {
                 hir::StmtKind::Let { local, init } => builder.assign(Assign {

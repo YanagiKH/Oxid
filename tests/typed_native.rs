@@ -446,3 +446,36 @@ fn invalid_comparison_types_and_chains_fail_before_native_tools() {
         );
     }
 }
+
+#[test]
+fn boolean_negation_and_short_circuit_value_joins_reach_native_tools() {
+    for expression in [
+        "!true",
+        "false && true",
+        "true || false",
+        "!(1+2<4) || (3*4==12) && (1<2)",
+        "false && 2147483647+1==0",
+    ] {
+        rejected(
+            &Fixture::new(format!("fn main() -> bool {{ return {expression}; }}").as_bytes()),
+            "E0701",
+        );
+    }
+}
+#[test]
+fn skipped_logical_rhs_is_statically_checked_and_in_native_admission() {
+    for (source, code) in [
+        ("fn main() -> bool { return false && 1; }", "E0300"),
+        ("fn main() -> bool { return true || missing(); }", "E0200"),
+        (
+            "fn recur() -> bool { return recur(); } fn main() -> bool { return false && recur(); }",
+            "E0700",
+        ),
+        (
+            "fn recur() -> bool { return recur(); } fn main() -> bool { return true || recur(); }",
+            "E0700",
+        ),
+    ] {
+        rejected(&Fixture::new(source.as_bytes()), code);
+    }
+}

@@ -31,6 +31,7 @@ fn minimal() -> (SourceMap, Program) {
                 }],
                 entry: BlockId(0),
                 blocks: vec![BasicBlock {
+                    merge: None,
                     span,
                     statements: vec![],
                     terminator: Some(Terminator {
@@ -81,6 +82,7 @@ fn call_program() -> (SourceMap, Program) {
         },
     });
     f.blocks.push(BasicBlock {
+        merge: None,
         span,
         statements: vec![],
         terminator: Some(Terminator {
@@ -823,6 +825,7 @@ fn long_chain(calls: usize) -> (SourceMap, Program) {
     }));
     f.blocks = (0..calls)
         .map(|index| BasicBlock {
+            merge: None,
             span,
             statements: vec![],
             terminator: Some(Terminator {
@@ -840,6 +843,7 @@ fn long_chain(calls: usize) -> (SourceMap, Program) {
         })
         .collect();
     f.blocks.push(BasicBlock {
+        merge: None,
         span,
         statements: vec![],
         terminator: Some(Terminator {

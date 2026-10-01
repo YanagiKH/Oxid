@@ -47,9 +47,22 @@ enum LocalKind {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BasicBlock {
+    merge: Option<BoolMerge>,
     span: Span,
     statements: Vec<Assign>,
     terminator: Option<Terminator>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MergeInput {
+    predecessor: BlockId,
+    value: Operand,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BoolMerge {
+    operator_span: Span,
+    destination: LocalId,
+    incoming: [MergeInput; 2],
+    span: Span,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Operand {
@@ -64,6 +77,10 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    NotBool {
+        operand: Operand,
+        operator_span: Span,
+    },
     Bool(bool),
     I32(i32),
     Unit,
@@ -145,6 +162,7 @@ enum FailureKind {
     ParameterKind,
     NoBlocks,
     InvalidBlock,
+    InvalidMerge,
     MissingTerminator,
     InvalidLocal,
     InvalidTarget,
@@ -297,3 +315,6 @@ mod arithmetic_tests;
 
 #[cfg(test)]
 mod comparison_tests;
+
+#[cfg(test)]
+mod logical_tests;

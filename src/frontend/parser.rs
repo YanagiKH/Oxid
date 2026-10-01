@@ -287,6 +287,38 @@ impl Parser<'_> {
         })
     }
     fn expression(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
+        self.logical(depth, LogicalOp::Or)
+    }
+    fn logical(&mut self, depth: usize, op: LogicalOp) -> Result<ExprId, Box<Diagnostic>> {
+        let child = |parser: &mut Self| match op {
+            LogicalOp::Or => parser.logical(depth, LogicalOp::And),
+            LogicalOp::And => parser.comparison(depth),
+        };
+        let mut left = child(self)?;
+        let token = match op {
+            LogicalOp::And => Kind::AndAnd,
+            LogicalOp::Or => Kind::OrOr,
+        };
+        while let Some(operator) = self.take(token) {
+            self.node()?;
+            let right = child(self)?;
+            let span = self.source.span(
+                self.expressions[left.0].span.start,
+                self.expressions[right.0].span.end,
+            );
+            left = self.push_expr(
+                ExprKind::Logical {
+                    op,
+                    left,
+                    right,
+                    operator_span: operator.span,
+                },
+                span,
+            )?;
+        }
+        Ok(left)
+    }
+    fn comparison(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
         let left = self.sum(depth)?;
         let Some(op) = self.comparison_op() else {
             return Ok(left);
@@ -325,13 +357,42 @@ impl Parser<'_> {
         }
     }
     fn product(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
-        let mut left = self.primary(depth)?;
+        let mut left = self.unary(depth)?;
         while let Some(token) = self.take(Kind::Star) {
             self.node()?;
-            let right = self.primary(depth)?;
+            let right = self.unary(depth)?;
             left = self.binary(ArithmeticOp::Multiply, left, right, token.span)?;
         }
         Ok(left)
+    }
+    fn unary(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
+        let mut prefixes = Vec::new();
+        while self.peek().kind == Kind::Not {
+            if depth + prefixes.len() >= MAX_NESTING {
+                return Err(Diagnostic::new(
+                    "E0400",
+                    "parse",
+                    "expression nesting limit exceeded",
+                    Some(self.peek().span),
+                ));
+            }
+            self.node()?;
+            prefixes.push(self.bump().span);
+        }
+        let mut operand = self.primary(depth + prefixes.len())?;
+        for operator_span in prefixes.into_iter().rev() {
+            let span = self
+                .source
+                .span(operator_span.start, self.expressions[operand.0].span.end);
+            operand = self.push_expr(
+                ExprKind::Not {
+                    operand,
+                    operator_span,
+                },
+                span,
+            )?;
+        }
+        Ok(operand)
     }
     fn binary(
         &mut self,
@@ -362,11 +423,13 @@ impl Parser<'_> {
         // A flat left-associative chain is a deep tree too. Bound total tree
         // height before resolution, whose recursive visits now remain <= 64.
         let height = 1 + match &kind {
-            ExprKind::Group(inner) => self.heights[inner.0],
+            ExprKind::Group(inner) | ExprKind::Not { operand: inner, .. } => self.heights[inner.0],
             ExprKind::Call { args, .. } => {
                 args.iter().map(|id| self.heights[id.0]).max().unwrap_or(0)
             }
-            ExprKind::Arithmetic { left, right, .. } | ExprKind::Comparison { left, right, .. } => {
+            ExprKind::Arithmetic { left, right, .. }
+            | ExprKind::Comparison { left, right, .. }
+            | ExprKind::Logical { left, right, .. } => {
                 self.heights[left.0].max(self.heights[right.0])
             }
             _ => 0,

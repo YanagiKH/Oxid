@@ -51,6 +51,7 @@ fn constant() -> (SourceMap, Program) {
                 }],
                 entry: BlockId(0),
                 blocks: vec![BasicBlock {
+                    merge: None,
                     span: entry,
                     statements: vec![Assign {
                         destination: LocalId(0),
@@ -88,6 +89,7 @@ fn recursive() -> (SourceMap, VerifiedProgram) {
         span,
     });
     f.blocks.push(BasicBlock {
+        merge: None,
         span,
         statements: vec![],
         terminator: ret,
@@ -160,11 +162,13 @@ fn branch_goto_and_backward_table_edges_each_pay_one() {
         span: branch,
     });
     f.blocks.push(BasicBlock {
+        merge: None,
         span: branch,
         statements: vec![],
         terminator: ret,
     });
     f.blocks.push(BasicBlock {
+        merge: None,
         span: goto,
         statements: vec![],
         terminator: Some(Terminator {
@@ -723,4 +727,106 @@ fn comparison_operand_calls_run_exactly_once_left_before_right() {
             ]
         );
     }
+}
+
+#[test]
+fn logical_fuel_counts_only_executed_assignments_edges_and_one_merge() {
+    for (expr, total, slots, result) in [
+        ("!true", 6, 2, false),
+        ("!!false", 8, 3, false),
+        ("false && true", 8, 3, false),
+        ("true || false", 8, 3, true),
+        ("true && false", 10, 3, false),
+        ("false || true", 10, 3, true),
+    ] {
+        let (_, p, entry) = compiled(&format!("fn main() -> bool {{ return {expr}; }}"));
+        let f = &p.program.functions[entry.0];
+        assert_eq!(f.locals.len(), slots);
+        assert_eq!(
+            invoke(&p, entry, &[], limits(total, 1, slots)),
+            Ok(Scalar::Bool(result)),
+            "{expr}"
+        );
+        let last = f
+            .blocks
+            .iter()
+            .find_map(|b| {
+                matches!(
+                    b.terminator.as_ref().unwrap().kind,
+                    TerminatorKind::Return(_)
+                )
+                .then_some(b.terminator.as_ref().unwrap().span)
+            })
+            .unwrap();
+        assert_eq!(
+            invoke(&p, entry, &[], limits(total - 1, 1, slots)),
+            Err(RunFailure::Fuel(last)),
+            "{expr}"
+        );
+        if let Some(merge) = f.blocks.iter().find_map(|b| b.merge.as_ref()) {
+            assert_eq!(
+                invoke(&p, entry, &[], limits(total - 2, 1, slots)),
+                Err(RunFailure::Fuel(merge.span)),
+                "{expr}"
+            );
+        }
+        assert!(matches!(
+            invoke(&p, entry, &[], limits(total, 1, slots - 1)),
+            Err(RunFailure::Slots(_))
+        ));
+    }
+}
+#[test]
+fn logical_call_traces_select_only_the_required_rhs_once() {
+    for left in [false, true] {
+        for right in [false, true] {
+            for op in ["&&", "||"] {
+                let (_,p,entry)=compiled(&format!("fn left() -> bool {{ return {left}; }} fn right() -> bool {{ return {right}; }} fn main() -> bool {{ return left() {op} right(); }}"));
+                let mut events = vec![];
+                let expected = if op == "&&" {
+                    left && right
+                } else {
+                    left || right
+                };
+                assert_eq!(
+                    execute(&p, entry, &[], Limits::default(), &mut |event| events
+                        .push(event)),
+                    Ok(Scalar::Bool(expected))
+                );
+                let mut wanted = vec![
+                    Event::Enter(hir::DefId(2)),
+                    Event::Enter(hir::DefId(0)),
+                    Event::Return(hir::DefId(0), Scalar::Bool(left)),
+                    Event::Branch(hir::DefId(2), left),
+                ];
+                if (op == "&&" && left) || (op == "||" && !left) {
+                    wanted.extend([
+                        Event::Enter(hir::DefId(1)),
+                        Event::Return(hir::DefId(1), Scalar::Bool(right)),
+                    ]);
+                }
+                wanted.push(Event::Return(hir::DefId(2), Scalar::Bool(expected)));
+                assert_eq!(events, wanted);
+            }
+        }
+    }
+}
+#[test]
+fn short_circuit_skips_recursive_activation_and_preserves_full_checking() {
+    for (expr, expected) in [("false && recur()", false), ("true || recur()", true)] {
+        let (_, p, entry) = compiled(&format!(
+            "fn recur() -> bool {{ return recur(); }} fn main() -> bool {{ return {expr}; }}"
+        ));
+        assert_eq!(
+            invoke(&p, entry, &[], limits(50, 1, 8)),
+            Ok(Scalar::Bool(expected))
+        );
+    }
+    let (_, p, entry) = compiled(
+        "fn recur() -> bool { return recur(); } fn main() -> bool { return true && recur(); }",
+    );
+    assert!(matches!(
+        invoke(&p, entry, &[], limits(50, 1, 8)),
+        Err(RunFailure::Frames(_))
+    ));
 }

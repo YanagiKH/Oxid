@@ -14,9 +14,9 @@ Default execution still uses the legacy interpreter, module loader and CLI. Runt
 Legacy source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
 ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified acyclic
-Branch/Goto OIR and explicit calls/returns. Check remains non-executing; explicit
+Branch/Goto OIR, explicit bool value merges and calls/returns. Check remains non-executing; explicit
 typed run uses bounded iterative scalar reference execution. Ownership analysis
-remains deferred. A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*` and explicit i32/bool comparisons, to Linux x86_64 ELF PIE. See
+remains deferred. A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons and short-circuit boolean logic, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
 [RFC 0006](../../rfcs/0006-checked-i32-arithmetic.md) adds ordinary checked i32

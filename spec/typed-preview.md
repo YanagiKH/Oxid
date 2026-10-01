@@ -8,7 +8,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0004](../rfcs/0004-bounded-reference-execution.md) and
 [RFC 0005](../rfcs/0005-exact-i32-literals.md) and
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
-[RFC 0009](../rfcs/0009-scalar-comparisons.md).
+[RFC 0009](../rfcs/0009-scalar-comparisons.md) and
+[RFC 0010](../rfcs/0010-boolean-logical-operators.md).
 
 ## Command and compatibility boundary
 
@@ -62,10 +63,14 @@ statement  := "let" name (":" type)? "=" expression ";"
             | expression ";"
             | "return" expression? ";"
             | "if" expression block ("else" block)?
-expression := sum (comparison sum)?
-comparison := "==" | "!=" | "<" | "<=" | ">" | ">="
+expression := logical_or
+logical_or := logical_and ("||" logical_and)*
+logical_and := comparison ("&&" comparison)*
+comparison := sum (comparison_op sum)?
+comparison_op := "==" | "!=" | "<" | "<=" | ">" | ">="
 sum        := product (("+" | "-") product)*
-product    := primary ("*" primary)*
+product    := unary ("*" unary)*
+unary      := "!" unary | primary
 primary    := "true" | "false" | name | "(" ")" | "(" expression ")"
             | name "(" arguments? ")" | decimal | "-" decimal
 decimal    := ASCII_DIGIT+
@@ -181,9 +186,27 @@ be adjacent; comments/whitespace do not join separate punctuation tokens.
 Operands execute exactly once, fully left before right, then the comparison
 executes. No comparison short-circuits, including discarded results and bool
 equality. Operand arithmetic can fail E0604 before comparison; comparison itself
-cannot overflow. Unchosen branches remain unexecuted. Standalone `!`, `&&`, `||`,
-`and` and `or` remain unavailable. The reference and bounded native backends share
+cannot overflow. Unchosen branches remain unexecuted. The reference and bounded native backends share
 this table and order; see [RFC 0009](../rfcs/0009-scalar-comparisons.md).
+
+### Boolean logical operators
+
+`!` accepts bool and returns its inverse. `&&` and `||` require bool/bool and
+return bool. `a && b` evaluates a once and skips b if a is false; `a || b` skips
+b if a is true. Otherwise b is evaluated once and becomes the result. Both
+operands are always resolved and type checked, even a statically skipped RHS.
+There is no truthiness or conversion from i32/unit. Executed work preserves
+left-to-right, first-error and discarded-expression rules. Skipped RHS calls,
+arguments and overflow operations have no runtime effect.
+
+`!` binds above arithmetic/comparisons, then `&&`, then `||`. Binary logical
+operators associate left at each tier, and prefix `!` nests right. `!a == b`
+means `(!a) == b`; `!1 < 2` fails E0300, while `!(1 < 2)` is valid. Existing
+comparison chaining restrictions remain. `1 < 2 && 2 < 3` is valid.
+Adjacent `!=` remains one token; separated `& &`, `| |`, standalone bitwise
+operators and textual `and`/`or` are unavailable. Newly recognized `!` in invalid
+grammar positions receives ordinary E0100 rather than unsupported E0101.
+See [RFC 0010](../rfcs/0010-boolean-logical-operators.md).
 
 Strings, null, imports/modules, macros, mutation, borrowing, ownership,
 containers, loops and other control flow, other operators, async, closures, generics, FFI, host I/O,
@@ -231,7 +254,8 @@ consumer below accepts only that immutable verified witness.
 Function-local slots contain bool, i32 or unit and are classified as parameters,
 bindings or expression temporaries. Assign evaluates a bool/i32/unit constant or
 copies a typed operand, computes CheckedI32 from two ordered i32 operands, or
-computes CompareScalar from the explicit scalar comparison type table.
+computes CompareScalar from the explicit scalar comparison type table, or
+computes NotBool from a bool operand into a bool destination.
 CheckedI32 retains its operator origin separately from the full assignment span.
 Both arithmetic operands must have dominating initialized definitions; its
 destination must be i32. CompareScalar independently checks each operand ID,
@@ -242,19 +266,24 @@ and one normal continuation. Return uses an explicitly initialized operand.
 Branch has a bool operand and two successors; Goto has one successor. Calls in
 conditions and arms remain explicit terminators, never hidden in Branch.
 
-Lowering traverses structured source bodies in lexical depth-first order with a
-single expression cursor. Conditions lower before Branch; then/else expressions
+Lowering traverses structured source bodies in lexical depth-first order using
+root-directed expression continuations and a checked postorder completion cursor. Conditions lower before Branch; then/else expressions
 lower only in their respective paths. A join exists only if some arm falls
 through or else is absent. Falling arms end in Goto(join); returning arms do not.
 An absent else branches directly to the join. Two returning arms produce no
 synthetic join. Table order is not topological: joins may be reserved before
-arm-call continuations. No fake return, phi or implicit merge value is introduced.
+arm-call continuations. Statement-if joins introduce no value. Logical expressions
+reserve two blocks (RHS and join), evaluate RHS only on its required path and
+define one explicit BoolMerge at the join from the selected left/right input.
+The existing expression temporary is the result; no opposite-arm writes occur.
 
 Verification validates aggregate bounds, every signature/reference/type/span and
 terminator before following graph edges, including unreachable raw blocks.
 Reachability and deterministic topological traversal reject unreachable blocks
 and cycles. Equal Branch targets are legal and their edge multiplicity is handled
-consistently. Direct and mutual recursive call graphs remain legal because calls
+consistently for non-merge targets. A BoolMerge requires exactly two distinct
+incoming edges matching its input predecessors and is forbidden at function entry.
+Direct and mutual recursive call graphs remain legal because calls
 to other function entries are not intraprocedural edges.
 
 Parameters are entry definitions and cannot be overwritten. Every other local
@@ -263,7 +292,11 @@ arms. An unused undefined slot is legal; every read needs a dominating definitio
 Within one block an assignment must precede a read, including its own RHS. A call
 result requires strict dominance by its call block, so it is unavailable in its
 own arguments/statements or at a join reachable by bypassing that call. Canonical
-single-definition rules are limited to this immutable no-phi preview.
+single-definition rules also cover BoolMerge destinations. Each fixed two-input
+merge independently requires bool destination/input types, valid IDs and origins,
+and availability of each input on its own predecessor edge. A call result is
+available on that call's normal edge into a merge, never in its own arguments.
+The merge destination is available from block entry and in dominated blocks.
 
 The verifier computes a dominator tree in topological order using predecessor
 lowest-common-ancestor queries and bounded binary lifting, then iterative tree
@@ -279,7 +312,10 @@ source spans. Existing function-entry, call-continuation, copy/use and bare-retu
 origins are preserved. Branch uses its full if statement; its operand uses the
 condition expression. Arm entries use full source blocks; arm-end Gotos use their
 closing braces. Synthetic joins use the full if statement. Exact Unicode/CRLF
-provenance is tested separately from valid file/range/UTF-8 boundaries.
+provenance is tested separately from valid file/range/UTF-8 boundaries. For logical
+expressions, Branch, RHS-ending Goto, merge and join block use the full expression;
+RHS entry uses its operand expression, and both input operands retain their spans.
+NotBool and BoolMerge also retain their exact operator origins.
 
 See [RFC 0003](../rfcs/0003-boolean-branch-cfg.md) for the bounded decision and
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) for its predecessor.
@@ -328,7 +364,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0201 | Duplicate binding or unsupported shadowing |
 | E0202 | Unknown type |
 | E0203 | Exact decimal literal outside i32 range (resolve stage) |
-| E0300 | Binding, argument, arithmetic operand, condition or return type mismatch |
+| E0300 | Binding, argument, scalar/logical operand, condition or return type mismatch |
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return |
@@ -388,9 +424,13 @@ These are slot counts, not bytes; host scalar sizes are measured in the
 [i32 validation report](../docs/architecture/i32-literal-validation.md).
 Main counts as a frame and every activation counts its complete local table.
 Root allocation costs 1 + local count. Assign/Branch/Goto/Return cost 1 each;
-an arithmetic or comparison assignment costs one (in addition to operand
-evaluation), charged before reading either slot or checking overflow. Neither
-operation needs extra scratch.
+a unary/arithmetic/comparison assignment or block-entry bool merge costs one
+(in addition to operand evaluation), charged before reading any operand or
+checking overflow. A merge reads only its selected incoming operand and needs
+no extra slot or variable-sized scratch. Short-circuiting skips RHS instruction
+and call costs, but whole-function allocation includes its temporary slots.
+Ungrouped `return !true;` costs 6; `return false && true;` / `return true || false;`
+cost 8; `return true && false;` / `return false || true;` cost 10.
 For example, `return 1 + 2;`, `return 1 < 2;` and `return true == false;` each
 cost exactly eight including root allocation/return;
 Call costs 1 + argument count + callee local count. Costs are charged before work.
@@ -431,9 +471,9 @@ and 65 terms fail E0400. Height tracking uses one usize per expression, at most
 ownership avoids recursive block-drop chains; later block/CFG passes are iterative.
 
 Lowering preflights exact aggregate expansion before IR/maps are allocated. For
-F functions, C calls, I if statements, P parameters, L lets, X expressions and
-Rb bare returns: locals = P + L + X + Rb; assignments = X - C + L + Rb;
-blocks <= F + C + 3I. These are bounded by the existing parser nodes, with only
+F functions, C calls, I if statements, S logical expressions, P parameters, L lets, X expressions and
+Rb bare returns: locals = P + L + X + Rb; assignments (including merges) = X - C + L + Rb;
+blocks <= F + C + 3I + 2S. These are bounded by the existing parser nodes, with only
 the block budget raised to three times that limit. Old accepted source programs
 are not excluded by a tighter unrelated cap. Call vectors stay capped at 256.
 
@@ -483,3 +523,6 @@ roadmap capability is implied.
 [Scalar comparison evidence](../docs/architecture/scalar-comparison-validation.md)
 records the explicit i32/bool comparison table, non-associative grammar and
 reference/native/Python checks. No generalized equality or later operator is implied.
+
+[Boolean logic evidence](../docs/architecture/boolean-logic-validation.md) records
+short-circuit value joins, exact path costs and reference/native differential checks.

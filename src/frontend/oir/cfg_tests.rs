@@ -15,6 +15,7 @@ fn fixture(blocks: usize, locals: usize) -> (SourceMap, Program) {
     ];
     decls[0].kind = LocalKind::Parameter;
     let block = BasicBlock {
+        merge: None,
         span,
         statements: vec![],
         terminator: Some(Terminator {
@@ -298,6 +299,7 @@ fn new_terminators_check_spans_even_on_unreachable_blocks() {
         let mut p = base.clone();
         let f = &mut p.functions[0];
         f.blocks.push(BasicBlock {
+            merge: None,
             span: valid,
             statements: vec![],
             terminator: Some(Terminator {
@@ -326,7 +328,7 @@ fn cycles_and_unreachable_blocks_fail_after_structural_checks() {
     reject(&s, p, FailureKind::MissingTerminator);
 }
 
-fn permute(p: &mut Program, order: &[usize]) {
+pub(super) fn permute(p: &mut Program, order: &[usize]) {
     let f = &mut p.functions[0];
     let old = f.blocks.clone();
     for (from, to) in order.iter().copied().enumerate() {
@@ -334,6 +336,11 @@ fn permute(p: &mut Program, order: &[usize]) {
     }
     f.entry = BlockId(order[f.entry.0]);
     for block in &mut f.blocks {
+        if let Some(merge) = &mut block.merge {
+            for input in &mut merge.incoming {
+                input.predecessor = BlockId(order[input.predecessor.0]);
+            }
+        }
         match &mut block.terminator.as_mut().unwrap().kind {
             TerminatorKind::Branch {
                 then_block,
@@ -582,4 +589,92 @@ fn scratch_dimensions_are_checked_at_zero_powers_bounds_and_overflow() {
             FailureKind::ResourceLimit("test cells")
         );
     }
+}
+
+#[test]
+fn exhaustive_merge_incoming_edges_match_independent_path_oracle() {
+    let mut comparisons = 0;
+    for n in 3..=6 {
+        let pairs: Vec<_> = (0..n)
+            .flat_map(|a| (a + 1..n).map(move |b| (a, b)))
+            .collect();
+        for mask in 0..1usize << pairs.len() {
+            let mut edges = vec![vec![]; n];
+            for (bit, &(a, b)) in pairs.iter().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    edges[a].push(b);
+                }
+            }
+            if edges.iter().any(|e| e.len() > 2)
+                || (0..n).any(|v| !path_exists(&edges, v, None, None))
+            {
+                continue;
+            }
+            for join in 1..n {
+                let preds: Vec<_> = (0..n).filter(|&p| edges[p].contains(&join)).collect();
+                if preds.len() != 2 {
+                    continue;
+                }
+                for side in 0..2 {
+                    for definition in 0..n {
+                        for call_result in [false, true] {
+                            if call_result && edges[definition].len() != 1 {
+                                continue;
+                            }
+                            let pred = preds[side];
+                            let expected = if call_result {
+                                (definition == pred && edges[definition][0] == join)
+                                    || (definition != pred
+                                        && !path_exists(
+                                            &edges,
+                                            pred,
+                                            None,
+                                            Some((definition, edges[definition][0])),
+                                        ))
+                            } else {
+                                !path_exists(&edges, pred, Some(definition), None)
+                            };
+                            for reverse in [false, true] {
+                                let (sources, mut p) = graph_fixture(&edges);
+                                let f = &mut p.functions[0];
+                                let span = f.span;
+                                if call_result {
+                                    call(f, definition, 1, edges[definition][0]);
+                                } else {
+                                    assign(f, definition, 1, Rvalue::Bool(true));
+                                }
+                                let mut inputs = [
+                                    MergeInput {
+                                        predecessor: BlockId(preds[0]),
+                                        value: op(0, span),
+                                    },
+                                    MergeInput {
+                                        predecessor: BlockId(preds[1]),
+                                        value: op(0, span),
+                                    },
+                                ];
+                                inputs[side].value = op(1, span);
+                                f.blocks[join].merge = Some(BoolMerge {
+                                    destination: LocalId(2),
+                                    incoming: inputs,
+                                    span,
+                                    operator_span: span,
+                                });
+                                if reverse {
+                                    permute(&mut p, &(0..n).rev().collect::<Vec<_>>());
+                                }
+                                let result = verify::verify(p, &sources);
+                                assert_eq!(result.is_ok(),expected,"edges={edges:?} join={join} pred={pred} definition={definition} call={call_result} reverse={reverse} result={result:?}");
+                                if let Err(e) = result {
+                                    assert_eq!(e.kind, FailureKind::Uninitialized);
+                                }
+                                comparisons += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(comparisons > 20_000, "{comparisons}");
 }

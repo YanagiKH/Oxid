@@ -30,6 +30,8 @@ struct Frame {
     function: hir::DefId,
     block: BlockId,
     next: usize,
+    predecessor: Option<BlockId>,
+    merge_pending: bool,
     slots: Vec<Option<Scalar>>,
     return_to: Option<Resume>,
 }
@@ -108,6 +110,8 @@ fn frame(
         function: function.id,
         block: function.entry,
         next: 0,
+        predecessor: None,
+        merge_pending: true,
         slots: vec![None; function.locals.len()],
         return_to,
     };
@@ -209,9 +213,34 @@ fn execute(
             .blocks
             .get(active.block.0)
             .ok_or_else(|| internal(FailureKind::InvalidBlock, Some(current.span)))?;
+        if active.merge_pending {
+            if let Some(merge) = &block.merge {
+                charge(&mut fuel, 1, merge.span)?;
+                let incoming = merge
+                    .incoming
+                    .iter()
+                    .find(|input| Some(input.predecessor) == active.predecessor)
+                    .ok_or_else(|| internal(FailureKind::InvalidMerge, Some(merge.span)))?;
+                let value = read(active, incoming.value)?;
+                if value.ty() != hir::Ty::Bool {
+                    return Err(internal(
+                        FailureKind::TypeMismatch,
+                        Some(incoming.value.span),
+                    ));
+                }
+                write(active, current, merge.destination, value, merge.span)?;
+            }
+            active.merge_pending = false;
+        }
         if let Some(assign) = block.statements.get(active.next) {
             charge(&mut fuel, 1, assign.span)?;
             let value = match assign.value {
+                Rvalue::NotBool { operand, .. } => {
+                    let Scalar::Bool(value) = read(active, operand)? else {
+                        return Err(internal(FailureKind::TypeMismatch, Some(operand.span)));
+                    };
+                    Scalar::Bool(!value)
+                }
                 Rvalue::Bool(value) => Scalar::Bool(value),
                 Rvalue::I32(value) => Scalar::I32(value),
                 Rvalue::Unit => Scalar::Unit,
@@ -325,11 +354,15 @@ fn execute(
                 };
                 #[cfg(test)]
                 observe(Event::Branch(current.id, value));
+                active.predecessor = Some(active.block);
+                active.merge_pending = true;
                 active.block = if value { *then_block } else { *else_block };
                 active.next = 0;
             }
             TerminatorKind::Goto { target } => {
                 charge(&mut fuel, 1, end.span)?;
+                active.predecessor = Some(active.block);
+                active.merge_pending = true;
                 active.block = *target;
                 active.next = 0;
             }
@@ -351,6 +384,8 @@ fn execute(
                     (Some(caller), Some(resume)) => {
                         let parent = function(program, caller.function, Some(resume.origin))?;
                         write(caller, parent, resume.destination, value, resume.origin)?;
+                        caller.predecessor = Some(caller.block);
+                        caller.merge_pending = true;
                         caller.block = resume.continuation;
                         caller.next = 0;
                     }

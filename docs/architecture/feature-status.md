@@ -50,6 +50,12 @@ Scalar comparisons are a separate experimental extension: same-type i32 or bool
 equality/inequality, signed i32 ordering, bool results and no coercion. All six
 operators share a non-associative tier below arithmetic. The checker, independent
 OIR verifier, bounded reference executor and narrower LLVM backend enforce the
-same table; unit equality, bool ordering, short-circuit operators and loops remain
-unavailable. [Comparison evidence](scalar-comparison-validation.md) records the
+same table; unit equality and bool ordering remain unavailable. [Comparison evidence](scalar-comparison-validation.md) records the
 actual supported checks and hosts.
+
+Boolean !, && and || form a further experimental slice with bool-only operands,
+full RHS static checking and runtime short-circuiting. Explicit two-input bool
+joins preserve global single assignment and predecessor-edge availability; the
+LLVM backend uses real branch/phi control flow. All native admission caps still
+include skipped RHS work conservatively. Loops, mutation and native recursion
+remain unavailable. See [boolean logic evidence](boolean-logic-validation.md).
