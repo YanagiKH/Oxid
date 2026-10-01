@@ -108,13 +108,20 @@ impl Drop for Project {
 }
 
 #[test]
-fn typed_run_and_direct_file_never_execute_at_any_option_placement() {
+fn typed_run_rejects_legacy_effects_and_direct_file_is_unavailable_at_any_option_placement() {
     for command in [&["run", "main.ox"][..], &["main.ox"][..]] {
         for position in std::iter::once(command.len()).chain(0..command.len()) {
             let project = Project::new(LEGACY_SOURCE);
             let mut args = command.to_vec();
             args.splice(position..position, ["--edition", "typed-preview"]);
-            project.rejected_without_effects(&args, "typed-preview");
+            project.rejected_without_effects(
+                &args,
+                if command[0] == "run" {
+                    "parameter requires an explicit type"
+                } else {
+                    "command `main.ox` is unavailable"
+                },
+            );
         }
     }
 }
@@ -392,7 +399,7 @@ fn script_payload_is_not_reinterpreted_as_oxid_options() {
 fn cli_errors_honor_json_even_when_the_invalid_option_comes_first() {
     let arguments: &[&[&str]] = &[
         &[
-            "run",
+            "compile",
             "main.ox",
             "--edition=typed-preview",
             "--message-format=json",

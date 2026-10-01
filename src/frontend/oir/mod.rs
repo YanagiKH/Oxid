@@ -1,4 +1,5 @@
-//! Private, check-only acyclic OIR. No executable or serialized contract.
+//! Private acyclic OIR with a bounded scalar reference consumer. No serialized contract.
+mod execute;
 mod lower;
 mod verify;
 
@@ -96,6 +97,27 @@ pub(super) struct VerifiedProgram {
     program: Program,
 }
 impl VerifiedProgram {
+    /// Entry identity is carried from resolved source declarations, never guessed
+    /// from arbitrary verified-IR origin text. The verifier owns the signature.
+    pub(super) fn run(&self, entry: Option<hir::DefId>) -> Result<Scalar, RunFailure> {
+        let id = entry.ok_or(RunFailure::Entry(None))?;
+        let function = self
+            .program
+            .functions
+            .get(id.0)
+            .filter(|f| f.id == id)
+            .ok_or_else(|| {
+                RunFailure::Internal(OirFailure::new(
+                    FailureKind::InvalidFunctionId,
+                    "oir-run",
+                    None,
+                ))
+            })?;
+        if function.param_count != 0 {
+            return Err(RunFailure::Entry(Some(function.span)));
+        }
+        execute::run(self, id)
+    }
     pub(super) fn function_count(&self) -> usize {
         self.program.functions.len()
     }
@@ -121,6 +143,8 @@ enum FailureKind {
     InvalidSpan,
     BuilderClosed,
     IncompleteBody,
+    Accounting,
+    CallFrame,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct OirFailure {
@@ -148,7 +172,66 @@ impl OirFailure {
     }
 }
 
-/// One mandatory boundary for all successful typed-preview checking.
+/// Closed scalar representation, independent of the legacy dynamic Value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Scalar {
+    Bool(bool),
+    Unit,
+}
+impl Scalar {
+    fn ty(self) -> hir::Ty {
+        match self {
+            Self::Bool(_) => hir::Ty::Bool,
+            Self::Unit => hir::Ty::Unit,
+        }
+    }
+    pub(super) fn json(self) -> String {
+        match self {
+            Self::Bool(value) => format!("{{\"type\":\"bool\",\"value\":{value}}}"),
+            Self::Unit => "{\"type\":\"unit\"}".into(),
+        }
+    }
+}
+impl std::fmt::Display for Scalar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bool(value) => write!(f, "{value}"),
+            Self::Unit => f.write_str("()"),
+        }
+    }
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum RunFailure {
+    Entry(Option<Span>),
+    Fuel(Span),
+    Frames(Span),
+    Slots(Span),
+    Internal(OirFailure),
+}
+impl RunFailure {
+    pub(super) fn diagnostic(&self, sources: &SourceMap) -> Box<Diagnostic> {
+        let (code, message, span) = match *self {
+            Self::Entry(None) => (
+                "E0600",
+                "typed-preview run requires a declared zero-argument main returning bool or ()",
+                None,
+            ),
+            Self::Entry(span) => ("E0600", "typed-preview main must have no parameters", span),
+            Self::Fuel(span) => ("E0601", "execution fuel exhausted", Some(span)),
+            Self::Frames(span) => ("E0602", "live call-frame limit exceeded", Some(span)),
+            Self::Slots(span) => ("E0603", "live local-slot limit exceeded", Some(span)),
+            Self::Internal(ref error) => return error.diagnostic(sources),
+        };
+        Diagnostic::new(
+            code,
+            "oir-run",
+            message,
+            span.filter(|span| sources.is_valid_span(*span)),
+        )
+    }
+}
+
+/// One mandatory boundary for all successful typed-preview checking and running.
 pub(super) fn lower_and_verify(
     typed: &typeck::TypedProgram,
     sources: &SourceMap,

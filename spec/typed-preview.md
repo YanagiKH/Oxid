@@ -1,10 +1,11 @@
-# Experimental bool/unit typed checking
+# Experimental bool/unit checking and bounded reference execution
 
-Status: experimental, check-only. `typed-preview` is a provisional selector,
+Status: experimental. Checking is non-executing; explicit run is bounded reference execution. `typed-preview` is a provisional selector,
 not a final language edition or a completed M1/M2 milestone. The scoped design
 and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md),
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
-[RFC 0003](../rfcs/0003-boolean-branch-cfg.md).
+[RFC 0003](../rfcs/0003-boolean-branch-cfg.md) and
+[RFC 0004](../rfcs/0004-bounded-reference-execution.md).
 
 ## Command and compatibility boundary
 
@@ -12,6 +13,7 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 oxid check input.ox --edition typed-preview
 oxid --edition=typed-preview check input.ox --message-format=json
 oxid check --edition typed-preview -- --dash-prefixed.ox
+oxid run input.ox --edition typed-preview
 ```
 
 With no edition option, existing commands retain their legacy behavior.
@@ -20,7 +22,7 @@ and `--option=value` work for edition and message format. These two options may
 appear before the command, between the command and source, or after the source.
 Duplicate, missing, empty, or unknown values fail; they are never ignored.
 
-`--` ends option recognition. For typed checking it must follow `check`, and all
+`--` ends option recognition. For typed checking/running it must follow `check` or `run`, and all
 later words are literal operands; exactly one source path is required. A typed
 option written after `--` is an operand, not an edition selection. With no new
 options, legacy arguments, including any separator, are forwarded unchanged.
@@ -31,12 +33,12 @@ passed through. To select an Oxid edition for a script command, place the option
 before its name. An explicit typed selection there is rejected before launching
 anything. This prevents accidentally consuming an external process's options.
 
-Only `check` supports the preview. Explicit typed `run`, direct-file invocation,
+Only `check` and explicit `run` support the preview. Direct-file invocation,
 `compile`, `ast`, project commands, and every other operation fail before legacy
 dispatch. The gate runs before interpreter construction, preprocessing,
 dependency resolution, script execution, cache writes, or artifact generation.
-Preview checking reads only the requested source, creates no output/cache files,
-and never executes it. It rejects OXBC input and does not fall back to the legacy
+Both operations read only the requested source and create no output/cache files.
+Checking never executes; run consumes only the completely verified scalar OIR. It rejects OXBC input and does not fall back to the legacy
 parser, dynamic values, macro expander, interpreter, or artifact writer.
 
 `--message-format text|json` is available only with typed preview. Unknown
@@ -75,7 +77,8 @@ functions and does not require `main`; checking is not execution.
 - Locals are immutable and initialized immediately, with an optional annotation
   or inferred bool/unit type; the initializer sees only earlier locals
 - Functions are collected before resolving bodies, so forward direct calls and
-  recursive calls resolve; no termination or executable-recursion claim follows
+  recursive calls resolve. Run uses isolated iterative activations; no termination
+  claim follows and recursive programs can exhaust execution limits
 - Function names are unique. Parameters, function bodies and branch arms have
   lexical scopes. Bindings cannot duplicate a name in the same scope, shadow an
   active ancestor, or shadow a top-level function. Sibling arms and declarations
@@ -139,12 +142,13 @@ encoding. The existing single-binary Cargo package and Rust edition are unchange
 
 ## Verified acyclic OIR
 
-Every successful production check lowers actual typed bodies and passes an
+Every successful production check or run lowers actual typed bodies and passes an
 independent OIR verifier before returning success. Immutable typed views expose
 complete types and block return flow; there is no reparsing or legacy adapter.
 Raw IR is private to `src/frontend/oir/`; only successful verification constructs
 the immutable witness used by the driver. No public IR loader, dump, stable
-serialization, execution, optimization or ownership contract is added.
+serialization, optimization or ownership contract is added. The bounded reference
+consumer below accepts only that immutable verified witness.
 
 Function-local slots contain bool or unit and are classified as parameters,
 bindings or expression temporaries. Assign evaluates a bool/unit constant or
@@ -243,18 +247,66 @@ characters instead of emitting source-controlled terminal commands.
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return |
 | E0400 | Frontend/lowering resource limit |
-| E0500 | Internal OIR lowering/verification invariant failure |
+| E0500 | Internal OIR lowering/verification/execution invariant failure |
+| E0600 | Missing or invalid zero-argument main for run |
+| E0601 | Execution fuel exhausted |
+| E0602 | Live call-frame limit exceeded |
+| E0603 | Live local-slot limit exceeded |
 
-Exit 0 means successful type checking, lowering and OIR verification of this
-subset; ordinary source/CLI/resource failures still exit 1. Lowering budget errors
+For check, exit 0 means successful type checking, lowering and OIR verification of this
+subset; for run it additionally means a bool/unit result (including false); ordinary source/CLI/resource failures still exit 1. Lowering budget errors
 use E0400 with stage `oir-lower`. Detected OIR invariant failures use E0500,
-explicitly say `internal compiler error`, use stage `oir-lower` or `oir-verify`,
+explicitly say `internal compiler error`, use stage `oir-lower`, `oir-verify` or `oir-run`,
 and exit 2. They retain the same JSON envelope with unsuccessful summary and
-`functions: null`. An invalid OIR origin is omitted (`primary: null`) rather than
+`functions: null` for check, or `result: null` for run. An invalid OIR origin is omitted (`primary: null`) rather than
 passed to the asserting renderer. Only the first deterministic IR failure is
 reported. The compiler does not catch arbitrary panics: earlier producer-invariant
 assertions, host allocation failures and broken output pipes remain host-process
 failures, not ordinary source type errors.
+
+
+## Bounded explicit run
+
+The complete file must pass the same compiler/verifier path before execution,
+including statically erroneous unchosen branches. Run then requires a declared
+`fn main() -> bool` or `fn main() -> ()`. Missing main is E0600 without a location;
+main parameters produce E0600 at the main name. Checking itself has no entry
+requirement. The compiler carries main's resolved DefId; the runner inspects the
+verified signature instead of reconstructing names from OIR spans.
+
+On text success stdout is exactly `true\n`, `false\n` or `()\n`; each exits 0.
+Failure writes no partial result. JSON replaces the check-summary with one
+`run-summary`: the same schema/edition fields, `success`, `errors`, and `result`
+containing `{ "type": "bool", "value": true|false }`, `{ "type": "unit" }`, or
+null on failure. No successful check record precedes a failed run. Errors while
+validating global edition/format options retain the existing check-summary;
+once valid global options select explicit typed run, command-option/operand,
+compile, entry and execution errors use run-summary. Check records are unchanged.
+
+Each activation has isolated optional bool/unit slots. Assign reads before
+writing; Branch executes exactly one arm; Goto uses its explicit target.
+Calls copy arguments in recorded order and suspend callers until normal return,
+then initialize the call result and resume at the explicit continuation. Bare
+returns contain explicit unit. Discarded calls still run. There is no folding,
+tail-call elimination, memoization or execution of an unchosen arm. Fresh calls
+and repeated invocations share no mutable execution state. The activation stack
+is iterative; the host call stack does not track source recursion.
+
+The execution ceilings are 1,000,000 fuel units, 1,024 live frames and 200,000 live
+slots. Main counts as a frame and every activation counts its complete local table.
+Root allocation costs 1 + local count. Assign/Branch/Goto/Return cost 1 each;
+Call costs 1 + argument count + callee local count. Costs are charged before work.
+Checked cost/fuel, frame count and live-slot count are checked in that order,
+before allocation. Returning releases the callee's slots. Argument scratch is
+bounded by 256 scalar entries; frame-header capacity by the fixed frame cap.
+
+E0601–E0603 point to the next unperformed operation, or main's name for root
+allocation. Counter overflow/invariant failure is E0500, distinct from resource
+exhaustion. No entry override, program arguments or budget flags are exposed.
+Fuel measures deterministic reference work, not wall-clock time, source-level
+complexity or a stable profiling ABI. Source reads, compiler work, allocation
+success and output-pipe behavior are not bounded by fuel. This is not an OS
+sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution.md).
 
 ## Resource and trust bounds
 
@@ -316,9 +368,10 @@ lossless numeric tokens, resolved IDs and complete type tables.
 
 [OIR validation evidence](../docs/architecture/oir-validation.md) records the
 straight-line increment, malformed-IR cases, call-order/provenance checks and
-resource/long-chain tests. No ownership/borrow checking, execution engine,
-numeric type system, native backend, typed artifact schema, self-hosting or AI
-capability is added. [Boolean CFG evidence](../docs/architecture/boolean-cfg-validation.md)
+resource/long-chain tests. The straight-line and boolean-CFG increments did not add execution. No
+ownership/borrow checking, numeric type system, native backend, typed artifact
+schema, self-hosting or AI capability is added by the reference runner. [Boolean CFG evidence](../docs/architecture/boolean-cfg-validation.md)
 records the later restricted branch/scope/all-path-return increment and its
-dominance, graph and resource checks. Numeric semantics and reference execution
-remain separate next decisions; no later roadmap capability is implied.
+dominance, graph and resource checks. The subsequent [reference execution evidence](../docs/architecture/reference-execution-validation.md)
+records the bounded opt-in runner and its independent source oracle. Numeric
+semantics remain a separate decision; no later roadmap capability is implied.

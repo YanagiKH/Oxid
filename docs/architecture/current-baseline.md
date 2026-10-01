@@ -7,16 +7,17 @@ This records part of M0, the initial implementation inventory and specification 
 
 `src/cli.rs` includes the legacy runtime in `src/main.rs`; legacy lexer, parser
 and AST now live in `src/legacy/syntax.rs`. The entry point first gates the
-explicit [typed-preview checker](../../spec/typed-preview.md) in `src/frontend/`.
+explicit [typed-preview compiler and runner](../../spec/typed-preview.md) in `src/frontend/`.
 Default execution still uses the legacy interpreter, module loader and CLI. Runtime services are split into `artifact`,
 `data`, `network`, `packages`, and `benchmark` modules.
 
-Source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
+Legacy source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
-ownership checker, or `.ox` native machine-code backend in this path. Typed HIR
-and structurally verified straight-line OIR exist only in the independent, opt-in
-bool/unit checker; neither is executable. OIR calls have explicit normal
-continuations, but branches, joins and ownership analysis remain deferred.
+ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/unit pipeline now has typed HIR, verified acyclic
+Branch/Goto OIR and explicit calls/returns. Check remains non-executing; explicit
+typed run uses bounded iterative scalar reference execution. Ownership analysis
+and native machine-code compilation remain deferred. See
+[RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact limits.
 The linked C/C++ helpers accelerate selected host operations; their existence
 does not mean Oxid source is compiled to native machine code.
 

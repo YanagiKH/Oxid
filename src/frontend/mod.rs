@@ -1,4 +1,4 @@
-//! Experimental check-only compiler. This module does not import the legacy runtime.
+//! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
 mod ast;
 mod diagnostic;
 mod driver;
