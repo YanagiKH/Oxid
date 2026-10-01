@@ -10,7 +10,7 @@ oxid inspect app.oxb
 oxid run app.oxb
 ```
 
-`oxid compile` resolves the import graph relative to each module, preprocesses source, parses every module with its own source name, orders dependencies deterministically, and serializes the combined program. `oxid ast` writes the same versioned representation with an `.oxa` extension for workflows that want to identify serialized AST explicitly.
+`oxid compile` resolves top-level imports relative to each module, preprocesses source, parses every module with its own source name, orders dependencies deterministically, and serializes the combined program. `oxid ast` writes the same versioned representation with an `.oxa` extension for workflows that want to identify serialized AST explicitly.
 
 ## OXBC 1.0
 
@@ -31,3 +31,7 @@ OXBC is not native machine code. Oxid 0.9 decodes the serialized AST and execute
 
 
 Import initialization order can differ between source and packaged execution. See the [known module-ordering limitation](MODULES.md#initialization-order).
+
+Imports nested inside functions remain runtime AST operations and may need source
+files beside the artifact. Packaging is not a guarantee that every runtime import
+has been bundled. See the [module contract](../spec/legacy-modules.md).
