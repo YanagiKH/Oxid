@@ -17,6 +17,7 @@ pub fn parse(source: &SourceFile, tokens: Vec<Token>) -> Result<Program, Vec<Dia
         tokens,
         cursor: 0,
         expressions: Vec::new(),
+        heights: Vec::new(),
         nodes: 0,
     };
     parser.skip();
@@ -49,6 +50,7 @@ struct Parser<'a> {
     tokens: Vec<Token>,
     cursor: usize,
     expressions: Vec<Expr>,
+    heights: Vec<usize>,
     nodes: usize,
 }
 impl Parser<'_> {
@@ -79,7 +81,12 @@ impl Parser<'_> {
         let token = self.peek();
         let unsupported = matches!(
             token.kind,
-            Kind::Unsupported | Kind::Number | Kind::Minus | Kind::String | Kind::Equal
+            Kind::Unsupported
+                | Kind::Number
+                | Kind::Minus
+                | Kind::Plus
+                | Kind::String
+                | Kind::Equal
         ) || (token.kind == Kind::Ident
             && &self.source.text()[token.span.start..token.span.end] == "as");
         // Report an unsupported cast in an already-invalid grammar position,
@@ -269,6 +276,80 @@ impl Parser<'_> {
         })
     }
     fn expression(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
+        let mut left = self.product(depth)?;
+        loop {
+            let op = match self.peek().kind {
+                Kind::Plus => ArithmeticOp::Add,
+                Kind::Minus => ArithmeticOp::Subtract,
+                _ => return Ok(left),
+            };
+            let operator_span = self.bump().span;
+            self.node()?;
+            let right = self.product(depth)?;
+            left = self.binary(op, left, right, operator_span)?;
+        }
+    }
+    fn product(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
+        let mut left = self.primary(depth)?;
+        while let Some(token) = self.take(Kind::Star) {
+            self.node()?;
+            let right = self.primary(depth)?;
+            left = self.binary(ArithmeticOp::Multiply, left, right, token.span)?;
+        }
+        Ok(left)
+    }
+    fn binary(
+        &mut self,
+        op: ArithmeticOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: super::source::Span,
+    ) -> Result<ExprId, Box<Diagnostic>> {
+        let span = self.source.span(
+            self.expressions[left.0].span.start,
+            self.expressions[right.0].span.end,
+        );
+        self.push_expr(
+            ExprKind::Arithmetic {
+                op,
+                left,
+                right,
+                operator_span,
+            },
+            span,
+        )
+    }
+    fn push_expr(
+        &mut self,
+        kind: ExprKind,
+        span: super::source::Span,
+    ) -> Result<ExprId, Box<Diagnostic>> {
+        // A flat left-associative chain is a deep tree too. Bound total tree
+        // height before resolution, whose recursive visits now remain <= 64.
+        let height = 1 + match &kind {
+            ExprKind::Group(inner) => self.heights[inner.0],
+            ExprKind::Call { args, .. } => {
+                args.iter().map(|id| self.heights[id.0]).max().unwrap_or(0)
+            }
+            ExprKind::Arithmetic { left, right, .. } => {
+                self.heights[left.0].max(self.heights[right.0])
+            }
+            _ => 0,
+        };
+        if height > MAX_NESTING {
+            return Err(Diagnostic::new(
+                "E0400",
+                "parse",
+                "expression nesting limit exceeded",
+                Some(span),
+            ));
+        }
+        let id = ExprId(self.expressions.len());
+        self.expressions.push(Expr { kind, span });
+        self.heights.push(height);
+        Ok(id)
+    }
+    fn primary(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
         if depth >= MAX_NESTING {
             return Err(Diagnostic::new(
                 "E0400",
@@ -355,11 +436,6 @@ impl Parser<'_> {
             }
             _ => return Err(self.error("expected a bool, i32 or unit expression")),
         };
-        let id = ExprId(self.expressions.len());
-        self.expressions.push(Expr {
-            kind,
-            span: self.source.span(token.span.start, end),
-        });
-        Ok(id)
+        self.push_expr(kind, self.source.span(token.span.start, end))
     }
 }

@@ -586,3 +586,70 @@ fn i32_maximum_argument_scratch_preserves_values_order_and_charges() {
         Err(RunFailure::Slots(_))
     ));
 }
+
+#[test]
+fn checked_arithmetic_costs_one_and_fuel_precedes_overflow_without_writing() {
+    for (expr, expected) in [("1 + 2", Ok(Scalar::I32(3))), ("2147483647 + 1", Err(()))] {
+        let text = format!("fn main() -> i32 {{ return {expr}; }}");
+        let (sources, program, entry) = compiled(&text);
+        let function = &program.program.functions[entry.0];
+        assert_eq!(function.locals.len(), 3);
+        let binary = &function.blocks[0].statements[2];
+        let Rvalue::CheckedI32 { operator_span, .. } = binary.value else {
+            panic!("binary")
+        };
+        let end = function.blocks[0].terminator.as_ref().unwrap().span;
+        assert_eq!(
+            invoke(&program, entry, &[], limits(6, 1, 3)),
+            Err(RunFailure::Fuel(binary.span))
+        );
+        for _ in 0..2 {
+            if let Ok(value) = expected {
+                assert_eq!(
+                    invoke(&program, entry, &[], limits(7, 1, 3)),
+                    Err(RunFailure::Fuel(end))
+                );
+                assert_eq!(invoke(&program, entry, &[], limits(8, 1, 3)), Ok(value));
+            } else {
+                assert_eq!(
+                    invoke(&program, entry, &[], limits(7, 1, 3)),
+                    Err(RunFailure::Overflow(operator_span))
+                );
+                assert_eq!(
+                    code(
+                        invoke(&program, entry, &[], limits(8, 1, 3)).unwrap_err(),
+                        &sources
+                    ),
+                    "E0604"
+                );
+            }
+        }
+        assert!(matches!(
+            invoke(&program, entry, &[], limits(8, 1, 2)),
+            Err(RunFailure::Slots(_))
+        ));
+    }
+}
+
+#[test]
+fn arithmetic_calls_are_completed_in_order_exactly_once() {
+    let (_, program, entry) = compiled("fn left() -> i32 { return 2; } fn right() -> i32 { return 3; } fn main() -> i32 { return left() + right() * left(); }");
+    let mut events = Vec::new();
+    let result = execute(&program, entry, &[], Limits::default(), &mut |event| {
+        events.push(event)
+    });
+    assert_eq!(result, Ok(Scalar::I32(8)));
+    assert_eq!(
+        events,
+        vec![
+            Event::Enter(hir::DefId(2)),
+            Event::Enter(hir::DefId(0)),
+            Event::Return(hir::DefId(0), Scalar::I32(2)),
+            Event::Enter(hir::DefId(1)),
+            Event::Return(hir::DefId(1), Scalar::I32(3)),
+            Event::Enter(hir::DefId(0)),
+            Event::Return(hir::DefId(0), Scalar::I32(2)),
+            Event::Return(hir::DefId(2), Scalar::I32(8)),
+        ]
+    );
+}

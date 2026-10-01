@@ -169,6 +169,19 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         locals[id.0].expect("resolved locals are initialized before use")
                     }
                     ExprKind::Group(inner) => expressions[inner.0],
+                    ExprKind::Arithmetic { left, right, .. } => {
+                        for operand in [left, right] {
+                            let actual = expressions[operand.0];
+                            if actual != Ty::I32 {
+                                return Err(mismatch(
+                                    Ty::I32,
+                                    actual,
+                                    function.expressions[operand.0].span,
+                                ));
+                            }
+                        }
+                        Ty::I32
+                    }
                     ExprKind::Call { target, args } => {
                         let called = &program.signatures[target.0];
                         if args.len() != called.params.len() {

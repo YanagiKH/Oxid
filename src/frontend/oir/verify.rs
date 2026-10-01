@@ -125,6 +125,22 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                     Rvalue::I32(_) => hir::Ty::I32,
                     Rvalue::Unit => hir::Ty::Unit,
                     Rvalue::Copy(value) => operand(function, value, sources)?,
+                    Rvalue::CheckedI32 {
+                        left,
+                        right,
+                        operator_span,
+                        ..
+                    } => {
+                        span(sources, operator_span)?;
+                        for value in [left, right] {
+                            same_type(
+                                operand(function, value, sources)?,
+                                hir::Ty::I32,
+                                value.span,
+                            )?;
+                        }
+                        hir::Ty::I32
+                    }
                 };
                 same_type(actual, expected, assign.span)?;
             }
@@ -685,8 +701,13 @@ fn cfg(function: &Function) -> Result<(), OirFailure> {
     let dominance = dominance(function, &predecessors, &order)?;
     for (block_id, block) in function.blocks.iter().enumerate() {
         for (index, assign) in block.statements.iter().enumerate() {
-            if let Rvalue::Copy(value) = assign.value {
-                read(&definitions, &dominance, value, block_id, index)?;
+            match assign.value {
+                Rvalue::Copy(value) => read(&definitions, &dominance, value, block_id, index)?,
+                Rvalue::CheckedI32 { left, right, .. } => {
+                    read(&definitions, &dominance, left, block_id, index)?;
+                    read(&definitions, &dominance, right, block_id, index)?;
+                }
+                Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => {}
             }
         }
         let position = block.statements.len();

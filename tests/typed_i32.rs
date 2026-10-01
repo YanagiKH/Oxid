@@ -184,7 +184,7 @@ fn range_errors_have_exact_signed_origins_and_never_round() {
     );
 }
 #[test]
-fn spelling_is_validated_before_range_and_arithmetic_remains_unavailable() {
+fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
     for literal in [
         "1i32",
         "1_000",
@@ -214,9 +214,6 @@ fn spelling_is_validated_before_range_and_arithmetic_remains_unavailable() {
         ("--1", "-"),
         ("-x", "-"),
         ("-id()", "-"),
-        ("1 + 2", "+"),
-        ("1 - 2", "-"),
-        ("1 * 2", "*"),
         ("1 / 2", "/"),
         ("1 % 2", "%"),
         ("1 == 1", "="),

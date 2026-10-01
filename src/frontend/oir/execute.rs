@@ -216,6 +216,26 @@ fn execute(
                 Rvalue::I32(value) => Scalar::I32(value),
                 Rvalue::Unit => Scalar::Unit,
                 Rvalue::Copy(operand) => read(active, operand)?,
+                Rvalue::CheckedI32 {
+                    op,
+                    left,
+                    right,
+                    operator_span,
+                } => {
+                    let Scalar::I32(left_value) = read(active, left)? else {
+                        return Err(internal(FailureKind::TypeMismatch, Some(left.span)));
+                    };
+                    let Scalar::I32(right_value) = read(active, right)? else {
+                        return Err(internal(FailureKind::TypeMismatch, Some(right.span)));
+                    };
+                    let result = match op {
+                        hir::ArithmeticOp::Add => left_value.checked_add(right_value),
+                        hir::ArithmeticOp::Subtract => left_value.checked_sub(right_value),
+                        hir::ArithmeticOp::Multiply => left_value.checked_mul(right_value),
+                    }
+                    .ok_or(RunFailure::Overflow(operator_span))?;
+                    Scalar::I32(result)
+                }
             };
             write(active, current, assign.destination, value, assign.span)?;
             active.next = add(active.next, 1, assign.span)?;

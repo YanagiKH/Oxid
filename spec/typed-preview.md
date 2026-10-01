@@ -6,7 +6,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
 [RFC 0003](../rfcs/0003-boolean-branch-cfg.md) and
 [RFC 0004](../rfcs/0004-bounded-reference-execution.md) and
-[RFC 0005](../rfcs/0005-exact-i32-literals.md).
+[RFC 0005](../rfcs/0005-exact-i32-literals.md) and
+[RFC 0006](../rfcs/0006-checked-i32-arithmetic.md).
 
 ## Command and compatibility boundary
 
@@ -60,7 +61,9 @@ statement  := "let" name (":" type)? "=" expression ";"
             | expression ";"
             | "return" expression? ";"
             | "if" expression block ("else" block)?
-expression := "true" | "false" | name | "(" ")" | "(" expression ")"
+expression := product (("+" | "-") product)*
+product    := primary ("*" primary)*
+primary    := "true" | "false" | name | "(" ")" | "(" expression ")"
             | name "(" arguments? ")" | decimal | "-" decimal
 decimal    := ASCII_DIGIT+
 arguments  := expression ("," expression)*
@@ -132,12 +135,29 @@ including sign/trivia. A 65,536-byte all-zero token is valid; many digits alone
 are not a range error. Full-file checking includes unused functions and unchosen
 branches. Exact integer conversion never uses f64 or a bigint.
 
-No arithmetic or cast is added and no future arithmetic overflow policy is
-chosen: literal range validity is a separate compile-time rule. Comparisons on
-integers and all other numeric types remain unavailable.
+### Checked i32 arithmetic
+
+Binary `+`, `-` and `*` require i32 operands and return i32. `*` binds more tightly
+than `+`/`-`; each level associates left. Parentheses override precedence. The
+left operand is fully evaluated before the right, then the operation executes.
+Calls execute exactly once in that order, and the first error stops execution.
+`1--2` subtracts the signed literal -2; general unary negation is still unavailable.
+
+Every operation checks its exact result against the i32 range. Overflow is
+E0604/oir-run at the operator's one-byte source span, with exit 1 and no partial
+result. Host debug and release builds behave identically. No folding, wrapping,
+saturation, widening or reassociation occurs: `2147483647 + 1 - 1` and
+`0 * (2147483647 + 1)` both overflow. Checking those expressions succeeds without
+execution; out-of-range literals still fail E0203 before running. Unchosen arms
+do not execute, but every arm is name/type checked. Wrong arithmetic operands
+produce E0300 at the first wrongly typed operand. Discarded arithmetic still runs.
+
+Division, remainder, casts, shifts, integer comparisons, explicit wrapping,
+other numeric types and their overflow rules remain unavailable. Literal range
+validity remains a separate compile-time rule.
 
 Strings, null, imports/modules, macros, mutation, borrowing, ownership,
-containers, loops and other control flow, operators, async, closures, generics, FFI, host I/O,
+containers, loops and other control flow, other operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
 silent approximation or legacy execution of these features. Now-recognized if/else
@@ -181,7 +201,10 @@ consumer below accepts only that immutable verified witness.
 
 Function-local slots contain bool, i32 or unit and are classified as parameters,
 bindings or expression temporaries. Assign evaluates a bool/i32/unit constant or
-copies a typed operand. Call has a direct DefId, ordered arguments, result slot
+copies a typed operand, or computes CheckedI32 from two ordered i32 operands.
+CheckedI32 retains its operator origin separately from the full assignment span.
+Both arithmetic operands must have dominating initialized definitions; its
+destination must be i32. Call has a direct DefId, ordered arguments, result slot
 and one normal continuation. Return uses an explicitly initialized operand.
 Branch has a bool operand and two successors; Goto has one successor. Calls in
 conditions and arms remain explicit terminators, never hidden in Branch.
@@ -272,7 +295,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0201 | Duplicate binding or unsupported shadowing |
 | E0202 | Unknown type |
 | E0203 | Exact decimal literal outside i32 range (resolve stage) |
-| E0300 | Binding, argument, condition or return type mismatch |
+| E0300 | Binding, argument, arithmetic operand, condition or return type mismatch |
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return |
@@ -282,6 +305,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0601 | Execution fuel exhausted |
 | E0602 | Live call-frame limit exceeded |
 | E0603 | Live local-slot limit exceeded |
+| E0604 | Checked i32 arithmetic overflow at its operator |
 
 For check, exit 0 means successful type checking, lowering and OIR verification of this
 subset; for run it additionally means a bool/i32/unit result (including false, zero and negatives); ordinary source/CLI/resource failures still exit 1. Lowering budget errors
@@ -331,6 +355,9 @@ These are slot counts, not bytes; host scalar sizes are measured in the
 [i32 validation report](../docs/architecture/i32-literal-validation.md).
 Main counts as a frame and every activation counts its complete local table.
 Root allocation costs 1 + local count. Assign/Branch/Goto/Return cost 1 each;
+an arithmetic assignment costs one (in addition to operand evaluation), charged
+before reading either slot or checking overflow. Arithmetic needs no extra scratch.
+For example, `return 1 + 2;` costs exactly eight including root allocation/return;
 Call costs 1 + argument count + callee local count. Costs are charged before work.
 Checked cost/fuel, frame count and live-slot count are checked in that order,
 before allocation. Returning releases the callee's slots. Argument scratch is
@@ -352,7 +379,7 @@ sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution
 | Non-EOF tokens, including trivia | 100,000 |
 | Bytes in one token, including whitespace/comment tokens | 65,536 |
 | Syntax nodes counted by parser | 100,000 |
-| Nested expression parser frames | 64 (63 grouping wrappers around a literal) |
+| Nested expression parser frames and total expression-tree height | 64 (63 grouping wrappers/operators above a literal) |
 | Parameters or call arguments | 256 each |
 | Emitted diagnostics | 100 |
 | Active statement block frames | 64, counting the function body as frame 1 |
@@ -362,8 +389,10 @@ sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution
 | Dominator ancestor cells | At most 5,700,000 usize entries (19 levels) |
 
 All limits are engineering defaults for this experimental subset. Token limits
-may be reached before source-size or node limits. Expression recursion is bounded
-at parsing; statement-block nesting has a separate pre-entry bound. AST/HIR arena
+may be reached before source-size or node limits. Expression recursion and total tree height are bounded
+at parsing; this includes flat left-associative chains, so 64 literal terms pass
+and 65 terms fail E0400. Height tracking uses one usize per expression, at most
+800,000 bytes on a 64-bit host (excluding vector capacity). Statement-block nesting has a separate pre-entry bound. AST/HIR arena
 ownership avoids recursive block-drop chains; later block/CFG passes are iterative.
 
 Lowering preflights exact aggregate expansion before IR/maps are allocated. For
@@ -412,5 +441,6 @@ dominance, graph and resource checks. The subsequent [reference execution eviden
 records the bounded opt-in runner and its independent source oracle. The later
 [i32 literal evidence](../docs/architecture/i32-literal-validation.md) adds exact
 decimal constants/copies, strict i32 types and result serialization. Broader
-numeric operations and overflow semantics remain separate decisions; no later
+numeric operations remain separate decisions. [Checked i32 arithmetic evidence](../docs/architecture/i32-arithmetic-validation.md)
+records the subsequent +/−/* increment and its runtime overflow policy; no later
 roadmap capability is implied.

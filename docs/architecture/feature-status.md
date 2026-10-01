@@ -34,5 +34,7 @@ predecessors. It enables explicit typed run but does not certify termination,
 ownership, OS isolation, native compilation or any completed milestone.
 
 Exact decimal i32 literals and scalar copies are a separate experimental entry.
-That extension does not implement arithmetic, casts, wider integers or floating
-point and does not choose a future arithmetic overflow policy.
+That predecessor does not implement arithmetic, casts, wider integers or floating
+point. Checked i32 addition/subtraction/multiplication are a separate experimental
+entry, with runtime overflow errors identical in debug and release. Other numeric
+operations remain deferred.
