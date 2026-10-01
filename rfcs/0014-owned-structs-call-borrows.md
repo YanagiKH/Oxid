@@ -1,6 +1,6 @@
 # RFC 0014: owned scalar-field structs and call-scoped borrowing
 
-Status: design contract for an experimental ownership-foundations phase. Only the private declaration/identity/layout groundwork described in §10 is implemented by the current change. Struct and borrow source syntax, ownership/loan verification, reference ownership execution and native aggregate lowering remain unavailable. Examples below describe the complete intended phase; they are not programs accepted by this groundwork change.
+Status: design contract for an experimental ownership-foundations phase. The private declaration/identity/layout groundwork and raw owner/loan verifier described in §10 are implemented. Struct and borrow source syntax, reference ownership execution and native aggregate lowering remain unavailable. Examples below describe the complete intended phase; they are not accepted source programs yet.
 
 Baseline: PR17 merge `f8061f403415fd728dc8beee73175a0b6b5e4e20`, tree `07c5f1d998d444baecfef8b53deb252ecd8c62ef`. This extends RFCs 0001–0013 without changing legacy-0.9, OXBC, current scalar semantics, source admission or the executable verified-witness boundary. The phase is not completion of M2 or a claim of Rust-compatible memory safety.
 
@@ -246,9 +246,11 @@ For R records and F fields, requested persistent payload is `R*sizeof(RecordDecl
 
 At current scalar field types total padded layout is bounded by `4F+R`, at most 266,240 bytes under the count limits. Both byte ceilings are therefore redundant on the measured representation but retained as checked defenses against later representation changes. The payload formula excludes caller-owned raw input, source storage, vector headers and allocator overhead; it is not a total process-memory promise. Future expanded runtime/work limits must be independently specified before source activation.
 
-The facade currently has no production caller. A narrowly scoped documented dead-code allowance permits it to compile while the future verifier is developed; remove that allowance when consumed. Existing hir::Ty, Scalar, scalar places/SSA, runtime/backend paths and VerifiedProgram construction are untouched. No type feature is added to the public feature inventory by this groundwork.
+The facade is consumed by the private raw ownership verifier. That verifier has no source producer or execution consumer yet, and its deferred private interfaces remain production-compiled. Existing hir::Ty, Scalar, scalar places/SSA and runtime/backend paths are unchanged. Canonical CFG/scalar shape/dominance logic is shared through direct private adapters; the existing scalar VerifiedProgram route remains intact. No ownership source feature is added to the public feature inventory.
 
-Remaining review units are: (1) raw owner/loan verification and finite-state/resource proofs; (2) reference owner identities and real native storage/call execution; (3) source integration plus complete phase qualification. Enable new syntax only when the specified subset works through the checked boundary and both consumers. See [groundwork validation](../docs/architecture/owned-types-validation.md) for actual implemented evidence; requirements in §9 are future phase gates, not claimed results.
+The private RawOwnedProgram → VerifiedOwnedProgram route now checks whole-owner availability, exact call/loan regions, argument preparation order and the caller/callee alias contract. Its witness is fully sealed in a dedicated verification module and has no run/native methods. See [raw verifier validation](../docs/architecture/owned-verifier-validation.md) for its bounded models, resource accounting and compile-fail witness tests.
+
+Remaining review units are: (1) reference owner identities and real native storage/call execution; (2) source integration plus complete phase qualification. Enable new syntax only when the specified subset works through the checked boundary and both consumers. See [groundwork validation](../docs/architecture/owned-types-validation.md) for actual implemented evidence; requirements in §9 are future phase gates, not claimed results.
 
 ## 11. Following capability gaps
 

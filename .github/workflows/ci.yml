@@ -45,6 +45,9 @@ jobs:
       - name: Run Rust and native bridge tests
         run: cargo test --all-targets --all-features --locked
 
+      - name: Check private ownership witness construction and immutability
+        run: python3 scripts/verify_owned_witness_privacy.py
+
       - name: Build optimized standalone runtime
         run: cargo build --release --locked
 

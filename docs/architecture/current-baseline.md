@@ -97,9 +97,13 @@ existing charged Goto edges without unreachable joins. No ownership or new type
 is implied. See [RFC 0013](../../rfcs/0013-loop-control.md) and
 [loop-control evidence](loop-control-validation.md).
 
-A private owned-type declaration facade now supplies nominal record/field IDs and
-checked fixed scalar layouts for the next ownership phase. It has no production
-caller: struct/borrow source syntax is still rejected, and no ownership/loan
-checker or aggregate execution/native support is added. Existing scalar and legacy
-behavior remains unchanged. See [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md)
-and [groundwork validation](owned-types-validation.md).
+The private owned-type declaration facade supplies nominal record/field IDs and
+checked fixed scalar layouts to a private raw ownership/loan verifier. That verifier
+checks whole-owner availability, explicit argument preparation and exact loan/call
+regions, and constructs a sealed immutable witness without execution methods.
+Struct/borrow source syntax and source-facing ownership checking remain unavailable,
+as do aggregate reference execution and native lowering. Existing scalar and legacy
+behavior remains unchanged, and the public feature inventory is unchanged. See
+[RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
+[groundwork validation](owned-types-validation.md) and
+[raw verifier validation](owned-verifier-validation.md).
