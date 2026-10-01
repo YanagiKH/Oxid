@@ -1,4 +1,4 @@
-//! Private, check-only straight-line OIR. No executable or serialized contract.
+//! Private, check-only acyclic OIR. No executable or serialized contract.
 mod lower;
 mod verify;
 
@@ -10,7 +10,7 @@ use super::{
 };
 
 const MAX_LOCALS: usize = super::parser::MAX_NODES;
-const MAX_BLOCKS: usize = super::parser::MAX_NODES;
+const MAX_BLOCKS: usize = 3 * super::parser::MAX_NODES;
 const MAX_ASSIGNMENTS: usize = super::parser::MAX_NODES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +73,14 @@ struct Terminator {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TerminatorKind {
+    Branch {
+        condition: Operand,
+        then_block: BlockId,
+        else_block: BlockId,
+    },
+    Goto {
+        target: BlockId,
+    },
     Call {
         target: hir::DefId,
         args: Vec<Operand>,
@@ -174,3 +182,6 @@ impl Budget {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod cfg_tests;

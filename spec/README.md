@@ -7,6 +7,8 @@ specification or evidence that M0 has been completed.
   through the public CLI, both as source and as an OXBC artifact.
 - [Legacy module contract](legacy-modules.md) records module resolution,
   diagnostics, and route-specific limitations.
+- [Typed preview](typed-preview.md) defines the opt-in experimental bool/unit
+  checker, lexical branches and verified acyclic OIR. It is check-only.
 - [Current architecture](../docs/architecture/current-baseline.md) identifies
   which implementation actually runs and separates demonstrations from it.
 - [Feature status](../docs/feature-status.json) records scoped claims and gaps.
@@ -18,10 +20,11 @@ The runtime/toolchain release is currently 0.9.0. Its Rust crate edition (2021)
 selects Rust syntax for building the host implementation; it is not an Oxid
 language edition or a claim of Rust language compatibility.
 
-"Legacy 0.9" is the name of the characterized behavior in these documents. There
-is currently no Oxid edition selector. Adding one requires a migration design;
-the proposed static core must not silently replace existing numeric, equality,
-aliasing, or task behavior.
+"Legacy 0.9" is the name of the characterized behavior in these documents. The default route remains legacy;
+`--edition legacy-0.9` explicitly selects it. The provisional `typed-preview`
+selector enables only single-source checking. It does not silently replace
+existing numeric, equality, aliasing, or task behavior or establish a stable
+static language edition.
 
 The production container uses OXBC format 1.0 and serialized AST version 1.
 `.oxa` currently contains the same representation as `.oxb`. These are neither

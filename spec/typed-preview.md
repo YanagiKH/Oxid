@@ -2,7 +2,9 @@
 
 Status: experimental, check-only. `typed-preview` is a provisional selector,
 not a final language edition or a completed M1/M2 milestone. The scoped design
-and review boundary are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md).
+and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md),
+[RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
+[RFC 0003](../rfcs/0003-boolean-branch-cfg.md).
 
 ## Command and compatibility boundary
 
@@ -47,12 +49,14 @@ is not a file-carried or project-wide edition marker.
 
 ```text
 file       := function*
-function   := "fn" name "(" parameters? ")" "->" type "{" statement* "}"
+function   := "fn" name "(" parameters? ")" "->" type block
+block      := "{" statement* "}"
 parameters := name ":" type ("," name ":" type)*
 type       := "bool" | "(" ")"
 statement  := "let" name (":" type)? "=" expression ";"
             | expression ";"
             | "return" expression? ";"
+            | "if" expression block ("else" block)?
 expression := "true" | "false" | name | "(" ")" | "(" expression ")"
             | name "(" arguments? ")"
 arguments  := expression ("," expression)*
@@ -72,15 +76,22 @@ functions and does not require `main`; checking is not execution.
   or inferred bool/unit type; the initializer sees only earlier locals
 - Functions are collected before resolving bodies, so forward direct calls and
   recursive calls resolve; no termination or executable-recursion claim follows
-- Function names are unique. Parameters and locals cannot duplicate another
-  binding in that function or shadow a top-level function name. Different
-  functions may use the same parameter/local names
+- Function names are unique. Parameters, function bodies and branch arms have
+  lexical scopes. Bindings cannot duplicate a name in the same scope, shadow an
+  active ancestor, or shadow a top-level function. Sibling arms and declarations
+  following a closed child scope may reuse names; every declaration has its own ID
+- An arm-local is visible only after its initializer and within that arm or its
+  descendants. It cannot escape to a sibling or the surrounding block
 - A bare name denotes a local; functions are not first-class values
 - Calls must resolve to declared functions and match their arity and types
 - There are no builtins or implicit conversions
-- Every function, including a unit function, requires an explicit terminal
-  return. `return;` and `return ();` both return unit. Statements after that
-  return are rejected
+- Every function, including unit functions, requires explicit returns on every
+  reachable intraprocedural path. `return;` and `return ();` return unit. Statements
+  after a return or an if with two returning arms are rejected
+- An if condition must be bool. Both arms are checked even for literal conditions.
+  A missing else leaves a reachable empty false path. Empty arms are legal. An if
+  is a statement with no value or trailing semicolon; else requires braces, so
+  else-if, if-expressions and naked block statements are unavailable
 - Expression statements may discard either supported type
 
 Example:
@@ -98,10 +109,12 @@ fn main() -> () {
 
 Numbers retain their exact source spelling but have no accepted numeric
 semantics. Strings, null, imports/modules, macros, mutation, borrowing, ownership,
-containers, control flow, operators, async, closures, generics, FFI, host I/O,
+containers, loops and other control flow, operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
-silent approximation or legacy execution of these features.
+silent approximation or legacy execution of these features. Now-recognized if/else
+keywords in invalid positions produce ordinary syntax errors (E0100), replacing
+the predecessor's unsupported-keyword E0101 for those newly enabled keywords.
 
 ## Compiler representation
 
@@ -115,70 +128,72 @@ AST names are source spans. HIR replaces value uses with function/local IDs,
 allocated deterministically in source order. Local IDs belong to one function.
 Signatures resolve before bodies. Successful typed construction has one supported
 type for every expression and local; incomplete tables cannot be constructed
-outside the checking pass. Type inference walks child-before-parent arena entries,
+outside the checking pass. AST/HIR statement blocks use arenas and ID edges.
+Each typed body also records every block's return flow. Lexical resolution and
+statement checking use explicit traversal frames. Type inference walks child-before-parent arena entries,
 not an unbounded recursive chain. There is no runtime `Value` in this pipeline.
 
 The old AST, parser, lexer and lexical helpers now live in
 `src/legacy/syntax.rs`. The extraction preserves their behavior and OXBC 1.0
 encoding. The existing single-binary Cargo package and Rust edition are unchanged.
 
-## Verified straight-line OIR
+## Verified acyclic OIR
 
-Every successful production check lowers the actual typed bodies and passes an
-independent OIR verifier before returning the success summary. Immutable typed
-views expose recorded types to lowering; there is no reparsing or legacy adapter.
-The raw IR is private to `src/frontend/oir/`; only successful verification creates
-the opaque, immutable verified result used by the driver. There is no public IR
-loader, dump, stable serialization, execution command, or typed artifact.
+Every successful production check lowers actual typed bodies and passes an
+independent OIR verifier before returning success. Immutable typed views expose
+complete types and block return flow; there is no reparsing or legacy adapter.
+Raw IR is private to `src/frontend/oir/`; only successful verification constructs
+the immutable witness used by the driver. No public IR loader, dump, stable
+serialization, execution, optimization or ownership contract is added.
 
-Each function has typed body-local slots for parameters, bindings and expression
-temporaries. Distinct HIR/OIR local types and explicit lowering maps separate the
-phases. Numeric slot IDs are body-relative, not owner-tagged identities: a valid
-index transplanted from another body is not distinguishable by bounds alone.
-Function IDs follow declaration order. Parameter types are the initial local
-prefix, so calls and definitions share one checked signature representation.
+Function-local slots contain bool or unit and are classified as parameters,
+bindings or expression temporaries. Assign evaluates a bool/unit constant or
+copies a typed operand. Call has a direct DefId, ordered arguments, result slot
+and one normal continuation. Return uses an explicitly initialized operand.
+Branch has a bool operand and two successors; Goto has one successor. Calls in
+conditions and arms remain explicit terminators, never hidden in Branch.
 
-The only statements are assignments of bool, unit or a copied operand. Each
-basic block has exactly one terminator: a direct call with a result destination
-and one explicit normal continuation, or return of an initialized operand.
-Calls returning unit and discarded results remain in the IR. Bare return creates
-an initialized unit temporary. There is no fallthrough or omitted call result.
-The block builder rejects appending after closure and closing twice; the raw
-representation permits a missing terminator only so it can be detected.
+Lowering traverses structured source bodies in lexical depth-first order with a
+single expression cursor. Conditions lower before Branch; then/else expressions
+lower only in their respective paths. A join exists only if some arm falls
+through or else is absent. Falling arms end in Goto(join); returning arms do not.
+An absent else branches directly to the join. Two returning arms produce no
+synthetic join. Table order is not topological: joins may be reserved before
+arm-call continuations. No fake return, phi or implicit merge value is introduced.
 
-Lowering is iterative over the existing child-before-parent expression arena.
-It preserves source-statement order and evaluates call arguments left-to-right
-in the IR, retaining group copies and every call. This records the current IR
-sequence; checking does not execute it or settle evaluation rules for future
-constructs. A function with C call expressions produces exactly C + 1 blocks.
-No optimization, branch, join, unwind edge, ownership operation or drop exists.
+Verification validates aggregate bounds, every signature/reference/type/span and
+terminator before following graph edges, including unreachable raw blocks.
+Reachability and deterministic topological traversal reject unreachable blocks
+and cycles. Equal Branch targets are legal and their edge multiplicity is handled
+consistently. Direct and mutual recursive call graphs remain legal because calls
+to other function entries are not intraprocedural edges.
 
-The verifier first checks aggregate bounds, function IDs/signatures, all source
-spans and all blocks, including unreachable blocks. It checks local/function/
-continuation references, parameter-prefix kinds, call arity, assignment/call/
-return types, and terminator presence before following edges. It then walks the
-unique entry continuation chain with one initialized-local bitmap and one
-visited-block bitmap per function. Parameters begin initialized. Every read must
-follow initialization; each other slot may be initialized only once and parameters
-cannot be overwritten. Call arguments are read before the destination becomes
-available on its normal continuation. Cycles and unreachable blocks are rejected.
-Acyclic chains may reference any block-table order; table order is not execution
-order. No per-block local-state matrix or recursive graph walk is used.
+Parameters are entry definitions and cannot be overwritten. Every other local
+has at most one definition globally, including definitions in mutually exclusive
+arms. An unused undefined slot is legal; every read needs a dominating definition.
+Within one block an assignment must precede a read, including its own RHS. A call
+result requires strict dominance by its call block, so it is unavailable in its
+own arguments/statements or at a join reachable by bypassing that call. Canonical
+single-definition rules are limited to this immutable no-phi preview.
 
-This establishes structural intraprocedural return completeness, assuming every
-call returns normally. Direct and mutual recursion remain valid. A callee's entry
-is not the caller's continuation edge. This is not program termination, executable
-call safety, user-stack safety, memory safety, or ownership/borrow checking.
+The verifier computes a dominator tree in topological order using predecessor
+lowest-common-ancestor queries and bounded binary lifting, then iterative tree
+intervals for constant-time dominance queries. There is no blocks-by-locals
+matrix, per-block initialization-set cloning or recursive graph traversal.
 
-Functions, local declarations, blocks, assignments, operands and terminators carry
-original source spans. Copies and arguments retain use-site spans. Entry blocks
-use the function name; call continuations use their originating call; synthesized
-bare-return units use the return statement. The verifier validates file identity,
-range and UTF-8 boundaries before rendering any failure. Exact provenance is
-tested separately; in-bounds spans alone do not prove source-to-IR equivalence.
+This proves structural intraprocedural return completeness assuming calls return
+normally. It does not establish termination, user-stack safety, executable call
+safety, ownership, memory safety or source-to-IR equivalence merely from spans.
 
-The bounded design and acceptance scope are in
-[RFC 0002](../rfcs/0002-verified-straight-line-oir.md).
+All declarations, blocks, assignments, operands and terminators retain original
+source spans. Existing function-entry, call-continuation, copy/use and bare-return
+origins are preserved. Branch uses its full if statement; its operand uses the
+condition expression. Arm entries use full source blocks; arm-end Gotos use their
+closing braces. Synthetic joins use the full if statement. Exact Unicode/CRLF
+provenance is tested separately from valid file/range/UTF-8 boundaries.
+
+See [RFC 0003](../rfcs/0003-boolean-branch-cfg.md) for the bounded decision and
+[RFC 0002](../rfcs/0002-verified-straight-line-oir.md) for its predecessor.
 
 ## Source and diagnostic contract
 
@@ -223,7 +238,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0200 | Unresolved local or direct function name |
 | E0201 | Duplicate binding or unsupported shadowing |
 | E0202 | Unknown type |
-| E0300 | Binding, argument or return type mismatch |
+| E0300 | Binding, argument, condition or return type mismatch |
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return |
@@ -252,22 +267,37 @@ failures, not ordinary source type errors.
 | Nested expression parser frames | 64 (63 grouping wrappers around a literal) |
 | Parameters or call arguments | 256 each |
 | Emitted diagnostics | 100 |
-| OIR locals, blocks, assignments | 100,000 of each, aggregate per program |
+| Active statement block frames | 64, counting the function body as frame 1 |
+| OIR locals and assignments | 100,000 of each, aggregate per program |
+| OIR blocks | 300,000, aggregate per program |
+| OIR successor edges | At most 600,000, two per block |
+| Dominator ancestor cells | At most 5,700,000 usize entries (19 levels) |
 
-All limits are engineering defaults for this experimental subset. A source can
-hit a token limit before its source-size or node limit. Long flat unsupported
-expressions fail before creating deep trees. Resolution recurses only through
-AST expressions already bounded by the parser; type checking is iterative.
-Lowering preflights its exact expansion with checked arithmetic before allocating
-IR storage/maps. Locals map to distinct counted parameters, expressions, let
-statements or bare returns; assignments map to non-call expressions, lets or bare
-returns; blocks map to functions plus calls. Each total is bounded by the existing
-100,000 parser-node budget, so the new bounds do not reduce the accepted source
-subset. Call vectors retain the 256-argument cap. Verification independently
-checks these bounds, even for malformed raw IR. Lowering/verification take linear
-time in functions + locals + blocks + assignments + operands; verification uses
-O(locals + blocks) scratch space per function. These are engineering bounds,
-not an allocation-failure guarantee.
+All limits are engineering defaults for this experimental subset. Token limits
+may be reached before source-size or node limits. Expression recursion is bounded
+at parsing; statement-block nesting has a separate pre-entry bound. AST/HIR arena
+ownership avoids recursive block-drop chains; later block/CFG passes are iterative.
+
+Lowering preflights exact aggregate expansion before IR/maps are allocated. For
+F functions, C calls, I if statements, P parameters, L lets, X expressions and
+Rb bare returns: locals = P + L + X + Rb; assignments = X - C + L + Rb;
+blocks <= F + C + 3I. These are bounded by the existing parser nodes, with only
+the block budget raised to three times that limit. Old accepted source programs
+are not excluded by a tighter unrelated cap. Call vectors stay capped at 256.
+
+Verification independently checks these limits for arbitrary private raw IR and
+checks graph/scratch arithmetic before allocation. A flat predecessor array and
+binary-lifting ancestor table need O(locals + blocks log blocks + edges) scratch
+per function; only one function's scratch is live at a time. The ancestor table
+alone is at most 45.6 MB on a 64-bit host. At peak dominator construction,
+ancestor cells plus offsets, predecessor edges, topological order, depth, child/
+sibling links and entry/exit intervals occupy B*levels + 7B + E + 1 usize cells.
+At the maxima that is 67,200,008 bytes, plus about 2,400,000 bytes for 100,000
+three-word optional definition records on this host: about 69.6 MB, excluding
+small vector headers, allocator overhead and raw IR/source storage. Earlier
+reachability/indegree and predecessor-construction cursor arrays are already freed. Verification time is
+O(functions + locals + assignments + operands + (blocks + edges) log blocks).
+No host allocation-success, OS-sandbox or blocking-I/O guarantee follows.
 
 Errors stop later compiler phases, and diagnostics beyond the cap are omitted.
 No total-error-count claim is made when the cap is reached.
@@ -288,5 +318,7 @@ lossless numeric tokens, resolved IDs and complete type tables.
 straight-line increment, malformed-IR cases, call-order/provenance checks and
 resource/long-chain tests. No ownership/borrow checking, execution engine,
 numeric type system, native backend, typed artifact schema, self-hosting or AI
-capability is added. The next separately reviewed dependency is boolean branches,
-scopes, joins and general CFG dataflow; it is not complete in this slice.
+capability is added. [Boolean CFG evidence](../docs/architecture/boolean-cfg-validation.md)
+records the later restricted branch/scope/all-path-return increment and its
+dominance, graph and resource checks. Numeric semantics and reference execution
+remain separate next decisions; no later roadmap capability is implied.

@@ -131,7 +131,7 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
         ("fn f(x: &bool) -> () { return; }", "&"),
         ("fn f() -> () { let mut x = true; return; }", "mut"),
         ("fn f() -> () { let x = true; x = false; return; }", "="),
-        ("fn f() -> () { if true { return; } return; }", "if"),
+        ("fn f() -> () { while true { return; } return; }", "while"),
         ("async fn f() -> () { return; }", "async"),
         ("fn f() -> () { \"text\"; return; }", "\"text\""),
     ] {
@@ -293,5 +293,154 @@ fn every_duplicate_function_labels_the_original_declaration() {
         );
         assert!(line.contains("\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"input.ox\",\"start\":3,\"end\":4"),"{line}");
         assert!(line.contains("first declared here"), "{line}");
+    }
+}
+
+#[test]
+fn boolean_branches_scopes_and_all_path_returns_are_check_only() {
+    for source in [
+        "fn choose(flag: bool, left: bool, right: bool) -> bool { if flag { return left; } else { return right; } }",
+        "fn early(flag: bool) -> bool { if flag { return true; } return false; }",
+        "fn scopes(flag: bool) -> () { let outer = flag; if outer { let value = true; value; } else { let value = (); value; } let value = (); outer; return value; }",
+        "fn nested(flag: bool) -> bool { if flag { if false { return true; } else { return flag; } } else { if true {} else {} } return false; }",
+        "fn empty(flag: bool) -> () { if flag {} if flag {} else {} return; }",
+        "fn calls(flag: bool) -> bool { if left(flag) { right(flag); } else { left(flag); } return right(flag); } fn left(x: bool) -> bool { return right(x); } fn right(x: bool) -> bool { return left(x); }",
+    ] {
+        let project = Project::new(source.as_bytes());
+        let one = project.check();
+        let two = project.check();
+        assert!(one.status.success(), "{source}: {one:?}");
+        assert!(one.stderr.is_empty(), "{one:?}");
+        assert_eq!(one.stdout, two.stdout);
+        let json = String::from_utf8(one.stdout).unwrap();
+        assert!(json.contains("\"success\":true"), "{json}");
+        assert_eq!(fs::read_dir(&project.0).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn branch_type_scope_and_return_failures_have_exact_ranges() {
+    for (source, code, mark) in [
+        (
+            "fn f() -> () { if () { return; } else { return; } }",
+            "E0300",
+            "() {",
+        ),
+        (
+            "fn f(flag: bool) -> bool { if flag { return true; } }",
+            "E0302",
+            "}",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { return; } else { if flag { return; } } }",
+            "E0302",
+            "}",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { return; } else { return; } true; }",
+            "E0303",
+            "true;",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { return; false; } return; }",
+            "E0303",
+            "false;",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { let local = true; } local; return; }",
+            "E0200",
+            "local",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { let local = true; } else { local; } return; }",
+            "E0200",
+            "local",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { let flag = true; } return; }",
+            "E0201",
+            "flag",
+        ),
+        (
+            "fn f(flag: bool) -> () { let outer = true; if flag { let outer = false; } return; }",
+            "E0201",
+            "outer",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { let x = true; let x = false; } return; }",
+            "E0201",
+            "x",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { let f = true; } return; }",
+            "E0201",
+            "f",
+        ),
+        (
+            "fn f(flag: bool) -> () { if flag { let x = x; } return; }",
+            "E0200",
+            "x",
+        ),
+        (
+            "fn f() -> () { if true { return; } else { return false; } }",
+            "E0300",
+            "false",
+        ),
+    ] {
+        // The condition's unit occurrence is followed by a brace; distinguish it
+        // from the result type while retaining the exact expression-only range.
+        if mark == "() {" {
+            let out = Project::new(source.as_bytes()).check();
+            assert_eq!(out.status.code(), Some(1));
+            let json = String::from_utf8(out.stdout).unwrap();
+            let start = source.find("if ()").unwrap() + 3;
+            assert!(json.contains("\"code\":\"E0300\""), "{json}");
+            assert!(
+                json.contains(&format!("\"start\":{start},\"end\":{}", start + 2)),
+                "{json}"
+            );
+        } else {
+            failure(source, code, mark);
+        }
+    }
+}
+
+#[test]
+fn statement_block_nesting_has_its_own_exact_boundary() {
+    // The function body is active frame 1; each then arm adds one frame.
+    for (depth, accepted) in [(63, true), (64, false)] {
+        let source = format!(
+            "fn f() -> () {{ {}{}return; }}",
+            "if true {".repeat(depth),
+            "}".repeat(depth)
+        );
+        let out = Project::new(source.as_bytes()).check();
+        assert_eq!(out.status.success(), accepted, "{out:?}");
+        if !accepted {
+            assert!(String::from_utf8(out.stdout).unwrap().contains("E0400"));
+        }
+    }
+}
+
+#[test]
+fn malformed_branch_syntax_is_recovered_deterministically() {
+    for source in [
+        "fn f()->(){ if true return; } fn later()->(){return;}",
+        "fn f()->(){ if true {} else return; } fn later()->(){return;}",
+        "fn f()->(){ if true {} else if true {} return; } fn later()->(){return;}",
+        "fn f()->(){ let x = if true {}; return; } fn later()->(){return;}",
+        "fn f()->(){ { return; } } fn later()->(){return;}",
+        "fn f()->(){ if true { return;",
+        "fn f()->(){ if true {} ; return; }",
+    ] {
+        let project = Project::new(source.as_bytes());
+        let one = project.check();
+        let two = project.check();
+        assert_eq!(one.status.code(), Some(1), "{one:?}");
+        assert!(one.stderr.is_empty());
+        assert_eq!(one.stdout, two.stdout);
+        let json = String::from_utf8(one.stdout).unwrap();
+        assert!(json.contains("E0100") || json.contains("E0101"), "{json}");
+        assert!(json.matches("\"kind\":\"diagnostic\"").count() <= 100);
     }
 }

@@ -6,6 +6,8 @@ use super::{
 };
 pub const MAX_NODES: usize = 100_000;
 pub const MAX_NESTING: usize = 64;
+/// Active statement blocks, including the outer function body; independent of expressions.
+pub const MAX_BLOCK_NESTING: usize = 64;
 pub const MAX_PARAMS: usize = 256;
 pub const MAX_DIAGNOSTICS: usize = 100;
 
@@ -142,21 +144,46 @@ impl Parser<'_> {
             "function requires an explicit return type after `->`",
         )?;
         let result = self.ty()?;
-        self.expect(Kind::LBrace, "expected function body `{`")?;
-        let mut body = Vec::new();
-        while !matches!(self.peek().kind, Kind::RBrace | Kind::Eof) {
-            body.push(self.statement()?);
-        }
-        let end = self
-            .expect(Kind::RBrace, "expected `}` before end of file")?
-            .span;
+        let mut blocks = Vec::new();
+        let body = self.block(&mut blocks, 0, "expected function body `{`")?;
+        let end = blocks[body.0].end;
         Ok(Function {
             name,
             params,
             result,
             body,
+            blocks,
             end,
         })
+    }
+    fn block(
+        &mut self,
+        blocks: &mut Vec<BodyBlock>,
+        depth: usize,
+        opening_message: &str,
+    ) -> Result<BodyBlockId, Box<Diagnostic>> {
+        // Nested callers check depth before entry. Arena edges prevent a
+        // recursive drop chain, including for malformed syntax.
+        let start = self.expect(Kind::LBrace, opening_message)?.span;
+        let id = BodyBlockId(blocks.len());
+        blocks.push(BodyBlock {
+            body: Vec::new(),
+            span: start,
+            end: start,
+        });
+        let mut body = Vec::new();
+        while !matches!(self.peek().kind, Kind::RBrace | Kind::Eof) {
+            body.push(self.statement(blocks, depth + 1)?);
+        }
+        let end = self
+            .expect(Kind::RBrace, "expected `}` before end of file")?
+            .span;
+        blocks[id.0] = BodyBlock {
+            body,
+            span: self.source.span(start.start, end.end),
+            end,
+        };
+        Ok(id)
     }
     fn ty(&mut self) -> Result<TypeSyntax, Box<Diagnostic>> {
         let start = self.peek().span.start;
@@ -173,9 +200,41 @@ impl Parser<'_> {
             span: self.source.span(start, end),
         })
     }
-    fn statement(&mut self) -> Result<Stmt, Box<Diagnostic>> {
+    fn statement(
+        &mut self,
+        blocks: &mut Vec<BodyBlock>,
+        depth: usize,
+    ) -> Result<Stmt, Box<Diagnostic>> {
         self.node()?;
         let start = self.peek().span.start;
+        if self.take(Kind::If).is_some() {
+            let condition = self.expression(0)?;
+            // `depth` is the number of active statement blocks. Check before
+            // recursive entry or arena allocation for either arm.
+            if depth >= MAX_BLOCK_NESTING {
+                return Err(Diagnostic::new(
+                    "E0400",
+                    "parse",
+                    "statement block nesting limit exceeded",
+                    Some(self.peek().span),
+                ));
+            }
+            let then_block = self.block(blocks, depth, "expected if body `{`")?;
+            let else_block = if self.take(Kind::Else).is_some() {
+                Some(self.block(blocks, depth, "expected else body `{`")?)
+            } else {
+                None
+            };
+            let end = blocks[else_block.unwrap_or(then_block).0].end.end;
+            return Ok(Stmt {
+                kind: StmtKind::If {
+                    condition,
+                    then_block,
+                    else_block,
+                },
+                span: self.source.span(start, end),
+            });
+        }
         let kind = if self.take(Kind::Let).is_some() {
             let name = self
                 .expect(Kind::Ident, "expected immutable binding name")?

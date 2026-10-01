@@ -1,6 +1,8 @@
 # RFC 0002: verified straight-line OIR for typed-preview
 
 Status: experimental implementation proposal for review with this increment.
+Historical straight-line scope; [RFC 0003](0003-boolean-branch-cfg.md) records the
+subsequent restricted boolean-branch extension to the current preview contract.
 No stable edition, completed roadmap milestone, memory model or execution
 contract is accepted by implementation alone. Maintainer owner/reviewer
 assignments remain unassigned in the feature inventory.
@@ -14,7 +16,7 @@ continuation, and Return. Its intraprocedural CFG is a reachable acyclic chain;
 the program call graph may be recursive. Empty source stays valid.
 
 The exact invariants, source provenance, error handling, complexity and limits
-are specified in [the preview contract](../spec/typed-preview.md#verified-straight-line-oir).
+are specified in [the preview contract](../spec/typed-preview.md#verified-acyclic-oir).
 This increment adds no source grammar, command, dump, public raw-IR loader,
 execution, serialization, dependency, ownership analysis or numeric semantics.
 

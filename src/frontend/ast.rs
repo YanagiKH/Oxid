@@ -2,6 +2,8 @@ use super::lexer::Token;
 use super::source::Span;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExprId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BodyBlockId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
     Bool(bool),
@@ -33,6 +35,11 @@ pub enum StmtKind {
     },
     Expr(ExprId),
     Return(Option<ExprId>),
+    If {
+        condition: ExprId,
+        then_block: BodyBlockId,
+        else_block: Option<BodyBlockId>,
+    },
 }
 #[derive(Debug)]
 pub struct Stmt {
@@ -40,11 +47,18 @@ pub struct Stmt {
     pub span: Span,
 }
 #[derive(Debug)]
+pub struct BodyBlock {
+    pub body: Vec<Stmt>,
+    pub span: Span,
+    pub end: Span,
+}
+#[derive(Debug)]
 pub struct Function {
     pub name: Span,
     pub params: Vec<Param>,
     pub result: TypeSyntax,
-    pub body: Vec<Stmt>,
+    pub body: BodyBlockId,
+    pub blocks: Vec<BodyBlock>,
     pub end: Span,
 }
 #[derive(Debug)]

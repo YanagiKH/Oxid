@@ -41,7 +41,7 @@ fn terminator(block: &BasicBlock) -> Result<&Terminator, OirFailure> {
 
 /// No recursive traversal, unchecked indexing, panics, or debug-only gates.
 /// First validate every signature; then every block, including unreachable ones;
-/// finally walk the unique intraprocedural continuation chain.
+/// finally verify the acyclic CFG, canonical definitions, and dominance.
 pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedProgram, OirFailure> {
     let mut budget = Budget::default();
     if program.functions.len() > MAX_BLOCKS {
@@ -130,6 +130,27 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
             let end = terminator(block)?;
             span(sources, end.span)?;
             match &end.kind {
+                TerminatorKind::Branch {
+                    condition,
+                    then_block,
+                    else_block,
+                } => {
+                    same_type(
+                        operand(function, *condition, sources)?,
+                        hir::Ty::Bool,
+                        condition.span,
+                    )?;
+                    for target in [then_block, else_block] {
+                        if function.blocks.get(target.0).is_none() {
+                            return Err(failure(FailureKind::InvalidBlock, end.span));
+                        }
+                    }
+                }
+                TerminatorKind::Goto { target } => {
+                    if function.blocks.get(target.0).is_none() {
+                        return Err(failure(FailureKind::InvalidBlock, end.span));
+                    }
+                }
                 TerminatorKind::Return(value) => same_type(
                     operand(function, *value, sources)?,
                     function.result,
@@ -163,81 +184,525 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
         }
     }
     for function in &program.functions {
-        chain(function)?;
+        cfg(function)?;
     }
     Ok(VerifiedProgram { program })
 }
-fn read(initialized: &[bool], value: Operand) -> Result<(), OirFailure> {
-    match initialized.get(value.local.0) {
-        Some(true) => Ok(()),
-        Some(false) => Err(failure(FailureKind::Uninitialized, value.span)),
-        None => Err(failure(FailureKind::InvalidLocal, value.span)),
-    }
+
+// Each non-parameter slot has one canonical definition across the entire
+// function, even when two writes would be in mutually exclusive arms. This is
+// an immutable no-phi IR rule, not support for mutation or merged values.
+#[derive(Clone, Copy)]
+enum Definition {
+    Parameter,
+    Assignment { block: usize, statement: usize },
+    CallResult { block: usize },
 }
-fn initialize(
-    initialized: &mut [bool],
+fn define(
+    definitions: &mut [Option<Definition>],
     destination: LocalId,
-    span: Span,
+    definition: Definition,
+    origin: Span,
 ) -> Result<(), OirFailure> {
-    let state = initialized
+    let slot = definitions
         .get_mut(destination.0)
-        .ok_or_else(|| failure(FailureKind::InvalidLocal, span))?;
-    if *state {
-        return Err(failure(FailureKind::AlreadyInitialized, span));
+        .ok_or_else(|| failure(FailureKind::InvalidLocal, origin))?;
+    if slot.is_some() {
+        return Err(failure(FailureKind::AlreadyInitialized, origin));
     }
-    *state = true;
+    *slot = Some(definition);
     Ok(())
 }
-fn chain(function: &Function) -> Result<(), OirFailure> {
-    // One bitmap per function, never one per block or call. Call graph edges are
-    // not CFG edges; recursive callees do not cause recursive compiler traversal.
-    let mut initialized: Vec<bool> = (0..function.locals.len())
-        .map(|index| index < function.param_count)
-        .collect();
-    let mut visited = vec![false; function.blocks.len()];
-    let mut current = function.entry;
-    loop {
-        let seen = visited
-            .get_mut(current.0)
-            .ok_or_else(|| failure(FailureKind::InvalidBlock, function.span))?;
-        if *seen {
-            return Err(failure(FailureKind::Cycle, function.span));
-        }
-        *seen = true;
-        let block = function
-            .blocks
-            .get(current.0)
-            .ok_or_else(|| failure(FailureKind::InvalidBlock, function.span))?;
-        for assign in &block.statements {
-            if let Rvalue::Copy(value) = assign.value {
-                read(&initialized, value)?;
-            }
-            initialize(&mut initialized, assign.destination, assign.span)?;
+fn definitions(function: &Function) -> Result<Vec<Option<Definition>>, OirFailure> {
+    let mut table = vec![None; function.locals.len()];
+    for parameter in 0..function.param_count {
+        define(
+            &mut table,
+            LocalId(parameter),
+            Definition::Parameter,
+            function.span,
+        )?;
+    }
+    for (block_id, block) in function.blocks.iter().enumerate() {
+        for (statement, assign) in block.statements.iter().enumerate() {
+            define(
+                &mut table,
+                assign.destination,
+                Definition::Assignment {
+                    block: block_id,
+                    statement,
+                },
+                assign.span,
+            )?;
         }
         let end = terminator(block)?;
-        match &end.kind {
-            TerminatorKind::Return(value) => {
-                read(&initialized, *value)?;
-                break;
-            }
-            TerminatorKind::Call {
-                args,
+        if let TerminatorKind::Call { destination, .. } = end.kind {
+            define(
+                &mut table,
                 destination,
-                continuation,
-                ..
-            } => {
-                for arg in args {
-                    read(&initialized, *arg)?;
+                Definition::CallResult { block: block_id },
+                end.span,
+            )?;
+        }
+    }
+    Ok(table)
+}
+
+// Raw references and dimensions are always checked, even though structural
+// validation and bounded constructors have already established their ranges.
+fn at<T>(table: &[T], index: usize, origin: Span) -> Result<&T, OirFailure> {
+    table
+        .get(index)
+        .ok_or_else(|| failure(FailureKind::InvalidBlock, origin))
+}
+fn at_mut<T>(table: &mut [T], index: usize, origin: Span) -> Result<&mut T, OirFailure> {
+    table
+        .get_mut(index)
+        .ok_or_else(|| failure(FailureKind::InvalidBlock, origin))
+}
+fn successors(block: &BasicBlock) -> Result<[Option<BlockId>; 2], OirFailure> {
+    Ok(match terminator(block)?.kind {
+        TerminatorKind::Branch {
+            then_block,
+            else_block,
+            ..
+        } => [Some(then_block), Some(else_block)],
+        TerminatorKind::Goto { target } => [Some(target), None],
+        TerminatorKind::Call { continuation, .. } => [Some(continuation), None],
+        TerminatorKind::Return(_) => [None, None],
+    })
+}
+
+#[derive(Debug)]
+pub(super) struct ScratchDimensions {
+    pub(super) offsets: usize,
+    pub(super) levels: usize,
+    pub(super) ancestors: usize,
+}
+pub(super) fn checked_product(
+    left: usize,
+    right: usize,
+    limit: usize,
+    name: &'static str,
+    origin: Span,
+) -> Result<usize, OirFailure> {
+    left.checked_mul(right)
+        .filter(|&value| value <= limit)
+        .ok_or_else(|| failure(FailureKind::ResourceLimit(name), origin))
+}
+pub(super) fn scratch_dimensions(
+    blocks: usize,
+    edges: usize,
+    origin: Span,
+) -> Result<ScratchDimensions, OirFailure> {
+    let mut bounded_blocks = 0;
+    Budget::add(
+        &mut bounded_blocks,
+        blocks,
+        MAX_BLOCKS,
+        "blocks",
+        STAGE,
+        Some(origin),
+    )?;
+    let max_edges = checked_product(blocks, 2, MAX_BLOCKS * 2, "CFG edges", origin)?;
+    let mut bounded_edges = 0;
+    Budget::add(
+        &mut bounded_edges,
+        edges,
+        max_edges,
+        "CFG edges",
+        STAGE,
+        Some(origin),
+    )?;
+    let mut offsets = blocks;
+    Budget::add(
+        &mut offsets,
+        1,
+        MAX_BLOCKS + 1,
+        "CFG offsets",
+        STAGE,
+        Some(origin),
+    )?;
+    // floor(log2(B)) + 1 suffices for every possible depth <= B - 1.
+    // Empty is useful for dimension tests; actual bodies cannot be empty.
+    let levels = blocks.checked_ilog2().map_or(0, |log| log as usize + 1);
+    let max_levels = MAX_BLOCKS.ilog2() as usize + 1;
+    let ancestors = checked_product(
+        blocks,
+        levels,
+        MAX_BLOCKS * max_levels,
+        "dominator ancestors",
+        origin,
+    )?;
+    Ok(ScratchDimensions {
+        offsets,
+        levels,
+        ancestors,
+    })
+}
+
+struct Predecessors {
+    offsets: Vec<usize>,
+    blocks: Vec<usize>,
+}
+impl Predecessors {
+    fn of(&self, block: usize, origin: Span) -> Result<&[usize], OirFailure> {
+        let after = block
+            .checked_add(1)
+            .ok_or_else(|| failure(FailureKind::InvalidBlock, origin))?;
+        let start = *at(&self.offsets, block, origin)?;
+        let end = *at(&self.offsets, after, origin)?;
+        self.blocks
+            .get(start..end)
+            .ok_or_else(|| failure(FailureKind::InvalidBlock, origin))
+    }
+}
+fn predecessors(function: &Function) -> Result<Predecessors, OirFailure> {
+    let count = function.blocks.len();
+    let origin = function.span;
+    let shape = scratch_dimensions(count, 0, origin)?;
+    let mut counts = vec![0; count];
+    let mut edges = 0;
+    for block in &function.blocks {
+        for successor in successors(block)?.into_iter().flatten() {
+            Budget::add(
+                &mut edges,
+                1,
+                MAX_BLOCKS * 2,
+                "CFG edges",
+                STAGE,
+                Some(block.span),
+            )?;
+            Budget::add(
+                at_mut(&mut counts, successor.0, block.span)?,
+                1,
+                MAX_BLOCKS * 2,
+                "CFG predecessors",
+                STAGE,
+                Some(block.span),
+            )?;
+        }
+    }
+    scratch_dimensions(count, edges, origin)?;
+    let mut offsets = Vec::with_capacity(shape.offsets);
+    offsets.push(0);
+    let mut total = 0;
+    for count in &counts {
+        Budget::add(
+            &mut total,
+            *count,
+            edges,
+            "CFG offsets",
+            STAGE,
+            Some(origin),
+        )?;
+        offsets.push(total);
+    }
+    // Reuse counts as insertion cursors rather than allocating an edge object
+    // or a predecessor Vec for each node. Duplicate branch targets deliberately
+    // retain edge multiplicity in both predecessors and Kahn indegrees.
+    for (index, cursor) in counts.iter_mut().enumerate() {
+        *cursor = *at(&offsets, index, origin)?;
+    }
+    let mut blocks = vec![0; edges];
+    for (from, block) in function.blocks.iter().enumerate() {
+        for successor in successors(block)?.into_iter().flatten() {
+            let cursor = at_mut(&mut counts, successor.0, block.span)?;
+            *at_mut(&mut blocks, *cursor, block.span)? = from;
+            Budget::add(cursor, 1, edges, "CFG offsets", STAGE, Some(block.span))?;
+        }
+    }
+    Ok(Predecessors { offsets, blocks })
+}
+
+fn topological(function: &Function, predecessors: &Predecessors) -> Result<Vec<usize>, OirFailure> {
+    let count = function.blocks.len();
+    let origin = function.span;
+    let mut seen = vec![false; count];
+    let mut order = Vec::with_capacity(count);
+    *at_mut(&mut seen, function.entry.0, origin)? = true;
+    order.push(function.entry.0);
+    let mut cursor = 0;
+    while let Some(&current) = order.get(cursor) {
+        let block = at(&function.blocks, current, origin)?;
+        for next in successors(block)?.into_iter().flatten() {
+            let reached = at_mut(&mut seen, next.0, block.span)?;
+            if !*reached {
+                *reached = true;
+                order.push(next.0);
+            }
+        }
+        cursor += 1; // <= the previously checked block count.
+    }
+    let reachable = order.len();
+    order.clear();
+    let mut indegrees = vec![0; count];
+    for (block, &reached) in seen.iter().enumerate() {
+        if reached {
+            let mut degree = 0;
+            for &pred in predecessors.of(block, origin)? {
+                if *at(&seen, pred, origin)? {
+                    Budget::add(
+                        &mut degree,
+                        1,
+                        MAX_BLOCKS * 2,
+                        "CFG predecessors",
+                        STAGE,
+                        Some(origin),
+                    )?;
                 }
-                // The destination is available only on the normal continuation,
-                // after every argument read, never to earlier uses or its own args.
-                initialize(&mut initialized, *destination, end.span)?;
-                current = *continuation;
+            }
+            *at_mut(&mut indegrees, block, origin)? = degree;
+            if degree == 0 {
+                order.push(block);
             }
         }
     }
-    if visited.iter().any(|seen| !seen) {
-        return Err(failure(FailureKind::Unreachable, function.span));
+    cursor = 0;
+    while let Some(&current) = order.get(cursor) {
+        let block = at(&function.blocks, current, origin)?;
+        for next in successors(block)?.into_iter().flatten() {
+            let degree = at_mut(&mut indegrees, next.0, block.span)?;
+            *degree = degree
+                .checked_sub(1)
+                .ok_or_else(|| failure(FailureKind::InvalidBlock, block.span))?;
+            if *degree == 0 {
+                order.push(next.0);
+            }
+        }
+        cursor += 1;
+    }
+    // Preserve the previous verifier's cycle diagnostic for a reachable cycle
+    // that also strands blocks, such as a self-call continuation back to entry.
+    if order.len() != reachable {
+        return Err(failure(FailureKind::Cycle, origin));
+    }
+    if reachable != count {
+        return Err(failure(FailureKind::Unreachable, origin));
+    }
+    Ok(order)
+}
+
+struct Ancestors {
+    levels: usize,
+    cells: Vec<usize>,
+    depths: Vec<usize>,
+}
+impl Ancestors {
+    fn index(&self, block: usize, level: usize, origin: Span) -> Result<usize, OirFailure> {
+        if level >= self.levels {
+            return Err(failure(FailureKind::InvalidBlock, origin));
+        }
+        block
+            .checked_mul(self.levels)
+            .and_then(|base| base.checked_add(level))
+            .filter(|&index| index < self.cells.len())
+            .ok_or_else(|| failure(FailureKind::InvalidBlock, origin))
+    }
+    fn get(&self, block: usize, level: usize, origin: Span) -> Result<usize, OirFailure> {
+        Ok(*at(&self.cells, self.index(block, level, origin)?, origin)?)
+    }
+    fn set(
+        &mut self,
+        block: usize,
+        level: usize,
+        value: usize,
+        origin: Span,
+    ) -> Result<(), OirFailure> {
+        let index = self.index(block, level, origin)?;
+        *at_mut(&mut self.cells, index, origin)? = value;
+        Ok(())
+    }
+    fn lca(&self, mut left: usize, mut right: usize, origin: Span) -> Result<usize, OirFailure> {
+        if at(&self.depths, left, origin)? < at(&self.depths, right, origin)? {
+            std::mem::swap(&mut left, &mut right);
+        }
+        let difference = at(&self.depths, left, origin)? - at(&self.depths, right, origin)?;
+        for level in 0..self.levels {
+            if difference & (1usize << level) != 0 {
+                left = self.get(left, level, origin)?;
+            }
+        }
+        if left == right {
+            return Ok(left);
+        }
+        for level in (0..self.levels).rev() {
+            let up_left = self.get(left, level, origin)?;
+            let up_right = self.get(right, level, origin)?;
+            if up_left != up_right {
+                left = up_left;
+                right = up_right;
+            }
+        }
+        self.get(left, 0, origin)
+    }
+}
+struct Dominance {
+    enter: Vec<usize>,
+    exit: Vec<usize>,
+}
+impl Dominance {
+    fn contains(
+        &self,
+        definition: usize,
+        use_block: usize,
+        origin: Span,
+    ) -> Result<bool, OirFailure> {
+        Ok(
+            at(&self.enter, definition, origin)? <= at(&self.enter, use_block, origin)?
+                && at(&self.exit, use_block, origin)? <= at(&self.exit, definition, origin)?,
+        )
+    }
+}
+fn dominance(
+    function: &Function,
+    predecessors: &Predecessors,
+    order: &[usize],
+) -> Result<Dominance, OirFailure> {
+    let count = function.blocks.len();
+    let origin = function.span;
+    let shape = scratch_dimensions(count, predecessors.blocks.len(), origin)?;
+    let mut ancestors = Ancestors {
+        levels: shape.levels,
+        cells: vec![0; shape.ancestors],
+        depths: vec![0; count],
+    };
+    const NONE: usize = usize::MAX;
+    let mut first_child = vec![NONE; count];
+    let mut next_sibling = vec![NONE; count];
+    for &block in order {
+        let parent = if block == function.entry.0 {
+            block
+        } else {
+            let mut preds = predecessors.of(block, origin)?.iter().copied();
+            let first = preds
+                .next()
+                .ok_or_else(|| failure(FailureKind::Unreachable, origin))?;
+            let mut common = first;
+            for pred in preds {
+                common = ancestors.lca(common, pred, origin)?;
+            }
+            let mut depth = *at(&ancestors.depths, common, origin)?;
+            Budget::add(&mut depth, 1, count, "dominator depth", STAGE, Some(origin))?;
+            *at_mut(&mut ancestors.depths, block, origin)? = depth;
+            *at_mut(&mut next_sibling, block, origin)? = *at(&first_child, common, origin)?;
+            *at_mut(&mut first_child, common, origin)? = block;
+            common
+        };
+        ancestors.set(block, 0, parent, origin)?;
+        for level in 1..shape.levels {
+            let half = ancestors.get(block, level - 1, origin)?;
+            ancestors.set(
+                block,
+                level,
+                ancestors.get(half, level - 1, origin)?,
+                origin,
+            )?;
+        }
+    }
+    let mut result = Dominance {
+        enter: vec![0; count],
+        exit: vec![0; count],
+    };
+    let mut current = function.entry.0;
+    let mut clock = 0;
+    let clock_limit = checked_product(count, 2, MAX_BLOCKS * 2, "dominator clock", origin)?;
+    // Parent/first-child/next-sibling walks need no recursion or DFS frame stack.
+    loop {
+        *at_mut(&mut result.enter, current, origin)? = clock;
+        Budget::add(
+            &mut clock,
+            1,
+            clock_limit,
+            "dominator clock",
+            STAGE,
+            Some(origin),
+        )?;
+        let child = *at(&first_child, current, origin)?;
+        if child != NONE {
+            current = child;
+            continue;
+        }
+        loop {
+            *at_mut(&mut result.exit, current, origin)? = clock;
+            Budget::add(
+                &mut clock,
+                1,
+                clock_limit,
+                "dominator clock",
+                STAGE,
+                Some(origin),
+            )?;
+            if current == function.entry.0 {
+                return Ok(result);
+            }
+            let sibling = *at(&next_sibling, current, origin)?;
+            if sibling != NONE {
+                current = sibling;
+                break;
+            }
+            current = ancestors.get(current, 0, origin)?;
+        }
+    }
+}
+fn read(
+    definitions: &[Option<Definition>],
+    dominance: &Dominance,
+    value: Operand,
+    use_block: usize,
+    use_statement: usize,
+) -> Result<(), OirFailure> {
+    let definition = definitions
+        .get(value.local.0)
+        .ok_or_else(|| failure(FailureKind::InvalidLocal, value.span))?;
+    let available = match definition {
+        Some(Definition::Parameter) => true,
+        Some(Definition::Assignment { block, statement }) if *block == use_block => {
+            *statement < use_statement
+        }
+        Some(Definition::Assignment { block, .. }) => {
+            dominance.contains(*block, use_block, value.span)?
+        }
+        // A call has exactly one normal successor. Strict block dominance in
+        // this acyclic CFG therefore implies its continuation edge was crossed.
+        // This must change if calls ever gain unwind or other successor edges.
+        Some(Definition::CallResult { block }) => {
+            *block != use_block && dominance.contains(*block, use_block, value.span)?
+        }
+        None => false,
+    };
+    if available {
+        Ok(())
+    } else {
+        Err(failure(FailureKind::Uninitialized, value.span))
+    }
+}
+fn cfg(function: &Function) -> Result<(), OirFailure> {
+    let predecessors = predecessors(function)?;
+    let order = topological(function, &predecessors)?;
+    let definitions = definitions(function)?;
+    let dominance = dominance(function, &predecessors, &order)?;
+    for (block_id, block) in function.blocks.iter().enumerate() {
+        for (index, assign) in block.statements.iter().enumerate() {
+            if let Rvalue::Copy(value) = assign.value {
+                read(&definitions, &dominance, value, block_id, index)?;
+            }
+        }
+        let position = block.statements.len();
+        match &terminator(block)?.kind {
+            TerminatorKind::Return(value)
+            | TerminatorKind::Branch {
+                condition: value, ..
+            } => {
+                read(&definitions, &dominance, *value, block_id, position)?;
+            }
+            TerminatorKind::Call { args, .. } => {
+                for &value in args {
+                    read(&definitions, &dominance, value, block_id, position)?;
+                }
+            }
+            TerminatorKind::Goto { .. } => {}
+        }
     }
     Ok(())
 }

@@ -902,7 +902,7 @@ fn raw_aggregate_resource_limits_apply_before_traversal() {
         span,
     });
     reject(&sources, p, FailureKind::ResourceLimit("locals"));
-    let (sources, p) = long_chain(MAX_BLOCKS - 1);
+    let (sources, p) = long_chain(MAX_LOCALS - 1);
     assert!(verify::verify(p, &sources).is_ok());
     let (_, mut p) = minimal();
     p.functions[0].blocks = vec![p.functions[0].blocks[0].clone(); MAX_BLOCKS + 1];
@@ -998,4 +998,212 @@ fn malformed_forward_callee_signature_is_checked_before_call_uses() {
         *target = hir::DefId(1);
     }
     reject(&sources, p, FailureKind::ParameterCount);
+}
+
+#[test]
+fn boolean_source_lowers_real_arms_and_a_reachable_join() {
+    let (sources, typed) =
+        checked("fn f(flag: bool) -> bool { if flag { true; } else { false; } return flag; }");
+    let verified = lower_and_verify(&typed, &sources).unwrap();
+    assert_eq!(verified.program.functions[0].blocks.len(), 4);
+}
+
+#[test]
+fn both_returning_arms_have_no_dead_join_and_optional_else_uses_real_join() {
+    for (source, block_count, goto_count) in [
+        (
+            "fn f(flag: bool) -> bool { if flag { return true; } else { return false; } }",
+            3,
+            0,
+        ),
+        (
+            "fn f(flag: bool) -> bool { if flag { return true; } return false; }",
+            3,
+            0,
+        ),
+        (
+            "fn f(flag: bool) -> bool { if flag { true; } else { return false; } return flag; }",
+            4,
+            1,
+        ),
+        (
+            "fn f(flag: bool) -> bool { if flag {} else {} return flag; }",
+            4,
+            2,
+        ),
+    ] {
+        let (sources, typed) = checked(source);
+        let verified = lower_and_verify(&typed, &sources).unwrap();
+        let blocks = &verified.program.functions[0].blocks;
+        assert_eq!(blocks.len(), block_count, "{source}");
+        assert_eq!(
+            blocks
+                .iter()
+                .filter(|b| matches!(
+                    b.terminator.as_ref().unwrap().kind,
+                    TerminatorKind::Goto { .. }
+                ))
+                .count(),
+            goto_count
+        );
+        assert!(matches!(
+            blocks[0].terminator.as_ref().unwrap().kind,
+            TerminatorKind::Branch {
+                then_block: BlockId(1),
+                else_block: BlockId(2),
+                ..
+            }
+        ));
+        assert_eq!(
+            verified.program,
+            lower_and_verify(&typed, &sources).unwrap().program
+        );
+    }
+}
+
+#[test]
+fn condition_arm_and_join_calls_remain_on_exact_paths() {
+    let source = "fn f(flag: bool) -> bool { if condition(flag) { let a = left(flag); sink(a); } else { let b = right(flag); sink(b); } return after(flag); } fn condition(x: bool) -> bool { return x; } fn left(x: bool) -> bool { return x; } fn right(x: bool) -> bool { return x; } fn sink(x: bool) -> () { return; } fn after(x: bool) -> bool { return x; }";
+    let (sources, typed) = checked(source);
+    let p = lower_and_verify(&typed, &sources).unwrap().program;
+    let f = &p.functions[0];
+    assert_eq!(f.blocks.len(), 10);
+    for (block, target, continuation) in [
+        (0, 1, 1),
+        (2, 2, 5),
+        (5, 4, 6),
+        (3, 3, 7),
+        (7, 4, 8),
+        (4, 5, 9),
+    ] {
+        let end = &f.blocks[block].terminator.as_ref().unwrap().kind;
+        assert!(
+            matches!(end, TerminatorKind::Call { target: actual_target, continuation: actual_continuation, .. } if actual_target.0 == target && actual_continuation.0 == continuation),
+            "block {block}: {end:?}"
+        );
+    }
+    assert!(matches!(
+        f.blocks[1].terminator.as_ref().unwrap().kind,
+        TerminatorKind::Branch {
+            then_block: BlockId(2),
+            else_block: BlockId(3),
+            ..
+        }
+    ));
+    for block in [6, 8] {
+        assert!(matches!(
+            f.blocks[block].terminator.as_ref().unwrap().kind,
+            TerminatorKind::Goto { target: BlockId(4) }
+        ));
+        assert!(f.blocks[block].statements.is_empty());
+    }
+    assert!(matches!(
+        f.blocks[9].terminator.as_ref().unwrap().kind,
+        TerminatorKind::Return(_)
+    ));
+    // Reserved join 4 receives real predecessors 6/8, proving table order is
+    // neither source expression order nor a topological order assumption.
+    assert_eq!(p, lower_and_verify(&typed, &sources).unwrap().program);
+}
+
+#[test]
+fn branch_origins_preserve_exact_unicode_crlf_source_bytes() {
+    let text = "// 雪\r\nfn f(flag: bool) -> bool {\r\n if (flag) { true; } else { false; }\r\n return flag;\r\n}";
+    let mut sources = SourceMap::new();
+    sources.add("other.ox".into(), "".into());
+    let file = sources.add("input.ox".into(), text.into());
+    let source = sources.get(file);
+    let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+    let typed = typeck::check(hir::resolve(source, &ast).unwrap()).unwrap();
+    let p = lower_and_verify(&typed, &sources).unwrap().program;
+    let f = &p.functions[0];
+    let slice = |span: Span| {
+        assert_eq!(span.file, file);
+        &text[span.start..span.end]
+    };
+    let branch = f.blocks[0].terminator.as_ref().unwrap();
+    assert_eq!(slice(branch.span), "if (flag) { true; } else { false; }");
+    if let TerminatorKind::Branch { condition, .. } = branch.kind {
+        assert_eq!(slice(condition.span), "(flag)");
+    } else {
+        panic!("expected Branch")
+    }
+    assert_eq!(slice(f.blocks[1].span), "{ true; }");
+    assert_eq!(slice(f.blocks[2].span), "{ false; }");
+    assert_eq!(slice(f.blocks[3].span), slice(branch.span));
+    for (block, literal) in [(1, "true"), (2, "false")] {
+        assert_eq!(slice(f.blocks[block].statements[0].span), literal);
+        let end = f.blocks[block].terminator.as_ref().unwrap();
+        assert_eq!(slice(end.span), "}");
+        assert!(matches!(
+            end.kind,
+            TerminatorKind::Goto { target: BlockId(3) }
+        ));
+        assert_eq!(end.span.start, f.blocks[block].span.end - 1);
+    }
+    let returned = f.blocks[3].terminator.as_ref().unwrap();
+    assert_eq!(slice(returned.span), "return flag;");
+    if let TerminatorKind::Return(op) = returned.kind {
+        assert_eq!(slice(op.span), "flag");
+    } else {
+        panic!("expected Return")
+    }
+}
+
+#[test]
+fn nested_branch_lowering_and_disjoint_binding_types_are_complete() {
+    let source = "fn f(flag: bool) -> () { if flag { let value = true; if value { return; } else { value; } } else { let value = (); value; } let value = (); return value; }";
+    let (sources, typed) = checked(source);
+    let p = lower_and_verify(&typed, &sources).unwrap().program;
+    let f = &p.functions[0];
+    assert_eq!(
+        f.locals
+            .iter()
+            .filter(|local| local.kind == LocalKind::Binding)
+            .map(|local| local.ty)
+            .collect::<Vec<_>>(),
+        [hir::Ty::Bool, hir::Ty::Unit, hir::Ty::Unit]
+    );
+    assert_eq!(
+        f.blocks
+            .iter()
+            .filter(|b| matches!(
+                b.terminator.as_ref().unwrap().kind,
+                TerminatorKind::Branch { .. }
+            ))
+            .count(),
+        2
+    );
+    assert_eq!(
+        f.blocks
+            .iter()
+            .filter(|b| matches!(
+                b.terminator.as_ref().unwrap().kind,
+                TerminatorKind::Return(_)
+            ))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn many_source_locals_calls_and_joins_lower_with_one_expression_cursor() {
+    let mut source = String::from("fn f(flag: bool) -> bool {");
+    for i in 0..1000 {
+        source.push_str(&format!(
+            "let v{i} = flag; if v{i} {{ sink(v{i}); }} else {{ sink(flag); }}"
+        ));
+    }
+    source.push_str("return flag; } fn sink(x: bool) -> () { return; }");
+    let (sources, typed) = checked(&source);
+    let p = lower_and_verify(&typed, &sources).unwrap().program;
+    assert_eq!(p.functions[0].blocks.len(), 5001);
+    assert_eq!(
+        p.functions[0]
+            .locals
+            .iter()
+            .filter(|l| l.kind == LocalKind::Binding)
+            .count(),
+        1000
+    );
 }
