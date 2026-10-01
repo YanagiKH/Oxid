@@ -1,9 +1,10 @@
-# FFI
+# Linked C and C++ helpers
 
-Oxid ships with both C and C++ bridge samples.
+Oxid's Rust host links four demonstration functions from [native/](../native/) through [build.rs](../build.rs):
 
-- `c_len` and `c_hash`
-- `cpp_len` and `cpp_hash`
-- `build.rs` compiles the native bridge sources together
+- `c_len(text)` and `c_hash(text)`
+- `cpp_len(text)` and `cpp_hash(text)`
 
-This keeps the project open to existing native code while the Oxid surface continues to grow.
+These fixed helpers exercise the host's C/C++ ABI boundary. They are not a general-purpose foreign function declaration system, and they do not compile `.ox` source into native code. Building the host from source requires a C/C++ compiler; release binaries already include the helpers.
+
+For running external programs or calling Oxid from another language, see [Interop](INTEROP.md).

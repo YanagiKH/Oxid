@@ -11,7 +11,7 @@ Path dependencies may be absolute or relative to the manifest that declares them
 shared = "../shared"
 ```
 
-Remote dependencies use HTTPS Git and must pin a complete 40- or 64-character commit hash:
+Remote dependencies use HTTPS Git and must pin a complete 40- or 64-character commit hash. Replace this illustrative URL and hash with a real repository and commit:
 
 ```toml
 [dependencies]
@@ -29,8 +29,8 @@ Nested manifests are resolved recursively. The resolver rejects cycles, conflict
 ## Commands
 
 ```bash
-oxid add codec https://github.com/example/oxid-codec.git#<full-commit>
-oxid remove codec
+oxid add shared ../shared
+oxid remove shared
 oxid list
 oxid lock
 oxid fetch
@@ -49,3 +49,7 @@ oxid build --frozen
 
 Commit `oxid.lock` for applications. Libraries may commit it when reproducible repository tooling is important, while consumers still resolve from their own manifest.
 
+
+## Current limits
+
+The resolver identifies packages by name and cannot resolve multiple versions of the same name together. Package-tree checksums use FNV; they detect changes but are not cryptographic supply-chain verification. Review dependency sources and lockfile updates before running their code. Registry publishing is not part of the 0.9 workflow.

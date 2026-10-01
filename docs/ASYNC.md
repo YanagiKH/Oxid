@@ -1,14 +1,16 @@
-# Async tasks and network I/O
+# Tasks and network I/O
 
-Oxid uses task values for concise asynchronous syntax.
+Oxid 0.9 supports task syntax, but has no concurrent task scheduler. Calling an async function creates a pending task; its body runs when awaited or joined. `join_all` runs tasks sequentially in input order.
 
-- `async fn` or `work fun` returns a task.
+- `async fn` or `work fun` declares a task-returning function.
 - `await`, `join`, and `join_all` resolve tasks.
-- `spawn` creates a task from a callable and arguments.
+- `spawn` creates a pending task from a callable and arguments; it does not start a background thread.
 - `task_status` reports `pending`, `running`, `completed`, or `failed`.
-- completed and failed task results are memoized.
-- `yield_now` yields the current operating-system thread.
+- Completed results and failures are memoized.
+- `yield_now` yields the current operating-system thread, rather than scheduling other Oxid tasks.
 
-The network adapter uses nonblocking TCP sockets and timeout-bounded polling. A listener remains open across repeated `net_accept` calls, while `net_try_accept` returns a connection or `null` immediately so idle loops can perform other work. Accepted connections can be read, written, parsed as HTTP, and closed independently. This supports long-running server loops without recreating the listening socket.
+## Network behavior
 
-Oxid 0.9 does not yet provide a concurrent event-loop scheduler: an individual accept/read/write call waits cooperatively until data, completion, or its timeout. Applications should use finite timeouts and keep TLS, authentication, rate limiting, and production connection management in an audited adapter.
+TCP sockets use nonblocking mode, but individual accept/read/write calls poll until they complete or time out. `net_try_accept` is the immediate-return option: it yields a connection or `null`. A listener can accept multiple connections over its lifetime without being recreated.
+
+Use finite timeouts and close connections when finished. The current runtime has no concurrent event loop, built-in TLS, or authentication. See [local HTTP examples](WEB_AND_BOTS.md) and [legacy task semantics](../spec/legacy-0.9.md#tasks).

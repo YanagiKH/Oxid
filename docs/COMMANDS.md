@@ -1,45 +1,59 @@
-# Commands
+# Oxid commands
 
-## Run, check, and compile
+Run `oxid --version` to check the installed version, or `oxid help` for built-in help. Commands below describe the 0.9 toolchain.
 
-- `oxid run <file.ox|file.oxb|file.oxa>` executes source or a validated OXBC artifact.
-- `oxid <existing-file>` is the direct shorthand for `oxid run`.
-- `oxid check <file>` parses source or validates an artifact without executing it.
-- `oxid compile <file.ox> [-o output.oxb]` writes OXBC 1.0.
-- `oxid ast <file.ox> [-o output.oxa]` writes the serialized AST representation.
-- `oxid inspect <artifact>` prints format, AST version, module/statement counts, and checksum.
-- `oxid repl` starts the interactive interpreter.
-- `oxid watch <file.ox>` reruns after project files change.
+## Run and package
 
-## Projects and packages
+| Command | What it does |
+|---|---|
+| `oxid run <file.ox\|file.oxb\|file.oxa>` | Execute source or load and interpret an artifact |
+| `oxid <existing-file>` | Shorthand for `run` |
+| `oxid check <file>` | Parse source or validate an artifact without executing it |
+| `oxid compile <file.ox> [-o output.oxb]` | Package the module graph as OXBC 1.0 serialized AST |
+| `oxid ast <file.ox> [-o output.oxa]` | Write the same artifact representation with an `.oxa` extension |
+| `oxid inspect <artifact>` | Print versions, counts, and checksum |
+| `oxid repl` | Start the interactive interpreter |
+| `oxid watch <file.ox>` | Rerun after project files change |
 
-- `oxid new <name>` / `oxid init <name>`
-- `oxid web new <name>` / `oxid discord new <name>`
-- `oxid build [--offline|--locked|--frozen]`
+`check` does not type-check or enforce ownership. `compile` does not emit native machine code. See [artifact format](COMPILER.md) and [module ordering](MODULES.md).
+
+## Create and maintain a project
+
+| Command | What it does |
+|---|---|
+| `oxid new <name>` / `oxid init <name>` | Create a new directory and project scaffold; the directory must not exist |
+| `oxid web new <name>` / `oxid discord new <name>` | Create an HTTP or Discord starter project |
+| `oxid build [--offline\|--locked\|--frozen]` | Resolve dependencies and write `.oxid/bin/<project>.oxb` |
+| `oxid test` | Execute `.ox` files under `tests/` and `examples/` |
+| `oxid lint` | Run source checks across the project |
+| `oxid fmt [path]` | Rewrite source formatting in a file or project |
+| `oxid doctor` / `oxid diagnose` | Check the manifest, entry point, and project structure |
+| `oxid doc` | Write a built-in reference to `docs/API.md`, replacing an existing file |
+| `oxid script <name> [args...]` | Run a manifest script with appended arguments |
+| `oxid clean` | Delete the project's `.oxid` artifacts, caches, and dependency checkouts |
+
+`lint` currently runs syntax checks, not a separate static-analysis engine. Manifest scripts launch an executable and argument vector without a shell; see [Scripts](SCRIPTS.md).
+
+## Manage dependencies
+
 - `oxid add <name> <path-or-pinned-git-source>`
 - `oxid remove <name>` / `oxid list`
 - `oxid lock [--offline|--locked]`
 - `oxid fetch [--offline|--locked]`
 - `oxid update`
 - `oxid install [--offline|--locked|--frozen]`
-- `oxid script <name> [args...]`
-- `oxid test`, `oxid fmt [path]`, `oxid clean`, `oxid doctor`, `oxid doc`, `oxid lint`
 
-## Measurement and bootstrap
+See [Packages](PACKAGES.md) for source rules, lockfile changes, and offline behavior. `install` resolves dependencies and builds the project; it does not install a global executable.
 
-- `oxid bench [--iterations N] [--json report.json]`
-- `oxid bootstrap [--check]`
-- `oxid self-compile [--check]`
-- `oxid emit [--check]`
-- `oxid self-host [--check]`
-- `oxid frontend`, `oxid diagnose`, `oxid module`, `oxid syntax`, `oxid interop`
+## Measure and inspect
 
-Without `--check`, bootstrap commands write deterministic stage artifacts and a manifest under `.oxid/bootstrap/`. With `--check`, they perform the parity validation without changing bootstrap outputs.
+- `oxid bench [--iterations N] [--json report.json]` measures Oxid's internal workloads.
+- `oxid frontend` prints provider declarations; it does not select compiler providers.
+- `oxid module`, `oxid syntax`, and `oxid interop` print reference information.
+- `oxid bridge <python|java|go|c|cpp|all> [output]` generates host process adapters.
 
-## Bridges
+## Legacy bootstrap aliases
 
-- `oxid bridge <python|java|go|c|cpp|all> [output]`
+`oxid bootstrap`, `oxid self-compile`, `oxid emit`, and `oxid self-host` all run the same [artifact round-trip check](BOOTSTRAP.md). They do not rebuild the compiler.
 
-Use `oxid --version`, `oxid help`, or `oxid --help` for the installed toolchain version and concise command help.
-
-Manifest scripts are tokenized with quote/backslash handling and launched as an executable plus argument vector. They do not use a command shell, so shell operators, substitutions, and expansions are not interpreted. Extra arguments after the script name are appended unchanged.
+Each accepts `--check`. Without that flag, the command writes artifacts and a manifest under `.oxid/bootstrap/`. With it, the command skips those output writes; source preprocessing may still use its cache. See [self-hosting status](SELF_HOSTING.md) for the exact checks.

@@ -2309,10 +2309,12 @@ fn document_project(root: &Path) -> Result<(), String> {
 
 ## Language focus
 
-- fast script execution
-- ergonomic async tasks
+- source interpretation
+- lazy, memoized tasks; join_all executes sequentially
 - concise fun / var / say / give / when / for syntax
-- deterministic versioned bytecode and serialized AST artifacts
+- deterministic OXBC 1.0 serialized-AST artifacts executed by the runtime
+- bootstrap aliases verify artifact serialization round-trip, not compiler self-rebuild
+- the production parser and binary artifact writer are Rust implementations
 - cross-module source spans and pipeline expressions
 - macro pre-expansion
 - local and locked Git module loading
@@ -3635,7 +3637,7 @@ const second = join(task);
     }
 
     #[test]
-    fn embedded_self_host_pipeline_reaches_a_deterministic_fixed_point() {
+    fn embedded_compiler_demo_artifact_roundtrip_is_deterministic() {
         let root = unique_temp_dir("bootstrap");
         fs::create_dir_all(&root).expect("temp project");
         bootstrap_project(&root, false).expect("bootstrap parity");

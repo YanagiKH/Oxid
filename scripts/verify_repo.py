@@ -9,6 +9,8 @@ import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from verify_feature_status import verify_feature_status
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNABLE_GROUPS = ("tests", "examples", "tools", "apps")
@@ -87,6 +89,7 @@ def main() -> int:
     if not executable.is_file():
         raise RuntimeError(f"Oxid executable not found: {executable}")
 
+    verify_feature_status(ROOT)
     verify_versions()
     verify_readmes()
     verify_assets()
@@ -116,6 +119,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except RuntimeError as error:
+    except (RuntimeError, ValueError) as error:
         print(f"verification error: {error}", file=sys.stderr)
         raise SystemExit(1)

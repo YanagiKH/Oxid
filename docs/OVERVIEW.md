@@ -1,10 +1,18 @@
-# Overview
+# What Oxid does
 
-Oxid 0.9 is a standalone language toolchain with two compatible workflows: interpret `.ox` source directly for fast iteration, or compile the same module graph into a deterministic, versioned `.oxb` artifact for distribution. The language accepts classical and concise spellings in one parser.
+Oxid is a small language for scripts, automation, and cross-language tools. A single `oxid` executable can run source, create projects, manage dependencies, and package programs.
 
-The runtime includes tasks, records and JSON, persistent nonblocking TCP adapters, files and processes, native C/C++ functions, and bridges for Python, Java, Go, C, and C++. The package workflow resolves local paths and commit-pinned Git dependencies into a deterministic lockfile.
+## Two ways to run
 
-The compiler migration is intentionally measurable. An Oxid-authored bytecode emitter is active behind a provider manifest, while lexer, parser, diagnostics, and modules remain in the stage-0 bootstrap. Deterministic bootstrap parity is implemented; complete independent self-hosting is not yet claimed.
+- `oxid run app.ox` parses and interprets source.
+- `oxid compile app.ox -o app.oxb` packages its module graph as a serialized AST. `oxid run app.oxb` loads it into the same interpreter.
 
-Performance depends on workload and platform. `oxid bench` supplies repeatable measurements rather than a universal claim against another language.
+An `.oxb` file requires a compatible Oxid runtime. Compilation does not produce a native executable. Import ordering also differs in one known case; see [Modules](MODULES.md).
 
+## Included in 0.9
+
+The language has functions, loops, pipelines, arrays, records, JSON, and lazy tasks. Runtime services cover files, processes, TCP/HTTP helpers, and a small set of linked C/C++ functions. Process adapters connect to Python, Java, and Go; package commands resolve local paths and commit-pinned Git dependencies.
+
+Oxid is experimental. The production parser and binary artifact writer are Rust code. The Oxid-authored emitter is a separate textual demonstration; self-hosting commands currently test serialization round-trips. Static ownership checking, native compilation, a concurrent scheduler, and native AI training remain future work.
+
+Start with the [quickstart](QUICKSTART.md). For technical detail, read the [architecture](ARCHITECTURE.md), [current implementation](architecture/current-baseline.md), and [roadmap](ROADMAP.md).

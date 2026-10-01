@@ -1,6 +1,6 @@
 # Architecture
 
-Oxid 0.9 uses a stage-0 Rust bootstrap around a growing Oxid-authored compiler surface.
+Oxid 0.9 uses a Rust frontend and interpreter. Packaging stores the parsed program as a serialized AST; an Oxid runtime is still needed to execute it.
 
 ## Language path
 
@@ -14,7 +14,7 @@ Oxid 0.9 uses a stage-0 Rust bootstrap around a growing Oxid-authored compiler s
 
 - arrays and deterministic records;
 - bounded JSON parsing and stringification;
-- task values with observable state and memoized completion;
+- lazy task values with observable state and memoized completion; joining multiple tasks is sequential;
 - persistent nonblocking TCP listener/connection handles with bounded reads, writes, and HTTP parsing;
 - files, environment, processes, and linked C/C++ functions;
 - Python, Java, Go, C, and C++ bridge generation.
@@ -25,5 +25,11 @@ Oxid 0.9 uses a stage-0 Rust bootstrap around a growing Oxid-authored compiler s
 
 ## Self-hosting boundary
 
-`compiler/providers.toml` selects the Oxid emitter while lexer, parser, diagnostics, and module handling remain stage-0. Bootstrap compiles and executes the Oxid compiler surface and verifies byte-identical stage artifacts. Provider replacement is incremental and parity-gated; the release compiler is not yet fully independent of stage-0.
+`compiler/providers.toml` declares ownership without dispatching production
+components. The binary OXBC writer is Rust code; the Oxid emitter is a separate
+textual instruction demonstration. The legacy bootstrap commands verify AST
+serialization round-trip and run that demonstration, not compiler self-rebuild.
 
+See [the scoped implementation baseline](architecture/current-baseline.md),
+[legacy characterization](../spec/legacy-0.9.md), and
+[self-hosting requirements](SELF_HOSTING.md).

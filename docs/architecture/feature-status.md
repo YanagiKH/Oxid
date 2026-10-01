@@ -1,0 +1,30 @@
+# Feature status inventory
+
+[feature-status.json](../feature-status.json) is a non-exhaustive M0 inventory.
+It records a source revision, bounded feature scope, implementation/test paths,
+owner/reviewer assignments, and known limitations. `unassigned` is explicit and
+must be resolved before a validation/stability claim; no maintainer commitment
+is implied by adding an entry.
+
+| Status | Meaning |
+| --- | --- |
+| `proposed` | Direction or acceptance target; not available functionality |
+| `experimental` | Some runnable code exists, with incomplete contract or evidence |
+| `implemented` | The scoped feature is connected to the production path and has tests; required validation may remain |
+| `validated` | The declared scope/target matrix has reviewed execution evidence and an owner |
+| `stable` | Validated with accepted compatibility/migration policy and review |
+
+Classification is separate: `production-path`, `demo`, `synthetic`, or `planned`.
+A demonstration can be tested without becoming a production feature. A feature
+can have a passing local test without becoming validated on every target.
+
+Every entry describes edition, backend, and target scope independently. The
+term `legacy-0.9` is a documentation label, not a currently supported CLI edition
+flag. Test paths identify checks; evidence paths identify recorded results and
+limitations. An empty evidence list means no report is attached to that claim.
+
+Run `python3 scripts/verify_feature_status.py` to detect malformed status values,
+duplicate IDs, missing/escaping repository paths, or claims missing required
+records. It is also run by `scripts/verify_repo.py`. The validator checks metadata
+consistency, not the truth of a safety, compatibility, performance, or release
+certification. Review must examine the linked implementation and evidence.

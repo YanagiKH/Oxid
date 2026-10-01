@@ -2,7 +2,7 @@
 
 ## Core values
 
-Oxid supports numbers, strings, booleans, null, arrays, records, functions, task values, TCP listeners, and TCP connections. Records use deterministic key ordering and support literals, property access, string-key indexing, and assignment.
+Oxid 0.9 supports numbers (`f64`), strings, booleans, null, arrays, records, functions, lazy task values, TCP listeners, and TCP connections. Records use deterministic key ordering and support literals, property access, string-key indexing, and assignment.
 
 ```oxid
 var user = {name: "Ada", active: yes};
@@ -41,3 +41,5 @@ web_serve_once(host, port, response[, timeout_ms])
 ```
 
 `net_try_accept` returns immediately with a connection or `null`, allowing an idle-resilient loop to perform other work. `http_read_request` returns structured request data and applies limits to request lines, headers, and body. `http_write_response` safely encodes either a raw HTTP string or a `{status, headers, body}` response record before writing it. Network and JSON functions reject oversized or malformed input rather than allocating without bounds.
+
+See [task semantics](ASYNC.md), [container sharing](LIFETIME.md), and [network limitations](WEB_AND_BOTS.md) before relying on concurrency, immutability, or binary I/O.

@@ -1,14 +1,15 @@
-# Tooling
+# Project tools
 
-The standalone `oxid` binary covers:
+The `oxid` executable includes the tools needed to try and package an Oxid project:
 
-- direct interpretation, REPL, watch, syntax checking, and linting;
-- OXBC compilation, serialized AST emission, artifact inspection, and project builds;
-- deterministic path/Git dependency resolution and lockfile management;
-- formatting, tests, project diagnostics, documentation, and scaffolding;
-- benchmark reporting for cold start, parsing, packaging, and runtime operations;
-- deterministic bootstrap parity and frontend provider inspection;
-- Python, Java, Go, C, and C++ bridge generation.
+- `run`, `repl`, and `watch` for execution
+- `check` and `lint` for syntax validation
+- `compile`, `ast`, `inspect`, and `build` for serialized-AST artifacts
+- `add`, `lock`, `fetch`, and related commands for path/Git dependencies
+- `new`, `fmt`, `test`, and `doctor` for project maintenance
+- `bench` for internal performance measurements
+- `bridge` for generated host process adapters
 
-Run `oxid help` for the concise list and consult [COMMANDS.md](COMMANDS.md) for flags and behavior.
+`frontend` reports provider declarations. Legacy bootstrap aliases check artifact round-trips. Neither command proves compiler self-hosting.
 
+Run `oxid help` or read [Commands](COMMANDS.md) for flags and side effects. In particular, `fmt` rewrites source, `doc` replaces `docs/API.md`, and `clean` removes the project `.oxid` directory.

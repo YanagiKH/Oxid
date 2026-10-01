@@ -1,6 +1,6 @@
 # Interop
 
-Oxid supports Python, Java, Go, C, and C++ through two verified boundaries.
+Oxid connects to other languages through external processes and four linked C/C++ helpers. Process integration requires the external program or runtime to be installed.
 
 ## Oxid to foreign programs
 
@@ -17,7 +17,7 @@ Generate host SDKs with:
 oxid bridge all bridges
 ```
 
-Individual targets are `python`, `java`, `go`, `c`, and `cpp`. Generated adapters expose a small `run` function around the stable `oxid run` process boundary.
+Individual targets are `python`, `java`, `go`, `c`, and `cpp`. Generated adapters expose a small `run` function around the `oxid run` process boundary. These launch the Oxid executable rather than embedding an Oxid compiler.
 
 ## Safety
 

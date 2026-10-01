@@ -1,6 +1,6 @@
 # Compiler and OXBC artifacts
 
-Oxid supports source interpretation and ahead-of-time artifact creation from the same frontend.
+Oxid can run source directly or package it as a serialized AST. Both paths execute in the interpreter; `compile` does not generate native machine code.
 
 ```bash
 oxid run app.ox
@@ -25,7 +25,9 @@ An artifact starts with the `OXBC` magic followed by:
 
 The reader rejects bad magic, unsupported versions, truncated or trailing data, checksum mismatches, excessive payloads, excessive AST depth, and excessive collection sizes. Major, minor, and AST versions must match the runtime currently; compatibility is explicit rather than silently guessed.
 
-OXBC is not native machine code. Oxid 0.9 decodes the serialized AST and executes it in the runtime. The stable, bounded container makes artifacts deterministic and gives later bytecode/runtime stages a versioned migration point.
+OXBC is not native machine code. Oxid 0.9 decodes the serialized AST and executes it in the runtime. The versioned container bounds payload size and gives future formats an explicit migration point. The FNV checksum detects accidental changes; it is not a cryptographic signature or proof that an artifact is trustworthy.
 
 `oxid build` resolves dependencies, compiles the manifest entry to `.oxid/bin/<project>.oxb`, and records a build report under `.oxid/`.
 
+
+Import initialization order can differ between source and packaged execution. See the [known module-ordering limitation](MODULES.md#initialization-order).
