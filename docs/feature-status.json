@@ -298,7 +298,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -400,6 +400,37 @@
         "docs/architecture/boolean-cfg-validation.md"
       ],
       "limitations": "Restricted provisional bool/unit checking only. Canonical globally unique immutable definitions; no phi or merge values. Calls assumed to return normally. No loops, numeric semantics, ownership, memory safety, execution, native output, stable edition or completed roadmap milestone."
+    },
+    {
+      "id": "typed-preview-reference-execution",
+      "summary": "Explicit bool/unit typed-preview run from compiler-resolved zero-argument main, through immutable verified OIR and bounded iterative isolated activations",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; this report does not claim remote CI or other execution hosts",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0004-bounded-reference-execution.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/driver.rs",
+        "src/frontend/options.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/execute.rs"
+      ],
+      "tests": [
+        "src/frontend/oir/execute_tests.rs",
+        "src/frontend/oir/source_oracle.rs",
+        "tests/typed_execution.rs",
+        "tests/edition_boundary.rs"
+      ],
+      "evidence": [
+        "docs/architecture/reference-execution-validation.md"
+      ],
+      "limitations": "Provisional bounded scalar reference execution only: 1,000,000 fuel, 1,024 live frames, 200,000 live slots. No numeric semantics, source heap, ownership, host I/O, imports, native output, typed artifact, termination or OS-sandbox guarantee. Default legacy execution and typed check remain unchanged."
     }
   ]
 }

@@ -8,7 +8,7 @@ specification or evidence that M0 has been completed.
 - [Legacy module contract](legacy-modules.md) records module resolution,
   diagnostics, and route-specific limitations.
 - [Typed preview](typed-preview.md) defines the opt-in experimental bool/unit
-  checker, lexical branches and verified acyclic OIR. It is check-only.
+  checker, lexical branches, verified acyclic OIR and bounded explicit reference run.
 - [Current architecture](../docs/architecture/current-baseline.md) identifies
   which implementation actually runs and separates demonstrations from it.
 - [Feature status](../docs/feature-status.json) records scoped claims and gaps.
@@ -22,7 +22,7 @@ language edition or a claim of Rust language compatibility.
 
 "Legacy 0.9" is the name of the characterized behavior in these documents. The default route remains legacy;
 `--edition legacy-0.9` explicitly selects it. The provisional `typed-preview`
-selector enables only single-source checking. It does not silently replace
+selector enables single-source checking and explicit bounded bool/unit running. It does not silently replace
 existing numeric, equality, aliasing, or task behavior or establish a stable
 static language edition.
 

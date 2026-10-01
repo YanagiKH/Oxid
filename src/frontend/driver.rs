@@ -1,7 +1,7 @@
 use super::{
     diagnostic::{json_string, Diagnostic},
     hir, lexer, oir,
-    options::{self, Route},
+    options::{self, Operation, Route},
     parser,
     source::{SourceMap, MAX_SOURCE_BYTES},
     typeck,
@@ -15,21 +15,33 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             *args = legacy;
             None
         }
-        Route::Error { message, json } => Some(report(
+        Route::Error {
+            message,
+            json,
+            operation,
+        } => Some(report(
             &SourceMap::new(),
             vec![*Diagnostic::new("E0001", "cli", message, None)],
             json,
-            None,
+            Summary::empty(operation),
         )),
-        Route::TypedCheck { path, json } => Some(check_file(&path, json)),
+        Route::TypedCheck { path, json } => Some(process_file(&path, json, Operation::Check)),
+        Route::TypedRun { path, json } => Some(process_file(&path, json, Operation::Run)),
     }
 }
-fn report(
-    sources: &SourceMap,
-    diagnostics: Vec<Diagnostic>,
-    json: bool,
-    functions: Option<usize>,
-) -> i32 {
+enum Summary {
+    Check(Option<usize>),
+    Run(Option<oir::Scalar>),
+}
+impl Summary {
+    fn empty(operation: Operation) -> Self {
+        match operation {
+            Operation::Check => Self::Check(None),
+            Operation::Run => Self::Run(None),
+        }
+    }
+}
+fn report(sources: &SourceMap, diagnostics: Vec<Diagnostic>, json: bool, summary: Summary) -> i32 {
     let success = diagnostics.is_empty();
     for diagnostic in &diagnostics {
         if json {
@@ -38,13 +50,24 @@ fn report(
             eprint!("{}", diagnostic.render_human(sources));
         }
     }
-    if json {
-        println!("{}", check_summary(diagnostics.len(), functions));
-    } else if success {
-        println!(
-            "typed-preview check ok ({} functions; check only)",
-            functions.unwrap_or(0)
-        );
+    match summary {
+        Summary::Check(functions) => {
+            if json {
+                println!("{}", check_summary(diagnostics.len(), functions));
+            } else if success {
+                println!(
+                    "typed-preview check ok ({} functions; check only)",
+                    functions.unwrap_or(0)
+                );
+            }
+        }
+        Summary::Run(result) => {
+            if json {
+                println!("{}", run_summary(diagnostics.len(), result));
+            } else if let Some(result) = result.filter(|_| success) {
+                println!("{result}");
+            }
+        }
     }
     exit_status(&diagnostics)
 }
@@ -52,6 +75,11 @@ fn check_summary(errors: usize, functions: Option<usize>) -> String {
     format!("{{\"schema_version\":1,\"edition\":{},\"kind\":\"check-summary\",\"success\":{},\"errors\":{},\"functions\":{}}}",
         json_string("typed-preview"), errors == 0, errors,
         functions.filter(|_| errors == 0).map_or("null".to_string(), |n| n.to_string()))
+}
+
+fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
+    format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":{},\"errors\":{errors},\"result\":{}}}",
+        errors == 0, result.filter(|_| errors == 0).map_or("null".into(), oir::Scalar::json))
 }
 
 fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
@@ -65,7 +93,7 @@ fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
     }
 }
 
-fn check_file(path: &str, json: bool) -> i32 {
+fn process_file(path: &str, json: bool, operation: Operation) -> i32 {
     let mut sources = SourceMap::new();
     let result = (|| {
         let file = File::open(path).map_err(|e| {
@@ -117,14 +145,30 @@ fn check_file(path: &str, json: bool) -> i32 {
         let ast = parser::parse(source, tokens)?;
         debug_assert!(!ast.tokens.is_empty());
         let resolved = hir::resolve(source, &ast)?;
+        // Resolution assigns DefIds in source declaration order. Use the actual
+        // resolved function's ID rather than reinterpreting OIR origin spans.
+        let entry = ast
+            .functions
+            .iter()
+            .zip(&resolved.functions)
+            .find(|(declaration, _)| {
+                &source.text()[declaration.name.start..declaration.name.end] == "main"
+            })
+            .map(|(_, function)| function.id);
         let typed = typeck::check(resolved)?;
         let verified = oir::lower_and_verify(&typed, &sources)
             .map_err(|error| vec![*error.diagnostic(&sources)])?;
-        Ok(verified.function_count())
+        match operation {
+            Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
+            Operation::Run => verified
+                .run(entry)
+                .map(|value| Summary::Run(Some(value)))
+                .map_err(|error| vec![*error.diagnostic(&sources)]),
+        }
     })();
     match result {
-        Ok(functions) => report(&sources, Vec::new(), json, Some(functions)),
-        Err(diagnostics) => report(&sources, diagnostics, json, None),
+        Ok(summary) => report(&sources, Vec::new(), json, summary),
+        Err(diagnostics) => report(&sources, diagnostics, json, Summary::empty(operation)),
     }
 }
 
@@ -145,7 +189,15 @@ mod tests {
         assert!(diagnostic
             .render_json(&SourceMap::new())
             .contains("\"primary\":null"));
-        assert_eq!(report(&SourceMap::new(), vec![diagnostic], true, None), 2);
+        assert_eq!(
+            report(
+                &SourceMap::new(),
+                vec![diagnostic],
+                true,
+                Summary::Check(None)
+            ),
+            2
+        );
         assert_eq!(check_summary(1, Some(7)), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}");
     }
 }

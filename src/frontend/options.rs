@@ -3,15 +3,40 @@
 //! The two new options are recognized anywhere before `--`. For `script`,
 //! recognition stops immediately after the script name: the remaining arguments
 //! belong to the launched process. With neither option, legacy argv is unchanged.
-//! Typed checking accepts `check [options] [--] <source>` and options before the
+//! Typed commands accept `check|run [options] [--] <source>` and options before the
 //! command or after the source. The separator is optional and makes all later
-//! words literal operands; exactly one source is required. It must follow `check`.
+//! words literal operands; exactly one source is required. It follows the command.
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
-    TypedCheck { path: String, json: bool },
-    Error { message: String, json: bool },
+    TypedCheck {
+        path: String,
+        json: bool,
+    },
+    TypedRun {
+        path: String,
+        json: bool,
+    },
+    Error {
+        message: String,
+        json: bool,
+        operation: Operation,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Operation {
+    Check,
+    Run,
+}
+impl Operation {
+    fn command(self) -> &'static str {
+        match self {
+            Self::Check => "check",
+            Self::Run => "run",
+        }
+    }
 }
 
 /// Classify arguments excluding the executable name, without reading any files.
@@ -95,20 +120,25 @@ pub fn route(args: &[String]) -> Route {
             .get_or_insert_with(|| "--message-format requires --edition typed-preview".to_string());
     }
     if let Some(message) = error {
-        return Route::Error { message, json };
+        return Route::Error {
+            message,
+            json,
+            operation: Operation::Check,
+        };
     }
     if edition != Some("typed-preview") {
         return Route::Legacy(forwarded);
     }
-    if forwarded.first().map(String::as_str) != Some("check") {
-        return Route::Error {
-            message: format!(
-                "edition `typed-preview` supports only `check`; command `{}` is unavailable",
-                forwarded.first().map(String::as_str).unwrap_or("<missing>")
-            ),
-            json,
-        };
-    }
+    let operation = match forwarded.first().map(String::as_str) {
+        Some("check") => Operation::Check,
+        Some("run") => Operation::Run,
+        _ => return Route::Error {
+            message: format!("edition `typed-preview` supports only `check` and explicit `run`; command `{}` is unavailable",
+                forwarded.first().map(String::as_str).unwrap_or("<missing>")),
+            json, operation: Operation::Check,
+        },
+    };
+    let command = operation.command();
 
     let mut path = None;
     let mut separated = false;
@@ -119,22 +149,28 @@ pub fn route(args: &[String]) -> Route {
         }
         if !separated && argument.starts_with('-') {
             return Route::Error {
-                message: format!("unsupported option for typed-preview check: {argument}"),
+                message: format!("unsupported option for typed-preview {command}: {argument}"),
                 json,
+                operation,
             };
         }
         if path.replace(argument).is_some() {
             return Route::Error {
-                message: "typed-preview check requires exactly one source path".to_string(),
+                message: format!("typed-preview {command} requires exactly one source path"),
                 json,
+                operation,
             };
         }
     }
     match path {
-        Some(path) => Route::TypedCheck { path, json },
+        Some(path) => match operation {
+            Operation::Check => Route::TypedCheck { path, json },
+            Operation::Run => Route::TypedRun { path, json },
+        },
         None => Route::Error {
-            message: "typed-preview check requires exactly one source path".to_string(),
+            message: format!("typed-preview {command} requires exactly one source path"),
             json,
+            operation,
         },
     }
 }
@@ -152,6 +188,7 @@ mod tests {
             Route::Error {
                 message,
                 json: actual,
+                ..
             } => {
                 assert!(message.contains(expected), "{message}");
                 assert_eq!(actual, json);
@@ -244,7 +281,6 @@ mod tests {
     #[test]
     fn typed_preview_rejects_every_other_command() {
         for command in [
-            "run",
             "file.ox",
             "compile",
             "ast",
@@ -349,7 +385,7 @@ mod tests {
         );
         error(
             &[
-                "run",
+                "compile",
                 "file.ox",
                 "--message-format=json",
                 "--edition=typed-preview",
