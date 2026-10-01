@@ -1,20 +1,29 @@
-<div align="center">
-  <img width="108" height="100" alt="Oxid logo" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
-</div>
+<p align="center">
+  <img width="216" height="200" alt="Oxid logo" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
+</p>
 
-# Oxid
+<h1 align="center">Oxid</h1>
 
-**A compact language for scripts, automation, and tools that work across languages.**
+<p align="center">
+  <strong>A compact language for scripts, automation, and tools that work across languages.</strong>
+</p>
 
-[![Repository CI](https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml/badge.svg)](https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/YanagiKH/Oxid?include_prereleases)](https://github.com/YanagiKH/Oxid/releases)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE)
+<p align="center">
+  <a href="https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml"><img alt="Repository CI" src="https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/YanagiKH/Oxid/releases"><img alt="Release" src="https://img.shields.io/github/v/release/YanagiKH/Oxid?include_prereleases" /></a>
+  <a href="LICENSE"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" /></a>
+</p>
 
-[English](README.md) · [繁體中文](README_ZH.md) · [日本語](README_JP.md)
+<p align="center">
+  <a href="README.md">English</a> · <a href="README_ZH.md">繁體中文</a> · <a href="README_JP.md">日本語</a>
+</p>
 
-Write a short `.ox` file, run it with `oxid`, or package it into one `.oxb` file. The release executable includes the interpreter and project tools; running Oxid programs does not require Rust.
+<p align="center">
+  Write a short <code>.ox</code> file, run it with <code>oxid</code>, or package top-level imports into one <code>.oxb</code> file.<br />
+  One executable includes the interpreter and project tools. Running Oxid programs does not require Rust.
+</p>
 
-**Current release: 0.9, experimental.** Oxid runs on a Rust-built interpreter. Native compilation, static ownership checking, and compiler self-hosting are future work.
+<p align="center"><strong>0.9 · Experimental · Rust-built interpreter</strong></p>
 
 ```oxid
 fun double(n) => n * 2;
@@ -47,13 +56,41 @@ Both run commands print `Hello from Oxid`. The build produces a serialized-AST a
 
 ## What you can do today
 
-- Write scripts with functions, loops, pipelines, arrays, records, and JSON
-- Read files, launch processes, and use Python, Java, or Go through process adapters
-- Package modules into one `.oxb` file and lock local or commit-pinned Git dependencies
-- Experiment with local HTTP services and Discord interaction handlers
-- Generate host adapters for Python, Java, Go, C, and C++
+Oxid 0.9 includes the following working features. Each guide describes the current behavior and limits.
 
-Start with the [examples](examples/), [runtime API](docs/API.md), or [interop guide](docs/INTEROP.md). External adapters need their own runtimes or toolchains.
+### Language and data
+
+- **Concise or familiar syntax:** use `fun` / `fn`, `var` / `let`, `say` / `print`, and other aliases in the same program
+- **Functions and control flow:** expression-bodied functions, `if` / `when`, `while` / `loop`, `for … in`, `break`, `continue`, and `|>` pipelines
+- **Built-in values:** numbers, strings, booleans, null, arrays, and records with property or string-key access
+- **Text and JSON:** split, join, and replace text; parse and serialize JSON with deterministic record-key ordering
+- **Source macros:** expand one-line parameterized macros before parsing, with cached preprocessing
+- **Lazy tasks:** `async` / `work`, `await`, `spawn`, task state inspection, and memoized results; `join_all` runs tasks sequentially
+
+### Run, package, and manage dependencies
+
+- **Direct execution:** run `.ox` files, use the REPL, or rerun a file with `watch` as project files change
+- **Portable AST artifacts:** bundle top-level imports into `.oxb`, emit the same representation as `.oxa`, and inspect format versions, counts, and checksums
+- **Module loading:** resolve relative imports and dependency aliases, with source locations retained in artifacts; imports inside functions still need their source files at runtime
+- **Locked dependencies:** local paths and full-commit-pinned HTTPS Git sources, recursive resolution, `oxid.lock`, and locked / offline / frozen modes
+
+### Project tools
+
+- **Starter projects:** `new` / `init`, plus HTTP and Discord scaffolds
+- **Everyday checks:** syntax checking, syntax-based `lint`, source formatting, and execution of project tests and examples
+- **Manifest scripts:** reusable commands with quoted arguments, launched without a command shell
+- **Project inspection:** `doctor`, generated API documentation, and benchmark reports for startup, parsing, packaging, and runtime operations
+
+### Files, networking, and other languages
+
+- **Local I/O:** text files, directory listings, environment variables, clocks, and sleep helpers
+- **External programs:** launch processes, collect exit codes or standard output, and call Python, Java, or Go through process adapters
+- **C/C++ and host adapters:** four linked native helpers plus generated Python, Java, Go, C, and C++ adapters that launch Oxid
+- **Local HTTP and Discord logic:** reusable TCP listeners, timeout-bounded HTTP helpers, routing, and Discord command/interaction dispatch; gateway transport remains external
+
+[Syntax](docs/SYNTAX.md) · [Runtime API](docs/API.md) · [Packages](docs/PACKAGES.md) · [Project tools](docs/COMMANDS.md) · [Interop](docs/INTEROP.md) · [HTTP / Discord](docs/WEB_AND_BOTS.md)
+
+Try the [examples](examples/) to see these features in use. External adapters need their own runtimes or toolchains. `.oxb` artifacts require a compatible Oxid runtime; they contain a serialized AST, not native machine code.
 
 ## Know the limits
 

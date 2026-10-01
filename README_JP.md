@@ -1,20 +1,29 @@
-<div align="center">
-  <img width="108" height="100" alt="Oxid logo" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
-</div>
+<p align="center">
+  <img width="216" height="200" alt="Oxid logo" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
+</p>
 
-# Oxid
+<h1 align="center">Oxid</h1>
 
-**短いコードでスクリプトや自動化ツールを書き、ほかの言語とつなぐ。**
+<p align="center">
+  <strong>短いコードでスクリプトや自動化ツールを書き、ほかの言語とつなぐ。</strong>
+</p>
 
-[![Repository CI](https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml/badge.svg)](https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/YanagiKH/Oxid?include_prereleases)](https://github.com/YanagiKH/Oxid/releases)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE)
+<p align="center">
+  <a href="https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml"><img alt="Repository CI" src="https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/YanagiKH/Oxid/releases"><img alt="Release" src="https://img.shields.io/github/v/release/YanagiKH/Oxid?include_prereleases" /></a>
+  <a href="LICENSE"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" /></a>
+</p>
 
-[English](README.md) · [繁體中文](README_ZH.md) · [日本語](README_JP.md)
+<p align="center">
+  <a href="README.md">English</a> · <a href="README_ZH.md">繁體中文</a> · <a href="README_JP.md">日本語</a>
+</p>
 
-`.ox` ファイルを `oxid` で実行するか、単一の `.oxb` ファイルにまとめられます。リリース版の実行ファイルにはインタープリターとプロジェクト用ツールが含まれ、Oxid プログラムの実行に Rust のインストールは不要です。
+<p align="center">
+  <code>.ox</code> ファイルを <code>oxid</code> で実行し、トップレベルのインポートを単一の <code>.oxb</code> にまとめられます。<br />
+  インタープリターとプロジェクト用ツールを一つの実行ファイルに同梱。Oxid プログラムの実行に Rust のインストールは不要です。
+</p>
 
-**現在のバージョン：0.9、実験段階。** 実行環境は Rust 製のインタープリターです。ネイティブコンパイル、静的な所有権チェック、コンパイラのセルフホスティングは今後の開発項目です。
+<p align="center"><strong>0.9 · 実験段階 · Rust 製インタープリター</strong></p>
 
 ```oxid
 fun double(n) => n * 2;
@@ -47,13 +56,41 @@ oxid test
 
 ## 今できること
 
-- 関数、ループ、パイプライン、配列、レコード、JSON を使ったスクリプト作成
-- ファイルの読み書きや外部プロセスの起動、Python・Java・Go とのプロセス連携
-- モジュールを単一の `.oxb` にまとめ、ローカル依存や Git の特定コミットを固定
-- ローカル HTTP サービスや Discord インタラクション処理の試作
-- Python・Java・Go・C・C++ から Oxid を呼び出すアダプターの生成
+Oxid 0.9 では次の機能を利用できます。各ガイドで現在の動作と制限を説明しています。
 
-[サンプル](examples/)、[ランタイム API](docs/API.md)、[言語間連携ガイド](docs/INTEROP.md)から始められます。外部アダプターには、それぞれのランタイムやツールチェーンが必要です。
+### 構文とデータ
+
+- **短い表記と慣れた表記：** `fun` / `fn`、`var` / `let`、`say` / `print` などの別名を同じプログラムで併用
+- **関数と制御構文：** 式で定義する関数、`if` / `when`、`while` / `loop`、`for … in`、`break`、`continue`、`|>` パイプライン
+- **組み込みの値：** 数値、文字列、真偽値、null、配列、プロパティや文字列キーでアクセスできるレコード
+- **テキストと JSON：** 文字列の分割・結合・置換、JSON の解析とシリアライズ、一定の順序でのレコードキー出力
+- **ソースマクロ：** 引数付きの一行マクロを構文解析前に展開し、前処理結果をキャッシュ
+- **遅延タスク：** `async` / `work`、`await`、`spawn`、状態の確認、結果の再利用。`join_all` はタスクを順番に実行
+
+### 実行とパッケージ管理
+
+- **直接実行：** `.ox` ファイルの実行、REPL、プロジェクトのファイル変更時に再実行する `watch`
+- **持ち運べる AST 成果物：** トップレベルのインポートを `.oxb` にまとめ、同じ表現を `.oxa` として出力。形式のバージョン、件数、チェックサムを確認
+- **モジュール読み込み：** 相対インポートと依存エイリアスを解決し、成果物にもソース位置を保持。関数内のインポートには実行時もソースファイルが必要
+- **依存関係の固定：** ローカルパス、完全なコミット ID で固定した HTTPS Git ソース、再帰的な依存解決、`oxid.lock`、locked / offline / frozen モード
+
+### プロジェクト用ツール
+
+- **ひな形の作成：** `new` / `init` と HTTP・Discord プロジェクトの生成
+- **日常のチェック：** 構文チェック、構文検証ベースの `lint`、ソースの整形、プロジェクト内のテストとサンプルの実行
+- **マニフェストスクリプト：** 引用符付き引数に対応した再利用可能なコマンド。シェルを介さずプロセスを起動
+- **プロジェクトの確認：** `doctor`、API ドキュメント生成、起動・解析・パッケージ化・ランタイム操作のベンチマークレポート
+
+### ファイルとネットワーク、言語間連携
+
+- **ローカル I/O：** テキストファイル、ディレクトリ一覧、環境変数、時刻、sleep 関数
+- **外部プログラム：** プロセスの起動、終了コードや標準出力の取得、プロセスアダプターによる Python・Java・Go の呼び出し
+- **C/C++ とホストアダプター：** リンク済みの四つのネイティブ補助関数と、Oxid を起動する Python・Java・Go・C・C++ アダプターの生成
+- **ローカル HTTP と Discord ロジック：** 再利用可能な TCP リスナー、タイムアウト付き HTTP 関数、ルーティング、Discord コマンドとインタラクションの振り分け。ゲートウェイ通信は外部で処理
+
+[構文](docs/SYNTAX.md) · [ランタイム API](docs/API.md) · [パッケージ](docs/PACKAGES.md) · [プロジェクトツール](docs/COMMANDS.md) · [言語間連携](docs/INTEROP.md) · [HTTP / Discord](docs/WEB_AND_BOTS.md)
+
+[サンプル](examples/)で使い方を試せます。外部アダプターには、それぞれのランタイムやツールチェーンが必要です。`.oxb` はシリアライズされた AST であり、ネイティブの機械語ではありません。実行には互換性のある Oxid ランタイムが必要です。
 
 ## 利用前に知っておくこと
 
