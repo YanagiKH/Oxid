@@ -81,12 +81,7 @@ impl Parser<'_> {
         let token = self.peek();
         let unsupported = matches!(
             token.kind,
-            Kind::Unsupported
-                | Kind::Number
-                | Kind::Minus
-                | Kind::Plus
-                | Kind::String
-                | Kind::Equal
+            Kind::Unsupported | Kind::Number | Kind::Minus | Kind::Plus | Kind::String
         ) || (token.kind == Kind::Ident
             && &self.source.text()[token.span.start..token.span.end] == "as");
         // Report an unsupported cast in an already-invalid grammar position,
@@ -246,9 +241,8 @@ impl Parser<'_> {
             });
         }
         let kind = if self.take(Kind::Let).is_some() {
-            let name = self
-                .expect(Kind::Ident, "expected immutable binding name")?
-                .span;
+            let mutable = self.take(Kind::Mut).is_some();
+            let name = self.expect(Kind::Ident, "expected binding name")?.span;
             let annotation = if self.take(Kind::Colon).is_some() {
                 Some(self.ty()?)
             } else {
@@ -256,6 +250,7 @@ impl Parser<'_> {
             };
             self.expect(Kind::Equal, "binding requires an initializer")?;
             StmtKind::Let {
+                mutable,
                 name,
                 annotation,
                 init: self.expression(0)?,
@@ -266,6 +261,19 @@ impl Parser<'_> {
             } else {
                 Some(self.expression(0)?)
             })
+        } else if self.peek().kind == Kind::Ident
+            && self.tokens[self.cursor + 1..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Equal)
+        {
+            let name = self.bump().span;
+            let operator_span = self.expect(Kind::Equal, "expected assignment `=`")?.span;
+            StmtKind::Assign {
+                name,
+                operator_span,
+                value: self.expression(0)?,
+            }
         } else {
             StmtKind::Expr(self.expression(0)?)
         };

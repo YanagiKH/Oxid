@@ -33,6 +33,7 @@ struct Frame {
     predecessor: Option<BlockId>,
     merge_pending: bool,
     slots: Vec<Option<Scalar>>,
+    places: Vec<Option<Scalar>>,
     return_to: Option<Resume>,
 }
 fn internal(kind: FailureKind, span: Option<Span>) -> RunFailure {
@@ -60,6 +61,40 @@ fn read(frame: &Frame, operand: Operand) -> Result<Scalar, RunFailure> {
         .get(operand.local.0)
         .ok_or_else(|| internal(FailureKind::InvalidLocal, Some(operand.span)))?
         .ok_or_else(|| internal(FailureKind::Uninitialized, Some(operand.span)))
+}
+fn load(frame: &Frame, place: Place) -> Result<Scalar, RunFailure> {
+    frame
+        .places
+        .get(place.id.0)
+        .ok_or_else(|| internal(FailureKind::InvalidPlace, Some(place.span)))?
+        .ok_or_else(|| internal(FailureKind::Uninitialized, Some(place.span)))
+}
+fn store(
+    frame: &mut Frame,
+    function: &Function,
+    place: Place,
+    value: Scalar,
+    initialize: bool,
+) -> Result<(), RunFailure> {
+    let decl = function
+        .places
+        .get(place.id.0)
+        .ok_or_else(|| internal(FailureKind::InvalidPlace, Some(place.span)))?;
+    if decl.ty != value.ty() {
+        return Err(internal(FailureKind::TypeMismatch, Some(place.span)));
+    }
+    let slot = frame
+        .places
+        .get_mut(place.id.0)
+        .ok_or_else(|| internal(FailureKind::InvalidPlace, Some(place.span)))?;
+    if initialize && slot.is_some() {
+        return Err(internal(FailureKind::AlreadyInitialized, Some(place.span)));
+    }
+    if !initialize && slot.is_none() {
+        return Err(internal(FailureKind::Uninitialized, Some(place.span)));
+    }
+    *slot = Some(value);
+    Ok(())
 }
 fn write(
     frame: &mut Frame,
@@ -113,6 +148,7 @@ fn frame(
         predecessor: None,
         merge_pending: true,
         slots: vec![None; function.locals.len()],
+        places: vec![None; function.places.len()],
         return_to,
     };
     for (index, &value) in args.iter().enumerate() {
@@ -174,6 +210,8 @@ enum Event {
     Enter(hir::DefId),
     Branch(hir::DefId, bool),
     Return(hir::DefId, Scalar),
+    Initialize(hir::DefId, PlaceId, Scalar),
+    Store(hir::DefId, PlaceId, Scalar),
 }
 fn execute(
     program: &VerifiedProgram,
@@ -192,10 +230,10 @@ fn execute(
     let mut fuel = limits.fuel;
     let mut live_slots = preflight(
         &mut fuel,
-        add(1, entry.locals.len(), entry.span)?,
+        add(1, entry.slot_count(), entry.span)?,
         0,
         0,
-        entry.locals.len(),
+        entry.slot_count(),
         limits,
         entry.span,
     )?;
@@ -232,9 +270,27 @@ fn execute(
             }
             active.merge_pending = false;
         }
-        if let Some(assign) = block.statements.get(active.next) {
-            charge(&mut fuel, 1, assign.span)?;
+        if let Some(statement) = block.statements.get(active.next) {
+            charge(&mut fuel, 1, statement.span())?;
+            let assign = match statement {
+                Statement::Assign(assign) => assign,
+                Statement::Initialize { place, value, .. }
+                | Statement::Store { place, value, .. } => {
+                    let value = read(active, *value)?;
+                    let initialize = matches!(statement, Statement::Initialize { .. });
+                    store(active, current, *place, value, initialize)?;
+                    #[cfg(test)]
+                    observe(if initialize {
+                        Event::Initialize(current.id, place.id, value)
+                    } else {
+                        Event::Store(current.id, place.id, value)
+                    });
+                    active.next = add(active.next, 1, statement.span())?;
+                    continue;
+                }
+            };
             let value = match assign.value {
+                Rvalue::Load(place) => load(active, place)?,
                 Rvalue::NotBool { operand, .. } => {
                     let Scalar::Bool(value) = read(active, operand)? else {
                         return Err(internal(FailureKind::TypeMismatch, Some(operand.span)));
@@ -310,7 +366,7 @@ fn execute(
                 continuation,
             } => {
                 let callee = function(program, *target, Some(end.span))?;
-                let cost = add(add(1, args.len(), end.span)?, callee.locals.len(), end.span)?;
+                let cost = add(add(1, args.len(), end.span)?, callee.slot_count(), end.span)?;
                 // Read the length without traversing/copying the suspended stack.
                 let count = frames.len();
                 let next_slots = preflight(
@@ -318,7 +374,7 @@ fn execute(
                     cost,
                     count,
                     live_slots,
-                    callee.locals.len(),
+                    callee.slot_count(),
                     limits,
                     end.span,
                 )?;
@@ -378,7 +434,11 @@ fn execute(
                     .pop()
                     .ok_or_else(|| internal(FailureKind::CallFrame, Some(end.span)))?;
                 live_slots = live_slots
-                    .checked_sub(completed.slots.len())
+                    .checked_sub(add(
+                        completed.slots.len(),
+                        completed.places.len(),
+                        end.span,
+                    )?)
                     .ok_or_else(|| internal(FailureKind::Accounting, Some(end.span)))?;
                 match (frames.last_mut(), completed.return_to) {
                     (Some(caller), Some(resume)) => {

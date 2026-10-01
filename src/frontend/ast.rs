@@ -79,9 +79,15 @@ pub struct Param {
 #[derive(Debug)]
 pub enum StmtKind {
     Let {
+        mutable: bool,
         name: Span,
         annotation: Option<TypeSyntax>,
         init: ExprId,
+    },
+    Assign {
+        name: Span,
+        operator_span: Span,
+        value: ExprId,
     },
     Expr(ExprId),
     Return(Option<ExprId>),

@@ -215,7 +215,7 @@
     },
     {
       "id": "llvm-native-backend",
-      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked arithmetic and typed scalar comparisons and bool short-circuit value joins",
+      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked arithmetic, scalar comparisons, lazy boolean value joins and typed mutable places",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -228,7 +228,8 @@
         "rfcs/0007-llvm-scalar-native.md",
         "rfcs/0008-native-checked-i32.md",
         "rfcs/0009-scalar-comparisons.md",
-        "rfcs/0010-boolean-logical-operators.md"
+        "rfcs/0010-boolean-logical-operators.md",
+        "rfcs/0011-mutable-scalar-locals.md"
       ],
       "implementation": [
         "src/frontend/oir/native.rs",
@@ -245,15 +246,18 @@
         "scripts/verify_native_arithmetic.py",
         "scripts/verify_scalar_comparisons.py",
         "tests/typed_logical.rs",
-        "scripts/verify_boolean_logic.py"
+        "scripts/verify_boolean_logic.py",
+        "src/frontend/oir/mutable_tests.rs",
+        "scripts/verify_mutable_locals.py"
       ],
       "evidence": [
         "docs/architecture/native-preview-validation.md",
         "docs/architecture/native-arithmetic-validation.md",
         "docs/architecture/scalar-comparison-validation.md",
-        "docs/architecture/boolean-logic-validation.md"
+        "docs/architecture/boolean-logic-validation.md",
+        "docs/architecture/mutable-locals-validation.md"
       ],
-      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. Same-type i32/bool equality and signed i32 ordering and bool !/&&/|| are also supported; skipped RHS calls remain in native admission. No coercion, unit equality, bool ordering, other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
+      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 combined value/place slots per function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. Same-type i32/bool equality and signed i32 ordering and bool !/&&/|| and initialized mutable scalar locals are also supported; skipped RHS calls remain in native admission. No coercion, unit equality, bool ordering, other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
     },
     {
       "id": "independent-self-hosting",
@@ -322,7 +326,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -608,7 +612,47 @@
       "evidence": [
         "docs/architecture/boolean-logic-validation.md"
       ],
-      "limitations": "Restricted acyclic bool-only logic with explicit two-input bool merges, no truthiness, bitwise operators, general unary negation, if-expressions, mutation or loops. Full-file checking and native admission include statically skipped RHSs. Existing reference budgets and stricter native limits remain; no native recursion, generic phi types, ownership, stable ABI, safety certification, completed milestone or optimization beyond native O0. Legacy dynamic semantics and OXBC remain independent."
+      "limitations": "This entry records the boolean-logic predecessor; initialized mutable scalar locals are tracked separately. Restricted acyclic bool-only logic with explicit two-input bool merges, no truthiness, bitwise operators, general unary negation, if-expressions, mutation or loops. Full-file checking and native admission include statically skipped RHSs. Existing reference budgets and stricter native limits remain; no native recursion, generic phi types, ownership, stable ABI, safety certification, completed milestone or optimization beyond native O0. Legacy dynamic semantics and OXBC remain independent."
+    },
+    {
+      "id": "typed-preview-mutable-scalar-locals",
+      "summary": "Initialized fixed-type bool/i32/unit mutable locals, ordered statement assignment and independently verified typed places with immutable SSA snapshots",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence; native supports Linux x86_64 only. Hosted CI and other reference hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0011-mutable-scalar-locals.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/native.rs"
+      ],
+      "tests": [
+        "tests/typed_mutable.rs",
+        "src/frontend/oir/mutable_tests.rs",
+        "src/frontend/oir/execute_tests.rs",
+        "src/frontend/oir/native.rs",
+        "tests/typed_native.rs",
+        "scripts/verify_mutable_locals.py"
+      ],
+      "evidence": [
+        "docs/architecture/mutable-locals-validation.md"
+      ],
+      "limitations": "Only initialized let mut and bare-name same-type statement assignment through existing acyclic control flow. Ordinary lets and parameters remain immutable. No uninitialized declarations, mut parameters, assignment expressions, compound/field/index assignment, loops, borrows, new types or native recursion. Typed scalar places prepare state analysis but do not implement non-Copy ownership, a stable ABI, safety certification, optimization beyond native O0 or a completed roadmap milestone. Existing reference/native caps, legacy semantics and OXBC remain independent."
     }
   ]
 }

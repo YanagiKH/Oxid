@@ -71,6 +71,7 @@ pub struct Expr {
 }
 #[derive(Debug)]
 pub struct Local {
+    pub mutable: bool,
     pub span: Span,
     pub annotation: Option<Ty>,
 }
@@ -79,6 +80,12 @@ pub enum StmtKind {
     Let {
         local: LocalId,
         init: ExprId,
+    },
+    Assign {
+        local: LocalId,
+        target_span: Span,
+        operator_span: Span,
+        value: ExprId,
     },
     Expr(ExprId),
     Return(Option<ExprId>),
@@ -251,7 +258,12 @@ impl<'a> Resolver<'a> {
     fn text(&self, span: Span) -> &'a str {
         &self.source.text()[span.start..span.end]
     }
-    fn bind(&mut self, span: Span, annotation: Option<Ty>) -> Result<LocalId, Box<Diagnostic>> {
+    fn bind(
+        &mut self,
+        span: Span,
+        annotation: Option<Ty>,
+        mutable: bool,
+    ) -> Result<LocalId, Box<Diagnostic>> {
         let name = self.text(span);
         if let Some((_, previous)) = self.scope.get(name) {
             return Err(duplicate(span, *previous));
@@ -260,7 +272,11 @@ impl<'a> Resolver<'a> {
             return Err(duplicate(span, *previous));
         }
         let id = LocalId(self.locals.len());
-        self.locals.push(Local { span, annotation });
+        self.locals.push(Local {
+            span,
+            annotation,
+            mutable,
+        });
         self.scope.insert(name, (id, span));
         Ok(id)
     }
@@ -270,7 +286,7 @@ impl<'a> Resolver<'a> {
         function: &ast::Function,
     ) -> Result<Function, Box<Diagnostic>> {
         for param in &function.params {
-            self.bind(param.name, Some(type_syntax(self.source, param.ty)?))?;
+            self.bind(param.name, Some(type_syntax(self.source, param.ty)?), false)?;
         }
         // Keep block IDs stable while resolving statements depth first. Only
         // currently active names stay in the lookup table; each scope removes
@@ -313,6 +329,7 @@ impl<'a> Resolver<'a> {
             frames.push(Frame::Next(block, index + 1));
             let kind = match &statement.kind {
                 ast::StmtKind::Let {
+                    mutable,
                     name,
                     annotation,
                     init,
@@ -321,12 +338,37 @@ impl<'a> Resolver<'a> {
                     let annotation = annotation
                         .map(|ty| type_syntax(self.source, ty))
                         .transpose()?;
-                    let local = self.bind(*name, annotation)?;
+                    let local = self.bind(*name, annotation, *mutable)?;
                     scopes
                         .last_mut()
                         .expect("active body scope")
                         .push(self.text(*name));
                     StmtKind::Let { local, init }
+                }
+                ast::StmtKind::Assign {
+                    name,
+                    operator_span,
+                    value,
+                } => {
+                    let text = self.text(*name);
+                    let local = self
+                        .scope
+                        .get(text)
+                        .ok_or_else(|| {
+                            Diagnostic::new(
+                                "E0200",
+                                "resolve",
+                                format!("unknown local `{text}`"),
+                                Some(*name),
+                            )
+                        })?
+                        .0;
+                    StmtKind::Assign {
+                        local,
+                        target_span: *name,
+                        operator_span: *operator_span,
+                        value: self.expression(*value)?,
+                    }
                 }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {

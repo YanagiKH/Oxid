@@ -47,7 +47,11 @@ fn comparison_origin_and_operand_order_survive_every_representation() {
     else {
         panic!()
     };
-    let assign = program.functions[0].blocks[0].statements.last().unwrap();
+    let assign = program.functions[0].blocks[0]
+        .statements
+        .last()
+        .unwrap()
+        .assignment();
     let Rvalue::CompareScalar {
         operator_span: oir_span,
         left: oir_left,
@@ -79,13 +83,14 @@ fn verifier_enforces_the_complete_closed_comparison_type_table() {
                 let f = &mut program.functions[0];
                 for (i, ty) in [left_ty, right_ty].into_iter().enumerate() {
                     f.locals[i].ty = ty;
-                    f.blocks[0].statements[i].value = match ty {
+                    f.blocks[0].statements[i].assignment_mut().value = match ty {
                         Ty::I32 => Rvalue::I32(if i == 0 { -1 } else { 0 }),
                         Ty::Bool => Rvalue::Bool(i != 0),
                         Ty::Unit => Rvalue::Unit,
                     };
                 }
-                let Rvalue::CompareScalar { op: actual, .. } = &mut f.blocks[0].statements[2].value
+                let Rvalue::CompareScalar { op: actual, .. } =
+                    &mut f.blocks[0].statements[2].assignment_mut().value
                 else {
                     panic!()
                 };
@@ -124,7 +129,7 @@ fn comparison_destination_and_every_operand_id_are_checked() {
     }
     for side in 0..3 {
         let (sources, mut p) = simple();
-        let a = &mut p.functions[0].blocks[0].statements[2];
+        let a = p.functions[0].blocks[0].statements[2].assignment_mut();
         let Rvalue::CompareScalar { left, right, .. } = &mut a.value else {
             panic!()
         };
@@ -151,7 +156,8 @@ fn comparison_reads_need_definitions_before_both_operands_and_a_unique_destinati
                 f.locals.push(f.locals[0].clone());
                 LocalId(3)
             };
-            let Rvalue::CompareScalar { left, right, .. } = &mut f.blocks[0].statements[2].value
+            let Rvalue::CompareScalar { left, right, .. } =
+                &mut f.blocks[0].statements[2].assignment_mut().value
             else {
                 panic!()
             };
@@ -172,7 +178,9 @@ fn comparison_reads_need_definitions_before_both_operands_and_a_unique_destinati
             FailureKind::Uninitialized
         );
         let (sources, mut p) = simple();
-        p.functions[0].blocks[0].statements[2].destination = LocalId(side);
+        p.functions[0].blocks[0].statements[2]
+            .assignment_mut()
+            .destination = LocalId(side);
         assert_eq!(
             verify::verify(p, &sources).unwrap_err().kind,
             FailureKind::AlreadyInitialized
@@ -196,6 +204,7 @@ fn comparison_cannot_read_a_call_result_from_only_one_branch() {
             .blocks
             .iter_mut()
             .flat_map(|b| &mut b.statements)
+            .map(Statement::assignment_mut)
             .find(|a| matches!(a.value, Rvalue::CompareScalar { .. }))
             .unwrap();
         let Rvalue::CompareScalar { left, right, .. } = &mut a.value else {
@@ -222,7 +231,9 @@ fn comparison_operator_and_both_operand_origins_are_independently_validated() {
                 left,
                 right,
                 ..
-            } = &mut p.functions[0].blocks[0].statements[2].value
+            } = &mut p.functions[0].blocks[0].statements[2]
+                .assignment_mut()
+                .value
             else {
                 panic!()
             };

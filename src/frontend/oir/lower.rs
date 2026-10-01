@@ -1,6 +1,11 @@
 use super::*;
 
 const STAGE: &str = "oir-lower";
+#[derive(Clone, Copy)]
+enum BindingLocation {
+    Value(LocalId),
+    Place(PlaceId),
+}
 fn failure(kind: FailureKind, span: Span) -> OirFailure {
     OirFailure::new(kind, STAGE, Some(span))
 }
@@ -75,7 +80,9 @@ fn preflight(typed: &typeck::TypedProgram) -> Result<(), OirFailure> {
                 }
                 if matches!(
                     statement.kind,
-                    hir::StmtKind::Let { .. } | hir::StmtKind::Return(None)
+                    hir::StmtKind::Let { .. }
+                        | hir::StmtKind::Assign { .. }
+                        | hir::StmtKind::Return(None)
                 ) {
                     Budget::add(
                         &mut budget.assignments,
@@ -147,7 +154,14 @@ impl BlockBuilder {
         let id = self
             .current
             .ok_or_else(|| failure(FailureKind::BuilderClosed, assign.span))?;
-        self.blocks[id.0].statements.push(assign);
+        self.blocks[id.0].statements.push(Statement::Assign(assign));
+        Ok(())
+    }
+    fn statement(&mut self, statement: Statement) -> Result<(), OirFailure> {
+        let id = self
+            .current
+            .ok_or_else(|| failure(FailureKind::BuilderClosed, statement.span()))?;
+        self.blocks[id.0].statements.push(statement);
         Ok(())
     }
     fn close(&mut self, terminator: Terminator) -> Result<(), OirFailure> {
@@ -228,7 +242,7 @@ fn complete_expression(id: hir::ExprId, next: &mut usize, span: Span) -> Result<
 }
 fn lower_expression(
     function: &hir::Function,
-    local_map: &[LocalId],
+    local_map: &[BindingLocation],
     expression_map: &[LocalId],
     root: hir::ExprId,
     builder: &mut BlockBuilder,
@@ -346,10 +360,16 @@ fn lower_expression(
                     hir::ExprKind::Bool(value) => Some(Rvalue::Bool(*value)),
                     hir::ExprKind::I32(value) => Some(Rvalue::I32(*value)),
                     hir::ExprKind::Unit => Some(Rvalue::Unit),
-                    hir::ExprKind::Local(id) => Some(Rvalue::Copy(Operand {
-                        local: local_map[id.0],
-                        span: expr.span,
-                    })),
+                    hir::ExprKind::Local(id) => Some(match local_map[id.0] {
+                        BindingLocation::Value(local) => Rvalue::Copy(Operand {
+                            local,
+                            span: expr.span,
+                        }),
+                        BindingLocation::Place(id) => Rvalue::Load(Place {
+                            id,
+                            span: expr.span,
+                        }),
+                    }),
                     hir::ExprKind::Group(inner) => Some(Rvalue::Copy(operand(*inner))),
                     hir::ExprKind::Not {
                         operand: inner,
@@ -414,9 +434,18 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
         let function = view.hir();
         let signature = view.signature();
         let mut locals = Vec::new();
+        let mut places = Vec::new();
         let mut local_map = Vec::with_capacity(function.locals.len());
         for (index, local) in function.locals.iter().enumerate() {
-            local_map.push(LocalId(locals.len()));
+            if local.mutable {
+                local_map.push(BindingLocation::Place(PlaceId(places.len())));
+                places.push(PlaceDecl {
+                    ty: view.local_ty(hir::LocalId(index)),
+                    span: local.span,
+                });
+                continue;
+            }
+            local_map.push(BindingLocation::Value(LocalId(locals.len())));
             locals.push(LocalDecl {
                 ty: view.local_ty(hir::LocalId(index)),
                 span: local.span,
@@ -479,7 +508,9 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                 }
             };
             let root = match statement.kind {
-                hir::StmtKind::Let { init, .. } | hir::StmtKind::Expr(init) => Some(init),
+                hir::StmtKind::Let { init, .. }
+                | hir::StmtKind::Assign { value: init, .. }
+                | hir::StmtKind::Expr(init) => Some(init),
                 hir::StmtKind::Return(value) => value,
                 hir::StmtKind::If { condition, .. } => Some(condition),
             };
@@ -494,11 +525,40 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                 )?;
             }
             match statement.kind {
-                hir::StmtKind::Let { local, init } => builder.assign(Assign {
-                    destination: local_map[local.0],
-                    value: Rvalue::Copy(operand(init)),
-                    span: statement.span,
-                })?,
+                hir::StmtKind::Let { local, init } => match local_map[local.0] {
+                    BindingLocation::Value(destination) => builder.assign(Assign {
+                        destination,
+                        value: Rvalue::Copy(operand(init)),
+                        span: statement.span,
+                    })?,
+                    BindingLocation::Place(id) => builder.statement(Statement::Initialize {
+                        place: Place {
+                            id,
+                            span: function.locals[local.0].span,
+                        },
+                        value: operand(init),
+                        span: statement.span,
+                    })?,
+                },
+                hir::StmtKind::Assign {
+                    local,
+                    target_span,
+                    operator_span,
+                    value,
+                } => {
+                    let BindingLocation::Place(id) = local_map[local.0] else {
+                        return Err(failure(FailureKind::InvalidPlace, target_span));
+                    };
+                    builder.statement(Statement::Store {
+                        place: Place {
+                            id,
+                            span: target_span,
+                        },
+                        value: operand(value),
+                        operator_span,
+                        span: statement.span,
+                    })?;
+                }
                 hir::StmtKind::Expr(_) => {}
                 hir::StmtKind::Return(value) => {
                     let value = match value {
@@ -567,6 +627,7 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
             return Err(failure(FailureKind::IncompleteBody, signature.span));
         }
         functions.push(Function {
+            places,
             id: function.id,
             span: signature.span,
             result: signature.result,

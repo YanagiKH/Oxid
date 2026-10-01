@@ -47,7 +47,11 @@ fn operator_and_operand_provenance_survive_ast_hir_oir_and_execution() {
         panic!("HIR")
     };
     assert_eq!(operator_span, hir_span);
-    let assign = p.functions[0].blocks[0].statements.last().unwrap();
+    let assign = p.functions[0].blocks[0]
+        .statements
+        .last()
+        .unwrap()
+        .assignment();
     let Rvalue::CheckedI32 {
         operator_span: ir_span,
         left: ir_left,
@@ -75,7 +79,7 @@ fn verifier_checks_each_arithmetic_operand_and_destination_type_and_id() {
             let f = &mut p.functions[0];
             f.locals[side].ty = ty;
             if side < 2 {
-                f.blocks[0].statements[side].value = if ty == hir::Ty::Bool {
+                f.blocks[0].statements[side].assignment_mut().value = if ty == hir::Ty::Bool {
                     Rvalue::Bool(true)
                 } else {
                     Rvalue::Unit
@@ -87,7 +91,7 @@ fn verifier_checks_each_arithmetic_operand_and_destination_type_and_id() {
             );
         }
         let (sources, mut p) = simple();
-        let assign = &mut p.functions[0].blocks[0].statements[2];
+        let assign = p.functions[0].blocks[0].statements[2].assignment_mut();
         let Rvalue::CheckedI32 { left, right, .. } = &mut assign.value else {
             panic!()
         };
@@ -114,7 +118,8 @@ fn arithmetic_operands_must_be_initialized_before_assignment_in_both_positions()
                 f.locals.push(f.locals[0].clone());
                 LocalId(3)
             };
-            let Rvalue::CheckedI32 { left, right, .. } = &mut f.blocks[0].statements[2].value
+            let Rvalue::CheckedI32 { left, right, .. } =
+                &mut f.blocks[0].statements[2].assignment_mut().value
             else {
                 panic!()
             };
@@ -154,6 +159,7 @@ fn branch_only_and_call_results_cannot_bypass_arithmetic_operand_dominance() {
             .blocks
             .iter_mut()
             .flat_map(|b| &mut b.statements)
+            .map(Statement::assignment_mut)
             .find(|a| matches!(a.value, Rvalue::CheckedI32 { .. }))
             .unwrap();
         let Rvalue::CheckedI32 { left, right, .. } = &mut assign.value else {
@@ -180,7 +186,9 @@ fn arithmetic_operator_and_both_operand_spans_are_validated() {
                 left,
                 right,
                 ..
-            } = &mut p.functions[0].blocks[0].statements[2].value
+            } = &mut p.functions[0].blocks[0].statements[2]
+                .assignment_mut()
+                .value
             else {
                 panic!()
             };

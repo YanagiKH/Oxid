@@ -17,6 +17,14 @@ fn local(function: &Function, id: LocalId, origin: Span) -> Result<&LocalDecl, O
         .get(id.0)
         .ok_or_else(|| failure(FailureKind::InvalidLocal, origin))
 }
+fn place(function: &Function, value: Place, sources: &SourceMap) -> Result<hir::Ty, OirFailure> {
+    span(sources, value.span)?;
+    function
+        .places
+        .get(value.id.0)
+        .map(|decl| decl.ty)
+        .ok_or_else(|| failure(FailureKind::InvalidPlace, value.span))
+}
 fn operand(
     function: &Function,
     value: Operand,
@@ -56,6 +64,14 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
         Budget::add(
             &mut budget.locals,
             function.locals.len(),
+            MAX_LOCALS,
+            "locals",
+            STAGE,
+            origin,
+        )?;
+        Budget::add(
+            &mut budget.locals,
+            function.places.len(),
             MAX_LOCALS,
             "locals",
             STAGE,
@@ -115,6 +131,9 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                 return Err(failure(FailureKind::ParameterKind, decl.span));
             }
         }
+        for decl in &function.places {
+            span(sources, decl.span)?;
+        }
         if function.blocks.is_empty() {
             return Err(failure(FailureKind::NoBlocks, function.span));
         }
@@ -144,10 +163,31 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                     )?;
                 }
             }
-            for assign in &block.statements {
-                span(sources, assign.span)?;
+            for statement in &block.statements {
+                span(sources, statement.span())?;
+                let assign = match statement {
+                    Statement::Assign(assign) => assign,
+                    Statement::Initialize {
+                        place: target,
+                        value,
+                        ..
+                    }
+                    | Statement::Store {
+                        place: target,
+                        value,
+                        ..
+                    } => {
+                        let expected = place(function, *target, sources)?;
+                        same_type(operand(function, *value, sources)?, expected, value.span)?;
+                        if let Statement::Store { operator_span, .. } = statement {
+                            span(sources, *operator_span)?;
+                        }
+                        continue;
+                    }
+                };
                 let expected = local(function, assign.destination, assign.span)?.ty;
                 let actual = match assign.value {
+                    Rvalue::Load(value) => place(function, value, sources)?,
                     Rvalue::NotBool {
                         operand: value,
                         operator_span,
@@ -316,7 +356,10 @@ fn definitions(function: &Function) -> Result<Vec<Option<Definition>>, OirFailur
                 merge.span,
             )?;
         }
-        for (statement, assign) in block.statements.iter().enumerate() {
+        for (statement, instruction) in block.statements.iter().enumerate() {
+            let Statement::Assign(assign) = instruction else {
+                continue;
+            };
             define(
                 &mut table,
                 assign.destination,
@@ -338,6 +381,54 @@ fn definitions(function: &Function) -> Result<Vec<Option<Definition>>, OirFailur
         }
     }
     Ok(table)
+}
+
+// Places have a separate canonical initialization table. Stores do not define
+// values or initialize places. Reuse the position/dominance proof, not SSA IDs.
+fn initializations(function: &Function) -> Result<Vec<Option<Definition>>, OirFailure> {
+    let mut table = vec![None; function.places.len()];
+    for (block, body) in function.blocks.iter().enumerate() {
+        for (statement, instruction) in body.statements.iter().enumerate() {
+            if let Statement::Initialize { place, span, .. } = instruction {
+                let entry = table
+                    .get_mut(place.id.0)
+                    .ok_or_else(|| failure(FailureKind::InvalidPlace, *span))?;
+                if entry.is_some() {
+                    return Err(failure(FailureKind::AlreadyInitialized, *span));
+                }
+                *entry = Some(Definition::Assignment { block, statement });
+            }
+        }
+    }
+    for (index, entry) in table.iter().enumerate() {
+        if entry.is_none() {
+            return Err(failure(
+                FailureKind::Uninitialized,
+                function.places[index].span,
+            ));
+        }
+    }
+    Ok(table)
+}
+fn read_place(
+    table: &[Option<Definition>],
+    dominance: &Dominance,
+    place: Place,
+    block: usize,
+    statement: usize,
+) -> Result<(), OirFailure> {
+    // This operand indexes only the separate initialization table. It is never
+    // a source value operand or an index into the SSA definition table.
+    read(
+        table,
+        dominance,
+        Operand {
+            local: LocalId(place.id.0),
+            span: place.span,
+        },
+        block,
+        statement,
+    )
 }
 
 // Raw references and dimensions are always checked, even though structural
@@ -774,6 +865,7 @@ fn cfg(function: &Function) -> Result<(), OirFailure> {
     let predecessors = predecessors(function)?;
     let order = topological(function, &predecessors)?;
     let definitions = definitions(function)?;
+    let initializations = initializations(function)?;
     let dominance = dominance(function, &predecessors, &order)?;
     for (block_id, block) in function.blocks.iter().enumerate() {
         if let Some(merge) = &block.merge {
@@ -806,8 +898,23 @@ fn cfg(function: &Function) -> Result<(), OirFailure> {
                 }
             }
         }
-        for (index, assign) in block.statements.iter().enumerate() {
+        for (index, instruction) in block.statements.iter().enumerate() {
+            let assign = match instruction {
+                Statement::Assign(assign) => assign,
+                Statement::Initialize { value, .. } => {
+                    read(&definitions, &dominance, *value, block_id, index)?;
+                    continue;
+                }
+                Statement::Store { place, value, .. } => {
+                    read_place(&initializations, &dominance, *place, block_id, index)?;
+                    read(&definitions, &dominance, *value, block_id, index)?;
+                    continue;
+                }
+            };
             match assign.value {
+                Rvalue::Load(place) => {
+                    read_place(&initializations, &dominance, place, block_id, index)?
+                }
                 Rvalue::Copy(value) | Rvalue::NotBool { operand: value, .. } => {
                     read(&definitions, &dominance, value, block_id, index)?
                 }

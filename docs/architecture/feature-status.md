@@ -57,5 +57,12 @@ Boolean !, && and || form a further experimental slice with bool-only operands,
 full RHS static checking and runtime short-circuiting. Explicit two-input bool
 joins preserve global single assignment and predecessor-edge availability; the
 LLVM backend uses real branch/phi control flow. All native admission caps still
-include skipped RHS work conservatively. Loops, mutation and native recursion
-remain unavailable. See [boolean logic evidence](boolean-logic-validation.md).
+include skipped RHS work conservatively. See [boolean logic evidence](boolean-logic-validation.md).
+
+Initialized mutable bool/i32/unit locals are a further experimental extension.
+Explicit typed places and init/store/load operations preserve immutable SSA value
+snapshots; independent verification requires initialization dominance. Existing
+if branches may update places, and native lowering uses private scalar allocas.
+All slot/fuel ceilings include the new storage operations. Loops, borrows,
+non-Copy ownership and native recursion remain unavailable. See
+[mutable-local evidence](mutable-locals-validation.md).

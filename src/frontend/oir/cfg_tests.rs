@@ -27,6 +27,7 @@ fn fixture(blocks: usize, locals: usize) -> (SourceMap, Program) {
         sources,
         Program {
             functions: vec![Function {
+                places: vec![],
                 id: hir::DefId(0),
                 span,
                 result: hir::Ty::Bool,
@@ -45,11 +46,11 @@ fn op(local: usize, span: Span) -> Operand {
     }
 }
 fn assign(f: &mut Function, block: usize, destination: usize, value: Rvalue) {
-    f.blocks[block].statements.push(Assign {
+    f.blocks[block].statements.push(Statement::Assign(Assign {
         destination: LocalId(destination),
         value,
         span: f.span,
-    });
+    }));
 }
 fn reject(sources: &SourceMap, program: Program, kind: FailureKind) {
     let err = verify::verify(program, sources).unwrap_err();

@@ -46,8 +46,11 @@ fn exact_signed_origin_and_value_survive_every_representation() {
     let f = &raw.functions[0];
     assert_eq!(f.locals[0].span, span);
     assert_eq!(f.locals[0].ty, hir::Ty::I32);
-    assert_eq!(f.blocks[0].statements[0].span, span);
-    assert_eq!(f.blocks[0].statements[0].value, Rvalue::I32(i32::MIN));
+    assert_eq!(f.blocks[0].statements[0].assignment().span, span);
+    assert_eq!(
+        f.blocks[0].statements[0].assignment().value,
+        Rvalue::I32(i32::MIN)
+    );
     let verified = verify::verify(raw, &sources).unwrap();
     for _ in 0..3 {
         assert_eq!(verified.run(Some(hir::DefId(0))), Ok(Scalar::I32(i32::MIN)));
@@ -57,7 +60,9 @@ fn exact_signed_origin_and_value_survive_every_representation() {
 fn raw_i32_constants_only_initialize_i32_destinations() {
     for value in [i32::MIN, -1, 0, 1, i32::MAX] {
         let (sources, mut p) = constant();
-        p.functions[0].blocks[0].statements[0].value = Rvalue::I32(value);
+        p.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .value = Rvalue::I32(value);
         let verified = verify::verify(p.clone(), &sources).unwrap();
         assert_eq!(verified.run(Some(hir::DefId(0))), Ok(Scalar::I32(value)));
         for ty in [hir::Ty::Bool, hir::Ty::Unit] {
@@ -70,7 +75,9 @@ fn raw_i32_constants_only_initialize_i32_destinations() {
         }
         for constant in [Rvalue::Unit, Rvalue::Bool(false)] {
             let mut wrong = p.clone();
-            wrong.functions[0].blocks[0].statements[0].value = constant;
+            wrong.functions[0].blocks[0].statements[0]
+                .assignment_mut()
+                .value = constant;
             assert_eq!(
                 verify::verify(wrong, &sources).unwrap_err().kind,
                 FailureKind::TypeMismatch
@@ -88,13 +95,15 @@ fn raw_i32_copy_argument_return_and_branch_types_cannot_bypass_verification() {
         match mutation {
             0 => {
                 // Copy destination differs from its i32 operand.
-                let destination = wrong.functions[0].blocks[0].statements[0].destination;
+                let destination = wrong.functions[0].blocks[0].statements[0]
+                    .assignment()
+                    .destination;
                 wrong.functions[0].locals[destination.0].ty = hir::Ty::Bool;
             }
             1 => {
                 // Valid bool caller constant passed to the i32 parameter.
                 let main = &mut wrong.functions[1];
-                let assign = &mut main.blocks[0].statements[0];
+                let assign = main.blocks[0].statements[0].assignment_mut();
                 main.locals[assign.destination.0].ty = hir::Ty::Bool;
                 assign.value = Rvalue::Bool(true);
             }
@@ -119,7 +128,7 @@ fn raw_i32_copy_argument_return_and_branch_types_cannot_bypass_verification() {
     }
     let (sources, mut p) = raw("fn main() -> i32 { if true { return 0; } else { return 1; } }");
     let main = &mut p.functions[0];
-    let assign = &mut main.blocks[0].statements[0];
+    let assign = main.blocks[0].statements[0].assignment_mut();
     main.locals[assign.destination.0].ty = hir::Ty::I32;
     assign.value = Rvalue::I32(1);
     assert_eq!(
@@ -143,7 +152,9 @@ fn raw_i32_origins_and_aggregate_local_limit_are_still_checked() {
         },
     ] {
         let mut wrong = p.clone();
-        wrong.functions[0].blocks[0].statements[0].span = bad_span;
+        wrong.functions[0].blocks[0].statements[0]
+            .assignment_mut()
+            .span = bad_span;
         let error = verify::verify(wrong, &sources).unwrap_err();
         assert_eq!(error.kind, FailureKind::InvalidSpan);
         assert!(error

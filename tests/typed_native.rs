@@ -479,3 +479,27 @@ fn skipped_logical_rhs_is_statically_checked_and_in_native_admission() {
         rejected(&Fixture::new(source.as_bytes()), code);
     }
 }
+
+#[test]
+fn mutable_scalar_storage_reaches_native_tools_after_whole_source_checking() {
+    for source in [
+        "fn main() -> i32 { let mut x = 1; let saved = x; x = x + 2; return saved + x; }",
+        "fn main() -> bool { let mut x = false; x = true || 2147483647 + 1 == 0; return x; }",
+        "fn main() -> () { let mut x = (); if false { x = (); } return x; }",
+    ] {
+        rejected(&Fixture::new(source.as_bytes()), "E0701");
+    }
+    for (source, code) in [
+        ("fn main() -> i32 { let x = 1; x = 2; return x; }", "E0304"),
+        (
+            "fn main() -> () { let mut x = 1; if false { x = true; } return; }",
+            "E0300",
+        ),
+        (
+            "fn main() -> i32 { let mut x = 1; if false { x = main(); } return x; }",
+            "E0700",
+        ),
+    ] {
+        rejected(&Fixture::new(source.as_bytes()), code);
+    }
+}
