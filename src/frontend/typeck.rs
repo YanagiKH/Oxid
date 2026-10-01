@@ -10,16 +10,53 @@ struct TypedBody {
     expressions: Vec<Ty>,
     locals: Vec<Ty>,
 }
+/// Immutable frontend-only view; successful construction remains in this pass.
+pub(super) struct TypedFunction<'a> {
+    function: &'a Function,
+    signature: &'a Signature,
+    body: &'a TypedBody,
+}
 impl TypedProgram {
-    pub fn function_count(&self) -> usize {
-        debug_assert_eq!(self.program.functions.len(), self.bodies.len());
-        for (function, body) in self.program.functions.iter().zip(&self.bodies) {
-            debug_assert_eq!(function.expressions.len(), body.expressions.len());
-            debug_assert_eq!(function.locals.len(), body.locals.len());
-        }
-        self.program.functions.len()
+    pub(super) fn functions(&self) -> impl ExactSizeIterator<Item = TypedFunction<'_>> {
+        // These are producer invariants, checked in release too. Raw OIR verification
+        // below the lowering boundary never relies on these assertions.
+        assert_eq!(self.program.functions.len(), self.program.signatures.len());
+        assert_eq!(self.program.functions.len(), self.bodies.len());
+        self.program
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(index, function)| {
+                let body = &self.bodies[index];
+                let signature = &self.program.signatures[index];
+                assert_eq!(function.id, DefId(index));
+                assert_eq!(function.expressions.len(), body.expressions.len());
+                assert_eq!(function.locals.len(), body.locals.len());
+                assert!(signature.params.len() <= body.locals.len());
+                assert_eq!(&body.locals[..signature.params.len()], &signature.params);
+                TypedFunction {
+                    function,
+                    signature,
+                    body,
+                }
+            })
     }
 }
+impl<'a> TypedFunction<'a> {
+    pub(super) fn hir(&self) -> &'a Function {
+        self.function
+    }
+    pub(super) fn signature(&self) -> &'a Signature {
+        self.signature
+    }
+    pub(super) fn expression_ty(&self, id: ExprId) -> Ty {
+        self.body.expressions[id.0]
+    }
+    pub(super) fn local_ty(&self, id: LocalId) -> Ty {
+        self.body.locals[id.0]
+    }
+}
+
 fn mismatch(expected: Ty, actual: Ty, span: super::source::Span) -> Box<Diagnostic> {
     Diagnostic::new(
         "E0300",
@@ -172,10 +209,59 @@ mod tests {
         check(hir::resolve(source, &ast).unwrap()).unwrap()
     }
     #[test]
+    fn immutable_views_expose_exact_function_signature_and_type_alignment() {
+        let typed = checked("fn f(x: bool, u: ()) -> bool { let y = (x); u; return y; }");
+        let views: Vec<_> = typed.functions().collect();
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.signature().params, [Ty::Bool, Ty::Unit]);
+        assert_eq!(view.signature().result, Ty::Bool);
+        assert_eq!(view.hir().id, DefId(0));
+        assert_eq!(
+            (0..3)
+                .map(|id| view.local_ty(LocalId(id)))
+                .collect::<Vec<_>>(),
+            [Ty::Bool, Ty::Unit, Ty::Bool]
+        );
+        assert_eq!(
+            (0..4)
+                .map(|id| view.expression_ty(ExprId(id)))
+                .collect::<Vec<_>>(),
+            [Ty::Bool, Ty::Bool, Ty::Unit, Ty::Bool]
+        );
+    }
+    #[test]
+    fn view_boundary_never_silently_truncates_internal_tables() {
+        for mutation in 0..6 {
+            let mut typed = checked("fn f(x: bool) -> bool { return x; }");
+            match mutation {
+                0 => {
+                    typed.bodies.pop();
+                }
+                1 => {
+                    typed.program.signatures.pop();
+                }
+                2 => {
+                    typed.bodies[0].expressions.pop();
+                }
+                3 => {
+                    typed.bodies[0].locals.pop();
+                }
+                4 => {
+                    typed.program.functions[0].id = DefId(9);
+                }
+                _ => {
+                    typed.bodies[0].locals[0] = Ty::Unit;
+                }
+            }
+            assert!(std::panic::catch_unwind(|| typed.functions().for_each(|_| {})).is_err());
+        }
+    }
+    #[test]
     fn resolved_ids_and_complete_type_tables_survive_the_pipeline() {
         let text = "fn main() -> () { let answer = identity(true); identity(answer); return (); } fn identity(value: bool) -> bool { let result = (value); return result; }";
         let typed = checked(text);
-        assert_eq!(typed.function_count(), 2);
+        assert_eq!(typed.functions().len(), 2);
         assert_eq!(
             typed.bodies[0].expressions,
             [Ty::Bool, Ty::Bool, Ty::Bool, Ty::Bool, Ty::Unit]

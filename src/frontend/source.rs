@@ -48,6 +48,17 @@ impl SourceMap {
         id
     }
 
+    /// Fallible validation for untrusted internal IR; never index or render first.
+    pub(super) fn is_valid_span(&self, span: Span) -> bool {
+        self.files.get(span.file.0).is_some_and(|file| {
+            file.id == span.file
+                && span.start <= span.end
+                && span.end <= file.text.len()
+                && file.text.is_char_boundary(span.start)
+                && file.text.is_char_boundary(span.end)
+        })
+    }
+
     pub fn get(&self, id: SourceFileId) -> &SourceFile {
         &self.files[id.0]
     }

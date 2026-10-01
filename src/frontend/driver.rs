@@ -1,6 +1,6 @@
 use super::{
     diagnostic::{json_string, Diagnostic},
-    hir, lexer,
+    hir, lexer, oir,
     options::{self, Route},
     parser,
     source::{SourceMap, MAX_SOURCE_BYTES},
@@ -39,15 +39,32 @@ fn report(
         }
     }
     if json {
-        println!("{{\"schema_version\":1,\"edition\":{},\"kind\":\"check-summary\",\"success\":{},\"errors\":{},\"functions\":{}}}",json_string("typed-preview"),success,diagnostics.len(),functions.map_or("null".to_string(),|n|n.to_string()));
+        println!("{}", check_summary(diagnostics.len(), functions));
     } else if success {
         println!(
             "typed-preview check ok ({} functions; check only)",
             functions.unwrap_or(0)
         );
     }
-    i32::from(!success)
+    exit_status(&diagnostics)
 }
+fn check_summary(errors: usize, functions: Option<usize>) -> String {
+    format!("{{\"schema_version\":1,\"edition\":{},\"kind\":\"check-summary\",\"success\":{},\"errors\":{},\"functions\":{}}}",
+        json_string("typed-preview"), errors == 0, errors,
+        functions.filter(|_| errors == 0).map_or("null".to_string(), |n| n.to_string()))
+}
+
+fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E0500")
+    {
+        2
+    } else {
+        i32::from(!diagnostics.is_empty())
+    }
+}
+
 fn check_file(path: &str, json: bool) -> i32 {
     let mut sources = SourceMap::new();
     let result = (|| {
@@ -101,10 +118,34 @@ fn check_file(path: &str, json: bool) -> i32 {
         debug_assert!(!ast.tokens.is_empty());
         let resolved = hir::resolve(source, &ast)?;
         let typed = typeck::check(resolved)?;
-        Ok(typed.function_count())
+        let verified = oir::lower_and_verify(&typed, &sources)
+            .map_err(|error| vec![*error.diagnostic(&sources)])?;
+        Ok(verified.function_count())
     })();
     match result {
         Ok(functions) => report(&sources, Vec::new(), json, Some(functions)),
         Err(diagnostics) => report(&sources, diagnostics, json, None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn diagnostic_exit_status_preserves_source_errors_and_distinguishes_oir_internal_errors() {
+        assert_eq!(exit_status(&[]), 0);
+        for (code, stage) in [("E0300", "type"), ("E0400", "oir-lower")] {
+            assert_eq!(
+                exit_status(&[*Diagnostic::new(code, stage, "failure", None)]),
+                1
+            );
+        }
+        let diagnostic = *Diagnostic::new("E0500", "oir-verify", "internal compiler error", None);
+        assert_eq!(exit_status(std::slice::from_ref(&diagnostic)), 2);
+        assert!(diagnostic
+            .render_json(&SourceMap::new())
+            .contains("\"primary\":null"));
+        assert_eq!(report(&SourceMap::new(), vec![diagnostic], true, None), 2);
+        assert_eq!(check_summary(1, Some(7)), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}");
     }
 }

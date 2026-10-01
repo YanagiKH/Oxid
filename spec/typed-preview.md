@@ -106,7 +106,7 @@ silent approximation or legacy execution of these features.
 ## Compiler representation
 
 The production path is UTF-8 source → lossless token tape → spanned AST →
-resolved HIR → typed HIR. It lives in `src/frontend/` independently of the legacy
+resolved HIR → typed HIR → verified OIR. It lives in `src/frontend/` independently of the legacy
 syntax module and runtime. The token tape retains trivia and invalid tokens; it
 is not a complete formatter/LSP CST. Parsing synchronizes at the next top-level
 `fn`, with a diagnostic limit; erroneous ASTs never enter name resolution.
@@ -121,6 +121,64 @@ not an unbounded recursive chain. There is no runtime `Value` in this pipeline.
 The old AST, parser, lexer and lexical helpers now live in
 `src/legacy/syntax.rs`. The extraction preserves their behavior and OXBC 1.0
 encoding. The existing single-binary Cargo package and Rust edition are unchanged.
+
+## Verified straight-line OIR
+
+Every successful production check lowers the actual typed bodies and passes an
+independent OIR verifier before returning the success summary. Immutable typed
+views expose recorded types to lowering; there is no reparsing or legacy adapter.
+The raw IR is private to `src/frontend/oir/`; only successful verification creates
+the opaque, immutable verified result used by the driver. There is no public IR
+loader, dump, stable serialization, execution command, or typed artifact.
+
+Each function has typed body-local slots for parameters, bindings and expression
+temporaries. Distinct HIR/OIR local types and explicit lowering maps separate the
+phases. Numeric slot IDs are body-relative, not owner-tagged identities: a valid
+index transplanted from another body is not distinguishable by bounds alone.
+Function IDs follow declaration order. Parameter types are the initial local
+prefix, so calls and definitions share one checked signature representation.
+
+The only statements are assignments of bool, unit or a copied operand. Each
+basic block has exactly one terminator: a direct call with a result destination
+and one explicit normal continuation, or return of an initialized operand.
+Calls returning unit and discarded results remain in the IR. Bare return creates
+an initialized unit temporary. There is no fallthrough or omitted call result.
+The block builder rejects appending after closure and closing twice; the raw
+representation permits a missing terminator only so it can be detected.
+
+Lowering is iterative over the existing child-before-parent expression arena.
+It preserves source-statement order and evaluates call arguments left-to-right
+in the IR, retaining group copies and every call. This records the current IR
+sequence; checking does not execute it or settle evaluation rules for future
+constructs. A function with C call expressions produces exactly C + 1 blocks.
+No optimization, branch, join, unwind edge, ownership operation or drop exists.
+
+The verifier first checks aggregate bounds, function IDs/signatures, all source
+spans and all blocks, including unreachable blocks. It checks local/function/
+continuation references, parameter-prefix kinds, call arity, assignment/call/
+return types, and terminator presence before following edges. It then walks the
+unique entry continuation chain with one initialized-local bitmap and one
+visited-block bitmap per function. Parameters begin initialized. Every read must
+follow initialization; each other slot may be initialized only once and parameters
+cannot be overwritten. Call arguments are read before the destination becomes
+available on its normal continuation. Cycles and unreachable blocks are rejected.
+Acyclic chains may reference any block-table order; table order is not execution
+order. No per-block local-state matrix or recursive graph walk is used.
+
+This establishes structural intraprocedural return completeness, assuming every
+call returns normally. Direct and mutual recursion remain valid. A callee's entry
+is not the caller's continuation edge. This is not program termination, executable
+call safety, user-stack safety, memory safety, or ownership/borrow checking.
+
+Functions, local declarations, blocks, assignments, operands and terminators carry
+original source spans. Copies and arguments retain use-site spans. Entry blocks
+use the function name; call continuations use their originating call; synthesized
+bare-return units use the return statement. The verifier validates file identity,
+range and UTF-8 boundaries before rendering any failure. Exact provenance is
+tested separately; in-bounds spans alone do not prove source-to-IR equivalence.
+
+The bounded design and acceptance scope are in
+[RFC 0002](../rfcs/0002-verified-straight-line-oir.md).
 
 ## Source and diagnostic contract
 
@@ -169,12 +227,19 @@ characters instead of emitting source-controlled terminal commands.
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return |
-| E0400 | Frontend resource limit |
+| E0400 | Frontend/lowering resource limit |
+| E0500 | Internal OIR lowering/verification invariant failure |
 
-Exit 0 means successful type checking of this subset; ordinary failures exit 1.
-There is no custom internal-error recovery protocol yet. Invalid internal spans
-and broken compiler invariants assert; they are not expected source diagnostics.
-A host allocation failure or broken output pipe remains a host-process failure.
+Exit 0 means successful type checking, lowering and OIR verification of this
+subset; ordinary source/CLI/resource failures still exit 1. Lowering budget errors
+use E0400 with stage `oir-lower`. Detected OIR invariant failures use E0500,
+explicitly say `internal compiler error`, use stage `oir-lower` or `oir-verify`,
+and exit 2. They retain the same JSON envelope with unsuccessful summary and
+`functions: null`. An invalid OIR origin is omitted (`primary: null`) rather than
+passed to the asserting renderer. Only the first deterministic IR failure is
+reported. The compiler does not catch arbitrary panics: earlier producer-invariant
+assertions, host allocation failures and broken output pipes remain host-process
+failures, not ordinary source type errors.
 
 ## Resource and trust bounds
 
@@ -187,11 +252,23 @@ A host allocation failure or broken output pipe remains a host-process failure.
 | Nested expression parser frames | 64 (63 grouping wrappers around a literal) |
 | Parameters or call arguments | 256 each |
 | Emitted diagnostics | 100 |
+| OIR locals, blocks, assignments | 100,000 of each, aggregate per program |
 
 All limits are engineering defaults for this experimental subset. A source can
 hit a token limit before its source-size or node limit. Long flat unsupported
 expressions fail before creating deep trees. Resolution recurses only through
 AST expressions already bounded by the parser; type checking is iterative.
+Lowering preflights its exact expansion with checked arithmetic before allocating
+IR storage/maps. Locals map to distinct counted parameters, expressions, let
+statements or bare returns; assignments map to non-call expressions, lets or bare
+returns; blocks map to functions plus calls. Each total is bounded by the existing
+100,000 parser-node budget, so the new bounds do not reduce the accepted source
+subset. Call vectors retain the 256-argument cap. Verification independently
+checks these bounds, even for malformed raw IR. Lowering/verification take linear
+time in functions + locals + blocks + assignments + operands; verification uses
+O(locals + blocks) scratch space per function. These are engineering bounds,
+not an allocation-failure guarantee.
+
 Errors stop later compiler phases, and diagnostics beyond the cap are omitted.
 No total-error-count claim is made when the cap is reached.
 
@@ -207,6 +284,9 @@ the exact snapshot and actual host. Public CLI fixtures are embedded in
 `.ox` discovery remains unchanged. Unit tests inspect source/diagnostic boundaries,
 lossless numeric tokens, resolved IDs and complete type tables.
 
-No OIR/CFG, ownership/borrow checking, execution engine, numeric type system,
-native backend, typed artifact schema, self-hosting or AI capability is added.
-The next dependency is a separately specified typed control-flow/OIR increment.
+[OIR validation evidence](../docs/architecture/oir-validation.md) records the
+straight-line increment, malformed-IR cases, call-order/provenance checks and
+resource/long-chain tests. No ownership/borrow checking, execution engine,
+numeric type system, native backend, typed artifact schema, self-hosting or AI
+capability is added. The next separately reviewed dependency is boolean branches,
+scopes, joins and general CFG dataflow; it is not complete in this slice.

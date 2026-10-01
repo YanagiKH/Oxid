@@ -51,7 +51,8 @@ records actual commands and host coverage; missing targets remain unverified.
 
 ## Follow-on boundary
 
-Add reviewed boolean control flow and verified OIR before ownership or native
-code. Exact integer literals and reference execution need a separate numerical
+The separately bounded [RFC 0002](0002-verified-straight-line-oir.md) adds
+verified straight-line OIR without new source syntax. Boolean branches, scopes
+and joins remain a later increment before ownership or native code. Exact integer literals and reference execution need a separate numerical
 contract; LLVM needs a specified target/toolchain/ABI. None may silently adopt
 legacy semantics when unsupported.
