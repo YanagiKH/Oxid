@@ -173,7 +173,9 @@ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&st
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
-                let module = verified.native_module(entry).map_err(|e| vec![*e])?;
+                let module = verified
+                    .native_module(entry, &sources)
+                    .map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
                 super::native::compile(&module, output).map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))

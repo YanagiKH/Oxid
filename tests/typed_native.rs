@@ -389,7 +389,7 @@ fn syntactic_directory_outputs_are_rejected_before_any_tool_or_artifact() {
 }
 
 #[test]
-fn checked_arithmetic_is_rejected_by_native_admission_including_dead_code() {
+fn checked_arithmetic_is_admitted_including_dead_code_before_missing_tools() {
     for source in [
         "fn main() -> i32 { return 1 + 2; }",
         "fn main() -> i32 { return 1 - 2; }",
@@ -409,8 +409,7 @@ fn checked_arithmetic_is_rejected_by_native_admission_including_dead_code() {
             Some(0),
             "frontend rejected arithmetic: {checked:?}"
         );
-        let native = rejected(&f, "E0700");
-        assert!(native.contains("native-admission"));
-        assert!(native.contains("checked arithmetic"));
+        let native = rejected(&f, "E0701");
+        assert!(native.contains("native-toolchain"));
     }
 }

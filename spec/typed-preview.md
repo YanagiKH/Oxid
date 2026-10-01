@@ -151,6 +151,9 @@ saturation, widening or reassociation occurs: `2147483647 + 1 - 1` and
 execution; out-of-range literals still fail E0203 before running. Unchosen arms
 do not execute, but every arm is name/type checked. Wrong arithmetic operands
 produce E0300 at the first wrongly typed operand. Discarded arithmetic still runs.
+The bounded [native preview](native-preview.md) supports these same three checked
+operations, with the reference human overflow diagnostic and exit 1. Its stricter
+whole-file admission bounds and native I/O failure status 74 still apply.
 
 Division, remainder, casts, shifts, integer comparisons, explicit wrapping,
 other numeric types and their overflow rules remain unavailable. Literal range
