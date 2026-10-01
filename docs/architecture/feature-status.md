@@ -18,9 +18,9 @@ Classification is separate: `production-path`, `demo`, `synthetic`, or `planned`
 A demonstration can be tested without becoming a production feature. A feature
 can have a passing local test without becoming validated on every target.
 
-Every entry describes edition, backend, and target scope independently. The
-term `legacy-0.9` is a documentation label, not a currently supported CLI edition
-flag. Test paths identify checks; evidence paths identify recorded results and
+Every entry describes edition, backend, and target scope independently. `legacy-0.9` now also explicitly selects the default legacy CLI route.
+The [typed-preview checker](../../spec/typed-preview.md) is an opt-in, check-only
+experimental frontend; it does not change the default edition. Test paths identify checks; evidence paths identify recorded results and
 limitations. An empty evidence list means no report is attached to that claim.
 
 Run `python3 scripts/verify_feature_status.py` to detect malformed status values,
