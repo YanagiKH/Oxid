@@ -96,7 +96,7 @@ Try the [examples](examples/) to see these features in use. External adapters ne
 
 Oxid 0.9 is useful for experiments and small tools. Its `.oxb` files contain a serialized AST executed by the interpreter. Tasks are lazy and run sequentially when joined; networking has no concurrent scheduler or built-in TLS. The legacy `bootstrap` and `self-host` commands check artifact round-trips, not compiler self-rebuilds.
 
-The long-term direction is a statically checked, native-compiled language. Those capabilities, Rust compatibility, and native AI training are not available in 0.9. Follow the [roadmap](docs/ROADMAP.md) and [implementation status](docs/architecture/current-baseline.md) for the current boundaries.
+The long-term direction is a statically checked, native-compiled language. An opt-in [experimental LLVM preview](spec/native-preview.md) now compiles a bounded nonrecursive bool/unit/i32 subset to Linux x86_64 executables. Complete static-core semantics, Rust compatibility, and native AI training remain unavailable. Follow the [roadmap](docs/ROADMAP.md) and [implementation status](docs/architecture/current-baseline.md) for the current boundaries.
 
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.
 

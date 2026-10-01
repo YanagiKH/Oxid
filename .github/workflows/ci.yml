@@ -164,3 +164,27 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.12
       - name: Validate manifest metadata
         run: python3 -c "import json, tomllib; json.load(open('license-metadata.json')); tomllib.load(open('Cargo.toml','rb')); tomllib.load(open('oxid.toml','rb'))"
+
+  native-scalar-preview:
+    name: Experimental LLVM scalar native (Linux x86_64)
+    runs-on: ubuntu-latest
+    container: debian:trixie-slim
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install the pinned LLVM preview tools and host C environment
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the compiler and run admission/tool-boundary regressions
+        run: |
+          cargo test --locked --test typed_native
+          cargo build --release --locked
+      - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
+        run: python3 scripts/verify_native_preview.py target/release/oxid

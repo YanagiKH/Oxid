@@ -96,7 +96,7 @@ Oxid 0.9 已提供以下功能。各項指南另有目前行為與限制的說�
 
 Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器執行。Task 採延遲執行，join 時依序執行；網路功能尚無並行排程器或內建 TLS。沿用的 `bootstrap`、`self-host` 指令驗證的是產物序列化往返，並非編譯器重建自身。
 
-長期方向是具備靜態檢查與原生編譯的語言。這些能力、Rust 相容性與原生 AI 訓練，在 0.9 都尚未提供。請參考[路線圖](docs/ROADMAP.md)與[實作現況](docs/architecture/current-baseline.md)。
+長期方向是具備靜態檢查與原生編譯的語言。可選的[實驗性 LLVM 預覽](spec/native-preview.md)已能將受限、非遞迴的 bool／unit／i32 子集編譯成 Linux x86_64 執行檔。完整靜態核心語意、Rust 相容性與原生 AI 訓練仍未提供。請參考[路線圖](docs/ROADMAP.md)與[實作現況](docs/architecture/current-baseline.md)。
 
 只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。
 

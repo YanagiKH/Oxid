@@ -127,7 +127,7 @@ fn typed_run_rejects_legacy_effects_and_direct_file_is_unavailable_at_any_option
 }
 
 #[test]
-fn typed_compile_and_ast_never_create_artifacts_at_any_option_placement() {
+fn typed_compile_without_backend_and_ast_never_create_artifacts_at_any_option_placement() {
     for command in ["compile", "ast"] {
         for position in 0..=2 {
             let project = Project::new(LEGACY_SOURCE);
@@ -445,7 +445,15 @@ fn cli_errors_honor_json_even_when_the_invalid_option_comes_first() {
         );
         assert!(records[0].contains("\"kind\":\"diagnostic\""), "{text}");
         assert!(records[0].contains("\"stage\":\"cli\""), "{text}");
-        assert!(records[1].contains("\"kind\":\"check-summary\""), "{text}");
+        let summary = if args.first() == Some(&"compile") {
+            "compile-summary"
+        } else {
+            "check-summary"
+        };
+        assert!(
+            records[1].contains(&format!("\"kind\":\"{summary}\"")),
+            "{text}"
+        );
         assert!(records[1].contains("\"success\":false"), "{text}");
         assert_eq!(
             project.snapshot(),

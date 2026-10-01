@@ -215,21 +215,35 @@
     },
     {
       "id": "llvm-native-backend",
-      "summary": "First planned native backend for the static core",
-      "status": "proposed",
-      "classification": "planned",
-      "edition": "proposed-static-core",
-      "backend": "llvm-planned",
-      "target_scope": "Proposed scope; no target validated",
+      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "llvm-19.1.7",
+      "target_scope": "Linux x86_64 host; x86_64-unknown-linux-gnu ELF PIE only",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
-        "rfcs/README.md"
+        "spec/native-preview.md",
+        "rfcs/0007-llvm-scalar-native.md"
       ],
-      "implementation": [],
-      "tests": [],
-      "evidence": [],
-      "limitations": "Host binary and C/C++ helpers do not establish native compilation of .ox programs."
+      "implementation": [
+        "src/frontend/oir/native.rs",
+        "src/frontend/native.rs",
+        "src/frontend/options.rs",
+        "src/frontend/driver.rs",
+        "native/typed_preview.c"
+      ],
+      "tests": [
+        "src/frontend/oir/native.rs",
+        "tests/typed_native.rs",
+        "tests/edition_boundary.rs",
+        "scripts/verify_native_preview.py"
+      ],
+      "evidence": [
+        "docs/architecture/native-preview-validation.md"
+      ],
+      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. No native arithmetic, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
     },
     {
       "id": "independent-self-hosting",

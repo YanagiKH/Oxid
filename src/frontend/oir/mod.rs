@@ -1,6 +1,7 @@
 //! Private acyclic OIR with a bounded scalar reference consumer. No serialized contract.
 mod execute;
 mod lower;
+mod native;
 mod verify;
 
 use super::{

@@ -1,6 +1,6 @@
 # Experimental scalar checking and bounded reference execution
 
-Status: experimental. Checking is non-executing; explicit run is bounded reference execution. `typed-preview` is a provisional selector,
+Status: experimental. Checking is non-executing; explicit run is bounded reference execution. A narrower optional [LLVM native compilation preview](native-preview.md) is also available. `typed-preview` is a provisional selector,
 not a final language edition or a completed M1/M2 milestone. The scoped design
 and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md),
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
@@ -35,16 +35,16 @@ passed through. To select an Oxid edition for a script command, place the option
 before its name. An explicit typed selection there is rejected before launching
 anything. This prevents accidentally consuming an external process's options.
 
-Only `check` and explicit `run` support the preview. Direct-file invocation,
-`compile`, `ast`, project commands, and every other operation fail before legacy
-dispatch. The gate runs before interpreter construction, preprocessing,
+The preview supports `check`, explicit `run`, and the separately specified
+[native `compile --backend llvm`](native-preview.md). Direct-file invocation,
+`ast`, project commands, and every other operation fail before legacy dispatch. The gate runs before interpreter construction, preprocessing,
 dependency resolution, script execution, cache writes, or artifact generation.
-Both operations read only the requested source and create no output/cache files.
+Checking and reference running read only the requested source and create no output/cache files. Native compilation has its own explicit artifact boundary.
 Checking never executes; run consumes only the completely verified scalar OIR. It rejects OXBC input and does not fall back to the legacy
 parser, dynamic values, macro expander, interpreter, or artifact writer.
 
 `--message-format text|json` is available only with typed preview. Unknown
-preview options, including backend/target/profile requests, are rejected.
+preview options are rejected. Backend/target/output options are available only for the native compile route; profile requests remain unavailable.
 Manifest edition propagation and typed project builds are not implemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.

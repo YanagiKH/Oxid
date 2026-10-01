@@ -16,7 +16,7 @@ arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
 ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified acyclic
 Branch/Goto OIR and explicit calls/returns. Check remains non-executing; explicit
 typed run uses bounded iterative scalar reference execution. Ownership analysis
-and native machine-code compilation remain deferred. See
+remains deferred. A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
 [RFC 0006](../../rfcs/0006-checked-i32-arithmetic.md) adds ordinary checked i32
@@ -77,6 +77,6 @@ See [the machine-readable inventory](../feature-status.json),
 
 The baseline records selected legacy behavior and its implementation limits.
 Full grammar/scope, static semantics and safety, threat model, compatibility and
-performance corpora, native compilation, provider dispatch, true self-hosting,
+performance corpora, broader native compilation, provider dispatch, true self-hosting,
 and native AI training remain open work. The future static-core design must use
 its own specification rather than treating the legacy interpreter as its oracle.
