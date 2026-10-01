@@ -26,6 +26,8 @@ pub enum Kind {
     Equal,
     Arrow,
     Minus,
+    Plus,
+    Star,
     Unsupported,
     Invalid,
     Eof,
@@ -153,7 +155,9 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                 Kind::Arrow
             }
             '-' => Kind::Minus,
-            '+' | '*' | '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '<' | '>' | '#' | '\'' => {
+            '+' => Kind::Plus,
+            '*' => Kind::Star,
+            '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '<' | '>' | '#' | '\'' => {
                 Kind::Unsupported
             }
             _ => Kind::Invalid,

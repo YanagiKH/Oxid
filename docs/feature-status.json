@@ -467,7 +467,43 @@
       "evidence": [
         "docs/architecture/i32-literal-validation.md"
       ],
-      "limitations": "Literal-only provisional i32 with ASCII decimal and optional literal minus; unconstrained literals default to i32. No arithmetic, casts, numeric comparisons, wider integers, floats, promotion or arithmetic overflow policy. Fuel/frame/slot counts are unchanged, but host slot bytes increase. No ownership, native output, typed artifact or safety certification. Legacy f64 and default routing are unchanged."
+      "limitations": "This entry records the literal-only predecessor; checked i32 arithmetic is tracked separately. Literal-only provisional i32 with ASCII decimal and optional literal minus; unconstrained literals default to i32. No arithmetic, casts, numeric comparisons, wider integers, floats, promotion or arithmetic overflow policy. Fuel/frame/slot counts are unchanged, but host slot bytes increase. No ownership, native output, typed artifact or safety certification. Legacy f64 and default routing are unchanged."
+    },
+    {
+      "id": "typed-preview-checked-i32-arithmetic",
+      "summary": "Checked i32 +, - and * with precedence, ordered operand evaluation and profile-independent runtime overflow through verified OIR",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; remote CI and other hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0006-checked-i32-arithmetic.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs"
+      ],
+      "tests": [
+        "tests/typed_arithmetic.rs",
+        "src/frontend/oir/arithmetic_tests.rs",
+        "src/frontend/oir/execute_tests.rs",
+        "scripts/verify_i32_arithmetic.py"
+      ],
+      "evidence": [
+        "docs/architecture/i32-arithmetic-validation.md"
+      ],
+      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, division, remainder, casts, shifts, numeric comparisons, wider integers, floats or promotion. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. No native support, ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
     }
   ]
 }

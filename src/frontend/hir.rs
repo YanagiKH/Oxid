@@ -1,4 +1,5 @@
 //! Resolved IDs are compilation-local, deterministic in source order.
+pub use super::ast::ArithmeticOp;
 use super::{
     ast,
     diagnostic::Diagnostic,
@@ -35,8 +36,17 @@ pub enum ExprKind {
     I32(i32),
     Unit,
     Local(LocalId),
-    Call { target: DefId, args: Vec<ExprId> },
+    Call {
+        target: DefId,
+        args: Vec<ExprId>,
+    },
     Group(ExprId),
+    Arithmetic {
+        op: ArithmeticOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
 }
 #[derive(Debug)]
 pub struct Expr {
@@ -378,6 +388,22 @@ impl<'a> Resolver<'a> {
                 ExprKind::Call { target, args }
             }
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+            ast::ExprKind::Arithmetic {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                // Complete the left subtree before starting the right, including calls.
+                let left = self.expression(*left)?;
+                let right = self.expression(*right)?;
+                ExprKind::Arithmetic {
+                    op: *op,
+                    left,
+                    right,
+                    operator_span: *operator_span,
+                }
+            }
         };
         let id = ExprId(self.expressions.len());
         self.expressions.push(Expr {

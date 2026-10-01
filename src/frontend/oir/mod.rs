@@ -67,6 +67,12 @@ enum Rvalue {
     I32(i32),
     Unit,
     Copy(Operand),
+    CheckedI32 {
+        op: hir::ArithmeticOp,
+        left: Operand,
+        right: Operand,
+        operator_span: Span,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Terminator {
@@ -211,6 +217,7 @@ pub(super) enum RunFailure {
     Fuel(Span),
     Frames(Span),
     Slots(Span),
+    Overflow(Span),
     Internal(OirFailure),
 }
 impl RunFailure {
@@ -225,6 +232,7 @@ impl RunFailure {
             Self::Fuel(span) => ("E0601", "execution fuel exhausted", Some(span)),
             Self::Frames(span) => ("E0602", "live call-frame limit exceeded", Some(span)),
             Self::Slots(span) => ("E0603", "live local-slot limit exceeded", Some(span)),
+            Self::Overflow(span) => ("E0604", "checked i32 arithmetic overflow", Some(span)),
             Self::Internal(ref error) => return error.diagnostic(sources),
         };
         Diagnostic::new(
@@ -276,3 +284,6 @@ mod cfg_tests;
 
 #[cfg(test)]
 mod i32_tests;
+
+#[cfg(test)]
+mod arithmetic_tests;

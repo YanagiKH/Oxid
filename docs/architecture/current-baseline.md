@@ -18,7 +18,9 @@ Branch/Goto OIR and explicit calls/returns. Check remains non-executing; explici
 typed run uses bounded iterative scalar reference execution. Ownership analysis
 and native machine-code compilation remain deferred. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
-and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for literal-only exact i32.
+and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
+[RFC 0006](../../rfcs/0006-checked-i32-arithmetic.md) adds ordinary checked i32
+addition, subtraction and multiplication, with profile-independent runtime overflow.
 The linked C/C++ helpers accelerate selected host operations; their existence
 does not mean Oxid source is compiled to native machine code.
 

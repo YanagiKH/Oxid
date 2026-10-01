@@ -4,6 +4,12 @@ use super::source::Span;
 pub struct ExprId(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodyBlockId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArithmeticOp {
+    Add,
+    Subtract,
+    Multiply,
+}
 #[derive(Debug)]
 pub enum ExprKind {
     Bool(bool),
@@ -19,6 +25,12 @@ pub enum ExprKind {
         args: Vec<ExprId>,
     },
     Group(ExprId),
+    Arithmetic {
+        op: ArithmeticOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
 }
 #[derive(Debug)]
 pub struct Expr {
