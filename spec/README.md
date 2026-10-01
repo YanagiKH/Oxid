@@ -9,6 +9,7 @@ specification or evidence that M0 has been completed.
   diagnostics, and route-specific limitations.
 - [Typed preview](typed-preview.md) defines the opt-in experimental bool/i32/unit
   checker, lexical branches, verified acyclic OIR and bounded explicit reference run.
+- [Native preview](native-preview.md) defines the optional bounded LLVM scalar backend for Linux x86_64.
 - [Current architecture](../docs/architecture/current-baseline.md) identifies
   which implementation actually runs and separates demonstrations from it.
 - [Feature status](../docs/feature-status.json) records scoped claims and gaps.

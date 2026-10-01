@@ -38,3 +38,9 @@ That predecessor does not implement arithmetic, casts, wider integers or floatin
 point. Checked i32 addition/subtraction/multiplication are a separate experimental
 entry, with runtime overflow errors identical in debug and release. Other numeric
 operations remain deferred.
+
+The optional LLVM native preview is separately tracked as experimental. It accepts
+a stricter bounded nonrecursive scalar subset, emits Linux x86_64 PIE executables,
+and rejects unsupported operations before tool invocation, including the checked
+i32 arithmetic supported by reference execution. It does not complete M2/M3 or
+certify production safety, a stable ABI, or self-hosting.

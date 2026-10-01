@@ -1,9 +1,9 @@
 //! Edition selection is a pure gate, before legacy dispatch or any host effects.
 //!
-//! The two new options are recognized anywhere before `--`. For `script`,
+//! Global edition and format options are recognized anywhere before `--`. For `script`,
 //! recognition stops immediately after the script name: the remaining arguments
 //! belong to the launched process. With neither option, legacy argv is unchanged.
-//! Typed commands accept `check|run [options] [--] <source>` and options before the
+//! Typed commands accept `check|run|compile [options] [--] <source>` and options before the
 //! command or after the source. The separator is optional and makes all later
 //! words literal operands; exactly one source is required. It follows the command.
 
@@ -18,6 +18,11 @@ pub enum Route {
         path: String,
         json: bool,
     },
+    TypedCompile {
+        path: String,
+        json: bool,
+        output: String,
+    },
     Error {
         message: String,
         json: bool,
@@ -29,12 +34,14 @@ pub enum Route {
 pub enum Operation {
     Check,
     Run,
+    Compile,
 }
 impl Operation {
     fn command(self) -> &'static str {
         match self {
             Self::Check => "check",
             Self::Run => "run",
+            Self::Compile => "compile",
         }
     }
 }
@@ -132,8 +139,9 @@ pub fn route(args: &[String]) -> Route {
     let operation = match forwarded.first().map(String::as_str) {
         Some("check") => Operation::Check,
         Some("run") => Operation::Run,
+        Some("compile") => Operation::Compile,
         _ => return Route::Error {
-            message: format!("edition `typed-preview` supports only `check` and explicit `run`; command `{}` is unavailable",
+            message: format!("edition `typed-preview` supports only `check`, explicit `run`, and explicit native `compile`; command `{}` is unavailable",
                 forwarded.first().map(String::as_str).unwrap_or("<missing>")),
             json, operation: Operation::Check,
         },
@@ -141,8 +149,41 @@ pub fn route(args: &[String]) -> Route {
     let command = operation.command();
 
     let mut path = None;
+    let mut output = None;
+    let mut backend = None;
+    let mut target = None;
     let mut separated = false;
-    for argument in forwarded.into_iter().skip(1) {
+    let mut words = forwarded.into_iter().skip(1);
+    while let Some(argument) = words.next() {
+        if operation == Operation::Compile && !separated {
+            let name = argument.split('=').next().unwrap_or("");
+            if matches!(name, "--backend" | "--target" | "--output") {
+                let value = argument
+                    .split_once('=')
+                    .map(|(_, v)| v.to_string())
+                    .or_else(|| words.next());
+                let slot = match name {
+                    "--backend" => &mut backend,
+                    "--target" => &mut target,
+                    _ => &mut output,
+                };
+                if slot.is_some()
+                    || value
+                        .as_ref()
+                        .is_none_or(|v| v.is_empty() || v.starts_with('-'))
+                {
+                    return Route::Error {
+                        message: format!(
+                            "{name} requires one nonempty value and may occur only once"
+                        ),
+                        json,
+                        operation,
+                    };
+                }
+                *slot = value;
+                continue;
+            }
+        }
         if !separated && argument == "--" {
             separated = true;
             continue;
@@ -162,10 +203,36 @@ pub fn route(args: &[String]) -> Route {
             };
         }
     }
+    if operation == Operation::Compile {
+        let message = if backend.as_deref() != Some("llvm") {
+            Some("typed-preview compile requires --backend llvm")
+        } else if target
+            .as_deref()
+            .is_some_and(|v| v != "x86_64-unknown-linux-gnu")
+        {
+            Some("native preview supports only --target x86_64-unknown-linux-gnu")
+        } else if output.is_none() {
+            Some("typed-preview compile requires --output <new-path>")
+        } else {
+            None
+        };
+        if let Some(message) = message {
+            return Route::Error {
+                message: message.into(),
+                json,
+                operation,
+            };
+        }
+    }
     match path {
         Some(path) => match operation {
             Operation::Check => Route::TypedCheck { path, json },
             Operation::Run => Route::TypedRun { path, json },
+            Operation::Compile => Route::TypedCompile {
+                path,
+                json,
+                output: output.expect("validated output"),
+            },
         },
         None => Route::Error {
             message: format!("typed-preview {command} requires exactly one source path"),
@@ -279,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_preview_rejects_every_other_command() {
+    fn typed_preview_rejects_unavailable_or_incomplete_commands() {
         for command in [
             "file.ox",
             "compile",

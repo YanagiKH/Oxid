@@ -25,19 +25,24 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             json,
             Summary::empty(operation),
         )),
-        Route::TypedCheck { path, json } => Some(process_file(&path, json, Operation::Check)),
-        Route::TypedRun { path, json } => Some(process_file(&path, json, Operation::Run)),
+        Route::TypedCheck { path, json } => Some(process_file(&path, json, Operation::Check, None)),
+        Route::TypedRun { path, json } => Some(process_file(&path, json, Operation::Run, None)),
+        Route::TypedCompile { path, json, output } => {
+            Some(process_file(&path, json, Operation::Compile, Some(&output)))
+        }
     }
 }
 enum Summary {
     Check(Option<usize>),
     Run(Option<oir::Scalar>),
+    Compile(Option<String>),
 }
 impl Summary {
     fn empty(operation: Operation) -> Self {
         match operation {
             Operation::Check => Self::Check(None),
             Operation::Run => Self::Run(None),
+            Operation::Compile => Self::Compile(None),
         }
     }
 }
@@ -59,6 +64,13 @@ fn report(sources: &SourceMap, diagnostics: Vec<Diagnostic>, json: bool, summary
                     "typed-preview check ok ({} functions; check only)",
                     functions.unwrap_or(0)
                 );
+            }
+        }
+        Summary::Compile(output) => {
+            if json {
+                println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":{},\"errors\":{},\"output\":{}}}", success, diagnostics.len(), output.filter(|_| success).map_or("null".into(), |p| json_string(&p)));
+            } else if let Some(path) = output.filter(|_| success) {
+                println!("typed-preview native compile ok: {}", json_string(&path));
             }
         }
         Summary::Run(result) => {
@@ -93,7 +105,7 @@ fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
     }
 }
 
-fn process_file(path: &str, json: bool, operation: Operation) -> i32 {
+fn process_file(path: &str, json: bool, operation: Operation, output: Option<&str>) -> i32 {
     let mut sources = SourceMap::new();
     let result = (|| {
         let file = File::open(path).map_err(|e| {
@@ -160,6 +172,12 @@ fn process_file(path: &str, json: bool, operation: Operation) -> i32 {
             .map_err(|error| vec![*error.diagnostic(&sources)])?;
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
+            Operation::Compile => {
+                let module = verified.native_module(entry).map_err(|e| vec![*e])?;
+                let output = output.expect("compile route validates output");
+                super::native::compile(&module, output).map_err(|e| vec![*e])?;
+                Ok(Summary::Compile(Some(output.to_string())))
+            }
             Operation::Run => verified
                 .run(entry)
                 .map(|value| Summary::Run(Some(value)))
