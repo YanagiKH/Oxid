@@ -1,6 +1,7 @@
 # RFC 0007: bounded LLVM scalar native preview
 
-Status: experimental implementation for review. The bounded first-backend
+Status: scalar-only predecessor, extended by [RFC 0008](0008-native-checked-i32.md).
+Experimental implementation for review. The bounded first-backend
 direction is approved; this document does not claim a stable ABI, independent
 review sign-off, or completion of a roadmap milestone. Owner/reviewer: unassigned.
 
@@ -28,7 +29,7 @@ output behavior and trust model are specified in
   host binary. This first version uses pinned external tools with explicit argv.
 - C transpilation would delegate too much scalar lowering to a different language.
   Only the small stdout adapter is C; Oxid code lowers directly to LLVM IR.
-- Native arithmetic is deferred until checked-overflow lowering has its own
+- In this initial increment, native arithmetic is deferred until checked-overflow lowering has its own
   differential evidence. Plain wrapping add or poison-producing flags are not
   substitutes for the reference interpreter's arithmetic contract.
 

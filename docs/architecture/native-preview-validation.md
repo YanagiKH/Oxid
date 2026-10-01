@@ -1,5 +1,9 @@
 # LLVM scalar native preview: local validation
 
+Historical scalar-only evidence; superseded for arithmetic admission by
+[the checked-i32 native report](native-arithmetic-validation.md). Counts and
+rejection tests below describe the predecessor snapshot, not the current scope.
+
 Scope: experimental candidate based on `a09318cb005075eeb6f56b423ec2fd43379a3e50`.
 This is local evidence for the [native contract](../../spec/native-preview.md),
 not independent review, remote CI, release certification, or completion of M3.
@@ -96,7 +100,7 @@ controlled tool doubles only test the process/publication failure boundaries.
 ## Local results
 
 - Formatting and Clippy with warnings denied: passed
-- Cargo all-target/all-feature tests: 293 passed (201 binary unit tests and 92 integration tests)
+- Cargo all-target/all-feature tests: 283 passed (201 binary unit tests and 82 integration tests; corrected count)
 - Metadata validator unit tests: 7 passed
 - Release compiler build: passed
 - Real native differential/artifact gate: 57 cases passed, plus printer failure injection

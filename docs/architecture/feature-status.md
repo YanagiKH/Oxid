@@ -41,6 +41,7 @@ operations remain deferred.
 
 The optional LLVM native preview is separately tracked as experimental. It accepts
 a stricter bounded nonrecursive scalar subset, emits Linux x86_64 PIE executables,
-and rejects unsupported operations before tool invocation, including the checked
-i32 arithmetic supported by reference execution. It does not complete M2/M3 or
-certify production safety, a stable ABI, or self-hosting.
+and rejects unsupported operations before tool invocation. Its checked i32
+`+`, `-` and `*` extension preserves reference overflow and first-error behavior;
+other numeric operations and recursive native calls remain unavailable. It does
+not complete M2/M3 or certify production safety, a stable ABI, or self-hosting.

@@ -35,6 +35,7 @@ impl VerifiedProgram {
     pub(in crate::frontend) fn native_module(
         &self,
         entry: Option<hir::DefId>,
+        sources: &SourceMap,
     ) -> Result<String, Box<Diagnostic>> {
         let id = entry.ok_or_else(|| {
             reject(
@@ -62,7 +63,7 @@ impl VerifiedProgram {
             ));
         }
         self.admit()?;
-        Ok(emit(&self.program, id))
+        Ok(emit(&self.program, id, sources))
     }
 
     fn admit(&self) -> Result<Vec<Bound>, Box<Diagnostic>> {
@@ -90,8 +91,17 @@ impl VerifiedProgram {
                 for a in &b.statements {
                     #[allow(unreachable_patterns)]
                     match a.value {
-                        Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit | Rvalue::Copy(_) => {}
-                        _ => return Err(reject("native preview does not support this OIR operation (including checked arithmetic)", Some(a.span))),
+                        Rvalue::Bool(_)
+                        | Rvalue::I32(_)
+                        | Rvalue::Unit
+                        | Rvalue::Copy(_)
+                        | Rvalue::CheckedI32 { .. } => {}
+                        _ => {
+                            return Err(reject(
+                                "native preview does not support this OIR operation",
+                                Some(a.span),
+                            ))
+                        }
                     }
                 }
                 if let TerminatorKind::Call { target, .. } =
@@ -171,8 +181,36 @@ fn ty(ty: hir::Ty) -> &'static str {
         hir::Ty::I32 => "i32",
     }
 }
-fn emit(program: &Program, entry: hir::DefId) -> String {
-    let mut out = String::from("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\n");
+fn overflow_message(span: Span, sources: &SourceMap) -> String {
+    RunFailure::Overflow(span)
+        .diagnostic(sources)
+        .render_human(sources)
+}
+fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
+    let mut out = String::from("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
+    // Diagnostics are pre-rendered with the reference renderer. Every UTF-8
+    // byte is escaped as LLVM constant data; no source path can become syntax.
+    for f in &program.functions {
+        for b in &f.blocks {
+            for a in &b.statements {
+                if let Rvalue::CheckedI32 { operator_span, .. } = a.value {
+                    let message = overflow_message(operator_span, sources);
+                    write!(
+                        out,
+                        "@__oxid_error_{}_{} = private unnamed_addr constant [{} x i8] c\"",
+                        f.id.0,
+                        a.destination.0,
+                        message.len()
+                    )
+                    .unwrap();
+                    for byte in message.bytes() {
+                        write!(out, "\\{byte:02X}").unwrap();
+                    }
+                    out.push_str("\"\n");
+                }
+            }
+        }
+    }
     for f in &program.functions {
         // Source names and paths never enter LLVM symbol syntax. Deterministic
         // numeric DefIds avoid collisions with main, libc and runtime symbols.
@@ -207,6 +245,45 @@ fn emit(program: &Program, entry: hir::DefId) -> String {
                     Rvalue::I32(v) => v.to_string(),
                     Rvalue::Unit => "0".into(),
                     Rvalue::Copy(v) => format!("%v{}", v.local.0),
+                    Rvalue::CheckedI32 {
+                        op,
+                        left,
+                        right,
+                        operator_span,
+                    } => {
+                        let intrinsic = match op {
+                            hir::ArithmeticOp::Add => "sadd",
+                            hir::ArithmeticOp::Subtract => "ssub",
+                            hir::ArithmeticOp::Multiply => "smul",
+                        };
+                        let n = a.destination.0;
+                        // The intrinsic is defined for every pair of i32 values.
+                        // Its wrapped component is only extracted on success;
+                        // failure cannot execute any later OIR work or printer.
+                        writeln!(out, "  %checked{n} = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 %v{}, i32 %v{})", left.local.0, right.local.0).unwrap();
+                        writeln!(
+                            out,
+                            "  %overflow{n} = extractvalue {{ i32, i1 }} %checked{n}, 1"
+                        )
+                        .unwrap();
+                        writeln!(
+                            out,
+                            "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok"
+                        )
+                        .unwrap();
+                        writeln!(out, "overflow{n}_error:").unwrap();
+                        writeln!(
+                            out,
+                            "  call void @__oxid_overflow(ptr @__oxid_error_{}_{n}, i64 {})",
+                            f.id.0,
+                            overflow_message(operator_span, sources).len()
+                        )
+                        .unwrap();
+                        writeln!(out, "  unreachable\nchecked{n}_ok:").unwrap();
+                        writeln!(out, "  %v{n} = extractvalue {{ i32, i1 }} %checked{n}, 0")
+                            .unwrap();
+                        continue;
+                    }
                     _ => unreachable!("native admission allowlist"),
                 };
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
@@ -279,13 +356,19 @@ fn emit(program: &Program, entry: hir::DefId) -> String {
 mod tests {
     use super::*;
     use crate::frontend::{lexer, parser};
-    fn verified(text: &str) -> VerifiedProgram {
+    fn verified_with_sources(text: &str) -> (VerifiedProgram, SourceMap) {
+        verified_at("native-unit.ox", text)
+    }
+    fn verified_at(path: &str, text: &str) -> (VerifiedProgram, SourceMap) {
         let mut sources = SourceMap::new();
-        let id = sources.add("native-unit.ox".into(), text.into());
+        let id = sources.add(path.into(), text.into());
         let source = sources.get(id);
         let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
         let typed = typeck::check(hir::resolve(source, &ast).unwrap()).unwrap();
-        lower_and_verify(&typed, &sources).unwrap()
+        (lower_and_verify(&typed, &sources).unwrap(), sources)
+    }
+    fn verified(text: &str) -> VerifiedProgram {
+        verified_with_sources(text).0
     }
     #[test]
     fn conservative_cost_counts_both_arms_and_repeated_calls() {
@@ -327,13 +410,106 @@ mod tests {
     }
     #[test]
     fn lowering_uses_private_scalar_abi_and_never_source_identifiers() {
-        let p = verified("fn printf(value: i32) -> i32 { return value; } fn main() -> i32 { return printf(-2147483648); }");
-        let ir = p.native_module(Some(hir::DefId(1))).unwrap();
+        let (p, sources) = verified_with_sources("fn printf(value: i32) -> i32 { return value; } fn main() -> i32 { return printf(-2147483648); }");
+        let ir = p.native_module(Some(hir::DefId(1)), &sources).unwrap();
         assert!(!ir.contains("printf"));
         assert!(ir.contains("define internal i32 @__oxid_fn_0(i32 %v0) noinline"));
         assert!(ir.contains("-2147483648"));
         assert!(!ir.contains("nsw"));
         assert!(!ir.contains("poison"));
         assert!(!ir.contains("undef"));
+    }
+    #[test]
+    fn checked_arithmetic_cost_is_one_including_dead_and_repeated_work() {
+        for op in ["+", "-", "*"] {
+            let p = verified(&format!("fn main() -> i32 {{ return 1 {op} 2; }}"));
+            let bound = p.admit().unwrap()[0];
+            // Root unit + 3 slots + 3 assignments (one arithmetic) + Return.
+            assert_eq!(1 + bound.cost, 8);
+            assert_eq!(bound.slots, 3);
+        }
+        let p = verified("fn value() -> i32 { return 1 + 2; } fn main() -> i32 { if false { value(); } else { value(); } return value(); }");
+        let bounds = p.admit().unwrap();
+        let main = &p.program.functions[1];
+        let own = main.locals.len()
+            + main
+                .blocks
+                .iter()
+                .map(|b| b.statements.len() + 1)
+                .sum::<usize>();
+        assert_eq!(bounds[0].cost, 7);
+        assert_eq!(bounds[1].cost, own + 3 * 7);
+    }
+
+    #[test]
+    fn checked_lowering_branches_before_exposing_each_result() {
+        let (p, sources) = verified_with_sources("fn main() -> i32 { return (1 + 2) * (4 - 3); }");
+        let ir = p.native_module(Some(hir::DefId(0)), &sources).unwrap();
+        for name in ["sadd", "ssub", "smul"] {
+            assert_eq!(
+                ir.matches(&format!(
+                    "= call {{ i32, i1 }} @llvm.{name}.with.overflow.i32"
+                ))
+                .count(),
+                1
+            );
+        }
+        assert_eq!(ir.matches("  call void @__oxid_overflow(").count(), 3);
+        for a in &p.program.functions[0].blocks[0].statements {
+            if matches!(a.value, Rvalue::CheckedI32 { .. }) {
+                let n = a.destination.0;
+                assert!(ir.contains(&format!(
+                    "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok"
+                )));
+                assert!(ir.contains(&format!("  unreachable\nchecked{n}_ok:\n  %v{n} = extractvalue {{ i32, i1 }} %checked{n}, 0")));
+            }
+        }
+        for forbidden in [
+            "nsw",
+            "nuw",
+            "poison",
+            "undef",
+            " add i32 ",
+            " sub i32 ",
+            " mul i32 ",
+        ] {
+            assert!(!ir.contains(forbidden), "{forbidden}");
+        }
+    }
+
+    #[test]
+    fn embedded_overflow_diagnostic_is_reference_human_text_encoded_as_data() {
+        let path = "雪\"\\\n\t\u{1b}.ox";
+        let text = "// 🦀\r\nfn main() -> i32 { return 2147483647 + 1; }";
+        let (p, sources) = verified_at(path, text);
+        let ir = p.native_module(Some(hir::DefId(0)), &sources).unwrap();
+        assert!(!ir.contains(path));
+        let constant = ir
+            .lines()
+            .find(|line| line.starts_with("@__oxid_error_"))
+            .unwrap();
+        let encoded = constant
+            .split_once(" c\"")
+            .unwrap()
+            .1
+            .strip_suffix('"')
+            .unwrap();
+        let (chunks, remainder) = encoded.as_bytes().as_chunks::<3>();
+        assert!(remainder.is_empty());
+        let decoded: Vec<u8> = chunks
+            .iter()
+            .map(|chunk| {
+                assert_eq!(chunk[0], b'\\');
+                u8::from_str_radix(std::str::from_utf8(&chunk[1..]).unwrap(), 16).unwrap()
+            })
+            .collect();
+        let failure = p.run(Some(hir::DefId(0))).unwrap_err();
+        let expected = failure.diagnostic(&sources).render_human(&sources);
+        assert_eq!(decoded, expected.as_bytes());
+        assert!(constant.contains(&format!("[{} x i8]", decoded.len())));
+        assert!(ir.contains(&format!(", i64 {})", decoded.len())));
+        assert_eq!(expected.lines().count(), 2);
+        assert!(!expected.contains('\u{1b}'));
+        assert!(expected.ends_with(":2:38\n"));
     }
 }

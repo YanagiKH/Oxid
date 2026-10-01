@@ -38,11 +38,14 @@ including unused functions and unchosen branches. Only the immutable verified
 witness can enter native admission. A declared zero-argument scalar `main` is
 required, carried by its resolved DefId rather than reconstructed from spans.
 
-Supported operations are exact bool/unit/i32 constants, immutable copies,
-explicit direct nonrecursive calls, Branch, Goto and Return. Native compilation
-rejects other OIR operations, including checked arithmetic, even when reference
-execution supports them. There are no source I/O operations, pointers, containers,
-loops, indirect calls, modules or implicit legacy adapters in this subset.
+Supported operations are exact bool/unit/i32 constants, immutable copies, checked
+i32 addition/subtraction/multiplication, explicit direct nonrecursive calls,
+Branch, Goto and Return. Native compilation rejects all other OIR operations.
+Arithmetic follows the ordered, checked-overflow semantics in
+[RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
+[RFC 0008](../rfcs/0008-native-checked-i32.md). There are no source I/O operations,
+pointers, containers, loops, indirect calls, modules or implicit legacy adapters
+in this subset.
 
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches. Iterative leaf-first traversal rejects recursive graphs.
@@ -64,7 +67,9 @@ sum(argument_count(call) + C(callee) for all calls)` in callee-first order.
 Require `1 + C(F) <= 100,000`. Calls at distinct sites are counted separately;
 there is no memoization discount. Since verified intraprocedural CFGs are
 acyclic, summing both arms overestimates every executed path. It also counts
-callee allocation and every reference execution operation. This conservative
+callee allocation and every reference execution operation. An arithmetic
+assignment counts once; operand evaluation has its own assignments/calls. Thus
+`return 1 + 2;` has an inclusive bound of eight fuel. This conservative
 admission can reject programs that run successfully in the reference interpreter.
 
 Depth is `1 + max(callee_depth)` and live slots are
@@ -82,12 +87,22 @@ Native ABI version 1 is private and provisional. LLVM values are `i1` for bool,
 `i8` containing zero for unit, and exact `i32`. Definitions use the verifier's
 single-assignment local IDs as LLVM SSA names. Copies/constants use bitwise OR
 with zero, with no numeric conversion, `undef`, `poison`, `nsw`, or `nuw`.
+Checked arithmetic uses LLVM `sadd`, `ssub` and `smul` signed-overflow intrinsics.
+Each operation branches on the overflow bit, extracts its i32 result only on the
+success path, and calls a noreturn diagnostic adapter on failure. Operand, call,
+statement and first-error order remain unchanged. Discarded arithmetic executes;
+unchosen branches do not. No hardware trap or unchecked/wrapping operation is a
+substitute for the overflow branch. Backend lowering adds two blocks per checked
+assignment; the 4,096-block ceiling measures original OIR blocks. At most 8,192
+arithmetic assignments can fit the aggregate local ceiling.
 Branches, direct calls and returns retain their OIR structure. Functions are
 `internal` and `noinline`; this preview uses `-O0` and no LTO or fast-math.
 
-Symbols are deterministic numeric `__oxid_fn_<DefId>` names. Source identifiers,
-comments and paths are not inserted into LLVM text, so names such as `write` or
-`printf` cannot collide with runtime/library symbols or inject IR syntax.
+Symbols are deterministic numeric `__oxid_fn_<DefId>` names. Source identifiers
+and comments never enter LLVM text. Overflow diagnostics contain the compile-time
+source path, pre-rendered with the reference human renderer and encoded entirely
+as hexadecimal LLVM constant bytes. Paths cannot supply IR syntax or symbols.
+Names such as `write` or `printf` cannot collide with runtime/library symbols.
 The C-compatible entry shim returns an output status, never the scalar value.
 It widens bool to i32 when calling the C output adapter. Unit has a no-argument
 printer. There is no general C/FFI ABI promise for user functions.
@@ -127,7 +142,19 @@ decimal i32 plus newline, and exit 0. The printer handles i32 MIN by widening
 before negation. It handles partial writes and retries EINTR. A failed write,
 zero-progress write, or signal-setup failure returns 74 (EX_IOERR); SIGPIPE is
 ignored so a closed pipe also returns 74. An output failure can leave a partial
-line. There is no native JSON output mode or program input/arguments contract.
+line.
+
+An executed checked-i32 overflow writes exactly the reference human E0604/oir-run
+diagnostic to stderr, including the operator's source line and Unicode-scalar
+column, leaves stdout empty and exits 1. It stops at the first error, including in
+discarded expressions or arguments. The embedded source path is the argument
+supplied to `compile`, with control characters escaped by the reference renderer;
+it remains fixed if source files are moved/deleted or the executable runs elsewhere.
+Paths may be visible in executable constant data. There is no runtime source read.
+The private adapter receives length-delimited bytes, writes them using the same
+partial-write/EINTR/SIGPIPE handling, and calls `_exit`. Diagnostic output failure
+exits 74 and can leave partial stderr. There is no native JSON output mode or
+program input/arguments contract.
 
 Compiler success is exit 0. Text mode prints a compile summary only, never the
 program result. JSON mode emits one `compile-summary` with schema_version 1,
@@ -139,5 +166,7 @@ exit 2 internal-invariant behavior are unchanged. Valid global options selecting
 compile use compile-summary for later errors; invalid global options retain the
 pre-existing check-summary. Diagnostics escape source/tool-controlled text.
 
-See [RFC 0007](../rfcs/0007-llvm-scalar-native.md) and
-[validation evidence](../docs/architecture/native-preview-validation.md).
+See [RFC 0007](../rfcs/0007-llvm-scalar-native.md),
+[RFC 0008](../rfcs/0008-native-checked-i32.md), the
+[scalar predecessor evidence](../docs/architecture/native-preview-validation.md),
+and [checked-arithmetic evidence](../docs/architecture/native-arithmetic-validation.md).

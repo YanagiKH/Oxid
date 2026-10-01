@@ -215,7 +215,7 @@
     },
     {
       "id": "llvm-native-backend",
-      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview",
+      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked +, - and *",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -225,7 +225,8 @@
       "reviewer": "unassigned",
       "spec": [
         "spec/native-preview.md",
-        "rfcs/0007-llvm-scalar-native.md"
+        "rfcs/0007-llvm-scalar-native.md",
+        "rfcs/0008-native-checked-i32.md"
       ],
       "implementation": [
         "src/frontend/oir/native.rs",
@@ -238,12 +239,14 @@
         "src/frontend/oir/native.rs",
         "tests/typed_native.rs",
         "tests/edition_boundary.rs",
-        "scripts/verify_native_preview.py"
+        "scripts/verify_native_preview.py",
+        "scripts/verify_native_arithmetic.py"
       ],
       "evidence": [
-        "docs/architecture/native-preview-validation.md"
+        "docs/architecture/native-preview-validation.md",
+        "docs/architecture/native-arithmetic-validation.md"
       ],
-      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. No native arithmetic, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
+      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. No other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
     },
     {
       "id": "independent-self-hosting",
@@ -517,7 +520,7 @@
       "evidence": [
         "docs/architecture/i32-arithmetic-validation.md"
       ],
-      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, division, remainder, casts, shifts, numeric comparisons, wider integers, floats or promotion. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. No native support, ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
+      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, division, remainder, casts, shifts, numeric comparisons, wider integers, floats or promotion. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support is tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
     }
   ]
 }

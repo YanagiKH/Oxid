@@ -5,11 +5,11 @@
 #include <stdint.h>
 #include <unistd.h>
 
-static int output(const char *bytes, size_t length) {
+static int output(int fd, const char *bytes, size_t length) {
     /* Broken pipes are reported as EX_IOERR, not an asynchronous SIGPIPE exit. */
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) return 74;
     while (length != 0) {
-        ssize_t done = write(STDOUT_FILENO, bytes, length);
+        ssize_t done = write(fd, bytes, length);
         if (done < 0 && errno == EINTR) continue;
         if (done <= 0) return 74;
         bytes += (size_t)done;
@@ -18,9 +18,9 @@ static int output(const char *bytes, size_t length) {
     return 0;
 }
 int __oxid_print_bool(int32_t value) {
-    return value ? output("true\n", 5) : output("false\n", 6);
+    return value ? output(STDOUT_FILENO, "true\n", 5) : output(STDOUT_FILENO, "false\n", 6);
 }
-int __oxid_print_unit(void) { return output("()\n", 3); }
+int __oxid_print_unit(void) { return output(STDOUT_FILENO, "()\n", 3); }
 int __oxid_print_i32(int32_t value) {
     char buffer[12]; /* minus, ten digits, newline */
     size_t index = sizeof buffer;
@@ -32,5 +32,13 @@ int __oxid_print_i32(int32_t value) {
         magnitude /= 10;
     } while (magnitude != 0);
     if (value < 0) buffer[--index] = '-';
-    return output(buffer + index, sizeof buffer - index);
+    return output(STDOUT_FILENO, buffer + index, sizeof buffer - index);
+}
+
+/* Private Linux x86_64 ABI: i64 is the byte length, not a NUL-terminated string.
+ * No result was printed before this first-error path. Never return to Oxid code.
+ */
+_Noreturn void __oxid_overflow(const char *message, uint64_t length) {
+    int status = output(STDERR_FILENO, message, (size_t)length);
+    _exit(status == 0 ? 1 : status);
 }
