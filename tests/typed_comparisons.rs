@@ -382,9 +382,9 @@ fn adjacent_tokens_are_required_and_unrelated_operators_remain_unsupported() {
         ("1 > /* 雪 */ = 2", "="),
         ("1 =/* 雪 */= 2", "="),
         ("1 !/* 雪 */=2", "!"),
-        ("!true", "!"),
-        ("true && false", "&"),
-        ("true || false", "|"),
+        ("true & false", "&"),
+        ("true | false", "|"),
+        ("true or false", "or"),
         ("1 / 2 == 0", "/"),
         ("1 as bool", "as"),
     ] {
@@ -392,7 +392,7 @@ fn adjacent_tokens_are_required_and_unrelated_operators_remain_unsupported() {
         let source = format!("{prefix}{expression}; }}");
         reject(
             &source,
-            "E0101",
+            if origin == "!" { "E0100" } else { "E0101" },
             "parse",
             prefix.len() + expression.find(origin).unwrap(),
             origin.len(),

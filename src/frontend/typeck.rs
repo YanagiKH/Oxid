@@ -169,6 +169,30 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         locals[id.0].expect("resolved locals are initialized before use")
                     }
                     ExprKind::Group(inner) => expressions[inner.0],
+                    ExprKind::Not { operand, .. } => {
+                        let actual = expressions[operand.0];
+                        if actual != Ty::Bool {
+                            return Err(mismatch(
+                                Ty::Bool,
+                                actual,
+                                function.expressions[operand.0].span,
+                            ));
+                        }
+                        Ty::Bool
+                    }
+                    ExprKind::Logical { left, right, .. } => {
+                        for operand in [left, right] {
+                            let actual = expressions[operand.0];
+                            if actual != Ty::Bool {
+                                return Err(mismatch(
+                                    Ty::Bool,
+                                    actual,
+                                    function.expressions[operand.0].span,
+                                ));
+                            }
+                        }
+                        Ty::Bool
+                    }
                     ExprKind::Comparison {
                         op, left, right, ..
                     } => {

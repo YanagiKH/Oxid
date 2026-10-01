@@ -87,6 +87,8 @@ impl VerifiedProgram {
             locals += f.locals.len();
             blocks += f.blocks.len();
             for b in &f.blocks {
+                // The only entry operation is the independently verified,
+                // fixed two-input bool merge; no generic phi types are admitted.
                 // Closed native allowlist: future reference operations stay unsupported.
                 for a in &b.statements {
                     #[allow(unreachable_patterns)]
@@ -95,6 +97,7 @@ impl VerifiedProgram {
                         | Rvalue::I32(_)
                         | Rvalue::Unit
                         | Rvalue::Copy(_)
+                        | Rvalue::NotBool { .. }
                         | Rvalue::CheckedI32 { .. }
                         | Rvalue::CompareScalar { .. } => {}
                         _ => {
@@ -134,7 +137,9 @@ impl VerifiedProgram {
             // path through the verified acyclic CFG. Repeated call sites count
             // separately; sharing a callee does not hide exponential execution.
             for b in &f.blocks {
-                bound.cost = bound.cost.saturating_add(b.statements.len() + 1);
+                bound.cost = bound
+                    .cost
+                    .saturating_add(b.statements.len() + 1 + usize::from(b.merge.is_some()));
                 if let TerminatorKind::Call { target, args, .. } =
                     &b.terminator.as_ref().expect("verified terminator").kind
                 {
@@ -230,8 +235,38 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
         }
         out.push_str(") noinline {\nentry:\n");
         writeln!(out, "  br label %b{}", f.entry.0).unwrap();
+        // Checked arithmetic splits an OIR block. Phi edges depart from its
+        // last successful LLVM block, not necessarily the original bN label.
+        let exits: Vec<_> = f
+            .blocks
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                b.statements
+                    .iter()
+                    .rev()
+                    .find(|a| matches!(a.value, Rvalue::CheckedI32 { .. }))
+                    .map_or_else(
+                        || format!("b{i}"),
+                        |a| format!("checked{}_ok", a.destination.0),
+                    )
+            })
+            .collect();
         for (i, b) in f.blocks.iter().enumerate() {
             writeln!(out, "b{i}:").unwrap();
+            if let Some(merge) = &b.merge {
+                let [left, right] = merge.incoming;
+                writeln!(
+                    out,
+                    "  %v{} = phi i1 [ %v{}, %{} ], [ %v{}, %{} ]",
+                    merge.destination.0,
+                    left.value.local.0,
+                    exits[left.predecessor.0],
+                    right.value.local.0,
+                    exits[right.predecessor.0]
+                )
+                .unwrap();
+            }
             for a in &b.statements {
                 let t = ty(f.locals[a.destination.0].ty);
                 #[allow(unreachable_patterns)]
@@ -246,6 +281,15 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                     Rvalue::I32(v) => v.to_string(),
                     Rvalue::Unit => "0".into(),
                     Rvalue::Copy(v) => format!("%v{}", v.local.0),
+                    Rvalue::NotBool { operand, .. } => {
+                        writeln!(
+                            out,
+                            "  %v{} = xor i1 %v{}, true",
+                            a.destination.0, operand.local.0
+                        )
+                        .unwrap();
+                        continue;
+                    }
                     Rvalue::CompareScalar {
                         op, left, right, ..
                     } => {
@@ -577,5 +621,57 @@ mod tests {
         }
         let p = verified("fn main() -> bool { return (1 < 2) == true; }");
         assert_eq!(1 + p.admit().unwrap()[0].cost, 14);
+    }
+    #[test]
+    fn logical_native_cost_counts_entry_merges_and_both_rhs_paths() {
+        for (expression, cost) in [
+            ("!true", 6),
+            ("false && true", 10),
+            ("true && false", 10),
+            ("true || false", 10),
+            ("false || true", 10),
+        ] {
+            let p = verified(&format!("fn main() -> bool {{ return {expression}; }}"));
+            assert_eq!(p.admit().unwrap()[0].cost + 1, cost);
+        }
+        let p = verified(
+            "fn recur() -> bool { return recur(); } fn main() -> bool { return false && recur(); }",
+        );
+        assert!(p.admit().unwrap_err().message.contains("recursive"));
+    }
+    #[test]
+    fn logical_phi_uses_the_actual_checked_success_predecessor_labels() {
+        let (p, sources) =
+            verified_with_sources("fn main() -> bool { return !(1+2<4) || (3*4==12) && (1<2); }");
+        let module = p.native_module(Some(hir::DefId(0)), &sources).unwrap();
+        assert!(module.contains("xor i1"));
+        let f = &p.program.functions[0];
+        let mut merged = 0;
+        let mut split = 0;
+        for b in &f.blocks {
+            if let Some(m) = &b.merge {
+                merged += 1;
+                for input in m.incoming {
+                    let pred = &f.blocks[input.predecessor.0];
+                    let checked = pred
+                        .statements
+                        .iter()
+                        .rfind(|a| matches!(a.value, Rvalue::CheckedI32 { .. }));
+                    let label = match checked {
+                        Some(a) => {
+                            split += 1;
+                            format!("checked{}_ok", a.destination.0)
+                        }
+                        None => format!("b{}", input.predecessor.0),
+                    };
+                    assert!(
+                        module.contains(&format!("[ %v{}, %{} ]", input.value.local.0, label)),
+                        "{module}"
+                    );
+                }
+            }
+        }
+        assert_eq!(merged, 2);
+        assert_eq!(split, 2);
     }
 }

@@ -243,11 +243,11 @@ def negative_cases():
     for expr, marker in [
         ("1 = = 1", "="), ("1 ! = 2", "!"), ("1 < = 2", "="),
         ("1 > /* 雪 */ = 2", "="), ("1 =/* 雪 */=2", "="),
-        ("1 !/* 雪 */=2", "!"), ("!true", "!"),
-        ("true && false", "&"), ("true || false", "|"),
+        ("1 !/* 雪 */=2", "!"), ("true and false", "and"),
+        ("true & false", "&"), ("true | false", "|"),
         ("1 / 2 == 0", "/"), ("1 as bool", "as"),
     ]:
-        yield "token", prefix + expr + "; }", "E0101", "parse", len(prefix) + expr.index(marker), len(marker)
+        yield "token", prefix + expr + "; }", ("E0100" if marker == "!" else "E0101"), "parse", len(prefix) + expr.index(marker), len(marker)
     for expr, marker in [("(1 < 2) + 3", "(1 < 2)"), ("(1 < 2) < 3", "(1 < 2)"), ("1 < (2 < 3)", "(2 < 3)")]:
         yield "invalid_context", prefix + expr + "; }", "E0300", "type", len(prefix) + expr.index(marker), len(marker)
     for expr in ["1 <", "true ==", "1 <=", "1 < < 2"]:

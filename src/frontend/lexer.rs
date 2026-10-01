@@ -26,6 +26,9 @@ pub enum Kind {
     Equal,
     EqualEqual,
     NotEqual,
+    Not,
+    AndAnd,
+    OrOr,
     Less,
     LessEqual,
     Greater,
@@ -164,6 +167,15 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                 cursor += 1;
                 Kind::NotEqual
             }
+            '!' => Kind::Not,
+            '&' if bytes.get(cursor) == Some(&b'&') => {
+                cursor += 1;
+                Kind::AndAnd
+            }
+            '|' if bytes.get(cursor) == Some(&b'|') => {
+                cursor += 1;
+                Kind::OrOr
+            }
             '<' if bytes.get(cursor) == Some(&b'=') => {
                 cursor += 1;
                 Kind::LessEqual
@@ -181,7 +193,7 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
             '-' => Kind::Minus,
             '+' => Kind::Plus,
             '*' => Kind::Star,
-            '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '#' | '\'' => Kind::Unsupported,
+            '/' | '%' | '&' | '|' | '[' | ']' | '.' | '#' | '\'' => Kind::Unsupported,
             _ => Kind::Invalid,
         };
         let span = source.span(start, cursor);

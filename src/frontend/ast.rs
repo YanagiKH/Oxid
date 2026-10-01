@@ -19,8 +19,23 @@ pub enum ComparisonOp {
     Greater,
     GreaterEqual,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
 #[derive(Debug)]
 pub enum ExprKind {
+    Not {
+        operand: ExprId,
+        operator_span: Span,
+    },
+    Logical {
+        op: LogicalOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Comparison {
         op: ComparisonOp,
         left: ExprId,

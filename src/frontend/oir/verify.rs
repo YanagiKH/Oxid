@@ -78,6 +78,14 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                 STAGE,
                 Some(block.span),
             )?;
+            Budget::add(
+                &mut budget.assignments,
+                usize::from(block.merge.is_some()),
+                MAX_ASSIGNMENTS,
+                "assignments",
+                STAGE,
+                Some(block.span),
+            )?;
             if let Some(Terminator {
                 kind: TerminatorKind::Call { args, .. },
                 span,
@@ -117,10 +125,41 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
     for function in &program.functions {
         for block in &function.blocks {
             span(sources, block.span)?;
+            if let Some(merge) = &block.merge {
+                span(sources, merge.span)?;
+                span(sources, merge.operator_span)?;
+                same_type(
+                    local(function, merge.destination, merge.span)?.ty,
+                    hir::Ty::Bool,
+                    merge.span,
+                )?;
+                for input in &merge.incoming {
+                    if function.blocks.get(input.predecessor.0).is_none() {
+                        return Err(failure(FailureKind::InvalidBlock, merge.span));
+                    }
+                    same_type(
+                        operand(function, input.value, sources)?,
+                        hir::Ty::Bool,
+                        input.value.span,
+                    )?;
+                }
+            }
             for assign in &block.statements {
                 span(sources, assign.span)?;
                 let expected = local(function, assign.destination, assign.span)?.ty;
                 let actual = match assign.value {
+                    Rvalue::NotBool {
+                        operand: value,
+                        operator_span,
+                    } => {
+                        span(sources, operator_span)?;
+                        same_type(
+                            operand(function, value, sources)?,
+                            hir::Ty::Bool,
+                            value.span,
+                        )?;
+                        hir::Ty::Bool
+                    }
                     Rvalue::Bool(_) => hir::Ty::Bool,
                     Rvalue::I32(_) => hir::Ty::I32,
                     Rvalue::Unit => hir::Ty::Unit,
@@ -234,10 +273,12 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
 
 // Each non-parameter slot has one canonical definition across the entire
 // function, even when two writes would be in mutually exclusive arms. This is
-// an immutable no-phi IR rule, not support for mutation or merged values.
+// an immutable SSA rule. A bool merge defines one slot at block entry; its
+// incoming edge operands are reads, never opposite-arm writes to that slot.
 #[derive(Clone, Copy)]
 enum Definition {
     Parameter,
+    Merge { block: usize },
     Assignment { block: usize, statement: usize },
     CallResult { block: usize },
 }
@@ -267,6 +308,14 @@ fn definitions(function: &Function) -> Result<Vec<Option<Definition>>, OirFailur
         )?;
     }
     for (block_id, block) in function.blocks.iter().enumerate() {
+        if let Some(merge) = &block.merge {
+            define(
+                &mut table,
+                merge.destination,
+                Definition::Merge { block: block_id },
+                merge.span,
+            )?;
+        }
         for (statement, assign) in block.statements.iter().enumerate() {
             define(
                 &mut table,
@@ -700,6 +749,7 @@ fn read(
         .ok_or_else(|| failure(FailureKind::InvalidLocal, value.span))?;
     let available = match definition {
         Some(Definition::Parameter) => true,
+        Some(Definition::Merge { block }) => dominance.contains(*block, use_block, value.span)?,
         Some(Definition::Assignment { block, statement }) if *block == use_block => {
             *statement < use_statement
         }
@@ -726,9 +776,41 @@ fn cfg(function: &Function) -> Result<(), OirFailure> {
     let definitions = definitions(function)?;
     let dominance = dominance(function, &predecessors, &order)?;
     for (block_id, block) in function.blocks.iter().enumerate() {
+        if let Some(merge) = &block.merge {
+            let preds = predecessors.of(block_id, merge.span)?;
+            let [left, right] = merge.incoming;
+            if block_id == function.entry.0
+                || preds.len() != 2
+                || preds[0] == preds[1]
+                || left.predecessor == right.predecessor
+                || !preds.contains(&left.predecessor.0)
+                || !preds.contains(&right.predecessor.0)
+            {
+                return Err(failure(FailureKind::InvalidMerge, merge.span));
+            }
+            for input in &merge.incoming {
+                let pred = input.predecessor.0;
+                let block = at(&function.blocks, pred, merge.span)?;
+                // A Call defines its result on this one normal successor edge.
+                // It remains unavailable in that block's statements/arguments.
+                let is_edge_result = matches!(definitions.get(input.value.local.0), Some(Some(Definition::CallResult {block})) if *block == pred)
+                    && matches!(terminator(block)?.kind, TerminatorKind::Call {continuation,..} if continuation.0 == block_id);
+                if !is_edge_result {
+                    read(
+                        &definitions,
+                        &dominance,
+                        input.value,
+                        pred,
+                        block.statements.len(),
+                    )?;
+                }
+            }
+        }
         for (index, assign) in block.statements.iter().enumerate() {
             match assign.value {
-                Rvalue::Copy(value) => read(&definitions, &dominance, value, block_id, index)?,
+                Rvalue::Copy(value) | Rvalue::NotBool { operand: value, .. } => {
+                    read(&definitions, &dominance, value, block_id, index)?
+                }
                 Rvalue::CheckedI32 { left, right, .. }
                 | Rvalue::CompareScalar { left, right, .. } => {
                     read(&definitions, &dominance, left, block_id, index)?;

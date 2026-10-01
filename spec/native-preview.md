@@ -40,17 +40,19 @@ required, carried by its resolved DefId rather than reconstructed from spans.
 
 Supported operations are exact bool/unit/i32 constants, immutable copies, checked
 i32 addition/subtraction/multiplication, same-type i32/bool equality and i32-only
-signed ordering comparisons, explicit direct nonrecursive calls,
+signed ordering comparisons, bool negation and explicit short-circuit bool merges,
+explicit direct nonrecursive calls,
 Branch, Goto and Return. Native compilation rejects all other OIR operations.
 Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
 [RFC 0008](../rfcs/0008-native-checked-i32.md). Comparisons follow
-[RFC 0009](../rfcs/0009-scalar-comparisons.md). There are no source I/O operations,
+[RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
+[RFC 0010](../rfcs/0010-boolean-logical-operators.md). There are no source I/O operations,
 pointers, containers, loops, indirect calls, modules or implicit legacy adapters
 in this subset.
 
 The entire call graph must be acyclic, including dead declarations and calls in
-constant-false branches. Iterative leaf-first traversal rejects recursive graphs.
+constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
 The following inclusive bounds are additional native restrictions:
 
 | Resource | Maximum |
@@ -64,7 +66,7 @@ The following inclusive bounds are additional native restrictions:
 | Conservative reference fuel upper bound | 100,000 |
 
 All declarations must meet the bounds. For a function F, compute
-`C(F) = locals(F) + sum(assignments(block) + 1 for all blocks) +
+`C(F) = locals(F) + sum(ordinary_assignments(block) + merge_count(block) + 1 for all blocks) +
 sum(argument_count(call) + C(callee) for all calls)` in callee-first order.
 Require `1 + C(F) <= 100,000`. Calls at distinct sites are counted separately;
 there is no memoization discount. Since verified intraprocedural CFGs are
@@ -74,6 +76,10 @@ or comparison assignment counts once; operand evaluation has its own
 assignments/calls. Thus `return 1 + 2;`, `return 1 < 2;` and
 `return true == false;` each have an inclusive bound of eight fuel. This conservative
 admission can reject programs that run successfully in the reference interpreter.
+A bool negation or join merge costs one. `return !true;` has bound 6; ungrouped
+`return a && b;` / `return a || b;` with literal operands have bound 10, counting
+both paths even if the reference runtime short-circuits in 8. Whole-function
+local-slot allocation still includes skipped RHS temporaries.
 
 Depth is `1 + max(callee_depth)` and live slots are
 `locals(F) + max(callee_live_slots)`, with zero for an empty maximum. These bounds
@@ -102,6 +108,10 @@ Comparisons lower to i1 results with `icmp eq`/`ne` over i32 or i1, or signed
 `icmp slt`/`sle`/`sgt`/`sge` over i32 only. The verifier rejects unit, mixed types
 and bool ordering. These instructions add no error path or runtime adapter;
 operand arithmetic can still fail before comparison.
+Bool negation uses `xor i1`; short-circuit values use branches and `phi i1` at
+block entry. Phi input labels identify the actual predecessor LLVM exit block,
+including the last checked-arithmetic success block when one OIR block expands.
+No eager and/or/select replaces the source's conditional RHS execution.
 Branches, direct calls and returns retain their OIR structure. Functions are
 `internal` and `noinline`; this preview uses `-O0` and no LTO or fast-math.
 
@@ -178,4 +188,5 @@ See [RFC 0007](../rfcs/0007-llvm-scalar-native.md),
 [RFC 0009](../rfcs/0009-scalar-comparisons.md), the
 [scalar predecessor evidence](../docs/architecture/native-preview-validation.md),
 [checked-arithmetic evidence](../docs/architecture/native-arithmetic-validation.md),
-and [comparison evidence](../docs/architecture/scalar-comparison-validation.md).
+[comparison evidence](../docs/architecture/scalar-comparison-validation.md),
+and [boolean logic evidence](../docs/architecture/boolean-logic-validation.md).
