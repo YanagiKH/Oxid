@@ -122,6 +122,7 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                 let expected = local(function, assign.destination, assign.span)?.ty;
                 let actual = match assign.value {
                     Rvalue::Bool(_) => hir::Ty::Bool,
+                    Rvalue::I32(_) => hir::Ty::I32,
                     Rvalue::Unit => hir::Ty::Unit,
                     Rvalue::Copy(value) => operand(function, value, sources)?,
                 };

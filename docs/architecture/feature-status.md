@@ -32,3 +32,7 @@ certification. Review must examine the linked implementation and evidence.
 The bounded bool/unit reference runner is tracked separately from its check-only
 predecessors. It enables explicit typed run but does not certify termination,
 ownership, OS isolation, native compilation or any completed milestone.
+
+Exact decimal i32 literals and scalar copies are a separate experimental entry.
+That extension does not implement arithmetic, casts, wider integers or floating
+point and does not choose a future arithmetic overflow policy.

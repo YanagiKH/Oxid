@@ -7,9 +7,17 @@ pub struct BodyBlockId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
     Bool(bool),
+    /// Exact decimal digits, separate literal-only sign, and full origin on Expr.
+    Number {
+        digits: Span,
+        negative: bool,
+    },
     Unit,
     Name(Span),
-    Call { callee: Span, args: Vec<ExprId> },
+    Call {
+        callee: Span,
+        args: Vec<ExprId>,
+    },
     Group(ExprId),
 }
 #[derive(Debug)]

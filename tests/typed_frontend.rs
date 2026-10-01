@@ -123,8 +123,8 @@ fn duplicate_declarations_and_call_contracts_fail() {
 fn unsupported_constructs_never_enter_legacy_frontend() {
     for (source, mark) in [
         (
-            "fn f() -> () { 9007199254740993; return; }",
-            "9007199254740993",
+            "fn f() -> () { 9007199254740993.0; return; }",
+            "9007199254740993.0",
         ),
         ("use \"side.ox\";", "use"),
         ("macro hi { }", "macro"),

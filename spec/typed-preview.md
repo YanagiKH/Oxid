@@ -1,11 +1,12 @@
-# Experimental bool/unit checking and bounded reference execution
+# Experimental scalar checking and bounded reference execution
 
 Status: experimental. Checking is non-executing; explicit run is bounded reference execution. `typed-preview` is a provisional selector,
 not a final language edition or a completed M1/M2 milestone. The scoped design
 and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md),
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
 [RFC 0003](../rfcs/0003-boolean-branch-cfg.md) and
-[RFC 0004](../rfcs/0004-bounded-reference-execution.md).
+[RFC 0004](../rfcs/0004-bounded-reference-execution.md) and
+[RFC 0005](../rfcs/0005-exact-i32-literals.md).
 
 ## Command and compatibility boundary
 
@@ -54,13 +55,14 @@ file       := function*
 function   := "fn" name "(" parameters? ")" "->" type block
 block      := "{" statement* "}"
 parameters := name ":" type ("," name ":" type)*
-type       := "bool" | "(" ")"
+type       := "bool" | "i32" | "(" ")"
 statement  := "let" name (":" type)? "=" expression ";"
             | expression ";"
             | "return" expression? ";"
             | "if" expression block ("else" block)?
 expression := "true" | "false" | name | "(" ")" | "(" expression ")"
-            | name "(" arguments? ")"
+            | name "(" arguments? ")" | decimal | "-" decimal
+decimal    := ASCII_DIGIT+
 arguments  := expression ("," expression)*
 ```
 
@@ -70,12 +72,12 @@ and non-nested `/* ... */` comments are retained as trivia and ignored by the
 parser. Unicode is permitted in comments; Unicode identifiers are not supported.
 Trailing commas and legacy concise-keyword aliases are not supported.
 
-The only types and values are `bool` and unit `()`. A file may contain no
+The supported types and values are `bool`, `i32` and unit `()`. A file may contain no
 functions and does not require `main`; checking is not execution.
 
 - Function parameters and return types must be explicit
 - Locals are immutable and initialized immediately, with an optional annotation
-  or inferred bool/unit type; the initializer sees only earlier locals
+  or inferred bool/i32/unit type; the initializer sees only earlier locals
 - Functions are collected before resolving bodies, so forward direct calls and
   recursive calls resolve. Run uses isolated iterative activations; no termination
   claim follows and recursive programs can exhaust execution limits
@@ -95,7 +97,7 @@ functions and does not require `main`; checking is not execution.
   A missing else leaves a reachable empty false path. Empty arms are legal. An if
   is a statement with no value or trailing semicolon; else requires braces, so
   else-if, if-expressions and naked block statements are unavailable
-- Expression statements may discard either supported type
+- Expression statements may discard any supported type
 
 Example:
 
@@ -110,8 +112,31 @@ fn main() -> () {
 }
 ```
 
-Numbers retain their exact source spelling but have no accepted numeric
-semantics. Strings, null, imports/modules, macros, mutation, borrowing, ownership,
+### Exact decimal i32 literals
+
+One or more ASCII decimal digits, optionally preceded by one minus token, denote
+an exact i32 in [-2147483648, 2147483647]. Existing trivia may separate minus and
+digits: `- /* comment */ 2147483648` is valid. Leading zeroes are decimal, not
+octal. `0`, `0000`, `-0` and `-0000` all print `0`. An explicit i32 context and
+an unconstrained literal (`let x = 1`) both produce i32; bool/unit contexts give
+E0300, with no coercion or truthiness. Other widths are E0202 unknown types.
+This provisional single-width default establishes no promotion algorithm.
+
+The sign is literal-only: `(-2147483648)` works, while `-(1)`, `-x`, `-f()`,
+`--1` and `+1` remain E0101 unsupported. Suffixes, separators, radices, floats,
+exponents and non-ASCII digits (`1i32`, `1_000`, `0xff`, `0o7`, `0b1`, `1.0`,
+`1e9`, `１`) are E0101/parse. The parser validates the complete numeric token
+before conversion; a long invalid suffix is not misreported as a range error.
+Digits beyond the i32 range produce E0203/resolve at the complete literal span,
+including sign/trivia. A 65,536-byte all-zero token is valid; many digits alone
+are not a range error. Full-file checking includes unused functions and unchosen
+branches. Exact integer conversion never uses f64 or a bigint.
+
+No arithmetic or cast is added and no future arithmetic overflow policy is
+chosen: literal range validity is a separate compile-time rule. Comparisons on
+integers and all other numeric types remain unavailable.
+
+Strings, null, imports/modules, macros, mutation, borrowing, ownership,
 containers, loops and other control flow, operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
@@ -127,7 +152,11 @@ syntax module and runtime. The token tape retains trivia and invalid tokens; it
 is not a complete formatter/LSP CST. Parsing synchronizes at the next top-level
 `fn`, with a diagnostic limit; erroneous ASTs never enter name resolution.
 
-AST names are source spans. HIR replaces value uses with function/local IDs,
+AST names are source spans. Numeric AST nodes store exact digits spans and a
+literal-only sign; resolution uses checked signed integer accumulation to create
+representable i32 HIR constants, retaining full literal origins. MIN is accumulated
+negatively, never by negating an unrepresentable positive i32. HIR replaces value
+uses with function/local IDs,
 allocated deterministically in source order. Local IDs belong to one function.
 Signatures resolve before bodies. Successful typed construction has one supported
 type for every expression and local; incomplete tables cannot be constructed
@@ -150,8 +179,8 @@ the immutable witness used by the driver. No public IR loader, dump, stable
 serialization, optimization or ownership contract is added. The bounded reference
 consumer below accepts only that immutable verified witness.
 
-Function-local slots contain bool or unit and are classified as parameters,
-bindings or expression temporaries. Assign evaluates a bool/unit constant or
+Function-local slots contain bool, i32 or unit and are classified as parameters,
+bindings or expression temporaries. Assign evaluates a bool/i32/unit constant or
 copies a typed operand. Call has a direct DefId, ordered arguments, result slot
 and one normal continuation. Return uses an explicitly initialized operand.
 Branch has a bool operand and two successors; Goto has one successor. Calls in
@@ -242,6 +271,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0200 | Unresolved local or direct function name |
 | E0201 | Duplicate binding or unsupported shadowing |
 | E0202 | Unknown type |
+| E0203 | Exact decimal literal outside i32 range (resolve stage) |
 | E0300 | Binding, argument, condition or return type mismatch |
 | E0301 | Call arity mismatch |
 | E0302 | Missing explicit terminal return |
@@ -254,7 +284,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0603 | Live local-slot limit exceeded |
 
 For check, exit 0 means successful type checking, lowering and OIR verification of this
-subset; for run it additionally means a bool/unit result (including false); ordinary source/CLI/resource failures still exit 1. Lowering budget errors
+subset; for run it additionally means a bool/i32/unit result (including false, zero and negatives); ordinary source/CLI/resource failures still exit 1. Lowering budget errors
 use E0400 with stage `oir-lower`. Detected OIR invariant failures use E0500,
 explicitly say `internal compiler error`, use stage `oir-lower`, `oir-verify` or `oir-run`,
 and exit 2. They retain the same JSON envelope with unsuccessful summary and
@@ -269,21 +299,24 @@ failures, not ordinary source type errors.
 
 The complete file must pass the same compiler/verifier path before execution,
 including statically erroneous unchosen branches. Run then requires a declared
-`fn main() -> bool` or `fn main() -> ()`. Missing main is E0600 without a location;
+`fn main() -> bool`, `fn main() -> i32` or `fn main() -> ()`. Missing main is E0600 without a location;
 main parameters produce E0600 at the main name. Checking itself has no entry
 requirement. The compiler carries main's resolved DefId; the runner inspects the
 verified signature instead of reconstructing names from OIR spans.
 
-On text success stdout is exactly `true\n`, `false\n` or `()\n`; each exits 0.
+On text success stdout is exactly `true\n`, `false\n`, `()\n` or a canonical
+signed decimal i32 followed by newline; each exits 0. Numeric results are never
+used as process exit codes.
 Failure writes no partial result. JSON replaces the check-summary with one
 `run-summary`: the same schema/edition fields, `success`, `errors`, and `result`
-containing `{ "type": "bool", "value": true|false }`, `{ "type": "unit" }`, or
-null on failure. No successful check record precedes a failed run. Errors while
+containing `{ "type": "bool", "value": true|false }`, `{ "type": "unit" }`,
+`{ "type": "i32", "value": -2147483648 }` (an exactly serialized JSON integer),
+or null on failure. No successful check record precedes a failed run. Errors while
 validating global edition/format options retain the existing check-summary;
 once valid global options select explicit typed run, command-option/operand,
 compile, entry and execution errors use run-summary. Check records are unchanged.
 
-Each activation has isolated optional bool/unit slots. Assign reads before
+Each activation has isolated optional bool/i32/unit slots. Assign reads before
 writing; Branch executes exactly one arm; Goto uses its explicit target.
 Calls copy arguments in recorded order and suspend callers until normal return,
 then initialize the call result and resume at the explicit continuation. Bare
@@ -293,7 +326,10 @@ and repeated invocations share no mutable execution state. The activation stack
 is iterative; the host call stack does not track source recursion.
 
 The execution ceilings are 1,000,000 fuel units, 1,024 live frames and 200,000 live
-slots. Main counts as a frame and every activation counts its complete local table.
+slots. An i32 counts as one slot, with the same instruction costs as bool/unit.
+These are slot counts, not bytes; host scalar sizes are measured in the
+[i32 validation report](../docs/architecture/i32-literal-validation.md).
+Main counts as a frame and every activation counts its complete local table.
 Root allocation costs 1 + local count. Assign/Branch/Goto/Return cost 1 each;
 Call costs 1 + argument count + callee local count. Costs are charged before work.
 Checked cost/fuel, frame count and live-slot count are checked in that order,
@@ -373,5 +409,8 @@ ownership/borrow checking, numeric type system, native backend, typed artifact
 schema, self-hosting or AI capability is added by the reference runner. [Boolean CFG evidence](../docs/architecture/boolean-cfg-validation.md)
 records the later restricted branch/scope/all-path-return increment and its
 dominance, graph and resource checks. The subsequent [reference execution evidence](../docs/architecture/reference-execution-validation.md)
-records the bounded opt-in runner and its independent source oracle. Numeric
-semantics remain a separate decision; no later roadmap capability is implied.
+records the bounded opt-in runner and its independent source oracle. The later
+[i32 literal evidence](../docs/architecture/i32-literal-validation.md) adds exact
+decimal constants/copies, strict i32 types and result serialization. Broader
+numeric operations and overflow semantics remain separate decisions; no later
+roadmap capability is implied.

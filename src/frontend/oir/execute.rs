@@ -213,6 +213,7 @@ fn execute(
             charge(&mut fuel, 1, assign.span)?;
             let value = match assign.value {
                 Rvalue::Bool(value) => Scalar::Bool(value),
+                Rvalue::I32(value) => Scalar::I32(value),
                 Rvalue::Unit => Scalar::Unit,
                 Rvalue::Copy(operand) => read(active, operand)?,
             };

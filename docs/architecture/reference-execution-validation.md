@@ -7,6 +7,11 @@ experimental and provisional; [RFC 0004](../../rfcs/0004-bounded-reference-execu
 defines the contract. No native compilation, numeric semantics, ownership,
 memory-safety, OS-sandbox, stable edition, or completed M2/M3 claim follows.
 
+The layout measurements below describe the bool/unit-only predecessor snapshot.
+The subsequent [i32 literal increment](i32-literal-validation.md) increases scalar
+storage and records current measurements; do not reuse this report's one-byte
+slot estimate for that extended representation.
+
 ## Snapshot and host
 
 - Base: `e998a8d5b1a680e9e2d723352a45a547d3935114`

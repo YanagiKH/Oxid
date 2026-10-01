@@ -371,7 +371,9 @@ fn checked_accounting_overflow_is_internal_and_preflight_does_not_allocate() {
 #[test]
 fn scalar_frame_and_argument_storage_layout_is_measured() {
     eprintln!("reference runner layout: scalar={} optional-slot={} frame={} resume={} argument-scratch-max={}", std::mem::size_of::<Scalar>(), std::mem::size_of::<Option<Scalar>>(), std::mem::size_of::<Frame>(), std::mem::size_of::<Resume>(), parser::MAX_PARAMS * std::mem::size_of::<Scalar>());
-    assert!(std::mem::size_of::<Option<Scalar>>() <= 2);
+    // Closed i32/bool/unit slots are finite; this is a layout regression guard,
+    // not a portable ABI or a total process-memory/OOM guarantee.
+    assert!(std::mem::size_of::<Option<Scalar>>() <= 16);
 }
 
 #[test]
@@ -468,4 +470,119 @@ fn verified_origins_are_not_reinterpreted_as_entry_names() {
     let verified = verify::verify(raw, &sources).unwrap();
     assert_eq!(verified.run(None), Err(RunFailure::Entry(None)));
     assert_eq!(verified.run(Some(hir::DefId(0))), Ok(Scalar::Bool(true)));
+}
+
+#[test]
+fn i32_constants_have_identical_fuel_charges_and_exact_failure_origins() {
+    let text = "fn main() -> i32 { return - /* é */ 2147483648; }";
+    let (sources, verified, entry) = compiled(text);
+    // One root slot: allocation2 + constant1 + return1, independent of magnitude/sign.
+    assert_eq!(
+        invoke(&verified, entry, &[], limits(4, 1, 1)),
+        Ok(Scalar::I32(i32::MIN))
+    );
+    for (fuel, origin) in [
+        (0, "main"),
+        (1, "main"),
+        (2, "- /* é */ 2147483648"),
+        (3, "return - /* é */ 2147483648;"),
+    ] {
+        let error = invoke(&verified, entry, &[], limits(fuel, 1, 1)).unwrap_err();
+        let RunFailure::Fuel(span) = error else {
+            panic!("fuel")
+        };
+        let source = sources.get(span.file);
+        assert_eq!(&source.text()[span.start..span.end], origin);
+    }
+    assert!(matches!(
+        invoke(&verified, entry, &[], limits(4, 0, 0)),
+        Err(RunFailure::Frames(_))
+    ));
+    assert!(matches!(
+        invoke(&verified, entry, &[], limits(4, 1, 0)),
+        Err(RunFailure::Slots(_))
+    ));
+}
+#[test]
+fn i32_parameters_are_checked_and_recursive_frames_remain_isolated() {
+    let (_, verified, _) = compiled("fn choose(x: i32, c: bool) -> i32 { if c { choose(2147483647, false); return x; } return x; } fn main() -> i32 { return choose(-2147483648, true); }");
+    for _ in 0..3 {
+        assert_eq!(
+            invoke(
+                &verified,
+                hir::DefId(0),
+                &[Scalar::I32(i32::MIN), Scalar::Bool(true)],
+                Limits::default()
+            ),
+            Ok(Scalar::I32(i32::MIN))
+        );
+    }
+    assert!(matches!(
+        invoke(
+            &verified,
+            hir::DefId(0),
+            &[Scalar::Bool(false), Scalar::Bool(true)],
+            Limits::default()
+        ),
+        Err(RunFailure::Internal(OirFailure {
+            kind: FailureKind::TypeMismatch,
+            ..
+        }))
+    ));
+}
+#[test]
+fn i32_live_slot_and_frame_caps_count_complete_tables_unchanged() {
+    let (sources, recursive, entry) = compiled("fn main() -> i32 { return main(); }");
+    for (locals, expected_entries, expected_code) in [
+        (1, 1024, "E0602"),
+        (50_000, 4, "E0603"),
+        (50_001, 3, "E0603"),
+    ] {
+        let mut raw = recursive.program.clone();
+        let decl = raw.functions[0].locals[0].clone();
+        raw.functions[0].locals.resize(locals, decl);
+        let verified = verify::verify(raw, &sources).unwrap();
+        let mut entries = 0;
+        let error = execute(&verified, entry, &[], Limits::default(), &mut |event| {
+            if matches!(event, Event::Enter(_)) {
+                entries += 1;
+            }
+        })
+        .unwrap_err();
+        assert_eq!(entries, expected_entries);
+        assert_eq!(code(error, &sources), expected_code);
+    }
+}
+#[test]
+fn i32_maximum_argument_scratch_preserves_values_order_and_charges() {
+    let params = (0..256)
+        .map(|i| format!("p{i}: i32"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let args = (0..256)
+        .map(|i| {
+            if i == 255 {
+                "-2147483648"
+            } else {
+                "2147483647"
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let (_, verified, entry) = compiled(&format!(
+        "fn many({params}) -> i32 {{ return p255; }} fn main() -> i32 {{ return many({args}); }}"
+    ));
+    // Same 1031 abstract work and 514 live slots as the bool fixture.
+    assert_eq!(
+        invoke(&verified, entry, &[], limits(1031, 2, 514)),
+        Ok(Scalar::I32(i32::MIN))
+    );
+    assert!(matches!(
+        invoke(&verified, entry, &[], limits(1030, 2, 514)),
+        Err(RunFailure::Fuel(_))
+    ));
+    assert!(matches!(
+        invoke(&verified, entry, &[], limits(1031, 2, 513)),
+        Err(RunFailure::Slots(_))
+    ));
 }
