@@ -7,7 +7,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0003](../rfcs/0003-boolean-branch-cfg.md) and
 [RFC 0004](../rfcs/0004-bounded-reference-execution.md) and
 [RFC 0005](../rfcs/0005-exact-i32-literals.md) and
-[RFC 0006](../rfcs/0006-checked-i32-arithmetic.md).
+[RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
+[RFC 0009](../rfcs/0009-scalar-comparisons.md).
 
 ## Command and compatibility boundary
 
@@ -61,7 +62,9 @@ statement  := "let" name (":" type)? "=" expression ";"
             | expression ";"
             | "return" expression? ";"
             | "if" expression block ("else" block)?
-expression := product (("+" | "-") product)*
+expression := sum (comparison sum)?
+comparison := "==" | "!=" | "<" | "<=" | ">" | ">="
+sum        := product (("+" | "-") product)*
 product    := primary ("*" primary)*
 primary    := "true" | "false" | name | "(" ")" | "(" expression ")"
             | name "(" arguments? ")" | decimal | "-" decimal
@@ -155,9 +158,32 @@ The bounded [native preview](native-preview.md) supports these same three checke
 operations, with the reference human overflow diagnostic and exit 1. Its stricter
 whole-file admission bounds and native I/O failure status 74 still apply.
 
-Division, remainder, casts, shifts, integer comparisons, explicit wrapping,
+Division, remainder, casts, shifts, explicit wrapping,
 other numeric types and their overflow rules remain unavailable. Literal range
 validity remains a separate compile-time rule.
+
+### Scalar comparisons
+
+`==` and `!=` accept matching i32 or matching bool operands. `<`, `<=`, `>` and
+`>=` accept i32 only and use signed order. Every result is bool. Unit equality,
+mixed-type operands, bool ordering and implicit conversions are unavailable.
+E0300 points to the first invalid operand; all declarations and branches are
+checked. Equality first validates the left type as i32/bool, then requires the
+right type to match it. Ordering requires i32 at each operand.
+
+All six comparisons share one non-associative tier below arithmetic.
+`1 + 2 < 4 * 2` is valid. `(1 < 2) == true` explicitly compares bool results.
+An unparenthesized second comparator, as in `1 < 2 < 3` or `1 == 2 < 3`, fails
+E0100/parse at the second operator's full span. Parenthesized comparisons used
+where i32 is required instead fail type checking. The multibyte operators must
+be adjacent; comments/whitespace do not join separate punctuation tokens.
+
+Operands execute exactly once, fully left before right, then the comparison
+executes. No comparison short-circuits, including discarded results and bool
+equality. Operand arithmetic can fail E0604 before comparison; comparison itself
+cannot overflow. Unchosen branches remain unexecuted. Standalone `!`, `&&`, `||`,
+`and` and `or` remain unavailable. The reference and bounded native backends share
+this table and order; see [RFC 0009](../rfcs/0009-scalar-comparisons.md).
 
 Strings, null, imports/modules, macros, mutation, borrowing, ownership,
 containers, loops and other control flow, other operators, async, closures, generics, FFI, host I/O,
@@ -204,10 +230,14 @@ consumer below accepts only that immutable verified witness.
 
 Function-local slots contain bool, i32 or unit and are classified as parameters,
 bindings or expression temporaries. Assign evaluates a bool/i32/unit constant or
-copies a typed operand, or computes CheckedI32 from two ordered i32 operands.
+copies a typed operand, computes CheckedI32 from two ordered i32 operands, or
+computes CompareScalar from the explicit scalar comparison type table.
 CheckedI32 retains its operator origin separately from the full assignment span.
 Both arithmetic operands must have dominating initialized definitions; its
-destination must be i32. Call has a direct DefId, ordered arguments, result slot
+destination must be i32. CompareScalar independently checks each operand ID,
+span and allowed type pair, both dominating initialized definitions and a bool
+destination. Equality permits i32/i32 or bool/bool; ordering permits i32/i32 only.
+Call has a direct DefId, ordered arguments, result slot
 and one normal continuation. Return uses an explicitly initialized operand.
 Branch has a bool operand and two successors; Goto has one successor. Calls in
 conditions and arms remain explicit terminators, never hidden in Branch.
@@ -358,9 +388,11 @@ These are slot counts, not bytes; host scalar sizes are measured in the
 [i32 validation report](../docs/architecture/i32-literal-validation.md).
 Main counts as a frame and every activation counts its complete local table.
 Root allocation costs 1 + local count. Assign/Branch/Goto/Return cost 1 each;
-an arithmetic assignment costs one (in addition to operand evaluation), charged
-before reading either slot or checking overflow. Arithmetic needs no extra scratch.
-For example, `return 1 + 2;` costs exactly eight including root allocation/return;
+an arithmetic or comparison assignment costs one (in addition to operand
+evaluation), charged before reading either slot or checking overflow. Neither
+operation needs extra scratch.
+For example, `return 1 + 2;`, `return 1 < 2;` and `return true == false;` each
+cost exactly eight including root allocation/return;
 Call costs 1 + argument count + callee local count. Costs are charged before work.
 Checked cost/fuel, frame count and live-slot count are checked in that order,
 before allocation. Returning releases the callee's slots. Argument scratch is
@@ -447,3 +479,7 @@ decimal constants/copies, strict i32 types and result serialization. Broader
 numeric operations remain separate decisions. [Checked i32 arithmetic evidence](../docs/architecture/i32-arithmetic-validation.md)
 records the subsequent +/−/* increment and its runtime overflow policy; no later
 roadmap capability is implied.
+
+[Scalar comparison evidence](../docs/architecture/scalar-comparison-validation.md)
+records the explicit i32/bool comparison table, non-associative grammar and
+reference/native/Python checks. No generalized equality or later operator is implied.

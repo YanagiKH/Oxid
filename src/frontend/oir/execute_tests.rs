@@ -653,3 +653,74 @@ fn arithmetic_calls_are_completed_in_order_exactly_once() {
         ]
     );
 }
+
+#[test]
+fn comparison_assignments_charge_one_fuel_before_reading_for_each_type() {
+    for (expression, expected) in [
+        ("1 < 2", true),
+        ("true == false", false),
+        ("false != true", true),
+    ] {
+        let (_, p, entry) = compiled(&format!("fn main() -> bool {{ return {expression}; }}"));
+        let f = &p.program.functions[entry.0];
+        assert_eq!(f.locals.len(), 3);
+        let a = &f.blocks[0].statements[2];
+        assert!(matches!(a.value, Rvalue::CompareScalar { .. }));
+        assert_eq!(
+            invoke(&p, entry, &[], limits(6, 1, 3)),
+            Err(RunFailure::Fuel(a.span))
+        );
+        let end = f.blocks[0].terminator.as_ref().unwrap().span;
+        assert_eq!(
+            invoke(&p, entry, &[], limits(7, 1, 3)),
+            Err(RunFailure::Fuel(end))
+        );
+        assert_eq!(
+            invoke(&p, entry, &[], limits(8, 1, 3)),
+            Ok(Scalar::Bool(expected))
+        );
+    }
+    let (_, p, entry) = compiled("fn main() -> bool { return (1 < 2) == true; }");
+    assert_eq!(
+        invoke(&p, entry, &[], limits(14, 1, 6)),
+        Ok(Scalar::Bool(true))
+    );
+    assert!(matches!(
+        invoke(&p, entry, &[], limits(13, 1, 6)),
+        Err(RunFailure::Fuel(_))
+    ));
+}
+
+#[test]
+fn comparison_operand_calls_run_exactly_once_left_before_right() {
+    for (ty, left, right, op, l, r) in [
+        ("i32", "-1", "0", "<", Scalar::I32(-1), Scalar::I32(0)),
+        (
+            "bool",
+            "false",
+            "true",
+            "!=",
+            Scalar::Bool(false),
+            Scalar::Bool(true),
+        ),
+    ] {
+        let (_, p, entry) = compiled(&format!("fn left() -> {ty} {{ return {left}; }} fn right() -> {ty} {{ return {right}; }} fn main() -> bool {{ return left() {op} right(); }}"));
+        let mut events = Vec::new();
+        assert_eq!(
+            execute(&p, entry, &[], Limits::default(), &mut |event| events
+                .push(event)),
+            Ok(Scalar::Bool(true))
+        );
+        assert_eq!(
+            events,
+            vec![
+                Event::Enter(hir::DefId(2)),
+                Event::Enter(hir::DefId(0)),
+                Event::Return(hir::DefId(0), l),
+                Event::Enter(hir::DefId(1)),
+                Event::Return(hir::DefId(1), r),
+                Event::Return(hir::DefId(2), Scalar::Bool(true))
+            ]
+        );
+    }
+}

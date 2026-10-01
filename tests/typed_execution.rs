@@ -225,7 +225,7 @@ fn unsupported_sources_and_artifacts_never_fallback_or_write_outputs() {
     for source in [
         "OXBCgarbage",
         "fn main() -> bool { return 1; }",
-        "fn main() -> bool { return true == false; }",
+        "fn main() -> bool { return true && false; }",
         "import evil;",
         "fn main() -> () { print true; return; }",
         "fn main() -> () { write_text(); return; }",

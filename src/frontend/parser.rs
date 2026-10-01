@@ -275,7 +275,42 @@ impl Parser<'_> {
             span: self.source.span(start, end),
         })
     }
+    fn comparison_op(&self) -> Option<ComparisonOp> {
+        Some(match self.peek().kind {
+            Kind::EqualEqual => ComparisonOp::Equal,
+            Kind::NotEqual => ComparisonOp::NotEqual,
+            Kind::Less => ComparisonOp::Less,
+            Kind::LessEqual => ComparisonOp::LessEqual,
+            Kind::Greater => ComparisonOp::Greater,
+            Kind::GreaterEqual => ComparisonOp::GreaterEqual,
+            _ => return None,
+        })
+    }
     fn expression(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
+        let left = self.sum(depth)?;
+        let Some(op) = self.comparison_op() else {
+            return Ok(left);
+        };
+        let operator_span = self.bump().span;
+        self.node()?;
+        let right = self.sum(depth)?;
+        if self.comparison_op().is_some() {
+            return Err(self.error("comparison operators cannot be chained; use parentheses"));
+        }
+        self.push_expr(
+            ExprKind::Comparison {
+                op,
+                left,
+                right,
+                operator_span,
+            },
+            self.source.span(
+                self.expressions[left.0].span.start,
+                self.expressions[right.0].span.end,
+            ),
+        )
+    }
+    fn sum(&mut self, depth: usize) -> Result<ExprId, Box<Diagnostic>> {
         let mut left = self.product(depth)?;
         loop {
             let op = match self.peek().kind {
@@ -331,7 +366,7 @@ impl Parser<'_> {
             ExprKind::Call { args, .. } => {
                 args.iter().map(|id| self.heights[id.0]).max().unwrap_or(0)
             }
-            ExprKind::Arithmetic { left, right, .. } => {
+            ExprKind::Arithmetic { left, right, .. } | ExprKind::Comparison { left, right, .. } => {
                 self.heights[left.0].max(self.heights[right.0])
             }
             _ => 0,

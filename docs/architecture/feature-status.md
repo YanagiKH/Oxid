@@ -43,5 +43,13 @@ The optional LLVM native preview is separately tracked as experimental. It accep
 a stricter bounded nonrecursive scalar subset, emits Linux x86_64 PIE executables,
 and rejects unsupported operations before tool invocation. Its checked i32
 `+`, `-` and `*` extension preserves reference overflow and first-error behavior;
-other numeric operations and recursive native calls remain unavailable. It does
+other arithmetic operations and recursive native calls remain unavailable. It does
 not complete M2/M3 or certify production safety, a stable ABI, or self-hosting.
+
+Scalar comparisons are a separate experimental extension: same-type i32 or bool
+equality/inequality, signed i32 ordering, bool results and no coercion. All six
+operators share a non-associative tier below arithmetic. The checker, independent
+OIR verifier, bounded reference executor and narrower LLVM backend enforce the
+same table; unit equality, bool ordering, short-circuit operators and loops remain
+unavailable. [Comparison evidence](scalar-comparison-validation.md) records the
+actual supported checks and hosts.

@@ -215,7 +215,7 @@
     },
     {
       "id": "llvm-native-backend",
-      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked +, - and *",
+      "summary": "Optional bounded nonrecursive bool/unit/i32 LLVM native preview with checked arithmetic and typed scalar comparisons",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -226,7 +226,8 @@
       "spec": [
         "spec/native-preview.md",
         "rfcs/0007-llvm-scalar-native.md",
-        "rfcs/0008-native-checked-i32.md"
+        "rfcs/0008-native-checked-i32.md",
+        "rfcs/0009-scalar-comparisons.md"
       ],
       "implementation": [
         "src/frontend/oir/native.rs",
@@ -240,13 +241,15 @@
         "tests/typed_native.rs",
         "tests/edition_boundary.rs",
         "scripts/verify_native_preview.py",
-        "scripts/verify_native_arithmetic.py"
+        "scripts/verify_native_arithmetic.py",
+        "scripts/verify_scalar_comparisons.py"
       ],
       "evidence": [
         "docs/architecture/native-preview-validation.md",
-        "docs/architecture/native-arithmetic-validation.md"
+        "docs/architecture/native-arithmetic-validation.md",
+        "docs/architecture/scalar-comparison-validation.md"
       ],
-      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. No other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
+      "limitations": "Conservative whole-file acyclic admission; 32 frames, 64 parameters, 256 locals/function, 8192 aggregate/live slots, 4096 blocks, 100000 fuel upper bound. Exact LLVM 19.1.7 plus host C development environment required. Checked arithmetic is limited to +, - and * at O0; overflow exits 1 with embedded-source human E0604 diagnostics. Same-type i32/bool equality and signed i32 ordering are also supported. No coercion, unit equality, bool ordering, other native numeric operations, recursion, cross compilation, stable ABI, ownership certification, sandbox or self-hosting. Broader reference execution and legacy compilation stay independent."
     },
     {
       "id": "independent-self-hosting",
@@ -520,7 +523,47 @@
       "evidence": [
         "docs/architecture/i32-arithmetic-validation.md"
       ],
-      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, division, remainder, casts, shifts, numeric comparisons, wider integers, floats or promotion. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support is tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
+      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, division, remainder, casts, shifts, wider integers, floats or promotion. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support and scalar comparisons are tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
+    },
+    {
+      "id": "typed-preview-scalar-comparisons",
+      "summary": "Same-type i32/bool equality and signed i32 ordering, with non-associative comparison grammar and exact reference/native parity",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence; native supports Linux x86_64 only. Hosted CI and other reference hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0009-scalar-comparisons.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/native.rs"
+      ],
+      "tests": [
+        "tests/typed_comparisons.rs",
+        "src/frontend/oir/comparison_tests.rs",
+        "src/frontend/oir/execute_tests.rs",
+        "src/frontend/oir/native.rs",
+        "tests/typed_native.rs",
+        "scripts/verify_scalar_comparisons.py"
+      ],
+      "evidence": [
+        "docs/architecture/scalar-comparison-validation.md"
+      ],
+      "limitations": "Only == and != for matching i32 or bool, and < <= > >= for i32. No coercion, unit equality, bool ordering, generic equality, unparenthesized comparison chains, logical operators, loops or mutation. Existing reference budgets and stricter native limits remain unchanged. No stable ABI, ownership, safety certification, completed milestone or optimization beyond native O0 is claimed. Legacy dynamic semantics and OXBC stay independent."
     }
   ]
 }

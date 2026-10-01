@@ -284,6 +284,17 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                             span: expr.span,
                         })),
                         hir::ExprKind::Group(inner) => Some(Rvalue::Copy(operand(*inner))),
+                        hir::ExprKind::Comparison {
+                            op,
+                            left,
+                            right,
+                            operator_span,
+                        } => Some(Rvalue::CompareScalar {
+                            op: *op,
+                            left: operand(*left),
+                            right: operand(*right),
+                            operator_span: *operator_span,
+                        }),
                         hir::ExprKind::Arithmetic {
                             op,
                             left,

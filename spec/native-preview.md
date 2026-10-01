@@ -39,11 +39,13 @@ witness can enter native admission. A declared zero-argument scalar `main` is
 required, carried by its resolved DefId rather than reconstructed from spans.
 
 Supported operations are exact bool/unit/i32 constants, immutable copies, checked
-i32 addition/subtraction/multiplication, explicit direct nonrecursive calls,
+i32 addition/subtraction/multiplication, same-type i32/bool equality and i32-only
+signed ordering comparisons, explicit direct nonrecursive calls,
 Branch, Goto and Return. Native compilation rejects all other OIR operations.
 Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
-[RFC 0008](../rfcs/0008-native-checked-i32.md). There are no source I/O operations,
+[RFC 0008](../rfcs/0008-native-checked-i32.md). Comparisons follow
+[RFC 0009](../rfcs/0009-scalar-comparisons.md). There are no source I/O operations,
 pointers, containers, loops, indirect calls, modules or implicit legacy adapters
 in this subset.
 
@@ -68,8 +70,9 @@ Require `1 + C(F) <= 100,000`. Calls at distinct sites are counted separately;
 there is no memoization discount. Since verified intraprocedural CFGs are
 acyclic, summing both arms overestimates every executed path. It also counts
 callee allocation and every reference execution operation. An arithmetic
-assignment counts once; operand evaluation has its own assignments/calls. Thus
-`return 1 + 2;` has an inclusive bound of eight fuel. This conservative
+or comparison assignment counts once; operand evaluation has its own
+assignments/calls. Thus `return 1 + 2;`, `return 1 < 2;` and
+`return true == false;` each have an inclusive bound of eight fuel. This conservative
 admission can reject programs that run successfully in the reference interpreter.
 
 Depth is `1 + max(callee_depth)` and live slots are
@@ -95,6 +98,10 @@ unchosen branches do not. No hardware trap or unchecked/wrapping operation is a
 substitute for the overflow branch. Backend lowering adds two blocks per checked
 assignment; the 4,096-block ceiling measures original OIR blocks. At most 8,192
 arithmetic assignments can fit the aggregate local ceiling.
+Comparisons lower to i1 results with `icmp eq`/`ne` over i32 or i1, or signed
+`icmp slt`/`sle`/`sgt`/`sge` over i32 only. The verifier rejects unit, mixed types
+and bool ordering. These instructions add no error path or runtime adapter;
+operand arithmetic can still fail before comparison.
 Branches, direct calls and returns retain their OIR structure. Functions are
 `internal` and `noinline`; this preview uses `-O0` and no LTO or fast-math.
 
@@ -167,6 +174,8 @@ compile use compile-summary for later errors; invalid global options retain the
 pre-existing check-summary. Diagnostics escape source/tool-controlled text.
 
 See [RFC 0007](../rfcs/0007-llvm-scalar-native.md),
-[RFC 0008](../rfcs/0008-native-checked-i32.md), the
+[RFC 0008](../rfcs/0008-native-checked-i32.md),
+[RFC 0009](../rfcs/0009-scalar-comparisons.md), the
 [scalar predecessor evidence](../docs/architecture/native-preview-validation.md),
-and [checked-arithmetic evidence](../docs/architecture/native-arithmetic-validation.md).
+[checked-arithmetic evidence](../docs/architecture/native-arithmetic-validation.md),
+and [comparison evidence](../docs/architecture/scalar-comparison-validation.md).

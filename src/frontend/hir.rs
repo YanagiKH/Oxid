@@ -1,5 +1,5 @@
 //! Resolved IDs are compilation-local, deterministic in source order.
-pub use super::ast::ArithmeticOp;
+pub use super::ast::{ArithmeticOp, ComparisonOp};
 use super::{
     ast,
     diagnostic::Diagnostic,
@@ -32,6 +32,12 @@ pub struct ExprId(pub usize);
 pub struct BodyBlockId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
+    Comparison {
+        op: ComparisonOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Bool(bool),
     I32(i32),
     Unit,
@@ -388,6 +394,21 @@ impl<'a> Resolver<'a> {
                 ExprKind::Call { target, args }
             }
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+            ast::ExprKind::Comparison {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let left = self.expression(*left)?;
+                let right = self.expression(*right)?;
+                ExprKind::Comparison {
+                    op: *op,
+                    left,
+                    right,
+                    operator_span: *operator_span,
+                }
+            }
             ast::ExprKind::Arithmetic {
                 op,
                 left,
