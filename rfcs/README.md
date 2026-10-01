@@ -23,3 +23,7 @@ backend.
 Small independently reviewable changes should link their affected specifications
 and tests. Claims of production readiness or safety need evidence for the declared scope
 and targets, beyond an accepted design or a passing unit test.
+
+[RFC 0014](0014-owned-structs-call-borrows.md) records the bounded ownership phase
+contract and distinguishes its implemented private type/layout groundwork from
+still-unavailable source structs, borrowing and aggregate execution.
