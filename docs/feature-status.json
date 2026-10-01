@@ -265,6 +265,30 @@
       "tests": [],
       "evidence": [],
       "limitations": "Process bridges and generic dynamic arrays are not native AI training."
+    },
+    {
+      "id": "legacy-module-contract",
+      "summary": "Selected module identity, initialization, diagnostics, and route-specific packaging limits",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "legacy-0.9",
+      "backend": "ast-interpreter",
+      "target_scope": "New module corpus: local x86_64-unknown-linux-gnu; other targets not yet run for this increment",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "spec/legacy-modules.md"
+      ],
+      "implementation": [
+        "src/main.rs"
+      ],
+      "tests": [
+        "tests/legacy_modules.rs"
+      ],
+      "evidence": [
+        "docs/architecture/module-validation.md"
+      ],
+      "limitations": "Current source/artifact initialization differs; function-local imports remain runtime source dependencies. This does not select new-edition semantics or define all module resolution rules."
     }
   ]
 }

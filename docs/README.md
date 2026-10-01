@@ -32,4 +32,5 @@ Start with a small program, then follow the guide for what you want to build. Th
 - [Current implementation and limits](architecture/current-baseline.md)
 - [Specification scope](../spec/README.md) and [selected legacy behavior](../spec/legacy-0.9.md)
 - [Feature status definitions](architecture/feature-status.md) and [machine-readable inventory](feature-status.json)
+- [Legacy module contract](../spec/legacy-modules.md) and [baseline CI evidence](architecture/ci-evidence-24b554d.md)
 - [Local baseline validation](architecture/baseline-validation.md) and [RFC process](../rfcs/README.md)

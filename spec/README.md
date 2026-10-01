@@ -5,6 +5,8 @@ specification or evidence that M0 has been completed.
 
 - [Legacy 0.9 behavior](legacy-0.9.md) characterizes selected existing behavior
   through the public CLI, both as source and as an OXBC artifact.
+- [Legacy module contract](legacy-modules.md) records module resolution,
+  diagnostics, and route-specific limitations.
 - [Current architecture](../docs/architecture/current-baseline.md) identifies
   which implementation actually runs and separates demonstrations from it.
 - [Feature status](../docs/feature-status.json) records scoped claims and gaps.
