@@ -25,6 +25,7 @@ pub enum Kind {
     Semi,
     Equal,
     Arrow,
+    Minus,
     Unsupported,
     Invalid,
     Eof,
@@ -104,12 +105,15 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                     _ => Kind::Ident,
                 }
             }
-            '0'..='9' => {
-                while cursor < bytes.len()
-                    && (bytes[cursor].is_ascii_alphanumeric()
-                        || matches!(bytes[cursor], b'_' | b'.'))
-                {
-                    cursor += 1;
+            c if c.is_numeric() => {
+                // Preserve the whole candidate, including unsupported Unicode,
+                // suffix/radix/float spelling. Parsing accepts ASCII digits only.
+                while cursor < bytes.len() {
+                    let next = text[cursor..].chars().next().unwrap();
+                    if !next.is_alphanumeric() && !matches!(next, '_' | '.') {
+                        break;
+                    }
+                    cursor += next.len_utf8();
                 }
                 Kind::Number
             }
@@ -148,8 +152,10 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                 cursor += 1;
                 Kind::Arrow
             }
-            '+' | '-' | '*' | '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '<' | '>' | '#'
-            | '\'' => Kind::Unsupported,
+            '-' => Kind::Minus,
+            '+' | '*' | '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '<' | '>' | '#' | '\'' => {
+                Kind::Unsupported
+            }
             _ => Kind::Invalid,
         };
         let span = source.span(start, cursor);

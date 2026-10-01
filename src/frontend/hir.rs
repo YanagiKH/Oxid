@@ -9,12 +9,14 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ty {
     Bool,
+    I32,
     Unit,
 }
 impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Bool => "bool",
+            Self::I32 => "i32",
             Self::Unit => "()",
         })
     }
@@ -30,6 +32,7 @@ pub struct BodyBlockId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
     Bool(bool),
+    I32(i32),
     Unit,
     Local(LocalId),
     Call { target: DefId, args: Vec<ExprId> },
@@ -96,14 +99,42 @@ fn type_syntax(source: &SourceFile, ty: ast::TypeSyntax) -> Result<Ty, Box<Diagn
     let text = &source.text()[ty.span.start..ty.span.end];
     match text {
         "bool" => Ok(Ty::Bool),
+        "i32" => Ok(Ty::I32),
         _ if text.starts_with('(') => Ok(Ty::Unit),
         _ => Err(Diagnostic::new(
             "E0202",
             "resolve",
-            format!("unknown typed-preview type `{text}`; expected bool or ()"),
+            format!("unknown typed-preview type `{text}`; expected bool, i32 or ()"),
             Some(ty.span),
         )),
     }
+}
+/// The parser has validated every byte before resolution. Accumulate directly
+/// with the chosen sign: MIN never constructs an unrepresentable positive i32.
+/// Arbitrarily many leading zeroes within the token limit remain exact zero.
+fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
+    let mut value = 0i32;
+    for byte in digits.bytes() {
+        let digit = i32::from(byte - b'0');
+        value = value
+            .checked_mul(10)
+            .and_then(|value| {
+                if negative {
+                    value.checked_sub(digit)
+                } else {
+                    value.checked_add(digit)
+                }
+            })
+            .ok_or_else(|| {
+                Diagnostic::new(
+                    "E0203",
+                    "resolve",
+                    "decimal literal is outside the i32 range [-2147483648, 2147483647]",
+                    Some(span),
+                )
+            })?;
+    }
+    Ok(value)
 }
 fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
     Diagnostic::new(
@@ -310,6 +341,9 @@ impl<'a> Resolver<'a> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
+            ast::ExprKind::Number { digits, negative } => {
+                ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
+            }
             ast::ExprKind::Unit => ExprKind::Unit,
             ast::ExprKind::Name(span) => {
                 let name = self.text(*span);

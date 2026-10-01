@@ -48,6 +48,9 @@ jobs:
       - name: Build optimized standalone runtime
         run: cargo build --release --locked
 
+      - name: Verify exact i32 literals against the independent Python integer oracle
+        run: python3 scripts/verify_i32_literals.py target/release/oxid
+
       - name: Verify every Oxid source, runnable program, README, SVG, build, and doctor check
         run: python3 scripts/verify_repo.py target/release/oxid
 

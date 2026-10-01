@@ -328,7 +328,7 @@
       "evidence": [
         "docs/architecture/typed-preview-validation.md"
       ],
-      "limitations": "Experimental check only; no ownership, numbers, modules, execution, native compilation or typed artifacts. OIR and branch CFG increments are tracked separately. Default legacy semantics are unchanged."
+      "limitations": "This entry records the predecessor scope; exact i32 is tracked separately. Experimental check only; no ownership, numbers, modules, execution, native compilation or typed artifacts. OIR and branch CFG increments are tracked separately. Default legacy semantics are unchanged."
     },
     {
       "id": "typed-preview-verified-oir",
@@ -399,7 +399,7 @@
       "evidence": [
         "docs/architecture/boolean-cfg-validation.md"
       ],
-      "limitations": "Restricted provisional bool/unit checking only. Canonical globally unique immutable definitions; no phi or merge values. Calls assumed to return normally. No loops, numeric semantics, ownership, memory safety, execution, native output, stable edition or completed roadmap milestone."
+      "limitations": "This entry records the predecessor scope; exact i32 is tracked separately. Restricted provisional bool/unit checking only. Canonical globally unique immutable definitions; no phi or merge values. Calls assumed to return normally. No loops, numeric semantics, ownership, memory safety, execution, native output, stable edition or completed roadmap milestone."
     },
     {
       "id": "typed-preview-reference-execution",
@@ -430,7 +430,44 @@
       "evidence": [
         "docs/architecture/reference-execution-validation.md"
       ],
-      "limitations": "Provisional bounded scalar reference execution only: 1,000,000 fuel, 1,024 live frames, 200,000 live slots. No numeric semantics, source heap, ownership, host I/O, imports, native output, typed artifact, termination or OS-sandbox guarantee. Default legacy execution and typed check remain unchanged."
+      "limitations": "This entry records the predecessor scope; exact i32 is tracked separately. Provisional bounded scalar reference execution only: 1,000,000 fuel, 1,024 live frames, 200,000 live slots. No numeric semantics, source heap, ownership, host I/O, imports, native output, typed artifact, termination or OS-sandbox guarantee. Default legacy execution and typed check remain unchanged."
+    },
+    {
+      "id": "typed-preview-exact-i32-literals",
+      "summary": "Exact decimal i32 literals, immutable copies, parameters and results through typed HIR, verified OIR and bounded reference execution",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; remote CI and other hosts require separate verification",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0005-exact-i32-literals.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/mod.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs"
+      ],
+      "tests": [
+        "tests/typed_i32.rs",
+        "src/frontend/oir/i32_tests.rs",
+        "src/frontend/oir/execute_tests.rs",
+        "src/frontend/oir/source_oracle.rs",
+        "scripts/verify_i32_literals.py"
+      ],
+      "evidence": [
+        "docs/architecture/i32-literal-validation.md"
+      ],
+      "limitations": "Literal-only provisional i32 with ASCII decimal and optional literal minus; unconstrained literals default to i32. No arithmetic, casts, numeric comparisons, wider integers, floats, promotion or arithmetic overflow policy. Fuel/frame/slot counts are unchanged, but host slot bytes increase. No ownership, native output, typed artifact or safety certification. Legacy f64 and default routing are unchanged."
     }
   ]
 }

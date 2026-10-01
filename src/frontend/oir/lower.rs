@@ -277,6 +277,7 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                     let destination = expression_map[next_expr];
                     let value = match &expr.kind {
                         hir::ExprKind::Bool(value) => Some(Rvalue::Bool(*value)),
+                        hir::ExprKind::I32(value) => Some(Rvalue::I32(*value)),
                         hir::ExprKind::Unit => Some(Rvalue::Unit),
                         hir::ExprKind::Local(id) => Some(Rvalue::Copy(Operand {
                             local: local_map[id.0],

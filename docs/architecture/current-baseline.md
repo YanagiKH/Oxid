@@ -13,11 +13,12 @@ Default execution still uses the legacy interpreter, module loader and CLI. Runt
 
 Legacy source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
-ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/unit pipeline now has typed HIR, verified acyclic
+ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified acyclic
 Branch/Goto OIR and explicit calls/returns. Check remains non-executing; explicit
 typed run uses bounded iterative scalar reference execution. Ownership analysis
 and native machine-code compilation remain deferred. See
-[RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact limits.
+[RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
+and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for literal-only exact i32.
 The linked C/C++ helpers accelerate selected host operations; their existence
 does not mean Oxid source is compiled to native machine code.
 

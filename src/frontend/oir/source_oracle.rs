@@ -6,12 +6,14 @@ use std::collections::BTreeMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Value {
     Bool(bool),
+    I32(i32),
     Unit,
 }
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Bool(x) => write!(f, "{x}"),
+            Self::I32(x) => write!(f, "{x}"),
             Self::Unit => f.write_str("()"),
         }
     }
@@ -330,6 +332,68 @@ fn generated_mixed_return_scope_group_unit_and_discard_paths_match_oracle() {
             };
             let trace = compare(model);
             assert!(trace.iter().any(|line| line == "return unit ()"));
+        }
+    }
+}
+
+#[test]
+fn generated_i32_selection_copies_calls_and_traces_match_independent_source_model() {
+    let values = [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX];
+    for offset in 0..values.len() {
+        let at = |index: usize| Expr::Literal(Value::I32(values[(offset + index) % values.len()]));
+        for a in [false, true] {
+            for b in [false, true] {
+                let model = Model {
+                    functions: vec![
+                        definition(
+                            "id",
+                            vec![("x", "i32")],
+                            "i32",
+                            vec![
+                                Stmt::Let("saved", false, Expr::Group(Box::new(name("x")))),
+                                ret(name("saved")),
+                            ],
+                        ),
+                        definition(
+                            "select",
+                            vec![("a", "bool"), ("b", "bool")],
+                            "i32",
+                            vec![Stmt::If(
+                                name("a"),
+                                vec![Stmt::If(
+                                    name("b"),
+                                    vec![ret(call(0, vec![at(3)]))],
+                                    vec![ret(at(2))],
+                                )],
+                                vec![Stmt::If(
+                                    name("b"),
+                                    vec![ret(at(1))],
+                                    vec![ret(call(0, vec![at(0)]))],
+                                )],
+                            )],
+                        ),
+                        definition(
+                            "main",
+                            vec![],
+                            "i32",
+                            vec![
+                                Stmt::Discard(call(0, vec![at(0)])),
+                                Stmt::Let(
+                                    "result",
+                                    false,
+                                    call(1, vec![bool_expr(a), bool_expr(b)]),
+                                ),
+                                ret(call(0, vec![name("result")])),
+                            ],
+                        ),
+                    ],
+                };
+                let index = usize::from(a) * 2 + usize::from(b);
+                let expected = values[(offset + index) % values.len()];
+                assert_eq!(model.call(2, vec![], &mut vec![], 0), Value::I32(expected));
+                let trace = compare(model);
+                assert_eq!(trace.last().unwrap(), &format!("return main {expected}"));
+            }
         }
     }
 }

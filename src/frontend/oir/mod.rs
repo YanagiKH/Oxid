@@ -64,6 +64,7 @@ struct Assign {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
     Bool(bool),
+    I32(i32),
     Unit,
     Copy(Operand),
 }
@@ -176,12 +177,14 @@ impl OirFailure {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Scalar {
     Bool(bool),
+    I32(i32),
     Unit,
 }
 impl Scalar {
     fn ty(self) -> hir::Ty {
         match self {
             Self::Bool(_) => hir::Ty::Bool,
+            Self::I32(_) => hir::Ty::I32,
             Self::Unit => hir::Ty::Unit,
         }
     }
@@ -189,6 +192,7 @@ impl Scalar {
         match self {
             Self::Bool(value) => format!("{{\"type\":\"bool\",\"value\":{value}}}"),
             Self::Unit => "{\"type\":\"unit\"}".into(),
+            Self::I32(value) => format!("{{\"type\":\"i32\",\"value\":{value}}}"),
         }
     }
 }
@@ -196,6 +200,7 @@ impl std::fmt::Display for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Bool(value) => write!(f, "{value}"),
+            Self::I32(value) => write!(f, "{value}"),
             Self::Unit => f.write_str("()"),
         }
     }
@@ -213,7 +218,7 @@ impl RunFailure {
         let (code, message, span) = match *self {
             Self::Entry(None) => (
                 "E0600",
-                "typed-preview run requires a declared zero-argument main returning bool or ()",
+                "typed-preview run requires a declared zero-argument main returning bool, i32 or ()",
                 None,
             ),
             Self::Entry(span) => ("E0600", "typed-preview main must have no parameters", span),
@@ -268,3 +273,6 @@ mod tests;
 
 #[cfg(test)]
 mod cfg_tests;
+
+#[cfg(test)]
+mod i32_tests;

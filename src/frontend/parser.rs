@@ -79,8 +79,11 @@ impl Parser<'_> {
         let token = self.peek();
         let unsupported = matches!(
             token.kind,
-            Kind::Unsupported | Kind::Number | Kind::String | Kind::Equal
-        );
+            Kind::Unsupported | Kind::Number | Kind::Minus | Kind::String | Kind::Equal
+        ) || (token.kind == Kind::Ident
+            && &self.source.text()[token.span.start..token.span.end] == "as");
+        // Report an unsupported cast in an already-invalid grammar position,
+        // without reserving `as` as a declaration or expression identifier.
         Diagnostic::new(
             if unsupported { "E0101" } else { "E0100" },
             "parse",
@@ -192,7 +195,7 @@ impl Parser<'_> {
                 .span
                 .end
         } else {
-            self.expect(Kind::Ident, "expected `bool` or `()` type")?
+            self.expect(Kind::Ident, "expected `bool`, `i32` or `()` type")?
                 .span
                 .end
         };
@@ -282,6 +285,34 @@ impl Parser<'_> {
                 self.bump();
                 ExprKind::Bool(token.kind == Kind::True)
             }
+            Kind::Number | Kind::Minus => {
+                let negative = token.kind == Kind::Minus;
+                if negative {
+                    self.bump();
+                    if self.peek().kind != Kind::Number {
+                        return Err(Diagnostic::new(
+                            "E0101",
+                            "parse",
+                            "only a minus followed by decimal literal digits is supported",
+                            Some(token.span),
+                        ));
+                    }
+                }
+                let digits = self.bump().span;
+                end = digits.end;
+                if !self.source.text()[digits.start..digits.end]
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit())
+                {
+                    return Err(Diagnostic::new(
+                        "E0101",
+                        "parse",
+                        "unsupported numeric spelling; expected ASCII decimal literal digits",
+                        Some(self.source.span(token.span.start, end)),
+                    ));
+                }
+                ExprKind::Number { digits, negative }
+            }
             Kind::Ident => {
                 self.bump();
                 if self.take(Kind::LParen).is_some() {
@@ -322,7 +353,7 @@ impl Parser<'_> {
                     ExprKind::Group(inner)
                 }
             }
-            _ => return Err(self.error("expected a bool/unit expression")),
+            _ => return Err(self.error("expected a bool, i32 or unit expression")),
         };
         let id = ExprId(self.expressions.len());
         self.expressions.push(Expr {

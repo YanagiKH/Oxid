@@ -164,6 +164,7 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         Ty::Bool
                     }
                     ExprKind::Unit => Ty::Unit,
+                    ExprKind::I32(_) => Ty::I32,
                     ExprKind::Local(id) => {
                         locals[id.0].expect("resolved locals are initialized before use")
                     }
