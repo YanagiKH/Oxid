@@ -1,0 +1,282 @@
+//! Resolved IDs are compilation-local, deterministic in source order.
+use super::{
+    ast,
+    diagnostic::Diagnostic,
+    parser::MAX_DIAGNOSTICS,
+    source::{SourceFile, Span},
+};
+use std::collections::HashMap;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ty {
+    Bool,
+    Unit,
+}
+impl std::fmt::Display for Ty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Bool => "bool",
+            Self::Unit => "()",
+        })
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DefId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LocalId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExprId(pub usize);
+#[derive(Debug)]
+pub enum ExprKind {
+    Bool(bool),
+    Unit,
+    Local(LocalId),
+    Call { target: DefId, args: Vec<ExprId> },
+    Group(ExprId),
+}
+#[derive(Debug)]
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+#[derive(Debug)]
+pub struct Local {
+    pub span: Span,
+    pub annotation: Option<Ty>,
+}
+#[derive(Debug)]
+pub enum StmtKind {
+    Let { local: LocalId, init: ExprId },
+    Expr(ExprId),
+    Return(Option<ExprId>),
+}
+#[derive(Debug)]
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: Span,
+}
+#[derive(Debug)]
+pub struct Signature {
+    pub params: Vec<Ty>,
+    pub result: Ty,
+    pub span: Span,
+}
+#[derive(Debug)]
+pub struct Function {
+    pub id: DefId,
+    pub locals: Vec<Local>,
+    pub expressions: Vec<Expr>,
+    pub body: Vec<Stmt>,
+    pub end: Span,
+}
+#[derive(Debug)]
+pub struct Program {
+    pub signatures: Vec<Signature>,
+    pub functions: Vec<Function>,
+}
+
+fn type_syntax(source: &SourceFile, ty: ast::TypeSyntax) -> Result<Ty, Box<Diagnostic>> {
+    // Unit types may contain trivia between parentheses.
+    let text = &source.text()[ty.span.start..ty.span.end];
+    match text {
+        "bool" => Ok(Ty::Bool),
+        _ if text.starts_with('(') => Ok(Ty::Unit),
+        _ => Err(Diagnostic::new(
+            "E0202",
+            "resolve",
+            format!("unknown typed-preview type `{text}`; expected bool or ()"),
+            Some(ty.span),
+        )),
+    }
+}
+fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
+    Diagnostic::new(
+        "E0201",
+        "resolve",
+        "duplicate binding; shadowing is unavailable in typed-preview",
+        Some(span),
+    )
+    .secondary(original, "first declared here")
+}
+
+pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<Diagnostic>> {
+    let mut names = HashMap::new();
+    let mut signatures = Vec::new();
+    let mut diagnostics = Vec::new();
+    for (index, function) in ast.functions.iter().enumerate() {
+        let name = &source.text()[function.name.start..function.name.end];
+        match names.entry(name) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert((DefId(index), function.name));
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                diagnostics.push(*duplicate(function.name, entry.get().1));
+                if diagnostics.len() >= MAX_DIAGNOSTICS {
+                    break;
+                }
+            }
+        }
+        let signature: Result<Signature, Box<Diagnostic>> = (|| {
+            let params = function
+                .params
+                .iter()
+                .map(|p| type_syntax(source, p.ty))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Signature {
+                params,
+                result: type_syntax(source, function.result)?,
+                span: function.name,
+            })
+        })();
+        match signature {
+            Ok(signature) => signatures.push(signature),
+            Err(error) => diagnostics.push(*error),
+        }
+        if diagnostics.len() >= MAX_DIAGNOSTICS {
+            break;
+        }
+    }
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+    let mut functions = Vec::new();
+    for (index, function) in ast.functions.iter().enumerate() {
+        let mut resolver = Resolver {
+            source,
+            ast,
+            names: &names,
+            scope: HashMap::new(),
+            locals: Vec::new(),
+            expressions: Vec::new(),
+        };
+        match resolver.function(DefId(index), function) {
+            Ok(function) => functions.push(function),
+            Err(error) => diagnostics.push(*error),
+        }
+        if diagnostics.len() >= MAX_DIAGNOSTICS {
+            break;
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(Program {
+            signatures,
+            functions,
+        })
+    } else {
+        Err(diagnostics)
+    }
+}
+struct Resolver<'a> {
+    source: &'a SourceFile,
+    ast: &'a ast::Program,
+    names: &'a HashMap<&'a str, (DefId, Span)>,
+    scope: HashMap<&'a str, (LocalId, Span)>,
+    locals: Vec<Local>,
+    expressions: Vec<Expr>,
+}
+impl<'a> Resolver<'a> {
+    fn text(&self, span: Span) -> &'a str {
+        &self.source.text()[span.start..span.end]
+    }
+    fn bind(&mut self, span: Span, annotation: Option<Ty>) -> Result<LocalId, Box<Diagnostic>> {
+        let name = self.text(span);
+        if let Some((_, previous)) = self.scope.get(name) {
+            return Err(duplicate(span, *previous));
+        }
+        if let Some((_, previous)) = self.names.get(name) {
+            return Err(duplicate(span, *previous));
+        }
+        let id = LocalId(self.locals.len());
+        self.locals.push(Local { span, annotation });
+        self.scope.insert(name, (id, span));
+        Ok(id)
+    }
+    fn function(
+        &mut self,
+        id: DefId,
+        function: &ast::Function,
+    ) -> Result<Function, Box<Diagnostic>> {
+        for param in &function.params {
+            self.bind(param.name, Some(type_syntax(self.source, param.ty)?))?;
+        }
+        let mut body = Vec::new();
+        for statement in &function.body {
+            let kind = match &statement.kind {
+                ast::StmtKind::Let {
+                    name,
+                    annotation,
+                    init,
+                } => {
+                    let init = self.expression(*init)?;
+                    let annotation = annotation
+                        .map(|ty| type_syntax(self.source, ty))
+                        .transpose()?;
+                    StmtKind::Let {
+                        local: self.bind(*name, annotation)?,
+                        init,
+                    }
+                }
+                ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
+                ast::StmtKind::Return(expr) => {
+                    StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
+                }
+            };
+            body.push(Stmt {
+                kind,
+                span: statement.span,
+            });
+        }
+        Ok(Function {
+            id,
+            locals: std::mem::take(&mut self.locals),
+            expressions: std::mem::take(&mut self.expressions),
+            body,
+            end: function.end,
+        })
+    }
+    fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
+        let expr = &self.ast.expressions[id.0];
+        let kind = match &expr.kind {
+            ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
+            ast::ExprKind::Unit => ExprKind::Unit,
+            ast::ExprKind::Name(span) => {
+                let name = self.text(*span);
+                let local = self.scope.get(name).ok_or_else(|| {
+                    Diagnostic::new(
+                        "E0200",
+                        "resolve",
+                        format!("unknown local `{name}`"),
+                        Some(*span),
+                    )
+                })?;
+                ExprKind::Local(local.0)
+            }
+            ast::ExprKind::Call { callee, args } => {
+                let name = self.text(*callee);
+                let target = self
+                    .names
+                    .get(name)
+                    .ok_or_else(|| {
+                        Diagnostic::new(
+                            "E0200",
+                            "resolve",
+                            format!("unknown direct function `{name}`"),
+                            Some(*callee),
+                        )
+                    })?
+                    .0;
+                let args = args
+                    .iter()
+                    .map(|id| self.expression(*id))
+                    .collect::<Result<Vec<_>, _>>()?;
+                ExprKind::Call { target, args }
+            }
+            ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+        };
+        let id = ExprId(self.expressions.len());
+        self.expressions.push(Expr {
+            kind,
+            span: expr.span,
+        });
+        Ok(id)
+    }
+}

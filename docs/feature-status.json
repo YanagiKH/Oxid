@@ -17,7 +17,8 @@
         "spec/legacy-0.9.md"
       ],
       "implementation": [
-        "src/main.rs"
+        "src/main.rs",
+        "src/legacy/syntax.rs"
       ],
       "tests": [
         "tests/legacy_semantics.rs"
@@ -210,7 +211,7 @@
       "implementation": [],
       "tests": [],
       "evidence": [],
-      "limitations": "No implemented typed HIR/OIR or ownership checker in the production path."
+      "limitations": "No OIR/CFG or ownership checker. The separate experimental bool/unit typed-preview checker does not establish a memory model or static memory safety."
     },
     {
       "id": "llvm-native-backend",
@@ -289,6 +290,45 @@
         "docs/architecture/module-validation.md"
       ],
       "limitations": "Current source/artifact initialization differs; function-local imports remain runtime source dependencies. This does not select new-edition semantics or define all module resolution rules."
+    },
+    {
+      "id": "typed-preview-bool-unit",
+      "summary": "Opt-in single-file bool/unit checking through spanned AST, resolved HIR and complete typed HIR",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "check-only",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0001-typed-preview-check.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/cli.rs",
+        "src/frontend/driver.rs",
+        "src/frontend/options.rs",
+        "src/frontend/source.rs",
+        "src/frontend/diagnostic.rs",
+        "src/frontend/lexer.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs"
+      ],
+      "tests": [
+        "tests/typed_frontend.rs",
+        "tests/edition_boundary.rs",
+        "src/frontend/source.rs",
+        "src/frontend/diagnostic.rs",
+        "src/frontend/lexer.rs",
+        "src/frontend/typeck.rs"
+      ],
+      "evidence": [
+        "docs/architecture/typed-preview-validation.md"
+      ],
+      "limitations": "Experimental check only; no OIR, ownership, numbers, modules, execution, native compilation or typed artifacts. Default legacy semantics are unchanged."
     }
   ]
 }

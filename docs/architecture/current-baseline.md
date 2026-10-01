@@ -5,13 +5,16 @@ This records part of M0, the initial implementation inventory and specification 
 
 ## Production path
 
-`src/cli.rs` includes `src/main.rs`. The latter contains the lexer, parser, AST,
-interpreter, module loader, and CLI. Runtime services are split into `artifact`,
+`src/cli.rs` includes the legacy runtime in `src/main.rs`; legacy lexer, parser
+and AST now live in `src/legacy/syntax.rs`. The entry point first gates the
+explicit [typed-preview checker](../../spec/typed-preview.md) in `src/frontend/`.
+Default execution still uses the legacy interpreter, module loader and CLI. Runtime services are split into `artifact`,
 `data`, `network`, `packages`, and `benchmark` modules.
 
 Source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
-arrays and records have shared `Rc<RefCell<...>>` storage. No typed HIR, OIR/CFG,
-ownership checker, or `.ox` native machine-code backend is present in this path.
+arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
+ownership checker, or `.ox` native machine-code backend in this path. Typed HIR
+exists only in the independent, opt-in bool/unit checker; it is not executable.
 The linked C/C++ helpers accelerate selected host operations; their existence
 does not mean Oxid source is compiled to native machine code.
 
