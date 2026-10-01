@@ -9,7 +9,60 @@ pub struct TypedProgram {
 struct TypedBody {
     expressions: Vec<Ty>,
     locals: Vec<Ty>,
-    block_returns: Vec<bool>,
+    block_flows: Vec<FlowSummary>,
+}
+/// Possible exits from a statement list. Loop transfers always refer to its
+/// nearest enclosing while; that while consumes them before its own summary
+/// reaches the containing list. These outcomes describe conservative source
+/// paths, not constant-condition or termination analysis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct FlowSummary {
+    fallthrough: bool,
+    returns: bool,
+    breaks: bool,
+    continues: bool,
+}
+impl FlowSummary {
+    const FALLTHROUGH: Self = Self::new(true, false, false, false);
+    const RETURN: Self = Self::new(false, true, false, false);
+    const BREAK: Self = Self::new(false, false, true, false);
+    const CONTINUE: Self = Self::new(false, false, false, true);
+
+    const fn new(fallthrough: bool, returns: bool, breaks: bool, continues: bool) -> Self {
+        Self {
+            fallthrough,
+            returns,
+            breaks,
+            continues,
+        }
+    }
+    pub(super) fn falls_through(self) -> bool {
+        self.fallthrough
+    }
+    pub(super) fn returns_only(self) -> bool {
+        self == Self::RETURN
+    }
+    fn union(self, other: Self) -> Self {
+        Self::new(
+            self.fallthrough || other.fallthrough,
+            self.returns || other.returns,
+            self.breaks || other.breaks,
+            self.continues || other.continues,
+        )
+    }
+    /// Only fallthrough paths enter a following statement; previous terminal
+    /// outcomes must survive even when that statement has different exits.
+    fn then(self, next: Self) -> Self {
+        if !self.fallthrough {
+            return self;
+        }
+        Self::new(false, self.returns, self.breaks, self.continues).union(next)
+    }
+    fn after_while(self) -> Self {
+        // The condition's false edge is always possible. Body fallthrough and
+        // continue repeat it; break exits; only returns escape the whole loop.
+        Self::new(true, self.returns, false, false)
+    }
 }
 /// Immutable frontend-only view; successful construction remains in this pass.
 pub(super) struct TypedFunction<'a> {
@@ -33,8 +86,8 @@ impl TypedProgram {
                 assert_eq!(function.id, DefId(index));
                 assert_eq!(function.expressions.len(), body.expressions.len());
                 assert_eq!(function.locals.len(), body.locals.len());
-                assert_eq!(function.blocks.len(), body.block_returns.len());
-                assert!(body.block_returns[function.body.0]);
+                assert_eq!(function.blocks.len(), body.block_flows.len());
+                assert!(body.block_flows[function.body.0].returns_only());
                 assert!(signature.params.len() <= body.locals.len());
                 assert_eq!(&body.locals[..signature.params.len()], &signature.params);
                 TypedFunction {
@@ -58,8 +111,8 @@ impl<'a> TypedFunction<'a> {
     pub(super) fn local_ty(&self, id: LocalId) -> Ty {
         self.body.locals[id.0]
     }
-    pub(super) fn block_returns(&self, id: BodyBlockId) -> bool {
-        self.body.block_returns[id.0]
+    pub(super) fn block_flow(&self, id: BodyBlockId) -> FlowSummary {
+        self.body.block_flows[id.0]
     }
 }
 
@@ -103,49 +156,88 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
         Block {
             block: BodyBlockId,
             index: usize,
-            returned: bool,
+            flow: FlowSummary,
+            active_loop: Option<LoopId>,
         },
-        Join {
+        IfJoin {
             block: BodyBlockId,
             index: usize,
+            before: FlowSummary,
+            active_loop: Option<LoopId>,
             then_block: BodyBlockId,
             else_block: Option<BodyBlockId>,
         },
+        WhileJoin {
+            block: BodyBlockId,
+            index: usize,
+            before: FlowSummary,
+            active_loop: Option<LoopId>,
+            body: BodyBlockId,
+        },
     }
-    let mut block_returns = vec![None; function.blocks.len()];
+    let mut block_flows: Vec<Option<FlowSummary>> = vec![None; function.blocks.len()];
     let mut frames = vec![Frame::Block {
         block: function.body,
         index: 0,
-        returned: false,
+        flow: FlowSummary::FALLTHROUGH,
+        active_loop: None,
     }];
     while let Some(frame) = frames.pop() {
-        let (block, index, mut returned) = match frame {
+        let (block, index, mut flow, active_loop) = match frame {
             Frame::Block {
                 block,
                 index,
-                returned,
-            } => (block, index, returned),
-            Frame::Join {
+                flow,
+                active_loop,
+            } => (block, index, flow, active_loop),
+            Frame::IfJoin {
                 block,
                 index,
+                before,
+                active_loop,
                 then_block,
                 else_block,
             } => {
-                let then_returns = block_returns[then_block.0].expect("then arm was checked");
-                let else_returns =
-                    else_block.is_some_and(|id| block_returns[id.0].expect("else arm was checked"));
-                (block, index, then_returns && else_returns)
+                let then_flow = block_flows[then_block.0].expect("then arm was checked");
+                let else_flow = else_block.map_or(FlowSummary::FALLTHROUGH, |id| {
+                    block_flows[id.0].expect("else arm was checked")
+                });
+                (
+                    block,
+                    index,
+                    before.then(then_flow.union(else_flow)),
+                    active_loop,
+                )
+            }
+            Frame::WhileJoin {
+                block,
+                index,
+                before,
+                active_loop,
+                body,
+            } => {
+                let body_flow = block_flows[body.0].expect("while body was checked");
+                (
+                    block,
+                    index,
+                    before.then(body_flow.after_while()),
+                    active_loop,
+                )
             }
         };
         let Some(statement) = function.blocks[block.0].body.get(index) else {
-            block_returns[block.0] = Some(returned);
+            block_flows[block.0] = Some(flow);
             continue;
         };
-        if returned {
+        if !flow.falls_through() {
             return Err(Diagnostic::new(
                 "E0303",
                 "type",
-                "statement after terminal return is unavailable in typed-preview",
+                if flow.returns_only() {
+                    "statement after terminal return is unavailable in typed-preview"
+                } else {
+                    "statement after terminal control transfer is unavailable in typed-preview"
+                },
                 Some(statement.span),
             ));
         }
@@ -154,6 +246,7 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
             | StmtKind::Assign { value: init, .. }
             | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
+            StmtKind::Break { .. } | StmtKind::Continue { .. } => None,
             StmtKind::If { condition, .. } | StmtKind::While { condition, .. } => Some(condition),
         };
         // Resolver emits children before parents and statement roots in source order.
@@ -329,9 +422,27 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         value.map_or(statement.span, |id| function.expressions[id.0].span),
                     ));
                 }
-                returned = true;
+                flow = flow.then(FlowSummary::RETURN);
             }
-            StmtKind::While { condition, body } => {
+            StmtKind::Break { target } | StmtKind::Continue { target } => {
+                assert_eq!(
+                    active_loop,
+                    Some(target),
+                    "resolved transfer targets the nearest active loop"
+                );
+                assert!(target.0 < function.blocks.len());
+                let transfer = if matches!(statement.kind, StmtKind::Break { .. }) {
+                    FlowSummary::BREAK
+                } else {
+                    FlowSummary::CONTINUE
+                };
+                flow = flow.then(transfer);
+            }
+            StmtKind::While {
+                loop_id,
+                condition,
+                body,
+            } => {
                 let actual = expressions[condition.0];
                 if actual != Ty::Bool {
                     return Err(mismatch(
@@ -340,17 +451,22 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         function.expressions[condition.0].span,
                     ));
                 }
-                // The false edge always exists. A returning body does not prove
-                // that the containing statement list returns.
-                frames.push(Frame::Block {
+                assert_eq!(
+                    loop_id.0, body.0,
+                    "resolved loop ID is its unique body block"
+                );
+                frames.push(Frame::WhileJoin {
                     block,
                     index: index + 1,
-                    returned: false,
+                    before: flow,
+                    active_loop,
+                    body,
                 });
                 frames.push(Frame::Block {
                     block: body,
                     index: 0,
-                    returned: false,
+                    flow: FlowSummary::FALLTHROUGH,
+                    active_loop: Some(loop_id),
                 });
                 continue;
             }
@@ -367,9 +483,11 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         function.expressions[condition.0].span,
                     ));
                 }
-                frames.push(Frame::Join {
+                frames.push(Frame::IfJoin {
                     block,
                     index: index + 1,
+                    before: flow,
+                    active_loop,
                     then_block,
                     else_block,
                 });
@@ -377,13 +495,15 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                     frames.push(Frame::Block {
                         block: otherwise,
                         index: 0,
-                        returned: false,
+                        flow: FlowSummary::FALLTHROUGH,
+                        active_loop,
                     });
                 }
                 frames.push(Frame::Block {
                     block: then_block,
                     index: 0,
-                    returned: false,
+                    flow: FlowSummary::FALLTHROUGH,
+                    active_loop,
                 });
                 continue;
             }
@@ -391,10 +511,14 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
         frames.push(Frame::Block {
             block,
             index: index + 1,
-            returned,
+            flow,
+            active_loop,
         });
     }
-    if !block_returns[function.body.0].expect("function body was checked") {
+    if !block_flows[function.body.0]
+        .expect("function body was checked")
+        .returns_only()
+    {
         return Err(Diagnostic::new(
             "E0302",
             "type",
@@ -407,14 +531,14 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
         .map(|ty| ty.expect("all resolved locals have typed initializers"))
         .collect();
     assert_eq!(next_expr, function.expressions.len());
-    let block_returns = block_returns
+    let block_flows = block_flows
         .into_iter()
         .map(|flow| flow.expect("all resolved blocks have checked flow"))
         .collect();
     Ok(TypedBody {
         expressions,
         locals,
-        block_returns,
+        block_flows,
     })
 }
 
@@ -475,13 +599,13 @@ mod tests {
                     typed.bodies[0].locals[0] = Ty::Unit;
                 }
                 6 => {
-                    typed.bodies[0].block_returns.pop();
+                    typed.bodies[0].block_flows.pop();
                 }
                 7 => {
                     typed.program.functions[0].body = BodyBlockId(99);
                 }
                 _ => {
-                    typed.bodies[0].block_returns[0] = false;
+                    typed.bodies[0].block_flows[0] = FlowSummary::FALLTHROUGH;
                 }
             }
             assert!(std::panic::catch_unwind(|| typed.functions().for_each(|_| {})).is_err());
@@ -525,3 +649,154 @@ mod tests {
 #[cfg(test)]
 #[path = "branch_tests.rs"]
 mod branch_tests;
+
+#[cfg(test)]
+mod loop_flow_tests {
+    use super::*;
+    use crate::frontend::{lexer, parser, source::SourceMap};
+
+    fn resolved(text: &str) -> Program {
+        let mut sources = SourceMap::new();
+        let id = sources.add("loop-flow.ox".into(), text.into());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        super::super::hir::resolve(source, &ast).unwrap()
+    }
+
+    #[test]
+    fn outcome_union_and_sequence_cover_the_complete_truth_table() {
+        fn outcomes(bits: u8) -> FlowSummary {
+            FlowSummary::new(bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0)
+        }
+        for left in 0u8..16 {
+            let before = outcomes(left);
+            assert_eq!(before.falls_through(), left & 1 != 0);
+            assert_eq!(before.returns_only(), left == 2);
+            assert_eq!(before.after_while(), outcomes(1 | (left & 2)));
+            for right in 0u8..16 {
+                let next = outcomes(right);
+                assert_eq!(before.union(next), outcomes(left | right));
+                // Enumerate individual paths: terminal paths keep their exit;
+                // each fallthrough path can take every exit of the next list.
+                let mut expected = 0;
+                for exit in [1, 2, 4, 8] {
+                    if left & exit != 0 {
+                        expected |= if exit == 1 { right } else { exit };
+                    }
+                }
+                assert_eq!(
+                    before.then(next),
+                    outcomes(expected),
+                    "{left:04b}; {right:04b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn partial_branches_keep_prior_exits_and_nested_loops_consume_only_their_exits() {
+        let returning = FlowSummary::RETURN;
+        let breaking = FlowSummary::BREAK;
+        let continuing = FlowSummary::CONTINUE;
+        let falling = FlowSummary::FALLTHROUGH;
+        for (body, expected) in [
+            (
+                "if a { return; } if b { break; } continue;",
+                returning.union(breaking).union(continuing),
+            ),
+            (
+                "if a { return; } while b { break; } continue;",
+                returning.union(continuing),
+            ),
+            (
+                "if a { break; } while b { return; } continue;",
+                returning.union(breaking).union(continuing),
+            ),
+            ("if a { break; }", falling.union(breaking)),
+            ("if a { continue; }", falling.union(continuing)),
+            (
+                "while a { if b { return; } else { break; } } continue;",
+                returning.union(continuing),
+            ),
+            ("while a { continue; } break;", breaking),
+            ("if a { return; } if b {} return;", returning),
+        ] {
+            let text = format!("fn f(a: bool, b: bool) -> () {{ while a {{ {body} }} return; }}");
+            let typed = check(resolved(&text)).unwrap();
+            let view = typed.functions().next().unwrap();
+            assert_eq!(view.block_flow(BodyBlockId(1)), expected, "{body}");
+            assert_eq!(view.block_flow(view.hir().body), returning, "{body}");
+        }
+    }
+
+    #[test]
+    fn all_terminal_arm_pairs_reject_following_statements_and_keep_return_only_text() {
+        for left in ["return;", "break;", "continue;"] {
+            for right in ["return;", "break;", "continue;"] {
+                let text = format!("fn f(c: bool) -> () {{ while c {{ if c {{ {left} }} else {{ {right} }} true; }} return; }}");
+                let errors = check(resolved(&text)).unwrap_err();
+                assert_eq!(errors.len(), 1);
+                let error = &errors[0];
+                assert_eq!(error.code, "E0303");
+                let span = error.primary.unwrap();
+                assert_eq!(&text[span.start..span.end], "true;");
+                let expected = if left == "return;" && right == "return;" {
+                    "statement after terminal return is unavailable in typed-preview"
+                } else {
+                    "statement after terminal control transfer is unavailable in typed-preview"
+                };
+                assert_eq!(error.message, expected);
+            }
+        }
+        for body in [
+            "break; true;",
+            "continue; true;",
+            "if c { return; } break; true;",
+            "if c { break; } continue; true;",
+            "if c { continue; } return; true;",
+        ] {
+            let text = format!("fn f(c: bool) -> () {{ while c {{ {body} }} return; }}");
+            let error = check(resolved(&text)).unwrap_err().remove(0);
+            assert_eq!(error.code, "E0303");
+            assert_eq!(
+                error.message,
+                "statement after terminal control transfer is unavailable in typed-preview"
+            );
+            let span = error.primary.unwrap();
+            assert_eq!(&text[span.start..span.end], "true;");
+        }
+    }
+
+    #[test]
+    fn while_keeps_false_edge_and_checks_literal_false_branches() {
+        for body in [
+            "return;",
+            "break;",
+            "continue;",
+            "if true { break; } else { continue; }",
+        ] {
+            let text = format!("fn f() -> () {{ while true {{ {body} }} }}");
+            assert_eq!(check(resolved(&text)).unwrap_err()[0].code, "E0302");
+        }
+        for text in [
+            "fn f() -> () { while false { if false { break; } else { let x: bool = 1; } } return; }",
+            "fn f() -> () { while false { if true { continue; } else { return 1; } } return; }",
+        ] {
+            assert_eq!(check(resolved(text)).unwrap_err()[0].code, "E0300");
+        }
+    }
+
+    #[test]
+    fn typechecker_rejects_broken_resolved_loop_target_invariants() {
+        for replacement in [LoopId(1), LoopId(0), LoopId(99)] {
+            let mut program =
+                resolved("fn f() -> () { while true { while true { break; } } return; }");
+            let StmtKind::Break { target } = &mut program.functions[0].blocks[2].body[0].kind
+            else {
+                panic!("fixture has the innermost break");
+            };
+            *target = replacement;
+            assert!(std::panic::catch_unwind(|| check(program)).is_err());
+        }
+    }
+}

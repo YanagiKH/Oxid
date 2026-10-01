@@ -30,6 +30,9 @@ pub struct LocalId(pub usize);
 pub struct ExprId(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodyBlockId(pub usize);
+/// Function-local identity, indexed by the unique while-body block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LoopId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
     Not {
@@ -89,7 +92,14 @@ pub enum StmtKind {
     },
     Expr(ExprId),
     Return(Option<ExprId>),
+    Break {
+        target: LoopId,
+    },
+    Continue {
+        target: LoopId,
+    },
     While {
+        loop_id: LoopId,
         condition: ExprId,
         body: BodyBlockId,
     },
@@ -299,6 +309,7 @@ impl<'a> Resolver<'a> {
             Enter(ast::BodyBlockId),
             Next(ast::BodyBlockId, usize),
             Leave,
+            LeaveLoop,
         }
         let mut blocks: Vec<_> = function
             .blocks
@@ -310,6 +321,7 @@ impl<'a> Resolver<'a> {
             })
             .collect();
         let mut scopes: Vec<Vec<&'a str>> = Vec::new();
+        let mut loops = Vec::new();
         let mut frames = vec![Frame::Enter(function.body)];
         while let Some(frame) = frames.pop() {
             let (block, index) = match frame {
@@ -323,6 +335,10 @@ impl<'a> Resolver<'a> {
                     for name in scopes.pop().expect("entered scope") {
                         self.scope.remove(name);
                     }
+                    continue;
+                }
+                Frame::LeaveLoop => {
+                    loops.pop().expect("entered loop context");
                     continue;
                 }
                 Frame::Next(block, index) => (block, index),
@@ -378,10 +394,31 @@ impl<'a> Resolver<'a> {
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
                 }
+                ast::StmtKind::Break | ast::StmtKind::Continue => {
+                    let is_break = matches!(statement.kind, ast::StmtKind::Break);
+                    let keyword = if is_break { "break" } else { "continue" };
+                    let target = loops.last().copied().ok_or_else(|| {
+                        Diagnostic::new(
+                            "E0204",
+                            "resolve",
+                            format!("`{keyword}` requires an enclosing while in the same function"),
+                            Some(statement.span),
+                        )
+                    })?;
+                    if is_break {
+                        StmtKind::Break { target }
+                    } else {
+                        StmtKind::Continue { target }
+                    }
+                }
                 ast::StmtKind::While { condition, body } => {
                     let condition = self.expression(*condition)?;
+                    let loop_id = LoopId(body.0);
+                    loops.push(loop_id);
+                    frames.push(Frame::LeaveLoop);
                     frames.push(Frame::Enter(*body));
                     StmtKind::While {
+                        loop_id,
                         condition,
                         body: BodyBlockId(body.0),
                     }

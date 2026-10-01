@@ -192,6 +192,8 @@ jobs:
           cargo test --release --locked --bin oxid frontend::oir::mutable_tests::raw_mutable_places_use_real_llvm -- --ignored --exact
           cargo test --locked --bin oxid frontend::oir::verify::cyclic_tests::execution::raw_cyclic_witnesses_use_real_llvm -- --ignored --exact
           cargo test --release --locked --bin oxid frontend::oir::verify::cyclic_tests::execution::raw_cyclic_witnesses_use_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: |
           python3 scripts/verify_native_preview.py target/release/oxid
@@ -200,3 +202,4 @@ jobs:
           python3 scripts/verify_boolean_logic.py target/debug/oxid target/release/oxid
           python3 scripts/verify_mutable_locals.py target/debug/oxid target/release/oxid
           python3 scripts/verify_while_loops.py target/debug/oxid target/release/oxid
+          python3 scripts/verify_loop_control.py target/debug/oxid target/release/oxid

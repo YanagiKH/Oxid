@@ -380,3 +380,6 @@ mod logical_tests;
 
 #[cfg(test)]
 mod mutable_tests;
+
+#[cfg(test)]
+mod loop_control_tests;
