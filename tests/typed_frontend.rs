@@ -131,7 +131,7 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
         ("fn f(x: &bool) -> () { return; }", "&"),
         ("fn f() -> () { const x = true; return; }", "const"),
         ("fn f() -> () { let x = true; x & false; return; }", "&"),
-        ("fn f() -> () { while true { return; } return; }", "while"),
+        ("fn f() -> () { for true { return; } return; }", "for"),
         ("async fn f() -> () { return; }", "async"),
         ("fn f() -> () { \"text\"; return; }", "\"text\""),
     ] {

@@ -87,10 +87,7 @@ fn malformed_or_unsupported_source_is_rejected_before_tools_or_files() {
         (&b"fn main() -> i32 { return true; }"[..], "E0300"),
         (&b"fn main() -> i32 { return 2147483648; }"[..], "E0203"),
         (&b"fn main() -> bool { return missing(); }"[..], "E0200"),
-        (
-            &b"fn main() -> bool { while true {} return true; }"[..],
-            "E0101",
-        ),
+        (&b"fn main() -> bool { loop {} return true; }"[..], "E0101"),
     ] {
         rejected(&Fixture::new(source), code);
     }
@@ -502,4 +499,19 @@ fn mutable_scalar_storage_reaches_native_tools_after_whole_source_checking() {
     ] {
         rejected(&Fixture::new(source.as_bytes()), code);
     }
+}
+
+#[test]
+fn while_runtime_guards_are_admitted_before_tools_and_invalid_bodies_are_not() {
+    for source in [
+        "fn main()->i32 { let mut n=0; while n<3 { n=n+1; } return n; }",
+        "fn unused()->() { while true {} return; } fn main()->bool { return true; }",
+        "fn check(x:i32)->bool { return x<4; } fn main()->i32 { let mut n=0; while n<3 && check(n) { n=n+1; } return n; }",
+    ] { rejected(&Fixture::new(source.as_bytes()), "E0701"); }
+    for (source, code) in [
+        ("fn main()->() { while 1 {} return; }", "E0300"),
+        ("fn main()->() { while false { missing; } return; }", "E0200"),
+        ("fn recur()->bool { return recur(); } fn main()->() { while false && recur() {} return; }", "E0700"),
+        ("fn main()->() { while true { return; } }", "E0302"),
+    ] { rejected(&Fixture::new(source.as_bytes()), code); }
 }

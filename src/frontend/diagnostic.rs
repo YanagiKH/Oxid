@@ -36,26 +36,44 @@ impl Diagnostic {
 
     /// Render plain text with a final newline and no terminal control sequences.
     pub fn render_human(&self, sources: &SourceMap) -> String {
-        let mut result = format!(
-            "error[{}] ({}): {}\n",
-            human_text(self.code),
-            human_text(self.stage),
-            human_text(&self.message),
-        );
+        let mut result = String::new();
+        self.write_human(sources, &mut result)
+            .expect("writing to String cannot fail");
+        result
+    }
+
+    /// Stream the same human format for bounded native diagnostic preflight.
+    /// No escaped path or complete message is allocated by this method.
+    pub(super) fn write_human(
+        &self,
+        sources: &SourceMap,
+        out: &mut impl std::fmt::Write,
+    ) -> std::fmt::Result {
+        out.write_str("error[")?;
+        write_human_text(out, self.code)?;
+        out.write_str("] (")?;
+        write_human_text(out, self.stage)?;
+        out.write_str("): ")?;
+        write_human_text(out, &self.message)?;
+        out.write_char('\n')?;
         if let Some(span) = self.primary {
-            result.push_str(&format!("  --> {}\n", human_location(span, sources)));
+            out.write_str("  --> ")?;
+            write_human_location(out, span, sources)?;
+            out.write_char('\n')?;
         }
         for (span, message) in &self.secondary {
-            result.push_str(&format!(
-                "  ::: {}: {}\n",
-                human_location(*span, sources),
-                human_text(message),
-            ));
+            out.write_str("  ::: ")?;
+            write_human_location(out, *span, sources)?;
+            out.write_str(": ")?;
+            write_human_text(out, message)?;
+            out.write_char('\n')?;
         }
         for note in &self.notes {
-            result.push_str(&format!("  = note: {}\n", human_text(note)));
+            out.write_str("  = note: ")?;
+            write_human_text(out, note)?;
+            out.write_char('\n')?;
         }
-        result
+        Ok(())
     }
 
     /// Render one JSON record without a trailing newline. The driver adds it.
@@ -129,23 +147,29 @@ fn json_span(span: Span, sources: &SourceMap) -> String {
     )
 }
 
-fn human_location(span: Span, sources: &SourceMap) -> String {
+fn write_human_location(
+    out: &mut impl std::fmt::Write,
+    span: Span,
+    sources: &SourceMap,
+) -> std::fmt::Result {
     let source = sources.get(span.file);
     source.span(span.start, span.end);
     let (line, column) = source.location(span.start);
-    format!("{}:{line}:{column}", human_text(source.path()))
+    write_human_text(out, source.path())?;
+    write!(out, ":{line}:{column}")
 }
 
-fn human_text(text: &str) -> String {
-    let mut result = String::new();
+fn write_human_text(out: &mut impl std::fmt::Write, text: &str) -> std::fmt::Result {
     for ch in text.chars() {
         if ch.is_control() {
-            result.extend(ch.escape_default());
+            for escaped in ch.escape_default() {
+                out.write_char(escaped)?;
+            }
         } else {
-            result.push(ch);
+            out.write_char(ch)?;
         }
     }
-    result
+    Ok(())
 }
 
 #[cfg(test)]

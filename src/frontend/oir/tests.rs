@@ -342,7 +342,7 @@ malformed!(
         }
     }
 );
-malformed!(self_cycle, call_program, FailureKind::Cycle, |p| {
+malformed!(self_cycle, call_program, FailureKind::Unreachable, |p| {
     if let Some(Terminator {
         kind: TerminatorKind::Call { continuation, .. },
         ..
@@ -351,7 +351,9 @@ malformed!(self_cycle, call_program, FailureKind::Cycle, |p| {
         *continuation = BlockId(0);
     }
 });
-malformed!(two_block_cycle, call_program, FailureKind::Cycle, |p| {
+#[test]
+fn two_block_cycle_has_unique_static_call_results() {
+    let (sources, mut p) = call_program();
     let f = &mut p.functions[0];
     f.locals.push(f.locals[1].clone());
     let mut t = f.blocks[0].terminator.clone().unwrap();
@@ -365,7 +367,8 @@ malformed!(two_block_cycle, call_program, FailureKind::Cycle, |p| {
         *destination = LocalId(2);
     }
     f.blocks[1].terminator = Some(t);
-});
+    verify::verify(p, &sources).unwrap();
+}
 malformed!(
     unreachable_valid_block,
     minimal,
@@ -924,7 +927,7 @@ fn long_chain_is_iterative_and_rejects_late_invalid_reference_and_cycle() {
             continuation: BlockId(calls - 1),
         },
     });
-    reject(&sources, bad, FailureKind::Cycle);
+    verify::verify(bad, &sources).unwrap();
 }
 #[test]
 fn raw_aggregate_resource_limits_apply_before_traversal() {

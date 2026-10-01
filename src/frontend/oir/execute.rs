@@ -2,7 +2,7 @@
 //! can enter here. Fuel counts abstract-machine work, not wall-clock time.
 use super::*;
 
-const MAX_FUEL: usize = 1_000_000;
+pub(super) const MAX_FUEL: usize = 1_000_000;
 const MAX_FRAMES: usize = 1_024;
 const MAX_LIVE_SLOTS: usize = 200_000;
 #[derive(Clone, Copy)]
@@ -87,9 +87,8 @@ fn store(
         .places
         .get_mut(place.id.0)
         .ok_or_else(|| internal(FailureKind::InvalidPlace, Some(place.span)))?;
-    if initialize && slot.is_some() {
-        return Err(internal(FailureKind::AlreadyInitialized, Some(place.span)));
-    }
+    // Verification proves a unique static initializer. Its next dynamic
+    // execution begins a fresh lexical body-local value in the reused slot.
     if !initialize && slot.is_none() {
         return Err(internal(FailureKind::Uninitialized, Some(place.span)));
     }
@@ -114,7 +113,10 @@ fn write(
         .slots
         .get_mut(destination.0)
         .ok_or_else(|| internal(FailureKind::InvalidLocal, Some(origin)))?;
-    if slot.is_some() {
+    // Every nonparameter has one verified static definition, which may execute
+    // repeatedly in a loop. Dominance proves each read sees that execution's
+    // value; outer values are not cleared on backedges. Parameters are immutable.
+    if local.kind == LocalKind::Parameter && slot.is_some() {
         return Err(internal(FailureKind::AlreadyInitialized, Some(origin)));
     }
     *slot = Some(value);
@@ -184,6 +186,22 @@ fn preflight(
 
 pub(super) fn run(program: &VerifiedProgram, entry: hir::DefId) -> Result<Scalar, RunFailure> {
     invoke(program, entry, &[], Limits::default())
+}
+#[cfg(test)]
+pub(super) fn run_with_fuel(
+    program: &VerifiedProgram,
+    entry: hir::DefId,
+    fuel: usize,
+) -> Result<Scalar, RunFailure> {
+    invoke(
+        program,
+        entry,
+        &[],
+        Limits {
+            fuel,
+            ..Limits::default()
+        },
+    )
 }
 // Private invocation seam validates IDs, arity and scalar types independently of
 // the source entry adapter. Tests may only lower the absolute resource ceilings.

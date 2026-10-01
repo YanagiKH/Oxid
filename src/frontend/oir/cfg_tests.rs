@@ -313,11 +313,11 @@ fn new_terminators_check_spans_even_on_unreachable_blocks() {
 }
 
 #[test]
-fn cycles_and_unreachable_blocks_fail_after_structural_checks() {
+fn cycles_are_valid_and_unreachable_blocks_fail_after_structural_checks() {
     for target in [0, 1, 2] {
         let (s, mut p) = diamond();
         goto(&mut p.functions[0], 3, target);
-        reject(&s, p, FailureKind::Cycle);
+        verify::verify(p, &s).unwrap();
     }
     let (s, mut p) = diamond();
     let b = p.functions[0].blocks[3].clone();
@@ -547,18 +547,9 @@ fn exact_expanded_block_limit_is_accepted_and_plus_one_rejected() {
 fn scratch_dimensions_are_checked_at_zero_powers_bounds_and_overflow() {
     let (_, p) = fixture(1, 1);
     let span = p.functions[0].span;
-    for (blocks, levels) in [
-        (0, 0),
-        (1, 1),
-        (2, 2),
-        (3, 2),
-        (4, 3),
-        (8, 4),
-        (MAX_BLOCKS, 19),
-    ] {
+    for blocks in [0, 1, 2, 3, 4, 8, MAX_BLOCKS] {
         let shape = verify::scratch_dimensions(blocks, 2 * blocks, span).unwrap();
-        assert_eq!(shape.levels, levels);
-        assert_eq!(shape.ancestors, blocks * levels);
+        assert_eq!(shape.vertices, blocks);
         assert_eq!(shape.offsets, blocks + 1);
     }
     for (blocks, edges, name) in [

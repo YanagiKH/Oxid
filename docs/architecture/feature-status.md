@@ -56,13 +56,21 @@ actual supported checks and hosts.
 Boolean !, && and || form a further experimental slice with bool-only operands,
 full RHS static checking and runtime short-circuiting. Explicit two-input bool
 joins preserve global single assignment and predecessor-edge availability; the
-LLVM backend uses real branch/phi control flow. All native admission caps still
-include skipped RHS work conservatively. See [boolean logic evidence](boolean-logic-validation.md).
+LLVM backend uses real branch/phi control flow. Full-file native structural checks include skipped RHS work; acyclic cost bounds
+remain conservative, while guarded runtime fuel charges only executed paths. See [boolean logic evidence](boolean-logic-validation.md).
 
 Initialized mutable bool/i32/unit locals are a further experimental extension.
 Explicit typed places and init/store/load operations preserve immutable SSA value
 snapshots; independent verification requires initialization dominance. Existing
 if branches may update places, and native lowering uses private scalar allocas.
-All slot/fuel ceilings include the new storage operations. Loops, borrows,
+All slot/fuel ceilings include the new storage operations. Borrows,
 non-Copy ownership and native recursion remain unavailable. See
 [mutable-local evidence](mutable-locals-validation.md).
+
+Ordinary bool-condition while is an experimental end-to-end extension with cyclic
+OIR dominance and shared one-million-operation reference/native fuel. Guarded
+native modules retain static call-depth/storage bounds and add explicit 16 MiB
+human-diagnostic/64 MiB LLVM-text ceilings. Existing acyclic native admission is
+preserved; no break/continue, native recursion or final-performance claim follows.
+See [RFC 0012](../../rfcs/0012-while-runtime-fuel.md) and
+[while validation](while-validation.md).

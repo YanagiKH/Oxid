@@ -1,6 +1,9 @@
 //! Validate arbitrary raw OIR, without trusting IDs, spans, or its producer.
 use super::*;
 const STAGE: &str = "oir-verify";
+#[cfg(test)]
+#[path = "cyclic_tests.rs"]
+mod cyclic_tests;
 fn failure(kind: FailureKind, span: Span) -> OirFailure {
     OirFailure::new(kind, STAGE, Some(span))
 }
@@ -49,7 +52,7 @@ fn terminator(block: &BasicBlock) -> Result<&Terminator, OirFailure> {
 
 /// No recursive traversal, unchecked indexing, panics, or debug-only gates.
 /// First validate every signature; then every block, including unreachable ones;
-/// finally verify the acyclic CFG, canonical definitions, and dominance.
+/// finally verify the reachable CFG, canonical definitions, and dominance.
 pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedProgram, OirFailure> {
     let mut budget = Budget::default();
     if program.functions.len() > MAX_BLOCKS {
@@ -459,8 +462,7 @@ fn successors(block: &BasicBlock) -> Result<[Option<BlockId>; 2], OirFailure> {
 #[derive(Debug)]
 pub(super) struct ScratchDimensions {
     pub(super) offsets: usize,
-    pub(super) levels: usize,
-    pub(super) ancestors: usize,
+    pub(super) vertices: usize,
 }
 pub(super) fn checked_product(
     left: usize,
@@ -506,21 +508,9 @@ pub(super) fn scratch_dimensions(
         STAGE,
         Some(origin),
     )?;
-    // floor(log2(B)) + 1 suffices for every possible depth <= B - 1.
-    // Empty is useful for dimension tests; actual bodies cannot be empty.
-    let levels = blocks.checked_ilog2().map_or(0, |log| log as usize + 1);
-    let max_levels = MAX_BLOCKS.ilog2() as usize + 1;
-    let ancestors = checked_product(
-        blocks,
-        levels,
-        MAX_BLOCKS * max_levels,
-        "dominator ancestors",
-        origin,
-    )?;
     Ok(ScratchDimensions {
         offsets,
-        levels,
-        ancestors,
+        vertices: bounded_blocks,
     })
 }
 
@@ -583,7 +573,7 @@ fn predecessors(function: &Function) -> Result<Predecessors, OirFailure> {
     }
     // Reuse counts as insertion cursors rather than allocating an edge object
     // or a predecessor Vec for each node. Duplicate branch targets deliberately
-    // retain edge multiplicity in both predecessors and Kahn indegrees.
+    // retain edge multiplicity for the exact bool-merge predecessor check.
     for (index, cursor) in counts.iter_mut().enumerate() {
         *cursor = *at(&offsets, index, origin)?;
     }
@@ -598,127 +588,153 @@ fn predecessors(function: &Function) -> Result<Predecessors, OirFailure> {
     Ok(Predecessors { offsets, blocks })
 }
 
-fn topological(function: &Function, predecessors: &Predecessors) -> Result<Vec<usize>, OirFailure> {
-    let count = function.blocks.len();
+const NONE: usize = usize::MAX;
+
+struct DepthFirst {
+    order: Vec<usize>,
+    parent: Vec<usize>,
+    number: Vec<usize>,
+}
+fn depth_first(function: &Function) -> Result<DepthFirst, OirFailure> {
     let origin = function.span;
-    let mut seen = vec![false; count];
-    let mut order = Vec::with_capacity(count);
-    *at_mut(&mut seen, function.entry.0, origin)? = true;
-    order.push(function.entry.0);
-    let mut cursor = 0;
-    while let Some(&current) = order.get(cursor) {
-        let block = at(&function.blocks, current, origin)?;
-        for next in successors(block)?.into_iter().flatten() {
-            let reached = at_mut(&mut seen, next.0, block.span)?;
-            if !*reached {
-                *reached = true;
-                order.push(next.0);
+    let count = scratch_dimensions(function.blocks.len(), 0, origin)?.vertices;
+    let mut result = DepthFirst {
+        order: Vec::with_capacity(count),
+        parent: vec![NONE; count],
+        number: vec![NONE; count],
+    };
+    // Each vertex owns a two-slot successor cursor. Walking DFS parents when
+    // its slots are exhausted replaces recursive calls, including at MAX_BLOCKS.
+    let mut next_edge = vec![0u8; count];
+    let root = function.entry.0;
+    *at_mut(&mut result.number, root, origin)? = 0;
+    *at_mut(&mut result.parent, root, origin)? = root;
+    result.order.push(root);
+    let mut current = root;
+    loop {
+        let cursor = at_mut(&mut next_edge, current, origin)?;
+        if *cursor == 2 {
+            if current == root {
+                break;
             }
+            current = *at(&result.parent, current, origin)?;
+            continue;
         }
-        cursor += 1; // <= the previously checked block count.
-    }
-    let reachable = order.len();
-    order.clear();
-    let mut indegrees = vec![0; count];
-    for (block, &reached) in seen.iter().enumerate() {
-        if reached {
-            let mut degree = 0;
-            for &pred in predecessors.of(block, origin)? {
-                if *at(&seen, pred, origin)? {
-                    Budget::add(
-                        &mut degree,
-                        1,
-                        MAX_BLOCKS * 2,
-                        "CFG predecessors",
-                        STAGE,
-                        Some(origin),
-                    )?;
-                }
-            }
-            *at_mut(&mut indegrees, block, origin)? = degree;
-            if degree == 0 {
-                order.push(block);
+        let edge = usize::from(*cursor);
+        *cursor += 1; // The two successor slots bound this increment.
+        let body = at(&function.blocks, current, origin)?;
+        if let Some(next) = *at(&successors(body)?, edge, body.span)? {
+            let number = at_mut(&mut result.number, next.0, body.span)?;
+            if *number == NONE {
+                *number = result.order.len();
+                *at_mut(&mut result.parent, next.0, body.span)? = current;
+                result.order.push(next.0);
+                current = next.0;
             }
         }
     }
-    cursor = 0;
-    while let Some(&current) = order.get(cursor) {
-        let block = at(&function.blocks, current, origin)?;
-        for next in successors(block)?.into_iter().flatten() {
-            let degree = at_mut(&mut indegrees, next.0, block.span)?;
-            *degree = degree
-                .checked_sub(1)
-                .ok_or_else(|| failure(FailureKind::InvalidBlock, block.span))?;
-            if *degree == 0 {
-                order.push(next.0);
-            }
-        }
-        cursor += 1;
-    }
-    // Preserve the previous verifier's cycle diagnostic for a reachable cycle
-    // that also strands blocks, such as a self-call continuation back to entry.
-    if order.len() != reachable {
-        return Err(failure(FailureKind::Cycle, origin));
-    }
-    if reachable != count {
+    if result.order.len() != count {
         return Err(failure(FailureKind::Unreachable, origin));
     }
-    Ok(order)
+    Ok(result)
 }
 
-struct Ancestors {
-    levels: usize,
-    cells: Vec<usize>,
-    depths: Vec<usize>,
+// Simple Lengauer-Tarjan link/eval forest. A link always points to a strict
+// DFS ancestor. Compression preserves the label with the least semidominator
+// on the linked path, excluding its unlinked root. The explicit reusable path
+// replaces recursive COMPRESS without changing its bottom-up update order.
+struct EvalForest {
+    ancestor: Vec<usize>,
+    label: Vec<usize>,
+    path: Vec<usize>,
 }
-impl Ancestors {
-    fn index(&self, block: usize, level: usize, origin: Span) -> Result<usize, OirFailure> {
-        if level >= self.levels {
-            return Err(failure(FailureKind::InvalidBlock, origin));
-        }
-        block
-            .checked_mul(self.levels)
-            .and_then(|base| base.checked_add(level))
-            .filter(|&index| index < self.cells.len())
-            .ok_or_else(|| failure(FailureKind::InvalidBlock, origin))
-    }
-    fn get(&self, block: usize, level: usize, origin: Span) -> Result<usize, OirFailure> {
-        Ok(*at(&self.cells, self.index(block, level, origin)?, origin)?)
-    }
-    fn set(
-        &mut self,
-        block: usize,
-        level: usize,
-        value: usize,
-        origin: Span,
-    ) -> Result<(), OirFailure> {
-        let index = self.index(block, level, origin)?;
-        *at_mut(&mut self.cells, index, origin)? = value;
-        Ok(())
-    }
-    fn lca(&self, mut left: usize, mut right: usize, origin: Span) -> Result<usize, OirFailure> {
-        if at(&self.depths, left, origin)? < at(&self.depths, right, origin)? {
-            std::mem::swap(&mut left, &mut right);
-        }
-        let difference = at(&self.depths, left, origin)? - at(&self.depths, right, origin)?;
-        for level in 0..self.levels {
-            if difference & (1usize << level) != 0 {
-                left = self.get(left, level, origin)?;
+impl EvalForest {
+    fn eval(&mut self, vertex: usize, semi: &[usize], origin: Span) -> Result<usize, OirFailure> {
+        self.path.clear();
+        let mut current = vertex;
+        loop {
+            let parent = *at(&self.ancestor, current, origin)?;
+            if parent == NONE || *at(&self.ancestor, parent, origin)? == NONE {
+                break;
             }
+            self.path.push(current);
+            current = parent;
         }
-        if left == right {
-            return Ok(left);
-        }
-        for level in (0..self.levels).rev() {
-            let up_left = self.get(left, level, origin)?;
-            let up_right = self.get(right, level, origin)?;
-            if up_left != up_right {
-                left = up_left;
-                right = up_right;
+        while let Some(current) = self.path.pop() {
+            let parent = *at(&self.ancestor, current, origin)?;
+            let parent_label = *at(&self.label, parent, origin)?;
+            let label = *at(&self.label, current, origin)?;
+            if at(semi, parent_label, origin)? < at(semi, label, origin)? {
+                *at_mut(&mut self.label, current, origin)? = parent_label;
             }
+            *at_mut(&mut self.ancestor, current, origin)? = *at(&self.ancestor, parent, origin)?;
         }
-        self.get(left, 0, origin)
+        Ok(*at(&self.label, vertex, origin)?)
     }
+}
+
+// Lengauer and Tarjan, "A Fast Algorithm for Finding Dominators in a
+// Flowgraph" (1979), https://doi.org/10.1145/357062.357071, simple link/eval
+// variant. There are B-1 links, at most
+// E+B-1 evals, and one insertion/removal per non-entry bucket member. Path
+// compression gives O((B+E) log B) total work, not a fixed-point sweep bound
+// that assumes reducible source CFGs. All arrays and the reusable eval path
+// are O(B); predecessors are O(B+E). No matrix or extra acceptance cap.
+// Peak CFG scratch here is 11B+E+1 usize cells including the predecessor and
+// DFS tables; canonical value/place tables and the caller's raw IR are separate.
+fn immediate_dominators(
+    function: &Function,
+    predecessors: &Predecessors,
+    dfs: &DepthFirst,
+) -> Result<Vec<usize>, OirFailure> {
+    let origin = function.span;
+    let count =
+        scratch_dimensions(function.blocks.len(), predecessors.blocks.len(), origin)?.vertices;
+    let mut semi = dfs.number.clone();
+    let mut forest = EvalForest {
+        ancestor: vec![NONE; count],
+        label: (0..count).collect(),
+        path: Vec::with_capacity(count),
+    };
+    let mut bucket = vec![NONE; count];
+    let mut next_member = vec![NONE; count];
+    let mut dominator = vec![NONE; count];
+    for &block in dfs.order.iter().skip(1).rev() {
+        let mut best = *at(&semi, block, origin)?;
+        for &pred in predecessors.of(block, origin)? {
+            let label = forest.eval(pred, &semi, origin)?;
+            best = best.min(*at(&semi, label, origin)?);
+        }
+        *at_mut(&mut semi, block, origin)? = best;
+        let semidominator = *at(&dfs.order, best, origin)?;
+        *at_mut(&mut next_member, block, origin)? = *at(&bucket, semidominator, origin)?;
+        *at_mut(&mut bucket, semidominator, origin)? = block;
+        let parent = *at(&dfs.parent, block, origin)?;
+        *at_mut(&mut forest.ancestor, block, origin)? = parent;
+        let mut member = *at(&bucket, parent, origin)?;
+        *at_mut(&mut bucket, parent, origin)? = NONE;
+        while member != NONE {
+            let label = forest.eval(member, &semi, origin)?;
+            *at_mut(&mut dominator, member, origin)? =
+                if at(&semi, label, origin)? < at(&semi, member, origin)? {
+                    label
+                } else {
+                    parent
+                };
+            member = *at(&next_member, member, origin)?;
+        }
+    }
+    // Provisional dominators precede their blocks in DFS order. Correct them
+    // once in forward order; this is not an iterative convergence loop.
+    for &block in dfs.order.iter().skip(1) {
+        let parent = *at(&dominator, block, origin)?;
+        let semidominator = *at(&dfs.order, *at(&semi, block, origin)?, origin)?;
+        if parent != semidominator {
+            *at_mut(&mut dominator, block, origin)? = *at(&dominator, parent, origin)?;
+        }
+    }
+    *at_mut(&mut dominator, function.entry.0, origin)? = function.entry.0;
+    Ok(dominator)
 }
 struct Dominance {
     enter: Vec<usize>,
@@ -740,48 +756,17 @@ impl Dominance {
 fn dominance(
     function: &Function,
     predecessors: &Predecessors,
-    order: &[usize],
+    dfs: &DepthFirst,
 ) -> Result<Dominance, OirFailure> {
     let count = function.blocks.len();
     let origin = function.span;
-    let shape = scratch_dimensions(count, predecessors.blocks.len(), origin)?;
-    let mut ancestors = Ancestors {
-        levels: shape.levels,
-        cells: vec![0; shape.ancestors],
-        depths: vec![0; count],
-    };
-    const NONE: usize = usize::MAX;
+    let dominator = immediate_dominators(function, predecessors, dfs)?;
     let mut first_child = vec![NONE; count];
     let mut next_sibling = vec![NONE; count];
-    for &block in order {
-        let parent = if block == function.entry.0 {
-            block
-        } else {
-            let mut preds = predecessors.of(block, origin)?.iter().copied();
-            let first = preds
-                .next()
-                .ok_or_else(|| failure(FailureKind::Unreachable, origin))?;
-            let mut common = first;
-            for pred in preds {
-                common = ancestors.lca(common, pred, origin)?;
-            }
-            let mut depth = *at(&ancestors.depths, common, origin)?;
-            Budget::add(&mut depth, 1, count, "dominator depth", STAGE, Some(origin))?;
-            *at_mut(&mut ancestors.depths, block, origin)? = depth;
-            *at_mut(&mut next_sibling, block, origin)? = *at(&first_child, common, origin)?;
-            *at_mut(&mut first_child, common, origin)? = block;
-            common
-        };
-        ancestors.set(block, 0, parent, origin)?;
-        for level in 1..shape.levels {
-            let half = ancestors.get(block, level - 1, origin)?;
-            ancestors.set(
-                block,
-                level,
-                ancestors.get(half, level - 1, origin)?,
-                origin,
-            )?;
-        }
+    for &block in dfs.order.iter().skip(1) {
+        let parent = *at(&dominator, block, origin)?;
+        *at_mut(&mut next_sibling, block, origin)? = *at(&first_child, parent, origin)?;
+        *at_mut(&mut first_child, parent, origin)? = block;
     }
     let mut result = Dominance {
         enter: vec![0; count],
@@ -824,7 +809,7 @@ fn dominance(
                 current = sibling;
                 break;
             }
-            current = ancestors.get(current, 0, origin)?;
+            current = *at(&dominator, current, origin)?;
         }
     }
 }
@@ -847,8 +832,10 @@ fn read(
         Some(Definition::Assignment { block, .. }) => {
             dominance.contains(*block, use_block, value.span)?
         }
-        // A call has exactly one normal successor. Strict block dominance in
-        // this acyclic CFG therefore implies its continuation edge was crossed.
+        // A call has exactly one normal successor. On every path to a different
+        // dominated block, leaving the call block crosses that continuation
+        // edge. This remains true with backedges and irreducible cycles. Reads
+        // inside the call block stay unavailable, including on its first visit.
         // This must change if calls ever gain unwind or other successor edges.
         Some(Definition::CallResult { block }) => {
             *block != use_block && dominance.contains(*block, use_block, value.span)?
@@ -863,10 +850,10 @@ fn read(
 }
 fn cfg(function: &Function) -> Result<(), OirFailure> {
     let predecessors = predecessors(function)?;
-    let order = topological(function, &predecessors)?;
+    let dfs = depth_first(function)?;
     let definitions = definitions(function)?;
     let initializations = initializations(function)?;
-    let dominance = dominance(function, &predecessors, &order)?;
+    let dominance = dominance(function, &predecessors, &dfs)?;
     for (block_id, block) in function.blocks.iter().enumerate() {
         if let Some(merge) = &block.merge {
             let preds = predecessors.of(block_id, merge.span)?;

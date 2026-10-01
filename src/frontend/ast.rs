@@ -91,6 +91,10 @@ pub enum StmtKind {
     },
     Expr(ExprId),
     Return(Option<ExprId>),
+    While {
+        condition: ExprId,
+        body: BodyBlockId,
+    },
     If {
         condition: ExprId,
         then_block: BodyBlockId,

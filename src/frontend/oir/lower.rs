@@ -93,6 +93,16 @@ fn preflight(typed: &typeck::TypedProgram) -> Result<(), OirFailure> {
                         Some(statement.span),
                     )?;
                 }
+                if matches!(statement.kind, hir::StmtKind::While { .. }) {
+                    Budget::add(
+                        &mut budget.blocks,
+                        3,
+                        MAX_BLOCKS,
+                        "blocks",
+                        STAGE,
+                        Some(statement.span),
+                    )?;
+                }
                 if let hir::StmtKind::If {
                     then_block,
                     else_block,
@@ -507,12 +517,49 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                     continue;
                 }
             };
+            if let hir::StmtKind::While { condition, body } = statement.kind {
+                let header = builder.reserve(statement.span);
+                let body_entry = builder.reserve(function.blocks[body.0].span);
+                let exit = builder.reserve(statement.span);
+                builder.close(Terminator {
+                    span: statement.span,
+                    kind: TerminatorKind::Goto { target: header },
+                })?;
+                builder.enter(Some(header), statement.span)?;
+                lower_expression(
+                    function,
+                    &local_map,
+                    &expression_map,
+                    condition,
+                    &mut builder,
+                    &mut next_expr,
+                )?;
+                builder.close(Terminator {
+                    span: statement.span,
+                    kind: TerminatorKind::Branch {
+                        condition: operand(condition),
+                        then_block: body_entry,
+                        else_block: exit,
+                    },
+                })?;
+                frames.push(Frame::Join {
+                    id: Some(exit),
+                    span: statement.span,
+                });
+                frames.push(Frame::EnterArm {
+                    id: body,
+                    entry: body_entry,
+                    join: Some(header),
+                });
+                continue;
+            }
             let root = match statement.kind {
                 hir::StmtKind::Let { init, .. }
                 | hir::StmtKind::Assign { value: init, .. }
                 | hir::StmtKind::Expr(init) => Some(init),
                 hir::StmtKind::Return(value) => value,
                 hir::StmtKind::If { condition, .. } => Some(condition),
+                hir::StmtKind::While { .. } => unreachable!("while lowered above"),
             };
             if let Some(root) = root {
                 lower_expression(
@@ -559,6 +606,7 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                         span: statement.span,
                     })?;
                 }
+                hir::StmtKind::While { .. } => unreachable!("while lowered above"),
                 hir::StmtKind::Expr(_) => {}
                 hir::StmtKind::Return(value) => {
                     let value = match value {

@@ -13,10 +13,10 @@ Default execution still uses the legacy interpreter, module loader and CLI. Runt
 
 Legacy source execution parses into the dynamic `Value` interpreter. Numbers are `f64`;
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
-ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified acyclic
+ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified cyclic
 Branch/Goto OIR, explicit bool value merges, initialized typed scalar places and calls/returns. Check remains non-executing; explicit
 typed run uses bounded iterative scalar reference execution. Ownership analysis
-remains deferred. A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic and mutable scalar locals, to Linux x86_64 ELF PIE. See
+remains deferred. A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
 [RFC 0006](../../rfcs/0006-checked-i32-arithmetic.md) adds ordinary checked i32
@@ -82,3 +82,11 @@ Full grammar/scope, static semantics and safety, threat model, compatibility and
 performance corpora, broader native compilation, provider dispatch, true self-hosting,
 and native AI training remain open work. The future static-core design must use
 its own specification rather than treating the legacy interpreter as its oracle.
+
+Ordinary bool-condition while is an experimental end-to-end extension with cyclic
+OIR dominance and shared one-million-operation reference/native fuel. Guarded
+native modules retain static call-depth/storage bounds and add explicit 16 MiB
+human-diagnostic/64 MiB LLVM-text ceilings. Existing acyclic native admission is
+preserved; no break/continue, native recursion or final-performance claim follows.
+See [RFC 0012](../../rfcs/0012-while-runtime-fuel.md) and
+[while validation](while-validation.md).

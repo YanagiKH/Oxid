@@ -356,7 +356,7 @@ fn assignments_remain_statements_and_unsupported_mutation_forms_fail() {
         "fn main() -> () { let mut x = 1; x += 1; return; }",
         "fn main() -> () { let mut x = 1; x -= 1; return; }",
         "fn main() -> () { let mut x = 1; x *= 1; return; }",
-        "fn main() -> () { let mut x = 1; while true { x = 2; } return; }",
+        "fn main() -> () { let mut x = 1; loop { x = 2; } return; }",
     ] {
         let out = Fixture::new(source).run(true);
         assert_eq!(out.status.code(), Some(1), "{source}: {out:?}");

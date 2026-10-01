@@ -467,7 +467,7 @@ def negative_cases():
                    "fn f(x: i32) -> () { return; } fn main() -> () { let mut x = 1; f(x = 2); return; }",
                    "fn f() -> i32 { return 1; } fn main() -> () { f() = 2; return; }"]:
         yield "statement_only_syntax", source, "E0100", "parse", None, None
-    for keyword in ("while", "for", "loop"):
+    for keyword in ("match", "for", "loop"):
         yield "unsupported_control", prefix + "let mut x = 1; " + keyword + " true { x = 2; } return; }", "E0101", "parse", None, None
     yield "rhs_height", "fn main() -> bool { let mut x = true; x = " + "!" * 64 + "x; return x; }", "E0400", "parse", None, None
     source = token_boundary_source()
