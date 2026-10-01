@@ -68,6 +68,12 @@ enum Rvalue {
     I32(i32),
     Unit,
     Copy(Operand),
+    CompareScalar {
+        op: hir::ComparisonOp,
+        left: Operand,
+        right: Operand,
+        operator_span: Span,
+    },
     CheckedI32 {
         op: hir::ArithmeticOp,
         left: Operand,
@@ -288,3 +294,6 @@ mod i32_tests;
 
 #[cfg(test)]
 mod arithmetic_tests;
+
+#[cfg(test)]
+mod comparison_tests;

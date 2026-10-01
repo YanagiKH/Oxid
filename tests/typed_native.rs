@@ -413,3 +413,36 @@ fn checked_arithmetic_is_admitted_including_dead_code_before_missing_tools() {
         assert!(native.contains("native-toolchain"));
     }
 }
+
+#[test]
+fn scalar_comparisons_are_admitted_before_missing_tools() {
+    for source in [
+        "fn main() -> bool { return -2147483648 < 2147483647; }",
+        "fn main() -> bool { return -1 <= 0; }",
+        "fn main() -> bool { return 1 > -1; }",
+        "fn main() -> bool { return 0 >= 0; }",
+        "fn main() -> bool { return 1 == 1; }",
+        "fn main() -> bool { return true != false; }",
+        "fn main() -> bool { return (1 < 2) == true; }",
+        "fn unused() -> bool { return 2147483647 + 1 > 0; } fn main() -> bool { return false; }",
+    ] {
+        rejected(&Fixture::new(source.as_bytes()), "E0701");
+    }
+}
+
+#[test]
+fn invalid_comparison_types_and_chains_fail_before_native_tools() {
+    for (expression, code) in [
+        ("true == 1", "E0300"),
+        ("1 != false", "E0300"),
+        ("true < false", "E0300"),
+        ("() == ()", "E0300"),
+        ("1 < 2 < 3", "E0100"),
+        ("1 == 2 < 3", "E0100"),
+    ] {
+        rejected(
+            &Fixture::new(format!("fn main() -> bool {{ return {expression}; }}").as_bytes()),
+            code,
+        );
+    }
+}

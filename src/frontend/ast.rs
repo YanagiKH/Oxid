@@ -10,8 +10,23 @@ pub enum ArithmeticOp {
     Subtract,
     Multiply,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComparisonOp {
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
 #[derive(Debug)]
 pub enum ExprKind {
+    Comparison {
+        op: ComparisonOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Bool(bool),
     /// Exact decimal digits, separate literal-only sign, and full origin on Expr.
     Number {

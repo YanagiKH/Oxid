@@ -216,8 +216,8 @@ fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
         ("-id()", "-"),
         ("1 / 2", "/"),
         ("1 % 2", "%"),
-        ("1 == 1", "="),
-        ("1 < 2", "<"),
+        ("!true", "!"),
+        ("true && false", "&"),
         ("1 as i32", "as"),
     ] {
         reject(

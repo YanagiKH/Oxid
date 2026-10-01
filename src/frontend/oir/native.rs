@@ -95,7 +95,8 @@ impl VerifiedProgram {
                         | Rvalue::I32(_)
                         | Rvalue::Unit
                         | Rvalue::Copy(_)
-                        | Rvalue::CheckedI32 { .. } => {}
+                        | Rvalue::CheckedI32 { .. }
+                        | Rvalue::CompareScalar { .. } => {}
                         _ => {
                             return Err(reject(
                                 "native preview does not support this OIR operation",
@@ -245,6 +246,28 @@ fn emit(program: &Program, entry: hir::DefId, sources: &SourceMap) -> String {
                     Rvalue::I32(v) => v.to_string(),
                     Rvalue::Unit => "0".into(),
                     Rvalue::Copy(v) => format!("%v{}", v.local.0),
+                    Rvalue::CompareScalar {
+                        op, left, right, ..
+                    } => {
+                        let predicate = match op {
+                            hir::ComparisonOp::Equal => "eq",
+                            hir::ComparisonOp::NotEqual => "ne",
+                            hir::ComparisonOp::Less => "slt",
+                            hir::ComparisonOp::LessEqual => "sle",
+                            hir::ComparisonOp::Greater => "sgt",
+                            hir::ComparisonOp::GreaterEqual => "sge",
+                        };
+                        // Independent verification admits matching i32/bool only
+                        // for equality, and i32 only for signed ordering.
+                        let operand_type = ty(f.locals[left.local.0].ty);
+                        writeln!(
+                            out,
+                            "  %v{} = icmp {predicate} {operand_type} %v{}, %v{}",
+                            a.destination.0, left.local.0, right.local.0
+                        )
+                        .unwrap();
+                        continue;
+                    }
                     Rvalue::CheckedI32 {
                         op,
                         left,
@@ -511,5 +534,48 @@ mod tests {
         assert_eq!(expected.lines().count(), 2);
         assert!(!expected.contains('\u{1b}'));
         assert!(expected.ends_with(":2:38\n"));
+    }
+    #[test]
+    fn comparison_lowering_uses_signed_i32_and_exact_bool_equality_predicates() {
+        let (p, sources) = verified_with_sources("fn main() -> bool { 1 == 2; 1 != 2; 1 < 2; 1 <= 2; 1 > 2; 1 >= 2; true == false; return true != false; }");
+        let ir = p.native_module(Some(hir::DefId(0)), &sources).unwrap();
+        for predicate in ["eq", "ne", "slt", "sle", "sgt", "sge"] {
+            assert_eq!(
+                ir.matches(&format!(" = icmp {predicate} i32 ")).count(),
+                1,
+                "{predicate}"
+            );
+        }
+        for predicate in ["eq", "ne"] {
+            assert_eq!(
+                ir.matches(&format!(" = icmp {predicate} i1 ")).count(),
+                1,
+                "{predicate}"
+            );
+        }
+        for forbidden in [
+            "icmp ult",
+            "icmp ule",
+            "icmp ugt",
+            "icmp uge",
+            " sub i32 ",
+            "fcmp",
+            "nsw",
+            "nuw",
+        ] {
+            assert!(!ir.contains(forbidden), "{forbidden}");
+        }
+        assert_eq!(p.run(Some(hir::DefId(0))), Ok(Scalar::Bool(true)));
+    }
+
+    #[test]
+    fn comparison_native_fuel_bound_counts_one_assignment_for_both_types() {
+        for expression in ["1 < 2", "true == false", "false != true"] {
+            let p = verified(&format!("fn main() -> bool {{ return {expression}; }}"));
+            assert_eq!(1 + p.admit().unwrap()[0].cost, 8);
+            assert_eq!(p.admit().unwrap()[0].slots, 3);
+        }
+        let p = verified("fn main() -> bool { return (1 < 2) == true; }");
+        assert_eq!(1 + p.admit().unwrap()[0].cost, 14);
     }
 }

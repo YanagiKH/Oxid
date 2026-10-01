@@ -169,6 +169,45 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         locals[id.0].expect("resolved locals are initialized before use")
                     }
                     ExprKind::Group(inner) => expressions[inner.0],
+                    ExprKind::Comparison {
+                        op, left, right, ..
+                    } => {
+                        let left_ty = expressions[left.0];
+                        let expected = match op {
+                            ComparisonOp::Equal | ComparisonOp::NotEqual => {
+                                if !matches!(left_ty, Ty::I32 | Ty::Bool) {
+                                    return Err(Diagnostic::new(
+                                        "E0300", "type",
+                                        format!("equality requires i32 or bool operands, found {left_ty}"),
+                                        Some(function.expressions[left.0].span),
+                                    ));
+                                }
+                                left_ty
+                            }
+                            ComparisonOp::Less
+                            | ComparisonOp::LessEqual
+                            | ComparisonOp::Greater
+                            | ComparisonOp::GreaterEqual => {
+                                if left_ty != Ty::I32 {
+                                    return Err(mismatch(
+                                        Ty::I32,
+                                        left_ty,
+                                        function.expressions[left.0].span,
+                                    ));
+                                }
+                                Ty::I32
+                            }
+                        };
+                        let right_ty = expressions[right.0];
+                        if right_ty != expected {
+                            return Err(mismatch(
+                                expected,
+                                right_ty,
+                                function.expressions[right.0].span,
+                            ));
+                        }
+                        Ty::Bool
+                    }
                     ExprKind::Arithmetic { left, right, .. } => {
                         for operand in [left, right] {
                             let actual = expressions[operand.0];

@@ -125,6 +125,32 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                     Rvalue::I32(_) => hir::Ty::I32,
                     Rvalue::Unit => hir::Ty::Unit,
                     Rvalue::Copy(value) => operand(function, value, sources)?,
+                    Rvalue::CompareScalar {
+                        op,
+                        left,
+                        right,
+                        operator_span,
+                    } => {
+                        span(sources, operator_span)?;
+                        let left_ty = operand(function, left, sources)?;
+                        let expected = match op {
+                            hir::ComparisonOp::Equal | hir::ComparisonOp::NotEqual => {
+                                if !matches!(left_ty, hir::Ty::I32 | hir::Ty::Bool) {
+                                    return Err(failure(FailureKind::TypeMismatch, left.span));
+                                }
+                                left_ty
+                            }
+                            hir::ComparisonOp::Less
+                            | hir::ComparisonOp::LessEqual
+                            | hir::ComparisonOp::Greater
+                            | hir::ComparisonOp::GreaterEqual => {
+                                same_type(left_ty, hir::Ty::I32, left.span)?;
+                                hir::Ty::I32
+                            }
+                        };
+                        same_type(operand(function, right, sources)?, expected, right.span)?;
+                        hir::Ty::Bool
+                    }
                     Rvalue::CheckedI32 {
                         left,
                         right,
@@ -703,7 +729,8 @@ fn cfg(function: &Function) -> Result<(), OirFailure> {
         for (index, assign) in block.statements.iter().enumerate() {
             match assign.value {
                 Rvalue::Copy(value) => read(&definitions, &dominance, value, block_id, index)?,
-                Rvalue::CheckedI32 { left, right, .. } => {
+                Rvalue::CheckedI32 { left, right, .. }
+                | Rvalue::CompareScalar { left, right, .. } => {
                     read(&definitions, &dominance, left, block_id, index)?;
                     read(&definitions, &dominance, right, block_id, index)?;
                 }

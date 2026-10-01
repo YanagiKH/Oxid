@@ -216,6 +216,31 @@ fn execute(
                 Rvalue::I32(value) => Scalar::I32(value),
                 Rvalue::Unit => Scalar::Unit,
                 Rvalue::Copy(operand) => read(active, operand)?,
+                Rvalue::CompareScalar {
+                    op, left, right, ..
+                } => {
+                    let left_value = read(active, left)?;
+                    let right_value = read(active, right)?;
+                    let result = match (left_value, right_value) {
+                        (Scalar::I32(l), Scalar::I32(r)) => match op {
+                            hir::ComparisonOp::Equal => l == r,
+                            hir::ComparisonOp::NotEqual => l != r,
+                            hir::ComparisonOp::Less => l < r,
+                            hir::ComparisonOp::LessEqual => l <= r,
+                            hir::ComparisonOp::Greater => l > r,
+                            hir::ComparisonOp::GreaterEqual => l >= r,
+                        },
+                        (Scalar::Bool(l), Scalar::Bool(r)) => match op {
+                            hir::ComparisonOp::Equal => l == r,
+                            hir::ComparisonOp::NotEqual => l != r,
+                            _ => {
+                                return Err(internal(FailureKind::TypeMismatch, Some(assign.span)))
+                            }
+                        },
+                        _ => return Err(internal(FailureKind::TypeMismatch, Some(assign.span))),
+                    };
+                    Scalar::Bool(result)
+                }
                 Rvalue::CheckedI32 {
                     op,
                     left,

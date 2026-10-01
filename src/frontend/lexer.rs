@@ -24,6 +24,12 @@ pub enum Kind {
     Comma,
     Semi,
     Equal,
+    EqualEqual,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
     Arrow,
     Minus,
     Plus,
@@ -149,7 +155,25 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
             ':' => Kind::Colon,
             ',' => Kind::Comma,
             ';' => Kind::Semi,
+            '=' if bytes.get(cursor) == Some(&b'=') => {
+                cursor += 1;
+                Kind::EqualEqual
+            }
             '=' => Kind::Equal,
+            '!' if bytes.get(cursor) == Some(&b'=') => {
+                cursor += 1;
+                Kind::NotEqual
+            }
+            '<' if bytes.get(cursor) == Some(&b'=') => {
+                cursor += 1;
+                Kind::LessEqual
+            }
+            '>' if bytes.get(cursor) == Some(&b'=') => {
+                cursor += 1;
+                Kind::GreaterEqual
+            }
+            '<' => Kind::Less,
+            '>' => Kind::Greater,
             '-' if bytes.get(cursor) == Some(&b'>') => {
                 cursor += 1;
                 Kind::Arrow
@@ -157,9 +181,7 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
             '-' => Kind::Minus,
             '+' => Kind::Plus,
             '*' => Kind::Star,
-            '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '<' | '>' | '#' | '\'' => {
-                Kind::Unsupported
-            }
+            '/' | '%' | '&' | '|' | '!' | '[' | ']' | '.' | '#' | '\'' => Kind::Unsupported,
             _ => Kind::Invalid,
         };
         let span = source.span(start, cursor);
