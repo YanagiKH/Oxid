@@ -21,6 +21,9 @@ RUNNABLE_PACKAGE_FILES = (
     "packages/demo/tests/smoke.ox",
     "packages/workflow_preview.ox",
 )
+# Exact typed fixture inventory; all other checked-in .ox files retain their
+# existing legacy checks. Never exclude an entire fixture directory.
+TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
 READMES = ("README.md", "README_ZH.md", "README_JP.md")
 IMAGES = (
     "docs/assets/quickstart.svg",
@@ -96,8 +99,15 @@ def main() -> int:
     verify_local_markdown_links()
 
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
+    typed_sources = [ROOT / relative for relative in TYPED_SOURCE_FILES]
+    for source in typed_sources:
+        if source not in sources:
+            raise RuntimeError(f"typed source fixture missing from discovery: {source}")
     for source in sources:
-        run([str(executable), "check", str(source)])
+        command = [str(executable), "check", str(source)]
+        if source in typed_sources:
+            command.append("--edition=typed-preview")
+        run(command)
 
     runnable = []
     for group in RUNNABLE_GROUPS:
@@ -108,11 +118,18 @@ def main() -> int:
         temp = Path(temp_dir)
         for source in runnable:
             run([str(executable), "run", str(source)], cwd=temp)
+        for source in typed_sources:
+            run([str(executable), "run", str(source), "--edition=typed-preview"], cwd=temp)
 
     run([str(executable), "test"])
     run([str(executable), "build"])
     run([str(executable), "doctor"])
-    print(f"repository verification passed: {len(sources)} sources, {len(runnable)} runnable programs")
+    print(
+        f"repository verification passed: {len(sources)} sources, "
+        f"{len(runnable) + len(typed_sources)} runnable programs "
+        f"({len(sources) - len(typed_sources)} legacy sources, "
+        f"{len(runnable)} legacy runnable programs, {len(typed_sources)} typed sources/runs)"
+    )
     return 0
 
 

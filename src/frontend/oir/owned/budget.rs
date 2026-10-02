@@ -70,155 +70,232 @@ pub(super) fn active(f: &RawOwnedFunction) -> bool {
                 )
         })
 }
-/// Preflight raw nested lengths before validation or analysis allocations.
-/// Work units are bounded inventory/statement/block/edge visits, not CPU instructions.
-pub(super) fn preflight(
-    raw: &RawOwnedProgram,
+/// Plain unprivileged inventory. Producers and raw verification derive these
+/// independently; using this arithmetic does not validate or seal a program.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct FunctionCounts {
+    pub locals: usize,
+    pub places: usize,
+    pub owners: usize,
+    pub references: usize,
+    pub parameters: usize,
+    pub calls: usize,
+    pub loans: usize,
+    pub blocks: usize,
+    pub edges: usize,
+    pub statements: usize,
+    pub merges: usize,
+    pub descriptor_arguments: usize,
+    pub preparations: usize,
+    pub constructed_fields: usize,
+    pub diagnostic_origins: usize,
+    pub max_constructor_fields: usize,
+    pub ownership_active: bool,
+}
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ProgramCounts {
+    functions: usize,
+    slots: usize,
+    blocks: usize,
+    statements: usize,
+    usage: OwnershipUsage,
+}
+impl ProgramCounts {
+    pub(super) fn usage(&self) -> OwnershipUsage {
+        self.usage
+    }
+}
+/// Shared checked counts only: no ownership state, witness, or allocations.
+pub(super) fn account_function(
+    c: FunctionCounts,
     limits: Limits,
-) -> Result<OwnershipUsage, OwnedFailure> {
+    program: &mut ProgramCounts,
+) -> Result<(), OwnedFailure> {
     let limits = limits.bounded();
-    cap(raw.functions.len(), MAX_BLOCKS, "functions")?;
-    let mut u = OwnershipUsage::default();
-    let (mut slots, mut blocks, mut statements) = (0, 0, 0);
-    for f in &raw.functions {
-        slots = cap(
-            add(
-                slots,
-                add(add(f.locals.len(), f.places.len())?, f.owners.len())?,
-            )?,
-            MAX_LOCALS,
-            "locals",
-        )?;
-        blocks = cap(add(blocks, f.blocks.len())?, MAX_BLOCKS, "blocks")?;
-        cap(
-            f.parameters.len(),
-            super::super::super::parser::MAX_PARAMS,
-            "parameters",
-        )?;
-        let (mut s, mut e, mut a, mut fields) = (0, 0, 0, 0);
-        for c in &f.calls {
-            cap(
-                c.arguments.len(),
-                super::super::super::parser::MAX_PARAMS,
-                "call arguments",
-            )?;
-            a = add(a, c.arguments.len())?;
-        }
-        let descriptor_args = a;
-        let mut ownership = false;
-        let mut field_scratch = 0;
-        for b in &f.blocks {
-            s = add(s, add(b.statements.len(), usize::from(b.merge.is_some()))?)?;
-            e = add(
-                e,
-                match b.terminator.as_ref().map(|e| &e.kind) {
-                    Some(OwnedTerminatorKind::Branch { .. }) => 2,
-                    Some(OwnedTerminatorKind::Goto(_) | OwnedTerminatorKind::Invoke { .. }) => 1,
-                    _ => 0,
-                },
-            )?;
-            ownership |= matches!(
-                b.terminator.as_ref().map(|e| &e.kind),
-                Some(OwnedTerminatorKind::Invoke { .. } | OwnedTerminatorKind::ReturnOwned(_))
-            );
-            for i in &b.statements {
-                ownership |= !matches!(i.kind, OwnedInstruction::Scalar(_));
-                match &i.kind {
-                    OwnedInstruction::Construct { fields: values, .. } => {
-                        fields = add(fields, values.len())?;
-                        field_scratch = field_scratch.max(values.len().min(1024));
-                    }
-                    OwnedInstruction::PrepareScalar { .. }
-                    | OwnedInstruction::PrepareOwned { .. }
-                    | OwnedInstruction::PrepareBorrow { .. } => a = add(a, 1)?,
-                    _ => {}
-                }
-            }
-        }
-        statements = cap(add(statements, s)?, MAX_ASSIGNMENTS, "assignments")?;
-        if !ownership
-            && f.owners.is_empty()
-            && f.references.is_empty()
-            && f.calls.is_empty()
-            && f.loans.is_empty()
-        {
-            continue;
-        }
-        u.owners = cap(add(u.owners, f.owners.len())?, limits.owners, "owners")?;
+    program.functions = cap(add(program.functions, 1)?, MAX_BLOCKS, "functions")?;
+    program.slots = cap(
+        add(program.slots, add(add(c.locals, c.places)?, c.owners)?)?,
+        MAX_LOCALS,
+        "locals",
+    )?;
+    program.blocks = cap(add(program.blocks, c.blocks)?, MAX_BLOCKS, "blocks")?;
+    cap(
+        c.parameters,
+        super::super::super::parser::MAX_PARAMS,
+        "parameters",
+    )?;
+    let s = add(c.statements, c.merges)?;
+    program.statements = cap(add(program.statements, s)?, MAX_ASSIGNMENTS, "assignments")?;
+    if !c.ownership_active && c.diagnostic_origins == 0 {
+        return Ok(());
+    }
+    let u = &mut program.usage;
+    let mut work = mul(if c.ownership_active { 4 } else { 2 }, c.diagnostic_origins)?;
+    let mut metadata = mul(
+        add(c.statements, c.blocks)?,
+        size_of::<Option<DiagnosticOrigins>>(),
+    )?;
+    if c.ownership_active {
+        let a = add(c.descriptor_arguments, c.preparations)?;
+        u.owners = cap(add(u.owners, c.owners)?, limits.owners, "owners")?;
         u.expanded_events = cap(
-            add(u.expanded_events, add(add(s, a)?, fields)?)?,
+            add(u.expanded_events, add(add(s, a)?, c.constructed_fields)?)?,
             limits.events,
             "expanded ownership events",
         )?;
         let mut n = 1;
         for count in [
-            mul(2, f.blocks.len())?,
-            e,
+            mul(2, c.blocks)?,
+            c.edges,
             s,
             a,
-            fields,
-            f.owners.len(),
-            f.loans.len(),
-            f.calls.len(),
-            f.parameters.len(),
-            f.references.len(),
-            f.locals.len(),
-            f.places.len(),
+            c.constructed_fields,
+            c.owners,
+            c.loans,
+            c.calls,
+            c.parameters,
+            c.references,
+            c.locals,
+            c.places,
         ] {
             n = add(n, count)?;
         }
-        let multiplier = add(
-            add(add(mul(4, f.owners.len())?, f.loans.len())?, f.calls.len())?,
-            32,
-        )?;
-        u.work = cap(
-            add(u.work, mul(multiplier, n)?)?,
-            limits.work,
-            "ownership work",
-        )?;
-        // Transient derived metadata is dropped before final witness construction.
-        // Descriptor payload is charged even when it already resides in caller-owned raw input.
-        let mut metadata = 0;
+        let multiplier = add(add(add(mul(4, c.owners)?, c.loans)?, c.calls)?, 32)?;
+        work = add(work, mul(multiplier, n)?)?;
+        // Retained acquisition sites are included here once. Their lifetime
+        // extends through flow; no duplicate loan-origin vector is allocated.
         for (count, size) in [
-            (f.owners.len(), size_of::<shape::OwnerSites>()),
-            (f.calls.len(), size_of::<shape::CallSites>()),
-            (descriptor_args, size_of::<Option<shape::Site>>()),
-            (f.loans.len(), size_of::<Option<shape::Site>>()),
-            (
-                f.calls.len(),
-                2 * size_of::<usize>() + size_of::<(usize, bool)>(),
-            ),
-            (f.parameters.len(), size_of::<ParameterBinding>()),
-            (f.references.len(), size_of::<ReferenceDecl>()),
-            (f.loans.len(), size_of::<LoanDecl>()),
-            (fields, size_of::<(FieldId, Operand)>()),
+            (c.owners, size_of::<shape::OwnerSites>()),
+            (c.calls, size_of::<shape::CallSites>()),
+            (c.descriptor_arguments, size_of::<Option<shape::Site>>()),
+            (c.loans, size_of::<Option<shape::Site>>()),
+            (c.calls, 2 * size_of::<usize>() + size_of::<(usize, bool)>()),
+            (c.parameters, size_of::<ParameterBinding>()),
+            (c.references, size_of::<ReferenceDecl>()),
+            (c.loans, size_of::<LoanDecl>()),
+            (c.constructed_fields, size_of::<(FieldId, Operand)>()),
         ] {
             metadata = add(metadata, mul(count, size)?)?;
         }
-        u.metadata_bytes = cap(
-            add(u.metadata_bytes, metadata)?,
-            limits.metadata,
-            "ownership metadata",
-        )?;
-        // Availability queue is explicitly dropped before failure reconstruction.
-        // Reconstruction retains one seen byte per block, CSR offsets/edges,
-        // then either insertion cursors or (visited bytes + B-entry queue).
-        let availability = mul(f.blocks.len(), 1 + 4 * size_of::<usize>())?;
+    }
+    u.work = cap(add(u.work, work)?, limits.work, "ownership work")?;
+    u.metadata_bytes = cap(
+        add(u.metadata_bytes, metadata)?,
+        limits.metadata,
+        "ownership metadata",
+    )?;
+    if c.ownership_active {
+        // Availability queue is dropped before reverse-path reconstruction.
+        let availability = mul(c.blocks, 1 + 4 * size_of::<usize>())?;
         let reconstruction = add(
-            mul(2, f.blocks.len())?,
+            mul(2, c.blocks)?,
             mul(
-                add(add(mul(2, f.blocks.len())?, 1)?, e)?,
+                add(add(mul(2, c.blocks)?, 1)?, c.edges)?,
                 size_of::<usize>(),
             )?,
         )?;
-        let scratch = availability.max(reconstruction).max(field_scratch);
+        let scratch = availability
+            .max(reconstruction)
+            .max(c.max_constructor_fields.min(1024));
         u.scratch_bytes = cap(
             u.scratch_bytes.max(scratch),
             limits.scratch,
             "ownership scratch",
         )?;
     }
-    Ok(u)
+    Ok(())
+}
+/// Preflight actual raw nested lengths before validation or analysis allocation.
+/// Work units are inventory/statement/block/edge visits, not CPU instructions.
+pub(super) fn preflight(
+    raw: &RawOwnedProgram,
+    limits: Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    cap(raw.functions.len(), MAX_BLOCKS, "functions")?;
+    let mut program = ProgramCounts::default();
+    for f in &raw.functions {
+        // Preserve the original early general-cap ordering before nested scans.
+        cap(
+            add(
+                program.slots,
+                add(add(f.locals.len(), f.places.len())?, f.owners.len())?,
+            )?,
+            MAX_LOCALS,
+            "locals",
+        )?;
+        cap(add(program.blocks, f.blocks.len())?, MAX_BLOCKS, "blocks")?;
+        cap(
+            f.parameters.len(),
+            super::super::super::parser::MAX_PARAMS,
+            "parameters",
+        )?;
+        let mut c = FunctionCounts {
+            locals: f.locals.len(),
+            places: f.places.len(),
+            owners: f.owners.len(),
+            references: f.references.len(),
+            parameters: f.parameters.len(),
+            calls: f.calls.len(),
+            loans: f.loans.len(),
+            blocks: f.blocks.len(),
+            ownership_active: !f.owners.is_empty()
+                || !f.references.is_empty()
+                || !f.calls.is_empty()
+                || !f.loans.is_empty(),
+            ..FunctionCounts::default()
+        };
+        for call in &f.calls {
+            cap(
+                call.arguments.len(),
+                super::super::super::parser::MAX_PARAMS,
+                "call arguments",
+            )?;
+            c.descriptor_arguments = add(c.descriptor_arguments, call.arguments.len())?;
+        }
+        for b in &f.blocks {
+            c.statements = add(c.statements, b.statements.len())?;
+            c.merges = add(c.merges, usize::from(b.merge.is_some()))?;
+            if let Some(end) = &b.terminator {
+                c.diagnostic_origins = add(
+                    c.diagnostic_origins,
+                    usize::from(end.diagnostic_origins.is_some()),
+                )?;
+                c.edges = add(
+                    c.edges,
+                    match end.kind {
+                        OwnedTerminatorKind::Branch { .. } => 2,
+                        OwnedTerminatorKind::Goto(_) | OwnedTerminatorKind::Invoke { .. } => 1,
+                        _ => 0,
+                    },
+                )?;
+                c.ownership_active |= matches!(
+                    end.kind,
+                    OwnedTerminatorKind::Invoke { .. } | OwnedTerminatorKind::ReturnOwned(_)
+                );
+            }
+            for i in &b.statements {
+                c.diagnostic_origins = add(
+                    c.diagnostic_origins,
+                    usize::from(i.diagnostic_origins.is_some()),
+                )?;
+                c.ownership_active |= !matches!(i.kind, OwnedInstruction::Scalar(_));
+                match &i.kind {
+                    OwnedInstruction::Construct { fields, .. } => {
+                        c.constructed_fields = add(c.constructed_fields, fields.len())?;
+                        c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
+                    }
+                    OwnedInstruction::PrepareScalar { .. }
+                    | OwnedInstruction::PrepareOwned { .. }
+                    | OwnedInstruction::PrepareBorrow { .. } => {
+                        c.preparations = add(c.preparations, 1)?
+                    }
+                    _ => {}
+                }
+            }
+        }
+        account_function(c, limits, &mut program)?;
+    }
+    Ok(program.usage())
 }
 #[derive(Default)]
 pub(super) struct Meter {

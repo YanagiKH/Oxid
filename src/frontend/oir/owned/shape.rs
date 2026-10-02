@@ -21,6 +21,20 @@ pub(super) struct CallSites {
 }
 pub(super) struct Shape {
     pub calls: Vec<CallSites>,
+    acquisitions: Vec<Option<Site>>,
+}
+impl Shape {
+    pub(super) fn acquisition_cause(
+        &self,
+        f: &RawOwnedFunction,
+        loan: LoanId,
+    ) -> Result<Span, OwnedFailure> {
+        let instruction = self.acquisitions.get(loan.0).and_then(|site| *site)
+            .and_then(|site| f.blocks.get(site.block)?.statements.get(site.statement))
+            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } if actual == loan))
+            .ok_or_else(|| bad(Malformed::CanonicalSite, f.span))?;
+        Ok(instruction.cause_span())
+    }
 }
 fn bad(kind: Malformed, s: Span) -> OwnedFailure {
     OwnedFailure::malformed(kind, s)
@@ -223,6 +237,7 @@ pub(super) fn check(
     raw: &RawOwnedProgram,
     d: &Declarations,
     sources: &SourceMap,
+    meter: &mut budget::Meter,
 ) -> Result<Shape, OwnedFailure> {
     let mut owners = filled(f.owners.len(), OwnerSites::default())?;
     let mut calls = filled(f.calls.len(), CallSites::default())?;
@@ -338,6 +353,7 @@ pub(super) fn check(
         for (si, instruction) in b.statements.iter().enumerate() {
             let s = instruction.span;
             span(sources, s)?;
+            diagnostic_origins(sources, instruction.diagnostic_origins, meter)?;
             let site = Site {
                 block: bi,
                 statement: si,
@@ -514,6 +530,7 @@ pub(super) fn check(
             .as_ref()
             .ok_or_else(|| bad(Malformed::MissingTerminator, b.span))?;
         span(sources, end.span)?;
+        diagnostic_origins(sources, end.diagnostic_origins, meter)?;
         let target = |id: BlockId| {
             if id.0 < f.blocks.len() {
                 Ok(())
@@ -611,5 +628,22 @@ pub(super) fn check(
     if visited != calls.len() {
         return Err(bad(Malformed::CallParent, f.span));
     }
-    Ok(Shape { calls })
+    Ok(Shape {
+        calls,
+        acquisitions,
+    })
+}
+
+fn diagnostic_origins(
+    sources: &SourceMap,
+    origins: Option<DiagnosticOrigins>,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    if let Some(origins) = origins {
+        meter.visit()?;
+        span(sources, origins.primary)?;
+        meter.visit()?;
+        span(sources, origins.cause)?;
+    }
+    Ok(())
 }

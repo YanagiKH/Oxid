@@ -52,7 +52,15 @@ pub enum ExprKind {
     Name(Span),
     Call {
         callee: Span,
-        args: Vec<ExprId>,
+        args: Vec<Argument>,
+    },
+    StructLiteral {
+        record: Span,
+        fields: Vec<FieldInit>,
+    },
+    FieldRead {
+        base: Span,
+        field: Span,
     },
     Group(ExprId),
     Arithmetic {
@@ -68,9 +76,55 @@ pub struct Expr {
     pub span: Span,
 }
 #[derive(Clone, Copy, Debug)]
+pub enum TypeSyntaxKind {
+    Name(Span),
+    Unit,
+    Reference { mutable: bool, referent: Span },
+}
+#[derive(Clone, Copy, Debug)]
 pub struct TypeSyntax {
     pub span: Span,
+    pub kind: TypeSyntaxKind,
 }
+#[derive(Debug)]
+pub struct StructField {
+    pub name: Span,
+    pub ty: TypeSyntax,
+    pub span: Span,
+}
+#[derive(Debug)]
+pub struct StructDecl {
+    pub name: Span,
+    pub fields: Vec<StructField>,
+    pub span: Span,
+    pub end: Span,
+}
+#[derive(Clone, Copy, Debug)]
+pub enum ItemId {
+    Function(usize),
+    Struct(usize),
+}
+#[derive(Clone, Copy, Debug)]
+pub enum BorrowPlace {
+    OwnerName(Span),
+    ForwardedParameter { name: Span, star_span: Span },
+}
+#[derive(Debug)]
+pub enum Argument {
+    Value(ExprId),
+    Borrow {
+        mutable: bool,
+        place: BorrowPlace,
+        span: Span,
+    },
+}
+#[derive(Debug)]
+pub struct FieldInit {
+    pub name: Span,
+    pub value: ExprId,
+    pub span: Span,
+}
+
 #[derive(Debug)]
 pub struct Param {
     pub name: Span,
@@ -86,6 +140,13 @@ pub enum StmtKind {
     },
     Assign {
         name: Span,
+        operator_span: Span,
+        value: ExprId,
+    },
+    FieldAssign {
+        base: Span,
+        field: Span,
+        target_span: Span,
         operator_span: Span,
         value: ExprId,
     },
@@ -129,4 +190,41 @@ pub struct Program {
     pub tokens: Vec<Token>,
     pub functions: Vec<Function>,
     pub expressions: Vec<Expr>,
+    pub records: Vec<StructDecl>,
+    pub items: Vec<ItemId>,
+}
+
+impl Program {
+    #[allow(dead_code)] // Used by private qualification until source dispatch activates.
+    pub(super) fn uses_owned_syntax(&self, source: &super::source::SourceFile) -> bool {
+        let owned_type = |ty: &TypeSyntax| match ty.kind {
+            TypeSyntaxKind::Unit => false,
+            TypeSyntaxKind::Reference { .. } => true,
+            TypeSyntaxKind::Name(name) => {
+                !matches!(&source.text()[name.start..name.end], "bool" | "i32")
+            }
+        };
+        !self.records.is_empty()
+            || self.functions.iter().any(|f| {
+                owned_type(&f.result)
+                    || f.params.iter().any(|p| owned_type(&p.ty))
+                    || f.blocks.iter().any(|b| {
+                        b.body.iter().any(|s| match &s.kind {
+                            StmtKind::Let {
+                                annotation: Some(ty),
+                                ..
+                            } => owned_type(ty),
+                            StmtKind::FieldAssign { .. } => true,
+                            _ => false,
+                        })
+                    })
+            })
+            || self.expressions.iter().any(|e| match &e.kind {
+                ExprKind::StructLiteral { .. } | ExprKind::FieldRead { .. } => true,
+                ExprKind::Call { args, .. } => {
+                    args.iter().any(|a| matches!(a, Argument::Borrow { .. }))
+                }
+                _ => false,
+            })
+    }
 }

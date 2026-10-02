@@ -199,5 +199,18 @@ jobs:
           cargo test --release --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
           cargo test --locked --bin oxid frontend::oir::owned::native::tests:: -- --ignored --nocapture --test-threads=1
           cargo test --release --locked --bin oxid frontend::oir::owned::native::tests:: -- --ignored --nocapture --test-threads=1
+      - name: Verify held-out owned-source native execution
+        run: |
+          OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-debug" cargo test --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
+          OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-release" cargo test --release --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
+      - name: Verify production source CLI and source-free ELF outcomes
+        run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --jobs 2
+      - name: Verify owned-source native budgets, stores, guards, and artifact identities
+        run: python3 scripts/verify_owned_source_native.py --llvm-bin "$OXID_LLVM_BIN" --jobs 2 --evidence target/owned-source-native-ci
+      - name: Recheck native matcher rejection controls against real collected evidence
+        env:
+          NATIVE_OBSERVATIONS: target/owned-source-native-ci/collection
+          PYTHONPATH: scripts
+        run: python3 -m unittest -v test_owned_source_native_matcher test_owned_source_native_binding
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2

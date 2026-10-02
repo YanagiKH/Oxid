@@ -1,10 +1,9 @@
 use super::{
     diagnostic::{json_string, Diagnostic},
-    hir, lexer, oir,
+    lexer, oir,
     options::{self, Operation, Route},
     parser,
     source::{SourceMap, MAX_SOURCE_BYTES},
-    typeck,
 };
 use std::{fs::File, io::Read};
 
@@ -156,34 +155,19 @@ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&st
         let tokens = lexer::lex(source).map_err(|e| vec![*e])?;
         let ast = parser::parse(source, tokens)?;
         debug_assert!(!ast.tokens.is_empty());
-        let resolved = hir::resolve(source, &ast)?;
-        // Resolution assigns DefIds in source declaration order. Use the actual
-        // resolved function's ID rather than reinterpreting OIR origin spans.
-        let entry = ast
-            .functions
-            .iter()
-            .zip(&resolved.functions)
-            .find(|(declaration, _)| {
-                &source.text()[declaration.name.start..declaration.name.end] == "main"
-            })
-            .map(|(_, function)| function.id);
-        let typed = typeck::check(resolved)?;
-        let verified = oir::lower_and_verify(&typed, &sources)
-            .map_err(|error| vec![*error.diagnostic(&sources)])?;
+        let verified: oir::CheckedSourceProgram = oir::check_source(source, &ast, &sources)?;
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
-                let module = verified
-                    .native_module(entry, &sources)
-                    .map_err(|e| vec![*e])?;
+                let module = verified.native_module(&sources).map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
                 super::native::compile(&module, output).map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
-                .run(entry)
+                .run(&sources)
                 .map(|value| Summary::Run(Some(value)))
-                .map_err(|error| vec![*error.diagnostic(&sources)]),
+                .map_err(|error| vec![*error]),
         }
     })();
     match result {

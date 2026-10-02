@@ -1,7 +1,13 @@
-# Experimental LLVM scalar native preview
+# Experimental LLVM native preview
+
+Source-integration status: experimental. The ownership source subset uses the
+production `typed-preview` route. See the
+[source qualification ledger](../docs/architecture/owned-source-validation.md)
+for the exact source, compiler, target and validation scope. This describes the
+current repository, not support in an older released binary.
 
 This is a narrow `typed-preview` backend, not completion of M2/M3, a stable ABI,
-Rust compatibility, ownership checking, a sandbox, or self-hosting. Default and
+Rust compatibility, a general memory-safety guarantee, a sandbox, or self-hosting. Default and
 explicit `legacy-0.9` compilation remain OXBC serialized-AST generation.
 
 ## Command
@@ -35,10 +41,15 @@ This is not a portable-binary or minimum-glibc-version promise.
 
 Compilation first runs the complete source → typed HIR → verified OIR path,
 including unused functions and unchosen branches. Only the immutable verified
-witness can enter native admission. A declared zero-argument scalar `main` is
+witness for the selected module-wide scalar or owned route can enter native
+admission. The owned source contract is specified in
+[typed preview](typed-preview.md#nominal-owned-structs-and-call-only-borrowing).
+Any owned syntax, even an unused declaration, selects owned lowering for the
+whole module; scalar-only modules retain their existing emitter/admission.
+No source or admission failure falls back to scalar, legacy or reference execution. A declared zero-argument scalar `main` is
 required, carried by its resolved DefId rather than reconstructed from spans.
 
-Supported operations are exact bool/unit/i32 constants, immutable copies, checked
+The scalar-only route supports exact bool/unit/i32 constants, immutable copies, checked
 i32 addition/subtraction/multiplication, same-type i32/bool equality and i32-only
 signed ordering comparisons, bool negation and explicit short-circuit bool merges,
 initialized mutable scalar places with explicit load/store,
@@ -49,13 +60,17 @@ Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0008](../rfcs/0008-native-checked-i32.md). Comparisons follow
 [RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
 [RFC 0010](../rfcs/0010-boolean-logical-operators.md), and mutable scalar storage
-follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. There are no source I/O operations,
-pointers, containers, indirect calls, modules or implicit legacy adapters
-in this subset.
+follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports scalar-field or empty nominal structs,
+whole-value transfers/replacement, scalar field access, owned helper returns and
+explicit call-only shared/exclusive loans and reborrows through its sealed
+witness. There are no source I/O operations, address values, heap containers,
+indirect calls, modules or implicit legacy adapters in this subset.
 
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
-The following inclusive bounds are additional native restrictions:
+The following inclusive bounds are the scalar-only native restrictions. Owned
+modules retain them and add the expanded-storage restrictions below; the scalar
+slot/cost formulas and examples in this section apply to scalar-only modules.
 
 | Resource | Maximum |
 | --- | ---: |
@@ -99,12 +114,85 @@ allocation failure, output blocking, or host resource limits. A 32-frame,
 64-parameter representative stress case is tested with a 1 MiB process stack;
 this is evidence, not an all-environments stack-safety theorem.
 
+## Owned-module storage, costs and private representation
+
+Owned modules retain 256 functions, 64 user parameters, 4,096 OIR blocks, call
+depth 32, whole-call-graph recursion rejection, at most 256 scalar slots per
+function and 8,192 aggregate/maximum-call-path scalar slots. Every declaration
+is included, even if unused or statically skipped. A scalar `main` is required;
+owned return values are permitted only in helpers. Native admission additionally
+requires:
+
+| Owned resource | Inclusive maximum |
+| --- | ---: |
+| Scalar slots plus all owner slots per function, `S + O` | 256 |
+| Sum of expanded cells X over all functions | 8,192 |
+| Maximum call-path sum of X | 8,192 |
+| Sum of explicit native arena bytes, including any wrapper fuel cell | 1 MiB |
+| Maximum call-path explicit arena bytes, including any wrapper fuel cell | 1 MiB |
+| Owned diagnostic data, including acyclic overflow diagnostics | 16 MiB |
+| Owned emitted LLVM text, acyclic or guarded | 64 MiB |
+
+For each function let S be scalar locals plus mutable places, A all call argument
+descriptors, O all owners, R incoming references, L loans, C calls, and
+P the sum of `max(1, record_field_count)` over every owner. B is the aligned
+owner arena including parameter, local, temporary, staged-argument and result
+storage, with inter-owner padding. On the qualified x86_64 representation:
+
+```text
+X = S + A + P + 4O + 8R + 12L + 2C
+Dnative = 8(S+A) + 8(R+L) + align4(B)
+```
+
+Byte sums/path sums use Dnative and add one 8-byte wrapper fuel cell when any
+function has cyclic cost. The cell is added once to each whole-module/path
+bound, not once per function. Scalar field layout is declaration order, bool
+and unit 1-byte size/alignment, i32 4-byte size/alignment, with checked natural
+padding. An empty struct has one private identity byte. Since B ≤ 4P, Dnative
+≤ 8X on this representation; the existing cell ceiling bounds total explicit
+native storage by 65,544 bytes including the guarded fuel cell. The separate
+1 MiB byte checks remain as defenses against representation changes. These
+figures exclude LLVM spills, ABI stack use, machine code, tool memory and RSS.
+
+For a transitively acyclic function, start its conservative cost at X, then
+sum every merge, statement and terminator using the owned ledger in
+[typed preview](typed-preview.md#owned-verification-execution-and-accounting).
+At each Invoke substitute the callee's total cost for the callee-X term already
+included in the Invoke charge. Require `1 + cost(F) <= 100,000`. Both conditional
+arms and every call site are included. A cyclic CFG or transitive cyclic callee
+has unknown static cost; it does not gain a guessed finite bound. If any function
+is cyclic, all functions share the 1,000,000-operation guarded budget. Guarding
+uses these owned costs, including expanded transfers and normal-edge release,
+rather than the scalar-only call/root/return formulas below.
+
+The ownership emitter uses entry-prologue owner byte arenas, i64 scalar/snapshot
+cells and pointer cells for incoming references and active loans. Incoming owned
+arguments are copied field-by-field into independent callee storage; owned
+results use caller-owned output storage and are transferred before callee
+return. Staging backing storage remains allocated until return even after its
+logical ownership is consumed. Shared reference pointers may alias. The emitter
+adds no `noalias`, `inbounds`, `nonnull`, `sret`, `byval` or lifetime assumptions.
+This is a private convention, not a stable source layout or C/FFI ABI.
+
+Bool merges select the predecessor's slot pointer before loading its value, so
+an untaken uninitialized slot is not read. Fuel/overflow success paths must
+dominate affected stores; an exhausted charge performs no store. Whole source
+argument/literal evaluation order and first-error behavior are preserved.
+Counted LLVM expansion stops when its byte ceiling is exceeded, before reserving
+the final text buffer, and checked count/render parity is required.
+
+Reference/native comparisons, held-out source cases, native artifacts and store
+control-flow checks belong to the [source qualification ledger](../docs/architecture/owned-source-validation.md).
+The [raw-consumer report](../docs/architecture/owned-consumers-validation.md)
+records predecessor fixtures only; its Batch sizes and 1,086-fuel schedule are
+not source measurements.
+
 ## Cyclic modules and shared runtime fuel
 
 A cyclic intraprocedural CFG or cyclic transitive callee has unknown static cost.
 It never uses a one-pass sum as an execution bound. If any function is cyclic,
 including an unused function, all emitted functions share one private i64 fuel
-counter through a hidden pointer. Root allocation costs 1+slots; statements,
+counter through a hidden pointer. For scalar-only modules, root allocation costs 1+slots; statements,
 merges and noncall terminators cost 1; calls cost 1+arguments+callee slots, before
 callee execution. Each executed iteration consumes fuel. Failure before the next
 operation is E0601 at that exact reference origin. Empty infinite loops therefore
@@ -115,13 +203,14 @@ produce an acyclic CFG and retain the unguarded emitter.
 Guarded diagnostic data is deduplicated by failure kind/origin and streamed into
 a checked byte counter before allocation; total data must be <=16 MiB. Exact LLVM
 text is counted before allocating its buffer and must be <=64 MiB. E0700 rejects
-excess before tools/output effects. These are guarded-only preview representation
-bounds; old acyclic admission is unchanged. They bound neither machine-code size
+excess before tools/output effects. For scalar-only modules these are guarded-only preview representation
+bounds; old acyclic scalar admission is unchanged. Owned modules apply their
+16 MiB/64 MiB representation bounds even when acyclic. They bound neither machine-code size
 nor tool runtime. Diagnostic text has escaped paths and line/column, no excerpts.
 
 ## Lowering and private ABI
 
-Native ABI version 1 is private and provisional. LLVM values are `i1` for bool,
+The scalar-only native ABI version 1 is private and provisional. LLVM values are `i1` for bool,
 `i8` containing zero for unit, and exact `i32`. Definitions use the verifier's
 single-assignment local IDs as LLVM SSA names. Each mutable place uses a private
 typed alloca in the LLVM entry prologue, before branching to the possibly nonzero
@@ -151,7 +240,8 @@ No eager and/or/select replaces the source's conditional RHS execution.
 Branches, direct calls and returns retain their OIR structure. Functions are
 `internal` and `noinline`; this preview uses `-O0` and no LTO or fast-math.
 
-Symbols are deterministic numeric `__oxid_fn_<DefId>` names. Source identifiers
+Scalar symbols are deterministic numeric `__oxid_fn_<DefId>` names; owned
+functions use private numeric `__oxid_owned_fn_<DefId>` symbols. Source identifiers
 and comments never enter LLVM text. Overflow diagnostics contain the compile-time
 source path, pre-rendered with the reference human renderer and encoded entirely
 as hexadecimal LLVM constant bytes. Paths cannot supply IR syntax or symbols.
@@ -233,3 +323,12 @@ and [mutable-local evidence](../docs/architecture/mutable-locals-validation.md).
 [While validation](../docs/architecture/while-validation.md) covers the cyclic/guarded extension and its qualification limits.
 
 [Loop-control validation](../docs/architecture/loop-control-validation.md) covers exact transfer fuel and real native execution.
+
+
+[RFC 0014](../rfcs/0014-owned-structs-call-borrows.md) specifies the owned-source
+contract. [Owned source qualification](../docs/architecture/owned-source-validation.md)
+records actual production CLI and reference/native evidence separately from
+preactivation candidate results.
+Linux x86_64, pinned LLVM 19.1.7 and O0 remain the only native qualification
+target; O2, LTO, other targets, heap/drop safety and a completed roadmap milestone
+are outside this increment.

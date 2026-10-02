@@ -1,6 +1,9 @@
 use super::super::consumer_fixtures::*;
 use super::*;
 
+#[path = "source/runtime_resource_tests.rs"]
+mod source_resources;
+
 #[test]
 fn independently_counted_complete_traces_and_every_lower_fuel() {
     type Builder = fn() -> (SourceMap, RawOwnedProgram, Schedule);
@@ -1060,3 +1063,6 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
             .contains("recursive")
     );
 }
+
+#[path = "source/reviewer_resource_runtime.rs"]
+mod reviewer_resources;

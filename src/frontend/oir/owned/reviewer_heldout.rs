@@ -26,10 +26,18 @@ fn op(id: usize, s: Span) -> Operand {
     }
 }
 fn ins(kind: OwnedInstruction, s: Span) -> OwnedStatement {
-    OwnedStatement { kind, span: s }
+    OwnedStatement {
+        diagnostic_origins: None,
+        kind,
+        span: s,
+    }
 }
 fn term(kind: OwnedTerminatorKind, s: Span) -> Option<OwnedTerminator> {
-    Some(OwnedTerminator { kind, span: s })
+    Some(OwnedTerminator {
+        diagnostic_origins: None,
+        kind,
+        span: s,
+    })
 }
 fn scalar(id: usize, value: Rvalue, s: Span) -> OwnedStatement {
     ins(

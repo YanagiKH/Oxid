@@ -14,6 +14,70 @@ import tempfile
 
 
 PROBES = [
+    ("source-facade-immutable-methods", True, (), """
+        fn inspect(w: &SourceProgram, sources: &SourceMap) {
+            let _ = w.function_count();
+            let _ = w.run(None, sources);
+        }
+    """),
+    ("source-facade-cannot-be-forged", False, ("E0451",), """
+        fn forge(witness: VerifiedOwnedProgram) -> SourceProgram {
+            SourceProgram { witness }
+        }
+    """),
+    ("source-facade-cannot-be-rebound", False, ("E0451",), """
+        fn rebind(base: SourceProgram, replacement: VerifiedOwnedProgram) -> SourceProgram {
+            SourceProgram { witness: replacement, ..base }
+        }
+    """),
+    ("source-facade-private-witness", False, ("E0616",), """
+        fn mutate(w: &mut SourceProgram, replacement: VerifiedOwnedProgram) {
+            w.witness = replacement;
+        }
+    """),
+    ("raw-program-cannot-enter-source-facade", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = SourceProgram::run(raw, None, sources);
+        }
+    """),
+    ("checked-source-cannot-rebind-entry", False, ("E0616",), """
+        fn mutate(w: &mut crate::frontend::oir::CheckedSourceProgram) {
+            w.entry = None;
+        }
+    """),
+    ("checked-source-cannot-use-struct-update", False, ("E0451",), """
+        fn rebind(base: crate::frontend::oir::CheckedSourceProgram)
+            -> crate::frontend::oir::CheckedSourceProgram {
+            crate::frontend::oir::CheckedSourceProgram { entry: None, ..base }
+        }
+    """),
+    ("raw-program-cannot-enter-checked-source", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = crate::frontend::oir::CheckedSourceProgram::run(raw, sources);
+        }
+    """),
+    ("denial-context-immutable-inspection", True, (), """
+        fn inspect(context: &flow::DenialContext) {
+            let facts = context.facts();
+            let _ = (facts.operation, facts.role, facts.subject, facts.state,
+                     facts.counterpart, facts.requested_borrow);
+        }
+    """),
+    ("denial-context-cannot-be-forged", False, ("E0451",), """
+        fn forge(facts: flow::DenialFacts) -> flow::DenialContext {
+            flow::DenialContext { facts }
+        }
+    """),
+    ("denial-context-cannot-mutate-facts", False, ("E0616",), """
+        fn mutate(context: &mut flow::DenialContext, replacement: flow::DenialFacts) {
+            context.facts = replacement;
+        }
+    """),
+    ("denial-context-constructor-is-private", False, ("E0624",), """
+        fn construct(raw: &RawOwnedFunction) {
+            let _ = flow::DenialContext::owner(raw, OwnerPlaceId(0));
+        }
+    """),
     ("raw-program-cannot-enter-reference", False, ("E0308",), """
         fn run_raw(raw: &RawOwnedProgram) {
             let _ = execute::run(raw, Some(hir::DefId(0)));

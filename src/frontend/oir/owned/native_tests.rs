@@ -31,6 +31,9 @@ fn verified_guarded(
 }
 use super::*;
 
+#[path = "source/native_resource_tests.rs"]
+mod source_resources;
+
 #[test]
 fn native_owned_tiny_storage_and_exact_acyclic_costs() {
     for (build, expected) in [
@@ -2344,3 +2347,6 @@ fn native_owned_count_pass_stops_wide_expansion_at_the_byte_cap() {
 
 #[path = "native_heldout_review.rs"]
 mod heldout_review;
+
+#[path = "source/reviewer_resource_native.rs"]
+mod reviewer_resources;

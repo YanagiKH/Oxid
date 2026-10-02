@@ -15,10 +15,16 @@ Legacy source execution parses into the dynamic `Value` interpreter. Numbers are
 arrays and records have shared `Rc<RefCell<...>>` storage. There is no OIR/CFG,
 ownership checker, or `.ox` native machine-code backend in this path. The independent opt-in bool/i32/unit pipeline now has typed HIR, verified cyclic
 Branch/Goto OIR, explicit bool value merges, initialized typed scalar places and calls/returns. Check remains non-executing; explicit
-typed run uses bounded iterative scalar reference execution. Source-facing ownership
-analysis remains unavailable; a private sealed ownership verifier and its reference
-and LLVM consumers are implemented and qualified through raw OIR fixtures. See
-[owned-consumer validation](owned-consumers-validation.md) for their evidence and limits.
+typed run uses bounded iterative scalar reference execution. The experimental
+source integration adds nominal scalar-field/empty owned structs and call-only borrowing
+through a sealed ownership verifier and its bounded reference/LLVM consumers.
+The production parser and driver select this experimental route; exact source,
+compiler and qualification identities are recorded in
+[owned-source validation](owned-source-validation.md). Native scope is Linux
+x86_64, LLVM 19.1.7 and O0. The historical
+[owned-consumer report](owned-consumers-validation.md) qualifies its raw OIR
+fixtures; it does not establish source qualification. Default legacy records retain their
+dynamic shared-storage behavior.
 A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
@@ -100,17 +106,36 @@ existing charged Goto edges without unreachable joins. No ownership or new type
 is implied. See [RFC 0013](../../rfcs/0013-loop-control.md) and
 [loop-control evidence](loop-control-validation.md).
 
-The private owned-type declaration facade supplies nominal record/field IDs and
-checked fixed scalar layouts to a private raw ownership/loan verifier. That verifier
-checks whole-owner availability, explicit argument preparation and exact loan/call
-regions, and constructs a sealed immutable witness. Private bounded reference
-execution and LLVM lowering consume that same witness through a sealed immutable
-execution plan. Raw OIR fixtures qualify aggregate storage, argument snapshots,
-ownership transfers, call-bounded loans and checked resource/fuel accounting.
-Struct/borrow source syntax and source-facing ownership checking and execution
-remain unavailable. Existing scalar and legacy behavior remains unchanged, and
-the public feature inventory is unchanged. See
-[RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
+The owned-type declaration facade supplies nominal record/field IDs and checked
+fixed scalar layouts to the private ownership/loan verifier. It checks whole-owner
+availability, explicit argument preparation and exact loan/call regions before
+constructing the sealed immutable witness used by both consumers.
+
+Source parsing, resolution, typing and bounded lowering feed that
+verifier. One module-wide selection sends every function through the owned route
+if any owned syntax occurs, including unused declarations and skipped paths.
+Scalar-only modules keep their established OIR, costs, diagnostics and native
+admission. No failure falls back to scalar, legacy or reference execution.
+Newly recognized but unsupported ownership forms can move to a more precise
+stage: for example, an `&bool` parameter changes from E0101 at `&` to E0202 at
+the scalar referent. This does not admit scalar borrowing or change an accepted
+scalar-only program.
+
+The public typed commands select the source route; the
+[source qualification ledger](owned-source-validation.md) records the exact
+activation identity, CLI/native results and remaining qualification limits.
+The source contract includes move-only scalar-field and empty nominal structs,
+whole replacement, scalar field mutation, owned helper returns, exact-mode
+call-only borrows and explicit nested reborrows. Run/native entry still requires
+a scalar zero-argument main. Stored/returned references, partial moves,
+field-disjoint borrowing, nested owned fields, heap/destructors, unsafe/FFI
+ownership and a complete static-memory model remain open. Native remains Linux
+x86_64 with LLVM 19.1.7 at O0, under its existing and expanded storage restrictions.
+This is one experimental ownership-foundations capability, with no M2 or v1.0
+completion claim. See [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
+[the typed contract](../../spec/typed-preview.md),
+[the native contract](../../spec/native-preview.md),
 [groundwork validation](owned-types-validation.md),
-[raw verifier validation](owned-verifier-validation.md), and
-[owned-consumer validation](owned-consumers-validation.md).
+[raw verifier validation](owned-verifier-validation.md),
+[historical raw-consumer validation](owned-consumers-validation.md), and
+[source qualification](owned-source-validation.md).

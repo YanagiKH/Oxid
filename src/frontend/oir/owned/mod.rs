@@ -1,6 +1,10 @@
 //! Authoritative private ownership OIR and bounded verified consumers.
 //! No source producer is enabled. Both consumers require the sealed witness.
-#![allow(dead_code)] // Private consumers remain source-gated until Unit 4.
+#![allow(dead_code)]
+// Private consumers remain source-gated until Unit 4.
+// Denials retain exact verifier-derived facts on the stack. Boxing this fixed
+// transport would add an allocation on ownership/resource failure paths.
+#![allow(clippy::result_large_err)]
 use super::{owned_types::*, *};
 mod budget;
 mod cfg;
@@ -9,6 +13,8 @@ mod flow;
 mod native;
 mod plan;
 mod shape;
+mod source;
+pub(super) use source::{check_source, SourceProgram};
 mod storage;
 mod verified;
 #[cfg(test)]
@@ -103,10 +109,24 @@ struct OwnedBlock {
     statements: Vec<OwnedStatement>,
     terminator: Option<OwnedTerminator>,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DiagnosticOrigins {
+    primary: Span,
+    cause: Span,
+}
 #[derive(Clone, Debug)]
 struct OwnedStatement {
     kind: OwnedInstruction,
     span: Span,
+    diagnostic_origins: Option<DiagnosticOrigins>,
+}
+impl OwnedStatement {
+    fn primary_span(&self) -> Span {
+        self.diagnostic_origins.map_or(self.span, |o| o.primary)
+    }
+    fn cause_span(&self) -> Span {
+        self.diagnostic_origins.map_or(self.span, |o| o.cause)
+    }
 }
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
@@ -157,6 +177,15 @@ enum OwnedInstruction {
 struct OwnedTerminator {
     kind: OwnedTerminatorKind,
     span: Span,
+    diagnostic_origins: Option<DiagnosticOrigins>,
+}
+impl OwnedTerminator {
+    fn primary_span(&self) -> Span {
+        self.diagnostic_origins.map_or(self.span, |o| o.primary)
+    }
+    fn cause_span(&self) -> Span {
+        self.diagnostic_origins.map_or(self.span, |o| o.cause)
+    }
 }
 #[derive(Clone, Debug)]
 enum OwnedTerminatorKind {
@@ -227,6 +256,7 @@ struct OwnedFailure {
     primary: Origin,
     related: Origin,
     declaration: Origin,
+    context: Option<flow::DenialContext>,
 }
 impl OwnedFailure {
     fn malformed(kind: Malformed, span: Span) -> Self {
@@ -235,6 +265,7 @@ impl OwnedFailure {
             primary: Origin(span),
             related: Origin::NONE,
             declaration: Origin::NONE,
+            context: None,
         }
     }
     fn violation(kind: Violation, span: Span, declaration: Option<Span>) -> Self {
@@ -243,6 +274,7 @@ impl OwnedFailure {
             primary: Origin(span),
             related: Origin::NONE,
             declaration: Origin::from(declaration),
+            context: None,
         }
     }
     fn resource(name: &'static str) -> Self {
@@ -251,6 +283,7 @@ impl OwnedFailure {
             primary: Origin::NONE,
             related: Origin::NONE,
             declaration: Origin::NONE,
+            context: None,
         }
     }
 }
@@ -264,6 +297,7 @@ impl From<OirFailure> for OwnedFailure {
             primary: Origin::from(value.span),
             related: Origin::NONE,
             declaration: Origin::NONE,
+            context: None,
         }
     }
 }
@@ -279,6 +313,7 @@ impl From<DeclarationError> for OwnedFailure {
             primary: Origin::NONE,
             related: Origin::NONE,
             declaration: Origin::NONE,
+            context: None,
         }
     }
 }
@@ -304,3 +339,13 @@ mod consumer_fixtures;
 mod consumer_pilot;
 #[cfg(test)]
 mod consumer_tests;
+
+#[cfg(test)]
+mod denial_tests;
+#[cfg(test)]
+mod origin_tests;
+
+#[cfg(test)]
+mod reviewer_allocator;
+#[cfg(test)]
+mod reviewer_origins;

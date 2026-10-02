@@ -33,20 +33,20 @@ pub(super) fn verify_with_limits(
     limits: budget::Limits,
 ) -> Result<VerifiedOwnedProgram, OwnedFailure> {
     let mut usage = budget::preflight(&raw, limits)?;
+    let mut meter = budget::Meter {
+        visits: 0,
+        ceiling: usage.work,
+    };
     let declarations = Declarations::check(&raw.records, sources)?;
     shape::signatures(&raw, &declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
     for f in &raw.functions {
-        shape::check(f, &raw, &declarations, sources)?;
+        shape::check(f, &raw, &declarations, sources, &mut meter)?;
     }
     for f in &raw.functions {
         super::super::verify::cfg(f)?;
     }
-    let mut meter = budget::Meter {
-        visits: 0,
-        ceiling: usage.work,
-    };
     for f in &raw.functions {
         for owner in &f.owners {
             usage.owner_cells = budget::add(
@@ -59,7 +59,7 @@ pub(super) fn verify_with_limits(
             )?;
         }
         if budget::active(f) {
-            let checked = shape::check(f, &raw, &declarations, sources)?;
+            let checked = shape::check(f, &raw, &declarations, sources, &mut meter)?;
             flow::check(f, &checked, &mut meter)?;
         }
     }

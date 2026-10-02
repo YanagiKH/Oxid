@@ -128,7 +128,6 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
         ),
         ("use \"side.ox\";", "use"),
         ("macro hi { }", "macro"),
-        ("fn f(x: &bool) -> () { return; }", "&"),
         ("fn f() -> () { const x = true; return; }", "const"),
         ("fn f() -> () { let x = true; x & false; return; }", "&"),
         ("fn f() -> () { for true { return; } return; }", "for"),

@@ -7,7 +7,10 @@ mod lexer;
 mod native;
 mod oir;
 mod options;
+mod owned_diagnostic;
 mod parser;
 mod source;
 mod typeck;
 pub use driver::dispatch;
+#[cfg(test)]
+mod owned_syntax_tests;
