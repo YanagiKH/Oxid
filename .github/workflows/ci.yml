@@ -197,5 +197,7 @@ jobs:
           cargo test --release --locked --bin oxid frontend::oir::verify::cyclic_tests::execution::raw_cyclic_witnesses_use_real_llvm -- --ignored --exact
           cargo test --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
           cargo test --release --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::owned::native::tests:: -- --ignored --nocapture --test-threads=1
+          cargo test --release --locked --bin oxid frontend::oir::owned::native::tests:: -- --ignored --nocapture --test-threads=1
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2

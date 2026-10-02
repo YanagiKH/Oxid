@@ -1,11 +1,15 @@
-//! Authoritative, private ownership OIR. No source producer or execution consumer.
-//! The checked witness owns the exact instruction stream; it has no run/native API.
-#![allow(dead_code)] // Unit 3 will consume this production-compiled private seam.
+//! Authoritative private ownership OIR and bounded verified consumers.
+//! No source producer is enabled. Both consumers require the sealed witness.
+#![allow(dead_code)] // Private consumers remain source-gated until Unit 4.
 use super::{owned_types::*, *};
 mod budget;
 mod cfg;
+mod execute;
 mod flow;
+mod native;
+mod plan;
 mod shape;
+mod storage;
 mod verified;
 #[cfg(test)]
 use verified::{verify_owned, verify_with_limits};
@@ -293,3 +297,10 @@ mod tests;
 
 #[cfg(test)]
 mod oracle_tests;
+
+#[cfg(test)]
+mod consumer_fixtures;
+#[cfg(test)]
+mod consumer_pilot;
+#[cfg(test)]
+mod consumer_tests;
