@@ -1,0 +1,49 @@
+{
+  "contract_revision": 3,
+  "contract_sha256": "25faad72c1c05370e80c43c8ef890b99ebd608baa39f1431521387d5ca44e0aa",
+  "planning_review_sha256": "4546e93038c47921ddbc8dea9fb85595d394d6db5e094849945b48937fd2a16a",
+  "core_snapshot_manifest_sha256": "e163437337f8690e8059308d59b42ce9296d02778212f3be7a8b9b6f87830f32",
+  "baseline_commit": "fbcfeb2a2de8fe9d335d6c8051d254cccdb663dc",
+  "pre_output_freeze": {
+    "frozen_at_utc": "2026-10-02T08:53:14Z",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "candidate_observations": "none; no candidate compiler invocation or output observed",
+    "files": {
+      "expectations.md": "637703145c3d3af22a400823334784288284b8a97848364f75bf1035dae9043d",
+      "materialize_fixtures.py": "3ec1abc535b7123bda144352459920293f7bf2e324eae404e44ffacd417d4092",
+      "fixture-manifest.json": "5807339a1fc9626bd342152d0ec8a1e4720abd3d952439ea671e13f91e908ae1",
+      "materialize_resource_fixtures.py": "506cde795a65980376ebb08ed2a7663e4e5f18d7752052fb566f16392b5214e6",
+      "resource-fixture-manifest.json": "5ecc8e2e085c8f576db81450503f5e36d1f26bd8a3fa23e34ae22bd686c1c246",
+      "origin_oracle.py": "6d58e7936a4dcdb08a79fdeae289066ba3d8775362cfc8568ad54fbe4804989a",
+      "origin-oracle.json": "1be2702ad2af0e3f907059a7d2ce34562d8a84646db9b5ea4bdd40ebad47bafd",
+      "resource-reachability.md": "c31b91e83bd3441f49449400e555d3f9964166677a8fc44e168d28ce1255d3b7",
+      "socket-unavailable.md": "016a50b80364d4d6714121b19846cb43b235fca7776ec3efe4879d919bda5d04"
+    }
+  },
+  "frozen_fixture_count": 42,
+  "available_fixture_count": 41,
+  "actual_default_resource_fixture_count": 12,
+  "final_test_functions_per_profile": 69,
+  "final_core_qualified_profiles": [
+    "debug",
+    "release"
+  ],
+  "final_core_executions": 138,
+  "controlled_allocation_failure_ordinals_per_profile": 16,
+  "checked_counter_overflow_ordinals_per_profile": 16,
+  "direct_reserve_arithmetic_cases_per_profile": 4,
+  "scalar_hir_schedule_functions_per_profile": 1,
+  "socket_status": "Unavailable after AF_UNIX creation denied in originating environment; generator never retries",
+  "packaging_change": "Relocate generated absolute fixture/display/include paths into a fresh temporary qualification root; preserve source bytes, diagnostic expectations, relative identities and counters",
+  "package_revision": 3,
+  "runner_hardening": [
+    "Exact source-bound69-test roster",
+    "Require each named libtest execution to pass exactly1 test with0 failures/ignores/measured",
+    "Nonzero standalone exit on failures and bounded listing",
+    "Refuse optimized Python that removes assert guards",
+    "Disallow output/cache/temp parent inside input repository",
+    "Rust string encoder preserves quoted/backslash/Unicode paths",
+    "Require a usable Rust compiler version",
+    "Disable local-import bytecode caches before importing helper modules"
+  ]
+}

@@ -31,9 +31,7 @@ pub(in crate::frontend) fn check_source(
             .functions
             .iter()
             .zip(&resolved.functions)
-            .find(|(declaration, _)| {
-                &source.text()[declaration.name.start..declaration.name.end] == "main"
-            })
+            .find(|(declaration, _)| source.text_at(declaration.name) == "main")
             .map(|(_, function)| function.id);
         let typed = typeck::check(resolved)?;
         let verified =

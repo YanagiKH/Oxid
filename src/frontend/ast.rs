@@ -99,8 +99,17 @@ pub struct StructDecl {
     pub span: Span,
     pub end: Span,
 }
+/// Private source-discovery grammar; no namespace or runtime semantics yet.
+#[derive(Clone, Copy, Debug)]
+pub struct ModuleDecl {
+    pub name: Span,
+    pub public: Option<Span>,
+    #[allow(dead_code)] // Full original declaration origin for the staged shared index.
+    pub span: Span,
+}
 #[derive(Clone, Copy, Debug)]
 pub enum ItemId {
+    Module(usize),
     Function(usize),
     Struct(usize),
 }
@@ -192,6 +201,7 @@ pub struct Program {
     pub expressions: Vec<Expr>,
     pub records: Vec<StructDecl>,
     pub items: Vec<ItemId>,
+    pub modules: Vec<ModuleDecl>,
 }
 
 impl Program {
@@ -200,9 +210,7 @@ impl Program {
         let owned_type = |ty: &TypeSyntax| match ty.kind {
             TypeSyntaxKind::Unit => false,
             TypeSyntaxKind::Reference { .. } => true,
-            TypeSyntaxKind::Name(name) => {
-                !matches!(&source.text()[name.start..name.end], "bool" | "i32")
-            }
+            TypeSyntaxKind::Name(name) => !matches!(source.text_at(name), "bool" | "i32"),
         };
         !self.records.is_empty()
             || self.functions.iter().any(|f| {

@@ -13,7 +13,7 @@ pub(in crate::frontend::oir) fn check_source(
     ast: &ast::Program,
     sources: &SourceMap,
 ) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
-    let resolved = resolve::resolve(source, ast)?;
+    let resolved = resolve::resolve_in_map(source, ast, sources)?;
     let typed = typeck::check(resolved)?;
     let entry = typed.entry();
     let raw = lower::lower(&typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;

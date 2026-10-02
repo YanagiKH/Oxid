@@ -1,11 +1,10 @@
 use super::{
     diagnostic::{json_string, Diagnostic},
-    lexer, oir,
+    oir,
     options::{self, Operation, Route},
-    parser,
-    source::{SourceMap, MAX_SOURCE_BYTES},
+    project::{ProjectLimits, ProjectSources},
+    source::SourceMap,
 };
-use std::{fs::File, io::Read};
 
 /// None returns an untouched/default or explicitly legacy command to the old CLI.
 pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
@@ -105,74 +104,41 @@ fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
 }
 
 fn process_file(path: &str, json: bool, operation: Operation, output: Option<&str>) -> i32 {
-    let mut sources = SourceMap::new();
+    let project = match ProjectSources::load_original(path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report(
+                &failure.sources,
+                failure.diagnostics,
+                json,
+                Summary::empty(operation),
+            )
+        }
+    };
+    let sources = project.sources();
+    let (source, ast) = project
+        .original_file()
+        .expect("public source facade remains one-file");
     let result = (|| {
-        let file = File::open(path).map_err(|e| {
-            vec![*Diagnostic::new(
-                "E0002",
-                "source",
-                format!("cannot read file {path}: {e}"),
-                None,
-            )]
-        })?;
-        let mut bytes = Vec::new();
-        file.take((MAX_SOURCE_BYTES + 1) as u64)
-            .read_to_end(&mut bytes)
-            .map_err(|e| {
-                vec![*Diagnostic::new(
-                    "E0002",
-                    "source",
-                    format!("cannot read file {path}: {e}"),
-                    None,
-                )]
-            })?;
-        if bytes.len() > MAX_SOURCE_BYTES {
-            return Err(vec![*Diagnostic::new(
-                "E0400",
-                "source",
-                format!("source exceeds {MAX_SOURCE_BYTES} bytes: {path}"),
-                None,
-            )]);
-        }
-        if bytes.starts_with(b"OXBC") {
-            return Err(vec![*Diagnostic::new(
-                "E0004",
-                "source",
-                "legacy OXBC artifacts are unavailable in typed-preview",
-                None,
-            )]);
-        }
-        let text = String::from_utf8(bytes).map_err(|_| {
-            vec![*Diagnostic::new(
-                "E0003",
-                "source",
-                format!("source is not valid UTF-8: {path}"),
-                None,
-            )]
-        })?;
-        let id = sources.add(path.to_string(), text);
-        let source = sources.get(id);
-        let tokens = lexer::lex(source).map_err(|e| vec![*e])?;
-        let ast = parser::parse(source, tokens)?;
         debug_assert!(!ast.tokens.is_empty());
-        let verified: oir::CheckedSourceProgram = oir::check_source(source, &ast, &sources)?;
+        let verified: oir::CheckedSourceProgram = oir::check_source(source, ast, sources)?;
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
-                let module = verified.native_module(&sources).map_err(|e| vec![*e])?;
+                let module = verified.native_module(sources).map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
                 super::native::compile(&module, output).map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
-                .run(&sources)
+                .run(sources)
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error]),
         }
     })();
     match result {
-        Ok(summary) => report(&sources, Vec::new(), json, summary),
-        Err(diagnostics) => report(&sources, diagnostics, json, Summary::empty(operation)),
+        Ok(summary) => report(sources, Vec::new(), json, summary),
+        Err(diagnostics) => report(sources, diagnostics, json, Summary::empty(operation)),
     }
 }
 

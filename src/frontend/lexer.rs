@@ -11,6 +11,9 @@ pub enum Kind {
     String,
     Fn,
     Struct,
+    Mod,
+    Use,
+    Pub,
     Ampersand,
     Dot,
     Let,
@@ -55,7 +58,16 @@ pub struct Token {
 }
 
 /// Retains every byte, including trivia and unsupported literal spelling.
+#[cfg(test)]
 pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
+    lex_with_limit(source, MAX_TOKENS)
+}
+
+pub(super) fn lex_with_limit(
+    source: &SourceFile,
+    limit: usize,
+) -> Result<Vec<Token>, Box<Diagnostic>> {
+    let limit = limit.min(MAX_TOKENS);
     let text = source.text();
     let bytes = text.as_bytes();
     let mut tokens = Vec::new();
@@ -111,6 +123,9 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                 match &text[start..cursor] {
                     "fn" => Kind::Fn,
                     "struct" => Kind::Struct,
+                    "mod" => Kind::Mod,
+                    "use" => Kind::Use,
+                    "pub" => Kind::Pub,
                     "let" => Kind::Let,
                     "mut" => Kind::Mut,
                     "return" => Kind::Return,
@@ -121,10 +136,9 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                     "else" => Kind::Else,
                     "true" => Kind::True,
                     "false" => Kind::False,
-                    "use" | "import" | "macro" | "macro_rules" | "const" | "for" | "loop"
-                    | "match" | "async" | "await" | "move" | "ref" | "unsafe" | "extern"
-                    | "enum" | "trait" | "impl" | "type" | "mod" | "pub" | "null" | "and"
-                    | "or" => Kind::Unsupported,
+                    "import" | "macro" | "macro_rules" | "const" | "for" | "loop" | "match"
+                    | "async" | "await" | "move" | "ref" | "unsafe" | "extern" | "enum"
+                    | "trait" | "impl" | "type" | "null" | "and" | "or" => Kind::Unsupported,
                     _ => Kind::Ident,
                 }
             }
@@ -211,7 +225,7 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
             _ => Kind::Invalid,
         };
         let span = source.span(start, cursor);
-        if cursor - start > MAX_TOKEN_BYTES || tokens.len() >= MAX_TOKENS {
+        if cursor - start > MAX_TOKEN_BYTES || tokens.len() >= limit {
             return Err(Diagnostic::new(
                 "E0400",
                 "lex",
