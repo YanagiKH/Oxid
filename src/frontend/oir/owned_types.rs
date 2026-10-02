@@ -13,13 +13,13 @@ use std::mem::size_of;
 
 /// Compilation-local nominal identity, assigned in declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct RecordId(pub(super) usize);
+pub(in crate::frontend) struct RecordId(pub(in crate::frontend) usize);
 
 /// An ordinal alone is not a field identity: its declaring record is essential.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct FieldId {
-    pub(super) record: RecordId,
-    pub(super) index: usize,
+pub(in crate::frontend) struct FieldId {
+    pub(in crate::frontend) record: RecordId,
+    pub(in crate::frontend) index: usize,
 }
 
 /// Function-local storage identity, independent of source binding mutability.
@@ -32,20 +32,20 @@ pub(super) struct LoanId(pub(super) usize);
 pub(super) struct CallSiteId(pub(super) usize);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ValueTy {
+pub(in crate::frontend) enum ValueTy {
     Scalar(hir::Ty),
     Owned(RecordId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum BorrowKind {
+pub(in crate::frontend) enum BorrowKind {
     Shared,
     Exclusive,
 }
 
 /// References exist only in parameter descriptors, not in `ValueTy`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ParameterTy {
+pub(in crate::frontend) enum ParameterTy {
     Value(ValueTy),
     Reference { record: RecordId, kind: BorrowKind },
 }
@@ -67,7 +67,7 @@ pub(super) struct RawFieldDecl {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum DeclarationError {
+pub(in crate::frontend) enum DeclarationError {
     ResourceLimit(&'static str),
     InvalidRecordId(RecordId),
     InvalidFieldId(FieldId),
@@ -146,7 +146,7 @@ impl RecordDecl {
 /// overhead and these constant-size vector headers. `layout_bytes` charges one
 /// instance of each declaration, not runtime slots or activation storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct DeclarationUsage {
+pub(in crate::frontend) struct DeclarationUsage {
     pub(super) records: usize,
     pub(super) fields: usize,
     pub(super) table_bytes: usize,
@@ -381,7 +381,7 @@ fn table_bytes(records: usize, fields: usize) -> Result<usize, DeclarationError>
 /// Allocation-free admission for source declaration lengths. This is only an
 /// inventory: it validates no identities, spans, field types, or layouts and
 /// cannot construct the checked declaration facade.
-pub(super) fn admit_declaration_counts(
+pub(in crate::frontend) fn admit_declaration_counts(
     field_counts: impl ExactSizeIterator<Item = usize>,
 ) -> Result<DeclarationUsage, DeclarationError> {
     preflight_counts(field_counts, Limits::DEFAULT)

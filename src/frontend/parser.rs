@@ -5,19 +5,54 @@ use super::{
     project::budget::{Allocator, ReserveFailure},
     source::SourceFile,
 };
+/// Only parsing can mint this association; AST consumers cannot clone or
+/// manufacture it for a different source owner.
+pub(super) struct SourceProvenance {
+    identity: u64,
+    text_len: usize,
+    file: super::source::SourceFileId,
+}
+impl std::fmt::Debug for SourceProvenance {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The generation binds ownership, not syntax. Keep structural AST
+        // observations deterministic across identical source allocations.
+        formatter
+            .debug_struct("SourceProvenance")
+            .field("text_len", &self.text_len)
+            .field("file", &self.file)
+            .finish_non_exhaustive()
+    }
+}
+impl SourceProvenance {
+    fn new(source: &SourceFile) -> Self {
+        Self {
+            identity: source.identity(),
+            text_len: source.text().len(),
+            file: source.span(0, 0).file,
+        }
+    }
+    pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
+        self.identity == source.identity()
+            && self.text_len == source.text().len()
+            && self.file == source.span(0, 0).file
+    }
+}
 pub const MAX_NODES: usize = 100_000;
 pub const MAX_NESTING: usize = 64;
 /// Active statement blocks, including the outer function body; independent of expressions.
 pub const MAX_BLOCK_NESTING: usize = 64;
 pub const MAX_PARAMS: usize = 256;
+pub(super) const MAX_PATH_SEGMENTS: usize = 34;
 pub const MAX_DIAGNOSTICS: usize = 100;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)] // Preserve privately qualified predecessor entrypoint names.
 pub(super) enum SourceMode {
     #[cfg(test)]
     ScalarOnly,
     OwnedCandidate,
     ModuleCandidate,
+    ProjectCandidate,
 }
 impl SourceMode {
     fn owned(self) -> bool {
@@ -70,6 +105,8 @@ pub(super) fn parse_counted(
         tokens,
         cursor: 0,
         expressions: Vec::new(),
+        paths: Vec::new(),
+        path_segments: Vec::new(),
         heights: Vec::new(),
         nodes: 0,
         node_limit: node_limit.min(MAX_NODES),
@@ -78,12 +115,16 @@ pub(super) fn parse_counted(
     let mut functions = Vec::new();
     let mut records = Vec::new();
     let mut modules = Vec::new();
+    let mut imports = Vec::new();
     let mut items = Vec::new();
     let mut diagnostics = Vec::new();
     while parser.peek().kind != Kind::Eof && diagnostics.len() < MAX_DIAGNOSTICS {
         let before = parser.cursor;
-        let result = if mode == SourceMode::ModuleCandidate
-            && matches!(parser.peek().kind, Kind::Mod | Kind::Pub)
+        let result = if (mode == SourceMode::ModuleCandidate
+            && matches!(parser.peek().kind, Kind::Mod | Kind::Pub))
+            || (mode == SourceMode::ProjectCandidate
+                && (parser.peek().kind == Kind::Mod
+                    || (parser.peek().kind == Kind::Pub && parser.next_kind() == Kind::Mod)))
         {
             parser.module().and_then(|module| {
                 let at = module.name;
@@ -106,16 +147,37 @@ pub(super) fn parse_counted(
                 modules.push(module);
                 Ok(())
             })
-        } else if mode.owned() && parser.peek().kind == Kind::Struct {
-            parser.record().map(|record| {
-                items.push(ItemId::Struct(records.len()));
-                records.push(record);
+        } else if mode == SourceMode::ProjectCandidate && parser.peek().kind == Kind::Use {
+            parser.import().and_then(|import| {
+                parser
+                    .allocator
+                    .vector(&mut imports, 1, "import declarations")
+                    .and_then(|()| parser.allocator.vector(&mut items, 1, "import items"))
+                    .map_err(|error| parser.project_reserve_error(error, import.span))?;
+                items.push(ItemId::Import(imports.len()));
+                imports.push(import);
+                Ok(())
             })
         } else {
-            parser.function().map(|function| {
-                items.push(ItemId::Function(functions.len()));
-                functions.push(function);
-            })
+            let public = if mode == SourceMode::ProjectCandidate
+                && parser.peek().kind == Kind::Pub
+                && matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
+            {
+                parser.take(Kind::Pub).map(|token| token.span)
+            } else {
+                None
+            };
+            if mode.owned() && parser.peek().kind == Kind::Struct {
+                parser.record(public).map(|record| {
+                    items.push(ItemId::Struct(records.len()));
+                    records.push(record);
+                })
+            } else {
+                parser.function(public).map(|function| {
+                    items.push(ItemId::Function(functions.len()));
+                    functions.push(function);
+                })
+            }
         };
         if let Err(error) = result {
             diagnostics.push(*error);
@@ -127,6 +189,8 @@ pub(super) fn parse_counted(
                 && !(mode.owned() && parser.peek().kind == Kind::Struct)
                 && !(mode == SourceMode::ModuleCandidate
                     && matches!(parser.peek().kind, Kind::Mod | Kind::Pub))
+                && !(mode == SourceMode::ProjectCandidate
+                    && matches!(parser.peek().kind, Kind::Mod | Kind::Pub | Kind::Use))
             {
                 parser.bump();
             }
@@ -134,14 +198,18 @@ pub(super) fn parse_counted(
     }
     if diagnostics.is_empty() {
         Ok((
-            Program {
-                tokens: parser.tokens,
+            Program::parsed(
+                SourceProvenance::new(source),
+                parser.tokens,
                 functions,
+                parser.expressions,
                 records,
                 items,
-                expressions: parser.expressions,
                 modules,
-            },
+                parser.paths,
+                parser.path_segments,
+                imports,
+            ),
             parser.nodes,
         ))
     } else {
@@ -155,6 +223,8 @@ struct Parser<'a> {
     tokens: Vec<Token>,
     cursor: usize,
     expressions: Vec<Expr>,
+    paths: Vec<AbsolutePath>,
+    path_segments: Vec<super::source::Span>,
     heights: Vec<usize>,
     nodes: usize,
     node_limit: usize,
@@ -182,6 +252,172 @@ impl Parser<'_> {
         } else {
             None
         }
+    }
+    fn next_kind(&self) -> Kind {
+        self.tokens[self.cursor + 1..]
+            .iter()
+            .find(|token| token.kind != Kind::Trivia)
+            .map_or(Kind::Eof, |token| token.kind)
+    }
+    fn double_colon(&self) -> bool {
+        self.peek().kind == Kind::Colon
+            && self.tokens.get(self.cursor + 1).is_some_and(|next| {
+                next.kind == Kind::Colon && self.peek().span.end == next.span.start
+            })
+    }
+    fn project_reserve_error(
+        &self,
+        error: ReserveFailure,
+        span: super::source::Span,
+    ) -> Box<Diagnostic> {
+        self.diagnostic(
+            "E0400",
+            "parse",
+            match error {
+                ReserveFailure::Overflow => "project syntax count overflow",
+                ReserveFailure::Allocation => "project syntax allocation failed",
+            },
+            Some(span),
+        )
+    }
+    fn item_path(
+        &mut self,
+        message: &str,
+        paths: bool,
+    ) -> Result<(ItemPath, super::source::Span), Box<Diagnostic>> {
+        let first = self.expect(Kind::Ident, message)?.span;
+        if self.mode != SourceMode::ProjectCandidate || !self.double_colon() {
+            return Ok((ItemPath::Unqualified(first), first));
+        }
+        if !paths {
+            return Err(self.diagnostic(
+                "E0101",
+                "parse",
+                "qualified paths are unavailable in scalar record fields",
+                Some(first),
+            ));
+        }
+        if self.source.text_at(first) != "crate" {
+            return Err(self.diagnostic(
+                "E0101",
+                "parse",
+                "only absolute item paths beginning with `crate::` are supported",
+                Some(first),
+            ));
+        }
+        let id = self.absolute_path(first)?;
+        Ok((ItemPath::Absolute(id), self.paths[id.0].span))
+    }
+    fn path_segment(
+        &mut self,
+        count: &mut usize,
+        segment: super::source::Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let next = count
+            .checked_add(1)
+            .ok_or_else(|| self.project_reserve_error(ReserveFailure::Overflow, segment))?;
+        self.path_segments
+            .len()
+            .checked_add(1)
+            .and_then(|length| length.checked_mul(std::mem::size_of::<super::source::Span>()))
+            .ok_or_else(|| self.project_reserve_error(ReserveFailure::Overflow, segment))?;
+        // Q precedes the aggregate node gate at this exact segment.
+        if next > MAX_PATH_SEGMENTS {
+            return Err(self.diagnostic(
+                "E0400",
+                "parse",
+                "qualified path segment limit exceeded",
+                Some(segment),
+            ));
+        }
+        if self.nodes >= self.node_limit {
+            return Err(self.diagnostic(
+                "E0400",
+                "parse",
+                "syntax node limit exceeded",
+                Some(segment),
+            ));
+        }
+        self.nodes = self
+            .nodes
+            .checked_add(1)
+            .ok_or_else(|| self.project_reserve_error(ReserveFailure::Overflow, segment))?;
+        self.allocator
+            .vector(&mut self.path_segments, 1, "absolute path segments")
+            .map_err(|error| self.project_reserve_error(error, segment))?;
+        self.path_segments.push(segment);
+        *count = next;
+        Ok(())
+    }
+    fn absolute_path(&mut self, first: super::source::Span) -> Result<PathId, Box<Diagnostic>> {
+        let segment_start = self.path_segments.len();
+        let mut segment_len = 0;
+        self.path_segment(&mut segment_len, first)?;
+        let mut end;
+        loop {
+            self.expect(Kind::Colon, "absolute item path requires `::`")?;
+            self.expect(Kind::Colon, "absolute item path requires `::`")?;
+            if matches!(self.peek().kind, Kind::Star | Kind::LBrace) {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "group and glob imports are unavailable in typed-preview",
+                    Some(self.peek().span),
+                ));
+            }
+            let segment = self.expect(Kind::Ident, "expected item path segment")?.span;
+            self.path_segment(&mut segment_len, segment)?;
+            end = segment.end;
+            if !self.double_colon() {
+                break;
+            }
+        }
+        let span = self.source.span(first.start, end);
+        self.allocator
+            .vector(&mut self.paths, 1, "absolute paths")
+            .map_err(|error| self.project_reserve_error(error, span))?;
+        let id = PathId(self.paths.len());
+        self.paths.push(AbsolutePath {
+            span,
+            segment_start,
+            segment_len,
+        });
+        Ok(id)
+    }
+    fn import(&mut self) -> Result<ImportDecl, Box<Diagnostic>> {
+        self.node()?;
+        let start = self.expect(Kind::Use, "expected import declaration")?.span;
+        if matches!(self.peek().kind, Kind::Star | Kind::LBrace) {
+            return Err(self.diagnostic(
+                "E0101",
+                "parse",
+                "group and glob imports are unavailable in typed-preview",
+                Some(self.peek().span),
+            ));
+        }
+        let (path, _) = self.item_path("expected absolute import path", true)?;
+        let ItemPath::Absolute(path) = path else {
+            return Err(self.error("import requires an absolute `crate::` item path"));
+        };
+        let alias =
+            if self.peek().kind == Kind::Ident && self.source.text_at(self.peek().span) == "as" {
+                self.bump();
+                self.expect(Kind::Ident, "expected import alias")?.span
+            } else {
+                *self
+                    .path_segments
+                    .last()
+                    .expect("absolute path has segments")
+            };
+        let end = self
+            .expect(Kind::Semi, "import declaration requires `;`")?
+            .span
+            .end;
+        Ok(ImportDecl {
+            path,
+            alias,
+            span: self.source.span(start.start, end),
+        })
     }
     fn diagnostic(
         &self,
@@ -279,7 +515,10 @@ impl Parser<'_> {
         })
     }
 
-    fn function(&mut self) -> Result<Function, Box<Diagnostic>> {
+    fn function(
+        &mut self,
+        public: Option<super::source::Span>,
+    ) -> Result<Function, Box<Diagnostic>> {
         self.node()?;
         self.expect(Kind::Fn, "expected a top-level function declaration")?;
         let name = self.expect(Kind::Ident, "expected function name")?.span;
@@ -317,6 +556,7 @@ impl Parser<'_> {
         let body = self.block(&mut blocks, 0, "expected function body `{`")?;
         let end = blocks[body.0].end;
         Ok(Function {
+            public,
             name,
             params,
             result,
@@ -355,6 +595,9 @@ impl Parser<'_> {
         Ok(id)
     }
     fn ty(&mut self) -> Result<TypeSyntax, Box<Diagnostic>> {
+        self.ty_with_paths(true)
+    }
+    fn ty_with_paths(&mut self, paths: bool) -> Result<TypeSyntax, Box<Diagnostic>> {
         let token = self.peek();
         let (kind, end) = if self.take(Kind::LParen).is_some() {
             (
@@ -364,10 +607,8 @@ impl Parser<'_> {
                     .end,
             )
         } else {
-            let name = self
-                .expect(Kind::Ident, "expected `bool`, `i32` or `()` type")?
-                .span;
-            (TypeSyntaxKind::Name(name), name.end)
+            let (name, span) = self.item_path("expected `bool`, `i32` or `()` type", paths)?;
+            (TypeSyntaxKind::Name(name), span.end)
         };
         Ok(TypeSyntax {
             span: self.source.span(token.span.start, end),
@@ -378,17 +619,19 @@ impl Parser<'_> {
         if self.mode.owned() && self.peek().kind == Kind::Ampersand {
             let start = self.bump().span.start;
             let mutable = self.take(Kind::Mut).is_some();
-            let referent = self
-                .expect(Kind::Ident, "reference parameter requires a record name")?
-                .span;
+            let (referent, span) =
+                self.item_path("reference parameter requires a record name", true)?;
             return Ok(TypeSyntax {
-                span: self.source.span(start, referent.end),
+                span: self.source.span(start, span.end),
                 kind: TypeSyntaxKind::Reference { mutable, referent },
             });
         }
         self.ty()
     }
-    fn record(&mut self) -> Result<StructDecl, Box<Diagnostic>> {
+    fn record(
+        &mut self,
+        public: Option<super::source::Span>,
+    ) -> Result<StructDecl, Box<Diagnostic>> {
         self.node()?;
         let start = self
             .expect(Kind::Struct, "expected struct declaration")?
@@ -398,13 +641,19 @@ impl Parser<'_> {
         let mut fields = Vec::new();
         while self.peek().kind != Kind::RBrace {
             self.node()?;
+            let public = if self.mode == SourceMode::ProjectCandidate {
+                self.take(Kind::Pub).map(|token| token.span)
+            } else {
+                None
+            };
             let name = self.expect(Kind::Ident, "expected field name")?.span;
             self.expect(Kind::Colon, "field requires an explicit scalar type")?;
-            let ty = self.ty()?;
+            let ty = self.ty_with_paths(false)?;
             fields.push(StructField {
+                public,
                 name,
                 ty,
-                span: self.source.span(name.start, ty.span.end),
+                span: self.source.span(public.unwrap_or(name).start, ty.span.end),
             });
             if self.take(Kind::Comma).is_none() {
                 break;
@@ -414,9 +663,10 @@ impl Parser<'_> {
             .expect(Kind::RBrace, "expected record fields `}`")?
             .span;
         Ok(StructDecl {
+            public,
             name,
             fields,
-            span: self.source.span(start.start, end.end),
+            span: self.source.span(public.unwrap_or(start).start, end.end),
             end,
         })
     }
@@ -437,6 +687,14 @@ impl Parser<'_> {
             let name = self
                 .expect(Kind::Ident, "borrow argument requires a binding name")?
                 .span;
+            if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "qualified borrow places are unavailable in typed-preview",
+                    Some(self.peek().span),
+                ));
+            }
             let place = star.map_or(BorrowPlace::OwnerName(name), |star| {
                 BorrowPlace::ForwardedParameter {
                     name,
@@ -833,7 +1091,8 @@ impl Parser<'_> {
                 ExprKind::Number { digits, negative }
             }
             Kind::Ident => {
-                self.bump();
+                let (path, path_span) = self.item_path("expected item name", true)?;
+                end = path_span.end;
                 if self.take(Kind::LParen).is_some() {
                     let mut args = Vec::new();
                     if self.peek().kind != Kind::RParen {
@@ -853,14 +1112,24 @@ impl Parser<'_> {
                         }
                     }
                     end = self.expect(Kind::RParen, "call requires `)`")?.span.end;
-                    ExprKind::Call {
-                        callee: token.span,
-                        args,
-                    }
-                } else if self.mode.owned() && self.take(Kind::Dot).is_some() {
+                    ExprKind::Call { callee: path, args }
+                } else if self.mode.owned()
+                    && matches!(path, ItemPath::Unqualified(_))
+                    && self.take(Kind::Dot).is_some()
+                {
                     let field = self
                         .expect(Kind::Ident, "expected field name after `.`")?
                         .span;
+                    // A qualified field assignment also reaches this branch:
+                    // assignment lookahead requires `.` + Ident + `=`.
+                    if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
+                        return Err(self.diagnostic(
+                            "E0101",
+                            "parse",
+                            "qualified field names are unavailable in typed-preview",
+                            Some(self.peek().span),
+                        ));
+                    }
                     end = field.end;
                     ExprKind::FieldRead {
                         base: token.span,
@@ -891,9 +1160,16 @@ impl Parser<'_> {
                     }
                     end = self.expect(Kind::RBrace, "expected literal `}`")?.span.end;
                     ExprKind::StructLiteral {
-                        record: token.span,
+                        record: path,
                         fields,
                     }
+                } else if matches!(path, ItemPath::Absolute(_)) {
+                    return Err(self.diagnostic(
+                        "E0101",
+                        "parse",
+                        "qualified item paths require a direct call or constructor",
+                        Some(path_span),
+                    ));
                 } else {
                     ExprKind::Name(token.span)
                 }
@@ -924,3 +1200,7 @@ pub(super) fn parse_with_lowered_node_limit(
 ) -> Result<Program, Vec<Diagnostic>> {
     parse_with_node_limit(source, tokens, mode, limit)
 }
+
+#[cfg(test)]
+#[path = "parser/project_tests.rs"]
+mod project_tests;

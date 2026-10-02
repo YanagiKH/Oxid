@@ -1,0 +1,11 @@
+--- candidate-v4/src/frontend/project.rs
++++ observer-v4/src/frontend/project.rs
+@@ -582,6 +582,8 @@
+         display: &str,
+         origin: Option<Span>,
+     ) -> Result<String, Box<Diagnostic>> {
++        #[cfg(test)]
++        crate::frontend::oir::unit2_observer::record_source_read(path, display, origin);
+         let mut file = File::open(path).map_err(|e| io_error(e, display, origin))?;
+         let mut bytes = Vec::new();
+         let mut scratch = [0u8; 8192];

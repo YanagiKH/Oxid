@@ -13,7 +13,7 @@ mod flow;
 mod native;
 mod plan;
 mod shape;
-mod source;
+pub(super) mod source;
 pub(super) use source::{check_source, SourceProgram};
 mod storage;
 mod verified;

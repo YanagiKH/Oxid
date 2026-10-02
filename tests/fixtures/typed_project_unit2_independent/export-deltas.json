@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "changes": [
+    {
+      "path": "semantic/README.md",
+      "original_sha256": "dc3b176f8f888fa8b26bdce51cce6d07536175142f7d702a729b1c1b6a8f8c00",
+      "export_sha256": "030246f1560023125b6e942373a01b59a308b4e2ed497edf5a2cc6254e1e3621",
+      "original_archive": "archive/semantic/portable-README.md",
+      "scope": "Documentation only: distinguish 3539 explicit creation orders from64 source_files fallback orders; state runner requirements directly. Corpus/source/expectation/adapter bytes unchanged."
+    }
+  ]
+}
