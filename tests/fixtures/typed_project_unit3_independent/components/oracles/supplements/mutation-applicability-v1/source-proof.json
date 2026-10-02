@@ -1,0 +1,109 @@
+{
+  "schema": "unit3-mutation-applicability-source-proof-v1",
+  "id": "raw-wrong_scalar_result",
+  "original_control": "control-span-variants-scalar",
+  "corrected_control": "scalar-root_child-absolute-entry0-i32",
+  "original_call": {
+    "arguments": [
+      {
+        "immediate_prepare": true,
+        "mode": "scalar",
+        "position": 0,
+        "snapshot_expression": "n0020",
+        "span": [
+          0,
+          160,
+          163
+        ],
+        "type": "i32"
+      }
+    ],
+    "callee": "noop",
+    "function": "main",
+    "global_caller": 0,
+    "global_target": 1,
+    "identity": "n0021",
+    "parent": null,
+    "result_owner": null,
+    "result_type": "()",
+    "span": [
+      0,
+      141,
+      164
+    ]
+  },
+  "corrected_call": {
+    "arguments": [
+      {
+        "immediate_prepare": true,
+        "mode": "scalar",
+        "position": 0,
+        "snapshot_expression": "n0032",
+        "span": [
+          0,
+          71,
+          72
+        ],
+        "type": "i32"
+      }
+    ],
+    "callee": "target",
+    "function": "main",
+    "global_caller": 0,
+    "global_target": 1,
+    "identity": "n0033",
+    "parent": null,
+    "result_owner": null,
+    "result_type": "i32",
+    "span": [
+      0,
+      51,
+      73
+    ]
+  },
+  "reason": "The original sole call returns unit, which has no opposite i32/bool type. The corrected existing frozen source has one i32-returning helper call; replacing only its result-slot type with bool creates the originally intended raw signature mismatch.",
+  "unchanged": [
+    "114 mutation IDs",
+    "mutation action",
+    "raw-verifier-rejection authority",
+    "E0500 internal classification",
+    "all original source fixtures and model facts",
+    "all original freeze bytes"
+  ],
+  "candidate_inputs": [],
+  "candidate_invocations": 0,
+  "source_inputs": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/pre-execution-manifest.json",
+      "sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/mutation-expectations.json",
+      "sha256": "e72e96a685272a93712af1d0efbd338c737c48d483fd69b15c8912c69447127f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/mutation-requests.json",
+      "sha256": "228f51304751f2a08d962d95aecbe066fdfa813fdf10b46b144f9cf7ee51846b"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/expected.jsonl.gz",
+      "sha256": "4c2753e8ab1c42a8965f5e07a02973ce99bccbdf22dbfa55de78ff33f06831aa"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/sources/control-span-variants-scalar/main.ox",
+      "sha256": "57a84856f7ab9ba85db6ab95f7ee6322b4e3bede45f0d325766ac8490ffa7a52"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/sources/control-span-variants-scalar/state.ox",
+      "sha256": "e15037cf3d48aeefdeada9c5df3b51bc21967028fa01fd6eb17a2d38c8ff275e"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/sources/scalar-root_child-absolute-entry0-i32/main.ox",
+      "sha256": "a13398474c73b5c1bea0e709dfed5d485b821c45f1aa10ee6c57d029367faf53"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/sources/scalar-root_child-absolute-entry0-i32/left.ox",
+      "sha256": "8067cb8eb73ccd3c3d67cd0fc1cb87b2e7d64325df835b68f1f966964ea66b21"
+    }
+  ]
+}

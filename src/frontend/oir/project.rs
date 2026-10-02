@@ -1,10 +1,9 @@
-//! Private Unit2 complete resolution/type schedule, deliberately ending before
-//! lowering, ownership verification, execution or native production.
+//! Private typed-project facades. Both depths share the source sealing leaf schedule.
 #![allow(dead_code)] // Complete private type qualification; no public activation.
-use super::{owned, *};
+use super::*;
 use crate::frontend::{
-    declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
-    project::{budget::Allocator, ProjectSources, SyntaxFlavor},
+    declaration_index::{IndexLimits, WorkMeter},
+    project::{budget::Allocator, ProjectSources},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +22,19 @@ pub(in crate::frontend) struct CheckedProjectTypes {
     root_main: Option<hir::DefId>,
 }
 impl CheckedProjectTypes {
+    pub(in crate::frontend::oir) fn new(
+        route: ProjectRoute,
+        functions: usize,
+        records: usize,
+        root_main: Option<hir::DefId>,
+    ) -> Self {
+        Self {
+            route,
+            functions,
+            records,
+            root_main,
+        }
+    }
     pub fn route(&self) -> ProjectRoute {
         self.route
     }
@@ -44,52 +56,16 @@ pub(in crate::frontend) fn check_project_candidate(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<CheckedProjectTypes, Vec<Diagnostic>> {
-    let sources = SourceOwner::project(project);
-    let route = if sources.owned(work).map_err(|e| vec![*e])? {
-        ProjectRoute::Owned
-    } else {
-        ProjectRoute::Scalar
-    };
-    #[cfg(test)]
-    work.observe(crate::frontend::declaration_index::Observation::Route {
-        owned: route == ProjectRoute::Owned,
-    });
-    let facts = index::collect_originals(sources, limits, work, allocator).map_err(|e| {
-        work.record_error(&e);
-        vec![*e]
-    })?;
-    // Only original scalar syntax interleaves conflicts with signatures.
-    let original_signatures =
-        if route == ProjectRoute::Scalar && sources.flavor() == SyntaxFlavor::OriginalSingleFile {
-            Some(hir::original_signatures(&facts, work)?)
-        } else {
-            None
-        };
-    let frozen = facts.finish(work, allocator)?;
-    match route {
-        ProjectRoute::Scalar => {
-            let resolved = match original_signatures {
-                Some(signatures) => hir::resolve_bodies(&frozen, work, signatures)?,
-                None => hir::resolve_project(&frozen, work)?,
-            };
-            work.phase("type");
-            let _typed = typeck::check(resolved).inspect_err(|errors| {
-                for error in errors {
-                    work.record_error(error)
-                }
-            })?;
-        }
-        ProjectRoute::Owned => {
-            let resolved = owned::source::resolve::resolve_project(&frozen, work)?;
-            let _typed = owned::source::typeck::check(resolved)?;
-        }
-    }
-    Ok(CheckedProjectTypes {
-        route,
-        functions: frozen.function_count(),
-        records: frozen.record_count(),
-        root_main: frozen.root_original_main(),
-    })
+    super::source::check_project_candidate(project, limits, work, allocator)
+}
+
+pub(in crate::frontend) fn check_project_executable_candidate<'s>(
+    project: &'s ProjectSources,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
+    super::source::check_project_executable_candidate(project, limits, work, allocator)
 }
 
 #[cfg(test)]
@@ -129,3 +105,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "project_execution_tests.rs"]
+mod execution_tests;

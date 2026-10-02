@@ -31,7 +31,14 @@ impl<'s> SourceOwner<'s> {
                 .is_some_and(|other| std::ptr::eq(file, other)),
         };
         if !same || !ast.belongs_to(file) {
-            return Err(bad(at));
+            // No supplied origin is authorized until both actual-map membership
+            // and parser identity agree, even if a substitute map has that range.
+            return Err(Diagnostic::new(
+                "E0500",
+                "resolve-project",
+                "invalid declaration index source or identity",
+                None,
+            ));
         }
         Ok(Self {
             kind: Kind::Original { file, ast, view },

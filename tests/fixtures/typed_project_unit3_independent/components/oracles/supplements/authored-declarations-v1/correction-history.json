@@ -1,0 +1,12 @@
+{
+  "schema": "unit3-pre-execution-supplement-correction-v1",
+  "parent_manifest_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "status": "Awaiting independent review before full candidate runs",
+  "reason": "The initial authored() representation retained function/record declaration identities but omitted field identities required by the full raw association comparator",
+  "correction": "Add complete normalized declarations and field IDs/types/name spans derived deterministically from all original frozen source bytes; verify every previously frozen origin and ID; preserve all original files and outcomes",
+  "entry_seam_clarification": "bind-entry_id changes only a constructor-local proposed entry before typed-entry/index-root-entry agreement and before sealing; it never mutates a constructed wrapper",
+  "candidate_outputs_used_for_correction": false,
+  "compiler_invocations": 0,
+  "original_semantic_expectations_changed": false,
+  "comparison_scope_weakened": false
+}

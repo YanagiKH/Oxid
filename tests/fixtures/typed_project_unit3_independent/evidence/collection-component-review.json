@@ -1,0 +1,13 @@
+{
+  "status": "passed source-only collector review",
+  "component_sha256": "4076e3f4ae5d03d7a8d0bd1f4968ad7d9bc626d7ee6b62d911860a92a022766d",
+  "collector_sha256": "c56769e2acea5be894ec3938cdf8a0981c95a9edec75f074dbb9eb8f54ccfd23",
+  "planner_sha256": "3963c04c2eff2ee963d13ab1a72f9674a2c7df7da2968a85f7d1246d1b3b3bc6",
+  "full_scope": [
+    "152 source cases x two profiles",
+    "150 native primary rows x two profiles"
+  ],
+  "native_mismatched_build_control": "independently rejected before worker",
+  "actual_candidate_executions": 0,
+  "semantic_comparison": "separate frozen comparator only; collector labels collected-not-compared"
+}

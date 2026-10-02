@@ -1,0 +1,511 @@
+[
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      164,
+      165
+    ],
+    "id": "pilot-scalar",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 151,
+        "path": "main.ox",
+        "sha256": "945fee241105224a5f0f03a538ae0c5e3d77b643a5ea3e53414c862c87d6a99a"
+      },
+      {
+        "bytes": 224,
+        "path": "maths.ox",
+        "sha256": "9e32ccfbeb54ab85be914456ad3ac50605a83485787adbf622c7860d77a6154e"
+      },
+      {
+        "bytes": 248,
+        "path": "loops.ox",
+        "sha256": "1df18a7d2dcfd400ac4ae499e97225c1df593c19b32511df7d103e4a907d8ae6"
+      }
+    ],
+    "source_root": "sources/pilot-scalar",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      56,
+      57,
+      63,
+      64,
+      68,
+      69,
+      70,
+      71,
+      88,
+      89,
+      91,
+      92,
+      109,
+      110,
+      116,
+      117,
+      125,
+      126
+    ],
+    "id": "pilot-counter",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 237,
+        "path": "main.ox",
+        "sha256": "70b2dbd65aee46a95d4467f839e0d120e18070ebd1d36ff55039b264bdd89cd5"
+      },
+      {
+        "bytes": 249,
+        "path": "state.ox",
+        "sha256": "55fb395700dd61127be9f16fd58fb50ee9d4d1a6a2673c50e83cc90cd6ad76eb"
+      }
+    ],
+    "source_root": "sources/pilot-counter",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-relay_reuse",
+    "mode": "private-project-candidate",
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 212,
+        "path": "main.ox",
+        "sha256": "a2f41cc84edbc43670465a016b23797e7b8a1f9002fe29154673816e083a7d38"
+      },
+      {
+        "bytes": 272,
+        "path": "state.ox",
+        "sha256": "635f800cc493cf026ea90c5bca76e851c6e5119e1827d2ef163728af44936c01"
+      },
+      {
+        "bytes": 0,
+        "path": "other.ox",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "source_root": "sources/negative-relay_reuse",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-arity",
+    "mode": "private-project-candidate",
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 78,
+        "path": "main.ox",
+        "sha256": "976fb0975bcb599d29da261986e9ce9c9a17986ab7805491f4d1222714cfbc93"
+      },
+      {
+        "bytes": 82,
+        "path": "state.ox",
+        "sha256": "87f22b9a31192b8e056fea626dc5a85dbf3bb6c749b154d52016f58564a91553"
+      },
+      {
+        "bytes": 35,
+        "path": "other.ox",
+        "sha256": "024f449a9c069edf58f4ce2061c4f9bb905fc4e693f2364b88aef7037ab5ebff"
+      }
+    ],
+    "source_root": "sources/negative-arity",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-private_read",
+    "mode": "private-project-candidate",
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 82,
+        "path": "main.ox",
+        "sha256": "5e81e8e91c6ca68e5883c51d0457f99c76088608df1698e288a5803d08ae841d"
+      },
+      {
+        "bytes": 83,
+        "path": "state.ox",
+        "sha256": "a6ec81092f5d649f0cec771de600995979f84ccc087ce699382f9f9d872dbb79"
+      }
+    ],
+    "source_root": "sources/negative-private_read",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-imported_main-scalar",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 68,
+        "path": "main.ox",
+        "sha256": "5f56ddc0ea36989f15b5926c05c30a2d9b1faed91ed9cb80cc877d987c4dbb74"
+      },
+      {
+        "bytes": 36,
+        "path": "state.ox",
+        "sha256": "b8d6eb2e302608c732d8cf10db66e69a61701c900d99f3b6fe15345cba865bd8"
+      }
+    ],
+    "source_root": "sources/negative-imported_main-scalar",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-imported_main-owned",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 68,
+        "path": "main.ox",
+        "sha256": "5f56ddc0ea36989f15b5926c05c30a2d9b1faed91ed9cb80cc877d987c4dbb74"
+      },
+      {
+        "bytes": 71,
+        "path": "state.ox",
+        "sha256": "ea51c3710fb9b5990825bec8aba604619d0014c4f07e0644ad5909a44ee5c905"
+      }
+    ],
+    "source_root": "sources/negative-imported_main-owned",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      3,
+      4
+    ],
+    "id": "negative-native_recursion-scalar-false",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 57,
+        "path": "main.ox",
+        "sha256": "83210c39172b353667cc9a9d33751c815e8683b6520d7920475f8e11a26975b1"
+      },
+      {
+        "bytes": 130,
+        "path": "state.ox",
+        "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+      },
+      {
+        "bytes": 130,
+        "path": "other.ox",
+        "sha256": "3799a5f0a0c8a2b85b0cabaad5b5603ef81177b6ee527eb0b468cb48e51d1e54"
+      }
+    ],
+    "source_root": "sources/negative-native_recursion-scalar-false",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      3,
+      4
+    ],
+    "id": "negative-native_recursion-owned-false",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 57,
+        "path": "main.ox",
+        "sha256": "83210c39172b353667cc9a9d33751c815e8683b6520d7920475f8e11a26975b1"
+      },
+      {
+        "bytes": 130,
+        "path": "state.ox",
+        "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+      },
+      {
+        "bytes": 151,
+        "path": "other.ox",
+        "sha256": "d5f02f2e31566ae93a0a3fbbfbe04727f4f237a5eeeedaf48a2e8bb3e28eaa6a"
+      }
+    ],
+    "source_root": "sources/negative-native_recursion-owned-false",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-crlf-scalar_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 79,
+        "path": "main.ox",
+        "sha256": "1b6154d0cb5b87af40aedd56d42b7088774d85a0a6d91d2c3440c2d94a3a6e31"
+      },
+      {
+        "bytes": 65,
+        "path": "state.ox",
+        "sha256": "abdeaabfb093530575ecc8910e9cabe9af37811abc0b8eedcf866ed14b0288f3"
+      }
+    ],
+    "source_root": "sources/origin-unicode-crlf-scalar_overflow",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-crlf-owned_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 119,
+        "path": "main.ox",
+        "sha256": "bdc8fdbba7e58fb9db9f2f840044e719734e7f57b065a0545f2dd0576ddee524"
+      },
+      {
+        "bytes": 175,
+        "path": "state.ox",
+        "sha256": "127004b0adfe7e0c984894bc5f76ab1160035355b8dc09189f9d0cf13125c833"
+      }
+    ],
+    "source_root": "sources/origin-unicode-crlf-owned_overflow",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-crlf-owned_loan",
+    "mode": "private-project-candidate",
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 124,
+        "path": "main.ox",
+        "sha256": "6fe9f11fbc6314c85b4d454dba810f379754c96c7a721b7082c45a0222814843"
+      },
+      {
+        "bytes": 157,
+        "path": "state.ox",
+        "sha256": "c01efa4fe9a6bbc5688b8ac101e61c0cc55b44972692cc6f784ce2b8232331c2"
+      }
+    ],
+    "source_root": "sources/origin-unicode-crlf-owned_loan",
+    "driver_operations": [
+      "check",
+      "run",
+      "compile"
+    ],
+    "driver_formats": [
+      "text",
+      "json"
+    ]
+  }
+]

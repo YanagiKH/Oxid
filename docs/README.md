@@ -30,6 +30,7 @@ Start with a small program, then follow the guide for what you want to build. Th
 
 - [Roadmap](ROADMAP.md) and [contribution guide](../CONTRIBUTING.md)
 - [Current implementation and limits](architecture/current-baseline.md)
+- [Private typed-project execution and evidence](architecture/typed-project-unit3-validation.md)
 - [Specification scope](../spec/README.md) and [selected legacy behavior](../spec/legacy-0.9.md)
 - [Feature status definitions](architecture/feature-status.md) and [machine-readable inventory](feature-status.json)
 - [Legacy module contract](../spec/legacy-modules.md) and [baseline CI evidence](architecture/ci-evidence-24b554d.md)

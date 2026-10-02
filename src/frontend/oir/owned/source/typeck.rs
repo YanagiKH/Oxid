@@ -81,13 +81,16 @@ pub(super) struct TypedOwnedFunction<'a> {
     body: &'a TypedBody,
 }
 impl TypedOwnedProgram<'_> {
+    pub(super) fn index(&self) -> &crate::frontend::declaration_index::DeclarationIndex<'_> {
+        self.program.index()
+    }
     pub(super) fn records(&self) -> &[Record] {
         self.program.records()
     }
     pub(super) fn signatures(&self) -> &[Signature] {
         self.program.signatures()
     }
-    pub(super) fn entry(&self) -> Option<DefId> {
+    pub(in crate::frontend::oir) fn entry(&self) -> Option<DefId> {
         self.program.entry()
     }
     pub(super) fn text(&self, span: Span) -> &str {

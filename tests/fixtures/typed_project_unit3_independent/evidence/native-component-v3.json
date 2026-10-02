@@ -1,0 +1,139 @@
+{
+  "core_manifest_sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
+  "entrypoint": "run.py",
+  "files": [
+    {
+      "bytes": 4229,
+      "path": "adapter.rs",
+      "sha256": "d35e76f863550853e5cb867187f44aa9bd83d2846b543ac3482e837edc88c4f9"
+    },
+    {
+      "bytes": 155,
+      "path": "main.rs",
+      "sha256": "588eb96bafcd9bca63e4354e23b3138b5decc1b20d98e5c7d0851d679fe9530d"
+    },
+    {
+      "bytes": 12464,
+      "path": "run.py",
+      "sha256": "05c96a02ba8ff2d5069a45e737aeefd37dfabf8d65fd16c9cffd8b5147089306"
+    },
+    {
+      "bytes": 4884,
+      "path": "prepare.py",
+      "sha256": "df72c425403dbbb820d75a775a8f10223b30767ae0f44185f5b89a8b91eb01f6"
+    },
+    {
+      "bytes": 6096,
+      "path": "audit_protocol.py",
+      "sha256": "048e4c5dc194ca7840a9331e98ef060c820d0288a3bbd393e9228b8d668620d1"
+    },
+    {
+      "bytes": 7786,
+      "path": "overlay-v2.patch",
+      "sha256": "2df49ce00cbb0e4483a9018b90279cf6b9d42c204c767692d0e740493e507bee"
+    },
+    {
+      "bytes": 36889,
+      "path": "overlay-manifest-v2.json",
+      "sha256": "f61460acd26bd9f8bf783b02c49315d0a950507834de945fe1ae07fd25f4c401"
+    },
+    {
+      "bytes": 808,
+      "path": "controller-manifest-v3.json",
+      "sha256": "a0a3223b57fbd87e370f7f6793894d109880aa04047970113ea297372e8d5851"
+    },
+    {
+      "bytes": 3477,
+      "path": "request-input-manifest.json",
+      "sha256": "2f5d4be3cfd30a1bc1811d12d5bdd1269f0581166abe76d69df49488c17db987"
+    },
+    {
+      "bytes": 26931,
+      "path": "native-requests.json",
+      "sha256": "c9828b3bb5f16d5f03c13475f769cec9726534a25e800777ec842f7feb909984"
+    },
+    {
+      "bytes": 3629,
+      "path": "fuel-requests.frozen.json",
+      "sha256": "712d69349d7c641feca7a6c24d48c8f4f7ebd05578094594a19831c4c449d13d"
+    },
+    {
+      "bytes": 10646,
+      "path": "driver-requests.proposed.json",
+      "sha256": "ab2a51daec389f659ee1aaa2ccf8d91b2184d94d712d646e6b6a1137006d20ac"
+    },
+    {
+      "bytes": 2142,
+      "path": "no-clobber-requests.json",
+      "sha256": "bf2955e64077d12513438ed2cad386287f7ab1f6c5ba6ab13c4e80ad98cc4f68"
+    },
+    {
+      "bytes": 148,
+      "path": "spy-bin/clang",
+      "sha256": "e320de2c81846ffe01e856bbfeda05894bd517d7566b4fc721aef780a692d868"
+    },
+    {
+      "bytes": 148,
+      "path": "spy-bin/opt",
+      "sha256": "e320de2c81846ffe01e856bbfeda05894bd517d7566b4fc721aef780a692d868"
+    },
+    {
+      "bytes": 148,
+      "path": "spy-bin/ld.lld",
+      "sha256": "e320de2c81846ffe01e856bbfeda05894bd517d7566b4fc721aef780a692d868"
+    },
+    {
+      "bytes": 8907,
+      "path": "report.md",
+      "sha256": "e00b50246e8fa3ec5a72fa25bae0fc6a67276c64695107780549386832ae13ab"
+    }
+  ],
+  "native_supplement_manifest_sha256": "9cae46e804a2776eb44732ced7201f99e37312346ef81958d025ee255f644c0a",
+  "primary_elf_replay_requested": false,
+  "prior_manifest_sha256": "b5884f09abb3d378db9b4f8a5cb45c6dfb57b136219e0b841c94412f21e07d6e",
+  "root": "/workspace/scratch/8266abf56995/typed-project-unit3-native-driver-review",
+  "schema": "unit3-portable-native-component-v3",
+  "shared_source_transport": {
+    "bytes": 83356,
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/transport-built-v1/source-transport.json",
+    "sha256": "2c863f351d6277d8b6c601d63d72ba53f4af94c20f1e698c1a35593e958e13cd"
+  },
+  "status": "library/environment identities and zero-invoke-probe controls; independent final review before real replay",
+  "upstream_manifest": {
+    "bytes": 812468,
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-native-driver-review/artifact-manifest.json",
+    "sha256": "f73c125e3b3099a93d9f3be5e20a51abadc5d28feab58dfc8558024f670130ec"
+  },
+  "wrapper_files": [
+    {
+      "bytes": 22667,
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_portable.py",
+      "sha256": "fcc7f17dd26de7ee20078db8fd6215bc9a62594eb9a5d731bb1cb8676a907501"
+    },
+    {
+      "bytes": 4283,
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/ARCHITECTURE.md",
+      "sha256": "846d8cfd44752c6b41a52f2c61c25b7837abb67048700b370f54e1de21124a99"
+    },
+    {
+      "bytes": 5597,
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/test_admission_order.py",
+      "sha256": "975a7be03cdc5a4c34094b069bd2e4186758551d44a3f677bdc5a1172bb80f07"
+    },
+    {
+      "bytes": 6631,
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/bounded-roster-v1.json",
+      "sha256": "d0480056fb539fa95b59afdb3467bb3ad576bc90e1950d0f3ab2e9832a9e412b"
+    },
+    {
+      "bytes": 2172,
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/admission-order-controls-v3/results.json",
+      "sha256": "edf80d37ed7936daf6719cd27efee376db81c2b9ea422ab91f1e09846de9ad37"
+    },
+    {
+      "bytes": 1485,
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/library-inventory-readonly.json",
+      "sha256": "b93877584d74f8c328ca3b6bec5acc116a440b84f83cd22413e83d049c7d85a0"
+    }
+  ]
+}

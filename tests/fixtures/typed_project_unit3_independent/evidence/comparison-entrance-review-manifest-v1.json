@@ -1,0 +1,92 @@
+{
+  "files": [
+    {
+      "bytes": 17338,
+      "path": "portable_compare.py",
+      "sha256": "7ee84a91adb97a94677b61ccb3936c548e6f2f6d986b4146366cb4cfe64c372d"
+    },
+    {
+      "bytes": 12759,
+      "path": "protocol.py",
+      "sha256": "05b3a82e5f014253cc153cfcc8bc9280febe04cc1b33f699ae7e7a409bf9f4b4"
+    },
+    {
+      "bytes": 18207,
+      "path": "bindings.py",
+      "sha256": "82bf7457b0c666b0e4a142455e73292ad9432cbdf56bfdc008d0b7ff163f5825"
+    },
+    {
+      "bytes": 16795,
+      "path": "native_plan.py",
+      "sha256": "fc3328c397a728b5e4ef4529fb87744309ccec8f8e54285e06a3a1159f49beba"
+    },
+    {
+      "bytes": 102162,
+      "path": "component-manifest.json",
+      "sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2"
+    },
+    {
+      "bytes": 3904,
+      "path": "PLAN_SCHEMA.md",
+      "sha256": "58f44165cc0df5d1e7224df3e644cff06270d37413b4a54d36b90390ab3c59ae"
+    },
+    {
+      "bytes": 4297,
+      "path": "README.md",
+      "sha256": "41fe74dd91b80422dfedee5c3296963fdc08244790d2025427856f3ef731caac"
+    },
+    {
+      "bytes": 1339,
+      "path": "runtime-manifest-v1.json",
+      "sha256": "93f5403db50358442646da9865e2b51c2de255bf8ec41ac92a805e242c4fdff3"
+    },
+    {
+      "bytes": 7844,
+      "path": "test_wrapper_controls.py",
+      "sha256": "8c1274bc0a8c87dac40cc8eb81264370022b7f9c8684ff101d6c7ff05325eb69"
+    },
+    {
+      "bytes": 9371,
+      "path": "native-plan-selfcheck.json",
+      "sha256": "96904002019f2dee9ee365b6c899dc37571e74c6f7037a166eea6983265cb7f7"
+    },
+    {
+      "bytes": 2431,
+      "path": "development-history.json",
+      "sha256": "851ba5b4b093f8dfb239131abbbb382b19fc1fad47cac53aabd0bb8e94205142"
+    },
+    {
+      "bytes": 6627,
+      "path": "development-v1/controls-attempt2/results.json",
+      "sha256": "0b301b1e3aa22a6d653672cc50f9bede8beec0c25be2788e40cf9da1455134cd"
+    },
+    {
+      "bytes": 4156,
+      "path": "development-v1/retained-source-plan.json",
+      "sha256": "1bb86bf10c8405c2b1cda6d7ccc827bd1fba62dfd53ddb87bbe2bf2fa1e19eb1"
+    },
+    {
+      "bytes": 10332,
+      "path": "development-v1/retained-native-plan.json",
+      "sha256": "a3209fe2a546b88bf2700c69ecd65a53ff679d505aa5ee85e63a00e6f9b85b36"
+    },
+    {
+      "bytes": 23504,
+      "path": "development-v1/source-final-v1/comparison.json",
+      "sha256": "8ca7d21846258133432cf727a239c65480ffd8a6142372b4aec6f691a4fc22d7"
+    },
+    {
+      "bytes": 14239,
+      "path": "development-v1/native-final-v1/comparison.json",
+      "sha256": "ac2ea3308d13e75cfbbc1f08607e34d4c8b99ba54909d27b7a61a95c31ea201e"
+    },
+    {
+      "bytes": 370,
+      "path": "development-v1/mutation-plan-admission.json",
+      "sha256": "6597e77581a4ddb962780f93cd9bac80ec16d472aa016d43ca6d0268a00c5942"
+    }
+  ],
+  "pending": "independent entrance review and authorized six actual mutation observations",
+  "schema": "unit3-independent-portable-entrance-review-v1",
+  "scope": "Mechanical portable entrance; unchanged semantic helpers/expectations. Retained4 source+6 native comparisons; source-only six-mutation/four-build admission;49 native controls and32 wrapper rejections. No new compiler execution."
+}

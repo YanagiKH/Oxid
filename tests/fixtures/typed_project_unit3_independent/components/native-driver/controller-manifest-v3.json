@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "candidate_executions": 0,
+  "files": [
+    {
+      "path": "run.py",
+      "sha256": "05c96a02ba8ff2d5069a45e737aeefd37dfabf8d65fd16c9cffd8b5147089306",
+      "bytes": 12464
+    },
+    {
+      "path": "request-input-manifest.json",
+      "sha256": "2f5d4be3cfd30a1bc1811d12d5bdd1269f0581166abe76d69df49488c17db987",
+      "bytes": 3477
+    },
+    {
+      "path": "spy-bin/clang",
+      "sha256": "e320de2c81846ffe01e856bbfeda05894bd517d7566b4fc721aef780a692d868",
+      "bytes": 148
+    },
+    {
+      "path": "spy-bin/ld.lld",
+      "sha256": "e320de2c81846ffe01e856bbfeda05894bd517d7566b4fc721aef780a692d868",
+      "bytes": 148
+    },
+    {
+      "path": "spy-bin/opt",
+      "sha256": "e320de2c81846ffe01e856bbfeda05894bd517d7566b4fc721aef780a692d868",
+      "bytes": 148
+    }
+  ]
+}

@@ -1,0 +1,3936 @@
+{
+  "schema": "unit3-native-driver-streams-v1",
+  "parent_manifest_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "path_substitution": {
+    "FIXTURE_ROOT": "literal absolute root selected before invocation; same path source compiler receives",
+    "OUTPUT": "literal output argument selected before invocation"
+  },
+  "defaults": [
+    {
+      "id": "scalar-root_child-absolute-entry0-i32",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "10\n",
+      "stderr": ""
+    },
+    {
+      "id": "scalar-sibling-import-entry1-bool",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "true\n",
+      "stderr": ""
+    },
+    {
+      "id": "scalar-child_ancestor-absolute-entry1-bool",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "true\n",
+      "stderr": ""
+    },
+    {
+      "id": "owned-root_child-absolute-root-shared_nested",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "8\n",
+      "stderr": ""
+    },
+    {
+      "id": "owned-root_child-import-root-loop_cleanup",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "1\n",
+      "stderr": ""
+    },
+    {
+      "id": "owned-sibling-import-child-exclusive_forward",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "8\n",
+      "stderr": ""
+    },
+    {
+      "id": "owned-child_ancestor-absolute-child-owned_staging",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "4\n",
+      "stderr": ""
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "816\n",
+      "stderr": ""
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "816\n",
+      "stderr": ""
+    },
+    {
+      "id": "pilot-scalar",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "10\n",
+      "stderr": ""
+    },
+    {
+      "id": "control-owned-entry-id1",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "5\n",
+      "stderr": ""
+    },
+    {
+      "id": "pilot-counter",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "5\n",
+      "stderr": ""
+    },
+    {
+      "id": "negative-imported_main-scalar",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native compile requires a declared zero-argument main",
+        "primary": null,
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "negative-imported_main-owned",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native compile requires a declared zero-argument main",
+        "primary": null,
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "negative-native_recursion-scalar-true",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native preview does not support recursive call graphs, including unused functions and unchosen branches\n  --> ${FIXTURE_ROOT}/negative-native_recursion-scalar-true/main.ox:3:4\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/negative-native_recursion-scalar-true/main.ox",
+          "start": 25,
+          "end": 29,
+          "line": 3,
+          "column": 4,
+          "end_line": 3,
+          "end_column": 8
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "negative-native_recursion-scalar-false",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native preview does not support recursive call graphs, including unused functions and unchosen branches\n  --> ${FIXTURE_ROOT}/negative-native_recursion-scalar-false/state.ox:1:8\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/negative-native_recursion-scalar-false/state.ox",
+          "start": 7,
+          "end": 11,
+          "line": 1,
+          "column": 8,
+          "end_line": 1,
+          "end_column": 12
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "negative-native_recursion-owned-true",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native preview does not support recursive call graphs, including unused functions and unchosen branches\n  --> ${FIXTURE_ROOT}/negative-native_recursion-owned-true/main.ox:3:4\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/negative-native_recursion-owned-true/main.ox",
+          "start": 25,
+          "end": 29,
+          "line": 3,
+          "column": 4,
+          "end_line": 3,
+          "end_column": 8
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "negative-native_recursion-owned-false",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native preview does not support recursive call graphs, including unused functions and unchosen branches\n  --> ${FIXTURE_ROOT}/negative-native_recursion-owned-false/state.ox:1:8\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/negative-native_recursion-owned-false/state.ox",
+          "start": 7,
+          "end": 11,
+          "line": 1,
+          "column": 8,
+          "end_line": 1,
+          "end_column": 12
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-ascii-lf-scalar_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-ascii-lf-scalar_overflow/state.ox:2:46\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-ascii-lf-scalar_overflow/state.ox",
+          "start": 55,
+          "end": 56,
+          "line": 2,
+          "column": 46,
+          "end_line": 2,
+          "end_column": 47
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-ascii-lf-owned_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-ascii-lf-owned_overflow/state.ox:4:71\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-ascii-lf-owned_overflow/state.ox",
+          "start": 163,
+          "end": 164,
+          "line": 4,
+          "column": 71,
+          "end_line": 4,
+          "end_column": 72
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-ascii-lf-missing_root",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native compile requires a declared zero-argument main",
+        "primary": null,
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-unicode-lf-scalar_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-unicode-lf-scalar_overflow/state.ox:2:46\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-unicode-lf-scalar_overflow/state.ox",
+          "start": 56,
+          "end": 57,
+          "line": 2,
+          "column": 46,
+          "end_line": 2,
+          "end_column": 47
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-unicode-lf-owned_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-unicode-lf-owned_overflow/state.ox:4:71\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-unicode-lf-owned_overflow/state.ox",
+          "start": 164,
+          "end": 165,
+          "line": 4,
+          "column": 71,
+          "end_line": 4,
+          "end_column": 72
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-unicode-lf-missing_root",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native compile requires a declared zero-argument main",
+        "primary": null,
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-ascii-crlf-scalar_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-ascii-crlf-scalar_overflow/state.ox:2:46\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-ascii-crlf-scalar_overflow/state.ox",
+          "start": 56,
+          "end": 57,
+          "line": 2,
+          "column": 46,
+          "end_line": 2,
+          "end_column": 47
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-ascii-crlf-owned_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-ascii-crlf-owned_overflow/state.ox:4:71\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-ascii-crlf-owned_overflow/state.ox",
+          "start": 166,
+          "end": 167,
+          "line": 4,
+          "column": 71,
+          "end_line": 4,
+          "end_column": 72
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-ascii-crlf-missing_root",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native compile requires a declared zero-argument main",
+        "primary": null,
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-unicode-crlf-scalar_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-scalar_overflow/state.ox:2:46\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-unicode-crlf-scalar_overflow/state.ox",
+          "start": 57,
+          "end": 58,
+          "line": 2,
+          "column": 46,
+          "end_line": 2,
+          "end_column": 47
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-unicode-crlf-owned_overflow",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-owned_overflow/state.ox:4:71\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_overflow/state.ox",
+          "start": 167,
+          "end": 168,
+          "line": 4,
+          "column": 71,
+          "end_line": 4,
+          "end_column": 72
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "origin-unicode-crlf-missing_root",
+      "compile": "reject",
+      "executable": false,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0700",
+        "stage": "native-admission",
+        "message": "native compile requires a declared zero-argument main",
+        "primary": null,
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "diagnostic-collision-scalar",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/diagnostic-collision-scalar/state.ox:1:62\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/diagnostic-collision-scalar/state.ox",
+          "start": 61,
+          "end": 62,
+          "line": 1,
+          "column": 62,
+          "end_line": 1,
+          "end_column": 63
+        },
+        "secondary": [],
+        "notes": []
+      }
+    },
+    {
+      "id": "diagnostic-collision-owned",
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/diagnostic-collision-owned/state.ox:2:62\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0604",
+        "stage": "oir-run",
+        "message": "checked i32 arithmetic overflow",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/diagnostic-collision-owned/state.ox",
+          "start": 82,
+          "end": 83,
+          "line": 2,
+          "column": 62,
+          "end_line": 2,
+          "end_column": 63
+        },
+        "secondary": [],
+        "notes": []
+      }
+    }
+  ],
+  "fuel": [
+    {
+      "id": "pilot-scalar",
+      "budget": 164,
+      "total_fuel": 165,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-scalar/main.ox:5:20\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/pilot-scalar/main.ox",
+          "start": 98,
+          "end": 148,
+          "line": 5,
+          "column": 20,
+          "end_line": 5,
+          "end_column": 70
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "Return",
+      "paid": 164,
+      "denied_cost": 1
+    },
+    {
+      "id": "pilot-scalar",
+      "budget": 165,
+      "total_fuel": 165,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "10\n",
+      "stderr": "",
+      "paid": 165
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "budget": 201,
+      "total_fuel": 1297,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-mechanical-batch/state.ox:3:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/pilot-mechanical-batch/state.ox",
+          "start": 139,
+          "end": 173,
+          "line": 3,
+          "column": 5,
+          "end_line": 3,
+          "end_column": 39
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "WriteField",
+      "paid": 201,
+      "denied_cost": 1
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "budget": 281,
+      "total_fuel": 1297,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-mechanical-batch/jobs.ox:4:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 2,
+          "path": "${FIXTURE_ROOT}/pilot-mechanical-batch/jobs.ox",
+          "start": 108,
+          "end": 132,
+          "line": 4,
+          "column": 5,
+          "end_line": 4,
+          "end_column": 29
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "Invoke",
+      "paid": 261,
+      "denied_cost": 21
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "budget": 204,
+      "total_fuel": 1297,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-mechanical-batch/state.ox:4:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/pilot-mechanical-batch/state.ox",
+          "start": 178,
+          "end": 185,
+          "line": 4,
+          "column": 5,
+          "end_line": 4,
+          "end_column": 12
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "ReturnScalar",
+      "paid": 203,
+      "denied_cost": 2
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "budget": 1255,
+      "total_fuel": 1297,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-mechanical-batch/main.ox:30:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/pilot-mechanical-batch/main.ox",
+          "start": 758,
+          "end": 783,
+          "line": 30,
+          "column": 5,
+          "end_line": 30,
+          "end_column": 30
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "StorageEnd",
+      "paid": 1251,
+      "denied_cost": 5
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "budget": 1296,
+      "total_fuel": 1297,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-mechanical-batch/main.ox:30:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/pilot-mechanical-batch/main.ox",
+          "start": 758,
+          "end": 783,
+          "line": 30,
+          "column": 5,
+          "end_line": 30,
+          "end_column": 30
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "ReturnScalar",
+      "paid": 1256,
+      "denied_cost": 41
+    },
+    {
+      "id": "pilot-mechanical-batch",
+      "budget": 1297,
+      "total_fuel": 1297,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "816\n",
+      "stderr": "",
+      "paid": 1297
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "budget": 280,
+      "total_fuel": 1577,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-opaque-batch/state.ox:6:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/pilot-opaque-batch/state.ox",
+          "start": 224,
+          "end": 258,
+          "line": 6,
+          "column": 5,
+          "end_line": 6,
+          "end_column": 39
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "WriteField",
+      "paid": 280,
+      "denied_cost": 1
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "budget": 377,
+      "total_fuel": 1577,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-opaque-batch/jobs.ox:4:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 2,
+          "path": "${FIXTURE_ROOT}/pilot-opaque-batch/jobs.ox",
+          "start": 108,
+          "end": 132,
+          "line": 4,
+          "column": 5,
+          "end_line": 4,
+          "end_column": 29
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "Invoke",
+      "paid": 357,
+      "denied_cost": 21
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "budget": 244,
+      "total_fuel": 1577,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-opaque-batch/state.ox:16:43\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 1,
+          "path": "${FIXTURE_ROOT}/pilot-opaque-batch/state.ox",
+          "start": 609,
+          "end": 629,
+          "line": 16,
+          "column": 43,
+          "end_line": 16,
+          "end_column": 63
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "ReturnScalar",
+      "paid": 243,
+      "denied_cost": 2
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "budget": 1528,
+      "total_fuel": 1577,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-opaque-batch/main.ox:33:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/pilot-opaque-batch/main.ox",
+          "start": 781,
+          "end": 806,
+          "line": 33,
+          "column": 5,
+          "end_line": 33,
+          "end_column": 30
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "StorageEnd",
+      "paid": 1524,
+      "denied_cost": 5
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "budget": 1576,
+      "total_fuel": 1577,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/pilot-opaque-batch/main.ox:33:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/pilot-opaque-batch/main.ox",
+          "start": 781,
+          "end": 806,
+          "line": 33,
+          "column": 5,
+          "end_line": 33,
+          "end_column": 30
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "ReturnScalar",
+      "paid": 1529,
+      "denied_cost": 48
+    },
+    {
+      "id": "pilot-opaque-batch",
+      "budget": 1577,
+      "total_fuel": 1577,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "816\n",
+      "stderr": "",
+      "paid": 1577
+    },
+    {
+      "id": "owned-root_child-import-root-loop_cleanup",
+      "budget": 149,
+      "total_fuel": 354,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/owned-root_child-import-root-loop_cleanup/main.ox:15:13\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/owned-root_child-import-root-loop_cleanup/main.ox",
+          "start": 374,
+          "end": 383,
+          "line": 15,
+          "column": 13,
+          "end_line": 15,
+          "end_column": 22
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "StorageEnd",
+      "paid": 148,
+      "denied_cost": 2
+    },
+    {
+      "id": "owned-root_child-import-root-loop_cleanup",
+      "budget": 337,
+      "total_fuel": 354,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/owned-root_child-import-root-loop_cleanup/main.ox:18:13\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/owned-root_child-import-root-loop_cleanup/main.ox",
+          "start": 426,
+          "end": 432,
+          "line": 18,
+          "column": 13,
+          "end_line": 18,
+          "end_column": 19
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "StorageEnd",
+      "paid": 336,
+      "denied_cost": 2
+    },
+    {
+      "id": "owned-root_child-import-root-loop_cleanup",
+      "budget": 353,
+      "total_fuel": 354,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "error[E0601] (oir-run): execution fuel exhausted\n  --> ${FIXTURE_ROOT}/owned-root_child-import-root-loop_cleanup/main.ox:22:5\n",
+      "diagnostic": {
+        "schema_version": 1,
+        "edition": "typed-preview",
+        "kind": "diagnostic",
+        "severity": "error",
+        "code": "E0601",
+        "stage": "oir-run",
+        "message": "execution fuel exhausted",
+        "primary": {
+          "file_id": 0,
+          "path": "${FIXTURE_ROOT}/owned-root_child-import-root-loop_cleanup/main.ox",
+          "start": 495,
+          "end": 508,
+          "line": 22,
+          "column": 5,
+          "end_line": 22,
+          "end_column": 18
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "next_denied_operation": "ReturnScalar",
+      "paid": 342,
+      "denied_cost": 12
+    },
+    {
+      "id": "owned-root_child-import-root-loop_cleanup",
+      "budget": 354,
+      "total_fuel": 354,
+      "compile": "success",
+      "executable": true,
+      "exit_status": 0,
+      "stdout": "1\n",
+      "stderr": "",
+      "paid": 354
+    }
+  ],
+  "driver": [
+    {
+      "id": "pilot-scalar",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (6 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 6
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":6}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 6
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "10\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 10
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":10}}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 10
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview native compile ok: \"${OUTPUT}\"\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":true,\"errors\":0,\"output\":\"${OUTPUT}\"}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        }
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (4 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 4
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":4}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 4
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "5\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 5
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":5}}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 5
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview native compile ok: \"${OUTPUT}\"\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":true,\"errors\":0,\"output\":\"${OUTPUT}\"}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        }
+      ]
+    },
+    {
+      "id": "negative-relay_reuse",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0310] (ownership): owned value is not available on every path\n  --> ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:7:31\n  ::: ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:6:5: value moved here\n  ::: ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:4:13: value declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0310",
+            "stage": "ownership",
+            "message": "owned value is not available on every path",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+              "start": 205,
+              "end": 207,
+              "line": 7,
+              "column": 31,
+              "end_line": 7,
+              "end_column": 33
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 143,
+                  "end": 174,
+                  "line": 6,
+                  "column": 5,
+                  "end_line": 6,
+                  "end_column": 36
+                },
+                "message": "value moved here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 53,
+                  "end": 54,
+                  "line": 4,
+                  "column": 13,
+                  "end_line": 4,
+                  "end_column": 14
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0310\",\"stage\":\"ownership\",\"message\":\"owned value is not available on every path\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":205,\"end\":207,\"line\":7,\"column\":31,\"end_line\":7,\"end_column\":33},\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":143,\"end\":174,\"line\":6,\"column\":5,\"end_line\":6,\"end_column\":36},\"message\":\"value moved here\"},{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":53,\"end\":54,\"line\":4,\"column\":13,\"end_line\":4,\"end_column\":14},\"message\":\"value declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0310",
+            "stage": "ownership",
+            "message": "owned value is not available on every path",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+              "start": 205,
+              "end": 207,
+              "line": 7,
+              "column": 31,
+              "end_line": 7,
+              "end_column": 33
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 143,
+                  "end": 174,
+                  "line": 6,
+                  "column": 5,
+                  "end_line": 6,
+                  "end_column": 36
+                },
+                "message": "value moved here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 53,
+                  "end": 54,
+                  "line": 4,
+                  "column": 13,
+                  "end_line": 4,
+                  "end_column": 14
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0310] (ownership): owned value is not available on every path\n  --> ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:7:31\n  ::: ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:6:5: value moved here\n  ::: ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:4:13: value declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0310",
+            "stage": "ownership",
+            "message": "owned value is not available on every path",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+              "start": 205,
+              "end": 207,
+              "line": 7,
+              "column": 31,
+              "end_line": 7,
+              "end_column": 33
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 143,
+                  "end": 174,
+                  "line": 6,
+                  "column": 5,
+                  "end_line": 6,
+                  "end_column": 36
+                },
+                "message": "value moved here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 53,
+                  "end": 54,
+                  "line": 4,
+                  "column": 13,
+                  "end_line": 4,
+                  "end_column": 14
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0310\",\"stage\":\"ownership\",\"message\":\"owned value is not available on every path\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":205,\"end\":207,\"line\":7,\"column\":31,\"end_line\":7,\"end_column\":33},\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":143,\"end\":174,\"line\":6,\"column\":5,\"end_line\":6,\"end_column\":36},\"message\":\"value moved here\"},{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":53,\"end\":54,\"line\":4,\"column\":13,\"end_line\":4,\"end_column\":14},\"message\":\"value declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0310",
+            "stage": "ownership",
+            "message": "owned value is not available on every path",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+              "start": 205,
+              "end": 207,
+              "line": 7,
+              "column": 31,
+              "end_line": 7,
+              "end_column": 33
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 143,
+                  "end": 174,
+                  "line": 6,
+                  "column": 5,
+                  "end_line": 6,
+                  "end_column": 36
+                },
+                "message": "value moved here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 53,
+                  "end": 54,
+                  "line": 4,
+                  "column": 13,
+                  "end_line": 4,
+                  "end_column": 14
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0310] (ownership): owned value is not available on every path\n  --> ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:7:31\n  ::: ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:6:5: value moved here\n  ::: ${FIXTURE_ROOT}/negative-relay_reuse/main.ox:4:13: value declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0310",
+            "stage": "ownership",
+            "message": "owned value is not available on every path",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+              "start": 205,
+              "end": 207,
+              "line": 7,
+              "column": 31,
+              "end_line": 7,
+              "end_column": 33
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 143,
+                  "end": 174,
+                  "line": 6,
+                  "column": 5,
+                  "end_line": 6,
+                  "end_column": 36
+                },
+                "message": "value moved here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 53,
+                  "end": 54,
+                  "line": 4,
+                  "column": 13,
+                  "end_line": 4,
+                  "end_column": 14
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0310\",\"stage\":\"ownership\",\"message\":\"owned value is not available on every path\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":205,\"end\":207,\"line\":7,\"column\":31,\"end_line\":7,\"end_column\":33},\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":143,\"end\":174,\"line\":6,\"column\":5,\"end_line\":6,\"end_column\":36},\"message\":\"value moved here\"},{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-relay_reuse/main.ox\",\"start\":53,\"end\":54,\"line\":4,\"column\":13,\"end_line\":4,\"end_column\":14},\"message\":\"value declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0310",
+            "stage": "ownership",
+            "message": "owned value is not available on every path",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+              "start": 205,
+              "end": 207,
+              "line": 7,
+              "column": 31,
+              "end_line": 7,
+              "end_column": 33
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 143,
+                  "end": 174,
+                  "line": 6,
+                  "column": 5,
+                  "end_line": 6,
+                  "end_column": 36
+                },
+                "message": "value moved here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/negative-relay_reuse/main.ox",
+                  "start": 53,
+                  "end": 54,
+                  "line": 4,
+                  "column": 13,
+                  "end_line": 4,
+                  "end_column": 14
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "negative-arity",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0301] (type): wrong argument count: expected 1, found 0\n  --> ${FIXTURE_ROOT}/negative-arity/main.ox:4:12\n  ::: ${FIXTURE_ROOT}/negative-arity/state.ox:2:8: function declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0301",
+            "stage": "type",
+            "message": "wrong argument count: expected 1, found 0",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-arity/main.ox",
+              "start": 52,
+              "end": 74,
+              "line": 4,
+              "column": 12,
+              "end_line": 4,
+              "end_column": 34
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-arity/state.ox",
+                  "start": 42,
+                  "end": 48,
+                  "line": 2,
+                  "column": 8,
+                  "end_line": 2,
+                  "end_column": 14
+                },
+                "message": "function declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0301\",\"stage\":\"type\",\"message\":\"wrong argument count: expected 1, found 0\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-arity/main.ox\",\"start\":52,\"end\":74,\"line\":4,\"column\":12,\"end_line\":4,\"end_column\":34},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-arity/state.ox\",\"start\":42,\"end\":48,\"line\":2,\"column\":8,\"end_line\":2,\"end_column\":14},\"message\":\"function declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0301",
+            "stage": "type",
+            "message": "wrong argument count: expected 1, found 0",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-arity/main.ox",
+              "start": 52,
+              "end": 74,
+              "line": 4,
+              "column": 12,
+              "end_line": 4,
+              "end_column": 34
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-arity/state.ox",
+                  "start": 42,
+                  "end": 48,
+                  "line": 2,
+                  "column": 8,
+                  "end_line": 2,
+                  "end_column": 14
+                },
+                "message": "function declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0301] (type): wrong argument count: expected 1, found 0\n  --> ${FIXTURE_ROOT}/negative-arity/main.ox:4:12\n  ::: ${FIXTURE_ROOT}/negative-arity/state.ox:2:8: function declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0301",
+            "stage": "type",
+            "message": "wrong argument count: expected 1, found 0",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-arity/main.ox",
+              "start": 52,
+              "end": 74,
+              "line": 4,
+              "column": 12,
+              "end_line": 4,
+              "end_column": 34
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-arity/state.ox",
+                  "start": 42,
+                  "end": 48,
+                  "line": 2,
+                  "column": 8,
+                  "end_line": 2,
+                  "end_column": 14
+                },
+                "message": "function declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0301\",\"stage\":\"type\",\"message\":\"wrong argument count: expected 1, found 0\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-arity/main.ox\",\"start\":52,\"end\":74,\"line\":4,\"column\":12,\"end_line\":4,\"end_column\":34},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-arity/state.ox\",\"start\":42,\"end\":48,\"line\":2,\"column\":8,\"end_line\":2,\"end_column\":14},\"message\":\"function declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0301",
+            "stage": "type",
+            "message": "wrong argument count: expected 1, found 0",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-arity/main.ox",
+              "start": 52,
+              "end": 74,
+              "line": 4,
+              "column": 12,
+              "end_line": 4,
+              "end_column": 34
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-arity/state.ox",
+                  "start": 42,
+                  "end": 48,
+                  "line": 2,
+                  "column": 8,
+                  "end_line": 2,
+                  "end_column": 14
+                },
+                "message": "function declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0301] (type): wrong argument count: expected 1, found 0\n  --> ${FIXTURE_ROOT}/negative-arity/main.ox:4:12\n  ::: ${FIXTURE_ROOT}/negative-arity/state.ox:2:8: function declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0301",
+            "stage": "type",
+            "message": "wrong argument count: expected 1, found 0",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-arity/main.ox",
+              "start": 52,
+              "end": 74,
+              "line": 4,
+              "column": 12,
+              "end_line": 4,
+              "end_column": 34
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-arity/state.ox",
+                  "start": 42,
+                  "end": 48,
+                  "line": 2,
+                  "column": 8,
+                  "end_line": 2,
+                  "end_column": 14
+                },
+                "message": "function declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0301\",\"stage\":\"type\",\"message\":\"wrong argument count: expected 1, found 0\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-arity/main.ox\",\"start\":52,\"end\":74,\"line\":4,\"column\":12,\"end_line\":4,\"end_column\":34},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-arity/state.ox\",\"start\":42,\"end\":48,\"line\":2,\"column\":8,\"end_line\":2,\"end_column\":14},\"message\":\"function declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0301",
+            "stage": "type",
+            "message": "wrong argument count: expected 1, found 0",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-arity/main.ox",
+              "start": 52,
+              "end": 74,
+              "line": 4,
+              "column": 12,
+              "end_line": 4,
+              "end_column": 34
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-arity/state.ox",
+                  "start": 42,
+                  "end": 48,
+                  "line": 2,
+                  "column": 8,
+                  "end_line": 2,
+                  "end_column": 14
+                },
+                "message": "function declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "negative-private_read",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0206] (type): record field is private to its declaring module\n  --> ${FIXTURE_ROOT}/negative-private_read/main.ox:2:63\n  ::: ${FIXTURE_ROOT}/negative-private_read/state.ox:1:19: private declaration here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0206",
+            "stage": "type",
+            "message": "record field is private to its declaring module",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-private_read/main.ox",
+              "start": 73,
+              "end": 78,
+              "line": 2,
+              "column": 63,
+              "end_line": 2,
+              "end_column": 68
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-private_read/state.ox",
+                  "start": 18,
+                  "end": 23,
+                  "line": 1,
+                  "column": 19,
+                  "end_line": 1,
+                  "end_column": 24
+                },
+                "message": "private declaration here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0206\",\"stage\":\"type\",\"message\":\"record field is private to its declaring module\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-private_read/main.ox\",\"start\":73,\"end\":78,\"line\":2,\"column\":63,\"end_line\":2,\"end_column\":68},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-private_read/state.ox\",\"start\":18,\"end\":23,\"line\":1,\"column\":19,\"end_line\":1,\"end_column\":24},\"message\":\"private declaration here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0206",
+            "stage": "type",
+            "message": "record field is private to its declaring module",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-private_read/main.ox",
+              "start": 73,
+              "end": 78,
+              "line": 2,
+              "column": 63,
+              "end_line": 2,
+              "end_column": 68
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-private_read/state.ox",
+                  "start": 18,
+                  "end": 23,
+                  "line": 1,
+                  "column": 19,
+                  "end_line": 1,
+                  "end_column": 24
+                },
+                "message": "private declaration here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0206] (type): record field is private to its declaring module\n  --> ${FIXTURE_ROOT}/negative-private_read/main.ox:2:63\n  ::: ${FIXTURE_ROOT}/negative-private_read/state.ox:1:19: private declaration here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0206",
+            "stage": "type",
+            "message": "record field is private to its declaring module",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-private_read/main.ox",
+              "start": 73,
+              "end": 78,
+              "line": 2,
+              "column": 63,
+              "end_line": 2,
+              "end_column": 68
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-private_read/state.ox",
+                  "start": 18,
+                  "end": 23,
+                  "line": 1,
+                  "column": 19,
+                  "end_line": 1,
+                  "end_column": 24
+                },
+                "message": "private declaration here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0206\",\"stage\":\"type\",\"message\":\"record field is private to its declaring module\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-private_read/main.ox\",\"start\":73,\"end\":78,\"line\":2,\"column\":63,\"end_line\":2,\"end_column\":68},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-private_read/state.ox\",\"start\":18,\"end\":23,\"line\":1,\"column\":19,\"end_line\":1,\"end_column\":24},\"message\":\"private declaration here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0206",
+            "stage": "type",
+            "message": "record field is private to its declaring module",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-private_read/main.ox",
+              "start": 73,
+              "end": 78,
+              "line": 2,
+              "column": 63,
+              "end_line": 2,
+              "end_column": 68
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-private_read/state.ox",
+                  "start": 18,
+                  "end": 23,
+                  "line": 1,
+                  "column": 19,
+                  "end_line": 1,
+                  "end_column": 24
+                },
+                "message": "private declaration here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0206] (type): record field is private to its declaring module\n  --> ${FIXTURE_ROOT}/negative-private_read/main.ox:2:63\n  ::: ${FIXTURE_ROOT}/negative-private_read/state.ox:1:19: private declaration here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0206",
+            "stage": "type",
+            "message": "record field is private to its declaring module",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-private_read/main.ox",
+              "start": 73,
+              "end": 78,
+              "line": 2,
+              "column": 63,
+              "end_line": 2,
+              "end_column": 68
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-private_read/state.ox",
+                  "start": 18,
+                  "end": 23,
+                  "line": 1,
+                  "column": 19,
+                  "end_line": 1,
+                  "end_column": 24
+                },
+                "message": "private declaration here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0206\",\"stage\":\"type\",\"message\":\"record field is private to its declaring module\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/negative-private_read/main.ox\",\"start\":73,\"end\":78,\"line\":2,\"column\":63,\"end_line\":2,\"end_column\":68},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-private_read/state.ox\",\"start\":18,\"end\":23,\"line\":1,\"column\":19,\"end_line\":1,\"end_column\":24},\"message\":\"private declaration here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0206",
+            "stage": "type",
+            "message": "record field is private to its declaring module",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/negative-private_read/main.ox",
+              "start": 73,
+              "end": 78,
+              "line": 2,
+              "column": 63,
+              "end_line": 2,
+              "end_column": 68
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 1,
+                  "path": "${FIXTURE_ROOT}/negative-private_read/state.ox",
+                  "start": 18,
+                  "end": 23,
+                  "line": 1,
+                  "column": 19,
+                  "end_line": 1,
+                  "end_column": 24
+                },
+                "message": "private declaration here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "negative-imported_main-scalar",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (2 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 2
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":2}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 2
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0600] (oir-run): typed-preview run requires a declared zero-argument main returning bool, i32 or ()\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0600",
+            "stage": "oir-run",
+            "message": "typed-preview run requires a declared zero-argument main returning bool, i32 or ()",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0600\",\"stage\":\"oir-run\",\"message\":\"typed-preview run requires a declared zero-argument main returning bool, i32 or ()\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0600",
+            "stage": "oir-run",
+            "message": "typed-preview run requires a declared zero-argument main returning bool, i32 or ()",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native compile requires a declared zero-argument main",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0700\",\"stage\":\"native-admission\",\"message\":\"native compile requires a declared zero-argument main\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native compile requires a declared zero-argument main",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "negative-imported_main-owned",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (2 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 2
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":2}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 2
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0600] (oir-run): typed-preview run requires a declared zero-argument main returning bool, i32 or ()\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0600",
+            "stage": "oir-run",
+            "message": "typed-preview run requires a declared zero-argument main returning bool, i32 or ()",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0600\",\"stage\":\"oir-run\",\"message\":\"typed-preview run requires a declared zero-argument main returning bool, i32 or ()\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0600",
+            "stage": "oir-run",
+            "message": "typed-preview run requires a declared zero-argument main returning bool, i32 or ()",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0700] (native-admission): native compile requires a declared zero-argument main\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native compile requires a declared zero-argument main",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0700\",\"stage\":\"native-admission\",\"message\":\"native compile requires a declared zero-argument main\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native compile requires a declared zero-argument main",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "negative-native_recursion-scalar-false",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (3 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 3
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":3}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 3
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "7\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 7
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":7}}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 7
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0700] (native-admission): native preview does not support recursive call graphs, including unused functions and unchosen branches\n  --> ${FIXTURE_ROOT}/negative-native_recursion-scalar-false/state.ox:1:8\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/negative-native_recursion-scalar-false/state.ox",
+              "start": 7,
+              "end": 11,
+              "line": 1,
+              "column": 8,
+              "end_line": 1,
+              "end_column": 12
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0700\",\"stage\":\"native-admission\",\"message\":\"native preview does not support recursive call graphs, including unused functions and unchosen branches\",\"primary\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-native_recursion-scalar-false/state.ox\",\"start\":7,\"end\":11,\"line\":1,\"column\":8,\"end_line\":1,\"end_column\":12},\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/negative-native_recursion-scalar-false/state.ox",
+              "start": 7,
+              "end": 11,
+              "line": 1,
+              "column": 8,
+              "end_line": 1,
+              "end_column": 12
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "negative-native_recursion-owned-false",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (3 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 3
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":3}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 3
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "7\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 7
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":7}}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": true,
+            "errors": 0,
+            "result": {
+              "type": "i32",
+              "value": 7
+            }
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0700] (native-admission): native preview does not support recursive call graphs, including unused functions and unchosen branches\n  --> ${FIXTURE_ROOT}/negative-native_recursion-owned-false/state.ox:1:8\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/negative-native_recursion-owned-false/state.ox",
+              "start": 7,
+              "end": 11,
+              "line": 1,
+              "column": 8,
+              "end_line": 1,
+              "end_column": 12
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0700\",\"stage\":\"native-admission\",\"message\":\"native preview does not support recursive call graphs, including unused functions and unchosen branches\",\"primary\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/negative-native_recursion-owned-false/state.ox\",\"start\":7,\"end\":11,\"line\":1,\"column\":8,\"end_line\":1,\"end_column\":12},\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0700",
+            "stage": "native-admission",
+            "message": "native preview does not support recursive call graphs, including unused functions and unchosen branches",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/negative-native_recursion-owned-false/state.ox",
+              "start": 7,
+              "end": 11,
+              "line": 1,
+              "column": 8,
+              "end_line": 1,
+              "end_column": 12
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "origin-unicode-crlf-scalar_overflow",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (2 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 2
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":2}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 2
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-scalar_overflow/state.ox:2:46\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0604",
+            "stage": "oir-run",
+            "message": "checked i32 arithmetic overflow",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-scalar_overflow/state.ox",
+              "start": 57,
+              "end": 58,
+              "line": 2,
+              "column": 46,
+              "end_line": 2,
+              "end_column": 47
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0604\",\"stage\":\"oir-run\",\"message\":\"checked i32 arithmetic overflow\",\"primary\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-scalar_overflow/state.ox\",\"start\":57,\"end\":58,\"line\":2,\"column\":46,\"end_line\":2,\"end_column\":47},\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0604",
+            "stage": "oir-run",
+            "message": "checked i32 arithmetic overflow",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-scalar_overflow/state.ox",
+              "start": 57,
+              "end": 58,
+              "line": 2,
+              "column": 46,
+              "end_line": 2,
+              "end_column": 47
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview native compile ok: \"${OUTPUT}\"\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":true,\"errors\":0,\"output\":\"${OUTPUT}\"}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        }
+      ]
+    },
+    {
+      "id": "origin-unicode-crlf-owned_overflow",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview check ok (3 functions; check only)\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 3
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":3}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": true,
+            "errors": 0,
+            "functions": 3
+          },
+          "diagnostic": null,
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0604] (oir-run): checked i32 arithmetic overflow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-owned_overflow/state.ox:4:71\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0604",
+            "stage": "oir-run",
+            "message": "checked i32 arithmetic overflow",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_overflow/state.ox",
+              "start": 167,
+              "end": 168,
+              "line": 4,
+              "column": 71,
+              "end_line": 4,
+              "end_column": 72
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0604\",\"stage\":\"oir-run\",\"message\":\"checked i32 arithmetic overflow\",\"primary\":{\"file_id\":1,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_overflow/state.ox\",\"start\":167,\"end\":168,\"line\":4,\"column\":71,\"end_line\":4,\"end_column\":72},\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0604",
+            "stage": "oir-run",
+            "message": "checked i32 arithmetic overflow",
+            "primary": {
+              "file_id": 1,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_overflow/state.ox",
+              "start": 167,
+              "end": 168,
+              "line": 4,
+              "column": 71,
+              "end_line": 4,
+              "end_column": 72
+            },
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 0,
+          "stdout": "typed-preview native compile ok: \"${OUTPUT}\"\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 0,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":true,\"errors\":0,\"output\":\"${OUTPUT}\"}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": true,
+            "errors": 0,
+            "output": "${OUTPUT}"
+          },
+          "diagnostic": null,
+          "external_tools": "real qualified LLVM only"
+        }
+      ]
+    },
+    {
+      "id": "origin-unicode-crlf-owned_loan",
+      "expectations": [
+        {
+          "operation": "check",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0311] (ownership): access conflicts with an active borrow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:88\n  ::: ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:80: borrow acquired here\n  ::: ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:28: value declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0311",
+            "stage": "ownership",
+            "message": "access conflicts with an active borrow",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+              "start": 111,
+              "end": 118,
+              "line": 3,
+              "column": 88,
+              "end_line": 3,
+              "end_column": 95
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 103,
+                  "end": 109,
+                  "line": 3,
+                  "column": 80,
+                  "end_line": 3,
+                  "end_column": 86
+                },
+                "message": "borrow acquired here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 51,
+                  "end": 52,
+                  "line": 3,
+                  "column": 28,
+                  "end_line": 3,
+                  "end_column": 29
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "check",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0311\",\"stage\":\"ownership\",\"message\":\"access conflicts with an active borrow\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":111,\"end\":118,\"line\":3,\"column\":88,\"end_line\":3,\"end_column\":95},\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":103,\"end\":109,\"line\":3,\"column\":80,\"end_line\":3,\"end_column\":86},\"message\":\"borrow acquired here\"},{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":51,\"end\":52,\"line\":3,\"column\":28,\"end_line\":3,\"end_column\":29},\"message\":\"value declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "check-summary",
+            "success": false,
+            "errors": 1,
+            "functions": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0311",
+            "stage": "ownership",
+            "message": "access conflicts with an active borrow",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+              "start": 111,
+              "end": 118,
+              "line": 3,
+              "column": 88,
+              "end_line": 3,
+              "end_column": 95
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 103,
+                  "end": 109,
+                  "line": 3,
+                  "column": 80,
+                  "end_line": 3,
+                  "end_column": 86
+                },
+                "message": "borrow acquired here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 51,
+                  "end": 52,
+                  "line": 3,
+                  "column": 28,
+                  "end_line": 3,
+                  "end_column": 29
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0311] (ownership): access conflicts with an active borrow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:88\n  ::: ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:80: borrow acquired here\n  ::: ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:28: value declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0311",
+            "stage": "ownership",
+            "message": "access conflicts with an active borrow",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+              "start": 111,
+              "end": 118,
+              "line": 3,
+              "column": 88,
+              "end_line": 3,
+              "end_column": 95
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 103,
+                  "end": 109,
+                  "line": 3,
+                  "column": 80,
+                  "end_line": 3,
+                  "end_column": 86
+                },
+                "message": "borrow acquired here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 51,
+                  "end": 52,
+                  "line": 3,
+                  "column": 28,
+                  "end_line": 3,
+                  "end_column": 29
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "run",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0311\",\"stage\":\"ownership\",\"message\":\"access conflicts with an active borrow\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":111,\"end\":118,\"line\":3,\"column\":88,\"end_line\":3,\"end_column\":95},\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":103,\"end\":109,\"line\":3,\"column\":80,\"end_line\":3,\"end_column\":86},\"message\":\"borrow acquired here\"},{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":51,\"end\":52,\"line\":3,\"column\":28,\"end_line\":3,\"end_column\":29},\"message\":\"value declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":false,\"errors\":1,\"result\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "run-summary",
+            "success": false,
+            "errors": 1,
+            "result": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0311",
+            "stage": "ownership",
+            "message": "access conflicts with an active borrow",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+              "start": 111,
+              "end": 118,
+              "line": 3,
+              "column": 88,
+              "end_line": 3,
+              "end_column": 95
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 103,
+                  "end": 109,
+                  "line": 3,
+                  "column": 80,
+                  "end_line": 3,
+                  "end_column": 86
+                },
+                "message": "borrow acquired here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 51,
+                  "end": 52,
+                  "line": 3,
+                  "column": 28,
+                  "end_line": 3,
+                  "end_column": 29
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0311] (ownership): access conflicts with an active borrow\n  --> ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:88\n  ::: ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:80: borrow acquired here\n  ::: ${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox:3:28: value declared here\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0311",
+            "stage": "ownership",
+            "message": "access conflicts with an active borrow",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+              "start": 111,
+              "end": 118,
+              "line": 3,
+              "column": 88,
+              "end_line": 3,
+              "end_column": 95
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 103,
+                  "end": 109,
+                  "line": 3,
+                  "column": 80,
+                  "end_line": 3,
+                  "end_column": 86
+                },
+                "message": "borrow acquired here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 51,
+                  "end": 52,
+                  "line": 3,
+                  "column": 28,
+                  "end_line": 3,
+                  "end_column": 29
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0311\",\"stage\":\"ownership\",\"message\":\"access conflicts with an active borrow\",\"primary\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":111,\"end\":118,\"line\":3,\"column\":88,\"end_line\":3,\"end_column\":95},\"secondary\":[{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":103,\"end\":109,\"line\":3,\"column\":80,\"end_line\":3,\"end_column\":86},\"message\":\"borrow acquired here\"},{\"span\":{\"file_id\":0,\"path\":\"${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox\",\"start\":51,\"end\":52,\"line\":3,\"column\":28,\"end_line\":3,\"end_column\":29},\"message\":\"value declared here\"}],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0311",
+            "stage": "ownership",
+            "message": "access conflicts with an active borrow",
+            "primary": {
+              "file_id": 0,
+              "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+              "start": 111,
+              "end": 118,
+              "line": 3,
+              "column": 88,
+              "end_line": 3,
+              "end_column": 95
+            },
+            "secondary": [
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 103,
+                  "end": 109,
+                  "line": 3,
+                  "column": 80,
+                  "end_line": 3,
+                  "end_column": 86
+                },
+                "message": "borrow acquired here"
+              },
+              {
+                "span": {
+                  "file_id": 0,
+                  "path": "${FIXTURE_ROOT}/origin-unicode-crlf-owned_loan/main.ox",
+                  "start": 51,
+                  "end": 52,
+                  "line": 3,
+                  "column": 28,
+                  "end_line": 3,
+                  "end_column": 29
+                },
+                "message": "value declared here"
+              }
+            ],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    }
+  ],
+  "no_clobber": [
+    {
+      "id": "pilot-scalar",
+      "output_kind": "regular",
+      "expectations": [
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0701] (native-toolchain): native output already exists; choose a new path (existing files and symlinks are never overwritten)\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0701\",\"stage\":\"native-toolchain\",\"message\":\"native output already exists; choose a new path (existing files and symlinks are never overwritten)\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "pilot-scalar",
+      "output_kind": "symlink",
+      "expectations": [
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0701] (native-toolchain): native output already exists; choose a new path (existing files and symlinks are never overwritten)\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0701\",\"stage\":\"native-toolchain\",\"message\":\"native output already exists; choose a new path (existing files and symlinks are never overwritten)\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "output_kind": "regular",
+      "expectations": [
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0701] (native-toolchain): native output already exists; choose a new path (existing files and symlinks are never overwritten)\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0701\",\"stage\":\"native-toolchain\",\"message\":\"native output already exists; choose a new path (existing files and symlinks are never overwritten)\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "output_kind": "symlink",
+      "expectations": [
+        {
+          "operation": "compile",
+          "format": "text",
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "error[E0701] (native-toolchain): native output already exists; choose a new path (existing files and symlinks are never overwritten)\n",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        },
+        {
+          "operation": "compile",
+          "format": "json",
+          "exit_status": 1,
+          "stdout": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0701\",\"stage\":\"native-toolchain\",\"message\":\"native output already exists; choose a new path (existing files and symlinks are never overwritten)\",\"primary\":null,\"secondary\":[],\"notes\":[]}\n{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+          "stderr": "",
+          "json_summary": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "compile-summary",
+            "success": false,
+            "errors": 1,
+            "output": null
+          },
+          "diagnostic": {
+            "schema_version": 1,
+            "edition": "typed-preview",
+            "kind": "diagnostic",
+            "severity": "error",
+            "code": "E0701",
+            "stage": "native-toolchain",
+            "message": "native output already exists; choose a new path (existing files and symlinks are never overwritten)",
+            "primary": null,
+            "secondary": [],
+            "notes": []
+          },
+          "external_tools": "none"
+        }
+      ]
+    }
+  ],
+  "compiler_invocations": 0,
+  "candidate_output_inputs": 0
+}

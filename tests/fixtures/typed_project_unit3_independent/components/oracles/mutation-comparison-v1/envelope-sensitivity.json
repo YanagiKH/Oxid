@@ -1,0 +1,67 @@
+{
+  "schema": "unit3-mutation-envelope-sensitivity-v1",
+  "input": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/smoke-v1/debug/correspondence-wrong-target-scalar/receipt.json",
+    "sha256": "c21d655ece5a80d30cf5fcfa86527b10638e2a4c4b1296f23611ccaaa7167200"
+  },
+  "controls": [
+    {
+      "id": "changed-frozen-request",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'exact frozen mutation request', 'expected': {'id': 'correspondence-wrong-target-scalar', 'positive_control': 'scalar-root_child-absolute-entry0-i32', 'mutation': {'kind': 'call-target', 'select': 'call to helper in left', 'replacement': 'same-signature helper original in right'}}, 'actual': {'id': 'correspondence-wrong-target-scalar', 'mutation': {'kind': 'call-target', 'replacement': 'a different helper', 'select': 'call to helper in left'}, 'positive_control': 'scalar-root_child-absolute-entry0-i32'}})"
+    },
+    {
+      "id": "changed-profile",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'build profile', 'expected': 'release', 'actual': 'debug'})"
+    },
+    {
+      "id": "changed-controller-pin",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'artifact hash', 'expected': '0000000000000000000000000000000000000000000000000000000000000000', 'actual': 'e0553a398c61eebe06e3b7f9a763d0313c2f41528b677b153cd979d7d3345510'})"
+    },
+    {
+      "id": "changed-marker-before",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'exact prescribed mutation applied', 'expected': 'applied', 'actual': 'invalid'})"
+    },
+    {
+      "id": "changed-marker-path",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'exact prescribed mutation applied', 'expected': 'applied', 'actual': 'invalid'})"
+    },
+    {
+      "id": "changed-parsed-artifact",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'envelope parsed artifact equals exact recorded bytes', 'expected': 'owned', 'actual': 'scalar'})"
+    },
+    {
+      "id": "changed-observation-hash",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'artifact hash', 'expected': '0000000000000000000000000000000000000000000000000000000000000000', 'actual': '5e4130d6cae8a1a47908f93bc70f27e106594ead2397a83bc9ae262559a09f65'})"
+    },
+    {
+      "id": "child-build-not-envelope-build",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'child uses exact envelope build', 'expected': {'bytes': 1948, 'path': '/workspace/scratch/8266abf56995/typed-project-unit3-mutations/build-v2-debug.json', 'sha256': 'eabe226c9c1e2de8c305485ce27bcf3b6223c541e86a3c8d62c6e638bd96a611'}, 'actual': {'path': '/workspace/scratch/8266abf56995/typed-project-unit3-mutations/build-v2-debug.json', 'bytes': 1948, 'sha256': '1111111111111111111111111111111111111111111111111111111111111111'}})"
+    },
+    {
+      "id": "child-observer-not-envelope-observer",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'child uses approved observer', 'expected': {'bytes': 12602, 'path': '/workspace/scratch/8266abf56995/typed-project-unit3-observer/run.py', 'sha256': 'ff51288e0bf90733eafe4690c02feacac06e61ab0608642423fd700e7fca42fc'}, 'actual': {'path': '/workspace/scratch/8266abf56995/typed-project-unit3-observer/run.py', 'bytes': 12602, 'sha256': '2222222222222222222222222222222222222222222222222222222222222222'}})"
+    },
+    {
+      "id": "child-source-operations-not-frozen",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'complete frozen source request including operations and fuel', 'expected': {'entry': 'main.ox', 'fuel_budgets': [114, 115], 'id': 'scalar-root_child-absolute-entry0-i32', 'mode': 'private-project-candidate', 'native': {'opt_level': 0, 'source_free': True}, 'operations': ['check', 'run'], 'profiles': ['debug', 'release'], 'source_files': [{'bytes': 81, 'path': 'main.ox', 'sha256': 'a13398474c73b5c1bea0e709dfed5d485b821c45f1aa10ee6c57d029367faf53'}, {'bytes': 257, 'path': 'left.ox', 'sha256': '8067cb8eb73ccd3c3d67cd0fc1cb87b2e7d64325df835b68f1f966964ea66b21'}, {'bytes': 48, 'path': 'right.ox', 'sha256': 'd49347ccd5fe276f60379900274484342d177daaf1cc5aabbde786d95d5c068a'}], 'source_root': 'sources/scalar-root_child-absolute-entry0-i32'}, 'actual': {'entry': 'main.ox', 'fuel_budgets': [114, 115], 'id': 'scalar-root_child-absolute-entry0-i32', 'mode': 'private-project-candidate', 'native': {'opt_level': 0, 'source_free': True}, 'operations': ['check'], 'profiles': ['debug', 'release'], 'source_files': [{'bytes': 81, 'path': 'main.ox', 'sha256': 'a13398474c73b5c1bea0e709dfed5d485b821c45f1aa10ee6c57d029367faf53'}, {'bytes': 257, 'path': 'left.ox', 'sha256': '8067cb8eb73ccd3c3d67cd0fc1cb87b2e7d64325df835b68f1f966964ea66b21'}, {'bytes': 48, 'path': 'right.ox', 'sha256': 'd49347ccd5fe276f60379900274484342d177daaf1cc5aabbde786d95d5c068a'}], 'source_root': 'sources/scalar-root_child-absolute-entry0-i32'}})"
+    },
+    {
+      "id": "child-binary-not-envelope-binary",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'child invokes exact approved observer binary entry', 'expected': ['/workspace/scratch/8266abf56995/typed-project-unit3-mutations/target/debug/deps/oxid-cd6bf3076cc14dc9', 'frontend::unit3_observer::observe_request', '--exact', '--ignored', '--nocapture', '--test-threads=1'], 'actual': ['/unrelated/observer', 'frontend::unit3_observer::observe_request', '--exact', '--ignored', '--nocapture', '--test-threads=1']})"
+    }
+  ],
+  "compiler_invocations": 0,
+  "expected_edits": 0,
+  "actual_artifact_edits": 0
+}

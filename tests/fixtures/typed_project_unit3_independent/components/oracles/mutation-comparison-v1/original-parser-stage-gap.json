@@ -1,0 +1,10 @@
+{
+  "schema": "unit3-original-parser-stage-gap-v1",
+  "prior_manifest": "f6894a12bed36bf675d895e2cf3de71d6c72f698063536bbb9540c83e42e2109",
+  "frozen_expected_stage": "resolve-project",
+  "pre_fix_rejection": "Invalid('count seam did not fail at source association')",
+  "prior_snapshot": "history/comparator-v1",
+  "scope": "offline source-contract comparator repair before mutation execution",
+  "candidate_invocations": 0,
+  "expected_edits": 0
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "unit3-exact-source-metadata-controls-v1",
+  "actual_controls": [
+    {
+      "profile": "debug",
+      "field": "primary",
+      "receipt_sha256": "e34bad6df69094457d3223f78351ec90c25ef96c7fe17bc484cd4c73f391d406",
+      "baseline": "MATCH",
+      "mutation": "REJECTED",
+      "reason": "AssertionError({'check': 'exact stored primary and enclosing-statement cause', 'expected': {'tag': 'DiagnosticOrigins', 'primary': [0, 177, 184], 'cause': [0, 143, 186]}, 'actual': {'cause': [0, 143, 186], 'primary': [0, 25, 29], 'tag': 'DiagnosticOrigins'}})",
+      "rendered_diagnostics_equal": false
+    },
+    {
+      "profile": "debug",
+      "field": "cause",
+      "receipt_sha256": "6785b311fe10efcad75901ffbcb53cfab83de54d3fe631b5ebef4c5eb67c2242",
+      "baseline": "MATCH",
+      "mutation": "REJECTED",
+      "reason": "AssertionError({'check': 'exact stored primary and enclosing-statement cause', 'expected': {'tag': 'DiagnosticOrigins', 'primary': [0, 177, 184], 'cause': [0, 143, 186]}, 'actual': {'cause': [0, 25, 29], 'primary': [0, 177, 184], 'tag': 'DiagnosticOrigins'}})",
+      "rendered_diagnostics_equal": true
+    },
+    {
+      "profile": "release",
+      "field": "primary",
+      "receipt_sha256": "6f3f0d1ec389993d19307e6082b422d9dcd3ceb808fbfe2a0071c19235b6cc11",
+      "baseline": "MATCH",
+      "mutation": "REJECTED",
+      "reason": "AssertionError({'check': 'exact stored primary and enclosing-statement cause', 'expected': {'tag': 'DiagnosticOrigins', 'primary': [0, 177, 184], 'cause': [0, 143, 186]}, 'actual': {'cause': [0, 143, 186], 'primary': [0, 25, 29], 'tag': 'DiagnosticOrigins'}})",
+      "rendered_diagnostics_equal": false
+    },
+    {
+      "profile": "release",
+      "field": "cause",
+      "receipt_sha256": "1befa67055c814f9ddbbe4c9dd2928eb3357d7a625b9a40a00d3e4ae7edd0abe",
+      "baseline": "MATCH",
+      "mutation": "REJECTED",
+      "reason": "AssertionError({'check': 'exact stored primary and enclosing-statement cause', 'expected': {'tag': 'DiagnosticOrigins', 'primary': [0, 177, 184], 'cause': [0, 143, 186]}, 'actual': {'cause': [0, 25, 29], 'primary': [0, 177, 184], 'tag': 'DiagnosticOrigins'}})",
+      "rendered_diagnostics_equal": true
+    }
+  ],
+  "source_expectations": "separate source-only AST supplement; no actual value used to prescribe metadata",
+  "compiler_invocations": 0,
+  "actual_artifact_edits": 0,
+  "original_expected_edits": 0
+}

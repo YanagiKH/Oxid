@@ -1,0 +1,35 @@
+{
+  "schema": "unit3-mutation-applicability-supplement-v1",
+  "status": "source-only review candidate before mutation execution",
+  "parent_manifest": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "original_requests": "228f51304751f2a08d962d95aecbe066fdfa813fdf10b46b144f9cf7ee51846b",
+  "mutation_count": 114,
+  "corrected_positive_controls": 1,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1268,
+      "sha256": "95e4100b23b4b2ea14727970abde87521b2e71b6c09c45de5854929d75959453"
+    },
+    {
+      "path": "build.py",
+      "bytes": 2956,
+      "sha256": "75ea24bfccc750ea7361ac48db46c7f5554b50a25073d389e136c5e1f45fa61a"
+    },
+    {
+      "path": "expectations.json",
+      "bytes": 61454,
+      "sha256": "9c4cbefee900c02d1df0ed494fd23d05afe96705dc146aa35f1753b573d50d8d"
+    },
+    {
+      "path": "requests.json",
+      "bytes": 38001,
+      "sha256": "628d08d0500d9b98acac658ad3c75ac311272cd493913b55c2e2598a48240bd8"
+    },
+    {
+      "path": "source-proof.json",
+      "bytes": 3519,
+      "sha256": "52a83323161e2b5f8427750bfddecb42b1cbe904d3ea23609b5c2153c679b1fe"
+    }
+  ]
+}

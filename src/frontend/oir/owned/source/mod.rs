@@ -1,4 +1,5 @@
 //! Owned-source producer. The raw verifier alone certifies ownership.
+mod association;
 mod budget;
 pub(super) mod hir;
 pub(super) mod lower;
@@ -7,7 +8,7 @@ pub(in crate::frontend::oir) mod resolve;
 #[cfg(test)]
 mod tests;
 pub(in crate::frontend::oir) mod typeck;
-pub(in crate::frontend::oir) use program::{check_source, SourceProgram};
+pub(in crate::frontend::oir) use program::{check_typed, SourceProgram};
 mod diagnostic;
 
 #[cfg(test)]

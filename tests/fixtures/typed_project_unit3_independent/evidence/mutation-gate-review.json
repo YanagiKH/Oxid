@@ -1,0 +1,64 @@
+{
+  "status": "passed source-only mutation dispatch review",
+  "controller_sha256": "788a2989d226a3e64bf6b57444696c675073e7876a28975834d216d9209edddb",
+  "full_plan_sha256": "2366b8a26196412c40eb4b098ba95dee9b52c6c2874891c936af3fcde25aea07",
+  "exact_internal_rows": 220,
+  "controls": [
+    {
+      "name": "duplicate",
+      "status": "rejected-before-worker",
+      "reason": "duplicate mutation receipt path"
+    },
+    {
+      "name": "missing",
+      "status": "rejected-before-worker",
+      "reason": "full internal mutation membership differs"
+    },
+    {
+      "name": "zero",
+      "status": "rejected-before-worker",
+      "reason": "empty mutation plan"
+    },
+    {
+      "name": "driver-id",
+      "status": "rejected-before-worker",
+      "reason": "unlisted mutation row"
+    },
+    {
+      "name": "wrong-build",
+      "status": "rejected-before-worker",
+      "reason": "mutation dispatch variant/profile differs"
+    },
+    {
+      "name": "wrong-variant",
+      "status": "rejected-before-worker",
+      "reason": "mutation dispatch variant/profile differs"
+    },
+    {
+      "name": "zero-execution",
+      "status": "rejected",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: '/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/mutation-gate-independent-v1/zero-execution/actual/portable-mutation.json'",
+      "fake_worker_calls": 1
+    },
+    {
+      "name": "nonzero",
+      "status": "rejected",
+      "reason": "ValueError: mutation worker returned nonzero",
+      "fake_worker_calls": 1
+    },
+    {
+      "name": "timeout",
+      "status": "rejected",
+      "reason": "TimeoutExpired: Command '['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12', '-B', '/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutations.py', 'run', '--prepared-manifest', '/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/prepared-mutation.json', '--materialization', '/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/real-replay-v1/inputs/materialization.json', '--build-receipt', '/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/build-v2-debug/build.json', '--mutation-id', 'bind-wrong-file-scalar-Function.span', '--profile', 'debug', '--output', '/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/mutation-gate-independent-v1/timeout/actual']' timed out after 600 seconds",
+      "fake_worker_calls": 1
+    },
+    {
+      "name": "wrong-row",
+      "status": "rejected",
+      "reason": "ValueError: actual mutation row differs",
+      "fake_worker_calls": 1
+    }
+  ],
+  "compiler_invocations": 0,
+  "driver_attribution": "separate comparator requirement, no collection credit"
+}

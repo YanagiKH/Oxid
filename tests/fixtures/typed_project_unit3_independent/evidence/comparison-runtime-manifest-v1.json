@@ -1,0 +1,44 @@
+{
+  "compiler_invocations": 0,
+  "component_manifest_sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2",
+  "entrypoint": "portable_compare.py",
+  "files": [
+    {
+      "bytes": 17338,
+      "path": "portable_compare.py",
+      "sha256": "7ee84a91adb97a94677b61ccb3936c548e6f2f6d986b4146366cb4cfe64c372d"
+    },
+    {
+      "bytes": 12759,
+      "path": "protocol.py",
+      "sha256": "05b3a82e5f014253cc153cfcc8bc9280febe04cc1b33f699ae7e7a409bf9f4b4"
+    },
+    {
+      "bytes": 18207,
+      "path": "bindings.py",
+      "sha256": "82bf7457b0c666b0e4a142455e73292ad9432cbdf56bfdc008d0b7ff163f5825"
+    },
+    {
+      "bytes": 16795,
+      "path": "native_plan.py",
+      "sha256": "fc3328c397a728b5e4ef4529fb87744309ccec8f8e54285e06a3a1159f49beba"
+    },
+    {
+      "bytes": 102162,
+      "path": "component-manifest.json",
+      "sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2"
+    },
+    {
+      "bytes": 3904,
+      "path": "PLAN_SCHEMA.md",
+      "sha256": "58f44165cc0df5d1e7224df3e644cff06270d37413b4a54d36b90390ab3c59ae"
+    },
+    {
+      "bytes": 4297,
+      "path": "README.md",
+      "sha256": "41fe74dd91b80422dfedee5c3296963fdc08244790d2025427856f3ef731caac"
+    }
+  ],
+  "schema": "unit3-independent-portable-runtime-manifest-v1",
+  "semantic_helpers_modified": false
+}

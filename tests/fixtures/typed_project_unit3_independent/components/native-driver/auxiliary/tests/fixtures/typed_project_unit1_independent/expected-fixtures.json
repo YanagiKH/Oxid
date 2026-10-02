@@ -1,0 +1,1367 @@
+{
+  "contract_sha256": "25faad72c1c05370e80c43c8ef890b99ebd608baa39f1431521387d5ca44e0aa",
+  "platform_fixture": "Linux native pathname bytes",
+  "fixtures": [
+    {
+      "id": "minimal",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ],
+        "usage": {
+          "bytes": 27,
+          "tokens": 18,
+          "nodes": 3,
+          "eofs": 2,
+          "probes": 1,
+          "entries": 2,
+          "name_units": 10
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "public_module_header",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 11,
+          "sha256": "9cdbe6e5302ab6e1300be3b65177c9c55f4f50012b6d1225c19b8c41f3bebfdd"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ],
+        "usage": {
+          "bytes": 11,
+          "tokens": 7,
+          "nodes": 1,
+          "eofs": 2
+        },
+        "visibility_span": [
+          0,
+          3
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "no_textual_mod_discovery",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 60,
+          "sha256": "5cd9866b038ad1daf64cd51edf3fc8dbc3d3c7bfac93f727b0d4a27752da1d4b"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          ""
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "nested_mod_rejected",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 26,
+          "sha256": "ced3b1ca6b03174eb4b759d19fba33ab044ab660e8da4cf5d2921fa01def0fb5"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0101",
+        "stage": "parse",
+        "primary_file": 0,
+        "retained_files": 1
+      },
+      "unavailable": []
+    },
+    {
+      "id": "inline_mod_rejected",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 9,
+          "sha256": "fa7ae0b78bb85bf73cd6848137f73874b82377bb9fdf801434c46bd7655064a0"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0101",
+        "stage": "parse",
+        "primary_file": 0,
+        "retained_files": 1
+      },
+      "unavailable": []
+    },
+    {
+      "id": "dfs_module_major",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 82,
+          "sha256": "230dabdfa79d83a28d73982ed3a994bb16e57ddd4764172bdbaa16307af67bd6"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 75,
+          "sha256": "38127f3f54bc669c52ac613feb9fcd23990a3167fe361880dcf56c7cb98d675c"
+        },
+        {
+          "path": "a/c.ox",
+          "bytes": 34,
+          "sha256": "47084993279987d2cfe93c8b5cb398ded6add3d9905d78952c110dda79ed7c28"
+        },
+        {
+          "path": "b.ox",
+          "bytes": 34,
+          "sha256": "d03bbf87172af3de546efd1c07459bf1dc3758106ef0871c98a8d4a1b6366510"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a",
+          "a/c",
+          "b"
+        ],
+        "function_handles": [
+          [
+            0,
+            0,
+            "r0"
+          ],
+          [
+            0,
+            1,
+            "r1"
+          ],
+          [
+            1,
+            0,
+            "a0"
+          ],
+          [
+            1,
+            1,
+            "a1"
+          ],
+          [
+            2,
+            0,
+            "c0"
+          ],
+          [
+            3,
+            0,
+            "b0"
+          ]
+        ],
+        "record_handles": [
+          [
+            0,
+            0,
+            "R0"
+          ],
+          [
+            0,
+            1,
+            "R1"
+          ],
+          [
+            1,
+            0,
+            "A0"
+          ],
+          [
+            1,
+            1,
+            "A1"
+          ],
+          [
+            2,
+            0,
+            "C0"
+          ],
+          [
+            3,
+            0,
+            "B0"
+          ]
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "missing_unused",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 38,
+          "sha256": "f28a43223498e1f5b48fd04b5c52c36c99b24c8a684749ac6194bc3447b82d28"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0002",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 10,
+          "literal_hex": "616273656e74"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "no_mod_ox_fallback",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a/mod.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0002",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "unrelated_malformed",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        },
+        {
+          "path": "other.ox",
+          "bytes": 9,
+          "sha256": "a1f97a0154e189079b69a3d4d4998845c97f2abf688f6104fee032863c6f6eb1"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "unrelated_special",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [
+        [
+          "fifo",
+          "ignored.ox",
+          null
+        ],
+        [
+          "symlink",
+          "OTHER.ox",
+          "missing-target"
+        ]
+      ],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "root_parse_before_missing",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 27,
+          "sha256": "7899609daf3d9341fc22764dcb9d6dd36d99fa1955f4fe1149e69c8e8d6b2c3d"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0100",
+        "stage": "parse",
+        "primary_file": 0,
+        "retained_files": 1
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_lex_before_sibling",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 19,
+          "sha256": "5f59250dc56dd1fce3620d3a4c9aac66bbd5b29aec995cdbb07526b71efcff4f"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 2,
+          "sha256": "766e0153d3f7ec95c97e755b1ea7b1681566923b9299365fdc8399443ca20c1d"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0100",
+        "stage": "lex",
+        "primary": {
+          "file": 1,
+          "start": 0,
+          "end": 2
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_parse_before_descendants",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 19,
+          "sha256": "5f59250dc56dd1fce3620d3a4c9aac66bbd5b29aec995cdbb07526b71efcff4f"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 31,
+          "sha256": "be436222cefcf47a3b613403df2600cce2a0e8443dbe0e01c3ab67818512fa4b"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0100",
+        "stage": "parse",
+        "primary_file": 1,
+        "retained_files": 2
+      },
+      "unavailable": []
+    },
+    {
+      "id": "load_before_resolution",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 52,
+          "sha256": "2e7bb6423ebae8858254fd675182cde07231c0fc18e2650699c22096d329804e"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0002",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 44,
+          "end": 50,
+          "literal_hex": "616273656e74"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "entry_symlink_directory",
+      "entry": "view/app.ox",
+      "sources": [
+        {
+          "path": "elsewhere/original.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "view/a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        },
+        {
+          "path": "elsewhere/a.ox",
+          "bytes": 2,
+          "sha256": "766e0153d3f7ec95c97e755b1ea7b1681566923b9299365fdc8399443ca20c1d"
+        }
+      ],
+      "special": [
+        [
+          "symlink",
+          "view/app.ox",
+          "../elsewhere/original.ox"
+        ]
+      ],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "parent_directory_symlink",
+      "entry": "alias/app.ox",
+      "sources": [
+        {
+          "path": "real/app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "real/a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [
+        [
+          "symlink",
+          "alias",
+          "real"
+        ]
+      ],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "display_components",
+      "entry": "./view/../view/app.ox",
+      "sources": [
+        {
+          "path": "view/app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "view/a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_final_symlink",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "target.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [
+        [
+          "symlink",
+          "a.ox",
+          "target.ox"
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_dangling_symlink",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "special": [
+        [
+          "symlink",
+          "a.ox",
+          "missing-target"
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_directory_symlink",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 7,
+          "sha256": "bf247c35e1ceca223033629399109be7289ce18e0f32528c05e10e2252b3827c"
+        },
+        {
+          "path": "inner/b.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [
+        [
+          "symlink",
+          "a",
+          "inner"
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 1,
+          "start": 4,
+          "end": 5
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_final_directory",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "special": [
+        [
+          "directory",
+          "a.ox",
+          null
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_final_fifo",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "special": [
+        [
+          "fifo",
+          "a.ox",
+          null
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "child_final_socket",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "special": [
+        [
+          "socket",
+          "a.ox",
+          null
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": [
+        {
+          "kind": "socket",
+          "reason": "Prior socket.socket(AF_UNIX) failed: [Errno 1] Operation not permitted; creation stopped"
+        }
+      ]
+    },
+    {
+      "id": "child_intermediate_file",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 7,
+          "sha256": "bf247c35e1ceca223033629399109be7289ce18e0f32528c05e10e2252b3827c"
+        },
+        {
+          "path": "a",
+          "bytes": 8,
+          "sha256": "03822375f2aca5e53d66838a3e803183e0c1a7921da8e4056d3341ea95777cd9"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 1,
+          "start": 4,
+          "end": 5
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "repeated_entry_path",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "a.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "special": [
+        [
+          "symlink",
+          "app.ox",
+          "a.ox"
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        },
+        "secondary": {
+          "file": 0,
+          "start": 7,
+          "end": 7
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "distinct_hardlinks",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 14,
+          "sha256": "1583007859010a6300b4f36c2ffc06e4e1ca72b7ab3cae61c7ae9fcc6b86560f"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 15,
+          "sha256": "2871518c5baa9f0bf351b9e20898d47efb9be036ddb8bc7d3e388cdbde6a142f"
+        },
+        {
+          "path": "b.ox",
+          "bytes": 15,
+          "sha256": "2871518c5baa9f0bf351b9e20898d47efb9be036ddb8bc7d3e388cdbde6a142f"
+        }
+      ],
+      "special": [
+        [
+          "hardlink",
+          "b.ox",
+          "a.ox"
+        ]
+      ],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a",
+          "b"
+        ],
+        "record_handles": [
+          [
+            1,
+            0,
+            "Item"
+          ],
+          [
+            2,
+            0,
+            "Item"
+          ]
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "entry_hardlink_distinct",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "special": [
+        [
+          "hardlink",
+          "a.ox",
+          "app.ox"
+        ]
+      ],
+      "expected": {
+        "result": "error",
+        "code": "E0002",
+        "stage": "source",
+        "primary": {
+          "file": 1,
+          "start": 4,
+          "end": 5
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "fold_only",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 10,
+          "sha256": "dff1176267e9773f9eec939fd2ffb7af3f28331c7301192200dc44747227360a"
+        },
+        {
+          "path": "Jobs.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 8,
+          "literal_hex": "6a6f6273"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "exact_and_fold",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 10,
+          "sha256": "dff1176267e9773f9eec939fd2ffb7af3f28331c7301192200dc44747227360a"
+        },
+        {
+          "path": "jobs.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        },
+        {
+          "path": "Jobs.ox",
+          "bytes": 2,
+          "sha256": "766e0153d3f7ec95c97e755b1ea7b1681566923b9299365fdc8399443ca20c1d"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "jobs"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "neither_exact_nor_fold",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 10,
+          "sha256": "dff1176267e9773f9eec939fd2ffb7af3f28331c7301192200dc44747227360a"
+        },
+        {
+          "path": "unrelated.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0002",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 8,
+          "literal_hex": "6a6f6273"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "sibling_fold_collision",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 20,
+          "sha256": "d7cfe8ff5764b053e6bd339affdb419f8f89206e0df6757f8709e24f024a706c"
+        },
+        {
+          "path": "Jobs.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 14,
+          "end": 18,
+          "literal_hex": "6a6f6273"
+        },
+        "secondary": {
+          "file": 0,
+          "start": 4,
+          "end": 8
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "sibling_exact_collision",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 14,
+          "sha256": "c5b5c589f0a57829ae0747ca8692453e792caa134f4dbbdb278e1d17a3b7fb6e"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0201",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 11,
+          "end": 12,
+          "literal_hex": "61"
+        },
+        "secondary": {
+          "file": 0,
+          "start": 4,
+          "end": 5
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "first_missing_before_collision",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 20,
+          "sha256": "d7cfe8ff5764b053e6bd339affdb419f8f89206e0df6757f8709e24f024a706c"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0002",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 8,
+          "literal_hex": "4a6f6273"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "intermediate_fold_only",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 7,
+          "sha256": "bf247c35e1ceca223033629399109be7289ce18e0f32528c05e10e2252b3827c"
+        },
+        {
+          "path": "A/b.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0005",
+        "stage": "source",
+        "primary": {
+          "file": 1,
+          "start": 4,
+          "end": 5
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "separate_parent_names",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 14,
+          "sha256": "1583007859010a6300b4f36c2ffc06e4e1ca72b7ab3cae61c7ae9fcc6b86560f"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 10,
+          "sha256": "fd175c2466e634c7548bca47023fc6f9d5d6a144aa4504e0687f69ae0d6481cf"
+        },
+        {
+          "path": "b.ox",
+          "bytes": 10,
+          "sha256": "fd175c2466e634c7548bca47023fc6f9d5d6a144aa4504e0687f69ae0d6481cf"
+        },
+        {
+          "path": "a/leaf.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        },
+        {
+          "path": "b/leaf.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a",
+          "a/leaf",
+          "b",
+          "b/leaf"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "invalid_utf8",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 1,
+          "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0003",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "oxbc_before_utf8",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 5,
+          "sha256": "864d93deedaef7695b15206c4335e8252cb24367df0f6a9c8a195c1282f4aa8b"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "error",
+        "code": "E0004",
+        "stage": "source",
+        "primary": {
+          "file": 0,
+          "start": 4,
+          "end": 5,
+          "literal_hex": "61"
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "empty_child",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ],
+        "usage": {
+          "bytes": 7,
+          "tokens": 5,
+          "nodes": 1,
+          "eofs": 2
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "file_local_expr_blocks",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 33,
+          "sha256": "6f1bd3a605235a525219f1e5814ed082973bdffc00264524bbac791adece6d5b"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 27,
+          "sha256": "0b4ff5e19354cc0f7dcc01ce250c1a1923b932594004aa1dad1aeb6d92b62482"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ],
+        "local_expressions": [
+          [
+            0,
+            0,
+            "7"
+          ],
+          [
+            1,
+            0,
+            "9"
+          ]
+        ],
+        "local_blocks": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "utf8_crlf_origins",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 45,
+          "sha256": "db96892372d58198a70b442008d0bab23dd821319d37935fe7c0002cfb8f8a57"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 35,
+          "sha256": "d28e5445e586d036e504ef3b782f96810afb612efcecf246c57c9c7d37972604"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ]
+      },
+      "unavailable": []
+    },
+    {
+      "id": "unrelated_nonutf8",
+      "entry": "app.ox",
+      "sources": [
+        {
+          "path": "app.ox",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        },
+        {
+          "path": "a.ox",
+          "bytes": 20,
+          "sha256": "6564d1a6c062c8371c915fd040317d45f73ea6fdc7219c160fc0647578eab8da"
+        }
+      ],
+      "special": [],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ],
+        "usage": {
+          "probes": 1,
+          "entries": 3,
+          "name_units": 20
+        }
+      },
+      "unavailable": []
+    },
+    {
+      "id": "native_path_identity",
+      "entry": "alias/app.ox",
+      "sources": [
+        {
+          "native_relative_hex": "ff2f612e6f78",
+          "bytes": 24,
+          "sha256": "30b5e2d2574c49fece85b42107dbdfcf2364ff2070b2267b3a1f07001994512e"
+        },
+        {
+          "native_relative_hex": "fe2f612e6f78",
+          "bytes": 7,
+          "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+        }
+      ],
+      "expected": {
+        "result": "ok",
+        "module_paths": [
+          "",
+          "a"
+        ],
+        "note": "Root and child canonical bytes differ but lossy UTF-8 strings collide"
+      },
+      "unavailable": []
+    }
+  ]
+}

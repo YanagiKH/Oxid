@@ -1,0 +1,92 @@
+{
+  "scope": "reviewed passive adapter and bounded smokes only; full independent corpus and actual native remain pending",
+  "core117_unchanged": true,
+  "core_manifest_sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
+  "files": [
+    {
+      "path": "SCHEMA.md",
+      "bytes": 4976,
+      "sha256": "b510196733b8db60411d475c1bdf1adad0d1911c30f40e2904ae9cd9df6963b9"
+    },
+    {
+      "path": "prepare.py",
+      "bytes": 14411,
+      "sha256": "b040216c2484e9d4fd28a725d3ea7af85f0c57bd889263996b26df87aff9f1d9"
+    },
+    {
+      "path": "overlay-v5.patch",
+      "bytes": 45496,
+      "sha256": "62a2b6382f7684c5aaf03c355580f2e8d582c6c2688d7bab970f0b50f9c0ed54"
+    },
+    {
+      "path": "overlay-manifest-v5.json",
+      "bytes": 37152,
+      "sha256": "f0d330def24e2e9832d665f364f0227efa41cbd8fd2f9500af0cf0bde32287e7"
+    },
+    {
+      "path": "parse_debug.py",
+      "bytes": 9473,
+      "sha256": "638fb39b814f637bf21902738edb35bbe775956d2c00a0e307957668e38c4264"
+    },
+    {
+      "path": "run.py",
+      "bytes": 12602,
+      "sha256": "ff51288e0bf90733eafe4690c02feacac06e61ab0608642423fd700e7fca42fc"
+    },
+    {
+      "path": "build.py",
+      "bytes": 2960,
+      "sha256": "d1a12eba9c86c931ef0579846a54267661431c6d2a119d2bd7302fb627169bfd"
+    },
+    {
+      "path": "build-v5-debug.json",
+      "bytes": 1942,
+      "sha256": "e7500dbf496b7e97729cb7aadd6edfc8af15824a241521f758599713b79959ec"
+    },
+    {
+      "path": "build-v5-release.json",
+      "bytes": 1966,
+      "sha256": "26326697969f10ff8934cabe6b401ad099b782a7047bf0ffe100f1ec84722811"
+    },
+    {
+      "path": "passivity.py",
+      "bytes": 4426,
+      "sha256": "09cac41a9d88b6e978bb617dcde06e41ec076efcc55d6fa616ef6fdbd8947400"
+    },
+    {
+      "path": "verify_smokes.py",
+      "bytes": 4013,
+      "sha256": "bc940752d1ca3f249ab57569703d17d1caaca15e6e966c7c322c2fb90eb915fd"
+    },
+    {
+      "path": "parser-delta-controls.json",
+      "bytes": 458,
+      "sha256": "87f4768ad4c3f8bc4985437d43aa02237c4ba2935e45a6a62edded1fc2acf9a4"
+    },
+    {
+      "path": "protocol-controls-v1/results.json",
+      "bytes": 4031,
+      "sha256": "925a3d016b72fd3d92c60e9dabbcee8e7924ba1785dda3024d49cf416367a4cd"
+    },
+    {
+      "path": "smoke-v1/requests.jsonl",
+      "bytes": 1494,
+      "sha256": "553e2d38be4680884dff9d8c9fbaf9c842c60af83a423bfecb2b2fe391aa162b"
+    },
+    {
+      "path": "smoke-v1/structural-final.json",
+      "bytes": 6305,
+      "sha256": "b6d61b977dcd641c02a5d3ea70971287a180a65022a2a0c521be882c6fcf591a"
+    },
+    {
+      "path": "smoke-v1/passivity-debug/results.json",
+      "bytes": 28465,
+      "sha256": "fac42b56f63a6d12848638e5f4e8c280863dd7e7e4716103a7a62851fdd28110"
+    },
+    {
+      "path": "smoke-v1/passivity-release/results.json",
+      "bytes": 28495,
+      "sha256": "f73fddc1a38d4da63402058b5af5e55950f4b5ea6341a742a0c4ecbd42ef62a0"
+    }
+  ]
+}

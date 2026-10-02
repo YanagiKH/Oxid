@@ -32,18 +32,28 @@ shared declaration/import/visibility index through its original scalar and owned
 schedules. Private Unit1 discovery and Unit2 project parsing/indexing reach real
 scalar/owned resolution and type checking. Private loading is qualified on Linux
 x86_64; non-Linux discovery is rejected and other Linux architectures have not
-been qualified. Linked project OIR, whole-project ownership verification and
-multi-file consumers remain Unit3, with public activation separately staged.
+been qualified. Private Unit3 now produces one linked scalar or owned OIR program
+and feeds the existing verifier and reference/native consumers. Its source seal
+binds the immutable map, verified body and original root-main identity. The finite
+source/reference, native/driver, mutation and bounded local portability gates
+passed; exact-head hosted CI remains pending. Public activation is separately staged as Unit4.
 
 The complete capability is proposed in
 [RFC 0015](../../rfcs/0015-bounded-typed-projects.md). The historical
-[Unit1 ledger](typed-project-unit1-validation.md) and current
+[Unit1 ledger](typed-project-unit1-validation.md) and
 [Unit2 ledger](typed-project-unit2-validation.md) distinguish each source
 representation and qualification. Unit2 measures ten flat index vectors, a fresh
 288N AST payload envelope and explicit I/J/W admissions; it does not inherit the
 old Unit1 280N envelope. Private groundwork adds no feature-inventory entry,
 new frontend/native host claim or milestone completion claim. Historical
 ownership and Unit1 evidence keep their original identities.
+
+The [Unit3 ledger](typed-project-unit3-validation.md) separates the 304 finite
+source/profile comparisons, 2,798 actual reference runs and native covering
+subset with 99 source-free ELF executions. It also records two newly paid origin
+walks, the null-origin malformed-source diagnostic change, retained compatibility
+identities and the test-only host-selection successor. These counts do not imply
+native execution of every composition case or qualification of all programs.
 
 A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits

@@ -119,19 +119,38 @@ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&st
     let (source, ast) = project
         .original_file()
         .expect("public source facade remains one-file");
+    debug_assert!(!ast.tokens.is_empty());
+    process_loaded(
+        &project,
+        json,
+        operation,
+        output,
+        oir::check_source(source, ast, sources),
+    )
+}
+
+/// Shared post-load operation path; private candidate adapters supply a checked
+/// project result, while public dispatch continues to load only original syntax.
+fn process_loaded(
+    project: &ProjectSources,
+    json: bool,
+    operation: Operation,
+    output: Option<&str>,
+    executable: Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>>,
+) -> i32 {
+    let sources = project.sources();
     let result = (|| {
-        debug_assert!(!ast.tokens.is_empty());
-        let verified: oir::CheckedSourceProgram = oir::check_source(source, ast, sources)?;
+        let verified = executable?;
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
-                let module = verified.native_module(sources).map_err(|e| vec![*e])?;
+                let module = verified.native_module().map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
                 super::native::compile(&module, output).map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
-                .run(sources)
+                .run()
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error]),
         }

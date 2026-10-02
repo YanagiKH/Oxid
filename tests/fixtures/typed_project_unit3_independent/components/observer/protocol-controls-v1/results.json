@@ -1,0 +1,104 @@
+{
+  "purpose": "synthetic protocol evidence only; no compiler execution",
+  "results": [
+    {
+      "mode": "positive-load-denial",
+      "status": "observed",
+      "exit_code": 0,
+      "error": null,
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/positive-load-denial/receipt.json",
+        "bytes": 4644,
+        "sha256": "ae1f258e74b0e8a84dd7894b0934e8b8880d51010e5aa0cb95ccf52e4834d74d"
+      }
+    },
+    {
+      "mode": "zero-execution",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": "AssertionError: observer exact test did not run once",
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/zero-execution/receipt.json",
+        "bytes": 3444,
+        "sha256": "00aa9ab9899c5a22d54a017b21ffcd9427287b5cef1d80342c77d8aa8f197a15"
+      }
+    },
+    {
+      "mode": "missing-marker",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": "FileNotFoundError: [Errno 2] No such file or directory: '/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/missing-marker/completion.json'",
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/missing-marker/receipt.json",
+        "bytes": 4301,
+        "sha256": "8b8ec37f2359d3b1671d2e118fe9e4d8e92329d8b7d80ed9626baf19aea286df"
+      }
+    },
+    {
+      "mode": "missing-artifact",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": "AssertionError: missing or contradictory actual loader outcome",
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/missing-artifact/receipt.json",
+        "bytes": 4211,
+        "sha256": "9faa326701e565152eb4ebf9416d0cf79c54278f261274685b9cbb1cd5d98777"
+      }
+    },
+    {
+      "mode": "wrong-nonce",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": "AssertionError: wrong/stale completion marker",
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/wrong-nonce/receipt.json",
+        "bytes": 4390,
+        "sha256": "0992895b23b6f1fba0c564e7ec39d5df793c9440232788f5b3489057af01a7cc"
+      }
+    },
+    {
+      "mode": "stale-request-hash",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": "AssertionError: wrong/stale completion marker",
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/stale-request-hash/receipt.json",
+        "bytes": 4466,
+        "sha256": "6926febf4abffc7a1aa076a79525adfa37381e86625955c9e647d3f9b69e9f43"
+      }
+    },
+    {
+      "mode": "nonzero-exit",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": null,
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/nonzero-exit/receipt.json",
+        "bytes": 3362,
+        "sha256": "814d71a3392123cb2affe2919379b06d25001bf0eabde306726f22b8b569bff9"
+      }
+    },
+    {
+      "mode": "missing-roster",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": "AssertionError: exact ignored observer test absent/duplicated in roster",
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/missing-roster/receipt.json",
+        "bytes": 2980,
+        "sha256": "9aa30c5d1f5bf73619b7b175cca656ff7f6641d36d9a6b275c04a4602735aaa3"
+      }
+    },
+    {
+      "mode": "observation-limit",
+      "status": "observer-failure",
+      "exit_code": 1,
+      "error": null,
+      "receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/protocol-controls-v1/observation-limit/receipt.json",
+        "bytes": 3397,
+        "sha256": "6897adab36e0ffc22750a60c6924e07bcc55f61f56c9756b6c1e9c07217493e9"
+      }
+    }
+  ]
+}

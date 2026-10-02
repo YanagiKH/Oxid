@@ -1,0 +1,66 @@
+{
+  "schema": "unit3-staged-path-source-only-preparation-v1",
+  "status": "passed",
+  "compiler_invocations": 0,
+  "llvm_invocations": 0,
+  "source_members": 445,
+  "derived_core_inputs": 117,
+  "observer_prepared_inputs": 120,
+  "native_prepatch_inputs": 198,
+  "native_overlay_inputs": 199,
+  "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",
+  "receipts": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/staging-source-only-v1/inputs/materialization.json",
+      "bytes": 83470,
+      "sha256": "255e88b68b6330baf2448ec953e852521fa6b98a994785a8a0cad75c9a277f26"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/staging-source-only-v1/bridge/bridge-receipt.json",
+      "bytes": 22210,
+      "sha256": "4b7ce7b3cf4db6d831a3bf854fc7a739f1bdff5e9048ce85ba35846241deadbb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/staging-source-only-v1/observer/prepared-source.json",
+      "bytes": 28456,
+      "sha256": "c1bb6efc6e32d090ea25edffe5676ea0aa4f4be3ff63738186920d64d9e99f04"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/staging-source-only-v1/native-inputs/native-inputs.json",
+      "bytes": 54822,
+      "sha256": "34ceae27b0280ee618f4f2040aafe8a289a520b9560b71e58d60a1e4c1d156fe"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/staging-source-only-v1/native/native-prepared.json",
+      "bytes": 73285,
+      "sha256": "4a651a4e87e2d6bc5bdde77297d1d81ca3a575acc6526f7b7c205b68806ebfed"
+    }
+  ],
+  "invoked_scripts": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/transport.py",
+      "bytes": 7351,
+      "sha256": "7e3e8b87ba54cc3c5a6693424fdcd539f48b11c78973ad66e962548016ab3f01"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/bridge.py",
+      "bytes": 3844,
+      "sha256": "0a67058d7592c1ce50ba52933784826f6883f566445bfe3da4aff49662f12e25"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/assemble.py",
+      "bytes": 5487,
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/native-v1/native_inputs.py",
+      "bytes": 4452,
+      "sha256": "57c6bd65664e7c2ac41f99a837f93f4067846b6d2b4b694a26eb50d79c5992a2"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/native-v1/native_portable_grouped.py",
+      "bytes": 21313,
+      "sha256": "49e857b57b0cf589d4fdf667b4f0b689340e3357122135fa0a4e8786c28245dd"
+    }
+  ]
+}

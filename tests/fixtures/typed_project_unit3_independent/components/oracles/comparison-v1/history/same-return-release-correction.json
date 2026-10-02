@@ -1,0 +1,42 @@
+{
+  "schema": "unit3-same-return-release-projection-correction-v1",
+  "original_comparator_manifest": {
+    "path": "comparator-manifest-v4.json",
+    "bytes": 2987,
+    "sha256": "b807098470e48cc0a93d6cdbe82813aa0372c6d97ff2039f1e65cbe78a0d75dc"
+  },
+  "original_comparator_snapshot": "history/main-comparator-v4",
+  "original_mismatch": {
+    "path": "full-debug-incremental-attempt1.json",
+    "bytes": 550893,
+    "sha256": "67363a5f1690f5944b7d498402000d2cf361452052b1f9671d54b16e0eb1cc11"
+  },
+  "source_contract": {
+    "path": "proposals/same-return-release-contract.md",
+    "bytes": 4825,
+    "sha256": "eb9cdce3ef098c6d4d56f6d6a94c598a1bebbc67b225c303a079dc0df1f7c8f2"
+  },
+  "observed_counterexample": "positive-exclusive_alias: model sibling releases [1,0], actual releases [0,1] inside one normal ReturnScalar",
+  "authority": "RFC0014 section 4, approved Unit3 section 5, frozen predecessor owned/execute.rs return_value",
+  "reviewed_reason": "Sibling release order within one atomic normal return is unspecified; reverse lexical cleanup applies to StorageEnd.",
+  "correction": "Preserve physical journals; compare only exact same-return membership after actual resume-call and complete borrowed runtime-key validation.",
+  "unchanged": [
+    "original 463-file source/model freeze",
+    "accepted source-only declaration and native supplements",
+    "original v4 mismatch",
+    "all original source and actual event order",
+    "all source results and resource boundaries",
+    "all production files"
+  ],
+  "sensitivity": {
+    "path": "return-release-group-sensitivity.json",
+    "bytes": 4522,
+    "sha256": "3fbc16b414aef03969dcc565c777213dbfe166d52c5246b45921a3f93c67bb1e"
+  },
+  "qualification_status": "Review candidate; no resumed collection or qualification credit yet",
+  "assertion_mode": {
+    "PYTHONOPTIMIZE": "0",
+    "sys_flags_optimize": 0,
+    "__debug__": true
+  }
+}

@@ -1,0 +1,165 @@
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -16,3 +16,6 @@
+ pub use driver::dispatch;
+ #[cfg(test)]
+ mod owned_syntax_tests;
++
++#[cfg(test)]
++pub fn qualification_main() -> i32 { driver::unit3_native_driver::main() }
+--- a/src/frontend/driver.rs
++++ b/src/frontend/driver.rs
+@@ -190,3 +190,6 @@
+         assert_eq!(check_summary(1, Some(7)), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}");
+     }
+ }
++
++#[cfg(test)]
++pub(in crate::frontend) mod unit3_native_driver;
+--- a/src/frontend/oir/native.rs
++++ b/src/frontend/oir/native.rs
+@@ -38,7 +38,10 @@
+         entry: Option<hir::DefId>,
+         sources: &SourceMap,
+     ) -> Result<String, Box<Diagnostic>> {
+-        self.native_module_fuel(entry, sources, execute::MAX_FUEL)
++        let fuel = execute::MAX_FUEL;
++        #[cfg(test)]
++        let fuel = crate::frontend::driver::unit3_native_driver::fuel(fuel);
++        self.native_module_fuel(entry, sources, fuel)
+     }
+ 
+     #[cfg(test)]
+--- a/src/frontend/oir/owned/native.rs
++++ b/src/frontend/oir/owned/native.rs
+@@ -97,7 +97,10 @@
+     entry: Option<hir::DefId>,
+     sources: &SourceMap,
+ ) -> Result<String, Box<Diagnostic>> {
+-    native_module_limits(witness, entry, sources, plan::MAX_FUEL, Limits::DEFAULT)
++    let fuel = plan::MAX_FUEL;
++    #[cfg(test)]
++    let fuel = crate::frontend::driver::unit3_native_driver::fuel(fuel);
++    native_module_limits(witness, entry, sources, fuel, Limits::DEFAULT)
+ }
+ #[cfg(test)]
+ pub(super) fn native_module_with_fuel(
+--- a/src/frontend/oir/execute.rs
++++ b/src/frontend/oir/execute.rs
+@@ -239,6 +239,9 @@
+     #[cfg(test)] observe: &mut dyn FnMut(Event),
+ ) -> Result<Scalar, RunFailure> {
+     let limits = Limits {
++        #[cfg(test)]
++        fuel: crate::frontend::driver::unit3_native_driver::fuel(limits.fuel).min(MAX_FUEL),
++        #[cfg(not(test))]
+         fuel: limits.fuel.min(MAX_FUEL),
+         frames: limits.frames.min(MAX_FRAMES),
+         slots: limits.slots.min(MAX_LIVE_SLOTS),
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -1266,6 +1266,8 @@
+     #[cfg(test)] events: Option<&mut Vec<Event>>,
+ ) -> Result<Scalar> {
+     let limits = limits.bounded();
++    #[cfg(test)]
++    let limits = Limits { fuel: crate::frontend::driver::unit3_native_driver::fuel(limits.fuel), ..limits };
+     let f = &plan.witness().functions()[entry.0];
+     let mut machine = Machine {
+         plan,
+--- a/src/frontend/native.rs
++++ b/src/frontend/native.rs
+@@ -57,6 +57,8 @@
+     }
+ }
+ fn run(tool: &Path, args: &[&OsStr], cwd: &Path) -> Result<Output, Box<Diagnostic>> {
++    #[cfg(test)]
++    crate::frontend::driver::unit3_native_driver::record_tool(tool, args, cwd);
+     let result = Command::new(tool).args(args).current_dir(cwd)
+         .env_remove("CCC_OVERRIDE_OPTIONS")
+         .output().map_err(|e| failure(format!("cannot launch {}: {e}; install LLVM {LLVM_VERSION} and set OXID_LLVM_BIN to its bin directory", tool.display())))?;
+@@ -90,6 +92,8 @@
+ }
+ 
+ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
++    #[cfg(test)]
++    crate::frontend::driver::unit3_native_driver::record_module(module);
+     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+         return Err(failure("native preview requires a Linux x86_64 build host"));
+     }
+--- /dev/null
++++ b/src/frontend/driver/unit3_native_driver.rs
+@@ -0,0 +1,73 @@
++//! Private qualification adapter. Its inputs contain no expected outcomes.
++use super::*;
++use std::{cell::Cell, fs, io::Write, path::{Path, PathBuf}};
++thread_local! { static FUEL: Cell<Option<usize>> = const { Cell::new(None) }; }
++pub(in crate::frontend) fn fuel(default: usize) -> usize {
++    FUEL.with(|value| value.get().unwrap_or(default).min(default))
++}
++fn receipt() -> PathBuf { PathBuf::from(std::env::var_os("OXID_UNIT3_NATIVE_RECEIPT").expect("receipt directory")) }
++fn append(name: &str, line: &str) {
++    let mut file=fs::OpenOptions::new().create(true).append(true).open(receipt().join(name)).expect("receipt append");
++    writeln!(file,"{line}").expect("receipt write");
++}
++pub(in crate::frontend) fn record_module(module: &str) {
++    fs::write(receipt().join("actual.ll"), module).expect("actual emitted IR receipt");
++}
++pub(in crate::frontend) fn record_tool(tool: &Path, args: &[&std::ffi::OsStr], cwd: &Path) {
++    let args=args.iter().map(|v|json_string(&v.to_string_lossy())).collect::<Vec<_>>().join(",");
++    append("tools.jsonl", &format!("{{\"tool\":{},\"argv\":[{}],\"cwd\":{}}}",json_string(&tool.to_string_lossy()),args,json_string(&cwd.to_string_lossy())));
++}
++struct Restore { visible: PathBuf, hidden: PathBuf }
++impl Drop for Restore {
++    fn drop(&mut self) {
++        fs::rename(&self.hidden,&self.visible).expect("restore fixture root");
++        append("source-state.jsonl", "{\"phase\":\"restored\",\"restored\":true}");
++    }
++}
++fn hide_loaded(entry: &str, project: &ProjectSources) -> Restore {
++    let visible=PathBuf::from(std::env::var_os("OXID_UNIT3_NATIVE_FIXTURE_ROOT").expect("fixture root"));
++    assert!(Path::new(entry).starts_with(&visible));
++    let hidden=visible.with_file_name(format!("{}.unavailable",visible.file_name().unwrap().to_string_lossy()));
++    assert!(!hidden.exists(),"never overwrite an old unavailable fixture");
++    fs::rename(&visible,&hidden).expect("hide loaded fixture root");
++    let restore=Restore{visible,hidden};
++    assert!(!Path::new(entry).exists());
++    let mut files=Vec::new();
++    // SourceMap iteration records original display paths, without rereading text.
++    for source in project.sources().files() {
++        let display=source.path();
++        assert!(!Path::new(display).exists());
++        files.push(json_string(display));
++    }
++    append("source-state.jsonl", &format!("{{\"phase\":\"after_load_before_check\",\"all_source_paths_absent\":true,\"files\":[{}]}}",files.join(",")));
++    restore
++}
++fn candidate(args: &mut Vec<String>) -> i32 {
++    let (path,json,operation,output)=match options::route(args) {
++        Route::TypedCheck{path,json}=>(path,json,Operation::Check,None),
++        Route::TypedRun{path,json}=>(path,json,Operation::Run,None),
++        Route::TypedCompile{path,json,output}=>(path,json,Operation::Compile,Some(output)),
++        Route::Error{..}=>return dispatch(args).expect("typed validation error"),
++        Route::Legacy(_)=>panic!("private adapter requires typed argv"),
++    };
++    let project=match ProjectSources::load_project_candidate(&path,ProjectLimits::default()) {
++        Ok(value)=>value,
++        Err(failure)=>return report(&failure.sources,failure.diagnostics,json,Summary::empty(operation)),
++    };
++    let _restore=hide_loaded(&path,&project);
++    let work=super::super::declaration_index::WorkMeter::default();
++    let mut allocator=super::super::project::budget::Allocator::default();
++    let executable=oir::project::check_project_executable_candidate(&project,super::super::declaration_index::IndexLimits::default(),&work,&mut allocator);
++    process_loaded(&project,json,operation,output.as_deref(),executable)
++}
++pub(in crate::frontend) fn main() -> i32 {
++    let receipt=receipt(); assert!(receipt.is_dir());
++    assert!(!receipt.join("tools.jsonl").exists());
++    fs::write(receipt.join("tools.jsonl"),b"").expect("empty tool receipt");
++    let fuel=std::env::var("OXID_UNIT3_NATIVE_FUEL").ok().map(|s|s.parse::<usize>().expect("fuel integer"));
++    FUEL.with(|value|value.set(fuel));
++    let mut args=std::env::args().skip(1).collect::<Vec<_>>();
++    if std::env::var_os("OXID_UNIT3_PUBLIC").is_some() {
++        dispatch(&mut args).expect("public typed route")
++    } else {candidate(&mut args)}
++}

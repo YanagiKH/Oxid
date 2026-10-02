@@ -334,7 +334,8 @@ impl RunFailure {
     }
 }
 
-/// One mandatory boundary for all successful typed-preview checking and running.
+/// Retained direct raw scalar test seam. Source production adds association checks.
+#[cfg(test)]
 pub(super) fn lower_and_verify(
     typed: &typeck::TypedProgram,
     sources: &SourceMap,

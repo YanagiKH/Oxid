@@ -1,0 +1,41 @@
+{
+  "schema": "unit3-qualified-source-evidence-v1",
+  "comparison_scope": "Exact 152 sources by two profiles, independent model facts for 105 sources; authored outcomes/declarations for 47",
+  "files": [
+    {
+      "path": "comparator-manifest-v5.json",
+      "bytes": 3900,
+      "sha256": "22666fa44ee61e8ee70dd6f4605e87000f3872f2f2728c20c0843ff35755d32d"
+    },
+    {
+      "path": "full304-v5-qualification-comparison.json",
+      "bytes": 1103493,
+      "sha256": "d9ee15c73d7d806d09698cf51d0b8c7395ffc53bb8b4638b968a5cc1daca4a61"
+    },
+    {
+      "path": "coverage_report.py",
+      "bytes": 4061,
+      "sha256": "df906f761b8f1ac7420855a82674e231607976fde0f2ba9dd4ff866861d0940b"
+    },
+    {
+      "path": "full304-v5-coverage.json",
+      "bytes": 1269279,
+      "sha256": "3b355f6dfdac0b3df5229f7085755b70de8e5e5ddcdb304f88d135c72e7eda87"
+    },
+    {
+      "path": "retained226-v5-development-comparison.json",
+      "bytes": 933239,
+      "sha256": "0dc1343edd13a5f8e3e17fe63f2baa9f182a527ac83bbb3c8c90d43a05cf842a"
+    },
+    {
+      "path": "full-debug-incremental-attempt1.json",
+      "bytes": 550893,
+      "sha256": "67363a5f1690f5944b7d498402000d2cf361452052b1f9671d54b16e0eb1cc11"
+    },
+    {
+      "path": "history/same-return-release-correction.json",
+      "bytes": 1904,
+      "sha256": "00afca5e65acf03edce863d3c1f81a38f62ab087e26f775669d1a36efb1d0bda"
+    }
+  ]
+}

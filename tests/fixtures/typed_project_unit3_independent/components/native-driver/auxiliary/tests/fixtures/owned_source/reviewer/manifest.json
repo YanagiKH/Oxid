@@ -1,0 +1,14 @@
+{
+  "scope": "Unchanged reviewer authored regression artifacts; repeated controls do not increase unique source-program coverage",
+  "files": {
+    "test_reviewer_owned_source.py": "39acf5d2e46f5ae5fa36c26a9b50e69cf8db11c4364f639c47448cc79d23b663",
+    "test_reviewer_lexical_boundaries.py": "7839d8a807ed9de1e8bcabf5bc1781f217beeb31458509a821167ba056f36bce",
+    "test_reviewer_final_contract_edges.py": "4165908ca18baef85b60184a79ac25cb192d29a739b49432f7007a55bc48b0a2",
+    "review_batch_ledger.py": "8a0625cd79b099cb3095aaada3d3fa41ddba451eca6190539b09275a896fc270",
+    "test_alias_amendment.py": "677f8b9289f8ab6d48559a8121ad2bbd1d6e8b10a75a2e8fca2696f47d8eff90",
+    "test_alias_amendment_edges.py": "c48a722df03b36bdab5e096b60e4121c58c5889c29f759a7b9e756c537a0a76c",
+    "source-only-alias-pair-inventory.json": "87e16422b2293f884e67f70ec5aacfe309c31798de373328e0ce3e1b6c2df04b",
+    "original-active-shadow-standalone-block.json": "694aca53b297203d3020dc242534af0c56a7e11901fd64937b8d4bafd530d3ba",
+    "original-lexical-reuse-standalone-block.json": "bee3c98f437e0034a7362c04dc9995613e00d94f3e9411e5b6d9467391988b24"
+  }
+}

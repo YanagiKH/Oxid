@@ -1,0 +1,11 @@
+{
+  "scope": "Pre-freeze author self-review only; no Unit3 source or compiler observations informed these changes",
+  "entries": [
+    {"id": "C01", "reason": "The inherited body model intentionally uses a generic arity type error and simplified diagnostic labels", "change": "Bind arity to established E0301 with cross-file callee declaration; bind call-type errors to existing declaration labels; add authoritative source-adapter owner declaration labels for E0311. Preserve model_message as explanatory data, not an exact compiler message assertion"},
+    {"id": "C02", "reason": "Established reference/native stage strings differ from informal run/native labels", "change": "Freeze oir-run and native-admission, with recursive native graph rejection E0700, from corrected Unit2 source and existing contract"},
+    {"id": "C03", "reason": "A missing-root plus root-unused move fixture did not exercise an unused child", "change": "Relocate the failing unused function to other.ox with explicit byte-origin relocation before freezing"},
+    {"id": "C04", "reason": "The scalar same-spelled sentinel initially had zero parameters", "change": "Give it the target's exact signature so wrong-target raw verification remains valid and semantic correspondence is the rejecting authority"},
+    {"id": "C05", "reason": "Generic raw safety does not demand all terminal source lexical cleanup", "change": "Classify omitted terminal return/break/join cleanup and reversed independent cleanup as source-correspondence failures where raw safety accepts; retain continue re-lifetime and duplicate-end mutations as raw rejections"},
+    {"id": "C06", "reason": "Record types and source calls require an explicit independent module bridge", "change": "Add a flat-module original/import/visibility predicate and validate every generated positive call/constructor/projection against real source tokens before freezing"}
+  ]
+}

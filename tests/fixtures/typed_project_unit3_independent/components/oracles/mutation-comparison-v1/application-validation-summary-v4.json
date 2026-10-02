@@ -1,0 +1,23 @@
+{
+  "actual_smoke_adversarial_controls": 44,
+  "actual_smokes": 12,
+  "compiler_runs": 0,
+  "covered_frozen_ids": 114,
+  "files": {
+    "APPLICATION.md": "5cbae962b6424d5add905f9cb5ff68929b61eb0820647aa1705a4d1a8ed9372d",
+    "application-tests-v4.json": "09a4f373969b2c728d411eaab0b6d240690ef70744e589990fd5d66dfe505c3c",
+    "application.py": "d3fc2c40ff933dc4f98614cae438d4a828ab7e89086f425ec83f7610adc44582",
+    "test_application.py": "b27b7854b05c6a30eed1e01bf578d9712635294d3c5b8d2e22d99e872b4586d9"
+  },
+  "frozen_request_count": 114,
+  "original_specimens_modified": false,
+  "report_count": 123,
+  "request_category_controls": 146,
+  "result_statuses": {
+    "applied": 117,
+    "evidence-missing": 5,
+    "invalid": 1
+  },
+  "schema": "unit3-mutation-application-observer-only-tests-v1",
+  "stale_identity_controls": 5
+}

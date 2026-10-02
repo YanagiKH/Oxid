@@ -1,0 +1,57 @@
+{
+  "schema": "unit3-synthetic-stream-sensitivity-v1",
+  "source": "fn main() -> i32 { let mut x = 0; return x; }\n",
+  "source_sha256": "ed5727a487d9054ddee16b667fa40e60a3a82f21449d351afcb64f6f9bbed7a3",
+  "evidence_kind": "INDEPENDENT_SYNTHETIC_TRANSPORT_CONTROL",
+  "candidate_receipts_read": 0,
+  "compiler_invocations": 0,
+  "positive": "PASS",
+  "mutants": [
+    {
+      "id": "drop-root-return",
+      "status": "REJECTED",
+      "reason": "('exact existing consumer callbacks for committed operation', Counter({'Return': 1}), Counter())"
+    },
+    {
+      "id": "duplicate-root-return",
+      "status": "REJECTED",
+      "reason": ""
+    },
+    {
+      "id": "drop-charge",
+      "status": "REJECTED",
+      "reason": "('effect after unpaid charge', 'existing_scalar_event', {'op': {'operation': 'Root', 'function': 0, 'span': [0, 3, 7], 'payload': None}, 'context': {'tag': 'Context', 'route': 'scalar', 'function': 0, 'activation': None, 'block': None, 'position': 'entry', 'operation': 0}, 'activation': None, 'attempt': None, 'committed': False, 'replacement_fields': [], 'transitions': 0, 'transfers': 0, 'payloads': 0, 'callbacks': Counter(), 'future_aid': None, 'field_effect': None, 'scalar_effect': None, 'released_keys': []})"
+    },
+    {
+      "id": "duplicate-charge",
+      "status": "REJECTED",
+      "reason": "('one nonresetting execution fuel', 96, 100)"
+    },
+    {
+      "id": "drop-commit",
+      "status": "REJECTED",
+      "reason": "('uncommitted operation before next start', {'op': {'operation': 'Root', 'function': 0, 'span': [0, 3, 7], 'payload': None}, 'context': {'tag': 'Context', 'route': 'scalar', 'function': 0, 'activation': None, 'block': None, 'position': 'entry', 'operation': 0}, 'activation': None, 'attempt': True, 'committed': False, 'replacement_fields': [], 'transitions': 0, 'transfers': 0, 'payloads': 0, 'callbacks': Counter({'Enter': 1}), 'future_aid': None, 'field_effect': None, 'scalar_effect': None, 'released_keys': []})"
+    },
+    {
+      "id": "duplicate-commit",
+      "status": "REJECTED",
+      "reason": "('effect/callback after operation commit', 'operation_commit')"
+    },
+    {
+      "id": "drop-effect",
+      "status": "REJECTED",
+      "reason": "('existing scalar callback matches physical place write', None, (0, 0, 0))"
+    },
+    {
+      "id": "duplicate-effect",
+      "status": "REJECTED",
+      "reason": "{'check': 'independent synthetic committed write', 'expected': [{'kind': 'initialize-scalar', 'function': 0, 'activation': 0, 'span': [0, 19, 33], 'target_span': [0, 27, 28], 'value': 0}], 'actual': [{'kind': 'initialize-scalar', 'function': 0, 'activation': 0, 'span': [0, 19, 33], 'target_span': [0, 27, 28], 'value': 0}, {'kind': 'initialize-scalar', 'function': 0, 'activation': 0, 'span': [0, 19, 33], 'target_span': [0, 27, 28], 'value': 0}]}"
+    },
+    {
+      "id": "drop-final-commit",
+      "status": "REJECTED",
+      "reason": "{'check': 'synthetic final operation committed', 'expected': False, 'actual': True}"
+    }
+  ],
+  "mutants_rejected": 9
+}

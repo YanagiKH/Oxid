@@ -1,0 +1,244 @@
+{
+  "scope": "bounded3hand-smoke adapter structural/passivity support; no full source oracle/native execution claim",
+  "independent_inventory_sha256": "1ac7bcaa23288a9f2c435f1ca49162384413fdce10ff151488607fc4aab20994",
+  "profile_raw_audit_reference_equal": true,
+  "equal_span_duplicate_missing_detected": {
+    "missing_path": "functions[0].span",
+    "duplicated_path": "functions[0].blocks[0].span",
+    "same_span": [
+      0,
+      14,
+      20
+    ]
+  },
+  "results": [
+    {
+      "profile": "debug",
+      "case": "scalar",
+      "counts": {
+        "D": 3,
+        "Sspan": 87,
+        "Vbind": 90
+      },
+      "path_and_value_multisets_equal": true,
+      "trace": {
+        "reference-default": {
+          "charge_attempts": 23,
+          "successful_charges": 23,
+          "commits": 23,
+          "spent": 41,
+          "rows": 79
+        },
+        "reference-fuel-0": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-1": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-100": {
+          "charge_attempts": 23,
+          "successful_charges": 23,
+          "commits": 23,
+          "spent": 41,
+          "rows": 79
+        },
+        "reference-fuel-20": {
+          "charge_attempts": 3,
+          "successful_charges": 2,
+          "commits": 2,
+          "spent": 15,
+          "rows": 9
+        }
+      },
+      "uncompressed_bytes": 649853,
+      "retained_bytes": 64774,
+      "receipt_sha256": "55d50aaa50dd6a8af581f1ab507cf3b763d9ed72c337060a236e5a4f6e5f271c"
+    },
+    {
+      "profile": "debug",
+      "case": "owned",
+      "counts": {
+        "D": 7,
+        "Sspan": 212,
+        "Vbind": 219
+      },
+      "path_and_value_multisets_equal": true,
+      "trace": {
+        "reference-default": {
+          "charge_attempts": 64,
+          "successful_charges": 64,
+          "commits": 64,
+          "spent": 176,
+          "rows": 305
+        },
+        "reference-fuel-0": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-1": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-100": {
+          "charge_attempts": 26,
+          "successful_charges": 25,
+          "commits": 25,
+          "spent": 99,
+          "rows": 123
+        },
+        "reference-fuel-20": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        }
+      },
+      "uncompressed_bytes": 1799242,
+      "retained_bytes": 292265,
+      "receipt_sha256": "7c7b0c868f8bfc1f2783ec7bf518d81fa42a32863b280a45a112479893565655"
+    },
+    {
+      "profile": "debug",
+      "case": "owned-loan-denial",
+      "counts": {
+        "D": 5,
+        "Sspan": 89,
+        "Vbind": 94
+      },
+      "path_and_value_multisets_equal": true,
+      "trace": {},
+      "uncompressed_bytes": 371519,
+      "retained_bytes": 29712,
+      "receipt_sha256": "d8b6d600a6b88c8f3364da1f2be7e371433a8fb208f938ecb7341578ab6b66e9"
+    },
+    {
+      "profile": "release",
+      "case": "scalar",
+      "counts": {
+        "D": 3,
+        "Sspan": 87,
+        "Vbind": 90
+      },
+      "path_and_value_multisets_equal": true,
+      "trace": {
+        "reference-default": {
+          "charge_attempts": 23,
+          "successful_charges": 23,
+          "commits": 23,
+          "spent": 41,
+          "rows": 79
+        },
+        "reference-fuel-0": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-1": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-100": {
+          "charge_attempts": 23,
+          "successful_charges": 23,
+          "commits": 23,
+          "spent": 41,
+          "rows": 79
+        },
+        "reference-fuel-20": {
+          "charge_attempts": 3,
+          "successful_charges": 2,
+          "commits": 2,
+          "spent": 15,
+          "rows": 9
+        }
+      },
+      "uncompressed_bytes": 649863,
+      "retained_bytes": 64916,
+      "receipt_sha256": "4fe631fb92b6fba9b11582f6ffc21132d0722f130ab57f8a83fd2ef98acdeb63"
+    },
+    {
+      "profile": "release",
+      "case": "owned",
+      "counts": {
+        "D": 7,
+        "Sspan": 212,
+        "Vbind": 219
+      },
+      "path_and_value_multisets_equal": true,
+      "trace": {
+        "reference-default": {
+          "charge_attempts": 64,
+          "successful_charges": 64,
+          "commits": 64,
+          "spent": 176,
+          "rows": 305
+        },
+        "reference-fuel-0": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-1": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        },
+        "reference-fuel-100": {
+          "charge_attempts": 26,
+          "successful_charges": 25,
+          "commits": 25,
+          "spent": 99,
+          "rows": 123
+        },
+        "reference-fuel-20": {
+          "charge_attempts": 1,
+          "successful_charges": 0,
+          "commits": 0,
+          "spent": 0,
+          "rows": 2
+        }
+      },
+      "uncompressed_bytes": 1799252,
+      "retained_bytes": 292403,
+      "receipt_sha256": "84c376a433c1e4b341c5909ded35ef8862c117762721f566af48be998b0ee585"
+    },
+    {
+      "profile": "release",
+      "case": "owned-loan-denial",
+      "counts": {
+        "D": 5,
+        "Sspan": 89,
+        "Vbind": 94
+      },
+      "path_and_value_multisets_equal": true,
+      "trace": {},
+      "uncompressed_bytes": 371519,
+      "retained_bytes": 29778,
+      "receipt_sha256": "741867a8a99bec0c78bbc39638fdff11ce01782fa651252896e58b64f9d87c57"
+    }
+  ]
+}
