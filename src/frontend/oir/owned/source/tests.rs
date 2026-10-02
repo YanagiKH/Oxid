@@ -322,15 +322,20 @@ fn typed_views_retain_identity_order_modes_projections_and_exact_origins() {
 }
 #[test]
 fn batch_pilot_completes_typing_without_activation() {
-    accepts(
-        include_str!("../../../../../rfcs/0014-owned-structs-call-borrows.md")
-            .split("```text\nstruct Batch")
-            .nth(1)
-            .map(|s| s.split("```").next().unwrap())
-            .map(|s| format!("struct Batch{s}"))
-            .unwrap()
-            .as_str(),
-    );
+    let lf = include_str!("../../../../../rfcs/0014-owned-structs-call-borrows.md")
+        .replace("\r\n", "\n");
+    let crlf = lf.replace('\n', "\r\n");
+    // Exercise both checkout conventions while still typing the actual RFC pilot.
+    for document in [&lf, &crlf] {
+        let normalized = document.replace("\r\n", "\n");
+        let (_, rest) = normalized
+            .split_once("```text\nstruct Batch")
+            .expect("RFC must contain the Batch pilot text block");
+        let (body, _) = rest
+            .split_once("\n```")
+            .expect("RFC Batch pilot text block must have a closing fence");
+        accepts(&format!("struct Batch{body}"));
+    }
 }
 #[test]
 fn declaration_count_limits_are_checked_before_contents() {

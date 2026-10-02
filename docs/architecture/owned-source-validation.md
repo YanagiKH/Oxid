@@ -7,8 +7,9 @@ native pipeline passes its bounded fuel, semantic-store, physical-guard and
 artifact checks. Final ordinary and explicit native/resource suites, privacy,
 Python, scalar regression, repository, formatting and strict Clippy gates pass.
 Independent activation, native matcher and portable pipeline reviews pass within
-their stated scopes. Hosted CI has not run for a publication head. These are
-bounded local results, not unrestricted language or memory-safety certification.
+their stated scopes. The first published head exposed two portable test defects described below.
+Replacement-head hosted results are tracked in [PR 22](https://github.com/YanagiKH/Oxid/pull/22).
+These are bounded results, not unrestricted language or memory-safety certification.
 
 The implementation baseline is main
 `cb370e5ec1261d99c80fae88979aa9bf4e45d8f0`, tree
@@ -38,7 +39,7 @@ v1.0 completion is implied.
 
 | Identity | Recorded value |
 | --- | --- |
-| Activated source inputs | [240-file source/test/script/workflow manifest](owned-source-inputs.json), SHA-256 `f00773e6cbb19eba6d08a68f9189a1ec7ece1a61d3d10826d43780fe20492f11`; baseline identified above |
+| Activated source inputs | [240-file source/test/script/workflow manifest](owned-source-inputs.json), SHA-256 `dd88113a290b87265352320d91a6b7fa13c128d4eeee1cdf3a4a0d3479a170e3`; baseline identified above |
 | Production parser/driver/source dispatcher | Activated implementations and their hashes are bound by the input manifest; independent activation review `980dc4d38d2f09e82e63330ba7ca8c04588f122530612927e7d6dc5a85ec3ec6` passes the scope described below |
 | Host and compiler toolchain | Linux 6.18.44 x86_64, glibc 2.41; Rust 1.98.1 (`48a229cea`, 2026-09-01), Cargo 1.98.1 (`797e8a9bc`, 2026-08-05) |
 | Native tools | LLVM/Clang/opt/LLD/llvm-as 19.1.7, Debian packages `1:19.1.7-3+b1`, O0; tool identity report SHA-256 `5ab519e296a27c5b4a7d67e292c07692a6e2143c0f4496737f70a793f0420afa` |
@@ -50,7 +51,7 @@ v1.0 completion is implied.
 | 431-source frozen expectation manifest SHA-256 | `297609147384f087a6252645f8f496f01f56132703fdcd45553b1d27b39a3ccc`, unchanged from the reviewed amendment |
 | Batch source SHA-256 | `dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2`, exact bytes at [`fixtures/owned_source/batch.ox`](../../fixtures/owned_source/batch.ox) |
 | Matcher and review SHA-256 | Matcher `e4a5e3d71bd04f604487b385412e23e96bcb07d1142c473429140550dd9155e2`; bounded matcher review `450d0e6e8cc336d29e7bbfdc050ed48bd67aad576bd9a5475d54b776451e0a58` |
-| Publication-head hosted CI | Not yet run; local evidence and configured workflow coverage do not establish hosted success |
+| Publication-head hosted CI | Initial head `8202f67035d966ca751b9118c75559343daba567` had the platform-test failures below; the exact replacement head must pass its own applicable checks. [PR 22](https://github.com/YanagiKH/Oxid/pull/22) records per-head status |
 
 The retained toolchain report binds versions and executable hashes from the same
 qualification environment. The corresponding reproduction commands, with
@@ -592,7 +593,7 @@ remains a separate local gate and is not hosted merely because it is compiled.
 | Repository source/runnable inventory | PASS: 122 sources, 68 runnable programs = 121 legacy sources, 67 legacy runnable programs and one explicitly typed Batch source/run |
 | CI commands and source routing review | PASS for configured coverage, including the explicit post-native evidence-dependent control step; not hosted execution |
 | Independent activation review | PASS for final source routing, CLI boundary and fixture relocation; bounded matcher and final portable pipeline reviews also PASS |
-| Hosted CI on exact publication head | Not yet run; local results do not establish exact-head hosted status |
+| Hosted CI on exact publication head | The first head had the platform-test failures below; replacement-head outcomes are tracked separately in PR 22 |
 
 The final gate command manifest contains 31 completed commands, every exit code
 zero and every expected Rust test count satisfied; SHA-256
@@ -661,3 +662,40 @@ identified above. Process counts, saved files and distinct content hashes are
 reported separately throughout this ledger. A reused ELF in a budget sweep is
 not an additional compiled program. Hosted CI remains a separate exact-head
 publication obligation.
+
+
+## Initial hosted portability failures and test-only correction
+
+The first published head, `8202f67035d966ca751b9118c75559343daba567`, exposed two
+test portability defects. Both macOS architectures reached the native-toolchain
+boundary correctly, but `owned_source_reaches_check_reference_and_native_admission`
+expected E0700 instead of the specified E0701 unsupported-host error. Windows
+failed the RFC Batch test because its literal LF-only fence marker did not match
+a CRLF checkout. These were actual failed jobs, not inferred platform limitations:
+[PR macOS arm64 failure](https://github.com/YanagiKH/Oxid/actions/runs/36977675791/job/110744942766)
+and [push Windows failure](https://github.com/YanagiKH/Oxid/actions/runs/36977666660/job/110744913495).
+
+The correction changes only two Rust test files. The boundary test now requires
+E0701 at `native-toolchain`, checks the specific host/output/tool failure, retains
+the existing-output sentinel and adds a fresh-output attempt. On Linux, this
+separates the preexisting-output rejection from the missing-tool rejection; on
+other hosts the documented host restriction remains first. The RFC test still
+types the actual Batch program and now exercises both LF and CRLF document
+forms. Compiler behavior, source grammar, RFC bytes and the native target scope
+are unchanged.
+
+Before editing the test, changing only the isolated included RFC from LF to CRLF
+reproduced the exact original unwrap failure; the LF baseline passed. After the
+correction, physical CRLF inclusion and both in-test newline forms pass. The
+corrected Linux debug and release suites each pass 700 ordinary tests with 21
+intentional ignores; all 721 discovered test names and the test-function counts
+are unchanged. Focused tests, formatting and strict all-target/all-feature Clippy
+also pass. Actual replacement-head Windows/macOS CI remains necessary; Linux
+newline reproduction is not a substitute for executing those hosts.
+
+The public input manifest is refreshed for the two changed test hashes. Earlier
+CLI/native results and collector executable hashes in this ledger retain their
+original frozen identities, followed by this reviewed test-only correction;
+none is relabeled as a fresh native execution. Original failed logs and the
+LF/CRLF red/green evidence are retained. The correction's independent review and
+exact replacement-head hosted outcomes are recorded with the publication.

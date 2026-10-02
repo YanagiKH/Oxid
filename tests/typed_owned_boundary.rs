@@ -24,6 +24,10 @@ impl Scratch {
     }
 
     fn typed(&self, operation: &str) -> Output {
+        self.typed_with_output(operation, "output")
+    }
+
+    fn typed_with_output(&self, operation: &str, output: &str) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
         command
             .current_dir(&self.0)
@@ -37,7 +41,7 @@ impl Scratch {
                 "--message-format=json",
             ]);
         if operation == "compile" {
-            command.args(["--backend=llvm", "--output=output"]);
+            command.args(["--backend=llvm", "--output", output]);
         }
         command.output().unwrap()
     }
@@ -91,16 +95,32 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         "{}",
         text(&run)
     );
-    let compile = scratch.typed("compile");
-    let json = text(&compile);
-    assert_eq!(compile.status.code(), Some(1), "{json}");
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        assert!(json.contains("E0701"), "{json}");
-    } else {
-        assert!(json.contains("E0700"), "{json}");
+    // Valid owned source reaches the native toolchain on every host. Linux
+    // rejects the existing output before tools, then the missing tool path for
+    // a fresh output; other hosts reject the unsupported build host first.
+    for output in ["output", "new-output"] {
+        let compile = scratch.typed_with_output("compile", output);
+        diagnostic(&compile, "E0701", "native-toolchain");
+        let json = text(&compile);
+        assert_eq!(json.lines().count(), 2, "{json}");
+        assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            if output == "output" {
+                assert!(json.contains("native output already exists"), "{json}");
+            } else {
+                assert!(json.contains("cannot launch "), "{json}");
+                assert!(json.contains("missing-tools/clang"), "{json}");
+            }
+        } else {
+            assert!(
+                json.contains("native preview requires a Linux x86_64 build host"),
+                "{json}"
+            );
+        }
+        assert!(!json.contains("E0101"), "{json}");
+        assert!(!scratch.0.join("new-output").exists());
+        scratch.unchanged_artifacts();
     }
-    assert!(!json.contains("E0101"), "{json}");
-    scratch.unchanged_artifacts();
 }
 
 #[test]

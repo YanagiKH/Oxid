@@ -123,7 +123,7 @@
     "src/frontend/oir/owned/source/reviewer_resource_runtime.rs": "9d247b483e42dd86c452c86221119628fd35c34b0e3a3d267c1e247829562e8f",
     "src/frontend/oir/owned/source/reviewer_source.rs": "e7af616d7d062ef570b088267d0f38806d17aaa63430a0f3c55faee1d9dd90ee",
     "src/frontend/oir/owned/source/runtime_resource_tests.rs": "794e81b0c16645ec25f25ac70e140c300f11bbfa41aeb8f5dc606667f37d734f",
-    "src/frontend/oir/owned/source/tests.rs": "540bb202c66504a91c005c6f4ec09e8dad5bf0a2b7368e68867ed40b7b5c595e",
+    "src/frontend/oir/owned/source/tests.rs": "178847526f3bec8c1ae6222242ba1b3eb34ac1b2df8c38f582ac80a6c9010d31",
     "src/frontend/oir/owned/source/typeck.rs": "3c5d9aa6763908de46569ab1b878f328347b56dcf0b7db979a6a2fdb9bb4e2d5",
     "src/frontend/oir/owned/storage.rs": "57fe594c36068d687960c3b2b8a47ba10d3fc7ff1a7e5be9138b02c3f4ab7f88",
     "src/frontend/oir/owned/tests.rs": "18c7d35225f9b02d00347c36a2ae678208b827c092c07e791f0922d4e50a32f0",
@@ -239,7 +239,7 @@
     "tests/typed_loop_control.rs": "41ab3ed66ebbc6b1d870b02f2850a8517adc56f7760493987bd56b0af5333f4b",
     "tests/typed_mutable.rs": "c78ba949f15491165b44677f86a5f9093f9665f1c224eb6f1b932f1a4b184328",
     "tests/typed_native.rs": "2ef5dd6ff8d6d1ab39c17329618bc62f6dc068d272376c383da9b459adc89057",
-    "tests/typed_owned_boundary.rs": "1c0592f314ce03282bb01b15be0de705550926486a37fa6797ffe762aa7d5be4",
+    "tests/typed_owned_boundary.rs": "1b1a3da94676d6e549f1fb6083660fb985c3714b00248bdc7639bc7ad7ef5117",
     "tests/typed_while.rs": "55910119663f136e7c70db3786d45c09d4d069deb38147ed74fedc7239352bf0"
   },
   "schema": "oxid-owned-source-inputs-v1",
