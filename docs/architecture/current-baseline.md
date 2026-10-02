@@ -25,6 +25,21 @@ x86_64, LLVM 19.1.7 and O0. The historical
 [owned-consumer report](owned-consumers-validation.md) qualifies its raw OIR
 fixtures; it does not establish source qualification. Default legacy records retain their
 dynamic shared-storage behavior.
+
+The public typed source route remains single-file. Its driver now owns an
+immutable source set with file-aware text access and per-file AST handles.
+Private Unit1 groundwork can discover explicitly declared module files under a
+filesystem policy qualified on Linux x86_64. Non-Linux discovery is rejected;
+other Linux architectures have not been qualified. This groundwork does not
+provide linked project resolution or execution. Public `mod`, `use`, `pub` and qualified item paths remain rejected.
+The complete modules/imports/visibility capability is proposed in
+[RFC 0015](../../rfcs/0015-bounded-typed-projects.md); the
+[Unit1 ledger](typed-project-unit1-validation.md) separates measured loader/source
+bounds from the still-unimplemented shared index, I/J/W proof, linked consumers
+and public activation. This private groundwork adds no feature-inventory entry,
+new frontend/native host claim, or milestone completion claim. Historical
+ownership evidence keeps its original source, binary and receipt identities.
+
 A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.

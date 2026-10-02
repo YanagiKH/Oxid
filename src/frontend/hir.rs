@@ -151,7 +151,7 @@ fn type_syntax(source: &SourceFile, ty: ast::TypeSyntax) -> Result<Ty, Box<Diagn
         ));
     }
     // Unit types may contain trivia between parentheses.
-    let text = &source.text()[ty.span.start..ty.span.end];
+    let text = source.text_at(ty.span);
     match text {
         "bool" => Ok(Ty::Bool),
         "i32" => Ok(Ty::I32),
@@ -202,6 +202,14 @@ fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
 }
 
 pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<Diagnostic>> {
+    if let Some(module) = ast.modules.first() {
+        return Err(vec![*Diagnostic::new(
+            "E0500",
+            "resolve",
+            "project syntax entered single-file resolution",
+            Some(module.name),
+        )]);
+    }
     if let Some(record) = ast.records.first() {
         return Err(vec![*Diagnostic::new(
             "E0500",
@@ -214,7 +222,7 @@ pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<D
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
     for (index, function) in ast.functions.iter().enumerate() {
-        let name = &source.text()[function.name.start..function.name.end];
+        let name = source.text_at(function.name);
         match names.entry(name) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert((DefId(index), function.name));
@@ -286,7 +294,7 @@ struct Resolver<'a> {
 }
 impl<'a> Resolver<'a> {
     fn text(&self, span: Span) -> &'a str {
-        &self.source.text()[span.start..span.end]
+        self.source.text_at(span)
     }
     fn bind(
         &mut self,

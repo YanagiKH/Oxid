@@ -12,11 +12,12 @@ pub struct Span {
     pub end: usize,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SourceMap {
     files: Vec<SourceFile>,
 }
 
+#[derive(Debug)]
 pub struct SourceFile {
     id: SourceFileId,
     path: String,
@@ -31,6 +32,7 @@ impl SourceMap {
 
     /// Add a source without normalizing its bytes or display path.
     /// The driver enforces `MAX_SOURCE_BYTES` before adding source text.
+    #[cfg(test)]
     pub fn add(&mut self, path: String, text: String) -> SourceFileId {
         let id = SourceFileId(self.files.len());
         let mut line_starts = vec![0];
@@ -46,6 +48,60 @@ impl SourceMap {
             line_starts,
         });
         id
+    }
+
+    /// The loader counts line entries before any new source table allocation.
+    pub(super) fn try_add(
+        &mut self,
+        path: String,
+        text: String,
+        allocator: &mut super::project::budget::Allocator,
+    ) -> Result<SourceFileId, super::project::budget::ReserveFailure> {
+        use super::project::budget::ReserveFailure;
+        let count = text
+            .bytes()
+            .filter(|&byte| byte == b'\n')
+            .count()
+            .checked_add(1)
+            .ok_or(ReserveFailure::Overflow)?;
+        count
+            .checked_mul(size_of::<usize>())
+            .ok_or(ReserveFailure::Overflow)?;
+        self.files
+            .len()
+            .checked_add(1)
+            .and_then(|n| n.checked_mul(size_of::<SourceFile>()))
+            .ok_or(ReserveFailure::Overflow)?;
+        let mut line_starts = Vec::new();
+        allocator.vector(&mut line_starts, count, "line starts")?;
+        allocator.vector(&mut self.files, 1, "source files")?;
+        line_starts.push(0);
+        line_starts.extend(
+            text.bytes()
+                .enumerate()
+                .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
+        );
+        let id = SourceFileId(self.files.len());
+        self.files.push(SourceFile {
+            id,
+            path,
+            text,
+            line_starts,
+        });
+        Ok(id)
+    }
+
+    pub(super) fn try_text(&self, span: Span) -> Option<&str> {
+        self.files.get(span.file.0)?.try_text(span)
+    }
+
+    /// Trusted frontend origins still validate their file and UTF-8 boundaries.
+    pub(super) fn text(&self, span: Span) -> &str {
+        self.try_text(span).expect("invalid source-map span")
+    }
+
+    pub(super) fn files(&self) -> &[SourceFile] {
+        &self.files
     }
 
     /// Fallible validation for untrusted internal IR; never index or render first.
@@ -65,6 +121,23 @@ impl SourceMap {
 }
 
 impl SourceFile {
+    pub(super) fn try_text(&self, span: Span) -> Option<&str> {
+        if span.file != self.id || span.start > span.end {
+            return None;
+        }
+        self.text.get(span.start..span.end)
+    }
+
+    /// A file-local parser/resolver view cannot reinterpret a foreign span.
+    pub(super) fn text_at(&self, span: Span) -> &str {
+        self.try_text(span)
+            .expect("invalid or foreign source-file span")
+    }
+
+    pub(super) fn line_count(&self) -> usize {
+        self.line_starts.len()
+    }
+
     pub fn text(&self) -> &str {
         &self.text
     }
@@ -101,6 +174,22 @@ impl SourceFile {
             self.text.is_char_boundary(offset),
             "source offset is not a UTF-8 boundary"
         );
+    }
+}
+
+/// Borrowed immutable source owner. Single is an explicit compatibility adapter.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SourceView<'a> {
+    #[allow(dead_code)] // Existing private one-file qualification adapters.
+    Single(&'a SourceFile),
+    Map(&'a SourceMap),
+}
+impl<'a> SourceView<'a> {
+    pub(super) fn text(self, span: Span) -> &'a str {
+        match self {
+            Self::Single(file) => file.text_at(span),
+            Self::Map(sources) => sources.text(span),
+        }
     }
 }
 

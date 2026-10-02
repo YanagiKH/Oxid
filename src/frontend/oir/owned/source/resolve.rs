@@ -5,13 +5,13 @@ use crate::frontend::{
     diagnostic::Diagnostic,
     owned_diagnostic::{self, diagnostic, name, secondary},
     parser::MAX_DIAGNOSTICS,
-    source::{SourceFile, Span},
+    source::{SourceFile, SourceMap, SourceView, Span},
 };
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub(super) struct ResolvedOwnedProgram<'src> {
-    source_text: &'src str,
+    sources: SourceView<'src>,
     records: Vec<Record>,
     signatures: Vec<Signature>,
     functions: Vec<Function>,
@@ -19,7 +19,7 @@ pub(super) struct ResolvedOwnedProgram<'src> {
 }
 impl ResolvedOwnedProgram<'_> {
     pub(super) fn text(&self, span: Span) -> &str {
-        &self.source_text[span.start..span.end]
+        self.sources.text(span)
     }
     pub(super) fn records(&self) -> &[Record] {
         &self.records
@@ -35,7 +35,7 @@ impl ResolvedOwnedProgram<'_> {
     }
 }
 fn text(source: &SourceFile, span: Span) -> &str {
-    &source.text()[span.start..span.end]
+    source.text_at(span)
 }
 fn error(code: &'static str, message: std::fmt::Arguments<'_>, span: Span) -> Box<Diagnostic> {
     diagnostic(code, "resolve", message, Some(span))
@@ -136,9 +136,26 @@ fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diag
     Ok(value)
 }
 
+#[cfg(test)]
 pub(super) fn resolve<'src>(
     source: &'src SourceFile,
     ast: &ast::Program,
+) -> Result<ResolvedOwnedProgram<'src>, Vec<Diagnostic>> {
+    resolve_with_view(source, ast, SourceView::Single(source))
+}
+
+pub(super) fn resolve_in_map<'src>(
+    source: &'src SourceFile,
+    ast: &ast::Program,
+    sources: &'src SourceMap,
+) -> Result<ResolvedOwnedProgram<'src>, Vec<Diagnostic>> {
+    resolve_with_view(source, ast, SourceView::Map(sources))
+}
+
+fn resolve_with_view<'src>(
+    source: &'src SourceFile,
+    ast: &ast::Program,
+    source_view: SourceView<'src>,
 ) -> Result<ResolvedOwnedProgram<'src>, Vec<Diagnostic>> {
     // Match the already qualified declaration envelope before name/body work.
     // These producer checks do not replace independent raw declaration checks.
@@ -161,6 +178,11 @@ pub(super) fn resolve<'src>(
             break;
         }
         let result = match *item {
+            ast::ItemId::Module(index) => Err(error(
+                "E0500",
+                format_args!("project syntax entered single-file resolution"),
+                ast.modules[index].name,
+            )),
             ast::ItemId::Function(index) => {
                 let span = ast.functions[index].name;
                 match names.entry(text(source, span)) {
@@ -302,7 +324,7 @@ pub(super) fn resolve<'src>(
     }
     if diagnostics.is_empty() {
         Ok(ResolvedOwnedProgram {
-            source_text: source.text(),
+            sources: source_view,
             records,
             signatures,
             functions,
@@ -324,7 +346,7 @@ struct Resolver<'a> {
 }
 impl<'a> Resolver<'a> {
     fn text(&self, span: Span) -> &'a str {
-        &self.source.text()[span.start..span.end]
+        self.source.text_at(span)
     }
     fn lookup(&self, span: Span) -> Result<BindingId, Box<Diagnostic>> {
         self.scope
@@ -743,5 +765,26 @@ impl<'a> Resolver<'a> {
             span: expr.span,
         });
         Ok(id)
+    }
+}
+
+#[cfg(test)]
+mod source_identity_tests {
+    use super::*;
+
+    #[test]
+    fn resolved_owned_names_select_each_original_file() {
+        let mut map = SourceMap::new();
+        let first = map.add("first.ox".into(), "aé".into());
+        let second = map.add("second.ox".into(), "xyz".into());
+        let program = ResolvedOwnedProgram {
+            sources: SourceView::Map(&map),
+            records: Vec::new(),
+            signatures: Vec::new(),
+            functions: Vec::new(),
+            entry: None,
+        };
+        assert_eq!(program.text(map.get(first).span(1, 3)), "é");
+        assert_eq!(program.text(map.get(second).span(1, 3)), "yz");
     }
 }

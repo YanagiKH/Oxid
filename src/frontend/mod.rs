@@ -9,6 +9,7 @@ mod oir;
 mod options;
 mod owned_diagnostic;
 mod parser;
+mod project;
 mod source;
 mod typeck;
 pub use driver::dispatch;

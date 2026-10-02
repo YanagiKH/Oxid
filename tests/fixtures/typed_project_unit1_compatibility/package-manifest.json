@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "intended_repository_path": "tests/fixtures/typed_project_unit1_compatibility",
+  "files": {
+    "README.md": {
+      "bytes": 7664,
+      "sha256": "197d26befd82af8458b6946b22763b1dfd9aefa15e1de1a8c157e6b0305af19e"
+    },
+    "cli_engine.py": {
+      "bytes": 11150,
+      "sha256": "776edfb1ac59b7d601601af25bb78a61192c9f91ba9ea17055f3d3cea6174dda"
+    },
+    "expected-results.json": {
+      "bytes": 139863,
+      "sha256": "89edaad688614797e7a8b0c09f287f4577daca753a5fbb76fbec7d716c6db952"
+    },
+    "generate_fixtures.py": {
+      "bytes": 11935,
+      "sha256": "d4f3d7da312b2eaf59bc94780fe8ae351d74529955eacffd8cc1493a642b4fb7"
+    },
+    "run.py": {
+      "bytes": 15410,
+      "sha256": "8ba2ff43742569f0f3df53d401f7f00bf8dc2e70dfcd1275236ef422af8d0d44"
+    },
+    "suite-intent.json": {
+      "bytes": 25608,
+      "sha256": "17e7aba629436896e34cdf7d6ee3392080c6a2792edde4036192e312d5151080"
+    }
+  },
+  "provenance": {
+    "predecessor_commit": "fbcfeb2a2de8fe9d335d6c8051d254cccdb663dc",
+    "predecessor_tree": "658c83465aed3a1423483dcdcc23a3d10037131f",
+    "contract_sha256": "25faad72c1c05370e80c43c8ef890b99ebd608baa39f1431521387d5ca44e0aa",
+    "complete_baseline_manifest_sha256": "0c359ecf1456ddb1996fc6aa7c28289e8b72262a0305b7b317c678f7f93dcec0",
+    "original_baseline_invocations": 560,
+    "canonical_expected_results": 140,
+    "original_generator_sha256": "d4f3d7da312b2eaf59bc94780fe8ae351d74529955eacffd8cc1493a642b4fb7",
+    "original_intent_sha256": "17e7aba629436896e34cdf7d6ee3392080c6a2792edde4036192e312d5151080",
+    "corrected_cli_engine_sha256": "776edfb1ac59b7d601601af25bb78a61192c9f91ba9ea17055f3d3cea6174dda",
+    "original_failed_finalization_runner_sha256": "f5b0770848994f5a6582c4726586bd65ede85cc62643174574cc4a73ec9cacec",
+    "original_failed_finalization_log_sha256": "2a53a51d31c50481943298f97dc9c4f885174b31245c7080a91a4f3385e79ad7",
+    "baseline_freeze_sha256": "703ad2eb2d3f5192b5d73aa4f50a09ed61260efe5748b582214d21c779e1f87b",
+    "retained_v3_freeze_sha256": "194e9caa82bea4d2563c5cfc0ab10f5ca1e0b7e72567045148ec722a78b0ad4b",
+    "retained_v4_freeze_sha256": "b8c4ef82250c956056c46760125cd6ee0f9462b4d83a825f0394fd21efbb52e2",
+    "packaging_policy": "No new source case or changed expected output; canonical streams deduplicated only after equality of all four original profile/repeat observations"
+  }
+}

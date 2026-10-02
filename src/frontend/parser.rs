@@ -2,6 +2,7 @@ use super::{
     ast::*,
     diagnostic::Diagnostic,
     lexer::{Kind, Token},
+    project::budget::{Allocator, ReserveFailure},
     source::SourceFile,
 };
 pub const MAX_NODES: usize = 100_000;
@@ -16,15 +17,27 @@ pub(super) enum SourceMode {
     #[cfg(test)]
     ScalarOnly,
     OwnedCandidate,
+    ModuleCandidate,
+}
+impl SourceMode {
+    fn owned(self) -> bool {
+        #[cfg(test)]
+        if self == Self::ScalarOnly {
+            return false;
+        }
+        true
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LiteralContext {
     Allowed,
     ConditionRoot,
 }
+#[cfg(test)]
 pub fn parse(source: &SourceFile, tokens: Vec<Token>) -> Result<Program, Vec<Diagnostic>> {
     parse_with_mode(source, tokens, SourceMode::OwnedCandidate)
 }
+#[cfg(test)]
 pub(super) fn parse_with_mode(
     source: &SourceFile,
     tokens: Vec<Token>,
@@ -32,14 +45,27 @@ pub(super) fn parse_with_mode(
 ) -> Result<Program, Vec<Diagnostic>> {
     parse_with_node_limit(source, tokens, mode, MAX_NODES)
 }
+#[cfg(test)]
 fn parse_with_node_limit(
     source: &SourceFile,
     tokens: Vec<Token>,
     mode: SourceMode,
     node_limit: usize,
 ) -> Result<Program, Vec<Diagnostic>> {
+    parse_counted(source, tokens, mode, node_limit, &mut Allocator::default())
+        .map(|(program, _)| program)
+}
+
+pub(super) fn parse_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
     let mut parser = Parser {
         source,
+        allocator,
         mode,
         tokens,
         cursor: 0,
@@ -51,11 +77,36 @@ fn parse_with_node_limit(
     parser.skip();
     let mut functions = Vec::new();
     let mut records = Vec::new();
+    let mut modules = Vec::new();
     let mut items = Vec::new();
     let mut diagnostics = Vec::new();
     while parser.peek().kind != Kind::Eof && diagnostics.len() < MAX_DIAGNOSTICS {
         let before = parser.cursor;
-        let result = if mode == SourceMode::OwnedCandidate && parser.peek().kind == Kind::Struct {
+        let result = if mode == SourceMode::ModuleCandidate
+            && matches!(parser.peek().kind, Kind::Mod | Kind::Pub)
+        {
+            parser.module().and_then(|module| {
+                let at = module.name;
+                parser
+                    .allocator
+                    .vector(&mut modules, 1, "module declarations")
+                    .and_then(|()| parser.allocator.vector(&mut items, 1, "module items"))
+                    .map_err(|error| {
+                        parser.diagnostic(
+                            "E0400",
+                            "parse",
+                            match error {
+                                ReserveFailure::Overflow => "module syntax count overflow",
+                                ReserveFailure::Allocation => "module syntax allocation failed",
+                            },
+                            Some(at),
+                        )
+                    })?;
+                items.push(ItemId::Module(modules.len()));
+                modules.push(module);
+                Ok(())
+            })
+        } else if mode.owned() && parser.peek().kind == Kind::Struct {
             parser.record().map(|record| {
                 items.push(ItemId::Struct(records.len()));
                 records.push(record);
@@ -73,26 +124,33 @@ fn parse_with_node_limit(
                 parser.bump();
             }
             while !matches!(parser.peek().kind, Kind::Fn | Kind::Eof)
-                && !(mode == SourceMode::OwnedCandidate && parser.peek().kind == Kind::Struct)
+                && !(mode.owned() && parser.peek().kind == Kind::Struct)
+                && !(mode == SourceMode::ModuleCandidate
+                    && matches!(parser.peek().kind, Kind::Mod | Kind::Pub))
             {
                 parser.bump();
             }
         }
     }
     if diagnostics.is_empty() {
-        Ok(Program {
-            tokens: parser.tokens,
-            functions,
-            records,
-            items,
-            expressions: parser.expressions,
-        })
+        Ok((
+            Program {
+                tokens: parser.tokens,
+                functions,
+                records,
+                items,
+                expressions: parser.expressions,
+                modules,
+            },
+            parser.nodes,
+        ))
     } else {
         Err(diagnostics)
     }
 }
 struct Parser<'a> {
     source: &'a SourceFile,
+    allocator: &'a mut Allocator,
     mode: SourceMode,
     tokens: Vec<Token>,
     cursor: usize,
@@ -132,7 +190,7 @@ impl Parser<'_> {
         message: impl std::fmt::Display,
         primary: Option<super::source::Span>,
     ) -> Box<Diagnostic> {
-        if self.mode == SourceMode::OwnedCandidate {
+        if self.mode.owned() {
             super::owned_diagnostic::diagnostic(code, stage, format_args!("{message}"), primary)
         } else {
             Diagnostic::new(code, stage, message.to_string(), primary)
@@ -143,6 +201,9 @@ impl Parser<'_> {
         let unsupported = matches!(
             token.kind,
             Kind::Unsupported
+                | Kind::Mod
+                | Kind::Use
+                | Kind::Pub
                 | Kind::Number
                 | Kind::Minus
                 | Kind::Plus
@@ -151,7 +212,7 @@ impl Parser<'_> {
                 | Kind::Ampersand
                 | Kind::Dot
         ) || (token.kind == Kind::Ident
-            && &self.source.text()[token.span.start..token.span.end] == "as");
+            && self.source.text_at(token.span) == "as");
         // Report an unsupported cast in an already-invalid grammar position,
         // without reserving `as` as a declaration or expression identifier.
         // Shared parser diagnostics retain the original scalar formatting. The
@@ -162,7 +223,7 @@ impl Parser<'_> {
             if unsupported {
                 format!(
                     "unsupported typed-preview construct `{}`",
-                    &self.source.text()[token.span.start..token.span.end]
+                    self.source.text_at(token.span)
                 )
             } else {
                 message.to_string()
@@ -185,6 +246,39 @@ impl Parser<'_> {
         self.nodes += 1;
         Ok(())
     }
+    fn module(&mut self) -> Result<ModuleDecl, Box<Diagnostic>> {
+        self.node()?;
+        let start = self.peek().span.start;
+        if self.peek().kind == Kind::Pub
+            && !self.tokens[self.cursor + 1..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Mod)
+        {
+            return Err(self.error("expected module declaration"));
+        }
+        let public = self.take(Kind::Pub).map(|token| token.span);
+        self.expect(Kind::Mod, "expected module declaration")?;
+        let name = self.expect(Kind::Ident, "expected module name")?.span;
+        if self.peek().kind == Kind::LBrace {
+            return Err(self.diagnostic(
+                "E0101",
+                "parse",
+                "inline modules are unavailable in typed-preview",
+                Some(self.peek().span),
+            ));
+        }
+        let end = self
+            .expect(Kind::Semi, "module declaration requires `;`")?
+            .span
+            .end;
+        Ok(ModuleDecl {
+            name,
+            public,
+            span: self.source.span(start, end),
+        })
+    }
+
     fn function(&mut self) -> Result<Function, Box<Diagnostic>> {
         self.node()?;
         self.expect(Kind::Fn, "expected a top-level function declaration")?;
@@ -281,7 +375,7 @@ impl Parser<'_> {
         })
     }
     fn parameter_ty(&mut self) -> Result<TypeSyntax, Box<Diagnostic>> {
-        if self.mode == SourceMode::OwnedCandidate && self.peek().kind == Kind::Ampersand {
+        if self.mode.owned() && self.peek().kind == Kind::Ampersand {
             let start = self.bump().span.start;
             let mutable = self.take(Kind::Mut).is_some();
             let referent = self
@@ -327,7 +421,7 @@ impl Parser<'_> {
         })
     }
     fn argument(&mut self, depth: usize) -> Result<Argument, Box<Diagnostic>> {
-        if self.mode == SourceMode::OwnedCandidate && self.peek().kind == Kind::Ampersand {
+        if self.mode.owned() && self.peek().kind == Kind::Ampersand {
             if depth >= MAX_NESTING {
                 return Err(self.diagnostic(
                     "E0400",
@@ -438,7 +532,7 @@ impl Parser<'_> {
             } else {
                 Some(self.expression(0, LiteralContext::Allowed)?)
             })
-        } else if self.mode == SourceMode::OwnedCandidate
+        } else if self.mode.owned()
             && self.peek().kind == Kind::Ident
             && self.tokens[self.cursor + 1..]
                 .iter()
@@ -723,7 +817,9 @@ impl Parser<'_> {
                 }
                 let digits = self.bump().span;
                 end = digits.end;
-                if !self.source.text()[digits.start..digits.end]
+                if !self
+                    .source
+                    .text_at(digits)
                     .bytes()
                     .all(|byte| byte.is_ascii_digit())
                 {
@@ -761,8 +857,7 @@ impl Parser<'_> {
                         callee: token.span,
                         args,
                     }
-                } else if self.mode == SourceMode::OwnedCandidate && self.take(Kind::Dot).is_some()
-                {
+                } else if self.mode.owned() && self.take(Kind::Dot).is_some() {
                     let field = self
                         .expect(Kind::Ident, "expected field name after `.`")?
                         .span;
@@ -771,7 +866,7 @@ impl Parser<'_> {
                         base: token.span,
                         field,
                     }
-                } else if self.mode == SourceMode::OwnedCandidate
+                } else if self.mode.owned()
                     && context == LiteralContext::Allowed
                     && self.take(Kind::LBrace).is_some()
                 {

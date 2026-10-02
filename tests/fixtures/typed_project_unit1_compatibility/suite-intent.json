@@ -1,0 +1,977 @@
+{
+  "version": 1,
+  "authority": "Authored before any execution of these fixtures, from contract revision3 and pinned predecessor source/spec",
+  "contract_sha256": "25faad72c1c05370e80c43c8ef890b99ebd608baa39f1431521387d5ca44e0aa",
+  "base_commit": "fbcfeb2a2de8fe9d335d6c8051d254cccdb663dc",
+  "base_tree": "658c83465aed3a1423483dcdcc23a3d10037131f",
+  "cases": [
+    {
+      "name": "contextual_functions",
+      "path": "fixtures/contextual_functions.ox",
+      "sha256": "0608e559af4831f28b88f6666c7aa6ac47d9de197a9ed8004570bb3801d01ced",
+      "bytes": 187,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "All four contextual words remain ordinary function identifiers; independent arithmetic is 2+3+5+7=17",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 5
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 17
+          }
+        }
+      }
+    },
+    {
+      "name": "contextual_locals",
+      "path": "fixtures/contextual_locals.ox",
+      "sha256": "6c7f2aacf5b1c2485ee7d4d17328d6e007941f066706a8dd1f4b26e6a078f161",
+      "bytes": 111,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "All four contextual words remain ordinary local identifiers",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 1
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 17
+          }
+        }
+      }
+    },
+    {
+      "name": "contextual_type_value_pairs",
+      "path": "fixtures/contextual_type_value_pairs.ox",
+      "sha256": "bdce61589e3f05d42513bbf28285c2e548de1af52a36c3b0e7e47fbb9b47b46e",
+      "bytes": 423,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Type annotations, constructors and callees select separate namespaces for the same four spellings",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 5
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 17
+          }
+        }
+      }
+    },
+    {
+      "name": "builtin_value_names",
+      "path": "fixtures/builtin_value_names.ox",
+      "sha256": "58a6ee45962ab197809b05b48777c1607857158dadc99cdff536f0905d2e1081",
+      "bytes": 105,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Builtin type spellings remain legal value declarations",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 3
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 13
+          }
+        }
+      }
+    },
+    {
+      "name": "double_colon_return",
+      "path": "fixtures/double_colon_return.ox",
+      "sha256": "1f7043314f949dc5c9af73976badb3675f8d7a071e5bf19bf8796b5b317851dc",
+      "bytes": 18,
+      "route": "parse",
+      "group": "OriginalSingleFile",
+      "intent": "Unsupported function punctuation diagnoses the first one-byte colon, never a globally combined double-colon token",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "spaced_colons",
+      "path": "fixtures/spaced_colons.ox",
+      "sha256": "f1bdda5de9174a80eaf55729527f0dbdb8fb42c1a7bc8ee9b548f5d228b2218c",
+      "bytes": 19,
+      "route": "parse",
+      "group": "OriginalSingleFile",
+      "intent": "Trivia-separated colons remain ordinary invalid punctuation",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "cast_scalar",
+      "path": "fixtures/cast_scalar.ox",
+      "sha256": "2bf396b6e55a70ed62639da5225797dd893926461dbfd85bb705ab389310ee82",
+      "bytes": 44,
+      "route": "parse",
+      "group": "OriginalSingleFile",
+      "intent": "as is contextual only for future import aliasing; scalar casts remain unavailable",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "cast_owned",
+      "path": "fixtures/cast_owned.ox",
+      "sha256": "26997be2804eca3f8e30b9c23fea9266c27d0b33c5a7c0a09add090a6ddb390d",
+      "bytes": 80,
+      "route": "parse",
+      "group": "OriginalSingleFile",
+      "intent": "The owned surface does not enable casts",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "colon_token_cap",
+      "path": "fixtures/colon_token_cap.ox",
+      "sha256": "2075568fd55440b5b97990974d3abfe134d4a8cfa08ae7cc85e87a2728e5441c",
+      "bytes": 100000,
+      "route": "parse",
+      "group": "OriginalSingleFile",
+      "intent": "Exactly 100000 one-byte colon tokens pass lex admission then fail ordinary parsing",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "colon_token_one_over",
+      "path": "fixtures/colon_token_one_over.ox",
+      "sha256": "8a47dd18c25137087f392c322cfa4cdaba514c8ed981a89f728e91155aa200f0",
+      "bytes": 100001,
+      "route": "lex",
+      "group": "OriginalSingleFile",
+      "intent": "Token 100001 fails lex admission at byte [100000,100001); :: cannot reduce the existing token count",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0400",
+              "lex"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0400",
+              "lex"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "number_token_cap",
+      "path": "fixtures/number_token_cap.ox",
+      "sha256": "7623a018db025482cb97b18db9938f1dec856a795331113b87763ce4acafb68b",
+      "bytes": 65566,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "65536 ASCII zero digits are one admitted token and exactly represent zero",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 1
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "number_token_one_over",
+      "path": "fixtures/number_token_one_over.ox",
+      "sha256": "cb9ca571b279de3bb9967e9f8d79c8a6bb8baa3e42d3dcc14e3205ddab66b7f9",
+      "bytes": 65567,
+      "route": "lex",
+      "group": "OriginalSingleFile",
+      "intent": "65537-byte number token fails before integer conversion or parser admission",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0400",
+              "lex"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0400",
+              "lex"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "long_common_prefix",
+      "path": "fixtures/long_common_prefix.ox",
+      "sha256": "40da897188c61b339176c0ddda97a7669beb5331fae510856700f110cbb77ce5",
+      "bytes": 32865,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "8193-byte names sharing 8192 bytes remain distinct; shared indexing must preserve original identity",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 3
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 42
+          }
+        }
+      }
+    },
+    {
+      "name": "scalar_duplicate_before_body",
+      "path": "fixtures/scalar_duplicate_before_body.ox",
+      "sha256": "e78b34b3dd37d388f33828eaad2cb0517090130b9ebb0c5211609fd7a412864c",
+      "bytes": 104,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Declaration duplicate is reported before invalid return typing and unknown body names; scalar signatures themselves are valid",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "unknown_signature_plus_duplicate",
+      "path": "fixtures/unknown_signature_plus_duplicate.ox",
+      "sha256": "cf00f742a79795aae89290b5c8be2ea248b75f5d3ae2753234cc5d410080b234",
+      "bytes": 103,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Unknown nominal-looking signature forces owned selection; later duplicate wins before the earlier unknown signature",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "owned_declaration_order",
+      "path": "fixtures/owned_declaration_order.ox",
+      "sha256": "1a9c89b86058fbf99be38d9ca639455958d2466922102ef964768cbb52286d75",
+      "bytes": 148,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Three declaration conflicts are emitted in lexical item order; no field/signature error leaks through",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ],
+            [
+              "E0201",
+              "resolve"
+            ],
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ],
+            [
+              "E0201",
+              "resolve"
+            ],
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "owned_fields_before_signatures",
+      "path": "fixtures/owned_fields_before_signatures.ox",
+      "sha256": "ad15039dde9bb140bf218fe185fa281c2d99804d21710408c6b08841f4ef554c",
+      "bytes": 121,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Absent declaration collisions, record-field diagnostic precedes first and next function signatures even though function text comes first",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ],
+            [
+              "E0202",
+              "resolve"
+            ],
+            [
+              "E0202",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ],
+            [
+              "E0202",
+              "resolve"
+            ],
+            [
+              "E0202",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "origins_unicode_crlf",
+      "path": "fixtures/origins_unicode_crlf.ox",
+      "sha256": "e22abc90ba61d150033bdc6b8f48c0602be9a2cd7aeabfb51724e92d8c5994c9",
+      "bytes": 77,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Equal byte offsets across independently invoked files, different Unicode scalar columns; primary and earlier-declaration secondary must use this file's bytes",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "origins_ascii_crlf",
+      "path": "fixtures/origins_ascii_crlf.ox",
+      "sha256": "ff22326dbba572109362b31ab5c5827609cec31feece7e089fcf45346940b1b9",
+      "bytes": 77,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Equal byte offsets across independently invoked files, different Unicode scalar columns; primary and earlier-declaration secondary must use this file's bytes",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0201",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "unicode_runtime_overflow",
+      "path": "fixtures/unicode_runtime_overflow.ox",
+      "sha256": "186a1d21f1dec522409dd89d39cb7ff356655c7a76de1d3134a2d3c83f118c5d",
+      "bytes": 66,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Checked overflow points to the one-byte plus after a multibyte comment; CRLF counts one newline",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 1
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0604",
+              "oir-run"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "control_text_origin",
+      "path": "fixtures/control_text_origin.ox",
+      "sha256": "3d7fe9cea783b53532c027efa7e182fa640ffdc60a3dffed2f8a4e1f36bf7533",
+      "bytes": 46,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Human source rendering must escape ESC rather than emit a terminal control sequence",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0200",
+              "resolve"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0200",
+              "resolve"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "scalar_helpers_loop",
+      "path": "fixtures/scalar_helpers_loop.ox",
+      "sha256": "b1fd7bf017499eb1e5c96f6a3252397914bdc6a59e849341e25fdb3521c8a3d9",
+      "bytes": 182,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Four loop/helper applications yield total 2,5,12,27 with isolated call parameters and mutable local storage",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 2
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 27
+          }
+        }
+      }
+    },
+    {
+      "name": "scalar_short_circuit",
+      "path": "fixtures/scalar_short_circuit.ox",
+      "sha256": "f49fca9874e997a016b1e203ca5b57a568ee6c1968b6c64f68a0cf57e0fc304a",
+      "bytes": 100,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Unchosen direct helper is checked but never executed, so overflow cannot fire",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 2
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      }
+    },
+    {
+      "name": "owned_helpers_moves_reborrows",
+      "path": "fixtures/owned_helpers_moves_reborrows.ox",
+      "sha256": "e0743fb616272f7d521c605ca839d56a28291bdc962449cd20a27202d30be4a2",
+      "bytes": 591,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Constructor returns, exclusive and shared reborrows, normal loan release and whole moves preserve value 3+2+2=7; observed plus consumed value is 14",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 8
+        },
+        "run": {
+          "exit": 0,
+          "result": {
+            "type": "i32",
+            "value": 14
+          }
+        }
+      }
+    },
+    {
+      "name": "owned_use_after_move",
+      "path": "fixtures/owned_use_after_move.ox",
+      "sha256": "102f929f56e199185d6de7ce8da40ee601ff3e24a0e2b8d85a391f925da91510",
+      "bytes": 131,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Whole-value argument consumes the owner; subsequent field projection reports use after move",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0310",
+              "ownership"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0310",
+              "ownership"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "owned_conflicting_borrows",
+      "path": "fixtures/owned_conflicting_borrows.ox",
+      "sha256": "09fd58cb91be3abb5402992231fba301686c4414623ecf98936b6b53dc6e9220",
+      "bytes": 139,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "A call cannot overlap exclusive and shared loans of one owner",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0311",
+              "ownership"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0311",
+              "ownership"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "owned_rhs_before_mutability",
+      "path": "fixtures/owned_rhs_before_mutability.ox",
+      "sha256": "8ffc21d82e4e1869c9f32e3f7cfb2d40fb77c8f80f984a1210be610dae637131",
+      "bytes": 89,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Invalid arithmetic RHS wins before immutable field target validation",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0300",
+              "type"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0300",
+              "type"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "owned_mutability_before_assignment_type",
+      "path": "fixtures/owned_mutability_before_assignment_type.ox",
+      "sha256": "8658c4ccba4d8f2bc213e2d13532d69a674ae502d32f4981312c895d2ad2481e",
+      "bytes": 85,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Well-typed bool RHS reaches immutable target check before assignment type compatibility",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0304",
+              "type"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0304",
+              "type"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "scalar_fuel_loop",
+      "path": "fixtures/scalar_fuel_loop.ox",
+      "sha256": "569e26ec173fc3889b9c3838ad086803a1e5d43a253bbc478ba668ccfc824c9e",
+      "bytes": 45,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Accepted empty infinite loop is stopped by the fixed one-million reference fuel budget",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 1
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0601",
+              "oir-run"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "owned_fuel_reborrow",
+      "path": "fixtures/owned_fuel_reborrow.ox",
+      "sha256": "d069a14ddde06a6dc6bd6037f08d3e859419b0f4efb590ad32376cc1e988624c",
+      "bytes": 195,
+      "route": "owned",
+      "group": "OriginalSingleFile",
+      "intent": "Repeated call-only reborrows release normally until fixed fuel denies the next operation; storage stays bounded",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 3
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0601",
+              "oir-run"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "check_without_entry",
+      "path": "fixtures/check_without_entry.ox",
+      "sha256": "c6add1916cb439191bd7ccb04d8eaf45ceec82e98b814b68340d1b2f7115a4fe",
+      "bytes": 33,
+      "route": "scalar",
+      "group": "OriginalSingleFile",
+      "intent": "Check is entry-optional; run requires original main",
+      "expected": {
+        "check": {
+          "exit": 0,
+          "functions": 1
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0600",
+              "oir-run"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "migration_module",
+      "path": "fixtures/migration_module.ox",
+      "sha256": "176be494b4b18470d7090ad857bce4db7d5cdf875b75c2fc26af9e4216aa3011",
+      "bytes": 43,
+      "route": "parse",
+      "group": "DeliberateFutureMigration",
+      "intent": "Historical mod token is unsupported",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        }
+      },
+      "future_intent": "After activation: parse mod, attempt absent.ox, report E0002/source at absent. Unit1 public syntax remains closed."
+    },
+    {
+      "name": "migration_import",
+      "path": "fixtures/migration_import.ox",
+      "sha256": "1beafd6b78741a1fa7e9ef0035ca3d89a5af4d13889518494ee28745be09d438",
+      "bytes": 100,
+      "route": "parse",
+      "group": "DeliberateFutureMigration",
+      "intent": "Historical use token is unsupported",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        }
+      },
+      "future_intent": "After activation: direct original import alias selects answer; check has two original functions and run returns i32 7."
+    },
+    {
+      "name": "migration_visibility",
+      "path": "fixtures/migration_visibility.ox",
+      "sha256": "a14868b8de7400fb2ccfd7a0d1dd305551413c8a3cf2d0dda702788398dfecdc",
+      "bytes": 36,
+      "route": "parse",
+      "group": "DeliberateFutureMigration",
+      "intent": "Historical pub token is unsupported",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0101",
+              "parse"
+            ]
+          ]
+        }
+      },
+      "future_intent": "After activation: scalar public main is valid, check one function and run returns i32 11."
+    },
+    {
+      "name": "migration_qualified_call",
+      "path": "fixtures/migration_qualified_call.ox",
+      "sha256": "cb0f2cb49b0d45ba7e67d8b5692c8ecfe802e03a1e3e63f35c1849976ea84635",
+      "bytes": 79,
+      "route": "parse",
+      "group": "DeliberateFutureMigration",
+      "intent": "Historical absolute call path fails at first colon",
+      "expected": {
+        "check": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        },
+        "run": {
+          "exit": 1,
+          "diagnostics": [
+            [
+              "E0100",
+              "parse"
+            ]
+          ]
+        }
+      },
+      "future_intent": "After activation: absolute original callee resolves answer; check two functions and run returns i32 13."
+    }
+  ]
+}
