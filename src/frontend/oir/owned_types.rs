@@ -378,19 +378,84 @@ fn table_bytes(records: usize, fields: usize) -> Result<usize, DeclarationError>
         .ok_or(DeclarationError::ResourceLimit("declaration table bytes"))
 }
 
+/// Allocation-free admission for source declaration lengths. This is only an
+/// inventory: it validates no identities, spans, field types, or layouts and
+/// cannot construct the checked declaration facade.
+pub(super) fn admit_declaration_counts(
+    field_counts: impl ExactSizeIterator<Item = usize>,
+) -> Result<DeclarationUsage, DeclarationError> {
+    preflight_counts(field_counts, Limits::DEFAULT)
+}
+
+/// Count scalar layouts without building declarations. The private cursor is
+/// shared with full declaration validation, and this result grants no authority.
+pub(super) fn admit_scalar_layouts<R, F>(records: R) -> Result<usize, DeclarationError>
+where
+    R: ExactSizeIterator<Item = F>,
+    F: ExactSizeIterator<Item = hir::Ty>,
+{
+    let limits = Limits::DEFAULT;
+    let expected_records = limited_add(0, records.len(), limits.records, "record declarations")?;
+    let (mut seen_records, mut fields, mut layouts) = (0, 0, 0);
+    for types in records {
+        seen_records = limited_add(seen_records, 1, limits.records, "record declarations")?;
+        let expected_fields = limited_add(
+            0,
+            types.len(),
+            limits.fields_per_record,
+            "fields per record",
+        )?;
+        let mut cursor = LayoutCursor::default();
+        let mut seen_fields = 0;
+        for ty in types {
+            seen_fields = limited_add(
+                seen_fields,
+                1,
+                limits.fields_per_record,
+                "fields per record",
+            )?;
+            fields = limited_add(fields, 1, limits.fields, "field declarations")?;
+            cursor.push(Layout::scalar(ty))?;
+        }
+        if seen_fields != expected_fields {
+            return Err(DeclarationError::ResourceLimit("field declarations"));
+        }
+        layouts = limited_add(
+            layouts,
+            cursor.finish()?.size,
+            limits.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    if seen_records != expected_records {
+        return Err(DeclarationError::ResourceLimit("record declarations"));
+    }
+    Ok(layouts)
+}
+
 fn preflight(raw: &[RawRecordDecl], limits: Limits) -> Result<DeclarationUsage, DeclarationError> {
-    let records = limited_add(0, raw.len(), limits.records, "record declarations")?;
+    preflight_counts(raw.iter().map(|record| record.fields.len()), limits)
+}
+
+fn preflight_counts(
+    field_counts: impl ExactSizeIterator<Item = usize>,
+    limits: Limits,
+) -> Result<DeclarationUsage, DeclarationError> {
+    let expected_records =
+        limited_add(0, field_counts.len(), limits.records, "record declarations")?;
+    let mut records = 0;
     let mut fields = 0;
-    for record in raw {
-        if record.fields.len() > limits.fields_per_record {
+    for count in field_counts {
+        records = limited_add(records, 1, limits.records, "record declarations")?;
+        if count > limits.fields_per_record {
             return Err(DeclarationError::ResourceLimit("fields per record"));
         }
-        fields = limited_add(
-            fields,
-            record.fields.len(),
-            limits.fields,
-            "field declarations",
-        )?;
+        fields = limited_add(fields, count, limits.fields, "field declarations")?;
+    }
+    // ExactSizeIterator is not an authority for understated table payload.
+    // Bound actual visits as well, and deny inconsistent producer inventory.
+    if records != expected_records {
+        return Err(DeclarationError::ResourceLimit("record declarations"));
     }
     let table_bytes = limited_add(
         0,
@@ -898,6 +963,140 @@ mod tests {
     }
 
     #[test]
+    fn count_admission_returns_only_observed_counts_and_table_payload() {
+        let usage = admit_declaration_counts([0, 1, 1024].into_iter()).unwrap();
+        assert_eq!(usage.records, 3);
+        assert_eq!(usage.fields, 1025);
+        assert_eq!(
+            usage.table_bytes,
+            3 * size_of::<RecordDecl>() + 1025 * size_of::<FieldDecl>()
+        );
+        assert_eq!(usage.layout_bytes, 0);
+        assert_eq!(
+            admit_declaration_counts(std::iter::empty()).unwrap(),
+            DeclarationUsage::default()
+        );
+    }
+
+    #[test]
+    fn count_only_scalar_layouts_share_padding_and_empty_identity_rules() {
+        let fields: &[&[hir::Ty]] = &[&[hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit], &[]];
+        assert_eq!(
+            admit_scalar_layouts(fields.iter().map(|fields| fields.iter().copied())),
+            Ok(13)
+        );
+        assert_eq!(
+            admit_scalar_layouts(std::iter::empty::<std::iter::Empty<hir::Ty>>()),
+            Ok(0)
+        );
+    }
+
+    #[test]
+    fn count_admission_rejects_record_limit_before_visiting_field_counts() {
+        struct NeverVisit;
+        impl Iterator for NeverVisit {
+            type Item = usize;
+            fn next(&mut self) -> Option<Self::Item> {
+                panic!("record-count admission must precede field counts");
+            }
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let count = Limits::DEFAULT.records + 1;
+                (count, Some(count))
+            }
+        }
+        impl ExactSizeIterator for NeverVisit {}
+        assert_eq!(
+            admit_declaration_counts(NeverVisit),
+            Err(DeclarationError::ResourceLimit("record declarations"))
+        );
+    }
+
+    #[test]
+    fn count_admission_rejects_inconsistent_exact_size_iterators() {
+        struct Misreported {
+            remaining: usize,
+            reported: usize,
+        }
+        impl Iterator for Misreported {
+            type Item = usize;
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.remaining == 0 {
+                    None
+                } else {
+                    self.remaining -= 1;
+                    Some(0)
+                }
+            }
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                (self.reported, Some(self.reported))
+            }
+        }
+        impl ExactSizeIterator for Misreported {}
+        for (remaining, reported) in [(1, 0), (2, 1), (1, 2), (4097, 1)] {
+            assert_eq!(
+                admit_declaration_counts(Misreported {
+                    remaining,
+                    reported
+                }),
+                Err(DeclarationError::ResourceLimit("record declarations"))
+            );
+        }
+    }
+
+    #[test]
+    fn shared_count_admission_preserves_inclusive_lowered_limits() {
+        let exact_bytes = size_of::<RecordDecl>() + 2 * size_of::<FieldDecl>();
+        let limits = Limits {
+            records: 1,
+            fields_per_record: 2,
+            fields: 2,
+            table_bytes: exact_bytes,
+            ..Limits::DEFAULT
+        };
+        assert_eq!(
+            preflight_counts([2].into_iter(), limits)
+                .unwrap()
+                .table_bytes,
+            exact_bytes
+        );
+        for (changed, expected) in [
+            (
+                Limits {
+                    records: 0,
+                    ..limits
+                },
+                "record declarations",
+            ),
+            (
+                Limits {
+                    fields_per_record: 1,
+                    ..limits
+                },
+                "fields per record",
+            ),
+            (
+                Limits {
+                    fields: 1,
+                    ..limits
+                },
+                "field declarations",
+            ),
+            (
+                Limits {
+                    table_bytes: exact_bytes - 1,
+                    ..limits
+                },
+                "declaration table bytes",
+            ),
+        ] {
+            assert_eq!(
+                preflight_counts([2].into_iter(), changed),
+                Err(DeclarationError::ResourceLimit(expected))
+            );
+        }
+    }
+
+    #[test]
     fn boundary_seam_cannot_raise_production_limits() {
         let limits = Limits {
             records: usize::MAX,
@@ -1082,7 +1281,7 @@ mod tests {
     }
 
     #[test]
-    fn production_source_still_rejects_records_and_call_borrows() {
+    fn explicit_scalar_source_mode_keeps_ownership_syntax_closed() {
         for text in [
             "struct Counter { value: i32 } fn main() -> i32 { return 0; }",
             "fn read(x: &Counter) -> i32 { return 0; }",
@@ -1091,13 +1290,15 @@ mod tests {
             "fn main() -> () { let x = 0; read(&x); return; }",
         ] {
             let mut sources = SourceMap::new();
-            let file = sources.add("disabled.ox".into(), text.into());
+            let file = sources.add("source-mode.ox".into(), text.into());
             let file = sources.get(file);
             let tokens = lexer::lex(file).unwrap();
             assert!(
-                parser::parse(file, tokens).is_err(),
-                "unexpected source acceptance: {text}"
+                parser::parse_with_mode(file, tokens, parser::SourceMode::ScalarOnly).is_err(),
+                "unexpected scalar-mode acceptance: {text}"
             );
+            let owned = parser::parse(file, lexer::lex(file).unwrap()).unwrap();
+            assert!(owned.uses_owned_syntax(file), "missing owned route: {text}");
         }
     }
 }

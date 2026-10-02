@@ -10,6 +10,9 @@ pub enum Kind {
     Number,
     String,
     Fn,
+    Struct,
+    Ampersand,
+    Dot,
     Let,
     Mut,
     Return,
@@ -107,6 +110,7 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                 }
                 match &text[start..cursor] {
                     "fn" => Kind::Fn,
+                    "struct" => Kind::Struct,
                     "let" => Kind::Let,
                     "mut" => Kind::Mut,
                     "return" => Kind::Return,
@@ -119,8 +123,8 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                     "false" => Kind::False,
                     "use" | "import" | "macro" | "macro_rules" | "const" | "for" | "loop"
                     | "match" | "async" | "await" | "move" | "ref" | "unsafe" | "extern"
-                    | "struct" | "enum" | "trait" | "impl" | "type" | "mod" | "pub" | "null"
-                    | "and" | "or" => Kind::Unsupported,
+                    | "enum" | "trait" | "impl" | "type" | "mod" | "pub" | "null" | "and"
+                    | "or" => Kind::Unsupported,
                     _ => Kind::Ident,
                 }
             }
@@ -180,6 +184,8 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
                 cursor += 1;
                 Kind::AndAnd
             }
+            '&' => Kind::Ampersand,
+            '.' => Kind::Dot,
             '|' if bytes.get(cursor) == Some(&b'|') => {
                 cursor += 1;
                 Kind::OrOr
@@ -201,7 +207,7 @@ pub fn lex(source: &SourceFile) -> Result<Vec<Token>, Box<Diagnostic>> {
             '-' => Kind::Minus,
             '+' => Kind::Plus,
             '*' => Kind::Star,
-            '/' | '%' | '&' | '|' | '[' | ']' | '.' | '#' | '\'' => Kind::Unsupported,
+            '/' | '%' | '|' | '[' | ']' | '#' | '\'' => Kind::Unsupported,
             _ => Kind::Invalid,
         };
         let span = source.span(start, cursor);

@@ -1,18 +1,25 @@
 # RFC 0014: owned scalar-field structs and call-scoped borrowing
 
-Status: design contract for an experimental ownership-foundations phase. The private declaration/identity/layout groundwork, raw owner/loan verifier and verified reference/native ownership consumers described in §10 are implemented. Struct and borrow source syntax and source ownership lowering remain unavailable. Examples below describe the complete intended phase; they are not accepted source programs yet.
+Status: experimental ownership-foundations contract. Nominal owned structs and
+call-only borrowing use the production `typed-preview` source path in this
+repository, with bounded lowering, authoritative raw verification and sealed
+reference/native dispatch. The [source validation ledger](../docs/architecture/owned-source-validation.md)
+records the exact source, compiler, target and qualification scope. These source
+examples describe this repository's implementation; they do not imply support in
+an older released binary. Historical raw-consumer results do not establish
+source-level qualification.
 
-Baseline: PR17 merge `f8061f403415fd728dc8beee73175a0b6b5e4e20`, tree `07c5f1d998d444baecfef8b53deb252ecd8c62ef`. This extends RFCs 0001–0013 without changing legacy-0.9, OXBC, current scalar semantics, source admission or the executable verified-witness boundary. The phase is not completion of M2 or a claim of Rust-compatible memory safety.
+Baseline: PR17 merge `f8061f403415fd728dc8beee73175a0b6b5e4e20`, tree `07c5f1d998d444baecfef8b53deb252ecd8c62ef`. This extends RFCs 0001–0013 without changing legacy-0.9, OXBC, scalar-only source admission and semantics, or the executable verified-witness boundary. The opt-in typed-preview source grammar is extended by the ownership forms specified below. The phase is not completion of M2 or a claim of Rust-compatible memory safety.
 
 ## 1. Outcome and boundaries
 
-A program can construct nominal structured state, update it through an exclusive helper parameter, inspect it through shared helper parameters, move it through helpers and returns, and have ownership violations rejected across all existing branches, loops, break, continue and return paths. Scalar behavior, entry output, failure ordering and existing admission must remain unchanged.
+A program can construct nominal structured state, update it through an exclusive helper parameter, inspect it through shared helper parameters, move it through helpers and returns, and have ownership violations rejected across all existing branches, loops, break, continue and return paths. Scalar-only programs preserve their existing behavior, entry output, failure ordering and admission. Ownership-bearing modules use the additional source and resource rules below.
 
 Supported values: existing bool/i32/unit scalars and named move-only structs whose fields are only these three scalars. Supported references: shared or exclusive function parameters pointing to one complete struct, supplied by explicit call-argument borrowing. Functions may return an owned struct; executable `main` still returns a scalar. Empty structs are allowed and remain move-only.
 
 Excluded: nested struct fields, tuples/enums/arrays/slices, partial moves, destructuring, user Copy/Clone/Drop traits, implicit aggregate equality, reference-bearing locals/fields/results, lifetime syntax/inference, NLL, two-phase borrowing, scalar/field/temporary borrows, pointer arithmetic/comparison/casts, arbitrary dereference expressions, closures, mutable parameter bindings, globals, heap resources, FFI and changes to the legacy edition.
 
-## 2. Phase source contract (not yet enabled)
+## 2. Source contract
 
 ```text
 item            := function | struct_decl
@@ -33,7 +40,7 @@ borrow_argument := "&" local_name | "&" "mut" local_name
 argument        := expression | borrow_argument
 ```
 
-Existing expression precedence remains; a struct literal or field read is an atomic primary. Fields are not methods. Borrow arguments are admitted only as the complete argument of a direct call, not as general expression values. Parentheses around an ordinary expression remain supported; parenthesized borrow/place forms, `(s).field`, `(*p).field`, `make().field`, dereference assignment and temporary borrows are not added. Use `p.field` for a borrowed parameter and bind owned results before projecting fields. Calls still require their existing no-trailing-comma parameter/argument grammar; optional trailing commas are confined to the newly introduced struct lists. No field shorthand or `..base` update syntax.
+Existing expression precedence remains; a struct literal or field read is an atomic primary. Fields are not methods. Borrow arguments are admitted only as the complete argument of a direct call, not as general expression values. Parentheses around an ordinary expression remain supported; parenthesized borrow/place forms, `(s).field`, `(*p).field`, `make().field`, dereference assignment and temporary borrows are not added. Use `p.field` for a borrowed parameter and bind owned results before projecting fields. Calls still require their existing no-trailing-comma parameter/argument grammar; optional trailing commas are confined to the newly introduced struct lists. No field shorthand, `..base` update syntax or standalone block statements are added.
 
 To avoid confusing a condition's body brace with a struct literal, an unparenthesized struct literal is not a primary in the top-level `if`/`while` condition grammar. A parenthesized literal remains an ordinary expression and will fail bool typing if directly used as the condition. Direct function-call arguments and nested parenthesized expressions can contain struct literals. This restriction never reinterprets an existing `if flag { ... }` or `while flag { ... }`.
 
@@ -94,6 +101,12 @@ RHS evaluation precedes replacement. If evaluation has already moved/mutated som
 Availability must hold on every reaching path; constant conditions do not remove checking paths. At a join, one moved incoming path makes the owner unavailable until wholly reinitialized. At a loop header, include the preheader and all backedges, including continue. A source declaration in a loop begins a fresh owner each dynamic execution; backend slot reuse does not revive the previous instance. Break/continue/return end exited lexical storage after required value transfer. A path that terminates does not contribute an unavailable state to an unreachable successor.
 
 ## 4. Call borrowing and evaluation matrix
+
+Reference modes match the formal parameter exactly: `&T` requires a shared
+argument and `&mut T` requires an exclusive argument. `read(&mut a)` for an `&T`
+formal and `write(&a)` for an `&mut T` formal both fail E0300; no implicit
+exclusive-to-shared argument coercion is introduced. Explicit `&*p` supplies a
+shared argument from a shared or exclusive reference parameter.
 
 Borrowing selects a complete, available owned local/parameter; `&mut` additionally requires a mutable owner. An immutable binding to an exclusive reference parameter can mutate its referent: the binding cannot be reassigned, but the granted permission is exclusive.
 
@@ -181,9 +194,14 @@ Expected independent calculation: six jobs, six retries, checksum `10*(1+2+3+4+5
 
 Preserve lex → parse → resolve → type → OIR shape → ownership → admission/execution order. All function bodies and both condition arms remain checked. Well-typed, well-shaped ownership/loan violations get ordinary exit 1 errors with stage `ownership`, not E0500. Forms excluded by §2 grammar, including a borrow expression in a local initializer or a reference field/result type, retain earlier parse/resolve/type diagnostics. A grammatical bare reference-parameter value use such as `let r = p;` is rejected during typing, before ownership lowering. E0500 remains a malformed compiler/raw-IR invariant failure; invalid private IR must not obtain a verified witness.
 
-Proposed diagnostic families (engineering numbering may be adjusted before publication): E0310 use/move/borrow of unavailable owner; E0311 conflicting loan or operation; E0312/type unsupported bare reference-parameter value use; E0313 illegal reborrow permission. Reuse E0304 for mutation of immutable source bindings, E0300 for type mismatches, E0200/0201/0202 for name/duplicate/type resolution where appropriate. Missing/duplicate literal fields need stable type/resolve diagnostics with exact field or literal origins.
+Source diagnostic families: E0310 use/move/borrow of unavailable owner; E0311 conflicting loan or operation; E0312/type unsupported bare reference-parameter value use; E0313 shared reference used for exclusive reborrowing or field mutation. Reuse E0304 for mutation of immutable source bindings, E0300 for type mismatches, E0200/0201/0202 for name/duplicate/type resolution where appropriate. Unknown/duplicate literal fields use E0200/E0201 during resolution, missing
+literal fields use E0300 at the literal, and an unknown projected field or a
+non-record projection base uses E0305/type. Full reference argument modes must
+match or produce E0300.
 
-Primary span is the rejected use, borrow or assignment target. Secondary spans identify the last conflicting move/loan and declaration; when several incoming paths move a value, choose a deterministic earliest source origin and explain “not available on every path.” Preserve full borrow syntax (including comments) and transfer statement spans. Ownership analysis must never invent a prior move on a path where none occurred merely to produce a label.
+Primary span is the rejected use, borrow or assignment target. Secondary spans identify a validated causal move/loan and declaration; causal selection must be deterministic and explain “not available on every
+path.” Selection among independently failing owner roots need not choose the
+earliest textual failure across the module. Preserve full borrow syntax (including comments) and transfer statement spans. Ownership analysis must never invent a prior move on a path where none occurred merely to produce a label.
 
 `check` accepts a well-typed owned-returning main. `run` rejects it with explicit E0600 entry-result diagnostic; native compile rejects unsupported entry result before tools/output with E0700. Helper-owned returns remain supported. Existing JSON scalar output, native output/no-clobber behavior, stderr and exit status contracts stay unchanged.
 
@@ -191,7 +209,7 @@ Primary span is the rejected use, borrow or assignment target. Secondary spans i
 
 Internal identities are compilation-local nominal RecordId/FieldId, function-local OwnerPlaceId, and explicit LoanId/CallSiteId. Source mutability remains distinct from storage identity: immutable owned locals require stable identity too. Compiler-side Rust Copy for an ID does not give source Copy semantics.
 
-Keep existing scalar SSA values/places and accounting unchanged. Introduce explicit owned-value transfers, full initialization/replacement, scalar field reads/writes, owner storage live/end boundaries and loan acquire/call-return release. Do not disguise a record move as unrestricted scalar Copy. Owned temporaries/results must participate in availability and storage accounting, including unused/discarded results.
+Keep scalar-only modules' SSA values/places, accounting and diagnostics unchanged. Introduce explicit owned-value transfers, full initialization/replacement, scalar field reads/writes, owner storage live/end boundaries and loan acquire/call-return release. Do not disguise a record move as unrestricted scalar Copy. Owned temporaries/results must participate in availability and storage accounting, including unused/discarded results.
 
 Verification layers:
 
@@ -210,17 +228,22 @@ An intentionally simple independent baseline is per-owner finite-state reachabil
 
 Do not allocate a dense blocks × owners matrix under the existing 300,000-block/100,000-slot limits. A viable baseline processes one owner at a time with O(B+E+S+O) scratch, and O(O*(B+E+S)) worst-case work. This needs a checked ownership-only work envelope measured before source enablement; cap rejection is a resource error, never “safe by timeout.” Scalar-only programs bypass this new work and retain existing limits/admission. Loan-state traversal must have its own bounded representation/convergence argument; nested argument expressions can branch, so linear token scanning is insufficient.
 
-Declaration-table limits are implemented in §10. Final expanded-storage and ownership-analysis caps require measured bounds before source activation; any material reduction of the specified envelope must be documented as a support limitation. The implementation report must state formulas, inclusive boundaries, peak-memory evidence and one-over rejection before large allocation. Reusing the current limits without charging expanded aggregate storage is not acceptable.
+Declaration-table, expanded-storage and ownership-analysis limits are implemented in §10; any material reduction of the specified envelope must be documented as a support limitation. The implementation report must state formulas, inclusive boundaries, peak-memory evidence and one-over rejection before large allocation. Reusing the current limits without charging expanded aggregate storage is not acceptable.
 
 ## 8. Reference, layout, native and fuel policy
 
 Reference ownership is represented by activation identity + owner slot + generation, with checked indirection for references. Do not store host-language pointers into growable frame vectors. Entering a loop-local lifetime creates a fresh generation, moving transfers the payload and consumes its source, and ending storage invalidates access. A reference cannot outlive the call supplying its parent permission. Dynamic checks supplement rather than replace static verification.
 
-Private Linux x86_64 layout recommendation: declaration-order fields, i32 4-byte size/alignment, bool and unit 1-byte storage, natural padding with checked offsets; empty structs reserve one private identity byte. Layout is not a stable source or FFI ABI. Reference handles are pointer-like backend values, but source exposes neither address nor representation. Field order in memory must not change source initializer evaluation order.
+The implemented private Linux x86_64 layout is: declaration-order fields, i32 4-byte size/alignment, bool and unit 1-byte storage, natural padding with checked offsets; empty structs reserve one private identity byte. Layout is not a stable source or FFI ABI. Reference handles are pointer-like backend values, but source exposes neither address nor representation. Field order in memory must not change source initializer evaluation order.
 
-Owned argument/result transfer may use a private by-value or indirect convention with bounded scratch. The chosen convention must be tested with real cross-call storage; do not expose host Rc/RefCell dynamic records, serialize through legacy values, silently fall back to reference execution or attach LLVM noalias/inbounds/lifetime attributes without sufficient proof. Uninitialized padding must never affect observable comparisons/output; structs have no equality/serialization operation in this phase.
+Owned argument/result transfer uses the private indirect convention detailed
+in §10 and the native specification, with separately bounded storage. Its
+qualification must exercise real cross-call storage; do not expose host Rc/RefCell dynamic records, serialize through legacy values, silently fall back to reference execution or attach LLVM noalias/inbounds/lifetime attributes without sufficient proof. Uninitialized padding must never affect observable comparisons/output; structs have no equality/serialization operation in this phase.
 
-Recommended aggregate accounting: scalar slots keep weight 1; a struct slot has weight max(1, scalar field count) plus explicitly counted owner metadata; references/loan tables and call-result scratch are separately bounded. Charge full layout-byte storage as well as abstract cells. Field reads/writes and loan acquire/release are constant operations; constructing/transferring/dropping struct storage charges expanded work before the operation. Define exact costs and origins in a lowering/accounting appendix before integration, then hand-count traces independently. Old scalar costs and diagnostic origins must remain byte-for-byte unchanged. Do not add speculative aggregate fuel numbers before the chosen representation is measured.
+The implemented aggregate accounting follows these rules: scalar slots keep weight 1; a struct slot has weight max(1, scalar field count) plus explicitly counted owner metadata; references/loan tables and call-result scratch are separately bounded. Charge full layout-byte storage as well as abstract cells. Field reads/writes and loan acquire/release are constant operations; constructing/transferring/dropping struct storage charges expanded work before the operation. Exact costs and origins are specified in the typed execution ledger linked
+from §10 and require independent source hand counts. Scalar-only costs and
+ordinary scalar diagnostics remain unchanged; source-owned totals must be
+measured separately from raw fixture totals.
 
 Preserve current reference fuel/frame/live-slot policy, native whole-call-graph recursion rejection, 32-depth/64-parameter boundaries, acyclic conservative static admission versus cyclic shared guarded fuel, and pinned LLVM 19.1.7 O0 Linux x86_64 qualification. New ownership-only caps may supplement them but may not silently relax them. Abrupt failure executes no user cleanup or rollback; this phase does not certify heap/resource release or unwinding.
 
@@ -236,21 +259,84 @@ Preserve current reference fuel/frame/live-slot policy, native whole-call-graph 
 
 Baseline reproduction commands remain those in `docs/architecture/loop-control-validation.md`; this includes full debug/release Rust suites, four explicit raw LLVM tests per profile, loop/while/mutable/logical/comparison/arithmetic/native/literal oracles, metadata tests and repository verification. Final CI must be checked on the exact proposed commit, separately from the already merged PR17 baseline.
 
-## 10. Implemented groundwork and staged activation
+## 10. Implementation and source integration
 
 `src/frontend/oir/owned_types.rs` is a production-private immutable declaration facade, registered from `oir/mod.rs`. It defines compilation-local RecordId, record-qualified FieldId and distinct function-local OwnerPlaceId/LoanId/CallSiteId wrappers. ValueTy contains only existing scalar types or an owned record ID; reference types are confined to ParameterTy. Raw declarations deliberately permit malformed IDs/types so the facade checks them independently. It validates every declaration/field span, positional identity and scalar-only field before allocation, then owns flat immutable record and field arrays. Checked lookups cannot expose mutable raw state.
 
-Current private ceilings are 4,096 records, 65,536 aggregate fields, 1,024 fields per record, 8 MiB requested declaration-table payload and 1 MiB sum of padded declaration layouts. Counts and table bytes are preflighted before inspecting field contents; all validation/layout checks finish before either fallible output reservation. The private test seam may lower each ceiling, never raise it. These are declaration limits, not new source, activation, live-slot, fuel or ownership-analysis admission rules.
+Current private ceilings are 4,096 records, 65,536 aggregate fields, 1,024 fields per record, 8 MiB requested declaration-table payload and 1 MiB sum of padded declaration layouts. Counts and table bytes are preflighted before inspecting field contents; all validation/layout checks finish before either fallible output reservation. The private test seam may lower each ceiling, never raise it. These declaration limits also apply when the source producer uses
+the facade; they are separate from source syntax, expanded live storage, fuel
+and ownership-analysis admission.
 
 For R records and F fields, requested persistent payload is `R*sizeof(RecordDecl) + F*sizeof(FieldDecl)`. Work is O(R+F), persistent storage O(R+F), auxiliary scratch O(1), with two flat output allocations and no per-record output vector. On the measured Linux x86_64 host the declaration sizes are 64 and 56 bytes; the maximum-count fixture requests 3,932,160 bytes. Field layout uses bool/unit size/alignment 1/1, i32 4/4, checked natural padding, and one private identity byte for an empty record. There is no stable/public/FFI ABI.
 
-At current scalar field types total padded layout is bounded by `4F+R`, at most 266,240 bytes under the count limits. Both byte ceilings are therefore redundant on the measured representation but retained as checked defenses against later representation changes. The payload formula excludes caller-owned raw input, source storage, vector headers and allocator overhead; it is not a total process-memory promise. Future expanded runtime/work limits must be independently specified before source activation.
+At current scalar field types total padded layout is bounded by `4F+R`, at most 266,240 bytes under the count limits. Both byte ceilings are therefore redundant on the measured representation but retained as checked defenses against later representation changes. The payload formula excludes caller-owned raw input, source storage, vector headers and allocator overhead; it is not a total process-memory promise. The independent expanded runtime/work ledgers are specified below and in the linked consumer contract.
 
-The facade is consumed by the private raw ownership verifier. That verifier has no source producer yet. Private reference and LLVM consumers now require its immutable witness; their source-gated interfaces remain production-compiled. Existing hir::Ty, Scalar, scalar places/SSA and runtime/backend paths are unchanged. Canonical CFG/scalar shape/dominance logic is shared through direct private adapters; the existing scalar VerifiedProgram route remains intact. No ownership source feature is added to the public feature inventory.
+The private RawOwnedProgram → VerifiedOwnedProgram route checks whole-owner
+availability, exact call/loan regions, argument preparation order and the
+caller/callee alias contract. Its sole witness constructor remains sealed in
+the verification module. The consumers obtain that witness from an immutable
+witness-bound execution plan; raw input or a separately rebound plan cannot run
+or emit native code. See [raw verifier validation](../docs/architecture/owned-verifier-validation.md)
+and [raw-consumer validation](../docs/architecture/owned-consumers-validation.md)
+for historical qualification at their explicitly recorded snapshots.
 
-The private RawOwnedProgram → VerifiedOwnedProgram route now checks whole-owner availability, exact call/loan regions, argument preparation order and the caller/callee alias contract. Its witness is fully sealed in a dedicated verification module and has no run/native methods. See [raw verifier validation](../docs/architecture/owned-verifier-validation.md) for its bounded models, resource accounting and compile-fail witness tests.
+Source code in `src/frontend/oir/owned/source/` resolves all nominal
+declarations/signatures, produces complete typed views, and lowers explicit
+transfers, temporaries, lexical cleanup and ordered call/loan events. The source
+producer cannot certify ownership: its output must pass the authoritative raw
+verifier. Source-facing E0310/E0311/E0313 diagnostics require validated denial
+context; internal cleanup, unavailable compiler temporaries and malformed raw
+operations stay E0500. Resource errors remain E0400 at lowering/verification or
+E0605 for owned execution-plan/runtime admission as applicable.
 
-Private reference owner identities and real native storage/call execution are implemented and independently reviewed; see [consumer validation](../docs/architecture/owned-consumers-validation.md) for the exact resource/fuel contract, bounded raw models and actual LLVM evidence. Source integration and complete source-level phase qualification remain the next review unit. Enable new syntax only when that source subset works through the checked boundary and both consumers. The raw Batch adaptation is executable; the source example above remains unavailable. See [groundwork validation](../docs/architecture/owned-types-validation.md) for declaration evidence; §9 source requirements are not silently claimed by raw-consumer results.
+`src/frontend/oir/source.rs` binds the resolved entry and chooses one route for
+the whole module. Any struct, nominal non-scalar annotation/signature, reference
+parameter, constructor, field read/write or borrow argument selects owned
+lowering for every function, including unused or skipped code. Comment text does
+not. Unknown nominal types enter that route and fail resolution. Scalar-only
+modules preserve the existing HIR/scalar OIR, costs, diagnostics and native
+admission. There is no per-function hybrid ABI or fallback on failure.
+
+The source producer preflights exact raw expansion before reserving output or
+maps: 64 MiB requested raw payload, 100,000 combined scalar/owner slots,
+100,000 statements/merges and expanded events, 300,000 blocks, 100M counted
+ownership work, 32 MiB metadata and 32 MiB peak ownership-flow scratch. Raw
+verification recounts its own nested vectors. Fallible exact reservations,
+release-mode parity checks and fixed iterative traversal stacks supplement the
+unchanged 1 MiB source, 100,000 token/node, depth 64 and arity 256 frontend bounds.
+The [typed specification](../spec/typed-preview.md#resource-and-trust-bounds)
+defines each ledger, the separate 8,800,000-byte conservative producer-map bound,
+33,872-byte measured fixed traversal representation and exclusions.
+
+New owned messages retain at most 1,024 bytes, with at most two 256-byte labels
+and two 256-byte notes, totaling at most 2,048 bytes per diagnostic. Displayed
+names use at most 64 bytes and missing-field lists show at most eight names.
+These bounds exclude preexisting shared lexer/parser formatting, capacities,
+rendered output, path expansion, allocator overhead and RSS.
+
+The consumer ledger uses `X = S + A + P + 4O + 8R + 12L + 2C`, with all scalar,
+argument, owner, reference, loan and call storage counted, including temporaries
+and staging. Reference retains 1,000,000 fuel/1,024 frames/200,000 scalar slots
+and adds 200,000 live X/16 MiB requested bytes. Plans have a separate 32 MiB
+ceiling. Native additionally requires `S+O <= 256` per function, aggregate and
+call-path X at most 8,192, and aggregate/path explicit arena bytes at most 1 MiB,
+including the guarded wrapper's 8-byte fuel cell. Diagnostic data and emitted
+LLVM text are capped at 16/64 MiB for owned modules, including acyclic ones.
+The [typed execution ledger](../spec/typed-preview.md#owned-verification-execution-and-accounting)
+and [native specification](../spec/native-preview.md#owned-module-storage-costs-and-private-representation)
+define costs, byte formulas and the private indirect owned-call convention.
+Linux x86_64, LLVM 19.1.7 and O0 restrictions remain.
+
+The experimental source route is selected by the production parser and driver.
+The [source validation ledger](../docs/architecture/owned-source-validation.md)
+records its exact activation identity and qualification scope, separating
+preactivation facade runs and independent source expectations from actual
+debug/release CLI checks, source-free ELF execution, exact source fuel,
+store-failure controls, correspondence mutations and resource evidence.
+The Batch source's independent result is 816; neither its fuel nor its storage
+can be copied from the raw adaptation. Public status records one experimental
+ownership-foundations capability, not separate features for internal work units.
+The §9 requirements are not silently claimed by raw-only or model-only results.
 
 ## 11. Following capability gaps
 

@@ -98,6 +98,8 @@ Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器
 
 長期方向是具備靜態檢查與原生編譯的語言。可選的[實驗性 LLVM 預覽](spec/native-preview.md)已能將受限、非遞迴的 bool／unit／i32 子集編譯成 Linux x86_64 執行檔。完整靜態核心語意、Rust 相容性與原生 AI 訓練仍未提供。請參考[路線圖](docs/ROADMAP.md)與[實作現況](docs/architecture/current-baseline.md)。
 
+可選的[所有權基礎擴充](spec/typed-preview.md#nominal-owned-structs-and-call-only-borrowing)適用於 `--edition typed-preview`，支援僅含純量欄位、只能移動的 struct、整體移動與替換，以及僅限函式呼叫的顯式借用。[Batch 範例](fixtures/owned_source/batch.ox)結合迴圈與回傳擁有值的輔助函式，結果為 816；實際證據與限制見[原始碼驗證紀錄](docs/architecture/owned-source-validation.md)。執行與原生編譯的 `main` 仍須無參數並回傳純量；原生範圍仍限 Linux x86_64、LLVM 19.1.7、O0。既有動態 record 語意不變；儲存參照、堆積配置與析構安全，以及 v1.0 完成，均不在本次範圍內。
+
 只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。
 
 ## 從原始碼建置

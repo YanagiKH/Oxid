@@ -43,6 +43,7 @@ fn subject(span: Span) -> RawOwnedProgram {
                 span,
                 statements: vec![
                     OwnedStatement {
+                        diagnostic_origins: None,
                         kind: OwnedInstruction::Scalar(Statement::Assign(Assign {
                             destination: LocalId(0),
                             value: Rvalue::Unit,
@@ -51,10 +52,12 @@ fn subject(span: Span) -> RawOwnedProgram {
                         span,
                     },
                     OwnedStatement {
+                        diagnostic_origins: None,
                         kind: OwnedInstruction::StorageLive(OwnerPlaceId(0)),
                         span,
                     },
                     OwnedStatement {
+                        diagnostic_origins: None,
                         kind: OwnedInstruction::Construct {
                             destination: OwnerPlaceId(0),
                             fields: vec![],
@@ -62,11 +65,13 @@ fn subject(span: Span) -> RawOwnedProgram {
                         span,
                     },
                     OwnedStatement {
+                        diagnostic_origins: None,
                         kind: OwnedInstruction::Discard(OwnerPlaceId(0)),
                         span,
                     },
                 ],
                 terminator: Some(OwnedTerminator {
+                    diagnostic_origins: None,
                     kind: OwnedTerminatorKind::ReturnScalar(Operand {
                         local: LocalId(0),
                         span,
@@ -86,10 +91,18 @@ fn verifies_whole_owner_consumption_without_execution_api() {
     assert_eq!(checked.usage().owners, 1);
 }
 fn instruction(kind: OwnedInstruction, span: Span) -> OwnedStatement {
-    OwnedStatement { kind, span }
+    OwnedStatement {
+        diagnostic_origins: None,
+        kind,
+        span,
+    }
 }
 fn end(kind: OwnedTerminatorKind, span: Span) -> Option<OwnedTerminator> {
-    Some(OwnedTerminator { kind, span })
+    Some(OwnedTerminator {
+        diagnostic_origins: None,
+        kind,
+        span,
+    })
 }
 fn unit_function(id: usize, span: Span) -> RawOwnedFunction {
     RawOwnedFunction {

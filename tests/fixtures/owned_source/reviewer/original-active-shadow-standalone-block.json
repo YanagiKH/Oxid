@@ -1,0 +1,15 @@
+{
+  "id": "original-active-shadow-standalone-block",
+  "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    let x = 1;\n    {\n        let x = 2;\n    }\n    return 0;\n}\n",
+  "source_sha256": "591de4ec8653826b63e8518e8d2acd04852ef56cc184a3d1aa2e6c293f3f3e6a",
+  "expected": {
+    "status": "reject",
+    "stage": "parse",
+    "code": "E0100",
+    "span": [
+      270,
+      271
+    ]
+  },
+  "basis": "Published typed-preview statement grammar excludes a block as a statement; earliest unexpected opening brace"
+}

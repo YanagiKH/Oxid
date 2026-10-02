@@ -1,0 +1,20 @@
+[
+  {
+    "original_id": "active-shadow",
+    "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    let x = 1;\n    {\n        let x = 2;\n    }\n    return 0;\n}\n",
+    "source_sha256": "591de4ec8653826b63e8518e8d2acd04852ef56cc184a3d1aa2e6c293f3f3e6a",
+    "unexpected_brace": [
+      270,
+      271
+    ]
+  },
+  {
+    "original_id": "lexical-reuse",
+    "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    {\n        let x = S { value: 1 };\n    }\n    let x = S { value: 2 };\n    return x.value;\n}\n",
+    "source_sha256": "c5c8c6ec3b635c1d6d1189983cdf134a5df68f8fde434831861f0a7f2e7d51f4",
+    "unexpected_brace": [
+      255,
+      256
+    ]
+  }
+]

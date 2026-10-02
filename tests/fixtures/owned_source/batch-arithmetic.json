@@ -1,0 +1,94 @@
+{
+  "checksum": 210,
+  "commits": 6,
+  "result": 816,
+  "retries": 6,
+  "source_fuel": null,
+  "source_fuel_status": "pending independent source template schedule; raw 1086 is not source evidence",
+  "state_transitions": [
+    {
+      "checksum": 0,
+      "completed": 0,
+      "event": "retry",
+      "job": 1,
+      "retries": 1
+    },
+    {
+      "checksum": 10,
+      "completed": 1,
+      "event": "commit",
+      "job": 1,
+      "retries": 1
+    },
+    {
+      "checksum": 10,
+      "completed": 1,
+      "event": "retry",
+      "job": 2,
+      "retries": 2
+    },
+    {
+      "checksum": 30,
+      "completed": 2,
+      "event": "commit",
+      "job": 2,
+      "retries": 2
+    },
+    {
+      "checksum": 30,
+      "completed": 2,
+      "event": "retry",
+      "job": 3,
+      "retries": 3
+    },
+    {
+      "checksum": 60,
+      "completed": 3,
+      "event": "commit",
+      "job": 3,
+      "retries": 3
+    },
+    {
+      "checksum": 60,
+      "completed": 3,
+      "event": "retry",
+      "job": 4,
+      "retries": 4
+    },
+    {
+      "checksum": 100,
+      "completed": 4,
+      "event": "commit",
+      "job": 4,
+      "retries": 4
+    },
+    {
+      "checksum": 100,
+      "completed": 4,
+      "event": "retry",
+      "job": 5,
+      "retries": 5
+    },
+    {
+      "checksum": 150,
+      "completed": 5,
+      "event": "commit",
+      "job": 5,
+      "retries": 5
+    },
+    {
+      "checksum": 150,
+      "completed": 5,
+      "event": "retry",
+      "job": 6,
+      "retries": 6
+    },
+    {
+      "checksum": 210,
+      "completed": 6,
+      "event": "commit",
+      "job": 6,
+      "retries": 6
+    }
+  ]
+}

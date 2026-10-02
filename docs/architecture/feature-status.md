@@ -63,8 +63,9 @@ Initialized mutable bool/i32/unit locals are a further experimental extension.
 Explicit typed places and init/store/load operations preserve immutable SSA value
 snapshots; independent verification requires initialization dominance. Existing
 if branches may update places, and native lowering uses private scalar allocas.
-All slot/fuel ceilings include the new storage operations. Borrows,
-non-Copy ownership and native recursion remain unavailable. See
+All scalar slot/fuel ceilings include those storage operations. That predecessor
+does not add borrows or non-Copy ownership; the experimental ownership-foundations extension
+is tracked below. Native recursion remains unavailable. See
 [mutable-local evidence](mutable-locals-validation.md).
 
 Ordinary bool-condition while is an experimental end-to-end extension with cyclic
@@ -80,3 +81,30 @@ flow summaries separate return from loop transfers; lexical targets lower to
 existing charged Goto edges without unreachable joins. No ownership or new type
 is implied. See [RFC 0013](../../rfcs/0013-loop-control.md) and
 [loop-control evidence](loop-control-validation.md).
+
+
+Ownership foundations are one additional experimental capability, not separate
+entries for declaration tables, raw verification, source parsing or consumers.
+The extension covers nominal move-only structs with bool/i32/unit fields or no
+fields, whole moves/replacement, scalar field access, owned helper returns and
+explicit exact-mode call-only borrowing/reborrowing. The complete source module
+selects one verified route; scalar-only modules retain their prior behavior and
+costs. Default legacy records retain dynamic shared storage.
+
+The entry is `experimental`/`production-path`: the public `typed-preview`
+parser and driver select the ownership source route. Its
+[source qualification ledger](owned-source-validation.md) records the exact
+source and compiler identities and separates model-only, preactivation facade,
+production CLI and native evidence. Native qualification is limited to Linux
+x86_64 with LLVM 19.1.7 at O0; hosted checks apply only to the recorded exact head.
+A gate's registration alone does not establish its result. The historical
+[raw-consumer report](owned-consumers-validation.md) remains scoped to its
+original fixtures and compiler identities.
+
+The broad `static-memory-model` item remains proposed for unresolved language-wide
+semantics. It must not be read as denying the bounded implemented verifier or as
+claiming that this subset completes general ownership safety. The native item
+cross-references the same ownership capability, without creating another feature
+for it. Stored-reference lifetimes, partial moves, field-disjoint loans,
+heap/resource cleanup, unsafe/FFI safety, broader native targets and stable ABI
+remain outside this increment. No inventory count certifies a milestone or v1.0.

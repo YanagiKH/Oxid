@@ -32,7 +32,11 @@ fn rv_local(ty: hir::Ty, span: Span) -> LocalDecl {
     }
 }
 fn rv_ins(kind: OwnedInstruction, span: Span) -> OwnedStatement {
-    OwnedStatement { kind, span }
+    OwnedStatement {
+        diagnostic_origins: None,
+        kind,
+        span,
+    }
 }
 fn rv_assign(i: usize, value: Rvalue, span: Span) -> OwnedStatement {
     rv_ins(
@@ -49,7 +53,11 @@ fn rv_block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Sp
         merge: None,
         span,
         statements,
-        terminator: Some(OwnedTerminator { kind, span }),
+        terminator: Some(OwnedTerminator {
+            diagnostic_origins: None,
+            kind,
+            span,
+        }),
     }
 }
 fn rv_fn(id: usize, ty: ValueTy, span: Span) -> RawOwnedFunction {

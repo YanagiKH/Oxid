@@ -142,6 +142,14 @@ pub struct Program {
 }
 
 fn type_syntax(source: &SourceFile, ty: ast::TypeSyntax) -> Result<Ty, Box<Diagnostic>> {
+    if matches!(ty.kind, ast::TypeSyntaxKind::Reference { .. }) {
+        return Err(Diagnostic::new(
+            "E0500",
+            "resolve",
+            "owned syntax entered scalar resolution",
+            Some(ty.span),
+        ));
+    }
     // Unit types may contain trivia between parentheses.
     let text = &source.text()[ty.span.start..ty.span.end];
     match text {
@@ -194,6 +202,14 @@ fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
 }
 
 pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<Diagnostic>> {
+    if let Some(record) = ast.records.first() {
+        return Err(vec![*Diagnostic::new(
+            "E0500",
+            "resolve",
+            "owned syntax entered scalar resolution",
+            Some(record.span),
+        )]);
+    }
     let mut names = HashMap::new();
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
@@ -390,6 +406,14 @@ impl<'a> Resolver<'a> {
                         value: self.expression(*value)?,
                     }
                 }
+                ast::StmtKind::FieldAssign { target_span, .. } => {
+                    return Err(Diagnostic::new(
+                        "E0500",
+                        "resolve",
+                        "owned syntax entered scalar resolution",
+                        Some(*target_span),
+                    ))
+                }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
@@ -457,6 +481,14 @@ impl<'a> Resolver<'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
+                return Err(Diagnostic::new(
+                    "E0500",
+                    "resolve",
+                    "owned syntax entered scalar resolution",
+                    Some(expr.span),
+                ))
+            }
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
@@ -490,7 +522,15 @@ impl<'a> Resolver<'a> {
                     .0;
                 let args = args
                     .iter()
-                    .map(|id| self.expression(*id))
+                    .map(|arg| match arg {
+                        ast::Argument::Value(id) => self.expression(*id),
+                        ast::Argument::Borrow { span, .. } => Err(Diagnostic::new(
+                            "E0500",
+                            "resolve",
+                            "owned syntax entered scalar resolution",
+                            Some(*span),
+                        )),
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 ExprKind::Call { target, args }
             }

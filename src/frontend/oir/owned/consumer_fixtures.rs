@@ -44,7 +44,11 @@ pub(super) fn operand(local: usize, span: Span) -> Operand {
     }
 }
 pub(super) fn instruction(kind: OwnedInstruction, span: Span) -> OwnedStatement {
-    OwnedStatement { kind, span }
+    OwnedStatement {
+        diagnostic_origins: None,
+        kind,
+        span,
+    }
 }
 pub(super) fn assign(destination: usize, value: Rvalue, span: Span) -> OwnedStatement {
     instruction(
@@ -57,7 +61,11 @@ pub(super) fn assign(destination: usize, value: Rvalue, span: Span) -> OwnedStat
     )
 }
 pub(super) fn end(kind: OwnedTerminatorKind, span: Span) -> Option<OwnedTerminator> {
-    Some(OwnedTerminator { kind, span })
+    Some(OwnedTerminator {
+        diagnostic_origins: None,
+        kind,
+        span,
+    })
 }
 pub(super) fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFunction {
     RawOwnedFunction {

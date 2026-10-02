@@ -1,10 +1,13 @@
-//! Private acyclic OIR with a bounded scalar reference consumer. No serialized contract.
+//! Private verified scalar/owned OIR with bounded consumers. No serialized contract.
 mod execute;
 mod lower;
 mod native;
 mod owned;
 mod owned_types;
+mod source;
 mod verify;
+
+pub(super) use source::{check_source, CheckedSourceProgram};
 
 use super::{
     diagnostic::Diagnostic,

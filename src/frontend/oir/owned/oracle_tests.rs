@@ -358,7 +358,11 @@ fn operand(local: usize, span: Span) -> Operand {
     }
 }
 fn instruction(kind: OwnedInstruction, span: Span) -> OwnedStatement {
-    OwnedStatement { kind, span }
+    OwnedStatement {
+        diagnostic_origins: None,
+        kind,
+        span,
+    }
 }
 fn scalar(local: usize, value: Rvalue, span: Span) -> OwnedStatement {
     instruction(
@@ -409,7 +413,11 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
         merge: None,
         span,
         statements,
-        terminator: Some(OwnedTerminator { kind, span }),
+        terminator: Some(OwnedTerminator {
+            diagnostic_origins: None,
+            kind,
+            span,
+        }),
     }
 }
 fn empty_function(id: usize, span: Span) -> RawOwnedFunction {
@@ -2002,6 +2010,7 @@ impl NestedRawBuilder<'_> {
                 let span = self.next_span();
                 let continuation = self.raw.blocks.len();
                 self.raw.blocks[self.current].terminator = Some(OwnedTerminator {
+                    diagnostic_origins: None,
                     kind: OwnedTerminatorKind::Invoke {
                         call,
                         continuation: BlockId(continuation),

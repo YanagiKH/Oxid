@@ -1,0 +1,101 @@
+{
+  "activations": 27,
+  "charged_operations": 506,
+  "evidence": "independent frozen source template prediction; no production execution",
+  "field_writes": 19,
+  "frame_census": {
+    "commit": {
+      "A": 0,
+      "C": 0,
+      "L": 0,
+      "O": 0,
+      "P": 0,
+      "R": 1,
+      "S": 10,
+      "X": 18
+    },
+    "dispatch": {
+      "A": 2,
+      "C": 1,
+      "L": 1,
+      "O": 0,
+      "P": 0,
+      "R": 1,
+      "S": 4,
+      "X": 28
+    },
+    "done": {
+      "A": 0,
+      "C": 0,
+      "L": 0,
+      "O": 0,
+      "P": 0,
+      "R": 1,
+      "S": 3,
+      "X": 11
+    },
+    "finish": {
+      "A": 0,
+      "C": 0,
+      "L": 0,
+      "O": 1,
+      "P": 4,
+      "R": 0,
+      "S": 7,
+      "X": 15
+    },
+    "main": {
+      "A": 6,
+      "C": 5,
+      "L": 3,
+      "O": 8,
+      "P": 32,
+      "R": 0,
+      "S": 26,
+      "X": 142
+    },
+    "relay": {
+      "A": 0,
+      "C": 0,
+      "L": 0,
+      "O": 2,
+      "P": 8,
+      "R": 0,
+      "S": 0,
+      "X": 16
+    },
+    "retry": {
+      "A": 0,
+      "C": 0,
+      "L": 0,
+      "O": 0,
+      "P": 0,
+      "R": 1,
+      "S": 4,
+      "X": 12
+    }
+  },
+  "loan_acquisitions": 24,
+  "normal_loan_releases": 24,
+  "payload_transfer_definition": {
+    "Invoke_owned_parameter_transfer": 2,
+    "MoveInitialize": 5,
+    "PrepareOwned": 2,
+    "ReturnOwned": 1
+  },
+  "peak_storage": {
+    "default_requested_reference_bytes": 279912,
+    "dynamic_reference_bytes": 1376,
+    "expanded_cells": 188,
+    "guard_wrapper_bytes": 8,
+    "native_arena_bytes": 560,
+    "path": [
+      "main",
+      "dispatch",
+      "commit"
+    ],
+    "three_frame_reference_bytes": 2200
+  },
+  "source_fuel": 1297,
+  "source_sha256": "dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2"
+}

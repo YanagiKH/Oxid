@@ -98,6 +98,8 @@ Oxid 0.9 is useful for experiments and small tools. Its `.oxb` files contain a s
 
 The long-term direction is a statically checked, native-compiled language. An opt-in [experimental LLVM preview](spec/native-preview.md) now compiles a bounded nonrecursive bool/unit/i32 subset to Linux x86_64 executables. Complete static-core semantics, Rust compatibility, and native AI training remain unavailable. Follow the [roadmap](docs/ROADMAP.md) and [implementation status](docs/architecture/current-baseline.md) for the current boundaries.
 
+The opt-in [ownership-foundations extension](spec/typed-preview.md#nominal-owned-structs-and-call-only-borrowing) for `--edition typed-preview` supports move-only scalar-field structs, whole moves/replacement and explicit call-only borrows. The [Batch pilot](fixtures/owned_source/batch.ox) combines those rules with loops and owned helper returns, producing 816; see the [source qualification](docs/architecture/owned-source-validation.md) for exact evidence and limits. Run/native `main` remains zero-argument and scalar; native scope remains Linux x86_64, LLVM 19.1.7 at O0. Legacy dynamic records are unchanged; stored references, heap/destructor safety and v1.0 completion are outside this increment.
+
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.
 
 ## Build from source
