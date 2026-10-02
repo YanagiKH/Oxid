@@ -100,8 +100,8 @@
     },
     {
       "path": "src/frontend/declaration_index/tests.rs",
-      "bytes": 18356,
-      "sha256": "c0c2772df58f280feb3c2684d52915bb256c14e181e5ae6cc738e138136e0921"
+      "bytes": 18857,
+      "sha256": "acc0851badfb0dbc5e956d9d0ce1c32907973e88d58a5ec0b336639574bc9d84"
     },
     {
       "path": "src/frontend/diagnostic.rs",
@@ -510,13 +510,13 @@
     },
     {
       "path": "src/frontend/project/unit2_tests.rs",
-      "bytes": 6496,
-      "sha256": "e97dfd6e9519f59b830de9989147fdb442a238e8e83046f0aa58d731bd20e45a"
+      "bytes": 7335,
+      "sha256": "8402dc8c6176e5d134ca26a5f13e5b2164295a3b4ffdc290ba440e6bb7dcec26"
     },
     {
       "path": "src/frontend/source.rs",
-      "bytes": 11118,
-      "sha256": "e78597297284b6473b4d6d7b172f73669ccc146b5066b2e5a5a8dfd5b23f1c89"
+      "bytes": 12395,
+      "sha256": "4928bf26220a08ce36dcbb0f939b912619169cf4e9a082ae26cf8d6554b6134f"
     },
     {
       "path": "src/frontend/typeck.rs",
@@ -568,5 +568,8 @@
       "bytes": 3884,
       "sha256": "9c4664937e5d04596bdd3ec73234ac2c1eb08fbc97e160a09dba6a2c606a8818"
     }
-  ]
+  ],
+  "previous_source_manifest_sha256": "bdeefc08c95824180ce2dadb9ddf79642e234907c3a1a15d3056773b4cdb8cb9",
+  "correction_base_commit": "47f9e168a2b5eb1d5996681e266747fb607de0b2",
+  "correction": "Checked Relaxed CAS source identities and platform-scoped loader tests; semantic corpus unchanged."
 }

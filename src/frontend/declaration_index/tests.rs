@@ -54,6 +54,7 @@ fn run(files: &[(&str, &str)]) -> (Result<Summary, Vec<Diagnostic>>, WorkMeter) 
     (result, work)
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn scalar_project_uses_real_global_calls_and_root_original_entry() {
     let(result,work)=run(&[("main.ox","mod a; use crate::a::f as g; fn helper() -> i32 { return g(); } fn main() -> i32 { return helper(); }"),("a.ox","pub fn f() -> i32 { return 7; }")]);
@@ -70,6 +71,7 @@ fn scalar_project_uses_real_global_calls_and_root_original_entry() {
         }
     )));
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn dense_per_kind_ids_precede_child_recursion() {
     let fixture = Fixture::new(&[
@@ -101,6 +103,7 @@ fn dense_per_kind_ids_precede_child_recursion() {
         assert_eq!(index.def_for(key).unwrap(), DefId(id));
     }
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn paired_import_failure_rolls_back_both_target_lanes() {
     let (result, work) = run(&[
@@ -141,6 +144,7 @@ fn paired_import_failure_rolls_back_both_target_lanes() {
         .iter()
         .any(|e| matches!(e, Observation::Frozen { .. })));
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn owned_inferred_read_and_rhs_first_write_use_requester_permission() {
     let child = "pub struct C { n:i32 } pub fn make()->C{return C{n:1};}";
@@ -163,6 +167,7 @@ fn owned_inferred_read_and_rhs_first_write_use_requester_permission() {
         assert_eq!((error.code, error.stage), (code, stage));
     }
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn construction_privacy_precedes_initializer_name_and_value_resolution() {
     let (result, _) = run(&[
@@ -177,9 +182,14 @@ fn construction_privacy_precedes_initializer_name_and_value_resolution() {
     assert_eq!(errors[0].secondary[0].0.file, SourceFileId(1));
 }
 #[test]
-fn signature_exposure_includes_external_and_canonical_names_preserve_identity() {
+fn signature_exposure_includes_external() {
     let (result, _) = run(&[("main.ox", "struct C{} pub fn make()->C{return C{};}")]);
     assert_eq!(result.unwrap_err()[0].code, "E0207");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn canonical_names_preserve_cross_module_identity() {
     let (result, _) = run(&[
         (
             "main.ox",
@@ -207,6 +217,11 @@ fn wrong_owner_and_stale_source_are_internal_failures() {
             .code,
         "E0500"
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn cross_file_requester_origins_are_internal_failures() {
     let fixture = Fixture::new(&[
         ("main.ox", "mod a; fn main()->(){return;}"),
         ("a.ox", "pub fn f()->(){return;}"),
@@ -333,6 +348,7 @@ fn measured_flat_rows_and_fixed_state() {
     const { assert!(FIXED_SCRATCH <= 4096) };
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn access_work_exhaustion_uses_each_actual_request_site() {
     let fixture = Fixture::new(&[
@@ -459,6 +475,7 @@ fn exact_work_query_cap_and_one_less_have_distinct_results() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn builtin_type_shortcut_rejects_cross_file_name_origins() {
     let fixture = Fixture::new(&[
@@ -493,6 +510,7 @@ fn builtin_type_shortcut_rejects_cross_file_name_origins() {
     assert_eq!(error.code, "E0500");
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn passive_trace_distinguishes_lookup_from_completed_constructor_and_borrow() {
     let (result, work) = run(&[
@@ -525,6 +543,10 @@ fn passive_trace_distinguishes_lookup_from_completed_constructor_and_borrow() {
             ..
         }
     )));
+}
+
+#[test]
+fn passive_trace_records_completed_whole_value_borrow() {
     let (result, work) = run(&[(
         "main.ox",
         "struct C{} fn take(x:&C)->(){return;} fn main()->(){let s=C{};take(&s);return;}",
@@ -544,6 +566,7 @@ fn passive_trace_distinguishes_lookup_from_completed_constructor_and_borrow() {
     )));
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn qualified_wrong_namespace_reports_only_the_terminal_name() {
     for (root, child, code) in [
@@ -575,6 +598,7 @@ fn qualified_wrong_namespace_reports_only_the_terminal_name() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn reference_exposure_reports_nominal_referent_without_borrow_prefix() {
     for reference in ["&T", "&mut T"] {

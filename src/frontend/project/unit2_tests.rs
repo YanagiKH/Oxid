@@ -54,6 +54,7 @@ fn single_file_private_syntax_selects_project_flavor_without_filesystem_policy()
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn global_owned_selection_scans_even_unused_loaded_modules() {
     let f = Fixture::new();
@@ -80,13 +81,19 @@ fn global_owned_selection_scans_even_unused_loaded_modules() {
 }
 
 #[test]
-fn invalid_project_files_never_load_their_declared_children() {
+fn invalid_project_root_never_loads_its_declared_children() {
     let f = Fixture::new();
     f.write("app.ox", "mod missing; use crate: :x;");
     let failure = f.load().unwrap_err();
     assert_eq!(failure.diagnostics[0].stage, "parse");
     assert_eq!(failure.sources.files().len(), 1);
     assert_eq!(failure.usage.probes, 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn invalid_project_child_never_loads_its_declared_children() {
+    let f = Fixture::new();
     f.write("app.ox", "mod child;");
     f.write("child.ox", "mod missing; pub use crate::f;");
     let failure = f.load().unwrap_err();
@@ -203,4 +210,28 @@ fn unit2_measured_layout_and_requested_inventory() {
         p.try_text(span).is_some()
     }));
     println!("validation span callbacks {spans}");
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn project_candidate_module_policy_is_explicit_on_unqualified_hosts() {
+    let f = Fixture::new();
+    f.write("app.ox", "pub mod child;");
+    let failure = f.load().unwrap_err();
+    let error = &failure.diagnostics[0];
+    assert_eq!((error.code, error.stage), ("E0005", "source"));
+    assert_eq!(
+        error.message,
+        "module source policy is not qualified on this host"
+    );
+    assert_eq!(
+        error.primary,
+        Some(Span {
+            file: SourceFileId(0),
+            start: 8,
+            end: 13
+        })
+    );
+    assert_eq!(failure.sources.files().len(), 1);
+    assert_eq!(failure.usage.probes, 0);
 }

@@ -168,8 +168,8 @@
     },
     {
       "path": "source-inputs.json",
-      "bytes": 19214,
-      "sha256": "bdeefc08c95824180ce2dadb9ddf79642e234907c3a1a15d3056773b4cdb8cb9"
+      "bytes": 19509,
+      "sha256": "074b419d2af8a2c44d834ba95363b9ca0f5ac059445806adf48bc2c1db1234ad"
     },
     {
       "path": "test_protocol.py",

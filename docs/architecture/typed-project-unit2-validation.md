@@ -228,3 +228,46 @@ normalized observations for independent replay. Build targets and generated
 source trees are excluded. Hosted Rust 1.99.0 layouts/results remain separate
 until that run completes. No feature-inventory, host expansion or M1/M2/v1.0
 completion claim follows from this private unit.
+
+## Hosted CI correction
+
+The first published Unit2 head, `47f9e168a2b5eb1d5996681e266747fb607de0b2`,
+exposed two qualification gaps. Rust 1.99.0 (`b940084d7`, compiler LLVM 23.1.1)
+deprecates AtomicU64::fetch_update, causing the warnings-denied Clippy gate to
+fail. Windows and macOS also ran 14 tests requiring the intentionally
+Linux-qualified child-module loader and reached its existing E0005 rejection.
+Those failing-head results remain historical evidence.
+
+The correction uses a checked Relaxed compare_exchange_weak loop, preserving
+successful old-value identity allocation, nonreuse and terminal exhaustion.
+Only tests requiring child-file loading are Linux-gated. Four mixed tests were
+split to keep their single-file checks portable, and ProjectCandidate has an
+explicit non-Linux E0005 test alongside the existing ModuleCandidate test.
+The production loader policy is unchanged.
+
+Official Rust 1.99.0 locally reproduces the hosted compiler identity. Both
+profiles pass 769 all-target tests with 21 ignored; warnings-denied Clippy,
+formatting and the focused source/index/project tests pass. The protocol suite
+passes 13 controls, and the Python suite runs 182 tests plus two skipped
+receipt-dependent classes. Independent Rust 1.98.1 and 1.99.0 probes exercise
+contention, exhaustion, allocation failures and retained-AST provenance;
+all 45 measured layouts match. Actual replacement-head Windows/macOS execution
+still requires the hosted matrix.
+
+The corrected source-input manifest is
+`074b419d2af8a2c44d834ba95363b9ca0f5ac059445806adf48bc2c1db1234ad`, and the
+portable package manifest is
+`4dae6a8de321b09d972d7dc345d19001332fe397ed05ccd3edaaf4f38a5db916`.
+Only three compiler file rows and their containing manifest identities change.
+The static corpus, all expectations and observation/comparison code are exact.
+The earlier v4 and first portable qualification identities above remain
+historical; this correction establishes its own source/toolchain results.
+
+The unchanged private Unit1 runner passes 69 cases per profile, the full public
+gate passes 35 cases and 560 exact comparisons, and the refreshed portable
+package passes 3,603 semantic cases and 21 resource tests per profile. Its terminal
+result SHA-256 is
+`31c08dc1fc27baee05a2d0c31f3f6d3c1eb33a8194bdd188817d9dc0d844aa1a`.
+Eight source/index seal probes, the repository verifier (122 sources/68 runnable
+programs) and the scalar literal/arithmetic oracles also pass. These results are
+new correction evidence; no additional old native corpus is counted.

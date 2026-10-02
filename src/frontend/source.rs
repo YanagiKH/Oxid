@@ -9,13 +9,15 @@ fn next_source_identity() -> Option<u64> {
     allocate_source_identity(&NEXT_SOURCE_IDENTITY)
 }
 fn allocate_source_identity(counter: &std::sync::atomic::AtomicU64) -> Option<u64> {
-    counter
-        .fetch_update(
-            std::sync::atomic::Ordering::Relaxed,
-            std::sync::atomic::Ordering::Relaxed,
-            |value| value.checked_add(1),
-        )
-        .ok()
+    use std::sync::atomic::Ordering::Relaxed;
+    let mut current = counter.load(Relaxed);
+    loop {
+        let next = current.checked_add(1)?;
+        match counter.compare_exchange_weak(current, next, Relaxed, Relaxed) {
+            Ok(previous) => return Some(previous),
+            Err(observed) => current = observed,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -227,6 +229,35 @@ mod tests {
         assert_eq!(allocate_source_identity(&counter), None);
         assert_eq!(allocate_source_identity(&counter), None);
         assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), u64::MAX);
+    }
+
+    #[test]
+    fn concurrent_source_identities_remain_unique_through_exhaustion() {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+        for (initial, successes) in [(1, 256), (u64::MAX - 4, 4)] {
+            let counter = AtomicU64::new(initial);
+            let mut identities = std::thread::scope(|scope| {
+                let workers: Vec<_> = (0..4)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            (0..64)
+                                .filter_map(|_| allocate_source_identity(&counter))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                workers
+                    .into_iter()
+                    .flat_map(|worker| worker.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            identities.sort_unstable();
+            assert_eq!(
+                identities,
+                (initial..initial + successes).collect::<Vec<_>>()
+            );
+            assert_eq!(counter.load(Relaxed), initial + successes);
+        }
     }
 
     fn file(text: &str) -> SourceMap {
