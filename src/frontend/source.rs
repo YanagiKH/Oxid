@@ -2,6 +2,24 @@
 
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 
+// Never reuse a parser/source association while an independently owned AST
+// might still exist. This counter is not a declaration or language identity.
+static NEXT_SOURCE_IDENTITY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+fn next_source_identity() -> Option<u64> {
+    allocate_source_identity(&NEXT_SOURCE_IDENTITY)
+}
+fn allocate_source_identity(counter: &std::sync::atomic::AtomicU64) -> Option<u64> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let mut current = counter.load(Relaxed);
+    loop {
+        let next = current.checked_add(1)?;
+        match counter.compare_exchange_weak(current, next, Relaxed, Relaxed) {
+            Ok(previous) => return Some(previous),
+            Err(observed) => current = observed,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SourceFileId(pub usize);
 
@@ -19,6 +37,7 @@ pub struct SourceMap {
 
 #[derive(Debug)]
 pub struct SourceFile {
+    identity: u64,
     id: SourceFileId,
     path: String,
     text: String,
@@ -42,6 +61,7 @@ impl SourceMap {
                 .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
         );
         self.files.push(SourceFile {
+            identity: next_source_identity().expect("source identity space exhausted"),
             id,
             path,
             text,
@@ -64,6 +84,7 @@ impl SourceMap {
             .count()
             .checked_add(1)
             .ok_or(ReserveFailure::Overflow)?;
+        let identity = next_source_identity().ok_or(ReserveFailure::Overflow)?;
         count
             .checked_mul(size_of::<usize>())
             .ok_or(ReserveFailure::Overflow)?;
@@ -83,6 +104,7 @@ impl SourceMap {
         );
         let id = SourceFileId(self.files.len());
         self.files.push(SourceFile {
+            identity,
             id,
             path,
             text,
@@ -121,6 +143,9 @@ impl SourceMap {
 }
 
 impl SourceFile {
+    pub(super) fn identity(&self) -> u64 {
+        self.identity
+    }
     pub(super) fn try_text(&self, span: Span) -> Option<&str> {
         if span.file != self.id || span.start > span.end {
             return None;
@@ -196,6 +221,44 @@ impl<'a> SourceView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_identity_exhaustion_never_wraps_or_reuses() {
+        let counter = std::sync::atomic::AtomicU64::new(u64::MAX - 1);
+        assert_eq!(allocate_source_identity(&counter), Some(u64::MAX - 1));
+        assert_eq!(allocate_source_identity(&counter), None);
+        assert_eq!(allocate_source_identity(&counter), None);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), u64::MAX);
+    }
+
+    #[test]
+    fn concurrent_source_identities_remain_unique_through_exhaustion() {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+        for (initial, successes) in [(1, 256), (u64::MAX - 4, 4)] {
+            let counter = AtomicU64::new(initial);
+            let mut identities = std::thread::scope(|scope| {
+                let workers: Vec<_> = (0..4)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            (0..64)
+                                .filter_map(|_| allocate_source_identity(&counter))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                workers
+                    .into_iter()
+                    .flat_map(|worker| worker.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            identities.sort_unstable();
+            assert_eq!(
+                identities,
+                (initial..initial + successes).collect::<Vec<_>>()
+            );
+            assert_eq!(counter.load(Relaxed), initial + successes);
+        }
+    }
 
     fn file(text: &str) -> SourceMap {
         let mut sources = SourceMap::new();

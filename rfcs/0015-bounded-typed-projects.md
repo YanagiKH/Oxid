@@ -1,19 +1,22 @@
 # RFC 0015: bounded typed modules, direct imports and visibility
 
 Status: proposed complete typed-project capability, with private Unit1 source-set
-and loader groundwork implemented. Public `typed-preview` check, run and compile
-remain single-file. `mod`, `use`, `pub` and qualified item paths are still rejected
-by the public parser. Private module discovery has execution evidence on Linux
-x86_64 only. Its code rejects non-Linux hosts; other Linux architectures have not
-been qualified. It does not resolve, link or execute a multi-file program.
+and loader groundwork and Unit2 shared declaration/import/visibility indexing
+implemented. Public `typed-preview` check, run and compile remain single-file.
+`mod`, `use`, `pub` and qualified item paths remain rejected by the public parser.
+Private project loading and type checking have execution evidence on Linux
+x86_64 only. The loader rejects non-Linux hosts; other Linux architectures have
+not been qualified. Linked project OIR and execution remain later work.
 
-Baseline: merged main `fbcfeb2a2de8fe9d335d6c8051d254cccdb663dc`, tree
+Proposal baseline: merged main `fbcfeb2a2de8fe9d335d6c8051d254cccdb663dc`, tree
 `658c83465aed3a1423483dcdcc23a3d10037131f`. This proposal extends
 [RFC 0014](0014-owned-structs-call-borrows.md) and the existing
 [typed](../spec/typed-preview.md) and [native](../spec/native-preview.md) contracts.
 Those specifications continue to describe the available source language until
-separate public activation. The [Unit1 support and validation ledger](../docs/architecture/typed-project-unit1-validation.md)
-records the current boundary and qualification status.
+separate public activation. The historical
+[Unit1 ledger](../docs/architecture/typed-project-unit1-validation.md) and current
+[Unit2 ledger](../docs/architecture/typed-project-unit2-validation.md) record their
+separate source identities, representation measurements and qualification.
 
 The architecture has been reviewed for staged implementation. That decision is
 not acceptance of the full implementation or public activation. Implementation
@@ -25,22 +28,27 @@ completion claim.
 
 Sections 1–10 specify the complete proposed capability. Their syntax examples,
 namespace/visibility outcomes, cross-file execution and pilots are requirements
-for later implementation, not source accepted by the Unit1 public commands.
+for the full capability. Public commands still accept only the single-file
+language in the typed and native specifications.
 
-| Area | Unit1 state |
+| Area | Implementation state |
 | --- | --- |
-| Immutable source set, file-aware text, per-file AST handles | Implemented privately; public one-file driver uses the source-set facade |
-| Explicit child discovery with `mod name;` / `pub mod name;` | Private parser mode and loader only; filesystem-policy evidence on Linux x86_64 |
-| `use`, public functions/structs/fields, qualified paths | Unimplemented, including in the current private parser mode |
-| Shared declarations, imports, visibility, global declaration index | Unimplemented; Unit2 |
+| Immutable source set, file-aware text, per-file AST handles | Unit1 groundwork; public one-file driver uses the source-set facade |
+| Explicit child discovery with `mod name;` / `pub mod name;` | Private parser/loader; filesystem-policy evidence on Linux x86_64 |
+| `use`, public functions/structs/fields, qualified item paths | Private ProjectCandidate mode in the existing parser; public syntax remains closed |
+| Shared declarations, imports, visibility, global declaration index | Unit2 private implementation and real scalar/owned resolution/type checking; ordinary single-file schedules use the same index |
 | Linked scalar/owned production and multi-file consumers | Unimplemented; Unit3 |
 | Multi-file public syntax and proposed pilots | Unavailable; separate Unit4 activation required |
 
-The private parser extends the existing parser; it is not a text pre-scan or a
-second grammar implementation. Its current discovery subset does not provide
-public visibility enforcement. One-file code keeps its previous local IDs,
-route selection and scalar/owned diagnostic schedules. An ordinary root with no
-module declarations acquires no new file-kind, canonicalization, case or path cap.
+The private parser extends the existing parser. The narrow ModuleCandidate and
+load_modules entry points preserve Unit1 discovery behavior; ProjectCandidate
+and load_project_candidate provide the new private grammar. The shared index
+checks effective visibility, signature exposure, construction and field access.
+Its seal certifies source associations, original conflicts and atomic imports;
+linked ownership verification remains separate. One-file code preserves its
+previous local IDs, route selection and distinct scalar/owned diagnostic
+schedules. An ordinary root with no module declarations acquires no new
+file-kind, canonicalization, case or path admission.
 
 ## 1. Decision, value and exact boundary
 

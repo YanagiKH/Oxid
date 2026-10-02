@@ -3,7 +3,8 @@ mod execute;
 mod lower;
 mod native;
 mod owned;
-mod owned_types;
+pub(super) mod owned_types;
+pub(super) mod project;
 mod source;
 mod verify;
 

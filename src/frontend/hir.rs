@@ -2,9 +2,15 @@
 pub use super::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 use super::{
     ast,
+    declaration_index::{
+        self as index, DeclarationFacts, DeclarationIndex, IndexLimits, QuerySession, SourceOwner,
+        TypeContext, WorkMeter,
+    },
     diagnostic::Diagnostic,
+    oir::owned_types::ValueTy,
     parser::MAX_DIAGNOSTICS,
-    source::{SourceFile, Span},
+    project::{budget::Allocator, ItemPathRef, ModuleId, SyntaxFlavor},
+    source::{SourceFile, SourceView, Span},
 };
 use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,25 +147,17 @@ pub struct Program {
     pub functions: Vec<Function>,
 }
 
-fn type_syntax(source: &SourceFile, ty: ast::TypeSyntax) -> Result<Ty, Box<Diagnostic>> {
-    if matches!(ty.kind, ast::TypeSyntaxKind::Reference { .. }) {
-        return Err(Diagnostic::new(
+fn type_syntax(
+    query: &mut QuerySession<'_, '_>,
+    requester: ModuleId,
+    ty: ast::TypeSyntax,
+) -> Result<Ty, Box<Diagnostic>> {
+    match query.value_type(requester, ty, TypeContext::Scalar)? {
+        ValueTy::Scalar(ty) => Ok(ty),
+        ValueTy::Owned(_) => Err(Diagnostic::new(
             "E0500",
             "resolve",
             "owned syntax entered scalar resolution",
-            Some(ty.span),
-        ));
-    }
-    // Unit types may contain trivia between parentheses.
-    let text = source.text_at(ty.span);
-    match text {
-        "bool" => Ok(Ty::Bool),
-        "i32" => Ok(Ty::I32),
-        _ if text.starts_with('(') => Ok(Ty::Unit),
-        _ => Err(Diagnostic::new(
-            "E0202",
-            "resolve",
-            format!("unknown typed-preview type `{text}`; expected bool, i32 or ()"),
             Some(ty.span),
         )),
     }
@@ -202,15 +200,36 @@ fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
 }
 
 pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<Diagnostic>> {
-    if let Some(module) = ast.modules.first() {
-        return Err(vec![*Diagnostic::new(
-            "E0500",
-            "resolve",
-            "project syntax entered single-file resolution",
-            Some(module.name),
-        )]);
-    }
-    if let Some(record) = ast.records.first() {
+    let sources =
+        SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
+    resolve_sources(sources)
+}
+
+pub(super) fn resolve_sources(sources: SourceOwner<'_>) -> Result<Program, Vec<Diagnostic>> {
+    resolve_sources_with_meter(sources, &WorkMeter::default(), &mut Allocator::default())
+}
+#[cfg(test)]
+pub(super) fn resolve_observed(
+    source: &SourceFile,
+    ast: &ast::Program,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Program, Vec<Diagnostic>> {
+    let sources =
+        SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
+    resolve_sources_with_meter(sources, work, allocator)
+}
+fn resolve_sources_with_meter(
+    sources: SourceOwner<'_>,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Program, Vec<Diagnostic>> {
+    if let Some(record) = sources
+        .ast(ModuleId(0))
+        .map_err(|e| vec![*e])?
+        .records
+        .first()
+    {
         return Err(vec![*Diagnostic::new(
             "E0500",
             "resolve",
@@ -218,37 +237,91 @@ pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<D
             Some(record.span),
         )]);
     }
-    let mut names = HashMap::new();
+    let facts = index::collect_originals(sources, IndexLimits::default(), work, allocator)
+        .map_err(|e| vec![*e])?;
+    if sources.flavor() == SyntaxFlavor::OriginalSingleFile {
+        let signatures = original_signatures(&facts, work)?;
+        let frozen = facts.finish(work, allocator)?;
+        resolve_bodies(&frozen, work, signatures)
+    } else {
+        let frozen = facts.finish(work, allocator)?;
+        resolve_project(&frozen, work)
+    }
+}
+
+fn signature(
+    query: &mut QuerySession<'_, '_>,
+    requester: ModuleId,
+    function: &ast::Function,
+) -> Result<Signature, Box<Diagnostic>> {
+    let params = function
+        .params
+        .iter()
+        .map(|p| type_syntax(query, requester, p.ty))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Signature {
+        params,
+        result: type_syntax(query, requester, function.result)?,
+        span: function.name,
+    })
+}
+
+pub(super) fn original_signatures(
+    facts: &DeclarationFacts<'_>,
+    work: &WorkMeter,
+) -> Result<Vec<Signature>, Vec<Diagnostic>> {
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
-    for (index, function) in ast.functions.iter().enumerate() {
-        let name = source.text_at(function.name);
-        match names.entry(name) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert((DefId(index), function.name));
-            }
-            std::collections::hash_map::Entry::Occupied(entry) => {
-                diagnostics.push(*duplicate(function.name, entry.get().1));
-                if diagnostics.len() >= MAX_DIAGNOSTICS {
-                    break;
-                }
+    for index in 0..facts.function_count() {
+        let id = DefId(index);
+        work.phase("original-conflicts");
+        let original = facts.function_original(id).map_err(|e| vec![*e])?;
+        if let Some(error) = facts.conflict(original, work).map_err(|e| vec![*e])? {
+            work.record_error(&error);
+            diagnostics.push(*error);
+            if diagnostics.len() >= MAX_DIAGNOSTICS {
+                break;
             }
         }
-        let signature: Result<Signature, Box<Diagnostic>> = (|| {
-            let params = function
-                .params
-                .iter()
-                .map(|p| type_syntax(source, p.ty))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Signature {
-                params,
-                result: type_syntax(source, function.result)?,
-                span: function.name,
-            })
-        })();
-        match signature {
-            Ok(signature) => signatures.push(signature),
-            Err(error) => diagnostics.push(*error),
+        let (key, module) = facts.function(id).map_err(|e| vec![*e])?;
+        let function = &facts.sources().ast(module).map_err(|e| vec![*e])?.functions[key.index];
+        work.phase("signatures");
+        work.signature_start(id, function.name);
+        match signature(&mut facts.signature_view(work), module, function) {
+            Ok(s) => signatures.push(s),
+            Err(error) => {
+                work.record_error(&error);
+                diagnostics.push(*error)
+            }
+        }
+        if diagnostics.len() >= MAX_DIAGNOSTICS {
+            break;
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(signatures)
+    } else {
+        Err(diagnostics)
+    }
+}
+
+pub(super) fn resolve_project(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<Program, Vec<Diagnostic>> {
+    work.phase("signatures");
+    let mut signatures = Vec::new();
+    let mut diagnostics = Vec::new();
+    for id in 0..index.function_count() {
+        let (key, module) = index.function(DefId(id)).map_err(|e| vec![*e])?;
+        let function = &index.sources().ast(module).map_err(|e| vec![*e])?.functions[key.index];
+        work.signature_start(DefId(id), function.name);
+        match signature(&mut index.query(work), module, function) {
+            Ok(s) => signatures.push(s),
+            Err(error) => {
+                work.record_error(&error);
+                diagnostics.push(*error)
+            }
         }
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
@@ -257,19 +330,37 @@ pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<D
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
+    resolve_bodies(index, work, signatures)
+}
+
+pub(super) fn resolve_bodies(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    signatures: Vec<Signature>,
+) -> Result<Program, Vec<Diagnostic>> {
+    work.phase("body-resolution");
     let mut functions = Vec::new();
-    for (index, function) in ast.functions.iter().enumerate() {
+    let mut diagnostics = Vec::new();
+    for id in 0..index.function_count() {
+        let (key, requester) = index.function(DefId(id)).map_err(|e| vec![*e])?;
+        let ast = index.sources().ast(requester).map_err(|e| vec![*e])?;
+        let source = index.sources().file(requester).map_err(|e| vec![*e])?;
         let mut resolver = Resolver {
             source,
             ast,
-            names: &names,
+            index,
+            work,
+            requester,
             scope: HashMap::new(),
             locals: Vec::new(),
             expressions: Vec::new(),
         };
-        match resolver.function(DefId(index), function) {
+        match resolver.function(DefId(id), &ast.functions[key.index]) {
             Ok(function) => functions.push(function),
-            Err(error) => diagnostics.push(*error),
+            Err(error) => {
+                work.record_error(&error);
+                diagnostics.push(*error)
+            }
         }
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
@@ -284,15 +375,17 @@ pub fn resolve(source: &SourceFile, ast: &ast::Program) -> Result<Program, Vec<D
         Err(diagnostics)
     }
 }
-struct Resolver<'a> {
+struct Resolver<'i, 'a> {
     source: &'a SourceFile,
     ast: &'a ast::Program,
-    names: &'a HashMap<&'a str, (DefId, Span)>,
+    index: &'i DeclarationIndex<'a>,
+    work: &'i WorkMeter,
+    requester: ModuleId,
     scope: HashMap<&'a str, (LocalId, Span)>,
     locals: Vec<Local>,
     expressions: Vec<Expr>,
 }
-impl<'a> Resolver<'a> {
+impl<'a> Resolver<'_, 'a> {
     fn text(&self, span: Span) -> &'a str {
         self.source.text_at(span)
     }
@@ -306,8 +399,12 @@ impl<'a> Resolver<'a> {
         if let Some((_, previous)) = self.scope.get(name) {
             return Err(duplicate(span, *previous));
         }
-        if let Some((_, previous)) = self.names.get(name) {
-            return Err(duplicate(span, *previous));
+        if let Some(previous) = self
+            .index
+            .query(self.work)
+            .value_binding_for_local_conflict(self.requester, span)?
+        {
+            return Err(duplicate(span, previous));
         }
         let id = LocalId(self.locals.len());
         self.locals.push(Local {
@@ -324,7 +421,15 @@ impl<'a> Resolver<'a> {
         function: &ast::Function,
     ) -> Result<Function, Box<Diagnostic>> {
         for param in &function.params {
-            self.bind(param.name, Some(type_syntax(self.source, param.ty)?), false)?;
+            self.bind(
+                param.name,
+                Some(type_syntax(
+                    &mut self.index.query(self.work),
+                    self.requester,
+                    param.ty,
+                )?),
+                false,
+            )?;
         }
         // Keep block IDs stable while resolving statements depth first. Only
         // currently active names stay in the lookup table; each scope removes
@@ -380,7 +485,7 @@ impl<'a> Resolver<'a> {
                 } => {
                     let init = self.expression(*init)?;
                     let annotation = annotation
-                        .map(|ty| type_syntax(self.source, ty))
+                        .map(|ty| type_syntax(&mut self.index.query(self.work), self.requester, ty))
                         .transpose()?;
                     let local = self.bind(*name, annotation, *mutable)?;
                     scopes
@@ -515,19 +620,14 @@ impl<'a> Resolver<'a> {
                 ExprKind::Local(local.0)
             }
             ast::ExprKind::Call { callee, args } => {
-                let name = self.text(*callee);
-                let target = self
-                    .names
-                    .get(name)
-                    .ok_or_else(|| {
-                        Diagnostic::new(
-                            "E0200",
-                            "resolve",
-                            format!("unknown direct function `{name}`"),
-                            Some(*callee),
-                        )
-                    })?
-                    .0;
+                let target = self.index.query(self.work).callee(
+                    self.requester,
+                    ItemPathRef {
+                        file: expr.span.file,
+                        path: *callee,
+                    },
+                    true,
+                )?;
                 let args = args
                     .iter()
                     .map(|arg| match arg {

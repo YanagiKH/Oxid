@@ -2,22 +2,66 @@
 use super::hir::*;
 use crate::frontend::{
     ast,
+    declaration_index::{
+        self as index, Access, DeclarationIndex, Exposure, IndexLimits, PreparedTypeName,
+        QuerySession, SourceOwner, TypeContext, WorkMeter,
+    },
     diagnostic::Diagnostic,
-    owned_diagnostic::{self, diagnostic, name, secondary},
+    owned_diagnostic::{self, diagnostic, secondary},
     parser::MAX_DIAGNOSTICS,
+    project::{budget::Allocator, ItemPathRef, ModuleId},
     source::{SourceFile, SourceMap, SourceView, Span},
 };
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub(super) struct ResolvedOwnedProgram<'src> {
+#[allow(clippy::large_enum_variant)] // Keep the checked legacy carrier allocation-free.
+enum IndexOwner<'src> {
+    Owned(DeclarationIndex<'src>),
+    Borrowed(&'src DeclarationIndex<'src>),
+}
+
+#[derive(Debug)]
+enum MeterOwner<'src> {
+    Owned(WorkMeter),
+    Borrowed(&'src WorkMeter),
+}
+#[derive(Debug)]
+pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
+    index: IndexOwner<'src>,
+    work: MeterOwner<'src>,
     sources: SourceView<'src>,
     records: Vec<Record>,
     signatures: Vec<Signature>,
     functions: Vec<Function>,
     entry: Option<DefId>,
 }
-impl ResolvedOwnedProgram<'_> {
+impl<'src> ResolvedOwnedProgram<'src> {
+    pub(super) fn index(&self) -> &DeclarationIndex<'src> {
+        match &self.index {
+            IndexOwner::Owned(index) => index,
+            IndexOwner::Borrowed(index) => index,
+        }
+    }
+    pub(super) fn work(&self) -> &WorkMeter {
+        match &self.work {
+            MeterOwner::Owned(work) => work,
+            MeterOwner::Borrowed(work) => work,
+        }
+    }
+    pub(super) fn query(&self) -> QuerySession<'_, 'src> {
+        self.index().query(self.work())
+    }
+    pub(super) fn requester(&self, function: DefId) -> Result<ModuleId, Box<Diagnostic>> {
+        self.index().function(function).map(|(_, module)| module)
+    }
+    pub(super) fn prepare_name(
+        &self,
+        record: RecordId,
+        at: Span,
+    ) -> Result<PreparedTypeName<'src>, Box<Diagnostic>> {
+        self.query().prepare_type_name(record, at)
+    }
     pub(super) fn text(&self, span: Span) -> &str {
         self.sources.text(span)
     }
@@ -52,52 +96,26 @@ fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
     )
 }
 fn value_type(
-    source: &SourceFile,
+    query: &mut QuerySession<'_, '_>,
+    requester: ModuleId,
     ty: ast::TypeSyntax,
-    records: &HashMap<&str, (RecordId, Span)>,
 ) -> Result<ValueTy, Box<Diagnostic>> {
-    match ty.kind {
-        ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
-        ast::TypeSyntaxKind::Name(span) => match text(source, span) {
-            "bool" => Ok(ValueTy::Scalar(Ty::Bool)),
-            "i32" => Ok(ValueTy::Scalar(Ty::I32)),
-            spelling => records
-                .get(spelling)
-                .map(|entry| ValueTy::Owned(entry.0))
-                .ok_or_else(|| {
-                    error(
-                        "E0202",
-                        format_args!("unknown type `{}`", name(spelling)),
-                        span,
-                    )
-                }),
-        },
-        ast::TypeSyntaxKind::Reference { .. } => Err(error(
-            "E0202",
-            format_args!("reference types are restricted to parameters"),
-            ty.span,
-        )),
-    }
+    query.value_type(requester, ty, TypeContext::Value)
 }
 fn parameter_type(
-    source: &SourceFile,
+    query: &mut QuerySession<'_, '_>,
+    requester: ModuleId,
     ty: ast::TypeSyntax,
-    records: &HashMap<&str, (RecordId, Span)>,
 ) -> Result<ParameterTy, Box<Diagnostic>> {
     if let ast::TypeSyntaxKind::Reference { mutable, referent } = ty.kind {
-        let record = records
-            .get(text(source, referent))
-            .ok_or_else(|| {
-                error(
-                    "E0202",
-                    format_args!(
-                        "reference parameter requires a record type, found `{}`",
-                        name(text(source, referent))
-                    ),
-                    referent,
-                )
-            })?
-            .0;
+        let record = query.record_type(
+            requester,
+            ItemPathRef {
+                file: ty.span.file,
+                path: referent,
+            },
+            TypeContext::Reference,
+        )?;
         Ok(ParameterTy::Reference {
             record,
             kind: if mutable {
@@ -107,7 +125,7 @@ fn parameter_type(
             },
         })
     } else {
-        value_type(source, ty, records).map(ParameterTy::Value)
+        value_type(query, requester, ty).map(ParameterTy::Value)
     }
 }
 fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
@@ -139,103 +157,115 @@ fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diag
 #[cfg(test)]
 pub(super) fn resolve<'src>(
     source: &'src SourceFile,
-    ast: &ast::Program,
+    ast: &'src ast::Program,
 ) -> Result<ResolvedOwnedProgram<'src>, Vec<Diagnostic>> {
     resolve_with_view(source, ast, SourceView::Single(source))
 }
-
 pub(super) fn resolve_in_map<'src>(
     source: &'src SourceFile,
-    ast: &ast::Program,
+    ast: &'src ast::Program,
     sources: &'src SourceMap,
 ) -> Result<ResolvedOwnedProgram<'src>, Vec<Diagnostic>> {
     resolve_with_view(source, ast, SourceView::Map(sources))
 }
-
 fn resolve_with_view<'src>(
     source: &'src SourceFile,
-    ast: &ast::Program,
-    source_view: SourceView<'src>,
+    ast: &'src ast::Program,
+    view: SourceView<'src>,
 ) -> Result<ResolvedOwnedProgram<'src>, Vec<Diagnostic>> {
-    // Match the already qualified declaration envelope before name/body work.
-    // These producer checks do not replace independent raw declaration checks.
-    if crate::frontend::oir::owned_types::admit_declaration_counts(
-        ast.records.iter().map(|record| record.fields.len()),
-    )
-    .is_err()
-    {
-        return Err(vec![*error(
-            "E0400",
-            format_args!("owned declaration resource limit exceeded"),
-            source.span(0, 0),
-        )]);
-    }
-    let mut names = HashMap::new();
-    let mut record_names = HashMap::new();
+    let sources = SourceOwner::original(source, ast, view).map_err(|e| vec![*e])?;
+    resolve_sources(sources)
+}
+pub(in crate::frontend) fn resolve_sources(
+    sources: SourceOwner<'_>,
+) -> Result<ResolvedOwnedProgram<'_>, Vec<Diagnostic>> {
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let (index, (records, signatures, functions)) =
+        resolve_source_parts(sources, &work, &mut allocator)?;
+    let entry = index.root_original_main();
+    Ok(ResolvedOwnedProgram {
+        sources: sources.view(),
+        index: IndexOwner::Owned(index),
+        work: MeterOwner::Owned(work),
+        records,
+        signatures,
+        functions,
+        entry,
+    })
+}
+#[cfg(test)]
+pub(in crate::frontend::oir) fn resolve_observed<'s>(
+    source: &'s SourceFile,
+    ast: &'s ast::Program,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let sources =
+        SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
+    let (index, (records, signatures, functions)) = resolve_source_parts(sources, work, allocator)?;
+    let entry = index.root_original_main();
+    Ok(ResolvedOwnedProgram {
+        sources: sources.view(),
+        index: IndexOwner::Owned(index),
+        work: MeterOwner::Borrowed(work),
+        records,
+        signatures,
+        functions,
+        entry,
+    })
+}
+fn resolve_source_parts<'s>(
+    sources: SourceOwner<'s>,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<(DeclarationIndex<'s>, ResolvedParts), Vec<Diagnostic>> {
+    let facts = index::collect_originals(sources, IndexLimits::default(), work, allocator)
+        .map_err(|e| vec![*e])?;
+    let index = facts.finish(work, allocator)?;
+    let parts = resolve_index(&index, work)?;
+    Ok((index, parts))
+}
+pub(in crate::frontend) fn resolve_project<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let (records, signatures, functions) = resolve_index(index, work)?;
+    Ok(ResolvedOwnedProgram {
+        sources: index.sources().view(),
+        index: IndexOwner::Borrowed(index),
+        work: MeterOwner::Borrowed(work),
+        records,
+        signatures,
+        functions,
+        entry: index.root_original_main(),
+    })
+}
+type ResolvedParts = (Vec<Record>, Vec<Signature>, Vec<Function>);
+fn resolve_index(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<ResolvedParts, Vec<Diagnostic>> {
+    let sources = index.sources();
     let mut diagnostics = Vec::new();
-    for item in &ast.items {
-        if diagnostics.len() >= MAX_DIAGNOSTICS {
-            break;
-        }
-        let result = match *item {
-            ast::ItemId::Module(index) => Err(error(
-                "E0500",
-                format_args!("project syntax entered single-file resolution"),
-                ast.modules[index].name,
-            )),
-            ast::ItemId::Function(index) => {
-                let span = ast.functions[index].name;
-                match names.entry(text(source, span)) {
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert((DefId(index), span));
-                        Ok(())
-                    }
-                    std::collections::hash_map::Entry::Occupied(entry) => {
-                        Err(duplicate(span, entry.get().1))
-                    }
-                }
-            }
-            ast::ItemId::Struct(index) => {
-                let span = ast.records[index].name;
-                if matches!(text(source, span), "bool" | "i32") {
-                    Err(error(
-                        "E0202",
-                        format_args!("scalar type names cannot be redeclared"),
-                        span,
-                    ))
-                } else {
-                    match record_names.entry(text(source, span)) {
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            entry.insert((RecordId(index), span));
-                            Ok(())
-                        }
-                        std::collections::hash_map::Entry::Occupied(entry) => {
-                            Err(duplicate(span, entry.get().1))
-                        }
-                    }
-                }
-            }
-        };
-        if let Err(error) = result {
-            diagnostics.push(*error);
-        }
-    }
-    if !diagnostics.is_empty() {
-        return Err(diagnostics);
-    }
     let mut records = Vec::new();
-    for (index, record) in ast.records.iter().enumerate() {
+    work.phase("record-fields");
+    for id in 0..index.record_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
+        let (key, module) = index.record(RecordId(id)).map_err(|e| vec![*e])?;
+        let record = &sources.ast(module).map_err(|e| vec![*e])?.records[key.index];
+        work.record_start(RecordId(id), record.name);
         let result = (|| {
             let mut fields = Vec::new();
             let mut names = HashMap::new();
             for field in &record.fields {
-                if let Some(first) = names.insert(text(source, field.name), field.name) {
+                if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ValueTy::Scalar(ty) = value_type(source, field.ty, &record_names)? else {
+                let ValueTy::Scalar(ty) = value_type(&mut index.query(work), module, field.ty)?
+                else {
                     return Err(error(
                         "E0202",
                         format_args!("record fields must have scalar bool, i32 or () type"),
@@ -244,7 +274,7 @@ fn resolve_with_view<'src>(
                 };
                 fields.push(Field {
                     id: FieldId {
-                        record: RecordId(index),
+                        record: RecordId(id),
                         index: fields.len(),
                     },
                     ty,
@@ -253,7 +283,7 @@ fn resolve_with_view<'src>(
                 });
             }
             Ok(Record {
-                id: RecordId(index),
+                id: RecordId(id),
                 name_span: record.name,
                 span: record.span,
                 end: record.end,
@@ -262,21 +292,28 @@ fn resolve_with_view<'src>(
         })();
         match result {
             Ok(record) => records.push(record),
-            Err(error) => diagnostics.push(*error),
+            Err(error) => {
+                work.record_error(&error);
+                diagnostics.push(*error)
+            }
         }
     }
+    work.phase("signatures");
     let mut signatures = Vec::new();
-    for function in &ast.functions {
+    for id in 0..index.function_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
+        let (key, module) = index.function(DefId(id)).map_err(|e| vec![*e])?;
+        let function = &sources.ast(module).map_err(|e| vec![*e])?.functions[key.index];
+        work.signature_start(DefId(id), function.name);
         let result: Result<Signature, Box<Diagnostic>> = (|| {
             let params = function
                 .params
                 .iter()
-                .map(|p| parameter_type(source, p.ty, &record_names))
+                .map(|p| parameter_type(&mut index.query(work), module, p.ty))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = value_type(source, function.result, &record_names)?;
+            let result = value_type(&mut index.query(work), module, function.result)?;
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
@@ -284,7 +321,7 @@ fn resolve_with_view<'src>(
                         ..
                     } = statement.kind
                     {
-                        value_type(source, ty, &record_names)?;
+                        value_type(&mut index.query(work), module, ty)?;
                     }
                 }
             }
@@ -296,57 +333,137 @@ fn resolve_with_view<'src>(
         })();
         match result {
             Ok(signature) => signatures.push(signature),
-            Err(error) => diagnostics.push(*error),
+            Err(error) => {
+                work.record_error(&error);
+                diagnostics.push(*error)
+            }
         }
     }
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
-    let mut functions = Vec::new();
-    for (index, function) in ast.functions.iter().enumerate() {
+    work.phase("exposure");
+    // Exposure consumes already selected nominal identities; it does not resolve
+    // signatures a second time or consult caller enumeration.
+    for (id, signature) in signatures.iter().enumerate() {
+        let (key, module) = index.function(DefId(id)).map_err(|e| vec![*e])?;
+        let function = &sources.ast(module).map_err(|e| vec![*e])?.functions[key.index];
+        let params = signature
+            .params
+            .iter()
+            .zip(&function.params)
+            .map(|(ty, p)| {
+                (
+                    match *ty {
+                        ParameterTy::Value(ValueTy::Owned(r))
+                        | ParameterTy::Reference { record: r, .. } => Some(r),
+                        _ => None,
+                    },
+                    &p.ty,
+                )
+            });
+        let result = (
+            match signature.result {
+                ValueTy::Owned(r) => Some(r),
+                _ => None,
+            },
+            &function.result,
+        );
+        for (record, ty) in params.chain(std::iter::once(result)) {
+            let Some(record) = record else { continue };
+            let at = match ty.kind {
+                ast::TypeSyntaxKind::Reference { referent, .. } => sources
+                    .path_span(ItemPathRef {
+                        file: ty.span.file,
+                        path: referent,
+                    })
+                    .map_err(|e| vec![*e])?,
+                _ => ty.span,
+            };
+            match index
+                .query(work)
+                .signature_exposure(DefId(id), record, at)
+                .map_err(|e| vec![*e])?
+            {
+                Exposure::Allowed => (),
+                Exposure::Denied { record, restrictor } => {
+                    let mut error = secondary(
+                        error(
+                            "E0207",
+                            format_args!("function signature exposes a less visible record type"),
+                            at,
+                        ),
+                        record,
+                        format_args!("record type declared here"),
+                    );
+                    if let Some(restrictor) = restrictor {
+                        error = secondary(
+                            error,
+                            restrictor,
+                            format_args!("restrictive module declared here"),
+                        );
+                    }
+                    work.record_error(&error);
+                    diagnostics.push(*error);
+                    break;
+                }
+            }
+        }
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
+    }
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+    work.phase("body-resolution");
+    let mut functions = Vec::new();
+    for id in 0..index.function_count() {
+        if diagnostics.len() >= MAX_DIAGNOSTICS {
+            break;
+        }
+        let (key, requester) = index.function(DefId(id)).map_err(|e| vec![*e])?;
+        let ast = sources.ast(requester).map_err(|e| vec![*e])?;
         let mut resolver = Resolver {
-            source,
             ast,
-            names: &names,
-            record_names: &record_names,
+            index,
+            work,
+            requester,
             records: &records,
             scope: HashMap::new(),
             bindings: Vec::new(),
             expressions: Vec::new(),
         };
-        match resolver.function(DefId(index), function) {
+        match resolver.function(DefId(id), &ast.functions[key.index]) {
             Ok(function) => functions.push(function),
-            Err(error) => diagnostics.push(*error),
+            Err(error) => {
+                work.record_error(&error);
+                diagnostics.push(*error)
+            }
         }
     }
     if diagnostics.is_empty() {
-        Ok(ResolvedOwnedProgram {
-            sources: source_view,
-            records,
-            signatures,
-            functions,
-            entry: names.get("main").map(|e| e.0),
-        })
+        Ok((records, signatures, functions))
     } else {
         Err(diagnostics)
     }
 }
-struct Resolver<'a> {
-    source: &'a SourceFile,
+struct Resolver<'i, 'a> {
     ast: &'a ast::Program,
-    names: &'a HashMap<&'a str, (DefId, Span)>,
-    record_names: &'a HashMap<&'a str, (RecordId, Span)>,
-    records: &'a [Record],
+    index: &'i DeclarationIndex<'a>,
+    work: &'i WorkMeter,
+    requester: ModuleId,
+    records: &'i [Record],
     scope: HashMap<&'a str, (BindingId, Span)>,
     bindings: Vec<Binding>,
     expressions: Vec<Expr>,
 }
-impl<'a> Resolver<'a> {
+impl<'a> Resolver<'_, 'a> {
     fn text(&self, span: Span) -> &'a str {
-        self.source.text_at(span)
+        self.index
+            .sources()
+            .text(span)
+            .expect("validated source span")
     }
     fn lookup(&self, span: Span) -> Result<BindingId, Box<Diagnostic>> {
         self.scope
@@ -375,8 +492,12 @@ impl<'a> Resolver<'a> {
         if let Some((_, previous)) = self.scope.get(name) {
             return Err(duplicate(span, *previous));
         }
-        if let Some((_, previous)) = self.names.get(name) {
-            return Err(duplicate(span, *previous));
+        if let Some(previous) = self
+            .index
+            .query(self.work)
+            .value_binding_for_local_conflict(self.requester, span)?
+        {
+            return Err(duplicate(span, previous));
         }
         let id = BindingId(self.bindings.len());
         self.bindings.push(Binding {
@@ -457,7 +578,7 @@ impl<'a> Resolver<'a> {
                 } => {
                     let init = self.expression(*init)?;
                     let annotation = annotation
-                        .map(|ty| value_type(self.source, ty, self.record_names))
+                        .map(|ty| value_type(&mut self.index.query(self.work), self.requester, ty))
                         .transpose()?;
                     let local =
                         self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
@@ -587,20 +708,40 @@ impl<'a> Resolver<'a> {
                 field_span: *field,
             },
             ast::ExprKind::StructLiteral { record, fields } => {
-                let record = self
-                    .record_names
-                    .get(self.text(*record))
-                    .ok_or_else(|| {
-                        error(
-                            "E0202",
-                            format_args!(
-                                "unknown record type `{}`",
-                                owned_diagnostic::name(self.text(*record))
-                            ),
-                            *record,
-                        )
-                    })?
-                    .0;
+                let path = *record;
+                let at = self.index.sources().path_span(ItemPathRef {
+                    file: expr.span.file,
+                    path,
+                })?;
+                let record = self.index.query(self.work).record_type(
+                    self.requester,
+                    ItemPathRef {
+                        file: expr.span.file,
+                        path,
+                    },
+                    TypeContext::Constructor,
+                )?;
+                if let Access::Denied(field) =
+                    self.index
+                        .query(self.work)
+                        .construction_access(self.requester, record, at)?
+                {
+                    let mut primary = at;
+                    for init in fields {
+                        if self
+                            .index
+                            .query(self.work)
+                            .initializer_matches_field(field, init.name)?
+                        {
+                            primary = init.name;
+                            break;
+                        }
+                    }
+                    return Err(self
+                        .index
+                        .query(self.work)
+                        .private_field_diagnostic(field, primary, "resolve")?);
+                }
                 let declared = &self.records[record.0];
                 let mut seen = HashMap::new();
                 let mut resolved = Vec::new();
@@ -629,6 +770,14 @@ impl<'a> Resolver<'a> {
                         span: field.span,
                     });
                 }
+                #[cfg(test)]
+                self.work
+                    .observe(crate::frontend::declaration_index::Observation::Target {
+                        operation: "constructor-resolved",
+                        origin: at,
+                        kind: "record",
+                        id: record.0,
+                    });
                 ExprKind::StructLiteral {
                     record,
                     fields: resolved,
@@ -652,22 +801,14 @@ impl<'a> Resolver<'a> {
                 ExprKind::Binding(local.0)
             }
             ast::ExprKind::Call { callee, args } => {
-                let name = self.text(*callee);
-                let target = self
-                    .names
-                    .get(name)
-                    .ok_or_else(|| {
-                        diagnostic(
-                            "E0200",
-                            "resolve",
-                            format_args!(
-                                "unknown direct function `{}`",
-                                owned_diagnostic::name(name)
-                            ),
-                            Some(*callee),
-                        )
-                    })?
-                    .0;
+                let target = self.index.query(self.work).callee(
+                    self.requester,
+                    ItemPathRef {
+                        file: expr.span.file,
+                        path: *callee,
+                    },
+                    false,
+                )?;
                 let args = args
                     .iter()
                     .map(|arg| match arg {
@@ -771,20 +912,20 @@ impl<'a> Resolver<'a> {
 #[cfg(test)]
 mod source_identity_tests {
     use super::*;
-
     #[test]
     fn resolved_owned_names_select_each_original_file() {
         let mut map = SourceMap::new();
-        let first = map.add("first.ox".into(), "aé".into());
-        let second = map.add("second.ox".into(), "xyz".into());
-        let program = ResolvedOwnedProgram {
-            sources: SourceView::Map(&map),
-            records: Vec::new(),
-            signatures: Vec::new(),
-            functions: Vec::new(),
-            entry: None,
-        };
-        assert_eq!(program.text(map.get(first).span(1, 3)), "é");
-        assert_eq!(program.text(map.get(second).span(1, 3)), "yz");
+        let first = map.add("first.ox".into(), "fn old() -> () { return; }".into());
+        let second = map.add(
+            "second.ox".into(),
+            "struct C {} fn main() -> () { return; }".into(),
+        );
+        let file = map.get(second);
+        let ast = crate::frontend::parser::parse(file, crate::frontend::lexer::lex(file).unwrap())
+            .unwrap();
+        let program = resolve_in_map(file, &ast, &map).unwrap();
+        assert_eq!(program.text(map.get(first).span(3, 6)), "old");
+        assert_eq!(program.text(map.get(second).span(7, 8)), "C");
+        assert_eq!(program.index().function(DefId(0)).unwrap().0.file, second);
     }
 }

@@ -1,0 +1,404 @@
+{
+  "schema": 1,
+  "status": "pre-candidate-exact-prose-bindings",
+  "authority_prose_sha256": "0a6723da18fba9226971846a2804acc448ec94f2025a9a81263fe819359ac2b4",
+  "selection_basis": "Frozen oracle wording_variant and structural secondary count only; no candidate message or code observation consulted.",
+  "diagnostics": [
+    {
+      "case": "D-exposure-private-root",
+      "diagnostic_index": 0,
+      "template": "E0207-record",
+      "structural_expected_sha256": "f309e34e763cfc29cfdb1e6943fa511a0e06aaeaecf23e6da4008646bac967eb",
+      "expected": {
+        "message": "function signature exposes a less visible record type",
+        "labels": [
+          "record type declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "E-inferred-field-immutable-target",
+      "diagnostic_index": 0,
+      "template": "E0206-field",
+      "structural_expected_sha256": "f9506d4ed770662fa5a2086f4e03ac282eacc3efd317f56f42ee388fbee3aa1d",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "E-inferred-field-read",
+      "diagnostic_index": 0,
+      "template": "E0206-field",
+      "structural_expected_sha256": "c0765a8e7ce4c40411035742a5443d6d947a62e716a28229862e323a6dab96d8",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "E-inferred-field-valid-rhs",
+      "diagnostic_index": 0,
+      "template": "E0206-field",
+      "structural_expected_sha256": "faaeca21114ac127ef2e954b7edfe27907797c8a96c7e9ed23078e886c5debbf",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "E-inferred-field-wrong-rhs-type",
+      "diagnostic_index": 0,
+      "template": "E0206-field",
+      "structural_expected_sha256": "faaeca21114ac127ef2e954b7edfe27907797c8a96c7e9ed23078e886c5debbf",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "constructor-declaration-order",
+      "diagnostic_index": 0,
+      "template": "E0206-construction",
+      "structural_expected_sha256": "32376502a54ca72d73967dab4897ab5579148be87b22c1a2d0801a02eff4b216",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "constructor-first-private-omitted",
+      "diagnostic_index": 0,
+      "template": "E0206-construction",
+      "structural_expected_sha256": "3c73e76f9ce308064f648e586c4371424e16caf432990efcb6a0531b49db0449",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "constructor-private-duplicate",
+      "diagnostic_index": 0,
+      "template": "E0206-construction",
+      "structural_expected_sha256": "53b92f0e9f3cf4f31a0ee9c841c429ce2818b364bbac1971430a9874430c6421",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "constructor-private-omitted",
+      "diagnostic_index": 0,
+      "template": "E0206-construction",
+      "structural_expected_sha256": "3c73e76f9ce308064f648e586c4371424e16caf432990efcb6a0531b49db0449",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "constructor-private-supplied",
+      "diagnostic_index": 0,
+      "template": "E0206-construction",
+      "structural_expected_sha256": "53b92f0e9f3cf4f31a0ee9c841c429ce2818b364bbac1971430a9874430c6421",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "constructor-private-unknown",
+      "diagnostic_index": 0,
+      "template": "E0206-construction",
+      "structural_expected_sha256": "3c73e76f9ce308064f648e586c4371424e16caf432990efcb6a0531b49db0449",
+      "expected": {
+        "message": "record field is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "exposure-alias-retains-original-domain",
+      "diagnostic_index": 0,
+      "template": "E0207-record",
+      "structural_expected_sha256": "1858ca854ea7a74d4629f1e020d79ba20591d9f555e8b81dfd317b02fa6e2708",
+      "expected": {
+        "message": "function signature exposes a less visible record type",
+        "labels": [
+          "record type declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "exposure-private-child-mutable-private-type",
+      "diagnostic_index": 0,
+      "template": "E0207-record",
+      "structural_expected_sha256": "87c55d62fdd15c16e11e98247af258005aa27ca9035b480d94cc9110ed7a3390",
+      "expected": {
+        "message": "function signature exposes a less visible record type",
+        "labels": [
+          "record type declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "exposure-private-child-shared-private-type",
+      "diagnostic_index": 0,
+      "template": "E0207-record",
+      "structural_expected_sha256": "b4c4cb811f907a4926075ab3534f2b6d4bc2ea7daf2c39c996b83b93d3ae2a63",
+      "expected": {
+        "message": "function signature exposes a less visible record type",
+        "labels": [
+          "record type declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "exposure-private-child-value-private-type",
+      "diagnostic_index": 0,
+      "template": "E0207-record",
+      "structural_expected_sha256": "35af097d6e6b34c5a85e5756c2bdd4fa82bbd704319766562d8b577fa868d659",
+      "expected": {
+        "message": "function signature exposes a less visible record type",
+        "labels": [
+          "record type declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "exposure-restrictive-ancestor-secondary",
+      "diagnostic_index": 0,
+      "template": "E0207-restrictive-ancestor",
+      "structural_expected_sha256": "9f65bb264963020fbea8bb071ae6f267cbdd33212d19b766026ec653aa397a9c",
+      "expected": {
+        "message": "function signature exposes a less visible record type",
+        "labels": [
+          "record type declared here",
+          "restrictive module declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "import-endpoint-alias-later",
+      "diagnostic_index": 0,
+      "template": "E0205-endpoint-alias-only",
+      "structural_expected_sha256": "82a6537d1d3ebdd33fe2798d1e0bcb44ba6d89491e60f33945ef9ef86a4900ab",
+      "expected": {
+        "message": "absolute path endpoint is not an original function or record",
+        "labels": [
+          "import alias declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "import-endpoint-missing",
+      "diagnostic_index": 0,
+      "template": "E0205-endpoint-without-alias",
+      "structural_expected_sha256": "7add05d36a78b2696b2b4c3c956edf779e129a692d6d991ae4a409bc1e011002",
+      "expected": {
+        "message": "absolute path endpoint is not an original function or record",
+        "labels": [],
+        "notes": []
+      }
+    },
+    {
+      "case": "import-endpoint-module",
+      "diagnostic_index": 0,
+      "template": "E0205-endpoint-without-alias",
+      "structural_expected_sha256": "654517ce42ac5dc82da90ba3a3913bbd10f89b0b0e50d4fd153f1b6b170baec7",
+      "expected": {
+        "message": "absolute path endpoint is not an original function or record",
+        "labels": [],
+        "notes": []
+      }
+    },
+    {
+      "case": "pair-private-both",
+      "diagnostic_index": 0,
+      "template": "E0206-item",
+      "structural_expected_sha256": "ee1c20260566971117fc65b4b0ec8bd857d15b1b1baf584f25a43f4afabd6486",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "pair-private-both",
+      "diagnostic_index": 1,
+      "template": "E0206-item",
+      "structural_expected_sha256": "ee1c20260566971117fc65b4b0ec8bd857d15b1b1baf584f25a43f4afabd6486",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "pair-private-type",
+      "diagnostic_index": 0,
+      "template": "E0206-item",
+      "structural_expected_sha256": "e5f5c33d215e75036472db38cec273061a33542a2030cf48a6cb35a8504663cf",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "pair-private-type",
+      "diagnostic_index": 1,
+      "template": "E0206-item",
+      "structural_expected_sha256": "e5f5c33d215e75036472db38cec273061a33542a2030cf48a6cb35a8504663cf",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "pair-private-value",
+      "diagnostic_index": 0,
+      "template": "E0206-item",
+      "structural_expected_sha256": "9e62e5c8259ba24148eb47d60e5b9e8cf26b9132fd2195141f9a2c15adfed65f",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "pair-private-value",
+      "diagnostic_index": 1,
+      "template": "E0206-item",
+      "structural_expected_sha256": "9e62e5c8259ba24148eb47d60e5b9e8cf26b9132fd2195141f9a2c15adfed65f",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "path-first-segment-alias-kind",
+      "diagnostic_index": 0,
+      "template": "E0205-intermediate-alias-only",
+      "structural_expected_sha256": "23d044fcf2db25988a46a66bae65677b6eeffa85a2263e0035f736d1b0caa551",
+      "expected": {
+        "message": "invalid absolute item path",
+        "labels": [
+          "import alias declared here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "path-first-segment-missing",
+      "diagnostic_index": 0,
+      "template": "E0205-intermediate-without-alias",
+      "structural_expected_sha256": "9308e83dfbd91d90a09140a7c7add799cb805d3766c750b0cbe36db10e1c190f",
+      "expected": {
+        "message": "invalid absolute item path",
+        "labels": [],
+        "notes": []
+      }
+    },
+    {
+      "case": "path-first-segment-private",
+      "diagnostic_index": 0,
+      "template": "E0206-item",
+      "structural_expected_sha256": "5240e027284c66a212654a132f96ed00fa9a52927e36c517317120016f6848b6",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "path-first-segment-wrong-kind",
+      "diagnostic_index": 0,
+      "template": "E0205-intermediate-without-alias",
+      "structural_expected_sha256": "0735384a31da13f835f418a52b7bf255c52f2d4676632526d11ccd499951a91a",
+      "expected": {
+        "message": "invalid absolute item path",
+        "labels": [],
+        "notes": []
+      }
+    },
+    {
+      "case": "qualified-private-endpoint-type",
+      "diagnostic_index": 0,
+      "template": "E0206-item",
+      "structural_expected_sha256": "d85646b1b9e21daa1fc4118a74d31d980046c5a16b444de39e3ff706b1288fe7",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    },
+    {
+      "case": "qualified-private-endpoint-value",
+      "diagnostic_index": 0,
+      "template": "E0206-item",
+      "structural_expected_sha256": "2a406d2cbac94f62317325249c490e0397669dd2ad90af5c98cd253532bf3509",
+      "expected": {
+        "message": "item is private to its declaring module",
+        "labels": [
+          "private declaration here"
+        ],
+        "notes": []
+      }
+    }
+  ]
+}

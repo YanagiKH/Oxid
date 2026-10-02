@@ -1,13 +1,16 @@
 //! Immutable source ownership and privately gated, declaration-only loading.
 //!
 //! Public dispatch uses `load_original`: modules/imports/pub/paths stay disabled.
-//! The private loader implements only mod/pub mod source discovery in this unit.
+//! Private candidate loading shares the parser and source-discovery owner.
 #![allow(dead_code)] // Private project facade is staged ahead of linked resolution.
 
 pub(super) mod budget;
 mod filesystem;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+#[path = "project/unit2_tests.rs"]
+mod unit2_tests;
 
 use super::{
     ast,
@@ -39,6 +42,11 @@ pub(super) struct RecordAstKey {
 pub(super) struct ExprKey {
     pub file: SourceFileId,
     pub expression: ast::ExprId,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ItemPathRef {
+    pub file: SourceFileId,
+    pub path: ast::ItemPath,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BlockKey {
@@ -146,6 +154,14 @@ impl ProjectSources {
             &mut Allocator::default(),
         )
     }
+    pub fn load_project_candidate(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
+        Self::load(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            &mut Allocator::default(),
+        )
+    }
     fn load(
         entry: &str,
         limits: ProjectLimits,
@@ -185,6 +201,12 @@ impl ProjectSources {
     }
     pub fn syntax_flavor(&self) -> SyntaxFlavor {
         self.syntax_flavor
+    }
+    pub fn uses_owned_syntax(&self) -> bool {
+        self.programs
+            .iter()
+            .enumerate()
+            .any(|(file, program)| program.uses_owned_syntax(self.sources.get(SourceFileId(file))))
     }
     pub fn modules(&self) -> &[ModuleHeader] {
         &self.modules
@@ -302,7 +324,20 @@ impl ProjectSources {
                         .modules
                         .len()
                         .checked_mul(size_of::<ast::ModuleDecl>())?,
-                )?;
+                )?
+                .checked_add(
+                    program
+                        .imports
+                        .len()
+                        .checked_mul(size_of::<ast::ImportDecl>())?,
+                )?
+                .checked_add(
+                    program
+                        .paths
+                        .len()
+                        .checked_mul(size_of::<ast::AbsolutePath>())?,
+                )?
+                .checked_add(program.path_segments.len().checked_mul(size_of::<Span>())?)?;
             for function in &program.functions {
                 result.ast_payload = result
                     .ast_payload
@@ -662,6 +697,9 @@ impl SourceSetBuilder<'_> {
             parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?;
         self.project.usage.syntax_nodes =
             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
+        if program.uses_project_syntax() {
+            self.project.syntax_flavor = SyntaxFlavor::ProjectSyntax;
+        }
         Ok(program)
     }
 

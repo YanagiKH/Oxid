@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "cases": 3603,
+  "source_files": 12867,
+  "source_bytes": 366806,
+  "uncompressed_bytes": 13747865,
+  "case_ids_sha256": "4b4f1f97f9ba4ec30e5232752d74358b65a368061e3680857ed3348bca87a2f9",
+  "candidate_manifest_sha256": "9aaadaf0567378a862ddfdbcf163045ba6fb696af88e0eac624b63f3a77abdfb",
+  "dataset": "All3603 final source-only cases and unchanged independent expected structures, with approved prose and metadata amendments kept as separate auxiliary files",
+  "compressed_corpus_sha256": "a5b1853d854b307ca31c79154b518fb9eddf19218467b5562af81979d1369994",
+  "compressed_bytes": 1050383
+}

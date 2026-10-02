@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "status": "proposed-pre-candidate-clarification-for-parent-review",
+  "reason": "The legacy helper metadata key complete_signatures_resolved_once is ambiguous at the100-error cap. It means no reached signature is repeated, not that every declared function is visited. Governing scalar scheduling stops immediately after the100th diagnostic; source-derived diagnostic tuples are unchanged.",
+  "superseded_field": "complete_signatures_resolved_once",
+  "cases": {
+    "scalar-interleave-intrinsic-99": {
+      "original_expected_sha256": "d67bdbeb476754585e5360aabb021ab966b0521c72dabba5c112f0b5d19eef8b",
+      "no_signature_resolves_more_than_once": true,
+      "signatures_started": 50,
+      "last_declared_signature_skipped": false,
+      "diagnostic_tuples_unchanged": true
+    },
+    "scalar-interleave-intrinsic-100": {
+      "original_expected_sha256": "07ac34dcb83427497b24f1ed4e2ea5aa6f536d63032bf54fdaf5e1dc90faf1e4",
+      "no_signature_resolves_more_than_once": true,
+      "signatures_started": 51,
+      "last_declared_signature_skipped": false,
+      "diagnostic_tuples_unchanged": true
+    },
+    "scalar-interleave-intrinsic-101": {
+      "original_expected_sha256": "d57f5e5b7a3892b42e8959b51a46ec530ea6021bd6e4d85497025a1eedea3c5f",
+      "no_signature_resolves_more_than_once": true,
+      "signatures_started": 50,
+      "last_declared_signature_skipped": true,
+      "diagnostic_tuples_unchanged": true
+    }
+  }
+}

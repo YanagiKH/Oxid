@@ -3,10 +3,10 @@ mod budget;
 pub(super) mod hir;
 pub(super) mod lower;
 mod program;
-pub(super) mod resolve;
+pub(in crate::frontend::oir) mod resolve;
 #[cfg(test)]
 mod tests;
-pub(super) mod typeck;
+pub(in crate::frontend::oir) mod typeck;
 pub(in crate::frontend::oir) use program::{check_source, SourceProgram};
 mod diagnostic;
 

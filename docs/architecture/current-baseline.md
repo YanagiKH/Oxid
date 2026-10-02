@@ -26,19 +26,24 @@ x86_64, LLVM 19.1.7 and O0. The historical
 fixtures; it does not establish source qualification. Default legacy records retain their
 dynamic shared-storage behavior.
 
-The public typed source route remains single-file. Its driver now owns an
-immutable source set with file-aware text access and per-file AST handles.
-Private Unit1 groundwork can discover explicitly declared module files under a
-filesystem policy qualified on Linux x86_64. Non-Linux discovery is rejected;
-other Linux architectures have not been qualified. This groundwork does not
-provide linked project resolution or execution. Public `mod`, `use`, `pub` and qualified item paths remain rejected.
-The complete modules/imports/visibility capability is proposed in
-[RFC 0015](../../rfcs/0015-bounded-typed-projects.md); the
-[Unit1 ledger](typed-project-unit1-validation.md) separates measured loader/source
-bounds from the still-unimplemented shared index, I/J/W proof, linked consumers
-and public activation. This private groundwork adds no feature-inventory entry,
-new frontend/native host claim, or milestone completion claim. Historical
-ownership evidence keeps its original source, binary and receipt identities.
+The public typed source route remains single-file and rejects `mod`, `use`,
+`pub` and qualified item paths. It uses immutable file-aware sources and one
+shared declaration/import/visibility index through its original scalar and owned
+schedules. Private Unit1 discovery and Unit2 project parsing/indexing reach real
+scalar/owned resolution and type checking. Private loading is qualified on Linux
+x86_64; non-Linux discovery is rejected and other Linux architectures have not
+been qualified. Linked project OIR, whole-project ownership verification and
+multi-file consumers remain Unit3, with public activation separately staged.
+
+The complete capability is proposed in
+[RFC 0015](../../rfcs/0015-bounded-typed-projects.md). The historical
+[Unit1 ledger](typed-project-unit1-validation.md) and current
+[Unit2 ledger](typed-project-unit2-validation.md) distinguish each source
+representation and qualification. Unit2 measures ten flat index vectors, a fresh
+288N AST payload envelope and explicit I/J/W admissions; it does not inherit the
+old Unit1 280N envelope. Private groundwork adds no feature-inventory entry,
+new frontend/native host claim or milestone completion claim. Historical
+ownership and Unit1 evidence keep their original identities.
 
 A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits

@@ -1,11 +1,15 @@
 //! Complete source typing, deliberately without an ownership/loan checker.
 use super::{hir::*, resolve::ResolvedOwnedProgram};
 use crate::frontend::{
-    diagnostic::Diagnostic, owned_diagnostic, parser::MAX_DIAGNOSTICS, source::Span,
+    declaration_index::{Access, PreparedTypeName},
+    diagnostic::Diagnostic,
+    owned_diagnostic,
+    parser::MAX_DIAGNOSTICS,
+    source::Span,
 };
 
 #[derive(Debug)]
-pub(super) struct TypedOwnedProgram<'src> {
+pub(in crate::frontend::oir) struct TypedOwnedProgram<'src> {
     program: ResolvedOwnedProgram<'src>,
     bodies: Vec<TypedBody>,
 }
@@ -159,23 +163,27 @@ impl Label for Box<Diagnostic> {
         owned_diagnostic::secondary(self, span, format_args!("{message}"))
     }
 }
-struct TypeName<'a> {
-    program: &'a ResolvedOwnedProgram<'a>,
-    ty: ValueTy,
+#[allow(clippy::large_enum_variant)] // Both bounded formatter frames are preaccounted; no heap allocation.
+enum TypeName<'a> {
+    Scalar(Ty),
+    Record(PreparedTypeName<'a>),
 }
 impl std::fmt::Display for TypeName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.ty {
-            ValueTy::Scalar(ty) => write!(f, "{ty}"),
-            ValueTy::Owned(record) => write!(
-                f,
-                "{}",
-                owned_diagnostic::name(
-                    self.program
-                        .text(self.program.records()[record.0].name_span)
-                )
-            ),
+        match self {
+            Self::Scalar(ty) => write!(f, "{ty}"),
+            Self::Record(name) => write!(f, "{name}"),
         }
+    }
+}
+fn type_name<'a>(
+    program: &ResolvedOwnedProgram<'a>,
+    ty: ValueTy,
+    span: Span,
+) -> Result<TypeName<'a>, Box<Diagnostic>> {
+    match ty {
+        ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
+        ValueTy::Owned(record) => program.prepare_name(record, span).map(TypeName::Record),
     }
 }
 fn mismatch(
@@ -184,19 +192,18 @@ fn mismatch(
     actual: ValueTy,
     span: Span,
 ) -> Box<Diagnostic> {
+    // Complete both bounded preparations before invoking infallible Display.
+    let expected = match type_name(program, expected, span) {
+        Ok(name) => name,
+        Err(error) => return error,
+    };
+    let actual = match type_name(program, actual, span) {
+        Ok(name) => name,
+        Err(error) => return error,
+    };
     error(
         "E0300",
-        format_args!(
-            "type mismatch: expected {}, found {}",
-            TypeName {
-                program,
-                ty: expected
-            },
-            TypeName {
-                program,
-                ty: actual
-            }
-        ),
+        format_args!("type mismatch: expected {expected}, found {actual}"),
         span,
     )
 }
@@ -206,9 +213,10 @@ fn immutable(function: &Function, binding: BindingId, span: Span) -> Box<Diagnos
         "immutable binding declared here",
     )
 }
-pub(super) fn check(
+pub(in crate::frontend::oir) fn check(
     program: ResolvedOwnedProgram<'_>,
 ) -> Result<TypedOwnedProgram<'_>, Vec<Diagnostic>> {
+    program.work().phase("type");
     let mut bodies = Vec::new();
     let mut diagnostics = Vec::new();
     for function in program.functions() {
@@ -217,7 +225,10 @@ pub(super) fn check(
         }
         match check_body(&program, function) {
             Ok(body) => bodies.push(body),
-            Err(error) => diagnostics.push(*error),
+            Err(error) => {
+                program.work().record_error(&error);
+                diagnostics.push(*error)
+            }
         }
     }
     if diagnostics.is_empty() {
@@ -259,6 +270,12 @@ fn projection(
             )
         })?
         .id;
+    let requester = program.requester(function.id)?;
+    if let Access::Denied(field) = program.query().field_access(requester, field, field_span)? {
+        return Err(program
+            .query()
+            .private_field_diagnostic(field, field_span, "type")?);
+    }
     Ok(Projection { base, field })
 }
 fn borrow_type(
@@ -439,7 +456,11 @@ fn expression_type(
                 )
                 .owned_secondary(called.span, "function declared here"));
             }
-            for ((actual, span), expected) in actuals.into_iter().zip(&called.params) {
+            #[allow(clippy::unused_enumerate_index)]
+            // Position is used only by passive test observation.
+            for (_position, ((actual, span), expected)) in
+                actuals.into_iter().zip(&called.params).enumerate()
+            {
                 if actual != *expected {
                     return Err(error(
                         "E0300",
@@ -447,6 +468,20 @@ fn expression_type(
                         span,
                     )
                     .owned_secondary(called.span, "function declared here"));
+                }
+                #[cfg(test)]
+                if let Argument::Borrow { place, .. } = args[_position] {
+                    let binding = match place {
+                        BorrowPlace::Owner(binding) | BorrowPlace::Forwarded(binding) => binding,
+                    };
+                    program.work().observe(
+                        crate::frontend::declaration_index::Observation::BorrowArgument {
+                            function: function.id,
+                            origin: span,
+                            binding: binding.0,
+                            ty: actual,
+                        },
+                    );
                 }
             }
             called.result
@@ -489,10 +524,32 @@ fn expression_type(
             let projection =
                 projection(program, function, *base, *base_span, *field_span, bindings)?;
             projections[id.0] = Some(projection);
-            scalar(program.records()[projection.field.record.0].fields[projection.field.index].ty)
+            let ty = scalar(
+                program.records()[projection.field.record.0].fields[projection.field.index].ty,
+            );
+            #[cfg(test)]
+            program.work().observe(
+                crate::frontend::declaration_index::Observation::Projection {
+                    operation: "read",
+                    function: function.id,
+                    origin: *field_span,
+                    field: projection.field,
+                    ty,
+                },
+            );
+            ty
         }
     };
     expressions[id.0] = Some(ty);
+    #[cfg(test)]
+    program.work().observe(
+        crate::frontend::declaration_index::Observation::Expression {
+            function: function.id,
+            origin: expr.span,
+            ty,
+            field: projections[id.0].map(|p| p.field),
+        },
+    );
     Ok(ty)
 }
 fn check_body(
@@ -503,6 +560,14 @@ fn check_body(
     let mut bindings = vec![None; function.bindings.len()];
     for (index, ty) in signature.params.iter().enumerate() {
         bindings[index] = Some(*ty);
+        #[cfg(test)]
+        program
+            .work()
+            .observe(crate::frontend::declaration_index::Observation::Binding {
+                function: function.id,
+                origin: function.bindings[index].span,
+                ty: *ty,
+            });
     }
     let mut expressions = vec![None; function.expressions.len()];
     let mut projections = vec![None; function.expressions.len()];
@@ -639,6 +704,14 @@ fn check_body(
                     }
                 }
                 bindings[binding.0] = Some(ParameterTy::Value(actual));
+                #[cfg(test)]
+                program
+                    .work()
+                    .observe(crate::frontend::declaration_index::Observation::Binding {
+                        function: function.id,
+                        origin: function.bindings[binding.0].span,
+                        ty: ParameterTy::Value(actual),
+                    });
             }
             StmtKind::Assign {
                 binding,
@@ -704,6 +777,16 @@ fn check_body(
                     ));
                 }
                 statement_projections[block.0][index] = Some(projection);
+                #[cfg(test)]
+                program.work().observe(
+                    crate::frontend::declaration_index::Observation::Projection {
+                        operation: "write",
+                        function: function.id,
+                        origin: field_span,
+                        field: projection.field,
+                        ty: expected,
+                    },
+                );
             }
             StmtKind::Expr(_) => {}
             StmtKind::Return(value) => {
