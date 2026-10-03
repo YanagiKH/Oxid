@@ -1,8 +1,7 @@
-//! Immutable source ownership and privately gated, declaration-only loading.
+//! Immutable source ownership and bounded, declaration-only loading.
 //!
-//! Public dispatch uses `load_original`: modules/imports/pub/paths stay disabled.
-//! Private candidate loading shares the parser and source-discovery owner.
-#![allow(dead_code)] // Private project facade is staged ahead of linked resolution.
+//! Public typed dispatch and historical adapters share one source-discovery owner.
+#![allow(dead_code)] // Historical qualification adapters retain their private API.
 
 pub(super) mod budget;
 mod filesystem;
@@ -54,6 +53,7 @@ pub(super) struct BlockKey {
     pub block: ast::BodyBlockId,
 }
 
+/// Aggregate successful AST syntax, independent of parser recovery state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SyntaxFlavor {
     OriginalSingleFile,
@@ -154,13 +154,18 @@ impl ProjectSources {
             &mut Allocator::default(),
         )
     }
-    pub fn load_project_candidate(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
+    /// Parse and load the bounded typed grammar once for public typed dispatch.
+    pub fn load_typed(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
         Self::load(
             entry,
             limits,
             parser::SourceMode::ProjectCandidate,
             &mut Allocator::default(),
         )
+    }
+    /// Historical qualification adapter for the same typed loader.
+    pub fn load_project_candidate(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
+        Self::load_typed(entry, limits)
     }
     fn load(
         entry: &str,
@@ -269,7 +274,7 @@ impl ProjectSources {
                 })
             })
     }
-    /// Only the compatibility constructor may feed the old one-file consumers.
+    /// Only successful original syntax may feed the old one-file consumers.
     pub fn original_file(&self) -> Option<(&super::source::SourceFile, &ast::Program)> {
         (self.syntax_flavor == SyntaxFlavor::OriginalSingleFile && self.programs.len() == 1)
             .then(|| (self.sources.get(SourceFileId(0)), &self.programs[0]))

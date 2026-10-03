@@ -548,6 +548,7 @@ fn checked_segment_count_overflow_precedes_all_admission_and_reserves() {
         source: file,
         allocator: &mut allocator,
         mode: SourceMode::ProjectCandidate,
+        project_recovery: false,
         tokens: super::super::lexer::lex(file).unwrap(),
         cursor: 0,
         expressions: Vec::new(),

@@ -126,7 +126,6 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
             "fn f() -> () { 9007199254740993.0; return; }",
             "9007199254740993.0",
         ),
-        ("use \"side.ox\";", "use"),
         ("macro hi { }", "macro"),
         ("fn f() -> () { const x = true; return; }", "const"),
         ("fn f() -> () { let x = true; x & false; return; }", "&"),
@@ -136,6 +135,11 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
     ] {
         failure(source, "E0101", mark);
     }
+}
+#[test]
+fn project_import_migration_rejects_legacy_string_targets_at_the_string() {
+    // `use` enters the bounded import grammar, which requires an item path.
+    failure("use \"side.ox\";", "E0101", "\"side.ox\"");
 }
 #[test]
 fn unicode_crlf_and_eof_diagnostics_are_source_based() {
