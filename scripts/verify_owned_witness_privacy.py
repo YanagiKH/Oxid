@@ -150,6 +150,39 @@ PROBES = [
 ]
 
 
+TEST_PROBES = [
+    ("array-reference-observation-is-unprivileged", True, (), """
+        fn inspect(raw: RawOwnedProgram, sources: &SourceMap) {
+            let observation = verified::probe_array_reference(raw, sources,
+                budget::Limits::DEFAULT, Some(hir::DefId(0)), execute::Limits::default(),
+                execute::ObservationControl::default()).unwrap();
+            let _ = (observation.result, observation.events, observation.storage,
+                     observation.remaining_fuel, observation.truncated);
+        }
+    """),
+    ("array-reference-observation-cannot-be-witness", False, ("E0308",), """
+        fn forge(observation: execute::ReferenceObservation) -> VerifiedOwnedProgram { observation }
+    """),
+    ("array-reference-observation-cannot-build-plan", False, ("E0308",), """
+        fn forge(observation: &execute::ReferenceObservation) {
+            let _ = plan::ExecutionPlan::build(observation);
+        }
+    """),
+    ("array-reference-observation-has-no-executable-accessor", False, ("E0599",), """
+        fn forge(observation: &execute::ReferenceObservation) { let _ = observation.witness(); }
+    """),
+    ("array-reference-observation-has-no-raw-body", False, ("E0609",), """
+        fn forge(observation: &execute::ReferenceObservation) { let _ = &observation.program; }
+    """),
+]
+PROBES.append(("array-reference-probe-absent-in-production", False, ("E0425",), """
+    fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
+        let _ = verified::probe_array_reference(raw, sources, budget::Limits::DEFAULT,
+            Some(hir::DefId(0)), execute::Limits::default(), Default::default());
+    }
+"""))
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="oxid-owned-privacy-") as directory:
@@ -157,18 +190,20 @@ def main():
         checkout.mkdir()
         for name in ["Cargo.toml", "Cargo.lock", "build.rs"]:
             shutil.copy2(root / name, checkout / name)
-        for name in ["src", "native", "compiler", "stdlib"]:
+        for name in ["src", "native", "compiler", "stdlib", "rfcs", "fixtures"]:
             shutil.copytree(root / name, checkout / name)
         module = checkout / "src/frontend/oir/owned/mod.rs"
         original = module.read_text()
         env = dict(os.environ, CARGO_TARGET_DIR=str(Path(directory) / "target"))
         reports = []
-        for name, succeeds, codes, body in PROBES:
-            module.write_text(original + "\nmod consumer_privacy_probe {\n"
+        for (name, succeeds, codes, body), test in [(probe, False) for probe in PROBES] + [(probe, True) for probe in TEST_PROBES]:
+            module.write_text(original + ("\n#[cfg(test)]" if test else "") + "\nmod consumer_privacy_probe {\n"
                               "use super::*;\n"
                               "use super::verified::VerifiedOwnedProgram;\n"
                               + body + "\n}\n")
             command = ["cargo", "check", "--locked", "--bin", "oxid", "--message-format=json"]
+            if test:
+                command.append("--tests")
             result = subprocess.run(command, cwd=checkout, env=env,
                                     text=True, capture_output=True, timeout=180)
             errors = []

@@ -49,6 +49,11 @@ fn event_receipts(events: &[execute::Event]) -> String {
     array(events.iter().enumerate().map(|(index, event)| {
         let mut values = vec![("index", index.to_string())];
         match event {
+            execute::Event::ReadIndex(..)
+            | execute::Event::WriteIndex(..)
+            | execute::Event::ArrayLength(..) => {
+                unreachable!("source arrays and production array witnesses remain gated")
+            }
             execute::Event::Charge(at, cost) => {
                 last_charge = Some(*at);
                 values.extend([

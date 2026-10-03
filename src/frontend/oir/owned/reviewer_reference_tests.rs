@@ -122,6 +122,7 @@ fn rv_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>) -> Machine<'p, 'w> {
         live_bytes: 0,
         header_bytes: 8 * size_of::<Frame>(),
         events: vec![],
+        observer: array_observe::Observer::default(),
     };
     let root = Frame::allocate(plan, hir::DefId(0), 1, None).unwrap();
     m.install(root);

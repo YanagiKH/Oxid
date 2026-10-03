@@ -138,18 +138,11 @@ impl<'a> ExecutionPlan<'a> {
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
-            OwnedInstruction::ConstructArray { .. }
-            | OwnedInstruction::ReadIndex { .. }
-            | OwnedInstruction::WriteIndex { .. }
-            | OwnedInstruction::ArrayLength { .. } => {
-                unreachable!(
-                    "production array admission is closed until both consumers are complete"
-                )
-            }
             OwnedInstruction::StorageEnd(o) | OwnedInstruction::Discard(o) => {
                 1 + self.owner_width(f, *o)
             }
-            OwnedInstruction::Construct { destination, .. } => {
+            OwnedInstruction::Construct { destination, .. }
+            | OwnedInstruction::ConstructArray { destination, .. } => {
                 1 + self.owner_width(f, *destination)
             }
             OwnedInstruction::MoveInitialize { source, .. }

@@ -113,6 +113,33 @@ pub(super) fn probe_array_validation(
     Ok(usage)
 }
 
+/// Qualification runs the real reference consumer while the witness remains
+/// sealed inside this trusted boundary. No privileged object can escape.
+#[cfg(test)]
+pub(super) fn probe_array_reference(
+    raw: RawOwnedProgram,
+    sources: &SourceMap,
+    verification_limits: budget::Limits,
+    entry: Option<hir::DefId>,
+    execution_limits: execute::Limits,
+    observation: execute::ObservationControl,
+) -> Result<execute::ReferenceObservation, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(&raw, sources, verification_limits)?;
+    validate(&raw, &declarations, sources, &mut usage, &mut meter)?;
+    let witness = VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    };
+    Ok(execute::run_array_observed(
+        &witness,
+        entry,
+        execution_limits,
+        observation,
+    ))
+}
+
 /// One fixed inventory pass, no allocation. Active rows fit the existing
 /// 32*n fixed-pass allowance: owners + references + loans <= n; the meter
 /// records each retained-row visit. Per-function result inspection is ordinary

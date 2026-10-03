@@ -383,3 +383,6 @@ mod origin_tests;
 mod reviewer_allocator;
 #[cfg(test)]
 mod reviewer_origins;
+
+#[cfg(test)]
+mod array_reference_tests;

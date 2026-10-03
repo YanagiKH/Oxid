@@ -234,6 +234,7 @@ fn stopped_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>, fuel: usize) -> Machine<
         live_bytes: 0,
         header_bytes: limits.frames * size_of::<Frame>(),
         events: vec![],
+        observer: array_observe::Observer::default(),
     };
     let f = &plan.witness().functions()[0];
     m.activation_preflight(f.id, 1 + plan.function(f.id).usage().expanded_cells, f.span)

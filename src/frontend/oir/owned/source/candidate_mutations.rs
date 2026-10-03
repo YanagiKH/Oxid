@@ -287,6 +287,9 @@ fn loan_key(key: storage::LoanKey) -> String {
 fn event(value: &execute::Event) -> String {
     use execute::Event;
     match value {
+        Event::ReadIndex(..) | Event::WriteIndex(..) | Event::ArrayLength(..) => {
+            unreachable!("source arrays and production array witnesses remain gated")
+        }
         Event::Charge(at, cost) => object([
             ("event", json_string("Charge")),
             ("span", span(*at)),
