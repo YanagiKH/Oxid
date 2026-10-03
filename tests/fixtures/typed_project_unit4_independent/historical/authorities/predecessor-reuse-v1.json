@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "status": "bound-not-executed",
+  "bindings": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/pre-execution-manifest.json",
+      "bytes": 87817,
+      "sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/requests.jsonl",
+      "bytes": 97143,
+      "sha256": "f405bf46d8945027cd1d79d3c125692b4c00b8fe57b97c0d55c68b83b9795113"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/expected.jsonl.gz",
+      "bytes": 437562,
+      "sha256": "4c2753e8ab1c42a8965f5e07a02973ce99bccbdf22dbfa55de78ff33f06831aa"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/qualification-final-manifest.json",
+      "bytes": 3495,
+      "sha256": "aebe93ba99d5743f0a76f88febbf30df42313ef920a01f06c4a91b064ddedc26"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit3_independent/evidence/source-qualification-manifest-v1.json",
+      "bytes": 1394,
+      "sha256": "5ad1cdcf1fbbc0fd24093c3359c2f46c4450e378bd1c40754131dc1aa1bd774a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit3_independent/portable/comparison-v1/component-manifest.json",
+      "bytes": 102162,
+      "sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit2_independent/semantic/package-manifest.json",
+      "bytes": 2531,
+      "sha256": "710c79c5c39c2aea8d3b8c51de3251adce9a755d4190e2434d289696d85c1936"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit2_independent/semantic/corpus-manifest.json",
+      "bytes": 609,
+      "sha256": "9457c6182f4a45e15308c5fe73512415ecef2ea6e0ec8fac37eb42f4fb8a8933"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit2_independent/semantic/corpus.jsonl.gz",
+      "bytes": 1050383,
+      "sha256": "a5b1853d854b307ca31c79154b518fb9eddf19218467b5562af81979d1369994"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit2_independent/semantic/original93-prose-expectations.json",
+      "bytes": 13035,
+      "sha256": "4742fee4eb4d5b09f2da3698ded582fcb08a7af9f13d9bf1369d9d547332187c"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-project-activation/tests/fixtures/typed_project_unit2_independent/semantic/legacy-scalar-schedule-clarification.json",
+      "bytes": 1457,
+      "sha256": "18472233e83df397f1a0a2eb67df339380b4ca15a860558d9851906ad300ea00"
+    }
+  ],
+  "unit2": {
+    "cases": 3603,
+    "source": "corpus.jsonl.gz immutable rows; existing approved corrections remain separate",
+    "observation_path": "new Unit4 public loader/checker observation of each recorded source map; keep private stage-depth comparisons for observations CLI cannot expose"
+  },
+  "unit3": {
+    "families": {
+      "scalar24": [
+        "scalar-root_child-absolute-entry0-i32",
+        "scalar-root_child-absolute-entry0-bool",
+        "scalar-root_child-absolute-entry1-i32",
+        "scalar-root_child-absolute-entry1-bool",
+        "scalar-root_child-import-entry0-i32",
+        "scalar-root_child-import-entry0-bool",
+        "scalar-root_child-import-entry1-i32",
+        "scalar-root_child-import-entry1-bool",
+        "scalar-sibling-absolute-entry0-i32",
+        "scalar-sibling-absolute-entry0-bool",
+        "scalar-sibling-absolute-entry1-i32",
+        "scalar-sibling-absolute-entry1-bool",
+        "scalar-sibling-import-entry0-i32",
+        "scalar-sibling-import-entry0-bool",
+        "scalar-sibling-import-entry1-i32",
+        "scalar-sibling-import-entry1-bool",
+        "scalar-child_ancestor-absolute-entry0-i32",
+        "scalar-child_ancestor-absolute-entry0-bool",
+        "scalar-child_ancestor-absolute-entry1-i32",
+        "scalar-child_ancestor-absolute-entry1-bool",
+        "scalar-child_ancestor-import-entry0-i32",
+        "scalar-child_ancestor-import-entry0-bool",
+        "scalar-child_ancestor-import-entry1-i32",
+        "scalar-child_ancestor-import-entry1-bool"
+      ],
+      "owned48": [
+        "owned-root_child-absolute-root-shared_nested",
+        "owned-root_child-absolute-root-exclusive_forward",
+        "owned-root_child-absolute-root-owned_staging",
+        "owned-root_child-absolute-root-loop_cleanup",
+        "owned-root_child-absolute-child-shared_nested",
+        "owned-root_child-absolute-child-exclusive_forward",
+        "owned-root_child-absolute-child-owned_staging",
+        "owned-root_child-absolute-child-loop_cleanup",
+        "owned-root_child-import-root-shared_nested",
+        "owned-root_child-import-root-exclusive_forward",
+        "owned-root_child-import-root-owned_staging",
+        "owned-root_child-import-root-loop_cleanup",
+        "owned-root_child-import-child-shared_nested",
+        "owned-root_child-import-child-exclusive_forward",
+        "owned-root_child-import-child-owned_staging",
+        "owned-root_child-import-child-loop_cleanup",
+        "owned-sibling-absolute-root-shared_nested",
+        "owned-sibling-absolute-root-exclusive_forward",
+        "owned-sibling-absolute-root-owned_staging",
+        "owned-sibling-absolute-root-loop_cleanup",
+        "owned-sibling-absolute-child-shared_nested",
+        "owned-sibling-absolute-child-exclusive_forward",
+        "owned-sibling-absolute-child-owned_staging",
+        "owned-sibling-absolute-child-loop_cleanup",
+        "owned-sibling-import-root-shared_nested",
+        "owned-sibling-import-root-exclusive_forward",
+        "owned-sibling-import-root-owned_staging",
+        "owned-sibling-import-root-loop_cleanup",
+        "owned-sibling-import-child-shared_nested",
+        "owned-sibling-import-child-exclusive_forward",
+        "owned-sibling-import-child-owned_staging",
+        "owned-sibling-import-child-loop_cleanup",
+        "owned-child_ancestor-absolute-root-shared_nested",
+        "owned-child_ancestor-absolute-root-exclusive_forward",
+        "owned-child_ancestor-absolute-root-owned_staging",
+        "owned-child_ancestor-absolute-root-loop_cleanup",
+        "owned-child_ancestor-absolute-child-shared_nested",
+        "owned-child_ancestor-absolute-child-exclusive_forward",
+        "owned-child_ancestor-absolute-child-owned_staging",
+        "owned-child_ancestor-absolute-child-loop_cleanup",
+        "owned-child_ancestor-import-root-shared_nested",
+        "owned-child_ancestor-import-root-exclusive_forward",
+        "owned-child_ancestor-import-root-owned_staging",
+        "owned-child_ancestor-import-root-loop_cleanup",
+        "owned-child_ancestor-import-child-shared_nested",
+        "owned-child_ancestor-import-child-exclusive_forward",
+        "owned-child_ancestor-import-child-owned_staging",
+        "owned-child_ancestor-import-child-loop_cleanup"
+      ]
+    },
+    "pilots": [
+      "pilot-scalar",
+      "pilot-original-batch",
+      "pilot-mechanical-batch",
+      "pilot-opaque-batch",
+      "pilot-counter",
+      "control-owned-entry-id1"
+    ],
+    "negative_cases": [
+      "negative-imported_main-scalar",
+      "negative-imported_main-owned",
+      "negative-unused_move_beats_missing_main",
+      "control-unused_nominal-false",
+      "control-unused_nominal-true",
+      "negative-native_recursion-scalar-true",
+      "negative-native_recursion-scalar-false",
+      "negative-native_recursion-owned-true",
+      "negative-native_recursion-owned-false"
+    ],
+    "observation_path": "actual public executable check/run/compile, new Unit4 receipt; private raw/event/fuel companions retain existing models and transport comparators"
+  },
+  "no_historical_receipt_retarget": true,
+  "no_new_semantic_model": true
+}

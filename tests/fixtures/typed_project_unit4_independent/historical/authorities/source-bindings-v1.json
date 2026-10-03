@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "production_head": "9481918869cfcd0aef6dbf803df1f9e6ec8a16cc",
+  "production_tree": "e08a7803a82fbf4f817578c598ca79a52b4edf4c",
+  "selected_manifest": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963",
+  "core_manifest": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
+  "production_files": [
+    {
+      "path": "src/frontend/parser.rs",
+      "bytes": 44049,
+      "sha256": "62111e22e12194c6668c0a925c2aed2c57dcc50697ef8a529e2f2bb12848fdc5"
+    },
+    {
+      "path": "src/frontend/lexer.rs",
+      "bytes": 8853,
+      "sha256": "6e75954085943e3b3018a51d91dcae1c2bf7bda1ebaff86efd10bfccde12de51"
+    },
+    {
+      "path": "src/frontend/ast.rs",
+      "bytes": 20717,
+      "sha256": "3632fc114303be571166307ddab04f78b508226789b7c1495b4a692c538d3d2f"
+    },
+    {
+      "path": "src/frontend/source.rs",
+      "bytes": 12395,
+      "sha256": "4928bf26220a08ce36dcbb0f939b912619169cf4e9a082ae26cf8d6554b6134f"
+    },
+    {
+      "path": "src/frontend/diagnostic.rs",
+      "bytes": 10360,
+      "sha256": "e62a8f66fda93a30135a9ab9026802082823adb1cf66e82e9e07547f735ca85e"
+    },
+    {
+      "path": "src/frontend/owned_diagnostic.rs",
+      "bytes": 33156,
+      "sha256": "6fb80f686eedee800bd506782d0bd72d1b96d3813a6ffdf9a285da8757e3d619"
+    },
+    {
+      "path": "src/frontend/driver.rs",
+      "bytes": 6987,
+      "sha256": "71e218dc1896eef8b29d6df7cd55cc39d5cb114cdba74b0f48e96fb06c7624df"
+    },
+    {
+      "path": "src/frontend/options.rs",
+      "bytes": 15461,
+      "sha256": "6eb1c651c604e25887cf6926604598e27a390613ef9f43347c0b5fa9ab6bab06"
+    },
+    {
+      "path": "src/frontend/project.rs",
+      "bytes": 33845,
+      "sha256": "e1e87fbd941dcbb61a33bb05f6b1c18bffc861f1287af3fc1dc3bae8eec4be75"
+    },
+    {
+      "path": "src/frontend/project/filesystem.rs",
+      "bytes": 5237,
+      "sha256": "6e27861bc9440d015f015c23bf31cb76d238392b7712aede89371ca3e85ddcb7"
+    },
+    {
+      "path": "src/frontend/oir/source/sealed.rs",
+      "bytes": 7427,
+      "sha256": "b18fe96214f67aae59b5b291090db491851d0d3ab2428b39082f4010cd0c3c27"
+    },
+    {
+      "path": "src/frontend/oir/mod.rs",
+      "bytes": 9998,
+      "sha256": "d3ac55cdff2dfb2fe909b2f19e4e5ed1971e1b129ebe1e3e5242580f9e9fd4f5"
+    },
+    {
+      "path": "src/frontend/oir/native.rs",
+      "bytes": 49487,
+      "sha256": "ca823b72bf102b6a3f019b74ab9fc0f0953bb26ed98fc10ddd771a65504c2640"
+    },
+    {
+      "path": "src/frontend/oir/owned/execute.rs",
+      "bytes": 50868,
+      "sha256": "bd23c1a0df31bedf3e9f7f7ba5411360a6541f6dcf023f7f066d831cca9d3231"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "bytes": 2050,
+      "sha256": "864c5ea65215586d1827c28f76df920ad0f8e863c7686e90e16568cc947ae1a8"
+    }
+  ],
+  "design_files": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-design/proposed-activation.md",
+      "bytes": 21155,
+      "sha256": "9cee78fb5b9149129de2856c828f85f94f167ed50d215ae4e4f42d19d79a1a72"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-design/verification-migration-plan.md",
+      "bytes": 8869,
+      "sha256": "b3d3b558b87be665d7bf11f29e82fff370ad4b3050d9a3dda96fdcae88107f93"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-design/independent-activation-review.md",
+      "bytes": 11427,
+      "sha256": "372ad9bd9e389a87ee76e221952e3eedbd3fcf1f4d6eb977755936bdb49fa987"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-design/published-unit3-binding-v1.json",
+      "bytes": 1029,
+      "sha256": "27958e6a3e13e4532a814a9f2e94e417dc436e10cbb4c5f1a477d85c42e13282"
+    }
+  ]
+}

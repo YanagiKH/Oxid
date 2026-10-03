@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-10-03T00:39:21.439664+00:00",
+  "status": "FROZEN_SOURCE_DERIVED_LIFECYCLE_AMENDMENT_AWAITING_INDEPENDENT_REVIEW",
+  "parent_freeze": {
+    "path": "contract-freeze-v2.json",
+    "bytes": 1571,
+    "sha256": "f87b62836fc234da9695a68f46af44e92299d5535380df4ca3adc7676e600a71"
+  },
+  "basis_review": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit4-independent/contract-review-v2.md",
+    "bytes": 10757,
+    "sha256": "338757d965a370d09892308139ce31969c95722088f00856686864e97ab55d87"
+  },
+  "active_parser_contract": {
+    "path": "parser-cases-v1.json",
+    "bytes": 1634317,
+    "sha256": "2c2b44cf895c2499821a3cc7ab31f6244840a8a44e876a0f82006d84e1f2ed71"
+  },
+  "active_public_contract": {
+    "path": "public-cli-contract-v3.json",
+    "bytes": 69344,
+    "sha256": "1cd3b42d2f93158e88b6a37ac99b89b9a10e85c926e2e7eb4d63675ab170073f"
+  },
+  "unchanged_predecessor_reuse": {
+    "path": "predecessor-reuse-v1.json",
+    "bytes": 8080,
+    "sha256": "6b79cb9a29e948309cb9127e2928db0dfdfa4ff1569ae1bc254d649a4772be96"
+  },
+  "files": [
+    {
+      "path": "clarify_lifecycle_v3.py",
+      "bytes": 17435,
+      "sha256": "61b287f5cdeef4e427ad055e7fc747f3a45fb149c2539cf9f72e2012d8fa094c"
+    },
+    {
+      "path": "public-cli-contract-v3.json",
+      "bytes": 69344,
+      "sha256": "1cd3b42d2f93158e88b6a37ac99b89b9a10e85c926e2e7eb4d63675ab170073f"
+    },
+    {
+      "path": "lifecycle-amendment-v3.json",
+      "bytes": 11197,
+      "sha256": "104aae4e819677cae34b272af2572e918f60a6c4af3aea171d4bc786ba54c920"
+    },
+    {
+      "path": "lifecycle-integrity-v3.json",
+      "bytes": 1432,
+      "sha256": "536e5e61f4f129326d0e8bc6a476367c979012da8f14290b88cf7c16df15b0eb"
+    }
+  ],
+  "compiler_invocations": 0,
+  "candidate_result_files_read": 0
+}

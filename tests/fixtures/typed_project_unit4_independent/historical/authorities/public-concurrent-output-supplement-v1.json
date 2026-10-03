@@ -1,0 +1,493 @@
+{
+  "schema_version": 1,
+  "supplement_id": "unit4-public-concurrent-output-v1",
+  "status": "FROZEN_PRE_EXECUTION_EXPECTATIONS_AWAITING_INDEPENDENT_REVIEW",
+  "scope": "Exactly two failed-publication controls for the already frozen public-pilot-scalar source: debug and release compiler profiles. No new language case, semantic oracle, native success, or ELF execution claim.",
+  "authority_commit": "ca6f7aced1e4bb3eed64d70a7fa20946722d5a9d",
+  "authoring_constraints": {
+    "compiler_invocations": 0,
+    "native_tool_invocations": 0,
+    "candidate_result_files_read": 0,
+    "production_edits": 0,
+    "remote_writes": 0
+  },
+  "spec_bindings": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-oracles/public-cli-contract-v3.json",
+      "bytes": 69344,
+      "sha256": "1cd3b42d2f93158e88b6a37ac99b89b9a10e85c926e2e7eb4d63675ab170073f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-oracles/contract-freeze-v3.json",
+      "bytes": 1822,
+      "sha256": "0407021036765aa7c4afbce7b101186ecab4e55c75678628f5bdf9e68a92984d"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-oracles/source-bindings-v1.json",
+      "bytes": 3687,
+      "sha256": "a40a6c770300c7581ea89fea345715d8e143d1459b4b17993a35e9f73fc36229"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit4-oracles/predecessor-reuse-v1.json",
+      "bytes": 8080,
+      "sha256": "6b79cb9a29e948309cb9127e2928db0dfdfa4ff1569ae1bc254d649a4772be96"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/pre-execution-manifest.json",
+      "bytes": 87817,
+      "sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/requests.jsonl",
+      "bytes": 97143,
+      "sha256": "f405bf46d8945027cd1d79d3c125692b4c00b8fe57b97c0d55c68b83b9795113"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/expected.jsonl.gz",
+      "bytes": 437562,
+      "sha256": "4c2753e8ab1c42a8965f5e07a02973ce99bccbdf22dbfa55de78ff33f06831aa"
+    }
+  ],
+  "source_authorities": [
+    {
+      "repository": "YanagiKH/Oxid",
+      "published_commit": "ca6f7aced1e4bb3eed64d70a7fa20946722d5a9d",
+      "path": "src/frontend/native.rs",
+      "git_blob": "a36a985305bd734fef4de3d16b2f2052c2a7c5a4",
+      "bytes": 7505,
+      "sha256": "2303197eeff30da4a4c552f1131de64cd871f1fe0ff6ea3afe60010db68645b4",
+      "regions": [
+        {
+          "label": "I/O diagnostic constructor",
+          "start_anchor": "fn failure(",
+          "end_anchor_exclusive": "struct Workspace",
+          "start_line": 16,
+          "end_line": 21,
+          "bytes": 238,
+          "sha256": "4b8e50e80d11c8eb21d015adc17850a30e26ba29da691510b994c5788806c1cd"
+        },
+        {
+          "label": "workspace drop",
+          "start_anchor": "impl Drop for Workspace",
+          "end_anchor_exclusive": "fn tool(",
+          "start_line": 48,
+          "end_line": 52,
+          "bytes": 104,
+          "sha256": "dcd61fb885aa87e21b4a741fbf5fc6a05abc6bf4e0ccba5f4adb2481130d130c"
+        },
+        {
+          "label": "real tool and atomic publication sequence",
+          "start_anchor": "pub(super) fn compile(",
+          "end_anchor_exclusive": null,
+          "start_line": 92,
+          "end_line": 211,
+          "bytes": 4208,
+          "sha256": "935e37ae609fbd3ecd160f1363585ba4742aeb80d330477c3796ae26a78d841a"
+        }
+      ]
+    },
+    {
+      "repository": "YanagiKH/Oxid",
+      "published_commit": "ca6f7aced1e4bb3eed64d70a7fa20946722d5a9d",
+      "path": "tests/typed_native.rs",
+      "git_blob": "d6ebd4c6b330eecc628f65546b95bbb16729a3c3",
+      "bytes": 17828,
+      "sha256": "2ef5dd6ff8d6d1ab39c17329618bc62f6dc068d272376c383da9b459adc89057",
+      "regions": [
+        {
+          "label": "historical race regression",
+          "start_anchor": "fn versions_failures_cleanup_and_atomic_no_clobber_are_enforced()",
+          "end_anchor_exclusive": "#[cfg(unix)]",
+          "start_line": 214,
+          "end_line": 274,
+          "bytes": 1988,
+          "sha256": "d6d72717f7cfef81e548efd69070ecc055defc0d8c2aeaab32bd0c365afb67c1"
+        }
+      ]
+    },
+    {
+      "repository": "YanagiKH/Oxid",
+      "published_commit": "ca6f7aced1e4bb3eed64d70a7fa20946722d5a9d",
+      "path": "src/frontend/driver.rs",
+      "git_blob": "f9a201ad800ef209ec4d13078fb49b1106cf7358",
+      "bytes": 6987,
+      "sha256": "71e218dc1896eef8b29d6df7cd55cc39d5cb114cdba74b0f48e96fb06c7624df",
+      "regions": [
+        {
+          "label": "summary and report contract",
+          "start_anchor": "enum Summary",
+          "end_anchor_exclusive": "fn check_summary(",
+          "start_line": 33,
+          "end_line": 83,
+          "bytes": 1876,
+          "sha256": "2ab30ddfa9a0c2ccb4e37609b89921f778c0db8f9c24e0c48812f6b2cec6f084"
+        },
+        {
+          "label": "public exit status",
+          "start_anchor": "fn exit_status(",
+          "end_anchor_exclusive": "fn process_file(",
+          "start_line": 95,
+          "end_line": 105,
+          "bytes": 222,
+          "sha256": "afb4a1e66c6953a980738c287bd79ef51608d3eabadcfd487d6f32053b8c79f4"
+        },
+        {
+          "label": "post-load public consumer",
+          "start_anchor": "fn process_loaded(",
+          "end_anchor_exclusive": "#[cfg(test)]",
+          "start_line": 134,
+          "end_line": 163,
+          "bytes": 1128,
+          "sha256": "99eddf124b06cd6b74a64003a35a1a8ab0095542fb9f7d79fb0e5c584aae8733"
+        }
+      ]
+    },
+    {
+      "repository": "YanagiKH/Oxid",
+      "published_commit": "ca6f7aced1e4bb3eed64d70a7fa20946722d5a9d",
+      "path": "src/frontend/diagnostic.rs",
+      "git_blob": "527599a82e26112599797f0050adc7888e9fcccd",
+      "bytes": 10360,
+      "sha256": "e62a8f66fda93a30135a9ab9026802082823adb1cf66e82e9e07547f735ca85e",
+      "regions": [
+        {
+          "label": "diagnostic data and constructor",
+          "start_anchor": "pub struct Diagnostic",
+          "end_anchor_exclusive": "    pub fn secondary(",
+          "start_line": 6,
+          "end_line": 31,
+          "bytes": 590,
+          "sha256": "084dedab4f5e4dfccfb435d7dc50351eaf4bfb00b97e9515baf4e749dbe6b355"
+        },
+        {
+          "label": "public diagnostic JSON schema",
+          "start_anchor": "    pub fn render_json(",
+          "end_anchor_exclusive": "/// Quote a UTF-8 string",
+          "start_line": 80,
+          "end_line": 113,
+          "bytes": 1136,
+          "sha256": "f9b6c13f7f3ccdf3c934e121640c5afccda696492384b97b569790f6c56e584b"
+        }
+      ]
+    }
+  ],
+  "application_preconditions": [
+    "Independent review accepts this frozen supplement before either control executes.",
+    "Bind the actual public candidate and debug/release executables by immutable source/input manifest and SHA-256; invoke their real public CLI, with no private checked-program injection.",
+    "Verify that native.rs, the driver process_loaded/report/exit_status/Summary regions and diagnostic construction/rendering used here still match the bound historical authority, or stop for a separately reviewed source-derived amendment.",
+    "Qualified Linux x86_64 host and real LLVM clang/opt/ld.lld 19.1.7; ordinary writable fixture and evidence directories; no forced I/O/tool failure other than the one competing final output."
+  ],
+  "source_case": {
+    "public_case_id": "public-pilot-scalar",
+    "predecessor_case_id": "pilot-scalar",
+    "source_root": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/sources/pilot-scalar",
+    "entry": "main.ox",
+    "source_files": [
+      {
+        "bytes": 151,
+        "path": "main.ox",
+        "sha256": "945fee241105224a5f0f03a538ae0c5e3d77b643a5ea3e53414c862c87d6a99a"
+      },
+      {
+        "bytes": 224,
+        "path": "maths.ox",
+        "sha256": "9e32ccfbeb54ab85be914456ad3ac50605a83485787adbf622c7860d77a6154e"
+      },
+      {
+        "bytes": 248,
+        "path": "loops.ox",
+        "sha256": "1df18a7d2dcfd400ac4ae499e97225c1df593c19b32511df7d103e4a907d8ae6"
+      }
+    ],
+    "expected_route": "scalar",
+    "expected_entry": 1,
+    "expected_function_count": 6,
+    "inherited_result_for_identification_only": {
+      "check": "accept",
+      "result": 10,
+      "result_type": "i32"
+    },
+    "inherited_native_required": true,
+    "inherited_native_expectation_unchanged": {
+      "compile": "success",
+      "exit_status": 0,
+      "llvm_version": "19.1.7",
+      "opt_level": 0,
+      "platform": "Linux x86_64",
+      "run_in_fresh_directory_with_sources_unavailable": true,
+      "stderr": "",
+      "stdout": "10\n"
+    },
+    "qualification_note": "The ordinary successful compile/run obligation stays in the original contract. These failure controls cannot satisfy or replace it."
+  },
+  "controls": [
+    {
+      "case_id": "public-concurrent-output-pilot-scalar-debug",
+      "profile": "debug",
+      "platform": "Linux x86_64",
+      "llvm_version": "19.1.7",
+      "opt_level": 0,
+      "operation": "compile",
+      "argv": [
+        "{oxid}",
+        "compile",
+        "main.ox",
+        "--edition",
+        "typed-preview",
+        "--backend",
+        "llvm",
+        "--output",
+        "out.bin",
+        "--message-format=json"
+      ],
+      "expectation": "shared_failed_publication_expectation"
+    },
+    {
+      "case_id": "public-concurrent-output-pilot-scalar-release",
+      "profile": "release",
+      "platform": "Linux x86_64",
+      "llvm_version": "19.1.7",
+      "opt_level": 0,
+      "operation": "compile",
+      "argv": [
+        "{oxid}",
+        "compile",
+        "main.ox",
+        "--edition",
+        "typed-preview",
+        "--backend",
+        "llvm",
+        "--output",
+        "out.bin",
+        "--message-format=json"
+      ],
+      "expectation": "shared_failed_publication_expectation"
+    }
+  ],
+  "method": {
+    "fixture": "For each case create a distinct new owned directory. Materialize only the three bound source files at their exact relative paths. out.bin and any .oxid-native-* directory must be absent. Keep wrapper programs and all logs outside the fixture; never compile or clean within a predecessor authority directory.",
+    "tool_boundary": "Set OXID_LLVM_BIN to separately hashed transparent wrappers. For every invocation run the pinned actual tool with the same arguments, cwd and native tool environment (including CCC_OVERRIDE_OPTIONS removal). Preserve argv[0] tool names where required by the multi-call ld.lld driver. Forward real stdout/stderr/status without fabricated version strings, outputs, or object/executable files.",
+    "barrier": "Only the final direct clang invocation identified by the exact phase-7 argv may inject the competing file. Wait for that real clang process, including its real ld.lld link, to complete successfully. Confirm native_workspace/executable exists and out.bin remains absent. While this wrapper is still running, atomically create fixture_root/out.bin using O_WRONLY|O_CREAT|O_EXCL and write exactly the six ASCII bytes winner, with no newline. Close the file, read back/hash its bytes and record successful exclusive creation before the wrapper returns status 0. The compiler waits for this wrapper, so its subsequent hard_link publication can only happen after the competing file is closed.",
+    "no_timing_guess": "Use the wrapper process-completion barrier, not sleeps, polling races, preflight output creation, or a fake linker. O_EXCL failure, tool failure, missing linked artifact, or absent barrier evidence invalidates this setup and must not be counted as a passing publication rejection.",
+    "recording": "Record a sequenced event log with pid/ppid, exact argv, cwd, pinned executable path/hash, real-tool start/finish/status and wrapper return. Record nested real linker activity separately from direct compiler-issued phases. Record final-clang success before O_EXCL creation, completed write/close before wrapper return, and compiler completion afterward. Capture and hash the linked artifact before workspace cleanup without executing it.",
+    "retention": "Retain actual compiler stdout/stderr/status, wrapper sources/hashes/logs, compiler/tool/source bindings, barrier evidence, before/after source manifests, output bytes/hash/type, and post-process directory inventory as validation evidence outside the fixture. Do not regenerate expected values from these observations."
+  },
+  "required_tool_phase_evidence": {
+    "direct_compiler_invocation_count": 7,
+    "exact_order": [
+      {
+        "ordinal": 1,
+        "tool": "clang",
+        "cwd": "fixture_root",
+        "argv": [
+          "--version"
+        ],
+        "required_marker": "clang version 19.1.7"
+      },
+      {
+        "ordinal": 2,
+        "tool": "opt",
+        "cwd": "fixture_root",
+        "argv": [
+          "--version"
+        ],
+        "required_marker": "LLVM version 19.1.7"
+      },
+      {
+        "ordinal": 3,
+        "tool": "ld.lld",
+        "cwd": "fixture_root",
+        "argv": [
+          "--version"
+        ],
+        "required_marker": "LLD 19.1.7"
+      },
+      {
+        "ordinal": 4,
+        "tool": "opt",
+        "cwd": "native_workspace",
+        "argv": [
+          "-passes=verify",
+          "-disable-output",
+          "program.ll"
+        ]
+      },
+      {
+        "ordinal": 5,
+        "tool": "clang",
+        "cwd": "native_workspace",
+        "argv": [
+          "--no-default-config",
+          "--target=x86_64-unknown-linux-gnu",
+          "-O0",
+          "-fPIE",
+          "-c",
+          "-x",
+          "ir",
+          "program.ll",
+          "-o",
+          "program.o"
+        ]
+      },
+      {
+        "ordinal": 6,
+        "tool": "clang",
+        "cwd": "native_workspace",
+        "argv": [
+          "--no-default-config",
+          "--target=x86_64-unknown-linux-gnu",
+          "-O0",
+          "-fPIE",
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-c",
+          "runtime.c",
+          "-o",
+          "runtime.o"
+        ]
+      },
+      {
+        "ordinal": 7,
+        "tool": "clang",
+        "cwd": "native_workspace",
+        "argv": [
+          "--no-default-config",
+          "--target=x86_64-unknown-linux-gnu",
+          "-pie",
+          "-Wl,-z,noexecstack",
+          "-Wl,-z,relro",
+          "-Wl,-z,now",
+          "program.o",
+          "runtime.o",
+          "-o",
+          "executable",
+          "--ld-path={resolved_wrapper_ld_lld}"
+        ]
+      }
+    ],
+    "all_real_tool_statuses": 0,
+    "version_marker_rule": "Apply native.rs's bound marker rule to real version output: marker plus 19.1.7, followed by end-of-line, a space, or an opening parenthesis; retain complete output.",
+    "workspace": "All phases 4-7 use the same newly created fixture_root/.oxid-native-{pid}-{counter} directory; retain its exact identity in the receipt.",
+    "nested_linker": "Retain all observed nested tool invocations and prove a successful real ld.lld link inside phase 7. Seven counts direct compiler-issued calls only; it is not an invented total for tool-internal subprocesses.",
+    "causal_order": [
+      "out.bin absent at start",
+      "direct phases 1-6 finish successfully in order",
+      "phase 7 real clang and real ld.lld link finish successfully",
+      "linked native_workspace/executable exists and out.bin absent",
+      "O_EXCL out.bin creation succeeds",
+      "winner bytes written, closed and verified",
+      "phase 7 wrapper returns status 0",
+      "compiler attempts atomic publication and reports the specified failure",
+      "compiler exits after workspace cleanup"
+    ]
+  },
+  "shared_failed_publication_expectation": {
+    "exit_status": 1,
+    "stderr": "",
+    "stdout_format": "Exactly two newline-terminated JSON records: one diagnostic followed by one compile-summary, with no additional text or records.",
+    "diagnostic_stable_fields": {
+      "schema_version": 1,
+      "edition": "typed-preview",
+      "kind": "diagnostic",
+      "severity": "error",
+      "code": "E0701",
+      "stage": "native-toolchain",
+      "primary": null,
+      "secondary": [],
+      "notes": []
+    },
+    "diagnostic_message": {
+      "stable_prefix": "native artifact I/O failed: ",
+      "suffix": "Nonempty host-dependent std::io::Error display text from failed hard_link publication; retain actual wording, but do not freeze a guessed string, errno text, locale or path.",
+      "assertion": "Require a string starting with the stable prefix and a nonempty suffix; establish the publication cause through the mandatory successful real-link/O_EXCL ordering evidence, not by matching host wording."
+    },
+    "diagnostic_origin": {
+      "semantic_origin": null,
+      "source_span": null,
+      "public_json_origin_field": "absent",
+      "reason": "native.rs constructs Diagnostic::new with primary=None and no secondary labels or notes. The public render_json schema has no origin property; a separate observer origin projection must be null and must not assign an AST/source origin."
+    },
+    "compile_summary": {
+      "schema_version": 1,
+      "edition": "typed-preview",
+      "kind": "compile-summary",
+      "success": false,
+      "errors": 1,
+      "output": null
+    },
+    "compile_summary_json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}\n",
+    "filesystem": {
+      "out_bin": {
+        "type": "regular-file-not-symlink",
+        "bytes": 6,
+        "utf8": "winner",
+        "hex": "77696e6e6572",
+        "sha256": "4221a0fc3dfbfd830dc3a13f6c72d233781179bea27df532ff903f3abdba5586",
+        "requirement": "The exact exclusively created competitor file survives unchanged; record its identity before wrapper return and after compiler exit."
+      },
+      "source_manifest_before_and_after": [
+        {
+          "bytes": 151,
+          "path": "main.ox",
+          "sha256": "945fee241105224a5f0f03a538ae0c5e3d77b643a5ea3e53414c862c87d6a99a"
+        },
+        {
+          "bytes": 224,
+          "path": "maths.ox",
+          "sha256": "9e32ccfbeb54ab85be914456ad3ac50605a83485787adbf622c7860d77a6154e"
+        },
+        {
+          "bytes": 248,
+          "path": "loops.ox",
+          "sha256": "1df18a7d2dcfd400ac4ae499e97225c1df593c19b32511df7d103e4a907d8ae6"
+        }
+      ],
+      "source_map_requirement": "The same three paths and bytes remain; no source deletion, rename, rewrite, or added .ox file.",
+      "directory_delta": [
+        "out.bin"
+      ],
+      "native_workspace_remaining": [],
+      "cleanup_requirement": "No generated .oxid-native-* directory or generated native file remains in the fixture after the compiler exits; specifically the captured native workspace has been removed."
+    },
+    "no_executable_run": true,
+    "coverage_class": "failed-publication-no-clobber-guard",
+    "counts_as_native_success": false,
+    "counts_as_source_free_elf_execution": false
+  },
+  "authority_reasoning": [
+    {
+      "requirement": "Preserve a concurrent winner",
+      "authority": "native.rs::compile final hard_link and tests/typed_native.rs::versions_failures_cleanup_and_atomic_no_clobber_are_enforced raced-output branch",
+      "derivation": "Historical test creates winner after link output creation and expects status 1 with winner preserved. The stronger public control passes real LLVM first and uses O_EXCL, preventing an accidental pre-existing target from satisfying setup."
+    },
+    {
+      "requirement": "One sourceless E0701/native-toolchain diagnostic",
+      "authority": "native.rs::compile hard_link(...).map_err(io)?; io; failure; diagnostic.rs::new/render_json",
+      "derivation": "After successful tools the existing target makes atomic no-replace hard_link fail. io adds the stable prefix, failure selects E0701/native-toolchain and primary None, and Diagnostic::new initializes empty secondary and notes. No source origin exists."
+    },
+    {
+      "requirement": "Status 1 and failure summary",
+      "authority": "driver.rs::process_loaded, Summary::empty, report and exit_status",
+      "derivation": "Native error maps to a one-element diagnostic vector; the error branch uses empty Compile summary. report emits diagnostic then compile-summary false/1/null on stdout; E0701 is non-E0500 and exits 1. JSON path does not emit stderr."
+    },
+    {
+      "requirement": "Cleanup and unchanged source map",
+      "authority": "native.rs::Workspace::drop and compile; frozen public contract observation_setup and ordering_contract",
+      "derivation": "The publication error unwinds past Workspace, which removes the private build directory. Compile reads no fixture source in this native boundary and creates generated files only inside that directory. Only the independently created winner may remain as a fixture delta."
+    },
+    {
+      "requirement": "No semantic or qualification substitution",
+      "authority": "public-cli-contract-v3.json public-pilot-scalar and predecessor-reuse-v1.json bindings",
+      "derivation": "Reuse existing route, entry, function count, result and all source bytes solely to exercise a known admissible compile. The existing native_required=true and successful source-free execution obligations remain unchanged and separate."
+    }
+  ],
+  "preservation": {
+    "modify_existing_contracts": false,
+    "modify_existing_native_required_fields": false,
+    "new_language_semantics": false,
+    "new_source_cases": false,
+    "observation_derived_expectations": false
+  }
+}
