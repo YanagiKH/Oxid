@@ -420,75 +420,6 @@ jobs:
           UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
         run: python3 -B scripts/collect_unit3_ci_diagnostics.py failure-logs
 
-      - name: Index and preserve Unit3 results on every terminal state
-        if: always()
-        timeout-minutes: 15
-        shell: bash
-        env:
-          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
-        run: |
-          python3 -B - <<'PYCODE'
-          import hashlib, json, os, pathlib, tarfile
-          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "typed-project-unit3"
-          root.mkdir(parents=True, exist_ok=True)
-          package = pathlib.Path("tests/fixtures/typed_project_unit3_independent")
-          selected = []
-          for path in sorted(root.rglob("*")):
-              if not (path.is_file() or path.is_symlink()):
-                  continue
-              relative = path.relative_to(root)
-              build_cache = "target" in relative.parts or "source-target" in relative.parts
-              if build_cache:
-                  if path.is_symlink() or not path.name.startswith("oxid-"):
-                      continue
-                  with path.open("rb") as source:
-                      if source.read(4) != b"\x7fELF":
-                          continue
-              selected.append(path)
-          entries = []
-          for path in selected:
-              name = path.relative_to(root).as_posix()
-              if path.is_symlink():
-                  entries.append({"path": name, "type": "symlink", "target": os.readlink(path)})
-              else:
-                  digest = hashlib.sha256()
-                  with path.open("rb") as source:
-                      while chunk := source.read(1024 * 1024):
-                          digest.update(chunk)
-                  entries.append({"path": name, "bytes": path.stat().st_size, "sha256": digest.hexdigest()})
-          inputs = {}
-          for name in ("package-manifest.json", "manifests/selected-current.json", "manifests/core-v1.json"):
-              path = package / name
-              if path.is_file():
-                  inputs[name] = {"bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-          index = root / "ci-evidence-index.json"
-          index.write_text(json.dumps({
-              "schema": 1,
-              "qualification_step_outcome": os.environ.get("UNIT3_STEP_OUTCOME", "unknown"),
-              "semantic_receipt_label": "archived core-v1 reconstructed by pinned inverse current-source changes, then the unchanged platform bridge",
-              "current_source_binding_receipt": "source-binding/prepared.json",
-              "direct_current_semantic_execution": False,
-              "direct_successor_semantic_execution": False,
-              "package_inputs": inputs,
-              "expected_full_plan_rows": {"source": 304, "native": 300, "mutation": 220},
-              "driver_attributions": "eight rows joined from the full native comparison; zero extra executions",
-              "retained_bytes": sum(row.get("bytes", 0) for row in entries),
-              "excluded": "regenerable Rust target caches; exact oxid test executables are retained",
-              "files": entries,
-          }, indent=2) + "\n")
-          archive = root.parent / "typed-project-unit3-evidence.tar.gz"
-          with tarfile.open(archive, "w:gz", compresslevel=6, dereference=False) as output:
-              for path in selected + [index]:
-                  output.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
-          archive_digest = hashlib.sha256()
-          with archive.open("rb") as source:
-              while chunk := source.read(1024 * 1024):
-                  archive_digest.update(chunk)
-          (root.parent / "typed-project-unit3-evidence.sha256").write_text(
-              archive_digest.hexdigest() + "  " + archive.name + "\n")
-          print(json.dumps({"files": len(entries), "retained_bytes": sum(row.get("bytes", 0) for row in entries), "archive_bytes": archive.stat().st_size}))
-          PYCODE
-
       - name: Prepare bounded Unit3 diagnostic receipts
         if: always()
         timeout-minutes: 2
@@ -507,7 +438,15 @@ jobs:
             ${{ runner.temp }}/typed-project-unit3-compact.tar.gz
             ${{ runner.temp }}/typed-project-unit3-compact.tar.gz.sha256
 
-      - name: Retain lossless Unit3 qualification artifacts
+      - name: Index and preserve Unit3 results on every terminal state
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/preserve_unit3_ci_evidence.py
+
+      - name: Retain indexed Unit3 evidence (complete or explicitly partial)
         if: always()
         uses: actions/upload-artifact@v4
         with:
