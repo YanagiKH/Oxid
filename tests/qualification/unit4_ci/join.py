@@ -213,19 +213,25 @@ def parser_records(capsule, repo, contract_root, plan, seal):
     q.need(result['status'] == 'pass' and result['issues'] == [], 'parser comparator failed')
     session = capsule.json(result['session'])
     q.need(session['checkout']['head'] == plan['provenance']['checkout_head'] and session['checkout']['tree'] == plan['provenance']['checkout_tree'] and
-           session['checkout']['historical_source_equivalent'] is True, 'parser current checkout identity')
+           session['checkout']['historical_source_equivalent'] is False and session['checkout']['current_source_bound'] is True, 'parser current checkout identity')
     q.need(session['host']['os'] == 'linux' and session['host']['architecture'] == 'x86_64' and session['host']['python_pointer_width'] == 64, 'parser actual host')
     root = session['root']
     adapter = q.module('_unit4_portable_admission', Path(repo) / q.PARSER / 'portable.py')
     authority = adapter.authority()
+    source = q.read(Path(repo) / q.SOURCE / 'current-source.json')
+    compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/')) or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
+    q.need(len(compiler) == 114 and session['checkout']['compiler_files'] == compiler and
+           session['checkout']['current_source_manifest_sha256'] == session['current_source_manifest']['sha256'] == q.CURRENT_SHA and
+           session['checkout']['reviewed_source_head'] == source['reviewed_source_head'] and
+           session['checkout']['source_only_tree'] == source['source_only_tree'], 'parser exact current source map/checkpoint')
     q.need(result['portable_authority_sha256'] == session['authority_sha256'] == adapter.AUTHORITY_SHA and
            session['adapter']['sha256'] == q.identity(Path(repo) / q.PARSER / 'portable.py')['sha256'], 'stale parser adapter/authority')
     comparator, proof = adapter.comparator()
     contract = comparator.load_contract(contract_root)
     effective, receipt = comparator.admit_contract_amendment(contract, contract_root, adapter.effective_authority(authority))
     q.need(result['derivation'] == proof and all(result.get(key) == value for key, value in receipt.items()), 'parser comparator/effective contract identity')
-    sys.path.insert(0, str(Path(repo) / q.PARSER / 'frozen/helpers'))
-    normalizer = q.module('_unit4_frozen_collector', Path(repo) / q.PARSER / 'frozen/helpers/run.py')
+    sys.path.insert(0, str(Path(repo) / q.PARSER_FROZEN / 'frozen/helpers'))
+    normalizer = q.module('_unit4_frozen_collector', Path(repo) / q.PARSER_FROZEN / 'frozen/helpers/run.py')
     expected_case_ids = [case['id'] for case in contract['cases']]
     expected_modes = sum(1 + ('relation_to_original' in case['expected']) for case in contract['cases'])
     q.need(len(expected_case_ids) == 248 and expected_modes == 319, 'parser frozen case/mode roster changed')
@@ -242,6 +248,10 @@ def parser_records(capsule, repo, contract_root, plan, seal):
                    session['prepared_ns'] <= invocation['started_ns'] <= invocation['finished_ns'], 'parser actual fresh build invocation')
             q.need(build['profile'] == profile and build['control'] is control and build['status'] == 'built' and build['exit_code'] == 0 and
                    build['rustc_version'] == authority['recipe']['rustc_verbose'] and build['target'] == authority['recipe']['target'], 'parser actual build recipe')
+            q.need(build['control'] is control and
+                   build['candidate_source_manifest_sha256'] == authority['current']['current_candidate_source_manifest_sha256'] and
+                   build['observer_source_sha256'] == authority['helper_manifest_sha256'] and
+                   build['overlay_manifest'] == session['control_overlay' if control else 'overlay'], 'parser actual current build source/overlay')
             q.need(build['binary']['sha256'] not in binaries, 'parser binary reused across builds')
             binaries.add(build['binary']['sha256'])
             rows = [q.loads(line) for line in capsule.raw(build['stdout']).splitlines()]

@@ -6,7 +6,8 @@
     "tests/fixtures/typed_project_unit4_contracts",
     "tests/fixtures/typed_project_source_binding",
     "tests/fixtures/typed_project_unit4_public_location_amendment_v1",
-    "tests/fixtures/typed_project_unit1_compatibility"
+    "tests/fixtures/typed_project_unit1_compatibility",
+    "tests/qualification/unit4_parser_current"
   ],
   "files": [
     {
@@ -718,6 +719,26 @@
       "bytes": 9175,
       "path": "tests/qualification/unit4_hosted_capability/selftest.py",
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
+    },
+    {
+      "bytes": 4028,
+      "path": "tests/qualification/unit4_parser_current/README.md",
+      "sha256": "34bb765a08f88b84ab3dfd88d3eff0f844c716feddf8860a42f490204a86cc44"
+    },
+    {
+      "bytes": 141860,
+      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "59b45b681b47aa0c5754c985e24dd3c93e428f58eea42e16721590cc098192d1"
+    },
+    {
+      "bytes": 58865,
+      "path": "tests/qualification/unit4_parser_current/portable.py",
+      "sha256": "717890f4fe6f1b1fe22a2cc09b4a49b2eadd45573eff195ecd9de50e30fe5a70"
+    },
+    {
+      "bytes": 6687,
+      "path": "tests/qualification/unit4_parser_current/test_current.py",
+      "sha256": "d28922fef128eb96e72f10298876c8bf63ff9902a7b4ba726278b18682df6122"
     },
     {
       "bytes": 7505,

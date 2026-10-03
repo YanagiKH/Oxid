@@ -241,3 +241,65 @@ fresh Unit2 result qualifies its current source and helper identities; preparati
 alone does not qualify semantic/native/mutation behavior. The unchanged long
 native corpora were not rerun locally. Final normal-trigger hosted qualification
 must still run all applicable gates on the exact published integration head.
+
+## Current parser authority correction
+
+Published head `ab98738e7837923b712261ae07d577050093f4bc` was not fully
+qualified. Its two exact-head hosted runs ended with **22 passed and four failed
+checks**: both Linux Unit4 jobs and their dependent final joins. The available
+job logs reached `08-parser-prepare`; detailed remote command stderr remained
+inside the large full archives and was not retrieved. A separate local
+reproduction of the exact published reader rejected `owned/mod.rs` against its
+historical identity, then identified the other two changed groundwork bodies
+and the added array test. That local error is not presented as remote stderr.
+
+The earlier preparation-only route stopped after lifecycle preparation at stage
+03. Unit2 used its separate current-source adapter. Neither exercised the
+parser's independent historical-equivalence boundary: **113 compiler bodies,
+283 base inputs and 286 members per derived view**. Current parser qualification
+requires **114 compiler bodies, 284 base inputs and 287 members per derived
+view**, derived from the already reviewed 121-member current manifest.
+
+The explicit successor in `tests/qualification/unit4_parser_current` preserves
+the entire original frozen v3 package, all ten helpers, instrumentation, observer
+Rust, semantic predicates and expected corpus. It verifies historical/current
+Git and file identities, retains the original preparation manifests, and applies
+only the four disjoint groundwork changes before compilation. New candidate and
+overlay identities bind actual current source. Sessions explicitly record
+`current_source_bound: true` and `historical_source_equivalent: false`; both
+identity domains and retained provenance are checked again by the final reader.
+Linux preparation-only now invokes the same actual parser preparation function
+and command as production stage 08, with an explicit historical checkout.
+
+The runtime freeze was `34864a8041189aba0202d5deec37837028c5ba03`, tree
+`edcd04d0f36bb626c573880da72804644937ca14`. Ten successor controls and 75 CI
+controls passed. Fresh local execution built all four observer/control
+binaries, passed **12 ordinary passivity pairs**, and compared **638 of 638
+observations** against the unchanged effective semantic contract. Independent
+review checked **508 distinct execution nonces**, all current maps/binaries,
+the complete **3,678-member** comparison closure and the actual raw reader.
+The 578 full-archive-only identities are exactly 287 source members per role
+plus four binaries; historical/current provenance metadata remains required.
+
+All production stage commands exited zero. A subsequent local audit harness
+lacked two reader interface members and failed after the semantic comparison.
+That outer failure is retained unchanged. A corrected, separate read-only
+finalizer passed the real seal/reader and live session checks without rebuilding,
+recollecting, or rewriting any original execution receipt. Its result is
+SHA-256 `5f1158761762b826952f6abd818895532ba00b9ac4405705ac084d04575e6960`;
+the actual semantic comparison is
+`4bb2d432d978d985b95deecbd47044ff540386a4ccd7035e4c3d0e04b13753f3`.
+The independent fresh runtime report is
+`ae39ccf757875a1a173135b768954ca8cf70e970ece4fda18b4154714c4947e6`.
+
+After that frozen run, three test-only portability corrections resolve an
+expected path, normalize only a test's path comparison, and emit fixture stderr
+as exact bytes. Runtime algorithms, current source, authority and semantic
+expectations remain identical; the execution above retains its original
+34864a8 identity. A failed stage 08 now prints only a bounded, JSON-escaped
+2,048-byte stderr tail with workflow markers escaped, after preserving the full
+stream and receipt. Failure status and full archives remain intact.
+
+These are local current-parser results. The corrected final publication still
+requires fresh exact-head hosted qualification across all applicable gates.
+No historical or failed receipt is relabeled as a successor pass.

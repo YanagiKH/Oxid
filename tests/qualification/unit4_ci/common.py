@@ -17,12 +17,13 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '03b7be17a7e2050d8245becae9b88b597754f9ac823c18a6dcbba12dc8d6cc03'
+INPUTS_SHA = '86ad38ddad4603d8e31f78277a5f03584c14611a8cd741f0fade2012f249c044'
 CURRENT_SHA = '5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
 HOSTED = 'tests/qualification/unit4_hosted_capability'
-PARSER = 'tests/fixtures/typed_project_unit4_parser_portable/frozen/v3'
+PARSER = 'tests/qualification/unit4_parser_current'
+PARSER_FROZEN = 'tests/fixtures/typed_project_unit4_parser_portable/frozen/v3'
 TRANSPORT = 'tests/fixtures/typed_project_unit4_contracts'
 SOURCE = 'tests/fixtures/typed_project_source_binding'
 AMENDMENT = 'tests/fixtures/typed_project_unit4_public_location_amendment_v1'

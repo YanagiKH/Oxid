@@ -71,12 +71,17 @@ def verify_parser_seal(seal, resolver):
             bound(value[stream])
         return value
 
-    authority_path = q.HERE.parents[2] / q.PARSER / 'authority.json'
-    q.need(q.identity(authority_path)['sha256'] == '02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0', 'unapproved parser closure authority')
-    authority = q.read(authority_path)
-    q.need(session['authority_sha256'] == '02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0', 'stale parser closure authority')
-    for subdirectory, field in (('source', 'derived_files'), ('control-source', 'control_derived_files'), ('helpers', 'helper_files')):
-        for row in authority[field]:
+    adapter = q.module('_unit4_current_parser_closure', q.HERE.parents[2] / q.PARSER / 'portable.py')
+    authority = adapter.authority()
+    q.need(session['authority_sha256'] == adapter.AUTHORITY_SHA, 'stale current parser closure authority')
+    try:
+        adapter.verify_transition_records(session, authority, resolve=bound)
+    except ValueError as error:
+        raise q.Reject('parser transition metadata: ' + str(error)) from error
+    for subdirectory, rows in (('source', authority['current']['current_derived_files']),
+                              ('control-source', authority['current']['current_control_derived_files']),
+                              ('helpers', authority['helper_files'])):
+        for row in rows:
             record = {'path': str(root / subdirectory / q.relative(row['path'])), 'bytes': row['bytes'], 'sha256': row['sha256']}
             bound(record, omit=subdirectory != 'helpers')
     for key in ('overlay', 'control_overlay'):

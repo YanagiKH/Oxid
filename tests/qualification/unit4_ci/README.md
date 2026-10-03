@@ -1,6 +1,6 @@
 # Mandatory current Unit4 qualification
 
-This additive CI integration admits156 exact component members plus the unchanged
+This additive CI integration admits160 exact component members plus the unchanged
 121-file current compiler authority before any component use. The current authority includes the private fixed-array groundwork and its new
 test member; its additive lifecycle observer contains122 members. The reviewed
 observer overlay and all semantic/native/mutation contracts remain unchanged.
@@ -27,8 +27,10 @@ ordinary and lifecycle debug/release binaries. Non-Linux hosts must actually
 build and exercise the frozen native-tool trap; zero applicable predecessor and
 guard scopes are explicit full-roster exclusions.
 
-`gate.py prepare-only` performs the identical admission/materialization/observer
-preparation prefix and produces only PREPARATION_ONLY. `gate.py local-only` can
+`gate.py prepare-only` performs current admission, contract materialization,
+lifecycle preparation and, on Linux, the actual current parser preparation used
+by stage08. Linux requires `--historical-repo` naming the exact historical
+checkout. It produces only PREPARATION_ONLY and never claims parser execution. `gate.py local-only` can
 exercise the complete local sequence with an explicitly verified selected LLVM
 runtime and produces LOCAL_ONLY_PASS. It never invokes the root controller. Its
 compact capsule is unconditionally rejected by the hosted reader. Inputs must be
@@ -58,3 +60,11 @@ Counts are derived from frozen host rosters:10286 public section observations
 across four hosts, separately638 parser observations and12 ordinary passivity
 pairs. Existing local public or parser evidence is useful for transport/replay
 controls only; it never supplies a hosted execution row.
+
+The current parser successor lives in `tests/qualification/unit4_parser_current`.
+It preserves the complete original frozen v3 package and distinguishes its
+283/286 historical maps from the current 284/287 maps. The source manifest and
+transition records bind actual current compiler bodies through the final join.
+Only a failed stage08 prints a bounded, JSON-escaped stderr tail; workflow marker
+pairs are escaped too. Full stderr and its exact receipt hash remain preserved,
+and the command still fails normally. No environment or general log dump is added.

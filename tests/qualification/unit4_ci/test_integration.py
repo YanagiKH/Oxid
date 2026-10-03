@@ -761,20 +761,41 @@ def synthetic_seal_fixture(root):
         return record
     def process(base):
         return put((base, 'invocation.json'), {'stdout': put((base, 'driver.stdout'), b''), 'stderr': put((base, 'driver.stderr'), b'')})
-    authority = q.read(REPO / q.PARSER / 'authority.json')
-    overlays = {kind: put((kind, 'overlay-manifest.json'), {'scope': 'synthetic-control-only'}) for kind in ('source', 'control-source')}
+    adapter = q.module('_unit4_synthetic_current_parser', REPO / q.PARSER / 'portable.py')
+    authority = adapter.authority()
+    overlays = {kind: put((kind, 'overlay-manifest.json'), adapter.current_overlay(root / kind, authority, kind == 'control-source'))
+                for kind in ('source', 'control-source')}
     for directory in ('source', 'control-source'):
         put((directory, 'observer-source-manifest.json'), authority['helper_files'])
-    for directory, field in (('source', 'derived_files'), ('control-source', 'control_derived_files')):
-        for row in authority[field]:
+    for directory, field in (('source', 'current_derived_files'), ('control-source', 'current_control_derived_files')):
+        for row in authority['current'][field]:
             record = {'path': str(root / directory / row['path']), 'bytes': row['bytes'], 'sha256': row['sha256']}
             records[record['path']] = record; omitted.append(record)
     for row in authority['helper_files']:
-        put(('helpers', row['path']), (REPO / q.PARSER / 'frozen/helpers' / row['path']).read_bytes())
-    session = put(('session.json',), {'root': str(root), 'authority_sha256': q.identity(REPO / q.PARSER / 'authority.json')['sha256'],
+        put(('helpers', row['path']), (REPO / q.PARSER_FROZEN / 'frozen/helpers' / row['path']).read_bytes())
+    transitions = []
+    historical_candidate = (json.dumps({'schema': 'oxid-unit4-candidate-source-manifest-v1', 'commit': authority['base_commit'],
+                                       'files': authority['original_files']}, indent=2, sort_keys=True) + '\n').encode()
+    for control in (False, True):
+        directory = 'control-source' if control else 'source'
+        preparation = 'prepare-control' if control else 'prepare'
+        historical_overlay = {'schema': 'oxid-unit4-observer-overlay-v1', 'base_commit': authority['base_commit'], 'control': control,
+                              'source': str(root / directory), 'candidate_source_manifest_sha256': authority['candidate_source_manifest_sha256'],
+                              'observer_source_sha256': authority['helper_manifest_sha256'], 'observer_files': authority['helper_files'],
+                              'instrumentation': authority['control_instrumentation' if control else 'instrumentation'],
+                              'files': authority['control_derived_files' if control else 'derived_files']}
+        transitions.append({'control': control, 'historical_candidate': put((preparation, 'historical-candidate-source-manifest.json'), historical_candidate),
+                            'historical_overlay': put((preparation, 'historical-overlay-manifest.json'), historical_overlay),
+                            'current_candidate': records[str(root / directory / 'candidate-source-manifest.json')],
+                            'current_overlay': overlays[directory], 'changes': authority['current']['source_delta']})
+    session = put(('session.json',), {'schema': 'oxid-unit4-current-parser-session-v1', 'root': str(root), 'authority_sha256': adapter.AUTHORITY_SHA,
                   'adapter': q.identity(REPO / q.PARSER / 'portable.py'), 'host': {'python_executable': sys.executable},
                   'overlay': overlays['source'], 'control_overlay': overlays['control-source'],
-                  'prepare_invocation': process('prepare'), 'control_prepare_invocation': process('prepare-control')})
+                  'prepare_invocation': process('prepare'), 'control_prepare_invocation': process('prepare-control'),
+                  'transition_authority': put(('current-authority.json',), (REPO / q.PARSER / 'authority.json').read_bytes()),
+                  'historical_authority': put(('historical-authority.json',), (REPO / q.PARSER_FROZEN / 'authority.json').read_bytes()),
+                  'current_source_manifest': put(('current-source-manifest.json',), (REPO / q.SOURCE / 'current-source.json').read_bytes()),
+                  'transitions': transitions})
     for profile_index, profile in enumerate(q.PROFILES):
         builds = []
         for control in (False, True):
@@ -887,6 +908,100 @@ class ComparisonSealControls(unittest.TestCase):
         record = next(row for row in self.seal['before'] if row['path'].endswith('observer-source-manifest.json'))
         self.seal['full_archive_only'].append(copy.deepcopy(record))
         with self.assertRaises(q.Reject): verify_parser_seal(self.seal, self.resolve)
+
+
+    def test_retained_transition_metadata_cannot_be_omitted(self):
+        for suffix in ('current-authority.json', 'historical-authority.json', 'current-source-manifest.json',
+                       'prepare/historical-candidate-source-manifest.json', 'prepare-control/historical-overlay-manifest.json'):
+            with self.subTest(member=suffix):
+                self.seal, self.data = synthetic_seal_fixture(self.root)
+                row = next(row for row in self.seal['before'] if row['path'].replace('\\', '/').endswith('/' + suffix))
+                self.seal['full_archive_only'].append(copy.deepcopy(row))
+                with self.assertRaisesRegex(q.Reject, 'raw parser input mislabeled'):
+                    verify_parser_seal(self.seal, self.resolve)
+
+    def test_coherently_rehashed_transition_metadata_is_rejected(self):
+        for key in ('transition_authority', 'historical_authority', 'current_source_manifest', 'historical_candidate', 'historical_overlay'):
+            with self.subTest(key=key):
+                self.seal, self.data = synthetic_seal_fixture(self.root)
+                comparison = q.loads(self.data[self.seal['comparison']['path']])
+                session_binding = comparison['session']
+                session = q.loads(self.data[session_binding['path']])
+                record = session['transitions'][0][key] if key.startswith('historical_') and key != 'historical_authority' else session[key]
+                raw = self.data[record['path']]
+                if key == 'historical_overlay':
+                    value = q.loads(raw); value['files'] = value['files'][:-1]; raw = q.canonical(value)
+                else:
+                    raw += b'\n'
+                def rebind(record, raw):
+                    self.data[record['path']] = raw
+                    record.update(bytes=len(raw), sha256=q.sha(raw))
+                    for row in self.seal['before']:
+                        if row['path'] == record['path']: row.update(record)
+                rebind(record, raw)
+                rebind(session_binding, q.canonical(session))
+                rebind(self.seal['comparison'], q.canonical(comparison))
+                self.seal['after'] = copy.deepcopy(self.seal['before'])
+                with self.assertRaisesRegex(q.Reject, 'parser transition metadata'):
+                    verify_parser_seal(self.seal, self.resolve)
+
+
+class ParserPreparationBoundaryControls(unittest.TestCase):
+    def test_shared_preparation_calls_actual_current_parser(self):
+        calls = []
+        args = SimpleNamespace(historical_repo='/explicit/historical-parser')
+        driver = SimpleNamespace(stage=lambda *values: calls.append(values))
+        with patch.object(q, 'git', return_value=q.HISTORICAL_HEAD):
+            gate.prepare_parser(args, REPO, Path('/fresh/qualification'), driver)
+        self.assertEqual(calls, [('08-parser-prepare', [REPO / q.PARSER / 'portable.py', 'prepare',
+                         '--repo', Path(args.historical_repo).resolve(), '--checkout', REPO,
+                         '--output', Path('/fresh/qualification/parser')], 300)])
+
+    def test_missing_historical_checkout_cannot_prepare(self):
+        with self.assertRaisesRegex(q.Reject, 'explicit historical checkout'):
+            gate.prepare_parser(SimpleNamespace(historical_repo=None), REPO, Path('/fresh'), None)
+
+    def test_failed_parser_tail_is_bounded_escaped_and_preserves_full_receipt(self):
+        from contextlib import redirect_stderr
+        payload = 'prefix ' * 500 + '\n\x1b[31m::error:: marker\n::stop-commands::token\n##[error] end\n'
+        for stage in ('08-parser-prepare', 'other-controlled-stage'):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                script = root / 'failure.py'
+                script.write_text('import sys\nsys.stderr.buffer.write(' + repr(payload.encode()) + ')\nraise SystemExit(7)\n')
+                provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+                runtime = q.public_modules(REPO)[1]
+                driver = gate.Driver(REPO, root, provenance, runtime)
+                displayed = io.StringIO()
+                with patch.object(q, 'admit', return_value=provenance), redirect_stderr(displayed):
+                    with self.assertRaises(q.Reject): driver.stage(stage, [script], 10)
+                receipt = q.read(root / 'commands' / stage / 'receipt.json')
+                self.assertEqual(receipt['status'], 7)
+                self.assertEqual((root / 'commands' / stage / 'stderr').read_text(), payload)
+                self.assertEqual(receipt['streams']['stderr']['sha256'], q.sha(payload.encode()))
+                text = displayed.getvalue()
+                if stage == '08-parser-prepare':
+                    prefix = 'Unit4 parser preparation diagnostic: '
+                    self.assertTrue(text.startswith(prefix))
+                    value = json.loads(text[len(prefix):])
+                    self.assertEqual(value['tail_bytes'], 2048)
+                    self.assertEqual(value['stderr_bytes'], len(payload.encode()))
+                    self.assertIs(value['truncated'], True)
+                    self.assertEqual(value['stderr_tail'], payload.encode()[-2048:].decode())
+                    for forbidden in ('\x1b', '::error::', '::stop-commands::', '##[error]'):
+                        self.assertNotIn(forbidden, text)
+                    self.assertEqual(text.count('\n'), 1)
+                else:
+                    self.assertEqual(text, '')
+
+    def test_historical_parser_session_cannot_enter_current_join(self):
+        session = {'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
+                   'historical_source_equivalent': True, 'current_source_bound': False}}
+        result = {'status': 'pass', 'issues': [], 'session': 'session'}
+        capsule = SimpleNamespace(json=lambda record: result if record == 'result' else session)
+        plan = {'provenance': {'checkout_head': 'a' * 40, 'checkout_tree': 'b' * 40}}
+        with self.assertRaisesRegex(q.Reject, 'parser current checkout identity'):
+            join.parser_records(capsule, REPO, None, plan, {'comparison': 'result'})
 
 
 class FinalFailureControls(unittest.TestCase):
