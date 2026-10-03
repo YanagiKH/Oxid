@@ -288,6 +288,12 @@ jobs:
             --manifest "$unit3_pkg/source-transport/source-transport.json" \
             --requests "$unit3_pkg/source-transport/requests.jsonl" --output "$unit3_out/inputs"
 
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" prepare \
+            --component-root "$unit3_pkg/components/oracles" \
+            --component-manifest "$unit3_pkg/portable/comparison-v1/component-manifest.json" \
+            --materialization "$unit3_out/inputs/materialization.json" \
+            --parser "$unit3_pkg/components/observer/parse_debug.py" --output "$unit3_out/comparison-view"
+
           "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_repo" \
             --selected-manifest "$unit3_pkg/manifests/selected-current.json" \
             --core-manifest "$unit3_pkg/manifests/core-v1.json" \
@@ -385,11 +391,6 @@ jobs:
           "$unit3_python" -B "$unit3_pkg/portable/mutation_gate.py" collect --plan "$unit3_out/mutation-plan.json" \
             --plan-sha256 "$unit3_mutation_plan_sha" --python "$unit3_python" --output "$unit3_out/mutation-collection"
 
-          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" prepare \
-            --component-root "$unit3_pkg/components/oracles" \
-            --component-manifest "$unit3_pkg/portable/comparison-v1/component-manifest.json" \
-            --materialization "$unit3_out/inputs/materialization.json" \
-            --parser "$unit3_pkg/components/observer/parse_debug.py" --output "$unit3_out/comparison-view"
           "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
             --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
             --plan "$unit3_out/source-plan.json" --plan-sha256 "$unit3_source_plan_sha" \

@@ -7,16 +7,16 @@
     "original_manifest_sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf",
     "restored_original_files": 81
   },
-  "bytes_excluding_manifest": 12336296,
+  "bytes_excluding_manifest": 12234427,
   "comparison_runtime_sha256": "2c3cbff718819d8511679b501b8253d89c54ace6f0f39a986606e3a04a859c12",
   "derived_original_core_sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
   "direct_successor_semantic_execution": false,
-  "file_count_excluding_manifest": 294,
+  "file_count_excluding_manifest": 293,
   "files": [
     {
-      "bytes": 11299,
+      "bytes": 11592,
       "path": "CI_COMMANDS.md",
-      "sha256": "f93af780653c2ac80135f4c5788fd09946816be8b335bdb174592e29fc980eb4"
+      "sha256": "15dd620244e60900f66bed9d2b986e7a69720121f49d46e9e802c0e507e3d29b"
     },
     {
       "bytes": 3253,
@@ -752,11 +752,6 @@
       "bytes": 5164,
       "path": "components/oracles/comparison-v1/test_stream_sensitivity.py",
       "sha256": "1b582c47d56216c843ed88dffdc54dfdd86d00abb06917482ee47007b9cbdd24"
-    },
-    {
-      "bytes": 102162,
-      "path": "components/oracles/component-manifest.json",
-      "sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2"
     },
     {
       "bytes": 1911,
@@ -1501,7 +1496,7 @@
   "observer_freeze_sha256": "a96db8900f0eb37dc21bb61f46b35635d5fa3809dd3195f1f3181783544008d0",
   "oracle_component_sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2",
   "original_expectation_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
-  "predecessor_package_manifest_sha256": "9610eeb61f9a6a783141318681511f9459e0a37559da507c8eac7bc1a1a6dd95",
+  "predecessor_package_manifest_sha256": "5fa6cb067f9b457ef148ee458ef505588f84be0869db9db93b823eb4412802c3",
   "schema": "unit3-independent-publication-package-v1",
   "selected_current_core_sha256": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963",
   "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",

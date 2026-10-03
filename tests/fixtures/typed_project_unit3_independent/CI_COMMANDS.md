@@ -15,6 +15,10 @@ dependencies before the offline builds. `LLVM_LIB_DIR` must be set to
 `$OUT/llvm-runtime/libraries`, the fresh stage below; it must not name the broad
 host `/usr/lib/x86_64-linux-gnu` directory. No source corpus is materialized inside
 the repository. Keep source-input qualification before cache-producing steps.
+Prepare the exact oracle comparison view immediately after materialization,
+before builds and collections; all three independent comparisons remain required
+after collection. The component manifest stays outside its 101-member oracle
+root at `portable/comparison-v1/component-manifest.json`.
 
 ```sh
 "$PYTHON" -B "$PKG/portable/verify_package.py" --package "$PKG" \
@@ -27,6 +31,12 @@ the repository. Keep source-input qualification before cache-producing steps.
   --archive "$PKG/source-transport/sources.tar.gz" \
   --manifest "$PKG/source-transport/source-transport.json" \
   --requests "$PKG/source-transport/requests.jsonl" --output "$OUT/inputs"
+
+"$PYTHON" -B "$PKG/portable/comparison-v1/portable_compare.py" prepare \
+  --component-root "$PKG/components/oracles" \
+  --component-manifest "$PKG/portable/comparison-v1/component-manifest.json" \
+  --materialization "$OUT/inputs/materialization.json" \
+  --parser "$PKG/components/observer/parse_debug.py" --output "$OUT/comparison-view"
 
 "$PYTHON" -B "$PKG/portable/bridge.py" --repo "$REPO" \
   --selected-manifest "$PKG/manifests/selected-current.json" \
@@ -152,11 +162,6 @@ MUTATION_PLAN_SHA=$(sha256sum "$OUT/mutation-plan.json" | cut -d' ' -f1)
 "$PYTHON" -B "$PKG/portable/mutation_gate.py" collect --plan "$OUT/mutation-plan.json" \
   --plan-sha256 "$MUTATION_PLAN_SHA" --python "$PYTHON" --output "$OUT/mutation-collection"
 
-"$PYTHON" -B "$PKG/portable/comparison-v1/portable_compare.py" prepare \
-  --component-root "$PKG/components/oracles" \
-  --component-manifest "$PKG/portable/comparison-v1/component-manifest.json" \
-  --materialization "$OUT/inputs/materialization.json" \
-  --parser "$PKG/components/observer/parse_debug.py" --output "$OUT/comparison-view"
 "$PYTHON" -B "$PKG/portable/comparison-v1/portable_compare.py" compare \
   --prepared "$OUT/comparison-view/prepared-comparison.json" \
   --plan "$OUT/source-plan.json" --plan-sha256 "$SOURCE_PLAN_SHA" \
