@@ -24,6 +24,11 @@ Small independently reviewable changes should link their affected specifications
 and tests. Claims of production readiness or safety need evidence for the declared scope
 and targets, beyond an accepted design or a passing unit test.
 
-[RFC 0014](0014-owned-structs-call-borrows.md) records the bounded ownership phase
-contract and distinguishes its implemented private type/layout groundwork from
-still-unavailable source structs, borrowing and aggregate execution.
+[RFC 0014](0014-owned-structs-call-borrows.md) records the experimental owned
+record and call-only borrowing contract. [RFC 0015](0015-bounded-typed-projects.md)
+extends it to bounded typed projects. Both have production source paths;
+their validation ledgers distinguish actual activation from earlier groundwork.
+
+[RFC 0016](0016-fixed-scalar-arrays.md) proposes fixed scalar arrays and checked
+indexing. Its planned first unit adds a private checked identity/layout seam;
+public array syntax and executable raw array operations remain disabled.
