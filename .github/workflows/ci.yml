@@ -38,12 +38,14 @@ jobs:
       - name: Fetch locked dependencies before offline private qualification
         run: cargo fetch --locked
 
+      - name: Test current and archived source-binding admission controls
+        run: python3 -B -m unittest discover -s scripts -p test_typed_project_source_binding.py -v
+
       # Check exact src/native membership before legacy checks can create caches.
       - name: Preserve Unit2 semantic and resource gates with explicit current inputs
         run: |
-          python3 -B tests/fixtures/typed_project_unit3_compatibility/run.py \
+          python3 -B tests/fixtures/typed_project_source_binding/run.py run-unit2 \
             --repo . \
-            --source-manifest tests/fixtures/typed_project_unit3_compatibility/source-inputs-unit3-platform-v2.json \
             --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
             --output "$RUNNER_TEMP/typed-project-unit2-results"
 
@@ -68,8 +70,8 @@ jobs:
       - name: Build optimized standalone runtime
         run: cargo build --release --locked
 
-      - name: Preserve public single-file behavior and the closed project source gate
-        run: python3 -B tests/fixtures/typed_project_unit1_compatibility/run.py --debug target/debug/oxid --release target/release/oxid --evidence-root "$RUNNER_TEMP"
+      - name: Preserve the 31 original public single-file cases
+        run: python3 -B tests/fixtures/typed_project_unit1_compatibility/run.py --debug target/debug/oxid --release target/release/oxid --original-only --evidence-root "$RUNNER_TEMP"
 
       - name: Test typed-project runner identity controls
         run: python3 -B -m unittest discover -s tests/fixtures/typed_project_unit2_independent -p 'test_protocol.py' -v
@@ -81,15 +83,15 @@ jobs:
         if: always()
         shell: bash
         run: |
-          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/run/result.json" "$RUNNER_TEMP/typed-project-unit2-results/run/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/run/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
+          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/result.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
             if test -f "$receipt"; then
               cat "$receipt"
             fi
           done
-          if test -f "$RUNNER_TEMP/typed-project-unit2-results/run/rustc-version.stdout"; then
-            cat "$RUNNER_TEMP/typed-project-unit2-results/run/rustc-version.stdout"
+          if test -f "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/rustc-version.stdout"; then
+            cat "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/rustc-version.stdout"
           fi
-          for observations in "$RUNNER_TEMP/typed-project-unit2-results/run/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/run/"*-normalized.jsonl; do
+          for observations in "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/"*-normalized.jsonl; do
             if test -f "$observations"; then
               gzip -6 -k "$observations"
             fi
@@ -107,10 +109,13 @@ jobs:
             ${{ runner.temp }}/typed-project-unit2-results/*.jsonl.gz
             ${{ runner.temp }}/typed-project-unit2-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-results/*.stderr
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.json
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.jsonl.gz
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.stdout
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.jsonl.gz
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.stderr
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.json
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.stderr
@@ -253,7 +258,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Fetch locked dependencies before offline private qualification
         run: cargo fetch --locked
-      - name: Qualify all private Unit3 source, native and mutation cases
+      - name: Qualify archived Unit3 source, native and mutation cases
         id: unit3_qualification
         timeout-minutes: 120
         shell: bash
@@ -277,6 +282,8 @@ jobs:
           unit3_ar="$(command -v ar)"
           unit3_llvm_bin="$OXID_LLVM_BIN"
           unit3_llvm_lib_dir="$unit3_out/llvm-runtime/libraries"
+          "$unit3_python" -B "$unit3_repo/tests/fixtures/typed_project_source_binding/run.py" prepare-archived \
+            --repo "$unit3_repo" --output "$unit3_out/source-binding"
           "$unit3_python" -B "$unit3_pkg/portable/verify_package.py" --package "$unit3_pkg" \
             --manifest "$unit3_pkg/package-manifest.json" --receipt "$unit3_out/package-verification.json"
 
@@ -294,7 +301,7 @@ jobs:
             --materialization "$unit3_out/inputs/materialization.json" \
             --parser "$unit3_pkg/components/observer/parse_debug.py" --output "$unit3_out/comparison-view"
 
-          "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_repo" \
+          "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_out/source-binding/archived-selected" \
             --selected-manifest "$unit3_pkg/manifests/selected-current.json" \
             --core-manifest "$unit3_pkg/manifests/core-v1.json" \
             --platform-patch "$unit3_pkg/manifests/platform-scope.patch" \
@@ -458,7 +465,9 @@ jobs:
           index.write_text(json.dumps({
               "schema": 1,
               "qualification_step_outcome": os.environ.get("UNIT3_STEP_OUTCOME", "unknown"),
-              "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",
+              "semantic_receipt_label": "archived core-v1 reconstructed by pinned inverse current-source changes, then the unchanged platform bridge",
+              "current_source_binding_receipt": "source-binding/prepared.json",
+              "direct_current_semantic_execution": False,
               "direct_successor_semantic_execution": False,
               "package_inputs": inputs,
               "expected_full_plan_rows": {"source": 304, "native": 300, "mutation": 220},
