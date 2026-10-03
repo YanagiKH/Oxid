@@ -1,19 +1,27 @@
 {
-  "bytes_excluding_manifest": 12322740,
+  "auxiliary_document_transport": {
+    "bridge": "portable/native-v1/auxiliary_transport.py",
+    "changed_document_paths": [
+      "components/native-driver/auxiliary/tests/fixtures/owned_source/README.md"
+    ],
+    "original_manifest_sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf",
+    "restored_original_files": 81
+  },
+  "bytes_excluding_manifest": 12327246,
   "comparison_runtime_sha256": "2c3cbff718819d8511679b501b8253d89c54ace6f0f39a986606e3a04a859c12",
   "derived_original_core_sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
   "direct_successor_semantic_execution": false,
-  "file_count_excluding_manifest": 292,
+  "file_count_excluding_manifest": 293,
   "files": [
     {
-      "bytes": 9937,
+      "bytes": 10171,
       "path": "CI_COMMANDS.md",
-      "sha256": "18dcb336cc1bc869ea07f04abc9a1f76470b3f390c2c9bd496aee3cc81cb1a91"
+      "sha256": "4c0db3c210c4db4199abb5b9ea26386e09f90f11bbc31cbee1883d48b7969916"
     },
     {
-      "bytes": 2879,
+      "bytes": 3253,
       "path": "README.md",
-      "sha256": "bf536a742d2d7d98dcc2376926daead03f0138de827c48562ae241a43b63cd6d"
+      "sha256": "329e0707c8f3d8a77d6491c5247f69b9f148f5ed74d5c0b539bf9737b64a025e"
     },
     {
       "bytes": 37984,
@@ -66,9 +74,9 @@
       "sha256": "048e4c5dc194ca7840a9331e98ef060c820d0288a3bbd393e9228b8d668620d1"
     },
     {
-      "bytes": 17787,
+      "bytes": 17805,
       "path": "components/native-driver/auxiliary/tests/fixtures/owned_source/README.md",
-      "sha256": "b43352a4036cda792bf2b674cc7c3a71862a31230702b5d43f520b0ba17dec41"
+      "sha256": "3154a9a8861178156eac1bf888367c3a7fc03e89588059e3858713f315da30bc"
     },
     {
       "bytes": 1630,
@@ -1416,6 +1424,11 @@
       "sha256": "24ddd3bb3b85c1e04a3daf82ac2e1001d71e6e28fa8c8b24f077ba545ee2cac7"
     },
     {
+      "bytes": 3880,
+      "path": "portable/native-v1/auxiliary_transport.py",
+      "sha256": "86c25b305a5701d8eabf32bf93aabaad3f5b7e99c3eb04c2a314817b860b365a"
+    },
+    {
       "bytes": 2320,
       "path": "portable/native-v1/native_groups.py",
       "sha256": "cd4a952a3cf72b1abd3f6c146e25fe103ed43eeccc070abf467b56126b7b93bf"
@@ -1475,6 +1488,7 @@
   "observer_freeze_sha256": "a96db8900f0eb37dc21bb61f46b35635d5fa3809dd3195f1f3181783544008d0",
   "oracle_component_sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2",
   "original_expectation_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "predecessor_package_manifest_sha256": "607e40ae9f61855eaa09341f08e272c79f7564255fa1f2b78ad65bb615ad1ebf",
   "schema": "unit3-independent-publication-package-v1",
   "selected_current_core_sha256": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963",
   "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",

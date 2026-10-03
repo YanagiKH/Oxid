@@ -44,3 +44,9 @@ runtime v1 attribution and adding independently checked pre-read regular-file
 guards. The six retained mutation rows compare successfully with v2; the change
 adds no compiler or native executions. Original semantic helpers and expectations
 remain byte-identical.
+
+The native auxiliary README uses a repository-relative link in this transported
+copy. `portable/native-v1/auxiliary_transport.py` restores its one original link
+in fresh staging and verifies all 81 original auxiliary file identities before
+the unchanged native input helper runs. The receipt records both forms; compiler
+and qualification inputs retain their frozen bytes.

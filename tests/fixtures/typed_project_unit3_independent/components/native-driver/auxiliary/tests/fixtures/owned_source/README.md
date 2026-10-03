@@ -111,7 +111,7 @@ source candidate and real guarded LLVM stores have been checked.
 ## Repository fixture dispatch boundary
 
 The exact required RFC pilot is checked in at
-[`fixtures/owned_source/batch.ox`](../../../fixtures/owned_source/batch.ox).
+[`fixtures/owned_source/batch.ox`](../../../../../../../../../fixtures/owned_source/batch.ox).
 It lives outside `tests/` because the legacy `oxid test` command recursively
 executes `.ox` files there. Repository verification dispatches this positive
 fixture explicitly through `--edition=typed-preview`; the old legacy suite

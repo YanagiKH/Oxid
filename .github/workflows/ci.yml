@@ -316,12 +316,16 @@ jobs:
           "$unit3_python" -B "$unit3_pkg/portable/collect.py" --plan "$unit3_out/source-plan.json" \
             --plan-sha256 "$unit3_source_plan_sha" --python "$unit3_python" --output "$unit3_out/source-collection"
 
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/auxiliary_transport.py" \
+            --auxiliary-root "$unit3_pkg/components/native-driver/auxiliary" \
+            --original-manifest "$unit3_pkg/components/native-driver/auxiliary-manifest-v1.json" \
+            --output "$unit3_out/native-auxiliary"
           "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_inputs.py" \
             --bridge-receipt "$unit3_out/bridge/bridge-receipt.json" \
             --core-manifest "$unit3_pkg/manifests/core-v1.json" \
             --overlay-manifest "$unit3_pkg/components/native-driver/overlay-manifest-v2.json" \
             --overlay-patch "$unit3_pkg/components/native-driver/overlay-v2.patch" \
-            --auxiliary-root "$unit3_pkg/components/native-driver/auxiliary" --output "$unit3_out/native-inputs"
+            --auxiliary-root "$unit3_out/native-auxiliary/inputs" --output "$unit3_out/native-inputs"
           "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_portable_grouped.py" prepare \
             --repo "$unit3_out/native-inputs/inputs" --core-manifest "$unit3_pkg/manifests/core-v1.json" \
             --native-root "$unit3_pkg/components/native-driver" \
@@ -398,6 +402,13 @@ jobs:
             --native-evidence "$unit3_out/native-comparison/comparison.json" \
             --native-evidence-sha256 "$unit3_native_evidence_sha" --output "$unit3_out/mutation-comparison"
 
+      - name: Surface bounded native build failure details
+        if: failure() && steps.unit3_qualification.outcome == 'failure'
+        timeout-minutes: 1
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/collect_unit3_ci_diagnostics.py failure-logs
+
       - name: Index and preserve Unit3 results on every terminal state
         if: always()
         timeout-minutes: 15
@@ -464,6 +475,24 @@ jobs:
               archive_digest.hexdigest() + "  " + archive.name + "\n")
           print(json.dumps({"files": len(entries), "retained_bytes": sum(row.get("bytes", 0) for row in entries), "archive_bytes": archive.stat().st_size}))
           PYCODE
+
+      - name: Prepare bounded Unit3 diagnostic receipts
+        if: always()
+        timeout-minutes: 2
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/collect_unit3_ci_diagnostics.py compact
+
+      - name: Retain compact Unit3 diagnostic receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-project-unit3-compact
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-project-unit3-compact.tar.gz
+            ${{ runner.temp }}/typed-project-unit3-compact.tar.gz.sha256
 
       - name: Retain lossless Unit3 qualification artifacts
         if: always()

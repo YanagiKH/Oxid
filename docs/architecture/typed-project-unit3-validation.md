@@ -310,8 +310,13 @@ and independent verdict is
 
 The [portable package](../../tests/fixtures/typed_project_unit3_independent/README.md)
 contains one source archive and separately bound compiler, observer, oracle,
-comparison and mutation components. Its package manifest is
+comparison and mutation components. The originally qualified package manifest is
 `607e40ae9f61855eaa09341f08e272c79f7564255fa1f2b78ad65bb615ad1ebf`.
+The documentation-transport successor is
+`9610eeb61f9a6a783141318681511f9459e0a37559da507c8eac7bc1a1a6dd95`.
+It corrects one relocated README link and restores that exact original document
+before native preparation. Source-only checks require all 81 auxiliary files,
+198 prepatch inputs and 199 overlay inputs to match their frozen identities.
 The source archive has 13,128 compressed bytes and SHA-256
 `1e6107e272f4cec23a7183eea8be23350b81b6702fe73c1c6e8d7687fe744293`.
 It decodes to a 450,560-byte canonical USTAR containing exactly 445 regular
@@ -351,3 +356,12 @@ These budgets are operational ceilings, not performance claims.
 
 Local evidence does not establish the result of hosted CI for a new head. This
 work adds no public syntax, stable ABI, new target or M1/M2/v1.0 completion claim.
+
+Hosted build failures expose only bounded, JSON-escaped native build log excerpts
+and the wrapper error field. A separate diagnostic archive is capped at 16 MiB
+uncompressed and records exact selected receipt bytes, observed status/count
+fields, and explicit omissions or truncated log prefixes. It supplements the
+complete lossless archive. Receipt hashes in the compact archive do not replay
+binary bytes, and absent comparison reports provide no qualification evidence.
+The documentation correction does not claim to fix an undiagnosed native build
+failure; exact-head hosted qualification remains required.

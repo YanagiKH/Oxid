@@ -54,12 +54,16 @@ SOURCE_PLAN_SHA=$(sha256sum "$OUT/source-plan.json" | cut -d' ' -f1)
 "$PYTHON" -B "$PKG/portable/collect.py" --plan "$OUT/source-plan.json" \
   --plan-sha256 "$SOURCE_PLAN_SHA" --python "$PYTHON" --output "$OUT/source-collection"
 
+"$PYTHON" -B "$PKG/portable/native-v1/auxiliary_transport.py" \
+  --auxiliary-root "$PKG/components/native-driver/auxiliary" \
+  --original-manifest "$PKG/components/native-driver/auxiliary-manifest-v1.json" \
+  --output "$OUT/native-auxiliary"
 "$PYTHON" -B "$PKG/portable/native-v1/native_inputs.py" \
   --bridge-receipt "$OUT/bridge/bridge-receipt.json" \
   --core-manifest "$PKG/manifests/core-v1.json" \
   --overlay-manifest "$PKG/components/native-driver/overlay-manifest-v2.json" \
   --overlay-patch "$PKG/components/native-driver/overlay-v2.patch" \
-  --auxiliary-root "$PKG/components/native-driver/auxiliary" --output "$OUT/native-inputs"
+  --auxiliary-root "$OUT/native-auxiliary/inputs" --output "$OUT/native-inputs"
 "$PYTHON" -B "$PKG/portable/native-v1/native_portable_grouped.py" prepare \
   --repo "$OUT/native-inputs/inputs" --core-manifest "$PKG/manifests/core-v1.json" \
   --native-root "$PKG/components/native-driver" \
