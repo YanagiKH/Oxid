@@ -1,0 +1,65 @@
+{
+  "accepted_contracts": {
+    "parser_decoded_contract_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+    "public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85"
+  },
+  "candidate_result_files_read_during_contract_authoring_and_packaging": 0,
+  "compiler_invocations_during_contract_authoring_and_packaging": 0,
+  "integration_base_commit": "8eceb4ce75d843e2df5d62a442ee8c55a775e070",
+  "package_exclusions": [
+    "Current compiler observations and implementation snapshots",
+    "Superseded rejected corpora",
+    "Executable compiler/native artifacts"
+  ],
+  "pilot_semantics": {
+    "authority": "Exact published Unit3 source transport and complete independent expected model rows; public result projections do not replace event/fuel/origin comparison.",
+    "mechanical_batch": {
+      "independent_fuel": 1297,
+      "result": 816
+    },
+    "opaque_batch": {
+      "independent_fuel": 1577,
+      "result": 816
+    },
+    "original_batch": {
+      "independent_fuel": 1297,
+      "result": 816
+    }
+  },
+  "preservation": {
+    "lifecycle_heldouts": 15,
+    "occupied_output_controls": 10,
+    "parser_source_cases": 248,
+    "post_link_output_race_scenarios": 1,
+    "public_literal_cases": 15,
+    "public_projected_cases": 26,
+    "unit1_exact_public_stream_envelopes": 124,
+    "unit1_original_source_cases": 31,
+    "unit2_unchanged_expectation_rows": 3603,
+    "unit3_unchanged_expectation_rows": 152
+  },
+  "review_history": {
+    "historical_full_contract_recovery_claim": false,
+    "public_v1": "Corrected observation/lifecycle scope, inventory, source-origin coverage and policy diagnostic bounds.",
+    "public_v2": "Rejected an oversized whitespace-token exact-cap fixture; v3 uses independently inventoried bounded comments.",
+    "rejected_payloads_included": false
+  },
+  "schema_version": 1,
+  "scope": "Reviewed source-only parser/public expectation contracts and immutable authority transport",
+  "scope_limits": [
+    "Source-contract review does not establish a compiler pass, observer/comparator correctness, hosted CI, native result or activation result.",
+    "Complete/first-error/prefix/schema-only projections retain their respective strengths. Missing observations or unimplemented seams are gaps.",
+    "Parser finite contract scope is Linux x86_64, 64-bit, x86_64-unknown-linux-gnu, debug and release. Public per-operation host sets remain explicit.",
+    "Unreadable-child capability must be proved for the effective execution identity; privilege bypass leaves explicit unqualified coverage.",
+    "Native qualification requires Linux x86_64, LLVM19.1.7, O0, actual copied-ELF execution with fixture sources unavailable and restored.",
+    "Historical implementation-status prose in retained authorities is outside the accepted semantic/resource authority scope and supplies no new execution evidence."
+  ],
+  "source_byte_boundary": {
+    "accepted_bytes": 1048576,
+    "bounded_comment_tokens": 16,
+    "maximum_token_bytes": 65536,
+    "non_eof_tokens": 35,
+    "one_over_rejected_before_lex": 1048577
+  }
+}
