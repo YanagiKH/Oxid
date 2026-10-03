@@ -269,7 +269,7 @@ fn native_owned_guarded_table_has_independent_costs_and_origins() {
         assert!(module.contains(&format!(
             "%root_exhausted = icmp ult i64 %root_remaining, {root_cost}"
         )));
-        let (id, len) = diag.get(false, root_span);
+        let (id, len) = diag.get(FailureKind::Fuel, root_span);
         assert!(module.contains(&format!("root_error:\n  call void @__oxid_overflow(ptr @__oxid_owned_error_{id}, i64 {len})\n  unreachable")));
         for &(span, cost) in &schedule.events[1..] {
             let mut found = false;
@@ -2018,14 +2018,10 @@ fn native_owned_acyclic_overflow_data_and_embedded_scalar_origins_are_bounded() 
     let plan = ExecutionPlan::build(&witness).unwrap();
     let diagnostics =
         Diagnostics::new(&plan, schedule.entry, &sources, true, MAX_DIAGNOSTIC_BYTES).unwrap();
-    assert!(diagnostics
-        .ids
-        .contains_key(&(false, embedded.file.0, embedded.start, embedded.end)));
-    assert!(!diagnostics
-        .ids
-        .contains_key(&(false, outer.file.0, outer.start, outer.end)));
+    assert!(diagnostics.contains(FailureKind::Fuel, embedded));
+    assert!(!diagnostics.contains(FailureKind::Fuel, outer));
     let module = native_module_with_fuel(&witness, schedule.entry, &sources, 14).unwrap();
-    let (id, len) = diagnostics.get(false, embedded);
+    let (id, len) = diagnostics.get(FailureKind::Fuel, embedded);
     assert!(module.contains(&format!("f0_b0_g5_error:\n  call void @__oxid_overflow(ptr @__oxid_owned_error_{id}, i64 {len})\n  unreachable")));
 }
 
@@ -2355,3 +2351,6 @@ mod heldout_review;
 
 #[path = "source/reviewer_resource_native.rs"]
 mod reviewer_resources;
+
+#[path = "array_native_resource_tests.rs"]
+mod array_resources;
