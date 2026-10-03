@@ -174,11 +174,63 @@ TEST_PROBES = [
     ("array-reference-observation-has-no-raw-body", False, ("E0609",), """
         fn forge(observation: &execute::ReferenceObservation) { let _ = &observation.program; }
     """),
+    ("array-native-observation-is-unprivileged", True, (), """
+        fn inspect(raw: RawOwnedProgram, verification_sources: &SourceMap,
+                   rendering_sources: &SourceMap) {
+            let native::NativeObservation { result, metrics } = verified::probe_array_native(
+                raw, verification_sources, budget::Limits::DEFAULT, Some(hir::DefId(0)),
+                rendering_sources, native::NativeControl::default()).unwrap();
+            let _: Result<String, Box<Diagnostic>> = result;
+            let _: (usize, usize, usize, usize, Option<&'static str>) = (
+                metrics.occurrences, metrics.unique, metrics.count_bytes,
+                metrics.render_bytes, metrics.failed_allocation);
+        }
+    """),
+    ("array-native-observation-cannot-be-witness", False, ("E0308",), """
+        fn forge(observation: native::NativeObservation) -> VerifiedOwnedProgram { observation }
+    """),
+    ("array-native-observation-cannot-build-plan", False, ("E0308",), """
+        fn forge(observation: &native::NativeObservation) {
+            let _ = plan::ExecutionPlan::build(observation);
+        }
+    """),
+    ("array-native-observation-has-no-raw-body", False, ("E0609",), """
+        fn forge(observation: &native::NativeObservation) { let _ = &observation.program; }
+    """),
+    ("array-native-observation-has-no-declarations", False, ("E0609",), """
+        fn forge(observation: &native::NativeObservation) { let _ = &observation.declarations; }
+    """),
+    ("array-native-observation-has-no-executable-accessor", False, ("E0599",), """
+        fn forge(observation: &native::NativeObservation) { let _ = observation.witness(); }
+    """),
+    ("array-native-observation-cannot-enter-native", False, ("E0308",), """
+        fn compile(observation: &native::NativeObservation, sources: &SourceMap) {
+            let _ = native::native_module(observation, Some(hir::DefId(0)), sources);
+        }
+    """),
+    ("raw-program-cannot-enter-observed-native", False, ("E0308",), """
+        fn compile(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = native::run_array_observed(raw, Some(hir::DefId(0)), sources,
+                native::NativeControl::default());
+        }
+    """),
+    ("array-native-probe-cannot-accept-witness-callback", False, ("E0308",), """
+        fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
+            let _ = verified::probe_array_native(raw, sources, budget::Limits::DEFAULT,
+                Some(hir::DefId(0)), sources, |_: &VerifiedOwnedProgram| ());
+        }
+    """),
 ]
 PROBES.append(("array-reference-probe-absent-in-production", False, ("E0425",), """
     fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
         let _ = verified::probe_array_reference(raw, sources, budget::Limits::DEFAULT,
             Some(hir::DefId(0)), execute::Limits::default(), Default::default());
+    }
+"""))
+PROBES.append(("array-native-probe-absent-in-production", False, ("E0425",), """
+    fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
+        let _ = verified::probe_array_native(raw, sources, budget::Limits::DEFAULT,
+            Some(hir::DefId(0)), sources, Default::default());
     }
 """))
 

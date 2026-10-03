@@ -233,10 +233,14 @@ impl Core {
     fn value(self, index: usize) -> Scalar {
         match self.ty {
             hir::Ty::I32 if self.extremes || self.n == 1024 => {
-                Scalar::I32(if index % 2 == 0 { i32::MIN } else { i32::MAX })
+                Scalar::I32(if index.is_multiple_of(2) {
+                    i32::MIN
+                } else {
+                    i32::MAX
+                })
             }
             hir::Ty::I32 => Scalar::I32(31 * index as i32 - 47),
-            hir::Ty::Bool => Scalar::Bool((index + self.n) % 2 == 0),
+            hir::Ty::Bool => Scalar::Bool((index + self.n).is_multiple_of(2)),
             hir::Ty::Unit => Scalar::Unit,
         }
     }
@@ -247,7 +251,7 @@ impl Core {
                 Scalar::I32(if self.index == 0 { i32::MAX } else { i32::MIN })
             }
             hir::Ty::I32 => Scalar::I32(700 + self.index.clamp(0, 1023)),
-            hir::Ty::Bool => Scalar::Bool((self.index.max(0) as usize + self.n) % 2 != 0),
+            hir::Ty::Bool => Scalar::Bool(!(self.index.max(0) as usize + self.n).is_multiple_of(2)),
             hir::Ty::Unit => Scalar::Unit,
         }
     }
@@ -569,7 +573,7 @@ struct Transfer {
 impl Transfer {
     fn seed(self, i: usize) -> Scalar {
         match self.ty {
-            hir::Ty::Bool => Scalar::Bool(i % 2 == 0),
+            hir::Ty::Bool => Scalar::Bool(i.is_multiple_of(2)),
             hir::Ty::I32 => Scalar::I32(113 - 41 * i as i32),
             hir::Ty::Unit => Scalar::Unit,
         }

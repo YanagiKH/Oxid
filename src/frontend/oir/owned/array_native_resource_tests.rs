@@ -1091,13 +1091,14 @@ fn array_native_resource_relay_accounts_all_four_transfer_sites() {
 #[test]
 fn array_native_resource_relay_each_new_allocation_fails_before_success() {
     let phases = [
-        "diagnostic occurrences",
-        "diagnostic lookup",
-        "diagnostic headers",
-        "diagnostic message",
-        "LLVM",
+        Some("diagnostic occurrences"),
+        Some("diagnostic lookup"),
+        Some("diagnostic headers"),
+        Some("diagnostic message"),
+        Some("LLVM"),
+        None,
     ];
-    for failure in 0..=5 {
+    for (failure, phase) in phases.into_iter().enumerate() {
         let (sources, raw, _) = array_relay(3);
         let observed = observe_array(
             raw,
@@ -1108,13 +1109,13 @@ fn array_native_resource_relay_each_new_allocation_fails_before_success() {
                 ..NativeControl::default()
             },
         );
-        if failure == 5 {
+        if phase.is_none() {
             assert_complete_emission(&observed, 12);
             assert_eq!(observed.metrics.allocation_attempts, 5);
             assert_eq!(observed.metrics.failed_allocation, None);
         } else {
             assert_denial(observed.result.as_ref().unwrap_err(), "allocation");
-            assert_eq!(observed.metrics.failed_allocation, Some(phases[failure]));
+            assert_eq!(observed.metrics.failed_allocation, phase);
             assert_eq!(observed.metrics.allocation_attempts, failure + 1);
             assert_eq!(observed.metrics.render_bytes, 0);
         }
