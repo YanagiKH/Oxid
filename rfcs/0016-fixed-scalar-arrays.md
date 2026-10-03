@@ -1,8 +1,9 @@
 # RFC 0016: fixed scalar arrays and checked indexing
 
-Status: proposed language capability; Unit 1 private type/layout groundwork.
+Status: proposed language capability; Unit 1 groundwork and gated Unit 2A
+private identity carriers.
 Array syntax and executable raw array operations are not enabled by this RFC or
-its first implementation unit. The current public contract remains
+the current preparatory slices. The current public contract remains
 [RFC 0014](0014-owned-structs-call-borrows.md) and
 [RFC 0015](0015-bounded-typed-projects.md). Implementation ownership and independent
 review are recorded by the associated pull request. Acceptance of groundwork
@@ -338,6 +339,31 @@ The new descriptors are transient values: no persistent table, interning lookup,
 new heap allocation, AST form, raw array operand vector or per-occurrence field
 expansion is introduced in Unit 1. Length validation/layout/width are O(1).
 Zero length never permits invalid element types or malformed nominal IDs.
+
+### 7.1 Gated Unit 2A retained-carrier amendment
+
+The [Unit 2A ledger](../docs/architecture/fixed-array-unit2a-validation.md) records
+an explicit amendment to Unit 1's transient-only representation. Semantic
+`ValueTy::Owned` and reference `ParameterTy` now carry `AggregateTy`; retained
+owner/reference/loan and diagnostic-subject rows store an eight-byte
+`AggregateSlot` with an independent record/array tag. Its checked conversion
+stores nominal ordinals as u32 without changing `RecordId(usize)` or treating
+an invalid nominal ID as an array. Declaration queries still validate semantic
+identity before equality, with each raw verification site's old failure mapping.
+
+The only raw construction exception is a retained RecordId above u32::MAX:
+conversion fails immediately with the original `InvalidRecordId`. Such values
+cannot identify valid records under the unchanged 4096-record cap. Full-width
+semantic descriptors and raw declaration/field IDs are unchanged. A representable
+invalid ordinal preserves resource-before-validation tests; separate controls
+cover the earlier conversion failure.
+
+Unit 2A explicitly rejects fixed-array carriers at authoritative raw admission,
+after existing resource/declaration checks and before any executable witness.
+The gate covers every result, owner, reference and loan, including unused and
+infinite-loop cases. The declaration query facade may still describe arrays.
+No opcode, source grammar, routing selector or array consumer is enabled. The
+gate remains until subsequent Unit 2 verifier and consumer work is complete.
 
 ## 8. Resource and compatibility obligations
 

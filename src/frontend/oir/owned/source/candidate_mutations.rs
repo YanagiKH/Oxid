@@ -95,8 +95,10 @@ impl Mutation {
             Self::NominalIdentity => {
                 let function = &mut raw.functions[0];
                 for owner in &mut function.owners {
-                    assert_eq!(owner.record, RecordId(0));
-                    owner.record = RecordId(1);
+                    assert_eq!(owner.aggregate(), AggregateTy::Record(RecordId(0)));
+                    owner.aggregate =
+                        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(1)))
+                            .unwrap();
                 }
                 for block in &mut function.blocks {
                     for statement in &mut block.statements {

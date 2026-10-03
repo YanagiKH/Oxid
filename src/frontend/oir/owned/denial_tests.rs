@@ -13,15 +13,13 @@ fn facts(p: RawOwnedProgram, sources: &SourceMap, violation: Violation) -> flow:
         .facts()
 }
 fn assert_owner(facts: flow::DenialFacts, id: OwnerPlaceId, class: OwnerKind, s: Span) {
-    assert_eq!(
-        facts.subject,
-        DeniedSubject::Owner(flow::OwnerSubject {
-            id,
-            record: RecordId(0),
-            class,
-            declaration: s
-        })
-    );
+    let DeniedSubject::Owner(owner) = facts.subject else {
+        panic!("denial must identify the owner");
+    };
+    assert_eq!(owner.id, id);
+    assert_eq!(owner.aggregate(), AggregateTy::Record(RecordId(0)));
+    assert_eq!(owner.class, class);
+    assert_eq!(owner.declaration, s);
 }
 
 #[test]
@@ -145,7 +143,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
         argument: 0,
         authority: AccessBase::Owner(source),
         kind,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: at(s, 7),
     });
     f.blocks[0].statements.extend([
@@ -177,7 +175,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     callee.references.push(ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         position: 0,
         span: at(s, 30),
@@ -276,7 +274,7 @@ fn shared_reference_write_denial_preserves_granted_mode_without_invented_state()
     f.parameters
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     f.references.push(ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: at(s, 1),
@@ -305,7 +303,7 @@ fn shared_reference_write_denial_preserves_granted_mode_without_invented_state()
         facts.subject,
         DeniedSubject::Reference {
             id: ReferenceParamId(0),
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             granted: BorrowKind::Shared,
             declaration: at(s, 1)
         }
@@ -318,7 +316,7 @@ fn exclusive_reborrow_permission_retains_requested_and_granted_modes() {
     let mut p = borrowed(s, BorrowKind::Exclusive);
     let f = &mut p.functions[0];
     f.references.push(ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: at(s, 1),
@@ -385,7 +383,7 @@ fn unavailable_return_value_is_internal_even_for_a_named_owner() {
     let mut p = raw(s);
     let f = &mut p.functions[0];
     let o = owner(f, OwnerKind::Parameter { position: 0 }, at(s, 1));
-    f.result = ValueTy::Owned(RecordId(0));
+    f.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     f.blocks[0]
         .statements
         .push(ins(OwnedInstruction::StorageEnd(o), at(s, 2)));
@@ -656,7 +654,8 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
         let f = &mut p.functions[0];
         let authority = if through_reference {
             f.references.push(ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: BorrowKind::Exclusive,
                 position: 0,
                 span: at(s, 1),
@@ -674,7 +673,7 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
             argument: 1,
             authority,
             kind: BorrowKind::Exclusive,
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: at(s, 8),
         });
         f.blocks[0].statements.push(ins(
@@ -690,7 +689,7 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(1)));
         callee.references.push(ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: BorrowKind::Exclusive,
             position: 1,
             span: at(s, 31),
@@ -755,7 +754,7 @@ fn call_result_lifetime_denial_captures_result_class_and_available_state() {
     let mut callee = function(1, s);
     let value = owner(&mut callee, OwnerKind::Temporary, at(s, 4));
     construct(&mut callee, value, at(s, 5));
-    callee.result = ValueTy::Owned(RecordId(0));
+    callee.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     callee.blocks[0].terminator = term(OwnedTerminatorKind::ReturnOwned(value), at(s, 6));
     p.functions.push(callee);
     let result = facts(p, &sources, Violation::Lifetime);

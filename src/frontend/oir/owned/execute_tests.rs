@@ -729,7 +729,7 @@ fn entry_denials_precede_plan_allocations_for_every_parameter_kind_and_owned_res
     }
     let (sources, mut raw, _) = owned_relay();
     let f = &mut raw.functions[0];
-    f.result = ValueTy::Owned(RecordId(0));
+    f.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     f.blocks[1].statements.clear();
     f.locals.truncate(1);
     f.blocks[1].terminator.as_mut().unwrap().kind =
@@ -847,7 +847,10 @@ fn default_200000_expanded_cell_boundary_is_real_and_precedes_activation_allocat
     f.locals = vec![scalar(hir::Ty::Unit, span)];
     f.owners = (0..195)
         .map(|i| OwnerDecl {
-            record: RecordId(usize::from(i == 194)),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(
+                usize::from(i == 194),
+            )))
+            .unwrap(),
             kind: OwnerKind::Local { mutable: false },
             span,
         })
@@ -931,7 +934,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: s(2),
     }];
     main.blocks = vec![
@@ -979,7 +982,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     recursive.locals = vec![scalar(hir::Ty::Unit, s(5))];
     recursive.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     recursive.references = vec![ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: s(5),
@@ -996,7 +999,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         argument: 0,
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: BorrowKind::Shared,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: s(7),
     }];
     recursive.blocks = vec![

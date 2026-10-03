@@ -602,13 +602,16 @@ fn transfer(
     out: &mut Emission,
     plan: &ExecutionPlan<'_>,
     name: &str,
-    record: RecordId,
+    aggregate: AggregateTy,
     source: &str,
     destination: &str,
 ) {
     if out.exceeded {
         return;
     }
+    let AggregateTy::Record(record) = aggregate else {
+        unreachable!("array carriers cannot obtain a Unit2A witness");
+    };
     let fields = plan
         .witness()
         .declarations()
@@ -843,7 +846,7 @@ fn emit_function(
                 out,
                 plan,
                 &name,
-                f.owners[o.0].record,
+                f.owners[o.0].aggregate(),
                 &format!("%arg{i}"),
                 &format!("%o{}", o.0),
             ),
@@ -980,7 +983,7 @@ fn emit_statement(
                 out,
                 plan,
                 name,
-                f.owners[source.0].record,
+                f.owners[source.0].aggregate(),
                 &format!("%o{}", source.0),
                 &format!("%o{}", destination.0),
             );
@@ -1055,7 +1058,7 @@ fn emit_statement(
                 out,
                 plan,
                 name,
-                f.owners[source.0].record,
+                f.owners[source.0].aggregate(),
                 &format!("%o{}", source.0),
                 &format!("%o{}", destination.0),
             );
@@ -1205,7 +1208,7 @@ fn emit_terminator(
                 out,
                 plan,
                 name,
-                f.owners[owner.0].record,
+                f.owners[owner.0].aggregate(),
                 &format!("%o{}", owner.0),
                 "%result",
             );

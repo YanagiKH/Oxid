@@ -419,7 +419,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             .plan
             .witness()
             .declarations()
-            .field(owner.record, field)
+            .field(record_type(owner.aggregate(), span)?, field)
             .map_err(|_| bad("payload field type", span))?;
         Ok((
             self.plan
@@ -493,14 +493,17 @@ impl<'p, 'w> Machine<'p, 'w> {
             ..to
         };
         let f = self.function(self.frames[from.frame as usize].function);
-        let record = f.owners[from.owner as usize].record;
+        let record = f.owners[from.owner as usize].aggregate();
         let target = self
             .function(self.frames[to.frame as usize].function)
             .owners[to.owner as usize]
-            .record;
-        if record != target {
-            return Err(bad("nominal transfer", span));
-        }
+            .aggregate();
+        self.plan
+            .witness()
+            .declarations()
+            .same_aggregate_type(record, target)
+            .map_err(|_| bad("nominal transfer", span))?;
+        let record = record_type(record, span)?;
         let fields = self.plan.witness().declarations().fields(record).unwrap();
         if fields.is_empty() {
             let source_offset = self
@@ -811,7 +814,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .plan
                         .witness()
                         .declarations()
-                        .field(f.owners[destination.0].record, *field)
+                        .field(
+                            record_type(f.owners[destination.0].aggregate(), span)?,
+                            *field,
+                        )
                         .map_err(|_| bad("construction field", span))?;
                     if d.ty() != v.ty() {
                         return Err(bad("construction type", span));
@@ -1000,7 +1006,15 @@ impl<'p, 'w> Machine<'p, 'w> {
                     let declared = &callee.references[reference.0];
                     let root_function =
                         self.function(self.frames[handle.root.frame as usize].function);
-                    if root_function.owners[handle.root.owner as usize].record != declared.record
+                    if self
+                        .plan
+                        .witness()
+                        .declarations()
+                        .same_aggregate_type(
+                            root_function.owners[handle.root.owner as usize].aggregate(),
+                            declared.aggregate(),
+                        )
+                        .is_err()
                         || self.loan_kind(handle.permission, span)? != declared.kind
                     {
                         return Err(bad("incoming reference type", span));
@@ -1009,10 +1023,13 @@ impl<'p, 'w> Machine<'p, 'w> {
                 }
                 (ArgumentSlot::Owned(source), ParameterBinding::Owned(destination)) => {
                     let key = self.owner_key(frame, *source, span)?;
-                    let record = callee.owners[destination.0].record;
-                    if record != f.owners[source.0].record {
-                        return Err(bad("incoming owned type", span));
-                    }
+                    let record = callee.owners[destination.0].aggregate();
+                    self.plan
+                        .witness()
+                        .declarations()
+                        .same_aggregate_type(record, f.owners[source.0].aggregate())
+                        .map_err(|_| bad("incoming owned type", span))?;
+                    let record = record_type(record, span)?;
                     let offset = self.plan.function(callee.id).owner_offset(*destination);
                     let fields = self.plan.witness().declarations().fields(record).unwrap();
                     if fields.is_empty() {
@@ -1312,3 +1329,10 @@ pub(super) fn run_observed(
 #[cfg(test)]
 #[path = "execute_tests.rs"]
 mod tests;
+
+fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
+    match aggregate {
+        AggregateTy::Record(record) => Ok(record),
+        AggregateTy::FixedArray(_) => Err(bad("unsupported aggregate carrier", span)),
+    }
+}

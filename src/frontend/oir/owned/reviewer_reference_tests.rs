@@ -102,7 +102,7 @@ fn rv_field(index: usize) -> FieldId {
 }
 fn rv_owner(kind: OwnerKind, span: Span) -> OwnerDecl {
     OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         span,
     }
@@ -354,7 +354,7 @@ fn rv_alias(
             argument: i,
             authority: AccessBase::Owner(OwnerPlaceId(roots[i])),
             kind: modes[i],
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: rv_span(s, 8 + i),
         })
         .collect();
@@ -432,7 +432,7 @@ fn rv_alias(
         .collect();
     g.references = (0..2)
         .map(|i| ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: modes[i],
             position: i,
             span: s,
@@ -751,7 +751,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: rv_span(s, 13),
     }];
     f.blocks = vec![
@@ -888,7 +888,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
     let mut g = rv_fn(1, ValueTy::Scalar(hir::Ty::I32), rv_span(s, 100));
     g.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     g.references = vec![ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: s,
@@ -1100,7 +1100,7 @@ fn rv_chain(
             .collect();
         f.references = (0..refs)
             .map(|i| ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
                 kind: mode(shared),
                 position: i,
                 span,
@@ -1158,7 +1158,7 @@ fn rv_chain(
                     argument: i,
                     authority: base,
                     kind: mode(edge.shared),
-                    record: RecordId(0),
+                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
                     span: at(if i == 0 { 1 } else { 3 }),
                 })
                 .collect();
@@ -1457,7 +1457,7 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
                 argument: i,
                 authority: AccessBase::Owner(OwnerPlaceId(0)),
                 kind: BorrowKind::Shared,
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
                 span: rv_span(s, 1000 + i),
             })
             .collect();
@@ -1477,7 +1477,7 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
             .collect();
         raw.functions[1].references = (0..count)
             .map(|i| ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
                 kind: BorrowKind::Shared,
                 position: i,
                 span: s,
@@ -1617,7 +1617,7 @@ fn rv_owned_chain(depth: usize, a: i32, b: i32) -> (SourceMap, RawOwnedProgram) 
     ];
     let mut functions = vec![root];
     for id in 1..=depth {
-        let mut f = rv_fn(id, ValueTy::Owned(RecordId(0)), rv_span(s, 100 + id));
+        let mut f = rv_fn(id, ValueTy::Owned(AggregateTy::Record(RecordId(0))), rv_span(s, 100 + id));
         f.parameters = vec![ParameterBinding::Owned(OwnerPlaceId(0))];
         f.owners = vec![rv_owner(OwnerKind::Parameter { position: 0 }, s)];
         if id == depth {

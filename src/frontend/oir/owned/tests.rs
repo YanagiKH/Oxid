@@ -30,7 +30,8 @@ fn subject(span: Span) -> RawOwnedProgram {
             }],
             places: vec![],
             owners: vec![OwnerDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: OwnerKind::Local { mutable: true },
                 span,
             }],
@@ -153,7 +154,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     callee.references.push(ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         position: 0,
         span,
@@ -177,7 +178,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span,
     });
     f.blocks[0].statements.extend([
@@ -281,7 +282,7 @@ fn ownership_class_matrix_denies_counterfeit_lifecycle_and_staged_access() {
         f.owners[0].kind = OwnerKind::Parameter { position: 0 };
         f.parameters.push(ParameterBinding::Owned(OwnerPlaceId(0)));
         f.owners.push(OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::Temporary,
             span: s,
         });
@@ -314,7 +315,7 @@ fn ownership_class_matrix_denies_counterfeit_lifecycle_and_staged_access() {
             .parameters
             .push(ParameterBinding::Owned(OwnerPlaceId(0)));
         callee.owners.push(OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::Parameter { position: 0 },
             span: s,
         });
@@ -328,7 +329,7 @@ fn ownership_class_matrix_denies_counterfeit_lifecycle_and_staged_access() {
             span: s,
         });
         f.owners.push(OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::StagedArgument {
                 call: CallSiteId(0),
                 argument: 0,
@@ -540,7 +541,9 @@ fn raw_type_binding_span_and_canonical_mutants_cannot_get_a_witness() {
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     cases.push(raw);
     let mut raw = subject(s);
-    raw.functions[0].owners[0].record = RecordId(usize::MAX);
+    raw.functions[0].owners[0].aggregate =
+        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(u32::MAX as usize)))
+            .unwrap();
     cases.push(raw);
     let mut raw = subject(s);
     raw.functions[0].blocks[0].span.end = 201;
@@ -597,7 +600,11 @@ fn resource_ceilings_are_inclusive_lowerable_and_precede_shape_allocations() {
     assert!(budget::mul(usize::MAX, 2).is_err());
     assert!(budget::reserve::<u64>(usize::MAX).is_err());
     let mut raw = subject(s);
-    raw.functions[0].owners[0].record = RecordId(usize::MAX);
+    // Compact carriers cannot construct usize::MAX; preserve this test's
+    // resource-before-validation purpose with a representable invalid ordinal.
+    raw.functions[0].owners[0].aggregate =
+        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(u32::MAX as usize)))
+            .unwrap();
     assert_eq!(
         verify_with_limits(raw, &sources, budget::Limits { work: 0, ..exact })
             .unwrap_err()
@@ -644,7 +651,8 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
         let mut f = unit_function(0, s);
         f.references = (0..count)
             .map(|position| ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: BorrowKind::Shared,
                 position,
                 span: s,
@@ -862,12 +870,12 @@ fn owned_result_initializes_only_on_return_and_is_consumed_once() {
     let (sources, s) = context();
     let mut raw = subject(s);
     let mut helper = unit_function(1, s);
-    helper.result = ValueTy::Owned(RecordId(0));
+    helper.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     helper
         .parameters
         .push(ParameterBinding::Owned(OwnerPlaceId(0)));
     helper.owners.push(OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: OwnerKind::Parameter { position: 0 },
         span: s,
     });
@@ -877,7 +885,7 @@ fn owned_result_initializes_only_on_return_and_is_consumed_once() {
     f.blocks[0].statements.pop();
     f.owners.extend([
         OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::StagedArgument {
                 call: CallSiteId(0),
                 argument: 0,
@@ -885,7 +893,7 @@ fn owned_result_initializes_only_on_return_and_is_consumed_once() {
             span: s,
         },
         OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::CallResult {
                 call: CallSiteId(0),
             },
@@ -937,12 +945,12 @@ fn owned_result_initializes_only_on_return_and_is_consumed_once() {
     // Rebuild with a checked helper and a second use of the returned owner.
     let mut raw = subject(s);
     let mut helper = unit_function(1, s);
-    helper.result = ValueTy::Owned(RecordId(0));
+    helper.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     helper
         .parameters
         .push(ParameterBinding::Owned(OwnerPlaceId(0)));
     helper.owners.push(OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: OwnerKind::Parameter { position: 0 },
         span: s,
     });
@@ -1009,7 +1017,7 @@ fn maximum_block_shape_uses_linear_scratch_and_oversize_product_is_preflighted()
     f.owners.resize(
         MAX_LOCALS - 1,
         OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::Local { mutable: true },
             span: s,
         },
@@ -1091,7 +1099,7 @@ fn nominal_record_ids_and_ordered_constructor_fields_survive_in_the_witness() {
         fields: vec![],
     });
     raw.functions[0].owners.push(OwnerDecl {
-        record: RecordId(1),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(1))).unwrap(),
         kind: OwnerKind::Temporary,
         span: s,
     });
@@ -1113,7 +1121,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
     f.owners.clear();
     f.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     f.references = vec![ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: parent,
         position: 0,
         span: s,
@@ -1132,7 +1140,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
         argument: 1,
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: children[1],
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: s,
     });
     f.blocks[0].statements.push(instruction(
@@ -1148,7 +1156,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(1)));
     target.references.push(ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: children[1],
         position: 1,
         span: s,
@@ -1240,3 +1248,198 @@ fn scalar_dominance_uses_real_owned_instruction_positions_and_return_edges() {
 
 #[path = "reviewer_heldout.rs"]
 mod reviewer_heldout;
+
+#[test]
+fn unit2a_all_array_carriers_reject_before_witness_or_consumers() {
+    let (sources, s) = context();
+    let mut rejected = 0;
+    let mut consumer_entries = 0;
+    for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
+        for length in [0, 1, 1024] {
+            let aggregate = AggregateTy::FixedArray(FixedArrayTy::check(element, length).unwrap());
+            let slot = AggregateSlot::try_from_aggregate(aggregate).unwrap();
+            for carrier in 0..6 {
+                // A result-only, ownership-inactive function has no array use.
+                // An infinite loop is valid for either result type absent the gate.
+                let mut function = unit_function(0, s);
+                function.blocks[0].statements.clear();
+                function.blocks[0].terminator = end(OwnedTerminatorKind::Goto(BlockId(0)), s);
+                let raw = |function| RawOwnedProgram {
+                    records: vec![],
+                    functions: vec![function],
+                };
+                verify_owned(raw(function.clone()), &sources).unwrap();
+                match carrier {
+                    0 => function.result = ValueTy::Owned(aggregate),
+                    1 | 2 => {
+                        function.owners.push(OwnerDecl {
+                            aggregate: slot,
+                            kind: if carrier == 1 {
+                                OwnerKind::Parameter { position: 0 }
+                            } else {
+                                OwnerKind::Local { mutable: false }
+                            },
+                            span: s,
+                        });
+                        if carrier == 1 {
+                            function
+                                .parameters
+                                .push(ParameterBinding::Owned(OwnerPlaceId(0)));
+                        } else {
+                            // The unused local has no constructor or projection.
+                            function.blocks[0].statements.extend([
+                                instruction(OwnedInstruction::StorageLive(OwnerPlaceId(0)), s),
+                                instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(0)), s),
+                            ]);
+                        }
+                    }
+                    3 | 4 => {
+                        function.references.push(ReferenceDecl {
+                            aggregate: slot,
+                            kind: BorrowKind::Shared,
+                            position: 0,
+                            span: s,
+                        });
+                        if carrier == 3 {
+                            function
+                                .parameters
+                                .push(ParameterBinding::Reference(ReferenceParamId(0)));
+                        }
+                    }
+                    5 => function.loans.push(LoanDecl {
+                        aggregate: slot,
+                        kind: BorrowKind::Shared,
+                        call: CallSiteId(0),
+                        argument: 0,
+                        authority: AccessBase::Owner(OwnerPlaceId(0)),
+                        span: s,
+                    }),
+                    _ => unreachable!(),
+                }
+                let error = verify_owned(raw(function), &sources)
+                    .map(|witness| {
+                        consumer_entries += 1;
+                        // All three public consumer paths require this same witness.
+                        let _ = plan::ExecutionPlan::build(&witness);
+                        let _ = execute::run(&witness, Some(hir::DefId(0)));
+                        let _ = native::native_module(&witness, Some(hir::DefId(0)), &sources);
+                    })
+                    .unwrap_err();
+                assert_eq!(
+                    error.kind,
+                    OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
+                );
+                assert_eq!(error.primary.get(), Some(s));
+                rejected += 1;
+            }
+        }
+    }
+    assert_eq!(rejected, 54);
+    assert_eq!(consumer_entries, 0);
+}
+
+#[test]
+fn unit2a_preflight_and_declarations_still_precede_array_gate() {
+    let (sources, s) = context();
+    let aggregate = AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, 0).unwrap());
+    let mut raw = subject(s);
+    raw.functions[0].owners[0].aggregate = AggregateSlot::try_from_aggregate(aggregate).unwrap();
+    assert_eq!(
+        verify_with_limits(
+            raw,
+            &sources,
+            budget::Limits {
+                work: 0,
+                ..budget::Limits::DEFAULT
+            }
+        )
+        .unwrap_err()
+        .kind,
+        OwnedFailureKind::Resource("ownership work")
+    );
+    let mut raw = subject(s);
+    raw.functions[0].result = ValueTy::Owned(aggregate);
+    raw.records[0].id = RecordId(4096);
+    let failure = error(raw, &sources);
+    assert_eq!(
+        failure.kind,
+        OwnedFailureKind::Malformed(Malformed::Declaration(DeclarationError::InvalidRecordId(
+            RecordId(4096)
+        )))
+    );
+    assert_eq!(failure.primary.get(), None);
+    // A raw signature embedded in a record field remains a non-scalar field.
+    for ty in [
+        ParameterTy::Value(ValueTy::Owned(aggregate)),
+        ParameterTy::Reference {
+            aggregate,
+            kind: BorrowKind::Shared,
+        },
+    ] {
+        let mut raw = subject(s);
+        let id = FieldId {
+            record: RecordId(0),
+            index: 0,
+        };
+        raw.records[0].fields.push(RawFieldDecl { id, ty, span: s });
+        assert_eq!(
+            error(raw, &sources).kind,
+            OwnedFailureKind::Malformed(Malformed::Declaration(DeclarationError::NonScalarField(
+                id
+            )))
+        );
+    }
+}
+
+#[test]
+fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
+    let (sources, s) = context();
+    let invalid = AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(4096))).unwrap();
+    let at = |n| Span {
+        start: n,
+        end: n + 1,
+        ..s
+    };
+    // Call descriptor errors precede the later loan span/authority walk.
+    for defect in 0..6 {
+        let mut raw = borrowed(s, BorrowKind::Shared);
+        let f = &mut raw.functions[0];
+        f.calls[0].span = at(10);
+        f.loans[0].aggregate = invalid;
+        match defect {
+            0 => (),
+            1 => f.loans[0].call = CallSiteId(4096),
+            2 => f.loans[0].argument = 4096,
+            3 => f.loans[0].kind = BorrowKind::Exclusive,
+            4 => f.loans[0].span = Span { end: 201, ..s },
+            5 => f.loans[0].authority = AccessBase::Owner(OwnerPlaceId(4096)),
+            _ => unreachable!(),
+        }
+        let failure = error(raw, &sources);
+        assert_eq!(
+            failure.kind,
+            OwnedFailureKind::Malformed(Malformed::Binding)
+        );
+        assert_eq!(failure.primary.get(), Some(at(10)));
+    }
+    for carrier in 0..3 {
+        let mut raw = borrowed(s, BorrowKind::Shared);
+        match carrier {
+            0 => {
+                raw.functions[0].result = ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))
+            }
+            1 => raw.functions[0].owners[0].aggregate = invalid,
+            2 => raw.functions[1].references[0].aggregate = invalid,
+            _ => unreachable!(),
+        }
+        let failure = error(raw, &sources);
+        let id = if carrier == 0 { usize::MAX } else { 4096 };
+        assert_eq!(
+            failure.kind,
+            OwnedFailureKind::Malformed(Malformed::Declaration(DeclarationError::InvalidRecordId(
+                RecordId(id)
+            )))
+        );
+        assert_eq!(failure.primary.get(), None);
+    }
+}

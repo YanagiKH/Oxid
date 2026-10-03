@@ -68,7 +68,8 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
         places: vec![],
         owners: if active {
             vec![OwnerDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: OwnerKind::Parameter { position: 0 },
                 span: s,
             }]
@@ -398,7 +399,7 @@ fn heldout_oversized_raw_preflight_allocates_nothing_and_ignores_false_source_co
     let f = &mut p.functions[0];
     f.owners = vec![
         OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::Local { mutable: false },
             span: s
         };

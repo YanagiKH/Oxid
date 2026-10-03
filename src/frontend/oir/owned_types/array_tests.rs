@@ -253,3 +253,63 @@ fn array_seam_reports_representation_without_widening_existing_carriers() {
         );
     }
 }
+
+#[test]
+fn retained_slot_roundtrips_without_validating_or_conflating_identities() {
+    let declarations = table();
+    for id in [0, 3, 4096, u32::MAX as usize] {
+        let ty = AggregateTy::Record(RecordId(id));
+        let slot = AggregateSlot::try_from_aggregate(ty).unwrap();
+        assert_eq!(slot.aggregate(), ty);
+        if id >= 4096 {
+            assert_eq!(
+                declarations.same_aggregate_type(slot.aggregate(), slot.aggregate()),
+                Err(DeclarationError::InvalidRecordId(RecordId(id)))
+            );
+        }
+    }
+    for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
+        for length in 0..=1024 {
+            let ty = array(element, length);
+            assert_eq!(
+                AggregateSlot::try_from_aggregate(ty).unwrap().aggregate(),
+                ty
+            );
+            assert_eq!(declarations.check_value_type(ValueTy::Owned(ty)), Ok(()));
+            for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
+                assert_eq!(
+                    declarations.check_parameter_type(ParameterTy::Reference {
+                        aggregate: ty,
+                        kind
+                    }),
+                    Ok(())
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn retained_slot_rejects_unrepresentable_full_ids_before_raw_construction() {
+    for ordinal in [u32::MAX as usize + 1, usize::MAX] {
+        let id = RecordId(ordinal);
+        assert_eq!(
+            AggregateSlot::try_from_aggregate(AggregateTy::Record(id)),
+            Err(DeclarationError::InvalidRecordId(id))
+        );
+        // Semantic query descriptors still preserve the original full ID.
+        let ty = ValueTy::Owned(AggregateTy::Record(id));
+        assert_eq!(
+            table().same_value_type(ty, ty),
+            Err(DeclarationError::InvalidRecordId(id))
+        );
+        assert_eq!(
+            table().check_parameter_type(ParameterTy::Reference {
+                aggregate: AggregateTy::Record(id),
+                kind: BorrowKind::Shared,
+            }),
+            Err(DeclarationError::InvalidRecordId(id))
+        );
+    }
+}
