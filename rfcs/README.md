@@ -30,5 +30,5 @@ extends it to bounded typed projects. Both have production source paths;
 their validation ledgers distinguish actual activation from earlier groundwork.
 
 [RFC 0016](0016-fixed-scalar-arrays.md) proposes fixed scalar arrays and checked
-indexing. Its planned first unit adds a private checked identity/layout seam;
+indexing. Its first unit implements a private checked identity/layout seam;
 public array syntax and executable raw array operations remain disabled.

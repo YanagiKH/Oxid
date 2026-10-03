@@ -155,12 +155,60 @@ class ObserverPreparationControls(unittest.TestCase):
         cls.temp.cleanup()
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 121)
+        self.assertEqual(len(self.manifest['files']), 122)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
         self.assertEqual(self.config.read_bytes(), b'[core]\n autocrlf = true\n eol = crlf\n')
         self.assertEqual(q.read(self.output / 'prepared.json')['compiler_invocations'], 0)
+
+    def test_groundwork_current_identity_rejects_before_observer_materialization(self):
+        for control in ('changed', 'coherent-changed', 'missing', 'coherent-missing', 'stale-checkpoint'):
+            with self.subTest(control=control), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                source = root / 'source'
+                manifest = q.read(REPO / q.SOURCE / 'current-source.json')
+                for row in manifest['files']:
+                    path = source / row['path']
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes((REPO / row['path']).read_bytes())
+                row = next(row for row in manifest['files'] if row['path'] == 'src/frontend/oir/owned_types/array_tests.rs')
+                path = source / row['path']
+                if control.endswith('changed'):
+                    path.write_bytes(path.read_bytes() + b'// unauthorized groundwork change\n')
+                    if control.startswith('coherent'):
+                        row.update(bytes=path.stat().st_size, sha256=q.sha(path.read_bytes()))
+                elif control.endswith('missing'):
+                    path.unlink()
+                    if control.startswith('coherent'):
+                        manifest['files'].remove(row)
+                else:
+                    manifest['reviewed_source_head'] = '0' * 40
+                manifest_path = root / 'current-source.json'
+                q.save(manifest_path, manifest)
+                output = root / 'observer'
+                args = SimpleNamespace(source_root=source, manifest=manifest_path, out=output)
+                with patch.object(self.builder.subprocess, 'run', side_effect=AssertionError('patch/tool must not run')):
+                    with self.assertRaises((self.c.Reject, OSError)):
+                        self.builder.prepare(args)
+                self.assertFalse(output.exists())
+
+    def test_coherently_rehashed_groundwork_observer_rejects_before_compiler(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            shutil.copytree(self.output, root / 'prepared')
+            manifest_path = root / 'prepared/observer-source.json'
+            manifest = q.read(manifest_path)
+            source = root / 'prepared/source'
+            row = next(row for row in manifest['files'] if row['path'] == 'src/frontend/oir/owned_types/array_tests.rs')
+            path = source / row['path']
+            path.write_bytes(path.read_bytes() + b'// unauthorized observer groundwork change\n')
+            row.update(bytes=path.stat().st_size, sha256=q.sha(path.read_bytes()))
+            q.save(manifest_path, manifest)
+            args = SimpleNamespace(source_root=source, manifest=manifest_path, kind='unit4-public-v3-lifecycle-observer')
+            with patch.object(self.builder.subprocess, 'check_output', side_effect=AssertionError('compiler must not run')):
+                with self.assertRaisesRegex(self.c.Reject, 'unapproved observer build source'):
+                    self.builder.build(args)
 
     def test_native_path_flavors_emit_identical_frozen_component_order(self):
         names = [row['path'] for row in self.manifest['files']]

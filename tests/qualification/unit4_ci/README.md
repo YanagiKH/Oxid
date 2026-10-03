@@ -1,9 +1,11 @@
 # Mandatory current Unit4 qualification
 
 This additive CI integration admits156 exact component members plus the unchanged
-120-file current compiler authority before any component use. The source compiler,
-public14-file adapter, hosted4-file controller, portable parser, and all existing
-Unit1/2/3/ordinary/native CI gates remain unchanged.
+121-file current compiler authority before any component use. The current authority includes the private fixed-array groundwork and its new
+test member; its additive lifecycle observer contains122 members. The reviewed
+observer overlay and all semantic/native/mutation contracts remain unchanged.
+The public14-file adapter, hosted4-file controller, portable parser, and existing
+Unit1/2/3/ordinary/native gates retain their respective qualification roles.
 
 The three added job definitions require four actual host executions and an
 always-running final join. The new jobs explicitly check out the event PR head,

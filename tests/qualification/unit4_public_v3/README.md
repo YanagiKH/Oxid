@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact120-file compiler manifest, the reviewed121-file
+`authority.py` pins the exact121-file compiler manifest, the reviewed122-file
 lifecycle overlay map and the retained additive patch. A caller cannot select a
 different compiler body merely by supplying a coherent rewritten manifest.
 `authority_controls.py` deterministically rejects both current-source and

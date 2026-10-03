@@ -247,9 +247,9 @@
       "sha256": "c3501e6b57f145d7d4fe54a5880105da7c8fa8bb642b1a5fc66277709a4aa1ed"
     },
     {
-      "bytes": 8832,
+      "bytes": 8863,
       "path": "src/frontend/oir/owned/mod.rs",
-      "sha256": "bb082ac4eb461808b2cdeb235836c2198cd565367390fd9e432502fa31ccf3bb"
+      "sha256": "bf170de2c7987e528305b061143bf7188b8e3b90d02876fe50676fff92759a03"
     },
     {
       "bytes": 43267,
@@ -277,9 +277,9 @@
       "sha256": "fc4071aacc957b54d8031a5012ef2957d9e74c8f40ba99a2710fb9c057a43b62"
     },
     {
-      "bytes": 16156,
+      "bytes": 16929,
       "path": "src/frontend/oir/owned/plan.rs",
-      "sha256": "9c87a013b2241df1df85c42ed0672bf1935e04de4371ab4b509ca4dbd6c30d20"
+      "sha256": "765fc8539d90cae8077a142141da9628b501a5f04731d5442bcf5a119a8fd318"
     },
     {
       "bytes": 1705,
@@ -437,9 +437,14 @@
       "sha256": "06222fc920789f7e3765e10315ba3cd7835b1dfd65caa538dce610e4c37a77f3"
     },
     {
-      "bytes": 45303,
+      "bytes": 48291,
       "path": "src/frontend/oir/owned_types.rs",
-      "sha256": "87a3805fe33ee4fe72ddfb2ba5161060b46b93226a8965d80efb675035140c2e"
+      "sha256": "f9b166ce29af411cf6babe3d3ea7ded46607a335902b54b540eaeeb2e6baa67a"
+    },
+    {
+      "bytes": 8588,
+      "path": "src/frontend/oir/owned_types/array_tests.rs",
+      "sha256": "ab62e471a0a4edcbe054f6df5acb0b26ad5db9cb28037d6093e456703bc09cca"
     },
     {
       "bytes": 3916,
@@ -602,7 +607,8 @@
       "sha256": "23e5bb6d0050b8adef32aada00f779c1a43c07dc42bd762d23529b794ac5d6a5"
     }
   ],
-  "purpose": "Actual current compiler inputs, including activation tests and two changed integration-test inputs; not historical core qualification",
+  "purpose": "Actual current compiler inputs, including activation and private fixed-array groundwork tests; base_head is historical activation provenance, reviewed_source_head is the immutable current source checkpoint; not historical core qualification",
+  "reviewed_source_head": "1f0f29066e411a87910a614495fc3c503d931654",
   "schema": 1,
-  "source_only_tree": "fe9b9ba73ba28cb2b180cd10854eec82912cfe94"
+  "source_only_tree": "d32c9fe5c0650e2a4765b92320068dd3dd5d7696"
 }

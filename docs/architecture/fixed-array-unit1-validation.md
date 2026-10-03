@@ -12,7 +12,8 @@ Baseline is commit `0ef3be1df3643febdff1f859a4eb1ce567ab8164`, tree
 one new test module, `owned_types/array_tests.rs`, under `src/frontend/oir`.
 The added Rust source file changes source-inventory cardinality by one. Frozen
 historical source authorities and qualification manifests are not retargeted
-by this change; current-source binding integration is separate work.
+by this change; the separately reviewed current-source binding successor is
+recorded below.
 
 ## Checked interface and gating
 
@@ -138,8 +139,8 @@ The exact qualified Rust SHA-256 values are:
 
 These are Linux local results, not exact-head hosted CI. No ignored LLVM corpus,
 additional host execution, source-array pilot qualification or public array
-activation is claimed. Current-source binding integration remains separate from
-these source changes and must retain historical authorities unchanged.
+activation is claimed. Current-source binding integration is recorded separately
+below and retains historical authorities unchanged.
 
 
 ## Independent review
@@ -165,3 +166,78 @@ The retained report SHA-256 is
 `3484653c8c7c5f03dc14488417e511bc089342f15fcf7a15a848bd2aefe8cf65`.
 No material implementation finding remained. The successor recovery payload
 clarifies the external pinned toolchain environment path without changing source.
+
+
+## Current-source binding successor
+
+The published source durability checkpoint is
+`1f0f29066e411a87910a614495fc3c503d931654`, tree
+`d32c9fe5c0650e2a4765b92320068dd3dd5d7696`. The four qualified Rust files above
+are unchanged. Local helper freeze `4f7ea5ba55d27fc78dedd15abd26a433b482fc5e`,
+tree `28dcc418ee7b94f2a3666ba7b73677088ea69308`, updates the current-source and
+observer authorities without changing compiler source, lifecycle instrumentation,
+semantic contracts or native/mutation expectations. This ledger/RFC index update
+is separate from that helper freeze.
+
+The adapter now admits **121** exact current members. Its single **48,414-byte**
+transition contains the unchanged **28,881-byte**, nine-path activation patch
+followed by the **19,533-byte**, four-path groundwork delta. The paths do not
+overlap. Strict inverse line offsets and byte context restore all **117**
+published archived members and the independently pinned inverse-only integration
+test; the latter is omitted only after its old identity is checked. The added
+array test file is removed by the inverse. No archived manifest is retargeted.
+
+| Identity | SHA-256 |
+| --- | --- |
+| Current 121-member manifest | `5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c` |
+| Current canonical member map | `d7cc30de5059b270e3f893b93269b456d85d1384123b4bd8055eb98e8d3761c3` |
+| Composed current-to-archive transition | `1958b851c49055cf3574469eb6dccf35e08904fb5976ad401ed98d4cd039738b` |
+| Unchanged archived selected-current manifest | `a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963` |
+| Unchanged lifecycle overlay | `2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56` |
+| Derived 122-member observer map | `910184d79aef6694cd812320d952099c39b2cc160c0dc7e415bd79928cf32f39` |
+| Closed 156-member CI input manifest | `03b7be17a7e2050d8245becae9b88b597754f9ac823c18a6dcbba12dc8d6cc03` |
+
+The current manifest retains its original `base_head` as historical activation
+provenance and separately names `reviewed_source_head` and that checkpoint's
+`source_only_tree`. The trusted adapter checks its immutable current-manifest pin
+after exact package admission and before archive reconstruction. Coherently
+rewritten current/package metadata therefore fails earlier than historical-input
+admission; raw modified package members retain their original rejection boundary.
+Transition authority checks bind the exact path order, old prefix, new delta,
+source base, diff recipe and reviewed checkpoint. A before/after inventory also
+confirms that all **581** nonbinding fixture files are unchanged.
+
+Fresh local qualification on the helper freeze:
+
+- **33** source-binding controls and **69** Unit4 CI controls passed, including
+  altered, missing, coherently rehashed and stale current/patch/member inputs,
+  strict inverse context, preserved failure receipts and zero-execution denials
+- An ordered sequence reran both control suites, current preflight, archived
+  preparation, current Unit2 preparation and committed Unit4 preparation with
+  explicit repository/output paths and the pinned toolchain environment;
+  each preparation remained zero-compiler, nonsemantic evidence
+- The unchanged observer overlay applied using scoped Git LF settings and the
+  existing POSIX component ordering, including under a hostile CRLF Git setting
+- A separate actual current Unit2 run passed **3,603** unchanged semantic cases
+  and **21** resource tests per debug/release profile. All **17** commands exited
+  zero, both isolated Cargo builds emitted a fresh executable, and the actual
+  binary identities, raw/normalized rows and artifact closures were checked
+- The exact closed-array grammar test then passed in both newly built Unit2
+  observer/resource binaries, rejecting the seven source forms per profile.
+  This is not a standalone ordinary CLI build or runtime array execution
+
+Independent helper review passed all 15 held-out tamper/context probes, exact
+current/archive/observer closure, the unchanged 581-file fixture inventory, five
+actual zero-compiler preparation actions, and inspection of the fresh Unit2
+receipts/binaries. No material finding remained. Its retained report is SHA-256
+`eb19e604136c9d16a2e1df84d533def834bd558a796e25098416ed81536c1e6d`.
+
+The full current Unit2 outer result is SHA-256
+`e680a2e848c74c8f350bb54c54f0f4305eeb7823fc6daa9a06e23a773129c2d5`;
+the combined preparation sequence is SHA-256
+`12e3a72daa5ed4f154e8baf7a3ab365bd5939061e92c9909f3337ca855b61df9`.
+Earlier failed admission and previous passed/failed receipts are retained. The
+fresh Unit2 result qualifies its current source and helper identities; preparation
+alone does not qualify semantic/native/mutation behavior. The unchanged long
+native corpora were not rerun locally. Final normal-trigger hosted qualification
+must still run all applicable gates on the exact published integration head.

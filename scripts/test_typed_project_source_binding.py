@@ -37,9 +37,35 @@ class SourceBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(binding.BindingError, text):
             binding.preflight(self.repo, self.package)
 
+    def rehash_package(self):
+        """Model coherent metadata tampering without replacing the trusted helper."""
+        manifest = binding.read_json(self.package / "package-manifest.json")
+        manifest["files"] = [binding.entry(row["path"], (self.package / row["path"]).read_bytes())
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "package-manifest.json", manifest)
+
+    def rejects_before_materialization(self, text):
+        output = self.root / "rejected"
+        sentinel = self.root / "tool-ran"
+        tool = self.root / "cargo"
+        tool.write_text("#!/bin/sh\ntouch '" + str(sentinel) + "'\nexit 0\n")
+        tool.chmod(0o755)
+        result = subprocess.run([sys.executable, "-B", str(self.package / "run.py"), "run-unit2",
+                                 "--repo", str(self.repo), "--output", str(output),
+                                 "--cargo", str(tool), "--rustc", str(tool)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(text, result.stderr)
+        failure = binding.read_json(output / "failure.json")
+        self.assertEqual(failure["compiler_executions"], 0)
+        self.assertFalse(failure["semantic_pass"])
+        self.assertFalse(sentinel.exists())
+        for name in ("plan.json", "compatibility", "archived-selected", "result.json"):
+            self.assertFalse((output / name).exists(), name)
+
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 120)
+        self.assertEqual(len(captured["inputs"]), 121)
         self.assertEqual(len(captured["archived"]), 117)
         self.assertNotEqual(captured["inputs"]["src/frontend/driver.rs"], captured["archived"]["src/frontend/driver.rs"])
         output = self.root / "archive"
@@ -48,6 +74,104 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(receipt["compiler_executions"], 0)
         self.assertFalse(receipt["semantic_pass"])
         binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
+
+    def test_groundwork_transition_restores_the_published_archive(self):
+        captured = binding.preflight(self.repo, self.package)
+        self.assertEqual(len(captured["touched"]), 13)
+        self.assertEqual(captured["touched"][-4:], ["src/frontend/oir/owned/mod.rs",
+                         "src/frontend/oir/owned/plan.rs", "src/frontend/oir/owned_types.rs",
+                         "src/frontend/oir/owned_types/array_tests.rs"])
+        self.assertNotIn("src/frontend/oir/owned_types/array_tests.rs", captured["archived"])
+        for path in captured["touched"][-4:-1]:
+            self.assertNotEqual(captured["inputs"][path], captured["archived"][path])
+        patch = captured["package_bytes"]["source-transition.patch"]
+        self.assertEqual(binding.digest(patch[:28881]),
+                         "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8")
+        restored, _ = binding.inverse_patch(captured["inputs"], patch)
+        extra = captured["authority"]["inverse_only_inputs"][0]
+        self.assertEqual(binding.entry(extra["path"], restored.pop(extra["path"])), extra)
+        binding.check_bytes(restored, captured["selected"]["files"])
+
+    def test_missing_groundwork_member_rejects_before_materialization(self):
+        (self.repo / "src/frontend/oir/owned_types/array_tests.rs").unlink()
+        self.rejects_before_materialization("missing regular input")
+
+    def test_changed_groundwork_member_rejects_before_materialization(self):
+        path = self.repo / "src/frontend/oir/owned_types/array_tests.rs"
+        path.write_bytes(path.read_bytes() + b"// changed\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_coherently_rehashed_groundwork_source_rejects_before_reconstruction(self):
+        path = "src/frontend/oir/owned_types/array_tests.rs"
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent change\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_groundwork_member_rejects_before_reconstruction(self):
+        path = "src/frontend/oir/owned_types/array_tests.rs"
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        binding.write_json(self.package / "current-source.json", manifest)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_stale_checkpoint_metadata_rejects_before_reconstruction(self):
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["reviewed_source_head"] = "0" * 40
+        binding.write_json(self.package / "current-source.json", manifest)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_missing_patch_rejects_before_materialization(self):
+        (self.package / "source-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_coherently_rehashed_patch_rejects_before_materialization(self):
+        path = self.package / "source-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_patch_sha256"] = binding.digest(path.read_bytes())
+        authority["transition_patch_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale transition authority")
+
+    def test_stale_transition_scope_rejects_before_materialization(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_touched_paths"].pop()
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale transition authority")
+
+    def test_coherently_rewritten_transition_base_rejects(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_source_delta"]["base_head"] = "0" * 40
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale source delta authority")
+
+    def test_coherently_rewritten_transition_recipe_rejects(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_source_delta"]["recipe"] = "unreviewed transformation"
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale source delta authority")
+
+    def test_groundwork_inverse_requires_exact_current_context(self):
+        inputs = dict(self.captured["inputs"])
+        path = "src/frontend/oir/owned_types/array_tests.rs"
+        inputs[path] = b"X" + inputs[path][1:]
+        with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+            binding.inverse_patch(inputs, self.captured["package_bytes"]["source-transition.patch"])
 
     def test_missing_source_fails(self):
         (self.repo / "src/frontend/driver.rs").unlink()

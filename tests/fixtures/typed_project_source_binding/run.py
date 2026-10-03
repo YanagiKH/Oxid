@@ -17,12 +17,34 @@ PACKAGE = Path(__file__).resolve().parent
 U2 = "tests/fixtures/typed_project_unit2_independent"
 U3 = "tests/fixtures/typed_project_unit3_independent"
 COMPAT = "tests/fixtures/typed_project_unit3_compatibility/run.py"
-EXTRA = {"src/frontend/parser/activation_tests.rs", "tests/typed_frontend.rs",
+EXTRA = {"src/frontend/oir/owned_types/array_tests.rs",
+         "src/frontend/parser/activation_tests.rs", "tests/typed_frontend.rs",
          "tests/typed_project_dispatch.rs"}
 RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
-PATCH_SHA = "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
+CURRENT_SOURCE_SHA = "5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c"
+PATCH_SHA = "1958b851c49055cf3574469eb6dccf35e08904fb5976ad401ed98d4cd039738b"
+PATCH_BYTES = 48414
+PATCH_PREFIX_BYTES = 28881
+PATCH_PREFIX_SHA = "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
+SOURCE_DELTA_BASE = "0ef3be1df3643febdff1f859a4eb1ce567ab8164"
+SOURCE_DELTA_RECIPE = "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS"
+PATCH_PATHS = (
+    'src/frontend/driver.rs',
+    'src/frontend/oir/project.rs',
+    'src/frontend/parser.rs',
+    'src/frontend/parser/activation_tests.rs',
+    'src/frontend/parser/project_tests.rs',
+    'src/frontend/project.rs',
+    'src/frontend/project/unit2_tests.rs',
+    'tests/typed_frontend.rs',
+    'tests/typed_project_dispatch.rs',
+    'src/frontend/oir/owned/mod.rs',
+    'src/frontend/oir/owned/plan.rs',
+    'src/frontend/oir/owned_types.rs',
+    'src/frontend/oir/owned_types/array_tests.rs',
+)
 
 
 class BindingError(ValueError):
@@ -106,7 +128,7 @@ def check_bytes(inputs, entries):
 
 def inverse_patch(inputs, patch):
     """Apply the pinned git patch backwards with exact offsets and byte context."""
-    require(digest(patch) == PATCH_SHA and len(patch) == 28881, "wrong transition patch")
+    require(digest(patch) == PATCH_SHA and len(patch) == PATCH_BYTES, "wrong transition patch")
     lines = patch.splitlines(keepends=True)
     at, touched = 0, []
     result = dict(inputs)
@@ -161,7 +183,7 @@ def inverse_patch(inputs, patch):
             del result[name]
         else:
             result[name] = b"".join(after)
-    require(len(touched) == 9, "wrong transition scope")
+    require(tuple(touched) == PATCH_PATHS, "wrong transition scope")
     return result, touched
 
 
@@ -172,7 +194,22 @@ def preflight(repo, package=PACKAGE):
     require(members(package) == sorted([x["path"] for x in package_entries] + ["package-manifest.json"]),
             "missing or extra adapter member")
     package_bytes = check_entries(package, package_entries)
+    require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA,
+            "unapproved current source manifest")
     authority = json.loads(package_bytes["authority.json"])
+    require(authority["current_source_sha256"] == CURRENT_SOURCE_SHA, "stale current manifest authority")
+    patch = package_bytes["source-transition.patch"]
+    require(authority["transition_patch_sha256"] == PATCH_SHA
+            and authority["transition_patch_bytes"] == PATCH_BYTES
+            and authority["transition_touched_paths"] == list(PATCH_PATHS), "stale transition authority")
+    require(authority["transition_patch_prefix"] == {"bytes": PATCH_PREFIX_BYTES, "sha256": PATCH_PREFIX_SHA}
+            and digest(patch[:PATCH_PREFIX_BYTES]) == PATCH_PREFIX_SHA, "changed activation patch prefix")
+    delta = authority["transition_source_delta"]
+    require(delta["bytes"] == len(patch) - PATCH_PREFIX_BYTES
+            and delta["sha256"] == digest(patch[PATCH_PREFIX_BYTES:])
+            and delta["paths"] == list(PATCH_PATHS[9:])
+            and delta["base_head"] == SOURCE_DELTA_BASE
+            and delta["recipe"] == SOURCE_DELTA_RECIPE, "stale source delta authority")
     references = check_entries(repo, authority["repository_inputs"])
     historical = json.loads(references[U2 + "/package-inputs.json"])
     historical_bytes = check_entries(repo / U2, historical["files"])
@@ -180,7 +217,9 @@ def preflight(repo, package=PACKAGE):
             "missing or extra historical Unit2 member")
     current = json.loads(package_bytes["current-source.json"])
     selected = json.loads(references[U3 + "/manifests/selected-current.json"])
-    require(len(current["files"]) == 120 and len(selected["files"]) == 117, "wrong source count")
+    require(len(current["files"]) == 121 and len(selected["files"]) == 117, "wrong source count")
+    require(delta["reviewed_source_head"] == current["reviewed_source_head"]
+            and delta["source_only_tree"] == current["source_only_tree"], "stale source checkpoint provenance")
     require({x["path"] for x in current["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
             "unexpected current source membership")
     require(digest(package_bytes["current-source.json"]) == authority["current_source_sha256"],
@@ -340,7 +379,7 @@ def main():
                       adapter_package_sha256=digest(captured["package_manifest"]),
                       authority_sha256=digest(captured["package_bytes"]["authority.json"]))
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 120, "archive_members": 117,
+                "current_source_members": 121, "archive_members": 117,
                 "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21}
         write_json(output / "plan.json", plan)
         result["plan_sha256"] = digest((output / "plan.json").read_bytes())

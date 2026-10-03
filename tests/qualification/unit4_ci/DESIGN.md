@@ -1,14 +1,17 @@
 # Mandatory Unit4 activation integration
 
 This integration owns orchestration and evidence transport only. It does not
-change the independently frozen public adapter, portable parser, hosted
-capability controller, contracts, compiler, or existing CI gates.
+change the public semantic contracts, portable parser, hosted capability
+controller, or existing CI gate responsibilities. Current compiler and observer
+identities are explicitly refreshed for the reviewed private fixed-array
+groundwork; the observer overlay and historical source/corpus authorities stay
+unchanged.
 
 ## Trust and command interfaces
 
 `gate.py host --repo REPO --output FRESH --expected-head SHA --event-sha SHA
 --host HOST [--historical-repo REPO --toolchain ROOT --cargo-cache CACHE]` is the
-mandatory actual-host route. All admitted component files, membership, source120,
+mandatory actual-host route. All admitted component files, membership, source121,
 Git head/full tree, contract transport and amendments are checked before importing
 component code, writing materialized inputs, or executing a compiler. Inputs are
 rechecked before every stage and before completion. HOST is an expectation checked
