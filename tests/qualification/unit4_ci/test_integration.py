@@ -167,6 +167,65 @@ class CheckoutControls(unittest.TestCase):
             self.assertIn('run: git -c core.autocrlf=false -c core.eol=lf checkout-index --all --force', workflow)
 
 
+    def test_linux_uses_fresh_owned_checkout_and_exact_scoped_trust(self):
+        workflow = (REPO / '.github/workflows/ci.yml').read_text()
+        linux = workflow.split('  unit4-linux:\n', 1)[1].split('  unit4-portable-hosts:\n', 1)[0]
+        self.assertIn('defaults:\n      run:\n        working-directory: unit4-current', linux)
+        self.assertIn('working-directory: /\n        run:', linux)
+        self.assertIn('mkdir "$GITHUB_WORKSPACE/unit4-current"', linux)
+        self.assertLess(linux.index('mkdir "$GITHUB_WORKSPACE/unit4-current"'), linux.index('uses: actions/checkout'))
+        self.assertIn('path: unit4-current', linux)
+        self.assertIn('set-safe-directory: false', linux)
+        self.assertIn('--repo "$GITHUB_WORKSPACE/unit4-current"', linux)
+        self.assertEqual(linux.count('git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" '), 3)
+        self.assertNotIn('--global', linux)
+        self.assertNotIn('safe.directory=*', linux)
+        self.assertNotIn('chown', linux)
+
+    def test_scoped_trust_and_clean_git_owned_worktree(self):
+        import os
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            checkout = root / 'unit4-current'
+            checkout.mkdir()
+            def git(*args, env=None):
+                return subprocess.run(['git', '-C', str(checkout), *args], capture_output=True, env=env)
+            self.assertEqual(git('init', '--quiet').returncode, 0)
+            (checkout / 'source').write_bytes(b'committed source\n')
+            self.assertEqual(git('add', '.').returncode, 0)
+            self.assertEqual(git('-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'owned checkout').returncode, 0)
+            head = git('rev-parse', 'HEAD').stdout.strip()
+            config_before = (checkout / '.git/config').read_bytes()
+            # Git's bounded test switch exercises rejection without changing ownership.
+            foreign = {**os.environ, 'GIT_TEST_ASSUME_DIFFERENT_OWNER': '1', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull}
+            denied = git('rev-parse', 'HEAD', env=foreign)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn(b'dubious ownership', denied.stderr)
+            self.assertEqual(git('-c', 'safe.directory=' + str(checkout), 'rev-parse', 'HEAD', env=foreign).stdout.strip(), head)
+            self.assertNotEqual(git('-c', 'safe.directory=' + str(root / 'other'), 'rev-parse', 'HEAD', env=foreign).returncode, 0)
+            self.assertEqual((checkout / '.git/config').read_bytes(), config_before)
+            if sys.platform.startswith('linux'):
+                # The unchanged parser erases inherited Git trust; the owned checkout still works.
+                portable = q.module('_unit4_test_portable_git', REPO / q.PARSER / 'portable.py')
+                self.assertEqual(portable.git(checkout, 'rev-parse', 'HEAD').strip(), head)
+                historical = root / 'historical'
+                self.assertEqual(git('worktree', 'add', '--detach', str(historical), head.decode()).returncode, 0)
+                self.assertEqual(portable.git(historical, 'show', 'HEAD:source'), b'committed source\n')
+
+    def test_windows_qualification_uses_native_shell_and_propagates_exit(self):
+        workflow = (REPO / '.github/workflows/ci.yml').read_text()
+        portable = workflow.split('  unit4-portable-hosts:\n', 1)[1].split('  unit4-qualification:\n', 1)[0]
+        mac = portable.split('- name: Execute ordinary, lifecycle and actual no-native trap gates', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("if: runner.os != 'Windows'", mac)
+        windows = portable.split('- name: Execute Windows gates with the native toolchain search path', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("if: runner.os == 'Windows'", windows)
+        self.assertIn('shell: pwsh', windows)
+        self.assertIn('python -B tests/qualification/unit4_ci/gate.py host', windows)
+        for key in ('GITHUB_WORKSPACE', 'RUNNER_TEMP', 'UNIT4_EXPECTED_HEAD', 'UNIT4_EVENT_SHA', 'UNIT4_HOST'):
+            self.assertIn('$env:' + key, windows)
+        self.assertTrue(windows.rstrip().endswith('exit $LASTEXITCODE'))
+
+
 class CapsuleControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

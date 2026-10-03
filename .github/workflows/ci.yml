@@ -492,12 +492,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 210
     container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: unit4-current
     env:
       UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       UNIT4_EVENT_SHA: ${{ github.sha }}
       OXID_LLVM_BIN: /usr/lib/llvm-19/bin
     steps:
       - name: Install qualified Linux native environment
+        working-directory: /
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -505,19 +509,23 @@ jobs:
             clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
             libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
             libclang-common-19-dev=1:19.1.7-3+b1
+          # The runner mount may have a different owner; create an owned worktree.
+          mkdir "$GITHUB_WORKSPACE/unit4-current"
       - uses: actions/checkout@v4
         with:
           # Bind the actual PR head; github.sha is retained separately as event SHA.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: unit4-current
+          set-safe-directory: false
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Fetch locked dependencies and exact historical parser authority
         shell: bash
         run: |
           set -euo pipefail
           cargo fetch --locked
-          git fetch --no-tags origin d9e6b9bf172abd5e15da7212c9e6224e29ccc768
-          git cat-file -e 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768^{commit}'
-          git worktree add --detach "$RUNNER_TEMP/unit4-parser-authority" d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" fetch --no-tags origin d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" cat-file -e 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768^{commit}'
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" worktree add --detach "$RUNNER_TEMP/unit4-parser-authority" d9e6b9bf172abd5e15da7212c9e6224e29ccc768
       - name: Verify Unit4 integration failure controls
         run: python3 -B tests/qualification/unit4_ci/test_integration.py
       - name: Execute complete current-source public, hosted-root and parser gates
@@ -529,7 +537,7 @@ jobs:
           unit4_rustc="$(rustup which rustc)"
           unit4_toolchain="$(dirname "$(dirname "$unit4_rustc")")"
           python3 -B tests/qualification/unit4_ci/gate.py host \
-            --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-linux" \
+            --repo "$GITHUB_WORKSPACE/unit4-current" --output "$RUNNER_TEMP/unit4-linux" \
             --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
             --host 'Linux x86_64' --historical-repo "$RUNNER_TEMP/unit4-parser-authority" \
             --toolchain "$unit4_toolchain" --cargo-cache "${CARGO_HOME:-$HOME/.cargo}"
@@ -595,6 +603,7 @@ jobs:
       - name: Verify actual-host integration controls
         run: python -B tests/qualification/unit4_ci/test_integration.py
       - name: Execute ordinary, lifecycle and actual no-native trap gates
+        if: runner.os != 'Windows'
         id: qualification
         timeout-minutes: 80
         shell: bash
@@ -604,6 +613,18 @@ jobs:
             --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-host" \
             --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
             --host "$UNIT4_HOST"
+      - name: Execute Windows gates with the native toolchain search path
+        if: runner.os == 'Windows'
+        id: qualification-windows
+        timeout-minutes: 80
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B tests/qualification/unit4_ci/gate.py host `
+            --repo "$env:GITHUB_WORKSPACE" --output "$env:RUNNER_TEMP/unit4-host" `
+            --expected-head "$env:UNIT4_EXPECTED_HEAD" --event-sha "$env:UNIT4_EVENT_SHA" `
+            --host "$env:UNIT4_HOST"
+          exit $LASTEXITCODE
       - name: Preserve complete or failed actual-host evidence
         if: always()
         timeout-minutes: 15
