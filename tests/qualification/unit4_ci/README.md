@@ -48,8 +48,11 @@ The parser comparison seal binds its complete input closure before and after the
 fresh comparison, including collection manifests, normalized and raw records,
 passivity, build receipts and executable identities. It also binds the exact
 command, exit, snapshot ordering and comparison bytes. The closure requires every
-consumed input and all four executable identities; only the exact fixed compiler
-source members and four binaries can be omitted from the compact capsule. The
+consumed input and all four executable identities. Both generated current
+candidate-source manifests must remain as actual compact bodies and are resolved
+against their pinned identities and re-derived maps. The allowed omissions are
+exactly 286 derived-tree members per role plus four binaries (576 identities); the
+287-member derived maps and complete comparison closure are unchanged. The
 final join reconstructs each normalized
 row from the unchanged raw case using the frozen normalizer and derives the
 complete case/mode/profile roster. Source/binary replay at original paths was

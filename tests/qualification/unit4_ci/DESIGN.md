@@ -89,6 +89,13 @@ Sessions explicitly deny historical source equivalence and bind the current121
 manifest, reviewed source checkpoint and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
+This includes both generated current candidate manifests even though they also
+belong to the 287-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 284-member base map. Compact omission is limited to the
+other 286 derived-tree members per role and four binaries, for 576 omitted identities.
+The transport controls exercise all 14 generated provenance artifacts through
+the actual compact reader, including missing, substituted and coherently
+rehashed current candidate bodies.
 The final join checks the actual current map and each build's source/overlay pins.
 
 Linux preparation-only now calls the same `prepare_parser` boundary as the hosted

@@ -37,9 +37,13 @@ The current session uses a distinct schema, `current_source_bound: true` and
 `historical_source_equivalent: false`. Every build, passivity run, collection and
 comparison rechecks the actual current checkout, all derived bodies, the retained
 historical metadata and the transition binding. The compact evidence reader
-consumes the same strict transition predicate. Historical/current metadata stays
-in the compact capsule; only exact current source members and four executables
-may be full-archive-only. The final join also binds the current 114-body map,
+consumes the same strict transition predicate and resolves both current candidate
+manifest bodies against their pinned identities and re-derived 284-member map.
+All 14 generated provenance artifacts remain in the compact capsule: the session,
+the historical/current authorities and current source manifest, both historical
+candidate/overlay pairs, and both current candidate/overlay/helper-manifest triples.
+Each 287-member derived view includes its generated candidate manifest; its other
+286 derived-tree members and the four executables may be full-archive-only (576 identities). The final join also binds the current 114-body map,
 source checkpoint and actual build candidate/overlay identities.
 
 Run bounded controls from the repository root:

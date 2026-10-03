@@ -278,8 +278,10 @@ binaries, passed **12 ordinary passivity pairs**, and compared **638 of 638
 observations** against the unchanged effective semantic contract. Independent
 review checked **508 distinct execution nonces**, all current maps/binaries,
 the complete **3,678-member** comparison closure and the actual raw reader.
-The 578 full-archive-only identities are exactly 287 source members per role
-plus four binaries; historical/current provenance metadata remains required.
+The original seal recorded 578 full-archive-only identities: 287 derived
+members per role plus four binaries. This included both generated current
+candidate manifests. Their identities were re-derived, but their bodies were
+absent from compact transport; the correction below closes that omission.
 
 All production stage commands exited zero. A subsequent local audit harness
 lacked two reader interface members and failed after the semantic comparison.
@@ -303,3 +305,29 @@ stream and receipt. Failure status and full archives remain intact.
 These are local current-parser results. The corrected final publication still
 requires fresh exact-head hosted qualification across all applicable gates.
 No historical or failed receipt is relabeled as a successor pass.
+
+## Current parser provenance retention
+
+An audit of the actual compact capsules from published head
+`d7627f65bec1e5019291763245352ab40e5d206f` found that both generated current
+`candidate-source-manifest.json` bodies were omitted. Each body is 46,453 bytes
+with SHA-256 `447bdcc8c98532f97d69b552cc16a661572b2f7aa9359f659e39b7c684432600`.
+Their exact identities were retained and independently re-derived, and all
+semantic observations passed their existing checks. The previous blanket claim
+that all provenance metadata bodies were compactly retained was too broad.
+
+The transport correction retains and resolves both candidate bodies, checking
+their pinned identities and re-derived 284-member base map. All 14 documented
+generated provenance artifacts are checked through the real compact reader.
+The allowed omissions become **576 identities**: 286 derived-tree members per role and
+four binaries. Each derived map remains 287 members and the complete comparison
+closure remains 3,678 members. Compiler source, historical/current authorities,
+portable runtime algorithms, build bodies and semantic expectations are unchanged.
+
+New controls reject omitted, substituted and coherently rehashed current
+candidate bodies in both roles. A separately named transport-only packaging
+result reads the preserved local 34864a execution, retaining its original
+comparison command, timestamps, four builds, 12 passivity pairs and 638 rows.
+The original 578-omission seal and all execution receipts remain unchanged.
+This packaging check is not a new compiler execution or hosted qualification;
+the successor still requires fresh exact-head hosted checks.

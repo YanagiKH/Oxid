@@ -16,7 +16,7 @@ from unittest.mock import patch
 import common as q
 import gate
 import join
-from evidence import Capsule, ReadCapsule, verify_parser_seal, stage_compact_upload
+from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only, stage_compact_upload
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -770,7 +770,11 @@ def synthetic_seal_fixture(root):
     for directory, field in (('source', 'current_derived_files'), ('control-source', 'current_control_derived_files')):
         for row in authority['current'][field]:
             record = {'path': str(root / directory / row['path']), 'bytes': row['bytes'], 'sha256': row['sha256']}
-            records[record['path']] = record; omitted.append(record)
+            records[record['path']] = record
+            if row['path'] == 'candidate-source-manifest.json':
+                put((directory, row['path']), (json.dumps(adapter.current_candidate(authority), indent=2, sort_keys=True) + '\n').encode())
+            else:
+                omitted.append(record)
     for row in authority['helper_files']:
         put(('helpers', row['path']), (REPO / q.PARSER_FROZEN / 'frozen/helpers' / row['path']).read_bytes())
     transitions = []
@@ -863,6 +867,104 @@ class ComparisonSealControls(unittest.TestCase):
         report = verify_parser_seal(self.seal, self.resolve)
         self.assertEqual(len(report['required_binaries']), 4)
 
+    def candidate_record(self, control=False):
+        directory = 'control-source' if control else 'source'
+        return next(row for row in self.seal['before']
+                    if Path(row['path']).relative_to(self.root / 'parser').parts == (directory, 'candidate-source-manifest.json'))
+
+    def compact_reader(self):
+        destination = self.root / 'capsule'
+        capsule = Capsule(destination)
+        omitted = {row['path'] for row in self.seal['full_archive_only']}
+        # Use the production classification and actual transport, not an identity-only resolver.
+        self.assertEqual(omitted, {row['path'] for row in self.seal['before'] if parser_full_only(row, self.root / 'parser')})
+        for name, raw in self.data.items():
+            if name not in omitted:
+                path = Path(name); path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
+                capsule.add(path, 'synthetic-parser-control')
+        capsule.finish({'status': 'pass', 'scope': 'synthetic transport control; no semantic qualification'})
+        return ReadCapsule(destination)
+
+    def test_actual_compact_reader_retains_all_generated_metadata(self):
+        reader = self.compact_reader()
+        metadata = ['session.json', 'current-authority.json', 'historical-authority.json', 'current-source-manifest.json']
+        for role in ('prepare', 'prepare-control'):
+            metadata += [role + '/' + name for name in ('historical-candidate-source-manifest.json', 'historical-overlay-manifest.json')]
+        for role in ('source', 'control-source'):
+            metadata += [role + '/' + name for name in ('candidate-source-manifest.json', 'overlay-manifest.json', 'observer-source-manifest.json')]
+        for name in metadata:
+            bound = reader.named(self.root / 'parser' / name)
+            self.assertEqual(reader.raw(bound), self.data[bound['path']])
+        report = verify_parser_seal(self.seal, reader.raw)
+        self.assertEqual(report['full_archive_only'], 576)
+        self.assertEqual(len(metadata), 14)
+
+    def test_current_candidate_missing_from_actual_compact_reader(self):
+        for control in (False, True):
+            with self.subTest(control=control):
+                reader = self.compact_reader()
+                bound = self.candidate_record(control)
+                entry = reader.mapping[bound['path']]
+                (reader.root / entry['member']).unlink()
+                manifest = q.read(reader.root / 'capsule.json')
+                manifest['members'] = [row for row in manifest['members'] if row['path'] != bound['path']]
+                q.save(reader.root / 'capsule.json', manifest)
+                reader = ReadCapsule(reader.root)
+                with self.assertRaises((q.Reject, KeyError)):
+                    verify_parser_seal(self.seal, reader.raw)
+                shutil.rmtree(reader.root)
+
+    def test_current_candidate_substitution_in_actual_compact_reader(self):
+        for control in (False, True):
+            with self.subTest(control=control):
+                reader = self.compact_reader()
+                bound = self.candidate_record(control)
+                entry = reader.mapping[bound['path']]
+                path = reader.root / entry['member']; path.write_bytes(path.read_bytes() + b'\n')
+                manifest = q.read(reader.root / 'capsule.json')
+                row = next(row for row in manifest['members'] if row['path'] == bound['path'])
+                row.update({key: q.identity(path)[key] for key in ('bytes', 'sha256')})
+                q.save(reader.root / 'capsule.json', manifest)
+                reader = ReadCapsule(reader.root)
+                with self.assertRaisesRegex(q.Reject, 'stale/altered sealed receipt'):
+                    verify_parser_seal(self.seal, reader.raw)
+                shutil.rmtree(reader.root)
+
+    def test_coherently_rehashed_current_candidate_is_rejected(self):
+        for control in (False, True):
+            with self.subTest(control=control):
+                self.seal, self.data = synthetic_seal_fixture(self.root)
+                record = self.candidate_record(control)
+                value = q.loads(self.data[record['path']]); value['files'] = value['files'][:-1]
+                self.data[record['path']] = q.canonical(value)
+                def rebind(value):
+                    if isinstance(value, list):
+                        return [rebind(item) for item in value]
+                    if isinstance(value, dict):
+                        value = {key: rebind(item) for key, item in value.items()}
+                        if {'path', 'bytes', 'sha256'} <= set(value) and value['path'] in self.data:
+                            raw = self.data[value['path']]; value.update(bytes=len(raw), sha256=q.sha(raw))
+                        if 'streams' in value:
+                            for name, stream in value['streams'].items():
+                                value[name + '_sha256'] = stream['sha256']
+                        return value
+                    return value
+                # Rehash the complete acyclic receipt graph, including comparison command streams.
+                for _ in range(20):
+                    changed = False
+                    for name, raw in list(self.data.items()):
+                        try: old = q.loads(raw)
+                        except (ValueError, UnicodeError): continue
+                        new = rebind(old)
+                        if old != new: self.data[name] = q.canonical(new); changed = True
+                    if not changed: break
+                self.assertFalse(changed, 'synthetic receipt graph did not stabilize')
+                self.seal = rebind(self.seal)
+                reader = self.compact_reader()
+                with self.assertRaisesRegex(q.Reject, 'current candidate transition binding'):
+                    verify_parser_seal(self.seal, reader.raw)
+                shutil.rmtree(reader.root)
+
     def test_post_comparison_raw_mutation(self):
         self.data[self.raw_record()['path']] = b'changed observation'
         with self.assertRaises(q.Reject): verify_parser_seal(self.seal, self.resolve)
@@ -912,7 +1014,9 @@ class ComparisonSealControls(unittest.TestCase):
 
     def test_retained_transition_metadata_cannot_be_omitted(self):
         for suffix in ('current-authority.json', 'historical-authority.json', 'current-source-manifest.json',
-                       'prepare/historical-candidate-source-manifest.json', 'prepare-control/historical-overlay-manifest.json'):
+                       'prepare/historical-candidate-source-manifest.json', 'prepare/historical-overlay-manifest.json',
+                       'prepare-control/historical-candidate-source-manifest.json', 'prepare-control/historical-overlay-manifest.json',
+                       'source/candidate-source-manifest.json', 'control-source/candidate-source-manifest.json'):
             with self.subTest(member=suffix):
                 self.seal, self.data = synthetic_seal_fixture(self.root)
                 row = next(row for row in self.seal['before'] if row['path'].replace('\\', '/').endswith('/' + suffix))
