@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "purpose": "Typed-project public and logical-lifecycle validation inputs",
+  "compiler_commit": "d1fecf4403165002de3f310f4dbecd14b8621190",
+  "compiler_patch_sha256": "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8",
+  "files": [
+    {
+      "path": "components/public/public_cli.py",
+      "bytes": 24066,
+      "sha256": "64ce7685979be6d244dbee1a111fa2ed200b90d3fc918699f81401d86ea71d79",
+      "provenance": "historical digest match",
+      "historical_sha256": "64ce7685979be6d244dbee1a111fa2ed200b90d3fc918699f81401d86ea71d79"
+    },
+    {
+      "path": "components/public/tool_wrapper.py",
+      "bytes": 1154,
+      "sha256": "b2ff630d2a615c692ba946b2b6ff6520a092f88268aefdfa86b71a1bb58c67f7",
+      "provenance": "historical digest match",
+      "historical_sha256": "b2ff630d2a615c692ba946b2b6ff6520a092f88268aefdfa86b71a1bb58c67f7"
+    },
+    {
+      "path": "components/public/direct_tool_passivity.py",
+      "bytes": 3683,
+      "sha256": "90b3e705b5215e837f972b5ef9de48d5d6202dbd437aa70b2a5e58b2807675dd",
+      "provenance": "historical digest match",
+      "historical_sha256": "90b3e705b5215e837f972b5ef9de48d5d6202dbd437aa70b2a5e58b2807675dd"
+    },
+    {
+      "path": "components/public/history/replay_predecessors.py",
+      "bytes": 13515,
+      "sha256": "d0ae4f83e1521b9a9eea9b4c17520e5876480a37cef22be009ffb4ca104fe4e0",
+      "provenance": "historical digest match",
+      "historical_sha256": "d0ae4f83e1521b9a9eea9b4c17520e5876480a37cef22be009ffb4ca104fe4e0"
+    },
+    {
+      "path": "components/public/replay_predecessors_v2.py",
+      "bytes": 13546,
+      "sha256": "ca55f5af66bf0c69960e0835f87cd01c184e7c9d9da8efe852ce570836e5a58b",
+      "provenance": "historical digest match",
+      "historical_sha256": "ca55f5af66bf0c69960e0835f87cd01c184e7c9d9da8efe852ce570836e5a58b"
+    },
+    {
+      "path": "components/public/history/prepare_predecessor_projection.py",
+      "bytes": 6329,
+      "sha256": "bfae1afe00e4b942c465bd10fbf2ce4eed344bdf56bd91a0528c623f9fb79b4d",
+      "provenance": "historical digest match",
+      "historical_sha256": "bfae1afe00e4b942c465bd10fbf2ce4eed344bdf56bd91a0528c623f9fb79b4d"
+    },
+    {
+      "path": "components/public/history/prepare_guard_projection.py",
+      "bytes": 2939,
+      "sha256": "19d9db37c826bdc756314f60e15cbc1eaa260bda2971bf6386cd4e7c900c1ea9",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/build_observer_v1.py",
+      "bytes": 2174,
+      "sha256": "394d38a9b64307233b527a37b3ad19e3b512300beb91c0c453a79220b9eade5b",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/freeze_lifecycle_expectations_v1.py",
+      "bytes": 4916,
+      "sha256": "ccc53a5273e09aca90b455a917c14b7458f0ceac74c4c1b094dfc412a60f0b32",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/heldout-lifecycle-expectations.reconstructed-source-only-v1.json.gz",
+      "bytes": 3892,
+      "sha256": "d9190ead4c5c11d91d9cdcb6e6c871db01bc29cfbf59802e868b30794cc27d49",
+      "provenance": "new source-only 15-case subset reconstructed from retained generator; separate from old complete expectations",
+      "historical_sha256": null,
+      "encoding": "gzip level9 mtime0; fixed stored bytes",
+      "decoded_bytes": 2112998,
+      "decoded_sha256": "71a74cd573193dbde6438faaeccdbcef4799b38f70ded2e70b621ecaa6a74afa"
+    },
+    {
+      "path": "components/lifecycle/lifecycle-amendment-v3.json",
+      "bytes": 11197,
+      "sha256": "104aae4e819677cae34b272af2572e918f60a6c4af3aea171d4bc786ba54c920",
+      "provenance": "historical digest match",
+      "historical_sha256": "104aae4e819677cae34b272af2572e918f60a6c4af3aea171d4bc786ba54c920"
+    },
+    {
+      "path": "components/lifecycle/lifecycle_observer.rs",
+      "bytes": 650,
+      "sha256": "31e2eaeb1d42a9449b7209d7b0b4eb52dde4f117db7f2239ca961d3454cb3b45",
+      "provenance": "extracted from hash-verified observer sources",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/observe_lifecycle_v1.py",
+      "bytes": 8457,
+      "sha256": "d32c1412a1068f56ae0a21f80debe80a31dcdcf222663da967d36caede46f5eb",
+      "provenance": "historical digest match",
+      "historical_sha256": "d32c1412a1068f56ae0a21f80debe80a31dcdcf222663da967d36caede46f5eb"
+    },
+    {
+      "path": "components/lifecycle/observer-additive-v1.patch",
+      "bytes": 7013,
+      "sha256": "2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56",
+      "provenance": "historical digest match",
+      "historical_sha256": "2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56"
+    },
+    {
+      "path": "components/lifecycle/prepare_observer_v1.py",
+      "bytes": 6308,
+      "sha256": "8d84f991a0d8b524fdc594973069ce419c04de802b3d0fd464eeb2f3e76f7afe",
+      "provenance": "historical digest match",
+      "historical_sha256": "8d84f991a0d8b524fdc594973069ce419c04de802b3d0fd464eeb2f3e76f7afe"
+    }
+  ],
+  "execution_status": "inputs checkpointed; complete public/parser contracts and path adapters are the next integration step",
+  "prior_full_qualification": "historical; raw artifacts were lost during the cloud workspace replacement",
+  "fresh_compiler_checks": {
+    "debug_passed": 789,
+    "release_passed": 789,
+    "ignored_per_profile": 21,
+    "fmt": "PASS",
+    "strict_clippy": "PASS"
+  }
+}

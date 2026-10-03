@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "finding": "V2-LIFECYCLE-1",
+  "scope": "Pre-execution lifecycle counter clarification only; no new cases or semantic/CLI outcome changes",
+  "basis_review": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit4-independent/contract-review-v2.md",
+    "bytes": 10757,
+    "sha256": "338757d965a370d09892308139ce31969c95722088f00856686864e97ab55d87"
+  },
+  "supersedes_public_contract": {
+    "path": "public-cli-contract-v2.json",
+    "bytes": 65827,
+    "sha256": "c41955bcddc8383a0dbcb3964a692f2aa7bf0da9efa9ff49eab33cbc37d79a8f"
+  },
+  "replacement_public_contract": {
+    "path": "public-cli-contract-v3.json",
+    "bytes": 69344,
+    "sha256": "1cd3b42d2f93158e88b6a37ac99b89b9a10e85c926e2e7eb4d63675ab170073f"
+  },
+  "parser_contract_unchanged": {
+    "path": "parser-cases-v1.json",
+    "bytes": 1634317,
+    "sha256": "2c2b44cf895c2499821a3cc7ab31f6244840a8a44e876a0f82006d84e1f2ed71"
+  },
+  "predecessor_reuse_unchanged": {
+    "path": "predecessor-reuse-v1.json",
+    "bytes": 8080,
+    "sha256": "6b79cb9a29e948309cb9127e2928db0dfdfa4ff1569ae1bc254d649a4772be96"
+  },
+  "historical_core_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-evidence/source-inputs-core-v1.json",
+    "bytes": 19899,
+    "sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910"
+  },
+  "source_derivation": [
+    {
+      "source": {
+        "path": "/workspace/scratch/8266abf56995/oxid-typed-project-execution/src/frontend/driver.rs",
+        "bytes": 6987,
+        "sha256": "71e218dc1896eef8b29d6df7cd55cc39d5cb114cdba74b0f48e96fb06c7624df"
+      },
+      "lines": "107-128,142-161",
+      "reason": "Load failure returns before checker invocation. A checker error returns before the common check/run/compile consumer dispatch."
+    },
+    {
+      "source": {
+        "path": "/workspace/scratch/8266abf56995/oxid-typed-project-execution/src/frontend/oir/source/sealed.rs",
+        "bytes": 7427,
+        "sha256": "b18fe96214f67aae59b5b291090db491851d0d3ab2428b39082f4010cd0c3c27"
+      },
+      "lines": "88-96,107-126,153-169",
+      "reason": "The executable project checker attempts route computation once, selects its route, enters index construction and returns the frozen index before owned resolution/type/check_typed. Any intervening ? exits without retry; ownership rejection prevents successful checked-executable return."
+    },
+    {
+      "source": {
+        "path": "/workspace/scratch/8266abf56995/oxid-typed-project-execution/src/frontend/oir/owned/source/program.rs",
+        "bytes": 2320,
+        "sha256": "aeb1969a292d2489a5cbdc04dce87a156ce2d161336239b9fa67097460a9c697"
+      },
+      "lines": "23-37",
+      "reason": "check_typed lowers, associates and verifies ownership before successfully returning its source program. The accepted E0310 ownership outcome therefore has route/index completions but no checked-program completion."
+    }
+  ],
+  "accepted_design": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit4-design/proposed-activation.md",
+    "bytes": 21155,
+    "sha256": "9cee78fb5b9149129de2856c828f85f94f167ed50d215ae4e4f42d19d79a1a72"
+  },
+  "accepted_migration_plan": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit4-design/verification-migration-plan.md",
+    "bytes": 8869,
+    "sha256": "b3d3b558b87be665d7bf11f29e82fff370ad4b3050d9a3dda96fdcae88107f93"
+  },
+  "corrections": [
+    {
+      "path": "/literal_cases/12/expected_lifecycle",
+      "operation": "replace",
+      "before": {
+        "complete_checker": 0,
+        "whole_program_route": 0,
+        "index": 0
+      },
+      "after": {
+        "checker_attempts": 0,
+        "checked_program_completions": 0,
+        "route_attempts": 0,
+        "route_completions": 0,
+        "index_attempts": 0,
+        "index_completions": 0
+      },
+      "reason": "Load rejection precedes checker invocation; replace ambiguous zeros with explicit attempt and successful-completion zeros"
+    },
+    {
+      "path": "/literal_cases/13/expected_lifecycle",
+      "operation": "replace",
+      "before": {
+        "complete_checker": 0,
+        "whole_program_route": 0,
+        "index": 0
+      },
+      "after": {
+        "checker_attempts": 0,
+        "checked_program_completions": 0,
+        "route_attempts": 0,
+        "route_completions": 0,
+        "index_attempts": 0,
+        "index_completions": 0
+      },
+      "reason": "Load rejection precedes checker invocation; replace ambiguous zeros with explicit attempt and successful-completion zeros"
+    },
+    {
+      "path": "/literal_cases/14/expected_lifecycle",
+      "operation": "replace",
+      "before": {
+        "complete_checker": 0,
+        "whole_program_route": 0,
+        "index": 0
+      },
+      "after": {
+        "checker_attempts": 0,
+        "checked_program_completions": 0,
+        "route_attempts": 0,
+        "route_completions": 0,
+        "index_attempts": 0,
+        "index_completions": 0
+      },
+      "reason": "Load rejection precedes checker invocation; replace ambiguous zeros with explicit attempt and successful-completion zeros"
+    },
+    {
+      "path": "/inherited_negative_and_route_cases/2/expected_lifecycle",
+      "operation": "add",
+      "before": null,
+      "after": {
+        "checker_attempts": 1,
+        "checked_program_completions": 0,
+        "route_attempts": 1,
+        "route_completions": 1,
+        "index_attempts": 1,
+        "index_completions": 1
+      },
+      "reason": "The accepted E0310 ownership rejection follows successful route selection and frozen index construction, but exits before a checked executable returns; this same row applies to all three existing operations"
+    },
+    {
+      "path": "/observation_lifecycle",
+      "operation": "replace",
+      "before": {
+        "source_open_read_lex_parse_per_file": 1,
+        "source_lifecycle_applicability": "Each source file that completes loading, lexing and parsing; unsuccessful earlier stages require case-specific partial counts",
+        "successful_frontend": {
+          "applicability": "Source loading and complete front-end checking successfully return a checked program",
+          "complete_checker": 1,
+          "whole_program_route": 1,
+          "index": 1
+        },
+        "source_or_parse_rejection": {
+          "applicability": "Source loading or parsing rejects before complete checker invocation",
+          "complete_checker": 0,
+          "whole_program_route": 0,
+          "index": 0
+        },
+        "other_semantic_rejection": "Case-specific stage observations; no universal complete-checker/route/index count is inferred",
+        "consumer_source_reopens": 0,
+        "source_lifecycle_is_not_syscall_count": true
+      },
+      "after": {
+        "source_open_read_lex_parse_per_file": 1,
+        "source_lifecycle_applicability": "Each source file that completes loading, lexing and parsing; unsuccessful earlier stages require case-specific partial counts",
+        "successful_frontend": {
+          "applicability": "Source loading and complete front-end checking successfully return a checked program; later missing-entry or native-admission rejection retains these counts",
+          "checker_attempts": 1,
+          "checked_program_completions": 1,
+          "route_attempts": 1,
+          "route_completions": 1,
+          "index_attempts": 1,
+          "index_completions": 1
+        },
+        "source_or_parse_rejection": {
+          "applicability": "Source, lex, parse or host load rejection before complete checker invocation",
+          "checker_attempts": 0,
+          "checked_program_completions": 0,
+          "route_attempts": 0,
+          "route_completions": 0,
+          "index_attempts": 0,
+          "index_completions": 0
+        },
+        "other_semantic_rejection": {
+          "route_computation_rejection": {
+            "applicability": "Route computation rejects before selecting a route or entering index construction",
+            "checker_attempts": 1,
+            "checked_program_completions": 0,
+            "route_attempts": 1,
+            "route_completions": 0,
+            "index_attempts": 0,
+            "index_completions": 0
+          },
+          "index_construction_rejection": {
+            "applicability": "Index construction rejects after route selection and before returning the frozen index",
+            "checker_attempts": 1,
+            "checked_program_completions": 0,
+            "route_attempts": 1,
+            "route_completions": 1,
+            "index_attempts": 1,
+            "index_completions": 0
+          },
+          "body_type_ownership_rejection": {
+            "applicability": "Body, type or ownership checking rejects after successful frozen-index construction and before a checked executable returns",
+            "checker_attempts": 1,
+            "checked_program_completions": 0,
+            "route_attempts": 1,
+            "route_completions": 1,
+            "index_attempts": 1,
+            "index_completions": 1
+          },
+          "other_failures": "Use source-derived reached-phase counts: one attempt for each entered phase, zero for unreached phases, and a completion only when that phase returns its specified result; no universal semantic-rejection completion count"
+        },
+        "consumer_source_reopens": 0,
+        "source_lifecycle_is_not_syscall_count": true,
+        "counter_definitions": {
+          "checker_attempts": "Invocation of the one selected complete source checker after successful load",
+          "checked_program_completions": "Successful return of its checked executable program, before check/run/compile consumer admission",
+          "route_attempts": "Entry into the selected checker's whole-program scalar/owned route computation",
+          "route_completions": "Successful selection of that one route",
+          "index_attempts": "Entry into the selected path's one declaration-index construction pipeline",
+          "index_completions": "Successful return of the frozen declaration index, before downstream body/type/ownership/consumer work"
+        },
+        "counter_semantics": {
+          "attempt": "Entry into the phase, including an eventual error",
+          "completion": "Successful return of the phase's specified result",
+          "exactly_once": "Each reached phase is entered exactly once; an unreached phase has zero attempts; no retries, repeated attempts or second traversal are allowed",
+          "completion_bound": "Each successful-completion count is at most its corresponding attempt count",
+          "case_expected_lifecycle_applicability": "A case-level expected_lifecycle applies separately to every declared observation or operation, in each existing profile and host scope",
+          "cli_status": "Do not infer phase completion from command exit status"
+        }
+      },
+      "reason": "Define all six measurement boundaries, replace ambiguous old counter names, and preserve conditional reached-phase counts for existing coverage"
+    }
+  ],
+  "literal_cli_outcomes_source_parser_predecessor_host_and_setup_unchanged": true,
+  "compiler_invocations": 0,
+  "candidate_result_files_read": 0
+}
