@@ -486,3 +486,186 @@ jobs:
         run: python3 -m unittest -v test_owned_source_native_matcher test_owned_source_native_binding
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2
+
+  unit4-linux:
+    name: Unit4 current typed-project qualification (Linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    container: debian:trixie-slim
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux native environment
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils util-linux xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          # Bind the actual PR head; github.sha is retained separately as event SHA.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked dependencies and exact historical parser authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked
+          git fetch --no-tags origin d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+          git cat-file -e 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768^{commit}'
+          git worktree add --detach "$RUNNER_TEMP/unit4-parser-authority" d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+      - name: Verify Unit4 integration failure controls
+        run: python3 -B tests/qualification/unit4_ci/test_integration.py
+      - name: Execute complete current-source public, hosted-root and parser gates
+        id: qualification
+        timeout-minutes: 165
+        shell: bash
+        run: |
+          set -euo pipefail
+          unit4_rustc="$(rustup which rustc)"
+          unit4_toolchain="$(dirname "$(dirname "$unit4_rustc")")"
+          python3 -B tests/qualification/unit4_ci/gate.py host \
+            --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-linux" \
+            --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
+            --host 'Linux x86_64' --historical-repo "$RUNNER_TEMP/unit4-parser-authority" \
+            --toolchain "$unit4_toolchain" --cargo-cache "${CARGO_HOME:-$HOME/.cargo}"
+      - name: Preserve complete or failed Unit4 evidence
+        if: always()
+        timeout-minutes: 30
+        run: python3 -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-linux" --archives "$RUNNER_TEMP/unit4-linux-archives"
+      - name: Upload compact Linux raw evidence and bindings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-host-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/unit4-linux-archives/compact.tar.xz
+            ${{ runner.temp }}/unit4-linux-archives/export.json
+      - name: Upload full Linux source, stream and binary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-full-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-linux-archives/full-evidence.tar.gz
+
+  unit4-portable-hosts:
+    name: Unit4 current typed-project qualification (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86_64
+            os: windows-latest
+            artifact: windows-x86_64
+          - name: macOS x86_64
+            os: macos-15-intel
+            artifact: macos-x86_64
+          - name: macOS arm64
+            os: macos-14
+            artifact: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_HOST: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Restore exact committed bytes with scoped checkout settings
+        shell: bash
+        run: git -c core.autocrlf=false -c core.eol=lf checkout-index --all --force
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked build dependencies
+        run: cargo fetch --locked
+      - name: Verify actual-host integration controls
+        run: python -B tests/qualification/unit4_ci/test_integration.py
+      - name: Execute ordinary, lifecycle and actual no-native trap gates
+        id: qualification
+        timeout-minutes: 80
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tests/qualification/unit4_ci/gate.py host \
+            --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-host" \
+            --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
+            --host "$UNIT4_HOST"
+      - name: Preserve complete or failed actual-host evidence
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-host" --archives "$RUNNER_TEMP/unit4-host-archives"
+      - name: Upload compact host raw evidence and bindings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-host-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/unit4-host-archives/compact.tar.xz
+            ${{ runner.temp }}/unit4-host-archives/export.json
+      - name: Upload full host source, stream and binary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-full-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-host-archives/full-evidence.tar.gz
+
+  unit4-qualification:
+    name: Unit4 mandatory four-host qualification join
+    needs: [unit4-linux, unit4-portable-hosts]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download exact-run host qualification capsules
+        uses: actions/download-artifact@v4
+        with:
+          pattern: unit4-host-*
+          path: ${{ runner.temp }}/unit4-host-artifacts
+      - name: Require complete raw frozen rosters from all four actual hosts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tests/qualification/unit4_ci/join.py \
+            --repo "$GITHUB_WORKSPACE" --artifacts "$RUNNER_TEMP/unit4-host-artifacts" \
+            --output "$RUNNER_TEMP/unit4-final-join" --expected-head "$UNIT4_EXPECTED_HEAD" \
+            --event-sha "$UNIT4_EVENT_SHA" --job-results "$UNIT4_JOB_RESULTS"
+      - name: Preserve final qualification result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-final-qualification
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-final-join/comparison.json
