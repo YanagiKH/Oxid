@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Collect real observations; does not evaluate or invent expected outcomes."""
-import argparse,base64,gzip,hashlib,json,os,pathlib,re,subprocess,uuid
+import argparse,base64,gzip,hashlib,json,os,pathlib,platform,re,struct,subprocess,uuid
 import sys
 if sys.flags.optimize or not __debug__:
     raise SystemExit("OPTIMIZED_PYTHON_UNSUPPORTED: parser observer requires enabled admission checks")
@@ -23,7 +23,13 @@ def read_json(p):return json.loads(p.read_text(),object_pairs_hook=unique)
 def verified(identity_row):
     actual=identity(identity_row['path']);assert actual['bytes']==identity_row['bytes']and actual['sha256']==identity_row['sha256'],identity_row['path'];return pathlib.Path(identity_row['path'])
 def b64(s):return base64.b64encode(s.encode('utf8')).decode('ascii')
-def normalize(raw,case,receipt,nonce):
+def runtime_host():
+    observed=platform.uname()
+    system={'Linux':'linux','Darwin':'macos','Windows':'windows'}.get(observed.system,observed.system.lower())
+    machine=observed.machine.lower()
+    architecture={'amd64':'x86_64','x86_64':'x86_64','arm64':'aarch64','aarch64':'aarch64'}.get(machine,machine)
+    return {'os':system,'architecture':architecture,'python_pointer_width':struct.calcsize('P')*8,'uname':{'system':observed.system,'release':observed.release,'version':observed.version,'machine':observed.machine},'python_executable':sys.executable,'python_version':sys.version}
+def normalize(raw,case,receipt,nonce,host):
     assert raw['case_id']==case['id'] and raw['nonce']==nonce and raw['schema']=='oxid-unit4-parser-raw-v1'
     actual_source=raw['source_utf8'].encode('utf8');assert digest(actual_source)==case['source']['sha256']and len(actual_source)==case['source']['bytes']and raw['display_path']==case['source']['path'],'executed source mismatch'
     modes=['ProjectCandidate']+(['OwnedCandidate']if 'relation_to_original'in case['expected']else[])
@@ -31,7 +37,9 @@ def normalize(raw,case,receipt,nonce):
     rows=[]
     for index,(mode,row)in enumerate(zip(modes,raw['observations'])):
         assert row['mode']==mode and row['mode_execution_index']==index and row['executed']is True
-        binding={'contract_decoded_sha256':CONTRACT,'package_freeze_sha256':FREEZE,'case_id':case['id'],'source_sha256':case['source']['sha256'],'source_bytes':case['source']['bytes'],'display_path':case['source']['path'],'candidate_source_manifest_sha256':receipt['candidate_source_manifest_sha256'],'observer_source_sha256':receipt['observer_source_sha256'],'binary_sha256':receipt['binary']['sha256'],'profile':receipt['profile'],'actual_runtime_os':row.pop('runtime_os'),'actual_runtime_architecture':row.pop('runtime_architecture'),'actual_pointer_width':row.pop('pointer_width'),'rust_compiler_target':receipt['target'],'mode':row.pop('mode'),'seam':case.get('seam',{}),'execution_id':nonce,'source_generation':row.pop('source_generation'),'mode_execution_index':row.pop('mode_execution_index')}
+        process_os=row.pop('runtime_os');process_arch=row.pop('runtime_architecture');process_width=row.pop('pointer_width')
+        assert process_os==host['os']and process_arch==host['architecture']and process_width==host['python_pointer_width'],'compiled process ABI and measured host differ'
+        binding={'contract_decoded_sha256':CONTRACT,'package_freeze_sha256':FREEZE,'case_id':case['id'],'source_sha256':case['source']['sha256'],'source_bytes':case['source']['bytes'],'display_path':case['source']['path'],'candidate_source_manifest_sha256':receipt['candidate_source_manifest_sha256'],'observer_source_sha256':receipt['observer_source_sha256'],'binary_sha256':receipt['binary']['sha256'],'profile':receipt['profile'],'actual_runtime_os':host['os'],'actual_runtime_architecture':host['architecture'],'actual_pointer_width':process_width,'rust_compiler_target':receipt['target'],'mode':row.pop('mode'),'seam':case.get('seam',{}),'execution_id':nonce,'source_generation':row.pop('source_generation'),'mode_execution_index':row.pop('mode_execution_index')}
         jsons=row.pop('json_diagnostic_renderings');assert [json.loads(s,object_pairs_hook=unique)for s in jsons]==row['diagnostics']
         row['json_diagnostic_bytes_base64']=[b64(s)for s in jsons];row['human_diagnostic_bytes_base64']=b64(row.pop('human_diagnostic_rendering'))
         if row['ast']is not None:row['ast']['canonical']=parse(row['ast'].pop('canonical_debug'))
@@ -54,10 +62,14 @@ def main():
     if a.case:
         assert len(set(a.case))==len(a.case),'duplicate requested case'
         assert set(a.case)<={c['id']for c in cases},'unknown requested case';cases=[c for c in cases if c['id']in a.case]
+    host=runtime_host()
+    actual_tuple={'os':host['os'],'architecture':host['architecture'],'pointer_width':host['python_pointer_width'],'rust_target':receipt['target']}
+    if actual_tuple not in contract['required_platforms']:
+        raise RuntimeError('UNSUPPORTED_PLATFORM: '+json.dumps(actual_tuple,sort_keys=True))
     out=a.output.resolve();assert not out.exists(),out;out.mkdir(parents=True)
     roster=subprocess.run([str(binary),'--list'],capture_output=True,text=True);(out/'test-roster.stdout').write_text(roster.stdout);(out/'test-roster.stderr').write_text(roster.stderr)
     assert roster.returncode==0 and roster.stdout.splitlines().count(ENTRY+': test')==1,'exact observer absent/duplicate'
-    manifest={'schema':'oxid-unit4-parser-execution-v1','status':'running','contract_decoded_sha256':CONTRACT,'package_freeze_sha256':FREEZE,'build_receipt':identity(a.build_receipt),'authority_checkpoint':identity(a.checkpoint),'driver':identity(pathlib.Path(__file__)),'normalizer':identity(HERE/'parse_debug.py'),'requested_case_ids':[c['id']for c in cases],'profile':receipt['profile'],'case_receipts':[]}
+    manifest={'schema':'oxid-unit4-parser-execution-v1','host_runtime':host,'status':'running','contract_decoded_sha256':CONTRACT,'package_freeze_sha256':FREEZE,'build_receipt':identity(a.build_receipt),'authority_checkpoint':identity(a.checkpoint),'driver':identity(pathlib.Path(__file__)),'normalizer':identity(HERE/'parse_debug.py'),'requested_case_ids':[c['id']for c in cases],'profile':receipt['profile'],'case_receipts':[]}
     (out/'execution-manifest.json').write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n')
     observations=out/'observations.jsonl'
     with observations.open('w')as observations_out:
@@ -77,7 +89,7 @@ def main():
                 stdout=(case_dir/'stdout.txt').read_text();assert stdout.count('UNIT4_EXECUTED '+nonce)==1 and re.search(r'test result: ok\. 1 passed; 0 failed; 0 ignored;',stdout),'zero/unconfirmed observer execution'
                 assert (case_dir/'raw.json').stat().st_size<=LIMIT
                 assert identity(case_dir/'source.ox')==request['source'],'source changed during execution'
-                case_receipt['raw']=identity(case_dir/'raw.json');raw=read_json(case_dir/'raw.json');rows=normalize(raw,case,receipt,nonce)
+                case_receipt['raw']=identity(case_dir/'raw.json');raw=read_json(case_dir/'raw.json');rows=normalize(raw,case,receipt,nonce,host)
                 for row in rows:observations_out.write(json.dumps(row,sort_keys=True,separators=(',',':'),ensure_ascii=False)+'\n')
                 case_receipt['observations']=len(rows)
             except Exception as error:

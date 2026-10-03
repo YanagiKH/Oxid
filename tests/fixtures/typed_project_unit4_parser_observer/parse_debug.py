@@ -2,6 +2,10 @@
 """Strict mechanical parser for derived Rust Debug; no source interpretation."""
 import re
 
+HEX_RUN = re.compile(r"[0-9a-fA-F]+")
+WORD = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+INTEGER = re.compile(r"-?[0-9]+")
+
 class DebugSyntaxError(ValueError): pass
 
 class Parser:
@@ -27,13 +31,13 @@ class Parser:
                 if not re.fullmatch('[0-9a-fA-F]{2}',h):raise DebugSyntaxError(('hex escape',self.i))
                 self.i+=2;out.append(chr(int(h,16)))
             elif c=='u':
-                self.expect('{');m=re.match('[0-9a-fA-F]+',self.s[self.i:])
+                self.expect('{');m=HEX_RUN.match(self.s,self.i)
                 if not m:raise DebugSyntaxError(('unicode escape',self.i))
                 self.i+=len(m[0]);self.expect('}');out.append(chr(int(m[0],16)))
             else:raise DebugSyntaxError(('escape',c,self.i))
         raise DebugSyntaxError('unterminated Rust Debug string')
     def word(self):
-        self.skip();m=re.match(r'[A-Za-z_][A-Za-z_0-9]*',self.s[self.i:])
+        self.skip();m=WORD.match(self.s,self.i)
         if not m:raise DebugSyntaxError(('word',self.i,self.s[self.i:self.i+60]))
         self.i+=len(m[0]);return m[0]
     def sequence(self,end):
@@ -57,7 +61,7 @@ class Parser:
                 elif self.peek()!='}':raise DebugSyntaxError(('map separator',self.i))
             self.i+=1;return {'tag':'$map','items':out}
         if p=='-' or p.isdigit():
-            m=re.match('-?[0-9]+',self.s[self.i:]);self.i+=len(m[0]);return int(m[0])
+            m=INTEGER.match(self.s,self.i);self.i+=len(m[0]);return int(m[0])
         tag=self.word()
         if tag=='None':return None
         if tag=='true':return True
