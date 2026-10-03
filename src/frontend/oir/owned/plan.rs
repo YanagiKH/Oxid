@@ -133,13 +133,7 @@ impl<'a> ExecutionPlan<'a> {
         self.metadata_bytes
     }
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
-        let record = self.witness.functions()[f.0].owners[o.0].record;
-        self.witness
-            .declarations()
-            .fields(record)
-            .expect("verified record")
-            .len()
-            .max(1)
+        width(self.witness, &self.witness.functions()[f.0], o)
     }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
@@ -233,9 +227,8 @@ impl<'a> ExecutionPlan<'a> {
             for owner in &f.owners {
                 let layout = witness
                     .declarations()
-                    .record(owner.record)
-                    .unwrap()
-                    .layout();
+                    .aggregate_layout(AggregateTy::Record(owner.record))
+                    .expect("verified record");
                 next = align(next, layout.align())?;
                 owner_offsets.push(next);
                 next = add(next, layout.size())?;
@@ -322,10 +315,8 @@ impl<'a> ExecutionPlan<'a> {
 fn width(witness: &VerifiedOwnedProgram, f: &RawOwnedFunction, o: OwnerPlaceId) -> usize {
     witness
         .declarations()
-        .fields(f.owners[o.0].record)
+        .aggregate_width(AggregateTy::Record(f.owners[o.0].record))
         .expect("verified record")
-        .len()
-        .max(1)
 }
 fn usage(
     witness: &VerifiedOwnedProgram,
@@ -345,9 +336,8 @@ fn usage(
     for (index, owner) in f.owners.iter().enumerate() {
         let layout = witness
             .declarations()
-            .record(owner.record)
-            .unwrap()
-            .layout();
+            .aggregate_layout(AggregateTy::Record(owner.record))
+            .expect("verified record");
         u.owner_cells = add(u.owner_cells, width(witness, f, OwnerPlaceId(index)))?;
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
     }
@@ -416,6 +406,31 @@ pub(super) fn fail_allocation_after<T>(count: usize, action: impl FnOnce() -> T)
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn aggregate_seam_retains_raw_and_runtime_representation() {
+        macro_rules! sizes { ($($ty:ty => $bytes:expr),* $(,)?) => { $(
+            println!("layout {} {}", stringify!($ty), size_of::<$ty>());
+            #[cfg(target_pointer_width = "64")]
+            assert_eq!(size_of::<$ty>(), $bytes, "{} accounting changed", stringify!($ty));
+        )* }; }
+        sizes!(
+            RawOwnedProgram => 48,
+            RawOwnedFunction => 248,
+            OwnerDecl => 56,
+            ReferenceDecl => 48,
+            LoanDecl => 72,
+            CallDecl => 96,
+            OwnedInstruction => 128,
+            ParameterBinding => 16,
+            FunctionPlan => 184,
+            CallPlan => 48,
+            FrameUsage => 88,
+            OwnerRuntime => 32,
+            ReferenceHandle => 64,
+            LoanRuntime => 96,
+            CallRuntime => 16
+        );
+    }
     #[test]
     fn checked_arithmetic_and_plan_preflight_precede_allocation() {
         assert!(add(usize::MAX, 1).is_err());
