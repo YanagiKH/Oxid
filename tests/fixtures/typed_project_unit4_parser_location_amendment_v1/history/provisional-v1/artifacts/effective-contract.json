@@ -1,0 +1,30 @@
+{
+  "admission_rule": "Independently pin this descriptor and amendment bytes. Verify the base package freeze, every frozen member, original gzip and decoded corpus, exact case ID/index/source, old whole-case and diagnostic hashes, complete old diagnostic and old primary. Replace only the specified primary in memory once. Require complete new diagnostic, new hashes, exact four changed integer leaves and full effective canonical-document hash. Reject stale or additional amendments and repeated application.",
+  "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "canonicalization": "UTF-8 json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False), without trailing newline",
+  "companion_rule": "All base package and transported authority bindings remain in force. The original gzip, decoded bytes, generator, validator and freeze remain unchanged. Historical contract_id metadata inside the base document does not identify the effective authority.",
+  "effective_parser_document_canonical_bytes": 2113465,
+  "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "identity": "oxid-unit4-parser-v1-location-amendment-v1",
+  "ordered_amendments": [
+    {
+      "bytes": 3473,
+      "file": "amendment.json",
+      "sha256": "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    }
+  ],
+  "receipt_binding": {
+    "descriptor_hash_rule": "SHA256 of exact effective-contract.json bytes including the final newline.",
+    "fresh_comparison_rule": "Every new comparison must bind the distinct effective identity and all required hashes in addition to the existing observer/build/platform/profile/roster bindings. Prior base-contract observations retain their original bytes and identities and do not qualify this amended contract.",
+    "required_fields": [
+      "effective_contract_identity",
+      "effective_contract_descriptor_sha256",
+      "base_parser_package_freeze_sha256",
+      "base_parser_corpus_decoded_sha256",
+      "ordered_amendment_sha256",
+      "effective_parser_document_canonical_sha256"
+    ]
+  },
+  "schema_version": 1
+}

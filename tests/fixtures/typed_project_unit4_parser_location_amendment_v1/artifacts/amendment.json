@@ -1,0 +1,99 @@
+{
+  "base_document": {
+    "decoded_bytes": 2113466,
+    "decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "gzip_bytes": 45324,
+    "gzip_sha256": "ce2b6f72448def28b0cfaecfab2b8cc8b0f7c5a3bf340511e040dd28421839bb",
+    "name": "parser-contract-new-v1.json.gz"
+  },
+  "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "canonicalization": "UTF-8 json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False), without trailing newline",
+  "case_id": "public-root-module-before-reserved-function",
+  "case_pointer": "/cases/246",
+  "exact_changed_json_pointers": [
+    "/cases/246/expected/first_diagnostic_projection/primary/column",
+    "/cases/246/expected/first_diagnostic_projection/primary/end",
+    "/cases/246/expected/first_diagnostic_projection/primary/end_column",
+    "/cases/246/expected/first_diagnostic_projection/primary/start"
+  ],
+  "identity": "oxid-unit4-parser-v1-location-amendment-v1",
+  "new_case_canonical_sha256": "b742d47dde13ff01e4c6bc1b459ae9d2240d0b625f48bce5bdc72a321a7066e9",
+  "new_diagnostic": {
+    "code": "E0101",
+    "edition": "typed-preview",
+    "kind": "diagnostic",
+    "message": "unsupported typed-preview construct `pub`",
+    "notes": [],
+    "primary": {
+      "column": 15,
+      "end": 17,
+      "end_column": 18,
+      "end_line": 1,
+      "file_id": 0,
+      "line": 1,
+      "path": "activation.ox",
+      "start": 14
+    },
+    "schema_version": 1,
+    "secondary": [],
+    "severity": "error",
+    "stage": "parse"
+  },
+  "new_diagnostic_canonical_sha256": "a69802ccc09e457c99bd9bdb1b479ba2f6ad73d7228181225e40521ec5741236",
+  "old_case_canonical_sha256": "c5684de4c6738f14440febbcd5067a5e592fa9358e31b8dec41a6bd27cefdab7",
+  "old_diagnostic": {
+    "code": "E0101",
+    "edition": "typed-preview",
+    "kind": "diagnostic",
+    "message": "unsupported typed-preview construct `pub`",
+    "notes": [],
+    "primary": {
+      "column": 14,
+      "end": 16,
+      "end_column": 17,
+      "end_line": 1,
+      "file_id": 0,
+      "line": 1,
+      "path": "activation.ox",
+      "start": 13
+    },
+    "schema_version": 1,
+    "secondary": [],
+    "severity": "error",
+    "stage": "parse"
+  },
+  "old_diagnostic_canonical_sha256": "d2cdbf98bf6450d42c1862ab439476ea12d87920a5645c9ff17be84cdfb5150a",
+  "operation": {
+    "old_value": {
+      "column": 14,
+      "end": 16,
+      "end_column": 17,
+      "end_line": 1,
+      "file_id": 0,
+      "line": 1,
+      "path": "activation.ox",
+      "start": 13
+    },
+    "op": "replace",
+    "pointer": "/cases/246/expected/first_diagnostic_projection/primary",
+    "value": {
+      "column": 15,
+      "end": 17,
+      "end_column": 18,
+      "end_line": 1,
+      "file_id": 0,
+      "line": 1,
+      "path": "activation.ox",
+      "start": 14
+    }
+  },
+  "reason": "The complete reserved function-name token pub occupies UTF-8 bytes [14,17), line 1 scalar columns [15,18); the prior [13,16) range selected a space followed by pu.",
+  "schema_version": 1,
+  "scope": "Only start, end, column and end_column change. All source, message, code, stage, recognition, roster, limits, provenance and other expectation values remain unchanged.",
+  "source": {
+    "base64": "bW9kIGNoaWxkOyBmbiBwdWIoKS0+aTMye3JldHVybiAxO30=",
+    "bytes": 35,
+    "path": "activation.ox",
+    "sha256": "5aaf30a3b8fac37e0745f7211ffd13fa0fae5b3903ff03bd285c6ce2d9025e9e"
+  }
+}
