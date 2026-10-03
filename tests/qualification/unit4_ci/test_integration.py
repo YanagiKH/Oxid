@@ -15,7 +15,7 @@ from unittest.mock import patch
 import common as q
 import gate
 import join
-from evidence import Capsule, ReadCapsule, verify_parser_seal
+from evidence import Capsule, ReadCapsule, verify_parser_seal, stage_compact_upload
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -220,10 +220,141 @@ class CheckoutControls(unittest.TestCase):
         windows = portable.split('- name: Execute Windows gates with the native toolchain search path', 1)[1].split('      - name:', 1)[0]
         self.assertIn("if: runner.os == 'Windows'", windows)
         self.assertIn('shell: pwsh', windows)
+        self.assertIn('Microsoft.VisualStudio.Component.VC.Tools.x86.x64', windows)
+        self.assertIn('& $unit4_dev_shell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation', windows)
         self.assertIn('python -B tests/qualification/unit4_ci/gate.py host', windows)
         for key in ('GITHUB_WORKSPACE', 'RUNNER_TEMP', 'UNIT4_EXPECTED_HEAD', 'UNIT4_EVENT_SHA', 'UNIT4_HOST'):
             self.assertIn('$env:' + key, windows)
         self.assertTrue(windows.rstrip().endswith('exit $LASTEXITCODE'))
+
+
+class WindowsToolchainControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name).resolve()
+        self.tools = self.root / 'MSVC/bin/Hostx64/x64'
+        self.tools.mkdir(parents=True)
+        for name in ('link.exe', 'cl.exe'): (self.tools / name).write_bytes(b'synthetic fixture: ' + name.encode())
+        self.env = {'PATH': str(self.tools), 'LIB': 'library search', 'INCLUDE': 'header search',
+                    'VCINSTALLDIR': str(self.root), 'VSINSTALLDIR': str(self.root),
+                    'VCToolsInstallDir': str(self.root / 'MSVC'), 'VSCMD_ARG_TGT_ARCH': 'x64', 'VSCMD_ARG_HOST_ARCH': 'x64'}
+        self.result = {'status': 0, 'timed_out': False, 'stream_limit_exceeded': False,
+                       'stdout': 'Microsoft (R) Incremental Linker Version 14.synthetic', 'stderr': ''}
+        self.calls = []
+        def process(argv, cwd, env, timeout):
+            self.calls.append((argv, cwd, env, timeout))
+            return dict(self.result)
+        self.driver = SimpleNamespace(env=self.env, output=self.root, state={},
+            runtime=SimpleNamespace(process=process), write=lambda: q.save(self.root / 'driver.json', self.driver.state))
+        self.which = patch.object(gate.shutil, 'which', side_effect=lambda name, path: str(self.tools / name))
+        self.which.start()
+
+    def tearDown(self):
+        self.which.stop()
+        self.temp.cleanup()
+
+    def test_clean_environment_retains_only_named_discovery_keys(self):
+        supplied = {**self.env, **{key: 'preinstalled-location' for key in gate.WINDOWS_DISCOVERY_KEYS},
+                    'UNRELATED_SECRET': 'must not be copied', 'RUSTFLAGS': 'must not be copied'}
+        with patch.object(gate, 'os', SimpleNamespace(name='nt', environ=supplied)):
+            actual = gate.clean_environment()
+        for key in gate.WINDOWS_DISCOVERY_KEYS: self.assertEqual(actual[key], supplied[key])
+        self.assertEqual(actual['VSLANG'], '1033')
+        self.assertNotIn('UNRELATED_SECRET', actual)
+        self.assertNotIn('RUSTFLAGS', actual)
+        with patch.object(gate, 'os', SimpleNamespace(name='posix', environ=supplied)):
+            nonwindows = gate.clean_environment()
+        self.assertFalse(set(gate.WINDOWS_DISCOVERY_KEYS) & nonwindows.keys())
+        self.assertNotIn('VSLANG', nonwindows)
+
+    def test_configured_tools_and_linker_receipt(self):
+        gate.verify_windows_toolchain(self.driver)
+        saved = q.read(self.root / 'driver.json')['windows_toolchain']
+        self.assertEqual(saved['status'], 'pass')
+        self.assertEqual(saved['tools']['link.exe'], q.identity(self.tools / 'link.exe'))
+        self.assertEqual(saved['linker_help'], self.result)
+        self.assertEqual(self.calls, [([str(self.tools / 'link.exe'), '/?'], self.root, self.env, 30)])
+        self.assertEqual(saved['search_environment_sha256']['PATH'], q.sha(self.env['PATH'].encode()))
+        self.assertNotIn('environment', saved)
+
+    def test_wrong_path_tool_is_rejected_before_execution(self):
+        other = self.root / 'link.exe'; other.write_bytes(b'GNU-link fixture')
+        with patch.object(gate.shutil, 'which', return_value=str(other)):
+            with self.assertRaises(q.Reject): gate.verify_windows_toolchain(self.driver)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(q.read(self.root / 'driver.json')['windows_toolchain']['status'], 'fail')
+
+    def test_unconfigured_or_wrong_architecture_is_rejected(self):
+        for key, value in (('VCINSTALLDIR', ''), ('VSCMD_ARG_TGT_ARCH', 'x86'), ('VSCMD_ARG_HOST_ARCH', 'arm64')):
+            with self.subTest(key=key), patch.dict(self.env, {key: value}):
+                with self.assertRaises(q.Reject): gate.verify_windows_toolchain(self.driver)
+        self.assertEqual(self.calls, [])
+
+    def test_gnu_diagnostic_or_nonzero_help_exit_is_rejected(self):
+        for change in ({'stdout': "link: extra operand; Try 'link --help'"}, {'status': 7}, {'timed_out': True}, {'stream_limit_exceeded': True}):
+            with self.subTest(change=change), patch.dict(self.result, change):
+                with self.assertRaises(q.Reject): gate.verify_windows_toolchain(self.driver)
+        self.assertEqual(q.read(self.root / 'driver.json')['windows_toolchain']['status'], 'fail')
+
+
+class CompactUploadControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name).resolve()
+        self.archives = self.root / 'archives'; self.archives.mkdir()
+        self.compact = self.archives / 'compact.tar.xz'; self.compact.write_bytes(b'synthetic compact fixture')
+        self.report = {'schema': 'oxid-unit4-evidence-export-v1', 'status': 'exported', 'qualification_status': 'pass',
+                       'archives': {'compact': q.identity(self.compact)}}
+        q.save(self.archives / 'export.json', self.report)
+        self.destination = self.root / 'unit4-host-linux-x86_64'
+
+    def tearDown(self): self.temp.cleanup()
+
+    def test_success_stages_only_exact_verified_members(self):
+        (self.archives / 'full-evidence.tar.gz').write_bytes(b'must remain separate')
+        (self.archives / 'unrelated').write_bytes(b'must not upload')
+        result = stage_compact_upload(self.archives, self.destination)
+        self.assertEqual(sorted(result['members']), ['compact.tar.xz', 'export.json'])
+        self.assertEqual(sorted(p.name for p in self.destination.iterdir()), ['compact.tar.xz', 'export.json'])
+        self.assertEqual((self.destination / 'compact.tar.xz').read_bytes(), self.compact.read_bytes())
+        self.assertEqual((self.destination / 'export.json').read_bytes(), (self.archives / 'export.json').read_bytes())
+        self.assertEqual(set(self.root.glob('*/compact.tar.xz')), {self.compact, self.destination / 'compact.tar.xz'})
+
+    def test_failed_export_preserves_only_failure_receipt(self):
+        self.report.update(status='failed', qualification_status='fail', archives={})
+        q.save(self.archives / 'export.json', self.report)
+        result = stage_compact_upload(self.archives, self.destination)
+        self.assertEqual(list(result['members']), ['export.json'])
+        self.assertEqual(q.read(self.destination / 'export.json')['status'], 'failed')
+
+    def test_changed_missing_or_wrong_path_compact_is_rejected(self):
+        original = self.compact.read_bytes()
+        for mutation in ('changed', 'missing', 'path', 'omitted'):
+            with self.subTest(mutation=mutation):
+                self.compact.write_bytes(original)
+                report = copy.deepcopy(self.report)
+                if mutation == 'changed': self.compact.write_bytes(b'changed')
+                elif mutation == 'missing': self.compact.unlink()
+                elif mutation == 'path': report['archives']['compact']['path'] = str(self.root / 'outside')
+                else: report['archives'] = {}
+                q.save(self.archives / 'export.json', report)
+                with self.assertRaises((q.Reject, OSError)): stage_compact_upload(self.archives, self.destination)
+                self.assertFalse(self.destination.exists())
+
+    def test_occupied_directory_is_preserved(self):
+        self.destination.mkdir(); (self.destination / 'existing').write_bytes(b'preserve')
+        with self.assertRaises(q.Reject): stage_compact_upload(self.archives, self.destination)
+        self.assertEqual((self.destination / 'existing').read_bytes(), b'preserve')
+
+    def test_linux_upload_has_one_directory_and_join_stays_strict(self):
+        workflow = (REPO / '.github/workflows/ci.yml').read_text()
+        block = workflow.split('- name: Upload compact Linux raw evidence and bindings', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('path: ${{ runner.temp }}/unit4-linux-compact-upload', block)
+        self.assertNotIn('path: |', block)
+        stage = workflow.split('- name: Stage the closed compact Linux upload directory', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('if: always()', stage)
+        self.assertIn('--stage-compact-upload "$RUNNER_TEMP/unit4-linux-compact-upload"', stage)
+        self.assertIn(".glob('*/compact.tar.xz')", (REPO / 'tests/qualification/unit4_ci/join.py').read_text())
 
 
 class CapsuleControls(unittest.TestCase):

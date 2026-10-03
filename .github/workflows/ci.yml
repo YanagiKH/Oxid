@@ -545,6 +545,9 @@ jobs:
         if: always()
         timeout-minutes: 30
         run: python3 -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-linux" --archives "$RUNNER_TEMP/unit4-linux-archives"
+      - name: Stage the closed compact Linux upload directory
+        if: always()
+        run: python3 -B tests/qualification/unit4_ci/evidence.py --archives "$RUNNER_TEMP/unit4-linux-archives" --stage-compact-upload "$RUNNER_TEMP/unit4-linux-compact-upload"
       - name: Upload compact Linux raw evidence and bindings
         if: always()
         uses: actions/upload-artifact@v4
@@ -553,9 +556,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-          path: |
-            ${{ runner.temp }}/unit4-linux-archives/compact.tar.xz
-            ${{ runner.temp }}/unit4-linux-archives/export.json
+          path: ${{ runner.temp }}/unit4-linux-compact-upload
       - name: Upload full Linux source, stream and binary evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -620,6 +621,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $unit4_vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path -LiteralPath $unit4_vswhere -PathType Leaf)) { throw 'Preinstalled Microsoft vswhere is missing' }
+          $unit4_vs = & $unit4_vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $unit4_vs) { throw 'Preinstalled Microsoft x64 C++ tools were not found' }
+          $unit4_dev_shell = Join-Path $unit4_vs 'Common7/Tools/Launch-VsDevShell.ps1'
+          if (-not (Test-Path -LiteralPath $unit4_dev_shell -PathType Leaf)) { throw 'Preinstalled Microsoft developer shell is missing' }
+          & $unit4_dev_shell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
           python -B tests/qualification/unit4_ci/gate.py host `
             --repo "$env:GITHUB_WORKSPACE" --output "$env:RUNNER_TEMP/unit4-host" `
             --expected-head "$env:UNIT4_EXPECTED_HEAD" --event-sha "$env:UNIT4_EVENT_SHA" `

@@ -34,11 +34,19 @@ def plan_for(contracts, measured, provenance, ci):
             'parser_required': measured['name'] == 'Linux x86_64', 'hosted_root_required': measured['name'] == 'Linux x86_64'}
 
 
+WINDOWS_DISCOVERY_KEYS = ('ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'VSINSTALLDIR',
+                          'VCINSTALLDIR', 'VCToolsInstallDir', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')
+
+
 def clean_environment():
     # Never serialize inherited CI credentials or unrelated environment values.
     keys = ('PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT',
             'TEMP', 'TMP', 'TMPDIR', 'SDKROOT', 'DEVELOPER_DIR', 'LIB', 'INCLUDE', 'LIBPATH')
+    if os.name == 'nt':
+        keys += WINDOWS_DISCOVERY_KEYS
     env = {key: os.environ[key] for key in keys if key in os.environ}
+    if os.name == 'nt':
+        env['VSLANG'] = '1033'
     env.update(CARGO_HOME=os.environ.get('CARGO_HOME', str(Path.home() / '.cargo')),
                RUSTUP_HOME=os.environ.get('RUSTUP_HOME', str(Path.home() / '.rustup')),
                PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1', PYTHONOPTIMIZE='0',
@@ -46,6 +54,39 @@ def clean_environment():
     if os.name != 'nt':
         env.update(LANG='C.UTF-8', LC_ALL='C.UTF-8')
     return env
+
+
+def verify_windows_toolchain(driver):
+    """Bind the preinstalled developer tools selected by the actual cleaned environment."""
+    env = driver.env
+    record = {'schema': 'oxid-unit4-windows-toolchain-v1', 'status': 'checking',
+              'discovery_keys': sorted(key for key in WINDOWS_DISCOVERY_KEYS if key in env),
+              'search_environment_sha256': {key: q.sha(env.get(key, '').encode()) for key in ('PATH', 'LIB', 'INCLUDE', 'LIBPATH')}}
+    driver.state['windows_toolchain'] = record
+    try:
+        q.need(all(env.get(key) for key in ('VCINSTALLDIR', 'VSINSTALLDIR', 'VCToolsInstallDir', 'LIB', 'INCLUDE')), 'Microsoft developer environment is incomplete')
+        q.need(all(env.get(key) in ('x64', 'amd64') for key in ('VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')), 'Microsoft developer tools must target and run on x64')
+        tools_dir = Path(env['VCToolsInstallDir']).resolve() / 'bin/Hostx64/x64'
+        record['expected_tool_directory'] = str(tools_dir)
+        record['tools'] = {}
+        for name in ('link.exe', 'cl.exe'):
+            selected = shutil.which(name, path=env['PATH'])
+            q.need(selected is not None, 'Microsoft tool is absent from cleaned PATH: ' + name)
+            selected = Path(selected).resolve()
+            record['tools'][name] = q.identity(selected)
+            q.need(selected == (tools_dir / name).resolve(), 'cleaned PATH selected a tool outside the configured x64 MSVC toolset: ' + name)
+        process = driver.runtime.process([record['tools']['link.exe']['path'], '/?'], driver.output, env, timeout=30)
+        record['linker_help'] = process
+        q.need(process['status'] == 0 and not process['timed_out'] and not process['stream_limit_exceeded'], 'selected Microsoft linker help invocation failed')
+        q.need('Microsoft (R) Incremental Linker Version' in process['stdout'] + process['stderr'], 'selected linker did not identify as Microsoft Incremental Linker')
+        for bound in record['tools'].values():
+            q.verify(bound['path'], bound)
+        record['status'] = 'pass'
+    except BaseException as error:
+        record.update(status='fail', failure=str(error)[:2000])
+        raise
+    finally:
+        driver.write()
 
 
 class Driver:
@@ -207,6 +248,8 @@ def host(args):
     c, rt, _, _, _ = q.public_modules(repo)
     driver = Driver(repo, output, provenance, rt)
     try:
+        if measured['name'] == 'Windows x86_64':
+            verify_windows_toolchain(driver)
         roots, contracts, plan = prepare_host(args, repo, output, provenance, measured, driver)
         for role, source, manifest, kind in (
             ('ordinary', output / 'current-source', repo / q.SOURCE / 'current-source.json', 'unit4-public-v3-candidate'),

@@ -310,11 +310,41 @@ def full_archive(output, path):
     return q.identity(path)
 
 
+def stage_compact_upload(archives, destination):
+    """Create one closed upload directory so container path translation has one root."""
+    archives = Path(archives).absolute()
+    export = q.identity(archives / 'export.json')
+    report = q.read(export['path'])
+    q.need(report.get('schema') == 'oxid-unit4-evidence-export-v1', 'unexpected export receipt')
+    members = {'export.json': export}
+    compact = report.get('archives', {}).get('compact')
+    if compact is not None:
+        q.need(Path(compact['path']) == archives / 'compact.tar.xz', 'compact export path differs from upload source')
+        q.verify(archives / 'compact.tar.xz', compact)
+        q.need(compact['bytes'] < q.COMPACT_LIMIT, 'compact upload exceeds32MiB')
+        members['compact.tar.xz'] = compact
+    if report.get('status') == 'exported' and report.get('qualification_status') in ('pass', 'LOCAL_ONLY_PASS'):
+        q.need(compact is not None, 'qualified export lacks compact archive')
+    destination = q.fresh(destination)
+    for name, bound in members.items():
+        q.verify(archives / name, bound)
+        shutil.copyfile(archives / name, destination / name)
+        q.verify(destination / name, bound)
+    q.need(sorted(p.name for p in destination.iterdir()) == sorted(members), 'unexpected compact upload member')
+    return {'status': 'staged', 'members': {name: q.identity(destination / name) for name in sorted(members)}}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', required=True)
+    parser.add_argument('--output')
     parser.add_argument('--archives', required=True)
+    parser.add_argument('--stage-compact-upload')
     args = parser.parse_args()
+    if args.stage_compact_upload is not None:
+        q.need(args.output is None, 'upload staging does not accept qualification output')
+        print(__import__('json').dumps(stage_compact_upload(args.archives, args.stage_compact_upload), sort_keys=True))
+        return
+    q.need(args.output is not None, 'qualification output is required')
     archives = q.fresh(args.archives)
     output = Path(args.output).resolve()
     status = {'schema': 'oxid-unit4-evidence-export-v1', 'qualification_status': 'missing', 'archives': {}}
