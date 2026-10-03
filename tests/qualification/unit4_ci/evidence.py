@@ -71,14 +71,21 @@ def verify_parser_seal(seal, resolver):
             bound(value[stream])
         return value
 
-    authority_path = q.HERE.parents[2] / q.PARSER / 'authority.json'
-    q.need(q.identity(authority_path)['sha256'] == '02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0', 'unapproved parser closure authority')
-    authority = q.read(authority_path)
-    q.need(session['authority_sha256'] == '02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0', 'stale parser closure authority')
-    for subdirectory, field in (('source', 'derived_files'), ('control-source', 'control_derived_files'), ('helpers', 'helper_files')):
-        for row in authority[field]:
+    adapter = q.module('_unit4_current_parser_closure', q.HERE.parents[2] / q.PARSER / 'portable.py')
+    authority = adapter.authority()
+    q.need(session['authority_sha256'] == adapter.AUTHORITY_SHA, 'stale current parser closure authority')
+    try:
+        adapter.verify_transition_records(session, authority, resolve=bound)
+    except ValueError as error:
+        raise q.Reject('parser transition metadata: ' + str(error)) from error
+    for subdirectory, rows in (('source', authority['current']['current_derived_files']),
+                              ('control-source', authority['current']['current_control_derived_files']),
+                              ('helpers', authority['helper_files'])):
+        for row in rows:
             record = {'path': str(root / subdirectory / q.relative(row['path'])), 'bytes': row['bytes'], 'sha256': row['sha256']}
-            bound(record, omit=subdirectory != 'helpers')
+            raw = bound(record, omit=parser_full_only(record, root))
+            if subdirectory != 'helpers' and row['path'] == 'candidate-source-manifest.json':
+                q.need(q.loads(raw) == adapter.current_candidate(authority), 'current candidate manifest body differs from reviewed map')
     for key in ('overlay', 'control_overlay'):
         bound(session[key])
     for directory in ('source', 'control-source'):
@@ -142,7 +149,7 @@ def verify_parser_seal(seal, resolver):
                     bound(process[key])
     q.need(len(set(binaries)) == 4, 'sealed four executable inventory')
     q.need(index == required, 'missing/extra complete parser comparison closure')
-    q.need(omitted == allowed_omissions, 'parser omissions must be exact compiler-source and four binary identities')
+    q.need(omitted == allowed_omissions, 'parser omissions must be exact derived-tree members excluding generated metadata and four binary identities')
     command = q.loads(resolver(seal['command']))
     q.need(command['name'] == '13-parser-comparison' and command['status'] == 0 and not command['timed_out'] and not command['stream_limit_exceeded'], 'parser actual comparison command failed')
     q.need(len(contract_roots) == 1, 'parser comparison contract roots differ')
@@ -157,7 +164,9 @@ def verify_parser_seal(seal, resolver):
 
 def parser_full_only(row, root):
     relative = Path(row['path']).relative_to(root)
-    return relative.parts[0] in ('source', 'control-source') and relative.name not in ('overlay-manifest.json', 'observer-source-manifest.json') or 'target' in relative.parts
+    generated_metadata = ('candidate-source-manifest.json', 'overlay-manifest.json', 'observer-source-manifest.json')
+    return (relative.parts[0] in ('source', 'control-source') and
+            relative.parts[1:] not in tuple((name,) for name in generated_metadata)) or 'target' in relative.parts
 
 
 class Capsule:

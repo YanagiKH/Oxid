@@ -722,3 +722,516 @@ index 0000000..66211e6
 +        failure(scratch.typed(operation), "E0005", "source", "main.ox");
 +    }
 +}
+diff --git a/src/frontend/oir/owned/mod.rs b/src/frontend/oir/owned/mod.rs
+index 16705a8..a5d1833 100644
+--- a/src/frontend/oir/owned/mod.rs
++++ b/src/frontend/oir/owned/mod.rs
+@@ -1,7 +1,7 @@
+ //! Authoritative private ownership OIR and bounded verified consumers.
+-//! No source producer is enabled. Both consumers require the sealed witness.
++//! Production record source lowering and both consumers require the sealed witness.
++//! Fixed-array type/layout groundwork does not yet extend these raw carriers.
+ #![allow(dead_code)]
+-// Private consumers remain source-gated until Unit 4.
+ // Denials retain exact verifier-derived facts on the stack. Boxing this fixed
+ // transport would add an allocation on ownership/resource failure paths.
+ #![allow(clippy::result_large_err)]
+diff --git a/src/frontend/oir/owned/plan.rs b/src/frontend/oir/owned/plan.rs
+index 60d457d..1130e4b 100644
+--- a/src/frontend/oir/owned/plan.rs
++++ b/src/frontend/oir/owned/plan.rs
+@@ -133,13 +133,7 @@ impl<'a> ExecutionPlan<'a> {
+         self.metadata_bytes
+     }
+     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
+-        let record = self.witness.functions()[f.0].owners[o.0].record;
+-        self.witness
+-            .declarations()
+-            .fields(record)
+-            .expect("verified record")
+-            .len()
+-            .max(1)
++        width(self.witness, &self.witness.functions()[f.0], o)
+     }
+     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
+         // Build preflights every cost with checked arithmetic before this read-only fast path.
+@@ -233,9 +227,8 @@ impl<'a> ExecutionPlan<'a> {
+             for owner in &f.owners {
+                 let layout = witness
+                     .declarations()
+-                    .record(owner.record)
+-                    .unwrap()
+-                    .layout();
++                    .aggregate_layout(AggregateTy::Record(owner.record))
++                    .expect("verified record");
+                 next = align(next, layout.align())?;
+                 owner_offsets.push(next);
+                 next = add(next, layout.size())?;
+@@ -322,10 +315,8 @@ impl<'a> ExecutionPlan<'a> {
+ fn width(witness: &VerifiedOwnedProgram, f: &RawOwnedFunction, o: OwnerPlaceId) -> usize {
+     witness
+         .declarations()
+-        .fields(f.owners[o.0].record)
++        .aggregate_width(AggregateTy::Record(f.owners[o.0].record))
+         .expect("verified record")
+-        .len()
+-        .max(1)
+ }
+ fn usage(
+     witness: &VerifiedOwnedProgram,
+@@ -345,9 +336,8 @@ fn usage(
+     for (index, owner) in f.owners.iter().enumerate() {
+         let layout = witness
+             .declarations()
+-            .record(owner.record)
+-            .unwrap()
+-            .layout();
++            .aggregate_layout(AggregateTy::Record(owner.record))
++            .expect("verified record");
+         u.owner_cells = add(u.owner_cells, width(witness, f, OwnerPlaceId(index)))?;
+         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
+     }
+@@ -417,6 +407,31 @@ pub(super) fn fail_allocation_after<T>(count: usize, action: impl FnOnce() -> T)
+ mod tests {
+     use super::*;
+     #[test]
++    fn aggregate_seam_retains_raw_and_runtime_representation() {
++        macro_rules! sizes { ($($ty:ty => $bytes:expr),* $(,)?) => { $(
++            println!("layout {} {}", stringify!($ty), size_of::<$ty>());
++            #[cfg(target_pointer_width = "64")]
++            assert_eq!(size_of::<$ty>(), $bytes, "{} accounting changed", stringify!($ty));
++        )* }; }
++        sizes!(
++            RawOwnedProgram => 48,
++            RawOwnedFunction => 248,
++            OwnerDecl => 56,
++            ReferenceDecl => 48,
++            LoanDecl => 72,
++            CallDecl => 96,
++            OwnedInstruction => 128,
++            ParameterBinding => 16,
++            FunctionPlan => 184,
++            CallPlan => 48,
++            FrameUsage => 88,
++            OwnerRuntime => 32,
++            ReferenceHandle => 64,
++            LoanRuntime => 96,
++            CallRuntime => 16
++        );
++    }
++    #[test]
+     fn checked_arithmetic_and_plan_preflight_precede_allocation() {
+         assert!(add(usize::MAX, 1).is_err());
+         assert!(mul(usize::MAX, 2).is_err());
+diff --git a/src/frontend/oir/owned_types.rs b/src/frontend/oir/owned_types.rs
+index 6ab8a2f..ee00f5e 100644
+--- a/src/frontend/oir/owned_types.rs
++++ b/src/frontend/oir/owned_types.rs
+@@ -1,11 +1,9 @@
+-//! Private ownership-phase declaration groundwork, not a source/runtime feature.
++//! Checked private declaration, aggregate identity and layout queries.
+ //!
+-//! This module deliberately does not change `hir::Ty`, scalar slots, or the
+-//! `VerifiedProgram` boundary. Only scalar fields have storage here; references
+-//! describe call parameters, never Rust references or stored language values.
+-//! Remove this narrowly scoped allowance when ownership verification consumes
+-//! the table. Keeping the implementation in production checks its interface even
+-//! while struct/borrow syntax and ownership execution remain disabled.
++//! Production record source, verification and consumers use this facade.
++//! Fixed scalar arrays have only a checked type/layout seam: source syntax and
++//! executable raw carriers remain record-only until the array consumer phase.
++//! References describe call parameters, never stored language values.
+ #![allow(dead_code)]
+ 
+ use super::{hir, SourceMap, Span};
+@@ -15,6 +13,58 @@ use std::mem::size_of;
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(in crate::frontend) struct RecordId(pub(in crate::frontend) usize);
+ 
++/// Structural fixed-array type. The constructor checks before narrowing;
++/// neither a caller-supplied stride/layout nor a nominal ID can create one.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(in crate::frontend) struct FixedArrayTy {
++    element: hir::Ty,
++    length: u16,
++}
++impl FixedArrayTy {
++    pub(in crate::frontend) fn check(
++        element: hir::Ty,
++        length: usize,
++    ) -> Result<Self, DeclarationError> {
++        if length > 1024 {
++            return Err(DeclarationError::ResourceLimit("fixed array length"));
++        }
++        Ok(Self {
++            element,
++            length: u16::try_from(length)
++                .map_err(|_| DeclarationError::ResourceLimit("fixed array length"))?,
++        })
++    }
++    pub(in crate::frontend) fn element(self) -> hir::Ty {
++        self.element
++    }
++    pub(in crate::frontend) fn length(self) -> usize {
++        usize::from(self.length)
++    }
++    pub(super) fn stride(self) -> usize {
++        Layout::scalar(self.element).size
++    }
++    fn layout(self) -> Result<Layout, DeclarationError> {
++        let scalar = Layout::scalar(self.element);
++        let bytes = self
++            .length()
++            .checked_mul(self.stride())
++            .ok_or(DeclarationError::LayoutOverflow)?;
++        Ok(Layout {
++            // Positive private storage, aligned even when there are no elements.
++            size: align_up(bytes.max(1), scalar.align)?,
++            align: scalar.align,
++        })
++    }
++}
++
++/// Explicit aggregate identity; RecordId is never packed or reinterpreted.
++/// This transient query type is not yet a raw executable value descriptor.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(in crate::frontend) enum AggregateTy {
++    Record(RecordId),
++    FixedArray(FixedArrayTy),
++}
++
+ /// An ordinal alone is not a field identity: its declaring record is essential.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(in crate::frontend) struct FieldId {
+@@ -192,8 +242,8 @@ impl Limits {
+     }
+ }
+ 
+-/// Only `check` constructs this facade. No raw/mutable table access, consumer
+-/// methods, or conversion to a verified executable program is provided.
++/// Only `check` constructs this immutable declaration facade. Queries do not
++/// grant a verified executable witness or expose mutable/raw table storage.
+ #[derive(Debug)]
+ pub(super) struct Declarations {
+     records: Vec<RecordDecl>,
+@@ -315,16 +365,50 @@ impl Declarations {
+             .filter(|field| field.id == id)
+             .ok_or(DeclarationError::InvalidFieldId(id))
+     }
++    pub(super) fn check_aggregate_type(&self, ty: AggregateTy) -> Result<(), DeclarationError> {
++        match ty {
++            AggregateTy::Record(id) => self.record(id).map(|_| ()),
++            AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
++        }
++    }
++    pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
++        match ty {
++            AggregateTy::Record(id) => self.record(id).map(RecordDecl::layout),
++            AggregateTy::FixedArray(array) => array.layout(),
++        }
++    }
++    pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
++        match ty {
++            AggregateTy::Record(id) => self.fields(id).map(|fields| fields.len().max(1)),
++            AggregateTy::FixedArray(array) => Ok(array.length().max(1)),
++        }
++    }
++    pub(super) fn same_aggregate_type(
++        &self,
++        actual: AggregateTy,
++        expected: AggregateTy,
++    ) -> Result<(), DeclarationError> {
++        // Malformed nominal IDs reject even when both inputs compare equal.
++        self.check_aggregate_type(actual)?;
++        self.check_aggregate_type(expected)?;
++        if actual == expected {
++            Ok(())
++        } else {
++            Err(DeclarationError::TypeMismatch)
++        }
++    }
+     pub(super) fn check_value_type(&self, ty: ValueTy) -> Result<(), DeclarationError> {
+         match ty {
+             ValueTy::Scalar(_) => Ok(()),
+-            ValueTy::Owned(id) => self.record(id).map(|_| ()),
++            ValueTy::Owned(id) => self.check_aggregate_type(AggregateTy::Record(id)),
+         }
+     }
+     pub(super) fn check_parameter_type(&self, ty: ParameterTy) -> Result<(), DeclarationError> {
+         match ty {
+             ParameterTy::Value(value) => self.check_value_type(value),
+-            ParameterTy::Reference { record, .. } => self.record(record).map(|_| ()),
++            ParameterTy::Reference { record, .. } => {
++                self.check_aggregate_type(AggregateTy::Record(record))
++            }
+         }
+     }
+     pub(super) fn same_value_type(
+@@ -1302,3 +1386,6 @@ mod tests {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod array_tests;
+diff --git a/src/frontend/oir/owned_types/array_tests.rs b/src/frontend/oir/owned_types/array_tests.rs
+new file mode 100644
+index 0000000..de82fc7
+--- /dev/null
++++ b/src/frontend/oir/owned_types/array_tests.rs
+@@ -0,0 +1,255 @@
++use super::*;
++use crate::frontend::{ast, lexer, parser};
++
++fn table() -> Declarations {
++    let mut sources = SourceMap::new();
++    let file = sources.add("array-layout.ox".into(), "record".into());
++    let span = sources.get(file).span(0, 6);
++    let records = [
++        (0, vec![]),
++        (1, vec![hir::Ty::I32]),
++        (2, vec![hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit]),
++        (3, vec![hir::Ty::I32]),
++    ]
++    .into_iter()
++    .map(|(id, elements)| RawRecordDecl {
++        id: RecordId(id),
++        span,
++        fields: elements
++            .into_iter()
++            .enumerate()
++            .map(|(index, ty)| RawFieldDecl {
++                id: FieldId {
++                    record: RecordId(id),
++                    index,
++                },
++                ty: ParameterTy::Value(ValueTy::Scalar(ty)),
++                span,
++            })
++            .collect(),
++    })
++    .collect::<Vec<_>>();
++    Declarations::check(&records, &sources).unwrap()
++}
++
++fn array(element: hir::Ty, length: usize) -> AggregateTy {
++    AggregateTy::FixedArray(FixedArrayTy::check(element, length).unwrap())
++}
++
++#[test]
++fn every_scalar_length_has_independently_calculated_layout_and_width() {
++    let declarations = table();
++    let mut cases = 0;
++    for (element, stride) in [(hir::Ty::Bool, 1), (hir::Ty::I32, 4), (hir::Ty::Unit, 1)] {
++        for length in 0..=1024 {
++            let fixed = FixedArrayTy::check(element, length).unwrap();
++            assert_eq!(fixed.element(), element);
++            assert_eq!(fixed.length(), length);
++            assert_eq!(fixed.stride(), stride);
++            let ty = AggregateTy::FixedArray(fixed);
++            let layout = declarations.aggregate_layout(ty).unwrap();
++            // Independent closed form: positive N cells, otherwise one aligned sentinel.
++            assert_eq!(
++                layout.size(),
++                if length == 0 { stride } else { length * stride }
++            );
++            assert_eq!(layout.align(), stride);
++            assert_eq!(
++                declarations.aggregate_width(ty),
++                Ok(if length == 0 { 1 } else { length })
++            );
++            assert_eq!(
++                declarations.same_aggregate_type(ty, array(element, length)),
++                Ok(())
++            );
++            cases += 1;
++        }
++    }
++    assert_eq!(cases, 3075);
++}
++
++#[test]
++fn excess_length_rejects_before_narrowing_including_machine_maximum() {
++    for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
++        assert!(FixedArrayTy::check(element, 1024).is_ok());
++        for length in [1025, 65_536, usize::MAX] {
++            assert_eq!(
++                FixedArrayTy::check(element, length),
++                Err(DeclarationError::ResourceLimit("fixed array length"))
++            );
++        }
++    }
++}
++
++#[test]
++fn structural_identity_is_element_and_length_not_layout_or_declaration() {
++    let declarations = table();
++    let types = [
++        array(hir::Ty::Bool, 4),
++        array(hir::Ty::Unit, 4),
++        array(hir::Ty::I32, 1),
++        AggregateTy::Record(RecordId(1)),
++        AggregateTy::Record(RecordId(3)),
++    ];
++    for (i, actual) in types.into_iter().enumerate() {
++        assert_eq!(declarations.aggregate_layout(actual).unwrap().size(), 4);
++        for (j, expected) in types.into_iter().enumerate() {
++            assert_eq!(
++                declarations.same_aggregate_type(actual, expected),
++                if i == j {
++                    Ok(())
++                } else {
++                    Err(DeclarationError::TypeMismatch)
++                }
++            );
++        }
++    }
++    for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
++        assert_eq!(
++            declarations.same_aggregate_type(array(element, 0), array(element, 1)),
++            Err(DeclarationError::TypeMismatch)
++        );
++    }
++    for (left, right) in [
++        (hir::Ty::Bool, hir::Ty::I32),
++        (hir::Ty::Bool, hir::Ty::Unit),
++        (hir::Ty::I32, hir::Ty::Unit),
++    ] {
++        assert_eq!(
++            declarations.same_aggregate_type(array(left, 0), array(right, 0)),
++            Err(DeclarationError::TypeMismatch)
++        );
++    }
++}
++
++#[test]
++fn all_aggregate_queries_preserve_invalid_nominal_id_and_error_precedence() {
++    let declarations = table();
++    let valid = array(hir::Ty::Bool, 0);
++    for id in [RecordId(4), RecordId(usize::MAX)] {
++        let bad = AggregateTy::Record(id);
++        let error = DeclarationError::InvalidRecordId(id);
++        assert_eq!(declarations.check_aggregate_type(bad), Err(error));
++        assert_eq!(declarations.aggregate_layout(bad), Err(error));
++        assert_eq!(declarations.aggregate_width(bad), Err(error));
++        assert_eq!(declarations.same_aggregate_type(bad, bad), Err(error));
++        assert_eq!(declarations.same_aggregate_type(valid, bad), Err(error));
++        assert_eq!(declarations.same_aggregate_type(bad, valid), Err(error));
++    }
++    assert_eq!(
++        declarations.same_aggregate_type(
++            AggregateTy::Record(RecordId(4)),
++            AggregateTy::Record(RecordId(usize::MAX))
++        ),
++        Err(DeclarationError::InvalidRecordId(RecordId(4)))
++    );
++    assert_eq!(
++        declarations.same_aggregate_type(
++            AggregateTy::Record(RecordId(usize::MAX)),
++            AggregateTy::Record(RecordId(4))
++        ),
++        Err(DeclarationError::InvalidRecordId(RecordId(usize::MAX)))
++    );
++}
++
++#[test]
++fn aggregate_record_queries_keep_nominal_width_and_padded_layout() {
++    let declarations = table();
++    for (id, size, alignment, width) in [(0, 1, 1, 1), (1, 4, 4, 1), (2, 12, 4, 3), (3, 4, 4, 1)] {
++        let aggregate = AggregateTy::Record(RecordId(id));
++        let layout = declarations.aggregate_layout(aggregate).unwrap();
++        assert_eq!((layout.size(), layout.align()), (size, alignment));
++        assert_eq!(declarations.aggregate_width(aggregate), Ok(width));
++    }
++    assert_eq!(declarations.usage().layout_bytes, 21);
++}
++
++#[test]
++fn repeated_array_queries_do_not_create_declarations_or_retained_payload() {
++    let declarations = table();
++    let usage = declarations.usage();
++    let capacities = (
++        declarations.records.capacity(),
++        declarations.fields.capacity(),
++    );
++    for _ in 0..10_000 {
++        assert_eq!(
++            declarations
++                .aggregate_layout(array(hir::Ty::I32, 1024))
++                .unwrap()
++                .size(),
++            4096
++        );
++        assert_eq!(declarations.aggregate_width(array(hir::Ty::Unit, 0)), Ok(1));
++    }
++    assert_eq!(declarations.usage(), usage);
++    assert_eq!(
++        (
++            declarations.records.capacity(),
++            declarations.fields.capacity()
++        ),
++        capacities
++    );
++}
++
++#[test]
++fn array_groundwork_does_not_open_source_syntax() {
++    for text in [
++        "fn main()->(){let a=[1];return;}",
++        "fn f(a:[i32;1])->(){return;}",
++        "fn f(a:&[i32;1])->(){return;}",
++        "fn main()->(){let a:[i32;0]=[];return;}",
++        "fn main()->i32{let a=1;return a[0];}",
++        "fn main()->(){let mut a=1;a[0]=2;return;}",
++        "fn main()->i32{let a=1;return a.len();}",
++    ] {
++        let mut sources = SourceMap::new();
++        let file = sources.add("array-closed.ox".into(), text.into());
++        let file = sources.get(file);
++        let tokens = lexer::lex(file).unwrap();
++        assert!(
++            parser::parse(file, tokens).is_err(),
++            "unexpected admission: {text}"
++        );
++    }
++}
++
++#[test]
++fn array_seam_reports_representation_without_widening_existing_carriers() {
++    macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
++    sizes!(
++        FixedArrayTy,
++        AggregateTy,
++        RecordId,
++        FieldId,
++        ValueTy,
++        ParameterTy,
++        RawRecordDecl,
++        RawFieldDecl,
++        RecordDecl,
++        FieldDecl,
++        DeclarationError,
++        Declarations,
++        ast::Program,
++        ast::Function,
++        ast::BodyBlock,
++        ast::ItemId,
++        ast::Expr,
++        ast::Stmt,
++        ast::TypeSyntax
++    );
++    #[cfg(target_pointer_width = "64")]
++    {
++        assert_eq!(size_of::<FixedArrayTy>(), 4);
++        assert_eq!(size_of::<AggregateTy>(), 16);
++        assert_eq!(size_of::<RecordId>(), 8);
++        assert_eq!(size_of::<ValueTy>(), 16);
++        assert_eq!(size_of::<ParameterTy>(), 24);
++        assert_eq!(size_of::<RecordDecl>(), 64);
++        assert_eq!(size_of::<FieldDecl>(), 56);
++        assert_eq!(
++            size_of::<ast::Function>() + size_of::<ast::BodyBlock>() + size_of::<ast::ItemId>(),
++            288
++        );
++    }
++}

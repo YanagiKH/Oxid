@@ -138,6 +138,16 @@ class Driver:
         q.save(directory / 'receipt.json', receipt)
         self.state['stages'].append(q.identity(directory / 'receipt.json'))
         self.write()
+        failed = process['timed_out'] or process['stream_limit_exceeded'] or process['status'] not in accepted
+        if name == '08-parser-prepare' and failed:
+            raw = process['stderr'].encode('utf-8')
+            tail = raw[-2048:]
+            diagnostic = {'stage': name, 'status': process['status'], 'stderr_bytes': len(raw),
+                          'tail_bytes': len(tail), 'truncated': len(raw) > len(tail),
+                          'stderr_tail': tail.decode('utf-8', errors='replace')}
+            displayed = __import__('json').dumps(diagnostic, ensure_ascii=True)
+            displayed = displayed.replace('::', '\\u003a\\u003a').replace('##', '\\u0023\\u0023')
+            print('Unit4 parser preparation diagnostic: ' + displayed, file=sys.stderr, flush=True)
         q.need(not process['timed_out'] and not process['stream_limit_exceeded'] and process['status'] in accepted,
                name + ' failed; raw command output is preserved')
         return process['status']
@@ -251,6 +261,15 @@ def prepare_host(args, repo, output, provenance, measured, driver):
     return roots, contracts, plan
 
 
+
+def prepare_parser(args, repo, output, driver):
+    q.need(args.historical_repo, 'Linux parser preparation requires explicit historical checkout')
+    historical = Path(args.historical_repo).resolve()
+    q.need(q.git(historical, 'rev-parse', 'HEAD') == q.HISTORICAL_HEAD, 'explicit historical parser Git checkout required')
+    driver.stage('08-parser-prepare', [repo / q.PARSER / 'portable.py', 'prepare', '--repo', historical,
+                 '--checkout', repo, '--output', output / 'parser'], 300)
+
+
 def host(args):
     repo = Path(args.repo).resolve()
     provenance = q.admit(repo, args.expected_head, args.event_sha)
@@ -311,11 +330,9 @@ def host(args):
                'boundary': 'Fresh same-host full comparator replay, followed by unchanged raw-row transport'})
         if linux:
             parser = repo / q.PARSER / 'portable.py'
-            historical = Path(args.historical_repo).resolve()
-            q.need(q.git(historical, 'rev-parse', 'HEAD') == q.HISTORICAL_HEAD, 'explicit historical parser Git checkout required')
             session_root = output / 'parser'
             session = session_root / 'session.json'
-            driver.stage('08-parser-prepare', [parser, 'prepare', '--repo', historical, '--checkout', repo, '--output', session_root], 300)
+            prepare_parser(args, repo, output, driver)
             for profile in q.PROFILES:
                 build = [parser, 'build', '--session', session, '--profile', profile, '--toolchain', Path(args.toolchain).resolve(), '--cargo-cache', Path(args.cargo_cache).resolve()]
                 driver.stage('09-parser-build-' + profile, build, 1800)
@@ -365,9 +382,10 @@ def main():
     runtime_parser = sub.add_parser('verify-local-runtime')
     for name in ('repo', 'llvm-lib-dir', 'llvm-runtime-receipt', 'output', 'expected-head', 'event-sha'):
         runtime_parser.add_argument('--' + name, required=True)
-    prepare_parser = sub.add_parser('prepare-only')
-    prepare_parser.add_argument('--host', choices=q.HOSTS, required=True)
-    for command in (host_parser, local_parser, prepare_parser):
+    prepare_command = sub.add_parser('prepare-only')
+    prepare_command.add_argument('--host', choices=q.HOSTS, required=True)
+    prepare_command.add_argument('--historical-repo')
+    for command in (host_parser, local_parser, prepare_command):
         for name in ('repo', 'output', 'expected-head', 'event-sha'):
             command.add_argument('--' + name, required=True)
     args = parser.parse_args()
@@ -384,9 +402,13 @@ def main():
         provenance = q.admit(repo, args.expected_head, args.event_sha)
         measured = q.measured_host()
         q.need(measured['name'] == args.host, 'requested/measured host mismatch')
+        if measured['name'] == 'Linux x86_64':
+            q.need(args.historical_repo, 'Linux preparation requires explicit historical parser checkout')
         output = q.fresh(args.output)
         driver = Driver(repo, output, provenance, q.public_modules(repo)[1])
         prepare_host(args, repo, output, provenance, measured, driver)
+        if measured['name'] == 'Linux x86_64':
+            prepare_parser(args, repo, output, driver)
         driver.state.update(status='PREPARATION_ONLY', compiler_executions=0)
         driver.write()
 

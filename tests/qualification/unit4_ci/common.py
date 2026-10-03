@@ -17,12 +17,13 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '8abd4b623810128df3efb47edceef8ce65555d798f706a982b52381d4a17a21d'
-CURRENT_SHA = '2ce302c0d3182b2b7c57d9cc99d65b9d3b40fd60761331fdec9db5ec8cf3bd5e'
+INPUTS_SHA = '00c9f9cfae8516cc924532e66c570633bf0f0f69f697e3047301865fc908a280'
+CURRENT_SHA = '5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
 HOSTED = 'tests/qualification/unit4_hosted_capability'
-PARSER = 'tests/fixtures/typed_project_unit4_parser_portable/frozen/v3'
+PARSER = 'tests/qualification/unit4_parser_current'
+PARSER_FROZEN = 'tests/fixtures/typed_project_unit4_parser_portable/frozen/v3'
 TRANSPORT = 'tests/fixtures/typed_project_unit4_contracts'
 SOURCE = 'tests/fixtures/typed_project_source_binding'
 AMENDMENT = 'tests/fixtures/typed_project_unit4_public_location_amendment_v1'
@@ -170,14 +171,14 @@ def admit(repo, expected_head, event_sha, committed=True):
     inputs = read(HERE / 'inputs.json')
     verify_package(repo, inputs)
     source_path = repo / SOURCE / 'current-source.json'
-    need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved source120 manifest')
+    need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved source121 manifest')
     source = read(source_path)
-    need(len(source['files']) == 120, 'source120 count')
+    need(len(source['files']) == 121, 'source121 count')
     for row in source['files']:
         verify(repo / relative(row['path']), row)
     actual = sorted(p.relative_to(repo).as_posix() for sub in ('src', 'native') for p in (repo / sub).rglob('*') if p.is_file())
     expected = sorted(row['path'] for row in source['files'] if row['path'].startswith(('src/', 'native/')))
-    need(actual == expected, 'source120 exact membership')
+    need(actual == expected, 'source121 exact membership')
     head = git(repo, 'rev-parse', 'HEAD')
     need(head == expected_head, 'checkout is not expected event head')
     names = [row['path'] for row in inputs['files']] + [row['path'] for row in source['files']]

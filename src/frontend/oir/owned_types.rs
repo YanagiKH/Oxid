@@ -1,11 +1,9 @@
-//! Private ownership-phase declaration groundwork, not a source/runtime feature.
+//! Checked private declaration, aggregate identity and layout queries.
 //!
-//! This module deliberately does not change `hir::Ty`, scalar slots, or the
-//! `VerifiedProgram` boundary. Only scalar fields have storage here; references
-//! describe call parameters, never Rust references or stored language values.
-//! Remove this narrowly scoped allowance when ownership verification consumes
-//! the table. Keeping the implementation in production checks its interface even
-//! while struct/borrow syntax and ownership execution remain disabled.
+//! Production record source, verification and consumers use this facade.
+//! Fixed scalar arrays have only a checked type/layout seam: source syntax and
+//! executable raw carriers remain record-only until the array consumer phase.
+//! References describe call parameters, never stored language values.
 #![allow(dead_code)]
 
 use super::{hir, SourceMap, Span};
@@ -14,6 +12,58 @@ use std::mem::size_of;
 /// Compilation-local nominal identity, assigned in declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct RecordId(pub(in crate::frontend) usize);
+
+/// Structural fixed-array type. The constructor checks before narrowing;
+/// neither a caller-supplied stride/layout nor a nominal ID can create one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) struct FixedArrayTy {
+    element: hir::Ty,
+    length: u16,
+}
+impl FixedArrayTy {
+    pub(in crate::frontend) fn check(
+        element: hir::Ty,
+        length: usize,
+    ) -> Result<Self, DeclarationError> {
+        if length > 1024 {
+            return Err(DeclarationError::ResourceLimit("fixed array length"));
+        }
+        Ok(Self {
+            element,
+            length: u16::try_from(length)
+                .map_err(|_| DeclarationError::ResourceLimit("fixed array length"))?,
+        })
+    }
+    pub(in crate::frontend) fn element(self) -> hir::Ty {
+        self.element
+    }
+    pub(in crate::frontend) fn length(self) -> usize {
+        usize::from(self.length)
+    }
+    pub(super) fn stride(self) -> usize {
+        Layout::scalar(self.element).size
+    }
+    fn layout(self) -> Result<Layout, DeclarationError> {
+        let scalar = Layout::scalar(self.element);
+        let bytes = self
+            .length()
+            .checked_mul(self.stride())
+            .ok_or(DeclarationError::LayoutOverflow)?;
+        Ok(Layout {
+            // Positive private storage, aligned even when there are no elements.
+            size: align_up(bytes.max(1), scalar.align)?,
+            align: scalar.align,
+        })
+    }
+}
+
+/// Explicit aggregate identity; RecordId is never packed or reinterpreted.
+/// This transient query type is not yet a raw executable value descriptor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) enum AggregateTy {
+    Record(RecordId),
+    FixedArray(FixedArrayTy),
+}
 
 /// An ordinal alone is not a field identity: its declaring record is essential.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,8 +242,8 @@ impl Limits {
     }
 }
 
-/// Only `check` constructs this facade. No raw/mutable table access, consumer
-/// methods, or conversion to a verified executable program is provided.
+/// Only `check` constructs this immutable declaration facade. Queries do not
+/// grant a verified executable witness or expose mutable/raw table storage.
 #[derive(Debug)]
 pub(super) struct Declarations {
     records: Vec<RecordDecl>,
@@ -315,16 +365,50 @@ impl Declarations {
             .filter(|field| field.id == id)
             .ok_or(DeclarationError::InvalidFieldId(id))
     }
+    pub(super) fn check_aggregate_type(&self, ty: AggregateTy) -> Result<(), DeclarationError> {
+        match ty {
+            AggregateTy::Record(id) => self.record(id).map(|_| ()),
+            AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
+        }
+    }
+    pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
+        match ty {
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::layout),
+            AggregateTy::FixedArray(array) => array.layout(),
+        }
+    }
+    pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
+        match ty {
+            AggregateTy::Record(id) => self.fields(id).map(|fields| fields.len().max(1)),
+            AggregateTy::FixedArray(array) => Ok(array.length().max(1)),
+        }
+    }
+    pub(super) fn same_aggregate_type(
+        &self,
+        actual: AggregateTy,
+        expected: AggregateTy,
+    ) -> Result<(), DeclarationError> {
+        // Malformed nominal IDs reject even when both inputs compare equal.
+        self.check_aggregate_type(actual)?;
+        self.check_aggregate_type(expected)?;
+        if actual == expected {
+            Ok(())
+        } else {
+            Err(DeclarationError::TypeMismatch)
+        }
+    }
     pub(super) fn check_value_type(&self, ty: ValueTy) -> Result<(), DeclarationError> {
         match ty {
             ValueTy::Scalar(_) => Ok(()),
-            ValueTy::Owned(id) => self.record(id).map(|_| ()),
+            ValueTy::Owned(id) => self.check_aggregate_type(AggregateTy::Record(id)),
         }
     }
     pub(super) fn check_parameter_type(&self, ty: ParameterTy) -> Result<(), DeclarationError> {
         match ty {
             ParameterTy::Value(value) => self.check_value_type(value),
-            ParameterTy::Reference { record, .. } => self.record(record).map(|_| ()),
+            ParameterTy::Reference { record, .. } => {
+                self.check_aggregate_type(AggregateTy::Record(record))
+            }
         }
     }
     pub(super) fn same_value_type(
@@ -1302,3 +1386,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod array_tests;

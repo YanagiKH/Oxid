@@ -1,7 +1,7 @@
 //! Authoritative private ownership OIR and bounded verified consumers.
-//! No source producer is enabled. Both consumers require the sealed witness.
+//! Production record source lowering and both consumers require the sealed witness.
+//! Fixed-array type/layout groundwork does not yet extend these raw carriers.
 #![allow(dead_code)]
-// Private consumers remain source-gated until Unit 4.
 // Denials retain exact verifier-derived facts on the stack. Boxing this fixed
 // transport would add an allocation on ownership/resource failure paths.
 #![allow(clippy::result_large_err)]

@@ -1,5 +1,5 @@
 {
-  "current_source_sha256": "2ce302c0d3182b2b7c57d9cc99d65b9d3b40fd60761331fdec9db5ec8cf3bd5e",
+  "current_source_sha256": "5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c",
   "derived_resource": {
     "bytes": 1974,
     "path": "archive/resource/parser-resource-review-tests.rs",
@@ -61,6 +61,39 @@
     }
   ],
   "schema": 1,
-  "transition_patch_bytes": 28881,
-  "transition_patch_sha256": "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
+  "transition_patch_bytes": 48414,
+  "transition_patch_prefix": {
+    "bytes": 28881,
+    "sha256": "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
+  },
+  "transition_patch_sha256": "1958b851c49055cf3574469eb6dccf35e08904fb5976ad401ed98d4cd039738b",
+  "transition_source_delta": {
+    "base_head": "0ef3be1df3643febdff1f859a4eb1ce567ab8164",
+    "bytes": 19533,
+    "paths": [
+      "src/frontend/oir/owned/mod.rs",
+      "src/frontend/oir/owned/plan.rs",
+      "src/frontend/oir/owned_types.rs",
+      "src/frontend/oir/owned_types/array_tests.rs"
+    ],
+    "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS",
+    "reviewed_source_head": "1f0f29066e411a87910a614495fc3c503d931654",
+    "sha256": "62fe1a44cea1a49c4a6929abae6c2d22c997f74883034f246d06472bcd0895e0",
+    "source_only_tree": "d32c9fe5c0650e2a4765b92320068dd3dd5d7696"
+  },
+  "transition_touched_paths": [
+    "src/frontend/driver.rs",
+    "src/frontend/oir/project.rs",
+    "src/frontend/parser.rs",
+    "src/frontend/parser/activation_tests.rs",
+    "src/frontend/parser/project_tests.rs",
+    "src/frontend/project.rs",
+    "src/frontend/project/unit2_tests.rs",
+    "tests/typed_frontend.rs",
+    "tests/typed_project_dispatch.rs",
+    "src/frontend/oir/owned/mod.rs",
+    "src/frontend/oir/owned/plan.rs",
+    "src/frontend/oir/owned_types.rs",
+    "src/frontend/oir/owned_types/array_tests.rs"
+  ]
 }
