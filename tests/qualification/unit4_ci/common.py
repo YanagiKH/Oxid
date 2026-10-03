@@ -156,6 +156,11 @@ def verify_package(repo, manifest):
         need(all(p.relative_to(repo).as_posix() in expected_dirs for p in base.rglob('*') if p.is_dir()), 'extra component directory')
 
 
+def relative_path_order(paths, root):
+    # Path comparison folds case on Windows; committed names must stay exact.
+    return sorted(paths, key=lambda path: path.relative_to(root).as_posix())
+
+
 def admit(repo, expected_head, event_sha, committed=True):
     need(not sys.flags.optimize and __debug__, 'optimized Python is forbidden')
     repo = Path(repo).resolve()
@@ -176,7 +181,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     head = git(repo, 'rev-parse', 'HEAD')
     need(head == expected_head, 'checkout is not expected event head')
     names = [row['path'] for row in inputs['files']] + [row['path'] for row in source['files']]
-    integration = sorted(p for p in HERE.iterdir() if p.is_file())
+    integration = relative_path_order((p for p in HERE.iterdir() if p.is_file()), repo)
     names += [p.relative_to(repo).as_posix() for p in integration]
     names.append('.github/workflows/ci.yml')
     if committed:
@@ -249,3 +254,98 @@ def unpack(archive, output):
             with source.extractfile(member) as stream, dest.open('xb') as target:
                 shutil.copyfileobj(stream, target)
     return output
+
+
+def restore_committed_checkout(repo, destination, expected_head):
+    """Restore only verified tracked blobs through a fresh, stat-cache-free view."""
+    repo = Path(repo).absolute()
+    destination = Path(destination).absolute()
+    need(repo not in destination.parents and destination != repo, 'restoration output must be outside the checkout')
+    output = fresh(destination)
+    report = {'schema': 'oxid-unit4-committed-checkout-v1', 'status': 'checking',
+              'expected_head': expected_head, 'files': [], 'writes_started': False}
+    try:
+        need(re.fullmatch('[0-9a-f]{40}', expected_head) is not None, 'invalid expected checkout head')
+        report['actual_head'] = git(repo, 'rev-parse', 'HEAD')
+        need(report['actual_head'] == expected_head, 'checkout restoration head mismatch')
+        def entries(raw, index=False):
+            need(raw.endswith('\0'), 'empty or incomplete tracked inventory')
+            result = {}
+            for entry in raw[:-1].split('\0'):
+                header, name = entry.split('\t', 1)
+                fields = header.split(' ')
+                need(len(fields) == 3, 'invalid tracked metadata')
+                mode, oid, kind = fields if index else (fields[0], fields[2], fields[1])
+                need(mode in ('100644', '100755') and kind == ('0' if index else 'blob'), 'unsupported tracked mode/type/stage')
+                need(re.fullmatch('[0-9a-f]{40}', oid) is not None, 'invalid tracked object identity')
+                relative(name)
+                need(':' not in name and all(ord(c) >= 32 and ord(c) != 127 for c in name) and
+                     '.git' not in [part.lower() for part in name.split('/')], 'unsafe tracked name')
+                need(name not in result, 'duplicate tracked member')
+                result[name] = {'mode': mode, 'oid': oid}
+            return result
+        head = entries(git(repo, 'ls-tree', '-rz', '--full-tree', expected_head))
+        index = entries(git(repo, 'ls-files', '--stage', '-z'), index=True)
+        need(index == head, 'index differs from the expected committed tree')
+        view = fresh(output / 'source')
+        command = ['git', '-C', str(repo), '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                   'checkout-index', '--all', '--force', '--prefix=' + view.as_posix() + '/']
+        process = subprocess.run(command, capture_output=True, timeout=120)
+        report['materialization'] = {'argv': command, 'status': process.returncode,
+                                     'stdout': process.stdout.decode(), 'stderr': process.stderr.decode()}
+        need(process.returncode == 0, 'committed-byte materialization failed')
+        expected_dirs = {parent.as_posix() for name in head for parent in Path(name).parents if parent != Path('.')}
+        actual = []
+        for path in view.rglob('*'):
+            name = path.relative_to(view).as_posix()
+            need(not path.is_symlink(), 'aliased materialized member')
+            if path.is_dir(): need(name in expected_dirs, 'extra materialized directory')
+            else:
+                regular(path)
+                actual.append(name)
+        need(sorted(actual) == sorted(head), 'materialized membership differs from the committed tree')
+        for name in sorted(head):
+            path = regular(view / relative(name))
+            size = path.stat().st_size
+            blob = hashlib.sha1(('blob ' + str(size) + '\0').encode())
+            digest = hashlib.sha256()
+            total = 0
+            with path.open('rb') as stream:
+                while chunk := stream.read(1024 * 1024):
+                    blob.update(chunk); digest.update(chunk); total += len(chunk)
+            need(total == size and blob.hexdigest() == head[name]['oid'], 'materialized bytes differ from the committed blob: ' + name)
+            materialized = {'path': str(path), 'bytes': total, 'sha256': digest.hexdigest()}
+            before = identity(repo / relative(name))
+            report['files'].append({'path': name, 'git': head[name], 'before': before, 'materialized': materialized})
+        # Every input, target, member and mode has been checked before overwriting anything.
+        report['writes_started'] = True
+        for row in report['files']:
+            verify(row['materialized']['path'], row['materialized'])
+            target = repo / relative(row['path'])
+            if any(row['before'][key] != row['materialized'][key] for key in ('bytes', 'sha256')):
+                shutil.copyfile(row['materialized']['path'], target)
+            row['after'] = verify(target, row['materialized'])
+        need(git(repo, 'rev-parse', 'HEAD') == expected_head and entries(git(repo, 'ls-files', '--stage', '-z'), index=True) == head,
+             'Git head/index changed during restoration')
+        report['status'] = 'restored'
+    except BaseException as error:
+        report.update(status='failed', failure=str(error)[:2000])
+        raise
+    finally:
+        save(output / 'restoration.json', report)
+    return report
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--restore-checkout', action='store_true', required=True)
+    for name in ('repo', 'output', 'expected-head'):
+        parser.add_argument('--' + name, required=True)
+    args = parser.parse_args()
+    try:
+        result = restore_committed_checkout(args.repo, args.output, args.expected_head)
+        print('Verified committed-byte restoration: ' + str(len(result['files'])) + ' tracked files')
+    except (Reject, OSError, ValueError, subprocess.SubprocessError) as error:
+        print('Unit4 checkout restoration rejected: ' + str(error), file=sys.stderr)
+        raise SystemExit(1)

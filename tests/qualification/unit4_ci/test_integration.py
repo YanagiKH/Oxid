@@ -5,7 +5,7 @@ sys.dont_write_bytecode = True
 import copy
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import tarfile
 import tempfile
 import subprocess
@@ -99,6 +99,36 @@ class FrozenRosterControls(unittest.TestCase):
             self.assertEqual((root / 'commands/failure-control/stderr').read_text(), 'retained stderr\n')
 
 
+class ProvenanceOrderingControls(unittest.TestCase):
+    def test_exact_posix_strings_order_both_path_flavors_identically(self):
+        names = ['common.py', 'DESIGN.md', 'evidence.py', 'gate.py', 'inputs.json', 'join.py', 'README.md', 'test_integration.py']
+        roots = [PurePosixPath('/repo'), PureWindowsPath('C:/repo')]
+        paths = [[root / 'tests/qualification/unit4_ci' / name for name in names] for root in roots]
+        self.assertNotEqual([p.name for p in sorted(paths[0])], [p.name for p in sorted(paths[1])])
+        for root, members in zip(roots, paths):
+            self.assertEqual([p.name for p in q.relative_path_order(members, root)], sorted(names))
+            self.assertEqual([p.relative_to(root).as_posix() for p in q.relative_path_order(members, root)],
+                             ['tests/qualification/unit4_ci/' + name for name in sorted(names)])
+
+    def test_producer_order_preserves_exact_case_and_duplicate_members(self):
+        for root in (PurePosixPath('/repo'), PureWindowsPath('C:/repo')):
+            members = [root / name for name in ('a.py', 'A.py', 'a.py', 'B.py')]
+            self.assertEqual([p.name for p in q.relative_path_order(members, root)], ['A.py', 'B.py', 'a.py', 'a.py'])
+
+    def test_strict_reader_still_rejects_order_and_member_identity_changes(self):
+        base = {'checkout_head': 'a' * 40, 'checkout_tree': 'b' * 40, 'event_sha': 'c' * 40, 'source_only_tree': 'd' * 40,
+                'integration': [{'path': name, 'bytes': i + 1, 'sha256': str(i) * 64} for i, name in enumerate(('DESIGN.md', 'common.py'))],
+                **{name: {'path': 'host-relative', 'bytes': 1, 'sha256': 'e' * 64} for name in ('source_manifest', 'inputs', 'workflow')}}
+        expected = join.provenance_key(base)
+        for mutation in ('order', 'hash', 'missing', 'duplicate'):
+            changed = copy.deepcopy(base)
+            if mutation == 'order': changed['integration'].reverse()
+            elif mutation == 'hash': changed['integration'][0]['sha256'] = 'f' * 64
+            elif mutation == 'missing': changed['integration'].pop()
+            else: changed['integration'].append(changed['integration'][0])
+            with self.subTest(mutation=mutation): self.assertNotEqual(join.provenance_key(changed), expected)
+
+
 class PackageControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -164,8 +194,47 @@ class CheckoutControls(unittest.TestCase):
                 self.assertEqual((root / name).read_bytes(), raw)
             self.assertEqual(git('config', 'core.autocrlf').strip(), b'true')
             workflow = (REPO / '.github/workflows/ci.yml').read_text()
-            self.assertIn('run: git -c core.autocrlf=false -c core.eol=lf checkout-index --all --force', workflow)
+            self.assertIn('common.py --restore-checkout --repo "$GITHUB_WORKSPACE"', workflow)
 
+
+    def test_fresh_prefix_restores_a_stable_crlf_index_without_normalizing_blobs(self):
+        import os
+        import shutil
+        import time
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            repo = root / 'checkout'; repo.mkdir()
+            def git(*args):
+                return subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True).stdout
+            fixtures = {'lf.txt': b'one\ntwo\n', 'intentional-crlf.txt': b'one\r\ntwo\r\n', 'binary.dat': b'\x00\xff\r\n\x10\n'}
+            git('init', '--quiet')
+            for name, raw in fixtures.items(): (repo / name).write_bytes(raw)
+            git('-c', 'core.autocrlf=false', 'add', '.')
+            git('-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'blob-byte fixture')
+            git('config', 'core.autocrlf', 'true')
+            for name in fixtures: (repo / name).unlink()
+            git('checkout', '--force', 'HEAD')
+            self.assertEqual((repo / 'lf.txt').read_bytes(), b'one\r\ntwo\r\n')
+            # Make the index stat entry older than the refreshed index, avoiding a racy fresh-checkout case.
+            for name in fixtures: os.utime(repo / name, (time.time() - 60, time.time() - 60))
+            git('update-index', '--really-refresh')
+            sentinel = repo / 'untracked.txt'; sentinel.write_bytes(b'preserve untracked')
+            metadata = {p.relative_to(repo).as_posix(): p.read_bytes() for p in (repo / '.git').rglob('*') if p.is_file()}
+            result = q.restore_committed_checkout(repo, root / 'restoration', git('rev-parse', 'HEAD').decode().strip())
+            self.assertEqual(result['status'], 'restored')
+            for name, raw in fixtures.items():
+                self.assertEqual((repo / name).read_bytes(), git('show', 'HEAD:' + name))
+                self.assertEqual((repo / name).read_bytes(), raw)
+            self.assertEqual((repo / 'untracked.txt').read_bytes(), b'preserve untracked')
+            self.assertEqual(metadata, {p.relative_to(repo).as_posix(): p.read_bytes() for p in (repo / '.git').rglob('*') if p.is_file()})
+            self.assertEqual(git('config', 'core.autocrlf').strip(), b'true')
+            restored = {row['path']: row for row in result['files']}
+            self.assertNotEqual(restored['lf.txt']['before']['sha256'], restored['lf.txt']['after']['sha256'])
+            self.assertEqual(restored['intentional-crlf.txt']['before']['sha256'], restored['intentional-crlf.txt']['after']['sha256'])
+            workflow = (REPO / '.github/workflows/ci.yml').read_text()
+            stage = workflow.split('- name: Restore and verify tracked committed bytes through a fresh checkout', 1)[1].split('      - name:', 1)[0]
+            self.assertIn('--restore-checkout --repo "$GITHUB_WORKSPACE"', stage)
+            self.assertIn('--expected-head "$UNIT4_EXPECTED_HEAD"', stage)
 
     def test_linux_uses_fresh_owned_checkout_and_exact_scoped_trust(self):
         workflow = (REPO / '.github/workflows/ci.yml').read_text()
@@ -226,6 +295,87 @@ class CheckoutControls(unittest.TestCase):
         for key in ('GITHUB_WORKSPACE', 'RUNNER_TEMP', 'UNIT4_EXPECTED_HEAD', 'UNIT4_EVENT_SHA', 'UNIT4_HOST'):
             self.assertIn('$env:' + key, windows)
         self.assertTrue(windows.rstrip().endswith('exit $LASTEXITCODE'))
+
+
+class CheckoutRestorationControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name).resolve()
+        self.repo = self.root / 'checkout'; self.repo.mkdir()
+        self.git('init', '--quiet')
+        self.original = {'nested space/LF.txt': b'one\ntwo\n', 'intentional.txt': b'one\r\ntwo\r\n', 'binary.dat': b'\x00\xff\r\n'}
+        for name, raw in self.original.items():
+            path = self.repo / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
+        self.git('-c', 'core.autocrlf=false', 'add', '.')
+        self.git('-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'restoration control')
+        self.head = self.git('rev-parse', 'HEAD').decode().strip()
+        (self.repo / 'nested space/LF.txt').write_bytes(b'one\r\ntwo\r\n')
+        (self.repo / 'untracked').write_bytes(b'keep')
+        self.before = {name: (self.repo / name).read_bytes() for name in self.original}
+        self.out = self.root / 'result'
+
+    def git(self, *args):
+        return subprocess.run(['git', '-C', str(self.repo), *args], check=True, capture_output=True).stdout
+
+    def tearDown(self): self.temp.cleanup()
+
+    def test_spaced_paths_and_receipt_preserve_all_blob_identities(self):
+        result = q.restore_committed_checkout(self.repo, self.out, self.head)
+        self.assertEqual(result['status'], 'restored')
+        self.assertEqual({row['path'] for row in result['files']}, set(self.original))
+        for row in result['files']:
+            self.assertEqual(row['before']['sha256'], q.sha(self.before[row['path']]))
+            self.assertEqual(row['after']['sha256'], q.sha(self.original[row['path']]))
+            self.assertEqual((self.repo / row['path']).read_bytes(), self.original[row['path']])
+        self.assertEqual((self.repo / 'untracked').read_bytes(), b'keep')
+
+    def test_changed_index_rejects_before_checkout_writes(self):
+        self.git('-c', 'core.autocrlf=false', 'add', 'nested space/LF.txt')
+        with self.assertRaises(q.Reject): q.restore_committed_checkout(self.repo, self.out, self.head)
+        self.assertFalse(q.read(self.out / 'restoration.json')['writes_started'])
+        self.assertEqual({name: (self.repo / name).read_bytes() for name in self.original}, self.before)
+
+    def test_unsupported_git_mode_rejects_before_checkout_writes(self):
+        oid = self.git('rev-parse', 'HEAD:intentional.txt').decode().strip()
+        self.git('update-index', '--add', '--cacheinfo', '120000,' + oid + ',unsupported-link')
+        self.git('-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'unsupported mode control')
+        head = self.git('rev-parse', 'HEAD').decode().strip()
+        with self.assertRaises(q.Reject): q.restore_committed_checkout(self.repo, self.out, head)
+        self.assertFalse(q.read(self.out / 'restoration.json')['writes_started'])
+        self.assertEqual({name: (self.repo / name).read_bytes() for name in self.original}, self.before)
+
+    def test_bad_materialized_members_or_bytes_reject_before_writes(self):
+        original_run = subprocess.run
+        for mutation in ('missing', 'extra', 'directory', 'changed'):
+            def run(argv, *args, **kwargs):
+                result = original_run(argv, *args, **kwargs)
+                if 'checkout-index' in argv:
+                    view = Path(next(arg[len('--prefix='):] for arg in argv if arg.startswith('--prefix=')))
+                    if mutation == 'missing': (view / 'intentional.txt').unlink()
+                    elif mutation == 'extra': (view / 'extra').write_bytes(b'extra')
+                    elif mutation == 'directory': (view / 'extra-dir').mkdir()
+                    else: (view / 'intentional.txt').write_bytes(b'altered')
+                return result
+            out = self.root / mutation
+            with self.subTest(mutation=mutation), patch.object(q.subprocess, 'run', side_effect=run):
+                with self.assertRaises(q.Reject): q.restore_committed_checkout(self.repo, out, self.head)
+            self.assertFalse(q.read(out / 'restoration.json')['writes_started'])
+            self.assertEqual({name: (self.repo / name).read_bytes() for name in self.original}, self.before)
+
+    def test_unsafe_target_and_inside_output_reject_without_checkout_writes(self):
+        with self.assertRaises(q.Reject): q.restore_committed_checkout(self.repo, self.repo / 'must-not-create', self.head)
+        self.assertFalse((self.repo / 'must-not-create').exists())
+        target = self.repo / 'intentional.txt'; target.unlink(); target.mkdir()
+        with self.assertRaises(q.Reject): q.restore_committed_checkout(self.repo, self.out, self.head)
+        self.assertFalse(q.read(self.out / 'restoration.json')['writes_started'])
+        self.assertTrue(target.is_dir())
+        self.assertEqual((self.repo / 'nested space/LF.txt').read_bytes(), self.before['nested space/LF.txt'])
+
+    def test_copy_error_propagates_and_preserves_failure_receipt(self):
+        with patch.object(q.shutil, 'copyfile', side_effect=OSError('controlled copy failure')):
+            with self.assertRaises(OSError): q.restore_committed_checkout(self.repo, self.out, self.head)
+        self.assertEqual(q.read(self.out / 'restoration.json')['status'], 'failed')
+        self.assertEqual((self.repo / 'untracked').read_bytes(), b'keep')
 
 
 class WindowsToolchainControls(unittest.TestCase):
