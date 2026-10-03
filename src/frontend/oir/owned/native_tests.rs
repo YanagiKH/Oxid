@@ -2354,3 +2354,6 @@ mod reviewer_resources;
 
 #[path = "array_native_resource_tests.rs"]
 mod array_resources;
+
+#[path = "array_native_tests.rs"]
+mod arrays;

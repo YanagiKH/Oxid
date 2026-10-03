@@ -140,6 +140,41 @@ pub(super) fn probe_array_reference(
     ))
 }
 
+/// Qualification invokes the complete real native consumer synchronously while
+/// the authoritative witness stays inside this boundary. Only bounded emitted
+/// text/error and inert accounting escape; no callback receives privileged data.
+#[cfg(test)]
+pub(super) fn probe_array_native(
+    raw: RawOwnedProgram,
+    verification_sources: &SourceMap,
+    verification_limits: budget::Limits,
+    entry: Option<hir::DefId>,
+    rendering_sources: &SourceMap,
+    control: native::NativeControl,
+) -> Result<native::NativeObservation, OwnedFailure> {
+    let (mut usage, declarations, mut meter) =
+        prepare(&raw, verification_sources, verification_limits)?;
+    validate(
+        &raw,
+        &declarations,
+        verification_sources,
+        &mut usage,
+        &mut meter,
+    )?;
+    let witness = VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    };
+    Ok(native::run_array_observed(
+        &witness,
+        entry,
+        rendering_sources,
+        control,
+    ))
+}
+
 /// One fixed inventory pass, no allocation. Active rows fit the existing
 /// 32*n fixed-pass allowance: owners + references + loans <= n; the meter
 /// records each retained-row visit. Per-function result inspection is ordinary

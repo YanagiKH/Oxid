@@ -68,9 +68,12 @@ pub(super) struct NativeMetrics {
     pub message_count_bytes: usize,
     pub message_render_bytes: usize,
     pub transfer_cells: usize,
+    pub transfer_inventory_visits: usize,
     pub count_bytes: usize,
     pub render_bytes: usize,
     pub count_expansions: usize,
+    pub count_expansion_kinds: [usize; 3],
+    pub render_expansion_kinds: [usize; 3],
     pub render_expansions: usize,
     pub count_ordinary_visits: usize,
     pub render_ordinary_visits: usize,
@@ -203,6 +206,55 @@ struct Bound {
     bytes: usize,
 }
 
+/// Closed test control: only lower budgets or inject one new-reservation failure.
+/// It cannot supply authority, choose an emitter, or expose the sealed witness.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(super) struct NativeControl {
+    pub(super) fuel: usize,
+    limits: Limits,
+    fail_after: Option<usize>,
+}
+#[cfg(test)]
+impl Default for NativeControl {
+    fn default() -> Self {
+        Self {
+            fuel: plan::MAX_FUEL,
+            limits: Limits::DEFAULT,
+            fail_after: None,
+        }
+    }
+}
+#[cfg(test)]
+pub(super) struct NativeObservation {
+    pub(super) result: Result<String, Box<Diagnostic>>,
+    pub(super) metrics: NativeMetrics,
+}
+#[cfg(test)]
+pub(super) fn run_array_observed(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    control: NativeControl,
+) -> NativeObservation {
+    let mut accounting = Accounting {
+        fail_after: control.fail_after,
+        ..Accounting::default()
+    };
+    let result = native_module_accounted(
+        witness,
+        entry,
+        sources,
+        control.fuel,
+        control.limits,
+        &mut accounting,
+    );
+    NativeObservation {
+        result,
+        metrics: accounting.metrics,
+    }
+}
+
 pub(super) fn native_module(
     witness: &VerifiedOwnedProgram,
     entry: Option<hir::DefId>,
@@ -319,6 +371,9 @@ fn native_module_accounted(
         "emission metadata bytes",
         root.span,
     )?;
+    let (transfer_cells, transfer_visits) = transfer_inventory(&plan)?;
+    accounting.metrics.transfer_cells = transfer_cells;
+    accounting.metrics.transfer_inventory_visits = transfer_visits;
     let mut count = Emission::count(limits.ir_bytes);
     emit(
         &plan,
@@ -329,6 +384,10 @@ fn native_module_accounted(
         &mut count,
     );
     accounting.metrics.count_bytes = count.len;
+    accounting.metrics.count_expansions = count.expansions;
+    accounting.metrics.count_expansion_kinds = count.expansion_kinds;
+    accounting.metrics.count_ordinary_visits = count.ordinary_visits;
+    accounting.metrics.count_predecessor_visits = count.predecessor_visits;
     accounting.metrics.count_call_scratch_peak = count.call_scratch_peak;
     if count.exceeded {
         return Err(reject(
@@ -338,6 +397,14 @@ fn native_module_accounted(
             ),
             Some(root.span),
         ));
+    }
+    if count.expansions
+        != add(
+            accounting.metrics.transfer_cells,
+            accounting.metrics.message_bytes,
+        )?
+    {
+        return Err(mismatch("LLVM expansion inventory"));
     }
     let text = accounting.string(count.len, "LLVM")?;
     let mut output = Emission {
@@ -353,8 +420,18 @@ fn native_module_accounted(
         &mut output,
     );
     accounting.metrics.render_bytes = output.len;
+    accounting.metrics.render_expansions = output.expansions;
+    accounting.metrics.render_expansion_kinds = output.expansion_kinds;
+    accounting.metrics.render_ordinary_visits = output.ordinary_visits;
+    accounting.metrics.render_predecessor_visits = output.predecessor_visits;
     accounting.metrics.render_call_scratch_peak = output.call_scratch_peak;
-    if output.exceeded || output.len != count.len {
+    if output.exceeded
+        || output.len != count.len
+        || output.expansions != count.expansions
+        || output.expansion_kinds != count.expansion_kinds
+        || output.ordinary_visits != count.ordinary_visits
+        || output.predecessor_visits != count.predecessor_visits
+    {
         return Err(Diagnostic::new(
             "E0500",
             "native-emission",
@@ -624,16 +701,44 @@ fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
     Ok((visited != f.blocks.len(), scratch))
 }
 
+#[derive(Clone, Copy)]
+enum Expansion {
+    Construct = 0,
+    Transfer = 1,
+    Diagnostic = 2,
+}
 struct Emission {
     len: usize,
     text: Option<String>,
     maximum: usize,
     exceeded: bool,
     call_scratch_peak: usize,
+    expansions: usize,
+    expansion_kinds: [usize; 3],
+    ordinary_visits: usize,
+    predecessor_visits: usize,
     #[cfg(test)]
     field_visits: usize,
 }
 impl Emission {
+    fn expand(&mut self, kind: Expansion) -> bool {
+        if self.exceeded {
+            return false;
+        }
+        let next = self.expansions.checked_add(1);
+        let ceiling = self.maximum.checked_add(1);
+        match (next, ceiling) {
+            (Some(next), Some(ceiling)) if next <= ceiling => {
+                self.expansions = next;
+                self.expansion_kinds[kind as usize] += 1;
+                true
+            }
+            _ => {
+                self.exceeded = true;
+                false
+            }
+        }
+    }
     fn count(maximum: usize) -> Self {
         Self {
             len: 0,
@@ -641,6 +746,10 @@ impl Emission {
             maximum,
             exceeded: false,
             call_scratch_peak: 0,
+            expansions: 0,
+            expansion_kinds: [0; 3],
+            ordinary_visits: 0,
+            predecessor_visits: 0,
             #[cfg(test)]
             field_visits: 0,
         }
@@ -1104,6 +1213,97 @@ fn field_pointer(out: &mut Emission, name: &str, base: &str, offset: usize) -> S
     .unwrap();
     format!("%{name}_ptr")
 }
+fn array_base(f: &RawOwnedFunction, base: AccessBase) -> FixedArrayTy {
+    let aggregate = match base {
+        AccessBase::Owner(owner) => f.owners[owner.0].aggregate(),
+        AccessBase::Parameter(reference) => f.references[reference.0].aggregate(),
+    };
+    let AggregateTy::FixedArray(array) = aggregate else {
+        unreachable!("verified array base")
+    };
+    array
+}
+fn sentinel_ty(array: FixedArrayTy) -> &'static str {
+    match array.element() {
+        hir::Ty::I32 => "i32",
+        hir::Ty::Bool | hir::Ty::Unit => "i8",
+    }
+}
+fn index_pointer(
+    plan: &ExecutionPlan<'_>,
+    id: hir::DefId,
+    name: &str,
+    statement: &OwnedStatement,
+    diagnostics: &Diagnostics,
+    out: &mut Emission,
+) -> (FixedArrayTy, String) {
+    let (base, index) = match statement.kind {
+        OwnedInstruction::ReadIndex { base, index, .. }
+        | OwnedInstruction::WriteIndex { base, index, .. } => (base, index),
+        _ => unreachable!("indexed operation"),
+    };
+    let f = &plan.witness().functions()[id.0];
+    let array = array_base(f, base);
+    let index = load_operand(out, f, &format!("{name}_index"), index);
+    let suffix = continuation(&statement.kind)
+        .suffix()
+        .expect("indexed continuation");
+    writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", array.length()).unwrap();
+    emit_failure(
+        out,
+        diagnostics,
+        FailureKind::Bounds,
+        plan::instruction_span(statement),
+    );
+    writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", array.stride()).unwrap();
+    // Even resolving a reference base happens only on the successful edge.
+    let base = base_pointer(out, name, base);
+    writeln!(
+        out,
+        "  %{name}_ptr = getelementptr i8, ptr {base}, i64 %{name}_offset"
+    )
+    .unwrap();
+    (array, format!("%{name}_ptr"))
+}
+
+/// O(raw emit sites), never an eager walk of expanded scalar cells.
+fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Diagnostic>> {
+    let mut cells = 0;
+    let mut visits = 0;
+    for f in plan.witness().functions() {
+        visits = add(visits, 1)?;
+        for parameter in &f.parameters {
+            visits = add(visits, 1)?;
+            if let ParameterBinding::Owned(owner) = parameter {
+                cells = add(cells, plan.owner_width(f.id, *owner))?;
+            }
+        }
+        for block in &f.blocks {
+            visits = add(visits, 1)?;
+            for statement in &block.statements {
+                visits = add(visits, 1)?;
+                let owner = match statement.kind {
+                    OwnedInstruction::Construct { destination, .. }
+                    | OwnedInstruction::ConstructArray { destination, .. } => Some(destination),
+                    OwnedInstruction::MoveInitialize { source, .. }
+                    | OwnedInstruction::Replace { source, .. }
+                    | OwnedInstruction::PrepareOwned { source, .. } => Some(source),
+                    _ => None,
+                };
+                if let Some(owner) = owner {
+                    cells = add(cells, plan.owner_width(f.id, owner))?;
+                }
+            }
+            visits = add(visits, 1)?;
+            if let OwnedTerminatorKind::ReturnOwned(owner) =
+                block.terminator.as_ref().expect("verified terminator").kind
+            {
+                cells = add(cells, plan.owner_width(f.id, owner))?;
+            }
+        }
+    }
+    Ok((cells, visits))
+}
 fn transfer(
     out: &mut Emission,
     plan: &ExecutionPlan<'_>,
@@ -1115,8 +1315,31 @@ fn transfer(
     if out.exceeded {
         return;
     }
-    let AggregateTy::Record(record) = aggregate else {
-        unreachable!("array carriers cannot obtain a Unit2A witness");
+    out.ordinary_visits += 1;
+    let record = match aggregate {
+        AggregateTy::Record(record) => record,
+        AggregateTy::FixedArray(array) => {
+            if array.length() == 0 {
+                if !out.expand(Expansion::Transfer) {
+                    return;
+                }
+                let scalar = sentinel_ty(array);
+                writeln!(out, "  %{name}_empty = load {scalar}, ptr {source}, align 1\n  store {scalar} %{name}_empty, ptr {destination}, align 1").unwrap();
+            }
+            for i in 0..array.length() {
+                if !out.expand(Expansion::Transfer) {
+                    return;
+                }
+                let offset = i
+                    .checked_mul(array.stride())
+                    .expect("verified array offset");
+                let input = field_pointer(out, &format!("{name}_in{i}"), source, offset);
+                let output = field_pointer(out, &format!("{name}_out{i}"), destination, offset);
+                let scalar = ty(array.element());
+                writeln!(out, "  %{name}_element{i} = load {scalar}, ptr {input}, align 1\n  store {scalar} %{name}_element{i}, ptr {output}, align 1").unwrap();
+            }
+            return;
+        }
     };
     let fields = plan
         .witness()
@@ -1124,10 +1347,13 @@ fn transfer(
         .fields(record)
         .expect("verified record");
     if fields.is_empty() {
+        if !out.expand(Expansion::Transfer) {
+            return;
+        }
         writeln!(out, "  %{name}_empty = load i8, ptr {source}, align 1\n  store i8 %{name}_empty, ptr {destination}, align 1").unwrap();
     }
     for (i, field) in fields.iter().enumerate() {
-        if out.exceeded {
+        if !out.expand(Expansion::Transfer) {
             return;
         }
         #[cfg(test)]
@@ -1154,6 +1380,7 @@ fn emit(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         write!(
             out,
             "@__oxid_owned_error_{id} = private unnamed_addr constant [{} x i8] c\"",
@@ -1161,7 +1388,7 @@ fn emit(
         )
         .unwrap();
         for byte in message.bytes() {
-            if out.exceeded {
+            if !out.expand(Expansion::Diagnostic) {
                 return;
             }
             write!(out, "\\{byte:02X}").unwrap();
@@ -1172,6 +1399,7 @@ fn emit(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         emit_function(plan, f.id, diagnostics, guarded, out);
     }
     if out.exceeded {
@@ -1212,7 +1440,57 @@ fn emit(
     out.write_str("  ret i32 %status\n}\n").unwrap();
 }
 
-fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool) -> String {
+#[derive(Clone, Copy)]
+enum Continuation {
+    Unsplit,
+    Arithmetic,
+    Bounds,
+}
+impl Continuation {
+    fn suffix(self) -> Option<&'static str> {
+        match self {
+            Self::Unsplit => None,
+            Self::Arithmetic => Some("checked_ok"),
+            Self::Bounds => Some("bounds_ok"),
+        }
+    }
+}
+/// Exhaustive classification shared by operation emission and phi predecessors.
+fn continuation(instruction: &OwnedInstruction) -> Continuation {
+    match instruction {
+        OwnedInstruction::Scalar(statement) => match statement {
+            Statement::Assign(assign) => match assign.value {
+                Rvalue::CheckedI32 { .. } => Continuation::Arithmetic,
+                Rvalue::Load(_)
+                | Rvalue::NotBool { .. }
+                | Rvalue::Bool(_)
+                | Rvalue::I32(_)
+                | Rvalue::Unit
+                | Rvalue::Copy(_)
+                | Rvalue::CompareScalar { .. } => Continuation::Unsplit,
+            },
+            Statement::Initialize { .. } | Statement::Store { .. } => Continuation::Unsplit,
+        },
+        OwnedInstruction::ReadIndex { .. } | OwnedInstruction::WriteIndex { .. } => {
+            Continuation::Bounds
+        }
+        OwnedInstruction::StorageLive(_)
+        | OwnedInstruction::StorageEnd(_)
+        | OwnedInstruction::Construct { .. }
+        | OwnedInstruction::ConstructArray { .. }
+        | OwnedInstruction::MoveInitialize { .. }
+        | OwnedInstruction::Replace { .. }
+        | OwnedInstruction::Discard(_)
+        | OwnedInstruction::ReadField { .. }
+        | OwnedInstruction::WriteField { .. }
+        | OwnedInstruction::ArrayLength { .. }
+        | OwnedInstruction::OpenCall(_)
+        | OwnedInstruction::PrepareScalar { .. }
+        | OwnedInstruction::PrepareOwned { .. }
+        | OwnedInstruction::PrepareBorrow { .. } => Continuation::Unsplit,
+    }
+}
+fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emission) -> String {
     if guarded {
         return format!(
             "f{}_b{block}_g{}_ok",
@@ -1220,22 +1498,13 @@ fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool) -> String {
             f.blocks[block].statements.len() + 1
         );
     }
-    f.blocks[block]
-        .statements
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(i, s)| {
-            matches!(
-                &s.kind,
-                OwnedInstruction::Scalar(Statement::Assign(Assign {
-                    value: Rvalue::CheckedI32 { .. },
-                    ..
-                }))
-            )
-            .then(|| format!("f{}_b{block}_i{i}_checked_ok", f.id.0))
-        })
-        .unwrap_or_else(|| format!("b{block}"))
+    for (i, statement) in f.blocks[block].statements.iter().enumerate().rev() {
+        out.predecessor_visits += 1;
+        if let Some(suffix) = continuation(&statement.kind).suffix() {
+            return format!("f{}_b{block}_i{i}_{suffix}", f.id.0);
+        }
+    }
+    format!("b{block}")
 }
 fn emit_function(
     plan: &ExecutionPlan<'_>,
@@ -1247,6 +1516,7 @@ fn emit_function(
     if out.exceeded {
         return;
     }
+    out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     let u = fp.usage();
@@ -1270,6 +1540,7 @@ fn emit_function(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         let t = match parameter {
             ParameterBinding::Scalar(l) => ty(f.locals[l.0].ty),
             _ => "ptr",
@@ -1303,6 +1574,7 @@ fn emit_function(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         writeln!(
             out,
             "  %s{i} = getelementptr i8, ptr %scalars, i64 {}",
@@ -1314,6 +1586,7 @@ fn emit_function(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         writeln!(
             out,
             "  %o{i} = getelementptr i8, ptr %owners, i64 {}",
@@ -1325,6 +1598,7 @@ fn emit_function(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         writeln!(
             out,
             "  %r{i} = getelementptr i8, ptr %references, i64 {}",
@@ -1336,6 +1610,7 @@ fn emit_function(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         let name = format!("f{}_param{i}", id.0);
         match parameter {
             ParameterBinding::Scalar(l) => store_slot(
@@ -1363,19 +1638,19 @@ fn emit_function(
         if out.exceeded {
             return;
         }
+        out.ordinary_visits += 1;
         writeln!(out, "b{b}:").unwrap();
         if let Some(m) = &block.merge {
             let name = format!("f{}_b{b}_merge", id.0);
             let [left, right] = m.incoming;
             // Select storage, then read exactly the taken input after charging.
             // A value phi would read an uninitialized slot on the untaken arm.
+            let left_label = exit_label(f, left.predecessor.0, guarded, out);
+            let right_label = exit_label(f, right.predecessor.0, guarded, out);
             writeln!(
                 out,
                 "  %{name}_slot = phi ptr [ %s{}, %{} ], [ %s{}, %{} ]",
-                left.value.local.0,
-                exit_label(f, left.predecessor.0, guarded),
-                right.value.local.0,
-                exit_label(f, right.predecessor.0, guarded)
+                left.value.local.0, left_label, right.value.local.0, right_label
             )
             .unwrap();
             if guarded {
@@ -1394,6 +1669,7 @@ fn emit_function(
             if out.exceeded {
                 return;
             }
+            out.ordinary_visits += 1;
             let name = format!("f{}_b{b}_i{i}", id.0);
             if guarded {
                 emit_guard(
@@ -1442,25 +1718,98 @@ fn emit_statement(
     if out.exceeded {
         return;
     }
+    out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     match &statement.kind {
-        OwnedInstruction::ConstructArray { .. }
-        | OwnedInstruction::ReadIndex { .. }
-        | OwnedInstruction::WriteIndex { .. }
-        | OwnedInstruction::ArrayLength { .. } => {
-            unreachable!("production array admission is closed until both consumers are complete")
+        OwnedInstruction::ConstructArray {
+            destination,
+            elements,
+        } => {
+            let AggregateTy::FixedArray(array) = f.owners[destination.0].aggregate() else {
+                unreachable!("verified array constructor")
+            };
+            if elements.is_empty() {
+                if !out.expand(Expansion::Construct) {
+                    return;
+                }
+                writeln!(
+                    out,
+                    "  store {} 0, ptr %o{}, align 1",
+                    sentinel_ty(array),
+                    destination.0
+                )
+                .unwrap();
+            }
+            for (i, value) in elements.iter().enumerate() {
+                if !out.expand(Expansion::Construct) {
+                    return;
+                }
+                let n = format!("{name}_element{i}");
+                let value = load_operand(out, f, &format!("{n}_value"), *value);
+                let offset = i
+                    .checked_mul(array.stride())
+                    .expect("verified array offset");
+                let ptr = field_pointer(out, &n, &format!("%o{}", destination.0), offset);
+                writeln!(
+                    out,
+                    "  store {} {value}, ptr {ptr}, align 1",
+                    ty(array.element())
+                )
+                .unwrap();
+            }
         }
-        OwnedInstruction::Scalar(s) => emit_scalar(plan, id, name, s, diagnostics, out),
+        OwnedInstruction::ReadIndex { destination, .. } => {
+            let (array, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
+            writeln!(
+                out,
+                "  %{name}_value = load {}, ptr {ptr}, align 1",
+                ty(array.element())
+            )
+            .unwrap();
+            store_slot(
+                out,
+                &format!("{name}_store"),
+                &format!("%s{}", destination.0),
+                array.element(),
+                &format!("%{name}_value"),
+            );
+        }
+        OwnedInstruction::WriteIndex { value, .. } => {
+            let (array, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
+            // The operand is the scalar snapshot made before the index helper;
+            // it is never recomputed from the mutated aggregate.
+            let value = load_operand(out, f, &format!("{name}_value"), *value);
+            writeln!(
+                out,
+                "  store {} {value}, ptr {ptr}, align 1",
+                ty(array.element())
+            )
+            .unwrap();
+        }
+        OwnedInstruction::ArrayLength { destination, base } => {
+            let array = array_base(f, *base);
+            store_slot(
+                out,
+                &format!("{name}_store"),
+                &format!("%s{}", destination.0),
+                hir::Ty::I32,
+                &array.length().to_string(),
+            );
+        }
+        OwnedInstruction::Scalar(_) => emit_scalar(plan, id, name, statement, diagnostics, out),
         OwnedInstruction::Construct {
             destination,
             fields,
         } => {
             if fields.is_empty() {
+                if !out.expand(Expansion::Construct) {
+                    return;
+                }
                 writeln!(out, "  store i8 0, ptr %o{}, align 1", destination.0).unwrap();
             }
             for (i, (field, value)) in fields.iter().enumerate() {
-                if out.exceeded {
+                if !out.expand(Expansion::Construct) {
                     return;
                 }
                 #[cfg(test)]
@@ -1596,13 +1945,17 @@ fn emit_scalar(
     plan: &ExecutionPlan<'_>,
     id: hir::DefId,
     name: &str,
-    statement: &Statement,
+    owned_statement: &OwnedStatement,
     diagnostics: &Diagnostics,
     out: &mut Emission,
 ) {
     if out.exceeded {
         return;
     }
+    out.ordinary_visits += 1;
+    let OwnedInstruction::Scalar(statement) = &owned_statement.kind else {
+        unreachable!("scalar operation")
+    };
     let f = &plan.witness().functions()[id.0];
     let assign = match statement {
         Statement::Assign(a) => a,
@@ -1669,9 +2022,16 @@ fn emit_scalar(
                 hir::ArithmeticOp::Subtract => "ssub",
                 hir::ArithmeticOp::Multiply => "smul",
             };
-            writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 {left}, i32 {right})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1\n  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_checked_ok\n{name}_checked_error:").unwrap();
+            let suffix = continuation(&owned_statement.kind)
+                .suffix()
+                .expect("arithmetic continuation");
+            writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 {left}, i32 {right})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1\n  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_{suffix}\n{name}_checked_error:").unwrap();
             emit_failure(out, diagnostics, FailureKind::Overflow, operator_span);
-            writeln!(out, "{name}_checked_ok:\n  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0").unwrap();
+            writeln!(
+                out,
+                "{name}_{suffix}:\n  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0"
+            )
+            .unwrap();
             format!("%{name}_value")
         }
     };
@@ -1694,6 +2054,7 @@ fn emit_terminator(
     if out.exceeded {
         return;
     }
+    out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     match term {
         OwnedTerminatorKind::Goto(target) => writeln!(out, "  br label %b{}", target.0).unwrap(),
@@ -1742,6 +2103,7 @@ fn emit_terminator(
                 if out.exceeded {
                     return;
                 }
+                out.ordinary_visits += 1;
                 match argument {
                     ArgumentSlot::Scalar => {
                         let ParameterBinding::Scalar(l) = callee.parameters[i] else {
