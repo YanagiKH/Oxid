@@ -1,0 +1,61 @@
+{
+  "status": "complete replay contract assembled from separately passed historical runs; a fresh complete debug/release replay is pending",
+  "source_head": "e087e232b4a9885447352b69b4279e5c30978d16",
+  "source_tree": "0a4e1c4c3a8b83165d2b2eec01e3a82d3780258a",
+  "test_binary_sha256": "d9c5564d89705a91343ad141387d5536488dad1f66a93f44031ab30821a1345e",
+  "reviewer_module_sha256": "b6b8f0a012c4d3b7dc1fa0140769174ee868af04db7e5ae3f34c8d1baa478c21",
+  "source_marker_excluded": true,
+  "source_original_paths": 1071,
+  "independent_test_functions": 17,
+  "ordinary_independent_functions": 8,
+  "native_families": 9,
+  "elf_artifacts": 336,
+  "source_free_executions": 1210,
+  "official_llvm_command_receipts": 3360,
+  "baseline_export_inputs": 90,
+  "baseline_unique_modules": 59,
+  "core_small": 195,
+  "core_max_width": 39,
+  "core_fuel_traces": 9,
+  "core_fuel_profiles": 209,
+  "effect_budget_profiles": 341,
+  "effect_executions": 686,
+  "physical_positive": 18,
+  "physical_mutants": 11,
+  "physical_destinations": 174,
+  "physical_i32_payload_bytes": 37220,
+  "physical_bool_i1_cells": 9305,
+  "physical_zero_unit_bytes": 9425,
+  "physical_guard_bytes": 348,
+  "physical_receipt_sha256": "7098e3fbc50ac05d7f65b8c145617d5107dff2dc8e6a1e77edb104c76ee69264",
+  "physical_manifest_sha256": "d25e9b111ef26ae5147934960074f17bb4d21f8365056a339a21d54b37ed9265",
+  "reviewer_module_path": "sources/reviewer-array-native-v3.rs",
+  "raw_authority_denials": 7,
+  "shared_alias_native": 1,
+  "extreme_native": 4,
+  "structural_bounds_sites": 379,
+  "structural_pointer_phis": 28,
+  "provenance": {
+    "semantic_expectations": "frozen raw fixtures/models and expectations/supplement-v1.json; expected values, failures, spans, fuel and physical observations are independently specified",
+    "structural_inventory": "379 bounds sites and 28 pointer phis are historical counts of the frozen v1 sidecars/LLVM, retained as completeness checks; their meaning is checked separately by the structural reader",
+    "replay_inventory": "17 function registrations; 336 ELF, 1210 runtime and 3360 tool-receipt totals combine historical 331/1205/3310 with separately observed 5/5/50; these totals are coverage/inventory constraints, not semantic oracles",
+    "original_v1_qualification": "qualification.json remains byte-identical and describes the 14-function historical scope only",
+    "supplement_history": {
+      "head": "e087e232b4a9885447352b69b4279e5c30978d16",
+      "test_binary_sha256": "d9c5564d89705a91343ad141387d5536488dad1f66a93f44031ab30821a1345e",
+      "manifest_sha256": "7b8fb01dfa70249425f7a6559e0e8ad21e5600079559d94cbb5677e1d363f4ac",
+      "report_sha256": "1eadb6c6ea0477785cb1f28d5dcf4c767e3a05cb30a808bbbc9145cde3f25678"
+    },
+    "v1_history": {
+      "local_head": "3882ccd174e361ef1a1dcfa030e12740cb139d93",
+      "published_equal_tree_head": "8251d2a96dd78e26ed63bd25ec9353b111cc28b5",
+      "test_binary_sha256": "c361b1db89d4921f4c6629bb489d4db2254e5148cc90c2106f56a3ffdcf4699a",
+      "manifest_sha256": "0a6141df33a75fea53691dd79461b72c0c2a416bc111490ccd905e8bb922664f"
+    },
+    "resource_input_completeness": "The exact 164 diagnostic bytes and >164+128 expansion assertion were strengthened after observing the original v1 resource profile, using its fixed two-message input and source-inspected formatting. It is a resource/input-completeness regression, not a pre-observation semantic oracle; the supplemental run passed the frozen stronger check."
+  },
+  "remaining": [
+    "fresh complete portable-runner debug/release replay",
+    "repository integration and exact-head CI qualification"
+  ]
+}
