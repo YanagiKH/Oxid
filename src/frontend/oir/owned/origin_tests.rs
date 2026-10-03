@@ -85,7 +85,7 @@ pub(super) fn raw(s: Span) -> RawOwnedProgram {
 pub(super) fn owner(f: &mut RawOwnedFunction, kind: OwnerKind, s: Span) -> OwnerPlaceId {
     let id = OwnerPlaceId(f.owners.len());
     f.owners.push(OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         span: s,
     });

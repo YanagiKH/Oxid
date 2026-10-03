@@ -394,7 +394,7 @@ fn local(ty: hir::Ty, span: Span) -> LocalDecl {
 }
 fn owner(kind: OwnerKind, span: Span) -> OwnerDecl {
     OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         span,
     }
@@ -654,7 +654,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
             argument: position,
             authority: AccessBase::Owner(OwnerPlaceId(root)),
             kind,
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: acquisition,
         });
         statements.push(instruction(
@@ -669,7 +669,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(position)));
         target.references.push(ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind,
             position,
             span: at(span, 1_100 + position),
@@ -1103,7 +1103,8 @@ fn region_raw(graph: &model::Graph, case: RegionCase, span: Span) -> RawOwnedPro
                 .parameters
                 .push(ParameterBinding::Reference(ReferenceParamId(0)));
             caller.references.push(ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: if matches!(case.authority, RegionAuthority::SharedParameter) {
                     BorrowKind::Shared
                 } else {
@@ -1960,7 +1961,10 @@ impl NestedRawBuilder<'_> {
                         argument,
                         authority,
                         kind,
-                        record: RecordId(0),
+                        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(
+                            RecordId(0),
+                        ))
+                        .unwrap(),
                         span,
                     });
                     arguments.push(ArgumentSlot::Borrow(loan));
@@ -2037,7 +2041,8 @@ fn nested_raw(model: &nested_model::Program, span: Span) -> RawOwnedProgram {
             raw.parameters
                 .push(ParameterBinding::Reference(ReferenceParamId(position)));
             raw.references.push(ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: if *mode == nested_model::Mode::Shared {
                     BorrowKind::Shared
                 } else {

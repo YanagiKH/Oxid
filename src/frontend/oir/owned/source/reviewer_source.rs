@@ -199,7 +199,9 @@ fn reviewer_source_raw_valid_mutability_nominal_and_origin_lies_are_detected_as_
             0 => f.owners[local].kind = OwnerKind::Local { mutable: true },
             1 => {
                 for owner in &mut f.owners {
-                    owner.record = RecordId(1);
+                    owner.aggregate =
+                        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(1)))
+                            .unwrap();
                 }
                 for block in &mut f.blocks {
                     for statement in &mut block.statements {
@@ -235,7 +237,7 @@ fn reviewer_source_raw_valid_mutability_nominal_and_origin_lies_are_detected_as_
         let f = &witness.functions()[0];
         let source_match = match mutant {
             0 => f.owners[local].kind == OwnerKind::Local { mutable: false },
-            1 => f.owners[local].record == RecordId(0),
+            1 => f.owners[local].aggregate() == AggregateTy::Record(RecordId(0)),
             _ => f
                 .blocks
                 .iter()

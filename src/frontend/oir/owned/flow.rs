@@ -19,19 +19,32 @@ pub(super) struct DenialFacts {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct OwnerSubject {
     pub id: OwnerPlaceId,
-    pub record: RecordId,
+    aggregate: AggregateSlot,
     pub class: OwnerKind,
     pub declaration: Span,
+}
+impl OwnerSubject {
+    pub(super) fn aggregate(self) -> AggregateTy {
+        self.aggregate.aggregate()
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum DeniedSubject {
     Owner(OwnerSubject),
     Reference {
         id: ReferenceParamId,
-        record: RecordId,
+        aggregate: AggregateSlot,
         granted: BorrowKind,
         declaration: Span,
     },
+}
+impl DeniedSubject {
+    pub(super) fn aggregate(self) -> AggregateTy {
+        match self {
+            Self::Owner(owner) => owner.aggregate(),
+            Self::Reference { aggregate, .. } => aggregate.aggregate(),
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ObservedState {
@@ -78,7 +91,7 @@ impl DenialContext {
         let owner = f.owners.get(id.0)?;
         Some(OwnerSubject {
             id,
-            record: owner.record,
+            aggregate: owner.aggregate,
             class: owner.kind,
             declaration: owner.span,
         })
@@ -90,7 +103,7 @@ impl DenialContext {
                 let r = f.references.get(id.0)?;
                 DeniedSubject::Reference {
                     id,
-                    record: r.record,
+                    aggregate: r.aggregate,
                     granted: r.kind,
                     declaration: r.span,
                 }
@@ -683,7 +696,7 @@ fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
             a == b
-                || (f.references[a.0].record == f.references[b.0].record
+                || (f.references[a.0].aggregate() == f.references[b.0].aggregate()
                     && f.references[a.0].kind == BorrowKind::Shared
                     && f.references[b.0].kind == BorrowKind::Shared)
         }

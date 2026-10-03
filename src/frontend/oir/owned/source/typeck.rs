@@ -186,7 +186,12 @@ fn type_name<'a>(
 ) -> Result<TypeName<'a>, Box<Diagnostic>> {
     match ty {
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
-        ValueTy::Owned(record) => program.prepare_name(record, span).map(TypeName::Record),
+        ValueTy::Owned(AggregateTy::Record(record)) => {
+            program.prepare_name(record, span).map(TypeName::Record)
+        }
+        ValueTy::Owned(AggregateTy::FixedArray(_)) => {
+            Err(error("E0500", "unsupported aggregate type", span))
+        }
     }
 }
 fn mismatch(
@@ -249,11 +254,14 @@ fn projection(
     bindings: &[Option<ParameterTy>],
 ) -> Result<Projection, Box<Diagnostic>> {
     let (record, base) = match bindings[binding.0].expect("resolved field base initialized") {
-        ParameterTy::Value(ValueTy::Owned(record)) => (record, AccessBase::Owner(binding)),
-        ParameterTy::Reference { record, kind } => {
-            (record, AccessBase::Reference { binding, kind })
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(record))) => {
+            (record, AccessBase::Owner(binding))
         }
-        ParameterTy::Value(ValueTy::Scalar(_)) => {
+        ParameterTy::Reference {
+            aggregate: AggregateTy::Record(record),
+            kind,
+        } => (record, AccessBase::Reference { binding, kind }),
+        _ => {
             return Err(
                 error("E0305", "field access requires a record binding", base_span)
                     .owned_secondary(function.bindings[binding.0].span, "binding declared here"),
@@ -315,7 +323,9 @@ fn borrow_type(
         }
         BorrowPlace::Forwarded(binding) => {
             match bindings[binding.0].expect("borrow binding initialized") {
-                ParameterTy::Reference { record, .. } => record,
+                ParameterTy::Reference {
+                    aggregate: record, ..
+                } => record,
                 ParameterTy::Value(_) => {
                     return Err(error(
                         "E0312",
@@ -328,7 +338,10 @@ fn borrow_type(
     };
     // Requested permission is retained even if the parent grants only shared.
     // The authoritative raw verifier diagnoses that ownership permission error.
-    Ok(ParameterTy::Reference { record, kind })
+    Ok(ParameterTy::Reference {
+        aggregate: record,
+        kind,
+    })
 }
 fn expression_type(
     program: &ResolvedOwnedProgram<'_>,
@@ -517,7 +530,7 @@ fn expression_type(
                     Some(expr.span),
                 ));
             }
-            ValueTy::Owned(*record)
+            ValueTy::Owned(AggregateTy::Record(*record))
         }
         ExprKind::FieldRead {
             base,

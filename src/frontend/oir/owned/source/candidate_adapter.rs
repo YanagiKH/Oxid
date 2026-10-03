@@ -116,9 +116,10 @@ fn scalar_type(ty: hir::Ty) -> String {
 fn value_type(ty: ValueTy) -> String {
     match ty {
         ValueTy::Scalar(ty) => object([("mode", json_string("scalar")), ("type", scalar_type(ty))]),
-        ValueTy::Owned(id) => {
-            object([("mode", json_string("owned")), ("record", id.0.to_string())])
-        }
+        ValueTy::Owned(aggregate) => object([
+            ("mode", json_string("owned")),
+            ("record", record_id(aggregate).0.to_string()),
+        ]),
     }
 }
 
@@ -438,7 +439,7 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                                 "owned",
                                 id.0,
                                 value.owners[id.0].span,
-                                value_type(ValueTy::Owned(value.owners[id.0].record)),
+                                value_type(ValueTy::Owned(value.owners[id.0].aggregate())),
                             ),
                             ParameterBinding::Reference(id) => {
                                 let reference = &value.references[id.0];
@@ -448,7 +449,7 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                                     reference.span,
                                     object([
                                         ("mode", borrow_kind(reference.kind)),
-                                        ("record", reference.record.0.to_string()),
+                                        ("record", record_id(reference.aggregate()).0.to_string()),
                                     ]),
                                 )
                             }
@@ -496,7 +497,7 @@ fn raw_function(value: &RawOwnedFunction) -> String {
             array(value.owners.iter().enumerate().map(|(id, owner)| {
                 object([
                     ("id", id.to_string()),
-                    ("record", owner.record.0.to_string()),
+                    ("record", record_id(owner.aggregate()).0.to_string()),
                     ("span", span(owner.span)),
                     ("kind", owner_kind(owner.kind)),
                 ])
@@ -507,7 +508,7 @@ fn raw_function(value: &RawOwnedFunction) -> String {
             array(value.references.iter().enumerate().map(|(id, reference)| {
                 object([
                     ("id", id.to_string()),
-                    ("record", reference.record.0.to_string()),
+                    ("record", record_id(reference.aggregate()).0.to_string()),
                     ("mode", borrow_kind(reference.kind)),
                     ("position", reference.position.to_string()),
                     ("span", span(reference.span)),
@@ -523,7 +524,7 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                     ("argument", loan.argument.to_string()),
                     ("authority", access_base(loan.authority)),
                     ("mode", borrow_kind(loan.kind)),
-                    ("record", loan.record.0.to_string()),
+                    ("record", record_id(loan.aggregate()).0.to_string()),
                     ("span", span(loan.span)),
                 ])
             })),
@@ -1055,3 +1056,10 @@ mod candidate_mutations;
 #[cfg(test)]
 #[path = "candidate_native.rs"]
 mod candidate_native;
+
+fn record_id(aggregate: AggregateTy) -> RecordId {
+    match aggregate {
+        AggregateTy::Record(record) => record,
+        AggregateTy::FixedArray(_) => panic!("source array gate"),
+    }
+}
