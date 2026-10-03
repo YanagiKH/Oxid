@@ -11,34 +11,34 @@
   ],
   "files": [
     {
-      "bytes": 6709,
+      "bytes": 8200,
       "path": "tests/fixtures/typed_project_source_binding/README.md",
-      "sha256": "8d72c6effa0b370d8f9044d2ccbc44ecc2c2339b59a3b88b83d12540d82ee170"
+      "sha256": "b59e280db2d138101fd92cbb163802b30e9487db93d1a200b1eca8737da18f75"
     },
     {
-      "bytes": 4008,
+      "bytes": 9916,
       "path": "tests/fixtures/typed_project_source_binding/authority.json",
-      "sha256": "2fdb5271b1891f5fb425e3beeae944633254c99852dee52adade9ca8d3b3511c"
+      "sha256": "73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce"
     },
     {
-      "bytes": 20833,
+      "bytes": 22314,
       "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-      "sha256": "5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c"
+      "sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8"
     },
     {
-      "bytes": 784,
+      "bytes": 785,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "5bbefaec81b516914aa1e2115a3bbec18445905ff8be63920c2538ea13cdeca5"
+      "sha256": "83fb8fc5102bd175aab1651b5b118df4f8a1e1c01b24ead77f6825f57f715939"
     },
     {
-      "bytes": 23891,
+      "bytes": 36714,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "ee501f44f20f59de7989337a33eead7c8dc3a4e6e501775b6c5b7be69d30b96f"
+      "sha256": "f329351e779353c58571e5b506049d86214013ad13724d457f357e40cc1b2b57"
     },
     {
-      "bytes": 48414,
+      "bytes": 605300,
       "path": "tests/fixtures/typed_project_source_binding/source-transition.patch",
-      "sha256": "1958b851c49055cf3574469eb6dccf35e08904fb5976ad401ed98d4cd039738b"
+      "sha256": "63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18"
     },
     {
       "bytes": 7664,
@@ -721,34 +721,34 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 4425,
+      "bytes": 4746,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "524ed03a5d5474bad78796c45cfc49016e45f2e2607334004e12174a3fa19d71"
+      "sha256": "c38493297eb220a56face0968ab634d18939500d68a993da9650e01331ad22d5"
     },
     {
-      "bytes": 141860,
+      "bytes": 164756,
       "path": "tests/qualification/unit4_parser_current/authority.json",
-      "sha256": "59b45b681b47aa0c5754c985e24dd3c93e428f58eea42e16721590cc098192d1"
+      "sha256": "fccebbd814ce0ea207f4e3ada3bee00e3a36c635d0a90827cb2775f271aaea31"
     },
     {
-      "bytes": 58865,
+      "bytes": 61768,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "717890f4fe6f1b1fe22a2cc09b4a49b2eadd45573eff195ecd9de50e30fe5a70"
+      "sha256": "a1e93fca59aa026c22a4aa1f2f1239c2f09eb728dd66cabe29d8056cbff46a23"
     },
     {
-      "bytes": 6687,
+      "bytes": 10909,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "d28922fef128eb96e72f10298876c8bf63ff9902a7b4ba726278b18682df6122"
+      "sha256": "5e7d8498e21200b81afc51155c21aa6749ba9a7cf8e6753833b0ccbba83549e4"
     },
     {
       "bytes": 7505,
       "path": "tests/qualification/unit4_public_v3/README.md",
-      "sha256": "3fc2c1a439359051bd12ca2abd8ef0d1461597bd1f5cdc26323aee0466670bda"
+      "sha256": "6cbe91d798a9ede9c14aaa82c075ead7f6a0636ad147a7f39a070fd922fe668c"
     },
     {
       "bytes": 567,
       "path": "tests/qualification/unit4_public_v3/authority.py",
-      "sha256": "2a60c87545b371d90f3cbd7c8ab1f364ba682b0cab4630954901fa8cfd8c6e27"
+      "sha256": "42650f90d7c4c13c8bdd7e407f25ac5e63534b90987129bc6b4fb725b41cc69f"
     },
     {
       "bytes": 7004,
@@ -798,7 +798,7 @@
     {
       "bytes": 18540,
       "path": "tests/qualification/unit4_public_v3/runtime.py",
-      "sha256": "b3ab295a5ef4418313d3cbdf0ef022ad37df0a72ffc37ccfd7db565e17478e31"
+      "sha256": "21cb0acb4c1e2ee19f43a3552c2a9d6b269116691c4d64b5537bab25b5f98830"
     },
     {
       "bytes": 10861,

@@ -11,7 +11,7 @@ unchanged.
 
 `gate.py host --repo REPO --output FRESH --expected-head SHA --event-sha SHA
 --host HOST [--historical-repo REPO --toolchain ROOT --cargo-cache CACHE]` is the
-mandatory actual-host route. All admitted component files, membership, source121,
+mandatory actual-host route. All admitted component files, membership, source129,
 Git head/full tree, contract transport and amendments are checked before importing
 component code, writing materialized inputs, or executing a compiler. Inputs are
 rechecked before every stage and before completion. HOST is an expectation checked
@@ -82,17 +82,17 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its four reviewed compiler changes are disjoint from parser instrumentation.
-Historical283/current284 base maps, historical286/current287 derived maps and
-historical113/current114 compiler rosters remain separate identity domains.
-Sessions explicitly deny historical source equivalence and bind the current121
+Its 47 reviewed compiler changes are disjoint from parser instrumentation.
+Historical283/current292 base maps, historical286/current295 derived maps and
+historical113/current122 compiler rosters remain separate identity domains.
+Sessions explicitly deny historical source equivalence and bind the current129
 manifest, reviewed source checkpoint and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 287-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 284-member base map. Compact omission is limited to the
-other 286 derived-tree members per role and four binaries, for 576 omitted identities.
+belong to the 295-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 292-member base map. Compact omission is limited to the
+other 294 derived-tree members per role and four binaries, for 592 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.

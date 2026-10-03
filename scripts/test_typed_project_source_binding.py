@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
@@ -65,7 +66,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 121)
+        self.assertEqual(len(captured["inputs"]), 129)
         self.assertEqual(len(captured["archived"]), 117)
         self.assertNotEqual(captured["inputs"]["src/frontend/driver.rs"], captured["archived"]["src/frontend/driver.rs"])
         output = self.root / "archive"
@@ -75,22 +76,41 @@ class SourceBindingTests(unittest.TestCase):
         self.assertFalse(receipt["semantic_pass"])
         binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
 
-    def test_groundwork_transition_restores_the_published_archive(self):
+    def test_cumulative_array_transition_restores_the_published_archive(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["touched"]), 13)
-        self.assertEqual(captured["touched"][-4:], ["src/frontend/oir/owned/mod.rs",
-                         "src/frontend/oir/owned/plan.rs", "src/frontend/oir/owned_types.rs",
-                         "src/frontend/oir/owned_types/array_tests.rs"])
-        self.assertNotIn("src/frontend/oir/owned_types/array_tests.rs", captured["archived"])
-        for path in captured["touched"][-4:-1]:
-            self.assertNotEqual(captured["inputs"][path], captured["archived"][path])
+        self.assertEqual(len(captured["touched"]), 56)
+        self.assertEqual(len(set(captured["touched"])), 56)
+        delta = captured["authority"]["transition_source_delta"]
+        self.assertEqual(captured["touched"][9:], delta["paths"])
+        self.assertEqual(len(delta["paths"]), 47)
+        self.assertFalse(set(captured["touched"][:9]) & set(delta["paths"]))
+        additions = binding.EXTRA - {"src/frontend/parser/activation_tests.rs",
+                                   "tests/typed_frontend.rs", "tests/typed_project_dispatch.rs"}
+        self.assertEqual(len(additions), 9)
+        for path in delta["paths"]:
+            if path in additions:
+                self.assertNotIn(path, captured["archived"])
+            else:
+                self.assertNotEqual(captured["inputs"][path], captured["archived"][path])
         patch = captured["package_bytes"]["source-transition.patch"]
         self.assertEqual(binding.digest(patch[:28881]),
                          "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8")
+        self.assertEqual(binding.digest(patch[28881:]), delta["sha256"])
         restored, _ = binding.inverse_patch(captured["inputs"], patch)
         extra = captured["authority"]["inverse_only_inputs"][0]
         self.assertEqual(binding.entry(extra["path"], restored.pop(extra["path"])), extra)
         binding.check_bytes(restored, captured["selected"]["files"])
+
+    def test_every_array_addition_is_required(self):
+        additions = binding.EXTRA - {"src/frontend/parser/activation_tests.rs",
+                                   "tests/typed_frontend.rs", "tests/typed_project_dispatch.rs"}
+        for path in sorted(additions):
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original)
 
     def test_missing_groundwork_member_rejects_before_materialization(self):
         (self.repo / "src/frontend/oir/owned_types/array_tests.rs").unlink()
@@ -224,11 +244,140 @@ class SourceBindingTests(unittest.TestCase):
         root = Path(seam["resource_package_root"])
         changes = [name for name, data in self.captured["historical_bytes"].items()
                    if (root / name).read_bytes() != data]
-        self.assertEqual(changes, [binding.RESOURCE])
+        self.assertEqual(sorted(changes), sorted([binding.RESOURCE, binding.OBSERVER]))
+        self.assertEqual(seam["resource_package_changes"],
+                         [binding.RESOURCE, binding.OBSERVER, "package-inputs.json"])
+        self.assertEqual(seam["observer_adapter"], self.captured["authority"]["unit2_observer_adapter"])
+        self.assertEqual((root / binding.OBSERVER).read_bytes(), self.captured["observer"])
         modified = (root / binding.RESOURCE).read_bytes()
         self.assertEqual(modified.replace(binding.NEW_SEAM, binding.OLD_SEAM),
                          self.captured["historical_bytes"][binding.RESOURCE])
         self.assertEqual((Path(seam["compatibility_runner"])).read_bytes(), self.captured["references"][binding.COMPAT])
+
+    def test_current_observer_substitutions_are_exact_and_reversible(self):
+        original = self.captured["historical_bytes"][binding.OBSERVER]
+        adapted = binding.adapt_unit2_observer(original)
+        self.assertEqual(len(binding.OBSERVER_SEAMS), 4)
+        self.assertEqual(binding.digest(original), binding.OBSERVER_ORIGINAL_SHA)
+        self.assertEqual(binding.digest(adapted), binding.OBSERVER_DERIVED_SHA)
+        restored = adapted
+        for old, new in reversed(binding.OBSERVER_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        # These compiled controls are required in the isolated observer; this
+        # bounded test checks admitted bytes, never claims they executed.
+        for name in ("preserves_scalar_and_record_json", "denies_owned_array",
+                     "denies_shared_array", "denies_exclusive_array"):
+            self.assertIn(("fn current_unit2_aggregate_adapter_" + name + "()").encode(), adapted)
+        self.assertEqual(adapted.count(b'#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]'), 3)
+
+    def test_wrong_original_observer_is_rejected(self):
+        original = self.captured["historical_bytes"][binding.OBSERVER]
+        for data in (original + b"\n", original[:-1], original.replace(b"record.0", b"record.1", 1)):
+            with self.subTest(sha=binding.digest(data)), self.assertRaisesRegex(binding.BindingError, "wrong original Unit2 observer"):
+                binding.adapt_unit2_observer(data)
+
+    def test_missing_or_extra_observer_substitution_is_rejected(self):
+        seams = binding.OBSERVER_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with self.subTest(count=len(changed)), patch.object(binding, "OBSERVER_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong Unit2 observer substitution count"):
+                    binding.adapt_unit2_observer(self.captured["historical_bytes"][binding.OBSERVER])
+
+    def test_observer_seam_or_projection_change_is_rejected(self):
+        seams = binding.OBSERVER_SEAMS
+        variants = [(b"missing seam", seams[0][1]), (seams[0][0], seams[0][1] + b"// altered")]
+        for replacement in variants:
+            with self.subTest(replacement=replacement), patch.object(binding, "OBSERVER_SEAMS", (replacement,) + seams[1:]):
+                with self.assertRaisesRegex(binding.BindingError, "observer seam drift|wrong derived Unit2 observer"):
+                    binding.adapt_unit2_observer(self.captured["historical_bytes"][binding.OBSERVER])
+
+    def test_coherently_rehashed_observer_authority_is_rejected(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["unit2_observer_adapter"]["derived"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale Unit2 observer adapter authority")
+
+    def observer_protocol(self):
+        spec = importlib.util.spec_from_file_location("_observer_control_test_protocol", REPO / binding.U2 / "protocol.py")
+        protocol = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(protocol)
+        return protocol
+
+    def observer_control_streams(self):
+        names = binding.OBSERVER_CONTROL_NAMES
+        listing = "\n".join(name + ": test" for name in names) + "\n\n4 tests, 0 benchmarks\n"
+        results = [name + (" - should panic" if "_denies_" in name else "") for name in names]
+        execution = "running 4 tests\n" + "\n".join("test " + name + " ... ok" for name in results)
+        execution += "\n\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.00s\n"
+        return listing, execution
+
+    def test_observer_control_protocol_rejects_incomplete_results(self):
+        listing, execution = self.observer_control_streams()
+        protocol = self.observer_protocol()
+        self.assertEqual(binding.verify_observer_control_output(protocol, listing, execution)["passed"], 4)
+        for changed_listing, changed_execution in (
+                (listing.replace(binding.OBSERVER_CONTROL_NAMES[0] + ": test\n", ""), execution),
+                (listing + "unexpected: test\n", execution),
+                (listing, execution.replace(" ... ok", " ... ignored", 1)),
+                (listing, execution.replace(" ... ok", " ... FAILED", 1)),
+                (listing, execution.replace("4 passed", "0 passed")),
+                (listing, execution.replace(" - should panic", "", 1))):
+            with self.subTest(listing=changed_listing, execution=changed_execution), self.assertRaises(ValueError):
+                binding.verify_observer_control_output(protocol, changed_listing, changed_execution)
+
+    def synthetic_observer_controls(self, fail=False):
+        """Exercise orchestration with synthetic stream producers; no Rust execution claim."""
+        output = self.root / "synthetic-observer-controls"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        run = output / "unit2/run"
+        source = run / "source"
+        binding.materialize(source, {"synthetic-source.txt": b"synthetic orchestration only\n"})
+        binding.write_json(run / "assembly.json", {"files": [binding.entry("synthetic-source.txt", (source / "synthetic-source.txt").read_bytes())]})
+        listing, execution = self.observer_control_streams()
+        script = ("#!" + sys.executable + "\nimport sys\n"
+                  + "print(" + repr(listing) + " if '--list' in sys.argv else " + repr(execution) + ", end='')\n"
+                  + ("sys.stderr.write('synthetic control failure\\n')\nraise SystemExit(7 if '--list' not in sys.argv else 0)\n" if fail else ""))
+        for profile in ("debug", "release"):
+            binary = run / "target" / profile / "synthetic-test-producer"
+            binary.parent.mkdir(parents=True)
+            binary.write_text(script)
+            binary.chmod(0o755)
+            binding.write_json(run / (profile + "-receipt.json"), {"binary": str(binary), "binary_sha256": binding.digest(binary.read_bytes())})
+        return output, seam
+
+    @unittest.skipIf(sys.platform == "win32", "synthetic executable uses a POSIX shebang")
+    def test_observer_controls_bind_both_profiles_and_keep_streams(self):
+        output, seam = self.synthetic_observer_controls()
+        receipt = binding.run_unit2_observer_controls(self.repo, output, self.captured, seam)
+        self.assertEqual(receipt["observer_control_tests_per_profile"], 4)
+        self.assertEqual(receipt["test_function_executions"], 52)
+        self.assertEqual(len(receipt["observer_control_receipts"]), 2)
+        for row in receipt["observer_control_receipts"]:
+            report = binding.read_json(output / row["path"])
+            self.assertEqual(report["tests"], list(binding.OBSERVER_CONTROL_NAMES))
+            self.assertEqual(report["observer_adapter"], seam["observer_adapter"])
+            self.assertEqual(report["source_inputs_sha256"], binding.CURRENT_SOURCE_SHA)
+            commands = binding.read_json(output / "observer-adapter-controls" / report["commands"]["path"])
+            self.assertEqual(len(commands), 2)
+            for command in commands:
+                self.assertEqual(command["exit_status"], 0)
+                self.assertFalse(command["timed_out"])
+                binding.check_entries(output / "observer-adapter-controls", [command["stdout"], command["stderr"]])
+
+    @unittest.skipIf(sys.platform == "win32", "synthetic executable uses a POSIX shebang")
+    def test_observer_control_failure_keeps_evidence(self):
+        output, seam = self.synthetic_observer_controls(fail=True)
+        with self.assertRaisesRegex(binding.BindingError, "observer controls failed"):
+            binding.run_unit2_observer_controls(self.repo, output, self.captured, seam)
+        commands = binding.read_json(output / "observer-adapter-controls/debug-commands.json")
+        self.assertEqual(commands[-1]["exit_status"], 7)
+        self.assertEqual((output / "observer-adapter-controls/debug-run.stderr").read_text(), "synthetic control failure\n")
+        self.assertFalse((output / "observer-adapter-controls/debug-receipt.json").exists())
+        self.assertFalse((output / "observer-adapter-controls/release-commands.json").exists())
 
     def test_preflight_retains_zero_execution_metadata(self):
         output = self.root / "preflight"
@@ -294,6 +443,7 @@ class SourceBindingTests(unittest.TestCase):
         run.mkdir(parents=True)
         inputs = dict(self.captured["historical_bytes"])
         inputs[binding.RESOURCE] = self.captured["resource"]
+        inputs[binding.OBSERVER] = self.captured["observer"]
         inputs["source-inputs.json"] = self.captured["package_bytes"]["current-source.json"]
         manifest = {**self.captured["historical"], "files": [binding.entry(n, d) for n, d in sorted(inputs.items())]}
         inputs["package-inputs.json"] = binding.encoded(manifest)

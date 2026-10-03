@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -17,15 +18,26 @@ PACKAGE = Path(__file__).resolve().parent
 U2 = "tests/fixtures/typed_project_unit2_independent"
 U3 = "tests/fixtures/typed_project_unit3_independent"
 COMPAT = "tests/fixtures/typed_project_unit3_compatibility/run.py"
-EXTRA = {"src/frontend/oir/owned_types/array_tests.rs",
-         "src/frontend/parser/activation_tests.rs", "tests/typed_frontend.rs",
-         "tests/typed_project_dispatch.rs"}
+EXTRA = {
+    'src/frontend/oir/owned/array_native_resource_tests.rs',
+    'src/frontend/oir/owned/array_native_tests.rs',
+    'src/frontend/oir/owned/array_observe.rs',
+    'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+    'src/frontend/oir/owned/array_reference_tests.rs',
+    'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
+    'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned_types/array_tests.rs',
+    'src/frontend/parser/activation_tests.rs',
+    'tests/typed_frontend.rs',
+    'tests/typed_project_dispatch.rs',
+}
 RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
-CURRENT_SOURCE_SHA = "5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c"
-PATCH_SHA = "1958b851c49055cf3574469eb6dccf35e08904fb5976ad401ed98d4cd039738b"
-PATCH_BYTES = 48414
+CURRENT_SOURCE_SHA = '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8'
+PATCH_SHA = '63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18'
+PATCH_BYTES = 605300
 PATCH_PREFIX_BYTES = 28881
 PATCH_PREFIX_SHA = "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
 SOURCE_DELTA_BASE = "0ef3be1df3643febdff1f859a4eb1ce567ab8164"
@@ -40,10 +52,64 @@ PATCH_PATHS = (
     'src/frontend/project/unit2_tests.rs',
     'tests/typed_frontend.rs',
     'tests/typed_project_dispatch.rs',
+    'src/frontend/declaration_index.rs',
+    'src/frontend/declaration_index/tests.rs',
+    'src/frontend/diagnostic.rs',
+    'src/frontend/oir/owned/array_native_resource_tests.rs',
+    'src/frontend/oir/owned/array_native_tests.rs',
+    'src/frontend/oir/owned/array_observe.rs',
+    'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+    'src/frontend/oir/owned/array_reference_tests.rs',
+    'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/budget.rs',
+    'src/frontend/oir/owned/cfg.rs',
+    'src/frontend/oir/owned/consumer_fixtures.rs',
+    'src/frontend/oir/owned/consumer_pilot.rs',
+    'src/frontend/oir/owned/denial_tests.rs',
+    'src/frontend/oir/owned/execute.rs',
+    'src/frontend/oir/owned/execute_tests.rs',
+    'src/frontend/oir/owned/flow.rs',
     'src/frontend/oir/owned/mod.rs',
+    'src/frontend/oir/owned/native.rs',
+    'src/frontend/oir/owned/native_heldout_review.rs',
+    'src/frontend/oir/owned/native_tests.rs',
+    'src/frontend/oir/owned/oracle_tests.rs',
+    'src/frontend/oir/owned/origin_tests.rs',
     'src/frontend/oir/owned/plan.rs',
+    'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
+    'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned/reviewer_heldout.rs',
+    'src/frontend/oir/owned/reviewer_origins.rs',
+    'src/frontend/oir/owned/reviewer_reference_tests.rs',
+    'src/frontend/oir/owned/shape.rs',
+    'src/frontend/oir/owned/source/association.rs',
+    'src/frontend/oir/owned/source/budget.rs',
+    'src/frontend/oir/owned/source/candidate_adapter.rs',
+    'src/frontend/oir/owned/source/candidate_mutations.rs',
+    'src/frontend/oir/owned/source/candidate_native.rs',
+    'src/frontend/oir/owned/source/diagnostic.rs',
+    'src/frontend/oir/owned/source/hir.rs',
+    'src/frontend/oir/owned/source/lower.rs',
+    'src/frontend/oir/owned/source/resolve.rs',
+    'src/frontend/oir/owned/source/reviewer_heldout.rs',
+    'src/frontend/oir/owned/source/reviewer_source.rs',
+    'src/frontend/oir/owned/source/tests.rs',
+    'src/frontend/oir/owned/source/typeck.rs',
+    'src/frontend/oir/owned/tests.rs',
+    'src/frontend/oir/owned/verified.rs',
     'src/frontend/oir/owned_types.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
+)
+
+OBSERVER = 'semantic/observer.rs'
+OBSERVER_ADAPTER_VERSION = 'unit2-record-aggregate-observer-v1'
+OBSERVER_ORIGINAL_SHA = 'f2403aace53b6255a94b8b3ec0290db025638c5af94571d5729355672681fb00'
+OBSERVER_DERIVED_SHA = 'ddeff8bd0acfaa9af0301c74f3aabd26ef69954eb5a216fdd9cc21e1837901a3'
+OBSERVER_SEAMS = (
+    (b'use oir::owned_types::{BorrowKind, FieldId, ParameterTy, ValueTy};', b'use oir::owned_types::{AggregateTy, BorrowKind, FieldId, ParameterTy, ValueTy};'),
+    (b'fn value_type(value: ValueTy) -> String {', b'fn current_unit2_record_ordinal(aggregate: AggregateTy) -> usize {\n    match aggregate {\n        AggregateTy::Record(record) => record.0,\n        AggregateTy::FixedArray(_) => panic!("current Unit2 observer excludes fixed-array projection"),\n    }\n}\n\n#[test]\nfn current_unit2_aggregate_adapter_preserves_scalar_and_record_json() {\n    use oir::owned_types::RecordId;\n    assert_eq!(value_type(ValueTy::Scalar(hir::Ty::I32)), "{\\"kind\\":\\"scalar\\",\\"scalar\\":\\"I32\\"}");\n    assert_eq!(value_type(ValueTy::Owned(AggregateTy::Record(RecordId(7)))), "{\\"kind\\":\\"owned\\",\\"record\\":7}");\n    assert_eq!(parameter_type(ParameterTy::Reference { aggregate: AggregateTy::Record(RecordId(7)), kind: BorrowKind::Shared }), "{\\"kind\\":\\"shared\\",\\"record\\":7}");\n    assert_eq!(parameter_type(ParameterTy::Reference { aggregate: AggregateTy::Record(RecordId(7)), kind: BorrowKind::Exclusive }), "{\\"kind\\":\\"exclusive\\",\\"record\\":7}");\n}\n#[test]\n#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]\nfn current_unit2_aggregate_adapter_denies_owned_array() {\n    let array = oir::owned_types::FixedArrayTy::check(hir::Ty::I32, 1).unwrap();\n    value_type(ValueTy::Owned(AggregateTy::FixedArray(array)));\n}\n#[test]\n#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]\nfn current_unit2_aggregate_adapter_denies_shared_array() {\n    let array = oir::owned_types::FixedArrayTy::check(hir::Ty::I32, 0).unwrap();\n    parameter_type(ParameterTy::Reference { aggregate: AggregateTy::FixedArray(array), kind: BorrowKind::Shared });\n}\n#[test]\n#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]\nfn current_unit2_aggregate_adapter_denies_exclusive_array() {\n    let array = oir::owned_types::FixedArrayTy::check(hir::Ty::Bool, 1024).unwrap();\n    parameter_type(ParameterTy::Reference { aggregate: AggregateTy::FixedArray(array), kind: BorrowKind::Exclusive });\n}\n\nfn value_type(value: ValueTy) -> String {'),
+    (b'ValueTy::Owned(record) => object(vec![("kind",q("owned")),("record",number(record.0))]),', b'ValueTy::Owned(aggregate) => object(vec![("kind",q("owned")),("record",number(current_unit2_record_ordinal(aggregate)))]),'),
+    (b'ParameterTy::Reference { record, kind } => object(vec![("kind",q(match kind { BorrowKind::Shared=>"shared",BorrowKind::Exclusive=>"exclusive"})),("record",number(record.0))]),', b'ParameterTy::Reference { aggregate, kind } => object(vec![("kind",q(match kind { BorrowKind::Shared=>"shared",BorrowKind::Exclusive=>"exclusive"})),("record",number(current_unit2_record_ordinal(aggregate)))]),'),
 )
 
 
@@ -187,6 +253,18 @@ def inverse_patch(inputs, patch):
     return result, touched
 
 
+def adapt_unit2_observer(original):
+    """Versioned current-only aggregate projection; frozen scalar/record JSON is retained."""
+    require(digest(original) == OBSERVER_ORIGINAL_SHA, "wrong original Unit2 observer")
+    result = original
+    require(len(OBSERVER_SEAMS) == 4, "wrong Unit2 observer substitution count")
+    for old, new in OBSERVER_SEAMS:
+        require(result.count(old) == 1 and new not in result, "Unit2 observer seam drift")
+        result = result.replace(old, new)
+    require(digest(result) == OBSERVER_DERIVED_SHA, "wrong derived Unit2 observer")
+    return result
+
+
 def preflight(repo, package=PACKAGE):
     require(sys.flags.optimize == 0 and __debug__, "optimized Python is not supported")
     package_manifest = regular(package, "package-manifest.json").read_bytes()
@@ -217,7 +295,7 @@ def preflight(repo, package=PACKAGE):
             "missing or extra historical Unit2 member")
     current = json.loads(package_bytes["current-source.json"])
     selected = json.loads(references[U3 + "/manifests/selected-current.json"])
-    require(len(current["files"]) == 121 and len(selected["files"]) == 117, "wrong source count")
+    require(len(current["files"]) == 129 and len(selected["files"]) == 117, "wrong source count")
     require(delta["reviewed_source_head"] == current["reviewed_source_head"]
             and delta["source_only_tree"] == current["source_only_tree"], "stale source checkpoint provenance")
     require({x["path"] for x in current["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
@@ -238,9 +316,19 @@ def preflight(repo, package=PACKAGE):
     require(resource.count(OLD_SEAM) == 1 and NEW_SEAM not in resource, "resource seam drift")
     adapted_resource = resource.replace(OLD_SEAM, NEW_SEAM)
     require(entry(RESOURCE, adapted_resource) == authority["derived_resource"], "derived resource drift")
+    adapted_observer = adapt_unit2_observer(historical_bytes[OBSERVER])
+    require(authority["unit2_observer_adapter"] == {
+        "version": OBSERVER_ADAPTER_VERSION,
+        "original": entry(OBSERVER, historical_bytes[OBSERVER]),
+        "derived": entry(OBSERVER, adapted_observer),
+        "substitutions": [{"old_sha256": digest(old), "new_sha256": digest(new), "count": 1}
+                          for old, new in OBSERVER_SEAMS],
+        "scope": "Four exact substitutions in an isolated current Unit2 copy: AggregateTy import, fail-closed record projection and four compiled adapter controls, Owned projection, Reference aggregate projection. Scalar/record JSON and frozen expectations remain unchanged; FixedArray projection panics.",
+    }, "stale Unit2 observer adapter authority")
     return {"current": current, "selected": selected, "historical": historical,
             "inputs": inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": adapted_resource,
+            "observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
             "touched": touched, "authority": authority}
 
@@ -274,6 +362,9 @@ def prepare_archived(output, captured):
 def prepare_unit2(output, captured):
     inputs = dict(captured["historical_bytes"])
     inputs[RESOURCE] = captured["resource"]
+    inputs[OBSERVER] = captured["observer"]
+    require({name for name, data in inputs.items() if data != captured["historical_bytes"][name]}
+            == {RESOURCE, OBSERVER}, "unexpected current Unit2 adapter member changes")
     manifest = {**captured["historical"], "files": [entry(name, data) for name, data in sorted(inputs.items())]}
     inputs["package-inputs.json"] = encoded(manifest)
     root = output / "compatibility" / "typed_project_unit2_independent"
@@ -281,7 +372,8 @@ def prepare_unit2(output, captured):
     compat = output / "compatibility" / "typed_project_unit3_compatibility"
     materialize(compat, {"run.py": captured["references"][COMPAT]})
     return {"resource_package_root": str(root), "resource_package_inputs_sha256": digest(inputs["package-inputs.json"]),
-            "resource_package_changes": [RESOURCE, "package-inputs.json"],
+            "resource_package_changes": [RESOURCE, OBSERVER, "package-inputs.json"],
+            "observer_adapter": captured["authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_after": captured["authority"]["derived_resource"],
             "compatibility_runner": str(compat / "run.py"), "files": manifest["files"]}
@@ -354,6 +446,81 @@ def verify_unit2_result(output, captured, seam, prepare_only):
             "unit2_package_inputs_sha256": package_sha}
 
 
+OBSERVER_CONTROL_FILTER = "current_unit2_aggregate_adapter_"
+OBSERVER_CONTROL_NAMES = tuple("frontend::oir::unit2_observer::" + OBSERVER_CONTROL_FILTER + name for name in (
+    "preserves_scalar_and_record_json", "denies_owned_array", "denies_shared_array", "denies_exclusive_array"))
+
+
+def verify_observer_control_output(protocol, listing, execution):
+    protocol.rust_listing(listing, list(OBSERVER_CONTROL_NAMES))
+    # Rust's human test format explicitly labels registered should_panic tests.
+    expected = [name + (" - should panic" if "_denies_" in name else "") for name in OBSERVER_CONTROL_NAMES]
+    return protocol.rust_success(execution, expected)
+
+
+def run_unit2_observer_controls(repo, output, captured, seam):
+    """Execute current-only adapter controls on the two already verified test binaries."""
+    run = output / "unit2/run"
+    controls = output / "observer-adapter-controls"
+    require(not controls.exists(), "observer adapter controls output exists")
+    controls.mkdir()
+    protocol_path = regular(Path(seam["resource_package_root"]), "protocol.py")
+    require(protocol_path.read_bytes() == captured["historical_bytes"]["protocol.py"], "observer control protocol changed")
+    spec = importlib.util.spec_from_file_location("_current_unit2_control_protocol", protocol_path)
+    protocol = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(protocol)
+    receipts = []
+    for profile in ("debug", "release"):
+        assert_unchanged(repo, captured)
+        source = run / "source"
+        assembly = read_json(run / "assembly.json")
+        check_entries(source, assembly["files"], exact=True)
+        original_receipt = read_json(run / (profile + "-receipt.json"))
+        binary = Path(original_receipt["binary"])
+        require(binary.is_absolute() and (run / "target") in binary.parents and not binary.is_symlink(),
+                "observer control binary outside isolated build")
+        require(digest(binary.read_bytes()) == original_receipt["binary_sha256"], "observer control binary changed")
+        commands, streams = [], {}
+        for label, filters in (("list", ["--list", OBSERVER_CONTROL_FILTER]),
+                               ("run", [OBSERVER_CONTROL_FILTER, "--test-threads=1", "--color", "never"])):
+            argv = [str(binary), *filters]
+            started = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            out, err = controls / (profile + "-" + label + ".stdout"), controls / (profile + "-" + label + ".stderr")
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+            env.pop("PYTHONOPTIMIZE", None)
+            status, timeout = None, False
+            with out.open("wb") as stdout, err.open("wb") as stderr:
+                try:
+                    status = subprocess.run(argv, cwd=source, env=env, stdout=stdout, stderr=stderr, timeout=60).returncode
+                except subprocess.TimeoutExpired:
+                    timeout = True
+            command = {"argv": argv, "cwd": str(source), "started_at_utc": started,
+                       "finished_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                       "exit_status": status, "timed_out": timeout,
+                       "stdout": entry(out.name, out.read_bytes()), "stderr": entry(err.name, err.read_bytes())}
+            commands.append(command)
+            write_json(controls / (profile + "-commands.json"), commands)
+            require(status == 0 and not timeout, "current Unit2 observer controls failed; see retained streams")
+            streams[label] = out.read_text(encoding="utf-8")
+            require(digest(binary.read_bytes()) == original_receipt["binary_sha256"], "observer control binary changed")
+        result = verify_observer_control_output(protocol, streams["list"], streams["run"])
+        check_entries(source, assembly["files"], exact=True)
+        assert_unchanged(repo, captured)
+        record = {"schema": "oxid-current-unit2-observer-controls-v1", "profile": profile,
+                  "status": "passed", "tests": list(OBSERVER_CONTROL_NAMES), "result": result,
+                  "source_inputs_sha256": CURRENT_SOURCE_SHA, "observer_adapter": seam["observer_adapter"],
+                  "original_unit2_receipt": entry(profile + "-receipt.json", (run / (profile + "-receipt.json")).read_bytes()),
+                  "binary": entry(str(binary), binary.read_bytes()),
+                  "assembly": entry("assembly.json", (run / "assembly.json").read_bytes()),
+                  "commands": entry(profile + "-commands.json", (controls / (profile + "-commands.json")).read_bytes())}
+        path = controls / (profile + "-receipt.json")
+        write_json(path, record)
+        receipts.append(entry(str(path.relative_to(output)), path.read_bytes()))
+    return {"observer_adapter_version": OBSERVER_ADAPTER_VERSION,
+            "observer_control_tests_per_profile": 4, "observer_control_receipts": receipts,
+            "test_function_executions": 2 * (1 + 21 + 4)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("preflight", "prepare-archived", "run-unit2"))
@@ -379,8 +546,9 @@ def main():
                       adapter_package_sha256=digest(captured["package_manifest"]),
                       authority_sha256=digest(captured["package_bytes"]["authority.json"]))
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 121, "archive_members": 117,
-                "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21}
+                "current_source_members": 129, "archive_members": 117,
+                "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21,
+                "unit2_current_observer_controls_per_profile": 4}
         write_json(output / "plan.json", plan)
         result["plan_sha256"] = digest((output / "plan.json").read_bytes())
         if args.action == "preflight":
@@ -409,7 +577,11 @@ def main():
             write_json(output / "command.json", command)
             result["command_sha256"] = digest((output / "command.json").read_bytes())
             require(completed.returncode == 0, "retained Unit2 gate failed; see runner.stderr and unit2 evidence")
-            result.update(verify_unit2_result(output, captured, seam, args.prepare_only))
+            verified = verify_unit2_result(output, captured, seam, args.prepare_only)
+            if not args.prepare_only:
+                verified.update(run_unit2_observer_controls(repo, output, captured, seam))
+                verify_unit2_result(output, captured, seam, False)
+            result.update(verified)
         assert_unchanged(repo, captured)
         if args.action == "prepare-archived":
             check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)

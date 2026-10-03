@@ -19,13 +19,25 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [284, 287, 287])
-        self.assertEqual(len(p.compiler_map(a)), 114)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [292, 295, 295])
+        self.assertEqual(len(a['current_source']['files']), 129)
+        self.assertEqual(len(p.compiler_map(a)), 122)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
-        self.assertEqual([r['path'] for r in a['current']['source_delta']], [
-            'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/owned/plan.rs',
-            'src/frontend/oir/owned_types.rs', 'src/frontend/oir/owned_types/array_tests.rs'])
-        self.assertEqual(sum(r['before'] is None for r in a['current']['source_delta']), 1)
+        self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
+        self.assertEqual(len(a['current']['source_delta']), 47)
+        self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], [
+            'src/frontend/oir/owned/array_native_resource_tests.rs',
+            'src/frontend/oir/owned/array_native_tests.rs',
+            'src/frontend/oir/owned/array_observe.rs',
+            'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+            'src/frontend/oir/owned/array_reference_tests.rs',
+            'src/frontend/oir/owned/array_tests.rs',
+            'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
+            'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+            'src/frontend/oir/owned_types/array_tests.rs'])
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 38)
+        self.assertEqual(a['current']['reviewed_source_head'], 'f8a30b2443d9d7a89498e0c243f75072cbf26c2f')
+        self.assertEqual(a['current']['source_only_tree'], '18a4611f46b3cdf59f37a9f2241dc4e39e2d8ba6')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -49,6 +61,58 @@ class CurrentAuthorityControls(unittest.TestCase):
             for path in p.CURRENT_PATHS:
                 self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
                                  next(r['after'] for r in a['current']['source_delta'] if r['path'] == path))
+
+    def test_generated_candidate_binds_the_complete_current_base(self):
+        a = p.authority()
+        candidate = p.current_candidate(a)
+        raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
+        self.assertEqual(len(candidate['files']), 292)
+        self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
+        for role in ('current_derived_files', 'current_control_derived_files'):
+            self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
+                             {'path': 'candidate-source-manifest.json', 'bytes': len(raw), 'sha256': p.sha(raw)})
+
+    def test_coherently_rewritten_authority_rejects_at_trusted_pin(self):
+        value = p.read(p.HERE / 'authority.json')
+        value['source_delta'] = value['source_delta'][1:]
+        with tempfile.TemporaryDirectory(prefix='oxid-current-authority-') as directory:
+            root = Path(directory)
+            p.write(root / 'authority.json', value)
+            with patch.object(p, 'HERE', root):
+                with self.assertRaisesRegex(p.Rejected, 'unreviewed current parser authority'):
+                    p.authority()
+
+    def mutated_current_rejects(self, transform, message):
+        # Inject below the already-verified manifest pin to exercise the separate
+        # structural predicates, without granting altered bytes authority.
+        original_read = p.read
+        manifest_path = p.REPOSITORY / 'tests/fixtures/typed_project_source_binding/current-source.json'
+        current = copy.deepcopy(original_read(manifest_path))
+        transform(current['files'])
+        with patch.object(p, 'read', side_effect=lambda path: current if Path(path) == manifest_path else original_read(path)):
+            with self.assertRaisesRegex(p.Rejected, message):
+                p.authority()
+
+    def test_duplicate_current_member_rejects(self):
+        self.mutated_current_rejects(lambda files: files.__setitem__(-1, files[0]), 'duplicate current member')
+
+    def test_reordered_transition_rejects(self):
+        self.mutated_current_rejects(lambda files: files.reverse(), 'unexpected current transition scope')
+
+    def test_deleted_historical_compiler_member_rejects_even_with_same_count(self):
+        historical = p.read(p.FROZEN / 'authority.json')
+        replacement = next(row for row in historical['original_files'] if row['path'] == '.dockerignore')
+        def remove_compiler(files):
+            index = next(i for i, row in enumerate(files) if row['path'] == 'src/cli.rs')
+            files[index] = replacement
+        self.mutated_current_rejects(remove_compiler, 'current transition deletes historical compiler input')
+
+    def test_every_added_and_changed_source_identity_is_bound(self):
+        for name in p.CURRENT_PATHS:
+            def change_identity(files):
+                next(row for row in files if row['path'] == name)['sha256'] = '0' * 64
+            with self.subTest(path=name):
+                self.mutated_current_rejects(change_identity, 'current transition before/after identities')
 
 
 class CheckoutControls(unittest.TestCase):
@@ -74,7 +138,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 114)
+        self.assertEqual(len(bound['compiler_files']), 122)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())
@@ -84,8 +148,15 @@ class CheckoutControls(unittest.TestCase):
         self.rejects_before_git_or_child('file bytes differ')
 
     def test_missing_new_member_rejects_before_git_or_child(self):
-        (self.root / p.CURRENT_PATHS[-1]).unlink()
-        self.rejects_before_git_or_child('missing regular file')
+        for name in p.CURRENT_ADDED_PATHS:
+            path = self.root / name
+            raw = path.read_bytes()
+            with self.subTest(path=name):
+                path.unlink()
+                try:
+                    self.rejects_before_git_or_child('missing regular file')
+                finally:
+                    path.write_bytes(raw)
 
     def test_extra_compiler_member_rejects_before_git_or_child(self):
         (self.root / 'src/unapproved.rs').write_bytes(b'// not admitted\n')
