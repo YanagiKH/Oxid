@@ -1,8 +1,9 @@
 use super::{
+    declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
     oir,
     options::{self, Operation, Route},
-    project::{ProjectLimits, ProjectSources},
+    project::{budget::Allocator, ProjectLimits, ProjectSources, SyntaxFlavor},
     source::SourceMap,
 };
 
@@ -104,7 +105,7 @@ fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
 }
 
 fn process_file(path: &str, json: bool, operation: Operation, output: Option<&str>) -> i32 {
-    let project = match ProjectSources::load_original(path, ProjectLimits::default()) {
+    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
         Ok(project) => project,
         Err(failure) => {
             return report(
@@ -115,22 +116,25 @@ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&st
             )
         }
     };
-    let sources = project.sources();
-    let (source, ast) = project
-        .original_file()
-        .expect("public source facade remains one-file");
-    debug_assert!(!ast.tokens.is_empty());
-    process_loaded(
-        &project,
-        json,
-        operation,
-        output,
-        oir::check_source(source, ast, sources),
-    )
+    let executable = match project.syntax_flavor() {
+        SyntaxFlavor::OriginalSingleFile => {
+            let (source, ast) = project
+                .original_file()
+                .expect("original syntax retains one source file");
+            debug_assert!(!ast.tokens.is_empty());
+            oir::check_source(source, ast, project.sources())
+        }
+        SyntaxFlavor::ProjectSyntax => {
+            let limits = IndexLimits::default();
+            let work = WorkMeter::new(limits.work);
+            let mut allocator = Allocator::default();
+            oir::project::check_project_executable(&project, limits, &work, &mut allocator)
+        }
+    };
+    process_loaded(&project, json, operation, output, executable)
 }
 
-/// Shared post-load operation path; private candidate adapters supply a checked
-/// project result, while public dispatch continues to load only original syntax.
+/// Shared post-load operation path for both original and project source syntax.
 fn process_loaded(
     project: &ProjectSources,
     json: bool,

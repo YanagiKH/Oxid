@@ -1,0 +1,63 @@
+{
+  "candidate_executions": 0,
+  "compiler_build_executions": 0,
+  "native_and_rust_identity_probes": true,
+  "records": [
+    {
+      "name": "synthetic_six_pairs_admitted",
+      "status": "pass"
+    },
+    {
+      "name": "ordinary_field_diff",
+      "rejection": "ordinary passivity differs: original.ProjectCandidate.result",
+      "status": "pass"
+    },
+    {
+      "name": "missing_ordinary_case",
+      "rejection": "exact ordinary passivity roster",
+      "status": "pass"
+    },
+    {
+      "name": "missing_parser_mode",
+      "rejection": "passivity exact executed mode roster",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_source_same_path",
+      "rejection": "prescribed ordinary passivity source",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_raw_source",
+      "rejection": "passivity actual source bytes",
+      "status": "pass"
+    },
+    {
+      "name": "zero_execution_witness",
+      "rejection": "zero-execution passivity witness",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_abi",
+      "rejection": "passivity Rust runtime ABI",
+      "status": "pass"
+    },
+    {
+      "name": "missing_raw_evidence",
+      "rejection": "missing regular file: /tmp/oxid-passivity-controls-me6zjxs7/session/passivity-debug/result/original-control/raw.json",
+      "status": "pass"
+    },
+    {
+      "name": "extra_evidence",
+      "rejection": "complete passivity evidence inventory",
+      "status": "pass"
+    },
+    {
+      "name": "nonce_reused_by_other_gate",
+      "rejection": "reused passivity execution nonce",
+      "status": "pass"
+    }
+  ],
+  "schema": "oxid-portable-passivity-synthetic-controls-v2",
+  "status": "pass"
+}

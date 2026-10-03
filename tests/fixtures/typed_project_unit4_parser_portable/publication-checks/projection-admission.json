@@ -1,0 +1,11 @@
+{
+  "candidate_executions": 0,
+  "checkpoint_bound_members": 67,
+  "compiler_builds": 0,
+  "original_checkpoint_sha256": "8a71652fa28e4c7580112f5e447b8eed7dce56497d1ece1e1b49a2e93dbb2af3",
+  "projected_member": "DESIGN.md",
+  "projection_sha256": "c6cb277b8f9d9909a72a9f98d1b0a04e303659bd06311fea1a1dd48ceb369b04",
+  "runtime_authority_sha256": "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0",
+  "status": "pass",
+  "unchanged_checkpoint_bound_members": 66
+}

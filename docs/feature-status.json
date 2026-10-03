@@ -328,7 +328,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -797,6 +797,38 @@
         "docs/architecture/owned-consumers-validation.md"
       ],
       "limitations": "Experimental production source route; the source ledger binds each qualification claim to exact compiler, source and target identities. CLI/ELF comparison, native semantic/store evidence, resource gates and hosted CI are separate scopes; raw-consumer evidence is historical. One capability covers declaration, verifier, source and consumer work. Exact nominal/mode matching; no borrow coercion, stored/returned references, scalar/field/temporary borrows, standalone blocks, nested owned fields, partial moves, general dereference, mutable parameter bindings, heap/destructors or unsafe/FFI ownership. Check may accept an owned-returning main; run/compile require scalar zero-argument main. Any owned syntax selects owned routing for the whole module without fallback. Source raw payload <=64 MiB; separate declaration/verifier/plan/runtime/native ledgers apply. New owned diagnostic text <=2048 bytes each excludes shared lexer/parser formatting, capacities, rendering, paths and RSS. No Rust equivalence, stable ABI, general safety certification, M2 or v1.0 completion claim."
+    },
+    {
+      "id": "typed-preview-bounded-projects",
+      "summary": "Bounded declaration-only typed projects with direct original-declaration imports, visibility and one linked verified scalar/owned program",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Declared-child discovery admits Linux; root-only syntax has no discovery host gate. Exact current-source and host qualification is recorded separately in the Unit4 ledger. Native remains Linux x86_64 LLVM19.1.7 O0.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0015-bounded-typed-projects.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/driver.rs",
+        "src/frontend/project.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/declaration_index.rs",
+        "src/frontend/oir/project.rs"
+      ],
+      "tests": [
+        "tests/typed_project_dispatch.rs",
+        "src/frontend/parser/activation_tests.rs",
+        "src/frontend/project/unit2_tests.rs"
+      ],
+      "evidence": [
+        "docs/architecture/typed-project-unit4-validation.md"
+      ],
+      "limitations": "Explicit typed selector only; unchanged legacy commands, artifact and lock versions. No package imports, reexports, grouped/glob imports, module aliasing, initialization effects, separate compilation or new native target. Aggregate source/index/ownership/runtime/native bounds apply across all files. Stable-filesystem path checks are not a snapshot or sandbox. Original single-file schedules are preserved, with recognized project syntax carrying explicit diagnostic migrations. Historical private-core receipts do not establish current public execution. No M1/M2 or v1.0 completion claim."
     }
   ]
 }

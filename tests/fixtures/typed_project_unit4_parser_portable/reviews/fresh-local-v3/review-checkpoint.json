@@ -1,0 +1,71 @@
+{
+  "admission_review_checkpoint_sha256": "3cfd3aed59a11b02dab37156fbbf5fdd4799c874ee6540b48a376e27394dc412",
+  "admitted_package_checkpoint_sha256": "8a71652fa28e4c7580112f5e447b8eed7dce56497d1ece1e1b49a2e93dbb2af3",
+  "candidate_executions_by_reviewer": 0,
+  "compiler_builds_executed_by_reviewer": 0,
+  "files": [
+    {
+      "bytes": 9611,
+      "path": "REVIEW.md",
+      "sha256": "eb2df442e628eb1008e0c4ade60ba2dd3e6b0732c159907ac6b9bb34b5c27946"
+    },
+    {
+      "bytes": 0,
+      "path": "audit.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 295,
+      "path": "audit.stdout",
+      "sha256": "015f57b5332504b4efbe8e0b8c8de141ce4739198beb06be6b0a422c091720ae"
+    },
+    {
+      "bytes": 15036,
+      "path": "audit_replay.py",
+      "sha256": "dc5cafd62147bd76e61a9062226a01a24fe11b083350406cc36460945fb3c903"
+    },
+    {
+      "bytes": 3334,
+      "path": "independent-comparison.json",
+      "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+    },
+    {
+      "bytes": 981364,
+      "path": "original-evidence-before.json",
+      "sha256": "bc352b1732fd7002528ec2d554f8a48e08b990080eabc83f96e44c28ecdba7d2"
+    },
+    {
+      "bytes": 11935,
+      "path": "package-before.json",
+      "sha256": "003e0d141ec6f41bf8a451ba50d6b3abbeb7e3f67079d25a4dd32e66545ed81e"
+    },
+    {
+      "bytes": 57240,
+      "path": "receipt-audit.json",
+      "sha256": "1871003ef75fecee21b8423f305d1818b6c74c372ddf9107325eddc151bbe261"
+    },
+    {
+      "bytes": 1881,
+      "path": "replay-report.json",
+      "sha256": "f02c2ff2624a91edf23a0925b250a5c18088d2812b9228107077d0396b655d16"
+    }
+  ],
+  "fresh_builds_verified": 4,
+  "historical_head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+  "hosted_claim": false,
+  "identity_probes_only": true,
+  "issues": [],
+  "observations_verified": 638,
+  "original_and_replayed_comparison_sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305",
+  "original_evidence_edits": 0,
+  "original_regular_files_verified_unchanged": 4371,
+  "original_symlink_targets_verified_unchanged": 8,
+  "passivity_pairs_verified": 12,
+  "production_or_helper_edits": 0,
+  "remote_writes": 0,
+  "schema": "oxid-portable-fresh-v3-independent-result-review-v1",
+  "source_head": "03a3a93dd90074484cfc2d0aa976b1327d757c79",
+  "source_tree": "06caab7624ddc17dd3d41f85871b534b7cf1dce4",
+  "stages_verified": 13,
+  "status": "PASS_FRESH_LOCAL_PORTABLE_638"
+}

@@ -1,0 +1,16 @@
+{
+  "archive": {
+    "bytes": 33733523,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-compact-evidence.tar.gz",
+    "sha256": "adb70750ddf2b15d07a927176b58b127699f60d10a23885d5683f898f5b66aa6"
+  },
+  "creation_seconds": 5.019022388001758,
+  "hosting_claim": false,
+  "member_manifest": {
+    "bytes": 811003,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/compact-evidence-members.json",
+    "sha256": "e3f2bc7ab93532a5e89b28c14ae84690d046fe74d20c2052a34befe77f93dadc"
+  },
+  "members": 3857,
+  "uncompressed_file_bytes": 547946056
+}

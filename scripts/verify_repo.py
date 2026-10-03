@@ -24,6 +24,15 @@ RUNNABLE_PACKAGE_FILES = (
 # Exact typed fixture inventory; all other checked-in .ox files retain their
 # existing legacy checks. Never exclude an entire fixture directory.
 TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
+# Every member is explicitly named. Child files are checked through their root
+# so their crate-relative imports preserve the real project context.
+TYPED_PROJECTS = {
+    "fixtures/typed-project-batch/main.ox": (
+        "fixtures/typed-project-batch/main.ox",
+        "fixtures/typed-project-batch/jobs.ox",
+        "fixtures/typed-project-batch/state.ox",
+    ),
+}
 READMES = ("README.md", "README_ZH.md", "README_JP.md")
 IMAGES = (
     "docs/assets/quickstart.svg",
@@ -87,6 +96,24 @@ def verify_local_markdown_links() -> None:
                 raise RuntimeError(f"broken local Markdown link in {relative_document}: {target}")
 
 
+def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path, bool]], list[Path], int]:
+    available = set(sources)
+    typed_entries = [root / relative for relative in TYPED_SOURCE_FILES]
+    typed_members = set(typed_entries)
+    for entry, members in TYPED_PROJECTS.items():
+        if entry not in members or len(members) != len(set(members)):
+            raise RuntimeError("invalid explicit typed project inventory")
+        paths = {root / relative for relative in members}
+        if paths & typed_members:
+            raise RuntimeError("overlapping typed source inventories")
+        typed_entries.append(root / entry)
+        typed_members.update(paths)
+    if not typed_members <= available:
+        raise RuntimeError("typed source fixture missing from discovery")
+    legacy = [(source, False) for source in sources if source not in typed_members]
+    return legacy + [(source, True) for source in typed_entries], typed_entries, len(typed_members)
+
+
 def main() -> int:
     executable = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/oxid").resolve()
     if not executable.is_file():
@@ -99,13 +126,10 @@ def main() -> int:
     verify_local_markdown_links()
 
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
-    typed_sources = [ROOT / relative for relative in TYPED_SOURCE_FILES]
-    for source in typed_sources:
-        if source not in sources:
-            raise RuntimeError(f"typed source fixture missing from discovery: {source}")
-    for source in sources:
+    checks, typed_entries, typed_member_count = source_plan(sources)
+    for source, typed in checks:
         command = [str(executable), "check", str(source)]
-        if source in typed_sources:
+        if typed:
             command.append("--edition=typed-preview")
         run(command)
 
@@ -118,7 +142,7 @@ def main() -> int:
         temp = Path(temp_dir)
         for source in runnable:
             run([str(executable), "run", str(source)], cwd=temp)
-        for source in typed_sources:
+        for source in typed_entries:
             run([str(executable), "run", str(source), "--edition=typed-preview"], cwd=temp)
 
     run([str(executable), "test"])
@@ -126,9 +150,10 @@ def main() -> int:
     run([str(executable), "doctor"])
     print(
         f"repository verification passed: {len(sources)} sources, "
-        f"{len(runnable) + len(typed_sources)} runnable programs "
-        f"({len(sources) - len(typed_sources)} legacy sources, "
-        f"{len(runnable)} legacy runnable programs, {len(typed_sources)} typed sources/runs)"
+        f"{len(runnable) + len(typed_entries)} runnable programs "
+        f"({len(sources) - typed_member_count} legacy sources, "
+        f"{len(runnable)} legacy runnable programs, {typed_member_count} typed source members / "
+        f"{len(typed_entries)} typed entry runs)"
     )
     return 0
 

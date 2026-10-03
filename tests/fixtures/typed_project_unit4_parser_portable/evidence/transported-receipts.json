@@ -1,0 +1,75 @@
+{
+  "complete_execution_evidence_in_this_package": false,
+  "files": [
+    {
+      "bytes": 10058,
+      "published_path": "evidence/local-03a3a93d/result-checkpoint.json",
+      "sha256": "ee28e435a690bb77729c4a176e3da8bc902f600c2e709ce9365d0379ebf4a788",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/result-checkpoint.json"
+    },
+    {
+      "bytes": 33674,
+      "published_path": "evidence/local-03a3a93d/result-summary.json",
+      "sha256": "e090197770108a98c59c14bf84c3d3ca3bc930ee7a46c5d86aed9f0c12e10d95",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/result-summary.json"
+    },
+    {
+      "bytes": 27400,
+      "published_path": "evidence/local-03a3a93d/status.json",
+      "sha256": "9582edbce44dae3b9dcc29bef5fe3930758be169d346c829e26fd06c44cdf587",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/status.json"
+    },
+    {
+      "bytes": 3334,
+      "published_path": "evidence/local-03a3a93d/fresh-session/comparison.json",
+      "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/comparison.json"
+    },
+    {
+      "bytes": 627,
+      "published_path": "evidence/local-03a3a93d/compact-evidence-transport.json",
+      "sha256": "6926d144c781c8bf1a2320ff8dff2fec37b2275175efcc727b3d28e420bd5fdf",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/compact-evidence-transport.json"
+    },
+    {
+      "bytes": 1676,
+      "published_path": "evidence/local-03a3a93d/binary-evidence-transport.json",
+      "sha256": "1dfa97aa2b37f0090049767ee6772f4c35b099d9fec1a5094f9f28471cfdceb9",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/binary-evidence-transport.json"
+    },
+    {
+      "bytes": 544,
+      "published_path": "evidence/local-03a3a93d/transport-verification.json",
+      "sha256": "c70d63778530e2676907200c3a4b89cf0ab9087982d0a10fa256e2e3b4a00748",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/transport-verification.json"
+    },
+    {
+      "bytes": 2497,
+      "published_path": "reviews/fresh-local-v3/review-checkpoint.json",
+      "sha256": "cbfa31161f69f596e660fad6834e6f342cf373baac0327923b9b7876083e539c",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-independent-review/review-checkpoint.json"
+    },
+    {
+      "bytes": 1881,
+      "published_path": "reviews/fresh-local-v3/replay-report.json",
+      "sha256": "f02c2ff2624a91edf23a0925b250a5c18088d2812b9228107077d0396b655d16",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-independent-review/replay-report.json"
+    },
+    {
+      "bytes": 57240,
+      "published_path": "reviews/fresh-local-v3/receipt-audit.json",
+      "sha256": "1871003ef75fecee21b8423f305d1818b6c74c372ddf9107325eddc151bbe261",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-independent-review/receipt-audit.json"
+    },
+    {
+      "bytes": 3334,
+      "published_path": "reviews/fresh-local-v3/independent-comparison.json",
+      "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305",
+      "source": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-independent-review/independent-comparison.json"
+    }
+  ],
+  "historical_paths_preserved": true,
+  "hosting_claim": false,
+  "schema": "oxid-portable-parser-published-local-receipts-v1",
+  "scope": "unchanged selected local result and independent audit receipts; raw corpus, original source views, complete audit snapshots and executable archives remain separately retained at recorded paths"
+}

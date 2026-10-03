@@ -1,0 +1,29 @@
+{
+  "admission_rule": "Pin the base freeze and amendment bytes independently. Check base raw document, exact case ID/index, old case and diagnostic subtree hashes and old location before applying once; require the stated new subtree and effective document hashes afterward. Reject unlisted changes, stale source, duplicate application or additional amendments.",
+  "base_public_document_sha256": "b4f1549baf04b8f8a5eed88bb23ee185b7f5b9e899dd0a80b712436f1ae8fe92",
+  "base_public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85",
+  "canonicalization": "UTF-8 json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False), without trailing newline",
+  "companion_authority_rule": "All base PUBLIC-FREEZE-v3 file, source, generator and validator bindings remain in force. Only the public document in memory receives this exact amendment. The original on-disk public document and v3 freeze must retain their original bytes.",
+  "effective_public_document_canonical_bytes": 107115,
+  "effective_public_document_canonical_sha256": "bb31b5b4ddd5467170ade55e7cc81f92378570f860ff17bfa86d821feab651ec",
+  "identity": "oxid-unit4-public-v3-location-amendment-v1",
+  "ordered_amendments": [
+    {
+      "bytes": 2100,
+      "file": "amendment.json",
+      "sha256": "e4c3b886ec2d0cf6448a1fc1d4f15bac5ee081d05e80876b13055587a421974d"
+    }
+  ],
+  "receipt_binding": {
+    "descriptor_hash_rule": "SHA256 of exact effective-contract.json bytes including its final newline.",
+    "fresh_comparison_rule": "New comparisons must bind this effective identity and descriptor hash, the base freeze, the ordered amendment hash, and effective document hash. Existing v3 receipts remain unchanged and do not qualify the amended contract. A receipt naming only unmodified v3 is insufficient.",
+    "required_fields": [
+      "effective_contract_identity",
+      "effective_contract_descriptor_sha256",
+      "base_public_freeze_sha256",
+      "ordered_amendment_sha256",
+      "effective_public_document_canonical_sha256"
+    ]
+  },
+  "schema_version": 1
+}

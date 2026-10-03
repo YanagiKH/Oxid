@@ -38,12 +38,14 @@ jobs:
       - name: Fetch locked dependencies before offline private qualification
         run: cargo fetch --locked
 
+      - name: Test current and archived source-binding admission controls
+        run: python3 -B -m unittest discover -s scripts -p test_typed_project_source_binding.py -v
+
       # Check exact src/native membership before legacy checks can create caches.
       - name: Preserve Unit2 semantic and resource gates with explicit current inputs
         run: |
-          python3 -B tests/fixtures/typed_project_unit3_compatibility/run.py \
+          python3 -B tests/fixtures/typed_project_source_binding/run.py run-unit2 \
             --repo . \
-            --source-manifest tests/fixtures/typed_project_unit3_compatibility/source-inputs-unit3-platform-v2.json \
             --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
             --output "$RUNNER_TEMP/typed-project-unit2-results"
 
@@ -68,8 +70,8 @@ jobs:
       - name: Build optimized standalone runtime
         run: cargo build --release --locked
 
-      - name: Preserve public single-file behavior and the closed project source gate
-        run: python3 -B tests/fixtures/typed_project_unit1_compatibility/run.py --debug target/debug/oxid --release target/release/oxid --evidence-root "$RUNNER_TEMP"
+      - name: Preserve the 31 original public single-file cases
+        run: python3 -B tests/fixtures/typed_project_unit1_compatibility/run.py --debug target/debug/oxid --release target/release/oxid --original-only --evidence-root "$RUNNER_TEMP"
 
       - name: Test typed-project runner identity controls
         run: python3 -B -m unittest discover -s tests/fixtures/typed_project_unit2_independent -p 'test_protocol.py' -v
@@ -81,15 +83,15 @@ jobs:
         if: always()
         shell: bash
         run: |
-          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/run/result.json" "$RUNNER_TEMP/typed-project-unit2-results/run/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/run/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
+          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/result.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
             if test -f "$receipt"; then
               cat "$receipt"
             fi
           done
-          if test -f "$RUNNER_TEMP/typed-project-unit2-results/run/rustc-version.stdout"; then
-            cat "$RUNNER_TEMP/typed-project-unit2-results/run/rustc-version.stdout"
+          if test -f "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/rustc-version.stdout"; then
+            cat "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/rustc-version.stdout"
           fi
-          for observations in "$RUNNER_TEMP/typed-project-unit2-results/run/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/run/"*-normalized.jsonl; do
+          for observations in "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/"*-normalized.jsonl; do
             if test -f "$observations"; then
               gzip -6 -k "$observations"
             fi
@@ -107,10 +109,13 @@ jobs:
             ${{ runner.temp }}/typed-project-unit2-results/*.jsonl.gz
             ${{ runner.temp }}/typed-project-unit2-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-results/*.stderr
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.json
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.jsonl.gz
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.stdout
-            ${{ runner.temp }}/typed-project-unit2-results/run/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.jsonl.gz
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.stderr
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.json
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.stderr
@@ -253,7 +258,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Fetch locked dependencies before offline private qualification
         run: cargo fetch --locked
-      - name: Qualify all private Unit3 source, native and mutation cases
+      - name: Qualify archived Unit3 source, native and mutation cases
         id: unit3_qualification
         timeout-minutes: 120
         shell: bash
@@ -277,6 +282,8 @@ jobs:
           unit3_ar="$(command -v ar)"
           unit3_llvm_bin="$OXID_LLVM_BIN"
           unit3_llvm_lib_dir="$unit3_out/llvm-runtime/libraries"
+          "$unit3_python" -B "$unit3_repo/tests/fixtures/typed_project_source_binding/run.py" prepare-archived \
+            --repo "$unit3_repo" --output "$unit3_out/source-binding"
           "$unit3_python" -B "$unit3_pkg/portable/verify_package.py" --package "$unit3_pkg" \
             --manifest "$unit3_pkg/package-manifest.json" --receipt "$unit3_out/package-verification.json"
 
@@ -294,7 +301,7 @@ jobs:
             --materialization "$unit3_out/inputs/materialization.json" \
             --parser "$unit3_pkg/components/observer/parse_debug.py" --output "$unit3_out/comparison-view"
 
-          "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_repo" \
+          "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_out/source-binding/archived-selected" \
             --selected-manifest "$unit3_pkg/manifests/selected-current.json" \
             --core-manifest "$unit3_pkg/manifests/core-v1.json" \
             --platform-patch "$unit3_pkg/manifests/platform-scope.patch" \
@@ -413,73 +420,6 @@ jobs:
           UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
         run: python3 -B scripts/collect_unit3_ci_diagnostics.py failure-logs
 
-      - name: Index and preserve Unit3 results on every terminal state
-        if: always()
-        timeout-minutes: 15
-        shell: bash
-        env:
-          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
-        run: |
-          python3 -B - <<'PYCODE'
-          import hashlib, json, os, pathlib, tarfile
-          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "typed-project-unit3"
-          root.mkdir(parents=True, exist_ok=True)
-          package = pathlib.Path("tests/fixtures/typed_project_unit3_independent")
-          selected = []
-          for path in sorted(root.rglob("*")):
-              if not (path.is_file() or path.is_symlink()):
-                  continue
-              relative = path.relative_to(root)
-              build_cache = "target" in relative.parts or "source-target" in relative.parts
-              if build_cache:
-                  if path.is_symlink() or not path.name.startswith("oxid-"):
-                      continue
-                  with path.open("rb") as source:
-                      if source.read(4) != b"\x7fELF":
-                          continue
-              selected.append(path)
-          entries = []
-          for path in selected:
-              name = path.relative_to(root).as_posix()
-              if path.is_symlink():
-                  entries.append({"path": name, "type": "symlink", "target": os.readlink(path)})
-              else:
-                  digest = hashlib.sha256()
-                  with path.open("rb") as source:
-                      while chunk := source.read(1024 * 1024):
-                          digest.update(chunk)
-                  entries.append({"path": name, "bytes": path.stat().st_size, "sha256": digest.hexdigest()})
-          inputs = {}
-          for name in ("package-manifest.json", "manifests/selected-current.json", "manifests/core-v1.json"):
-              path = package / name
-              if path.is_file():
-                  inputs[name] = {"bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-          index = root / "ci-evidence-index.json"
-          index.write_text(json.dumps({
-              "schema": 1,
-              "qualification_step_outcome": os.environ.get("UNIT3_STEP_OUTCOME", "unknown"),
-              "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",
-              "direct_successor_semantic_execution": False,
-              "package_inputs": inputs,
-              "expected_full_plan_rows": {"source": 304, "native": 300, "mutation": 220},
-              "driver_attributions": "eight rows joined from the full native comparison; zero extra executions",
-              "retained_bytes": sum(row.get("bytes", 0) for row in entries),
-              "excluded": "regenerable Rust target caches; exact oxid test executables are retained",
-              "files": entries,
-          }, indent=2) + "\n")
-          archive = root.parent / "typed-project-unit3-evidence.tar.gz"
-          with tarfile.open(archive, "w:gz", compresslevel=6, dereference=False) as output:
-              for path in selected + [index]:
-                  output.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
-          archive_digest = hashlib.sha256()
-          with archive.open("rb") as source:
-              while chunk := source.read(1024 * 1024):
-                  archive_digest.update(chunk)
-          (root.parent / "typed-project-unit3-evidence.sha256").write_text(
-              archive_digest.hexdigest() + "  " + archive.name + "\n")
-          print(json.dumps({"files": len(entries), "retained_bytes": sum(row.get("bytes", 0) for row in entries), "archive_bytes": archive.stat().st_size}))
-          PYCODE
-
       - name: Prepare bounded Unit3 diagnostic receipts
         if: always()
         timeout-minutes: 2
@@ -498,7 +438,15 @@ jobs:
             ${{ runner.temp }}/typed-project-unit3-compact.tar.gz
             ${{ runner.temp }}/typed-project-unit3-compact.tar.gz.sha256
 
-      - name: Retain lossless Unit3 qualification artifacts
+      - name: Index and preserve Unit3 results on every terminal state
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/preserve_unit3_ci_evidence.py
+
+      - name: Retain indexed Unit3 evidence (complete or explicitly partial)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -538,3 +486,223 @@ jobs:
         run: python3 -m unittest -v test_owned_source_native_matcher test_owned_source_native_binding
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2
+
+  unit4-linux:
+    name: Unit4 current typed-project qualification (Linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: unit4-current
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux native environment
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils util-linux xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+          # The runner mount may have a different owner; create an owned worktree.
+          mkdir "$GITHUB_WORKSPACE/unit4-current"
+      - uses: actions/checkout@v4
+        with:
+          # Bind the actual PR head; github.sha is retained separately as event SHA.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: unit4-current
+          set-safe-directory: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked dependencies and exact historical parser authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" fetch --no-tags origin d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" cat-file -e 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768^{commit}'
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" worktree add --detach "$RUNNER_TEMP/unit4-parser-authority" d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+      - name: Verify Unit4 integration failure controls
+        run: python3 -B tests/qualification/unit4_ci/test_integration.py
+      - name: Execute complete current-source public, hosted-root and parser gates
+        id: qualification
+        timeout-minutes: 165
+        shell: bash
+        run: |
+          set -euo pipefail
+          unit4_rustc="$(rustup which rustc)"
+          unit4_toolchain="$(dirname "$(dirname "$unit4_rustc")")"
+          python3 -B tests/qualification/unit4_ci/gate.py host \
+            --repo "$GITHUB_WORKSPACE/unit4-current" --output "$RUNNER_TEMP/unit4-linux" \
+            --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
+            --host 'Linux x86_64' --historical-repo "$RUNNER_TEMP/unit4-parser-authority" \
+            --toolchain "$unit4_toolchain" --cargo-cache "${CARGO_HOME:-$HOME/.cargo}"
+      - name: Preserve complete or failed Unit4 evidence
+        if: always()
+        timeout-minutes: 30
+        run: python3 -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-linux" --archives "$RUNNER_TEMP/unit4-linux-archives"
+      - name: Stage the closed compact Linux upload directory
+        if: always()
+        run: python3 -B tests/qualification/unit4_ci/evidence.py --archives "$RUNNER_TEMP/unit4-linux-archives" --stage-compact-upload "$RUNNER_TEMP/unit4-linux-compact-upload"
+      - name: Upload compact Linux raw evidence and bindings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-host-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-linux-compact-upload
+      - name: Upload full Linux source, stream and binary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-full-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-linux-archives/full-evidence.tar.gz
+
+  unit4-portable-hosts:
+    name: Unit4 current typed-project qualification (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86_64
+            os: windows-latest
+            artifact: windows-x86_64
+          - name: macOS x86_64
+            os: macos-15-intel
+            artifact: macos-x86_64
+          - name: macOS arm64
+            os: macos-14
+            artifact: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_HOST: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore and verify tracked committed bytes through a fresh checkout
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/common.py --restore-checkout --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-committed-checkout" --expected-head "$UNIT4_EXPECTED_HEAD"
+      - name: Preserve committed-byte checkout identities
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-checkout-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-committed-checkout/restoration.json
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked build dependencies
+        run: cargo fetch --locked
+      - name: Verify actual-host integration controls
+        run: python -B tests/qualification/unit4_ci/test_integration.py
+      - name: Execute ordinary, lifecycle and actual no-native trap gates
+        if: runner.os != 'Windows'
+        id: qualification
+        timeout-minutes: 80
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tests/qualification/unit4_ci/gate.py host \
+            --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-host" \
+            --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
+            --host "$UNIT4_HOST"
+      - name: Execute Windows gates with the native toolchain search path
+        if: runner.os == 'Windows'
+        id: qualification-windows
+        timeout-minutes: 80
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $unit4_vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path -LiteralPath $unit4_vswhere -PathType Leaf)) { throw 'Preinstalled Microsoft vswhere is missing' }
+          $unit4_vs = & $unit4_vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $unit4_vs) { throw 'Preinstalled Microsoft x64 C++ tools were not found' }
+          $unit4_dev_shell = Join-Path $unit4_vs 'Common7/Tools/Launch-VsDevShell.ps1'
+          if (-not (Test-Path -LiteralPath $unit4_dev_shell -PathType Leaf)) { throw 'Preinstalled Microsoft developer shell is missing' }
+          & $unit4_dev_shell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          python -B tests/qualification/unit4_ci/gate.py host `
+            --repo "$env:GITHUB_WORKSPACE" --output "$env:RUNNER_TEMP/unit4-host" `
+            --expected-head "$env:UNIT4_EXPECTED_HEAD" --event-sha "$env:UNIT4_EVENT_SHA" `
+            --host "$env:UNIT4_HOST"
+          exit $LASTEXITCODE
+      - name: Preserve complete or failed actual-host evidence
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-host" --archives "$RUNNER_TEMP/unit4-host-archives"
+      - name: Upload compact host raw evidence and bindings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-host-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/unit4-host-archives/compact.tar.xz
+            ${{ runner.temp }}/unit4-host-archives/export.json
+      - name: Upload full host source, stream and binary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-full-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-host-archives/full-evidence.tar.gz
+
+  unit4-qualification:
+    name: Unit4 mandatory four-host qualification join
+    needs: [unit4-linux, unit4-portable-hosts]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download exact-run host qualification capsules
+        uses: actions/download-artifact@v4
+        with:
+          pattern: unit4-host-*
+          path: ${{ runner.temp }}/unit4-host-artifacts
+      - name: Require complete raw frozen rosters from all four actual hosts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tests/qualification/unit4_ci/join.py \
+            --repo "$GITHUB_WORKSPACE" --artifacts "$RUNNER_TEMP/unit4-host-artifacts" \
+            --output "$RUNNER_TEMP/unit4-final-join" --expected-head "$UNIT4_EXPECTED_HEAD" \
+            --event-sha "$UNIT4_EVENT_SHA" --job-results "$UNIT4_JOB_RESULTS"
+      - name: Preserve final qualification result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-final-qualification
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-final-join/comparison.json

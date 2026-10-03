@@ -1,0 +1,724 @@
+diff --git a/src/frontend/driver.rs b/src/frontend/driver.rs
+index f9a201a..6351a0b 100644
+--- a/src/frontend/driver.rs
++++ b/src/frontend/driver.rs
+@@ -1,8 +1,9 @@
+ use super::{
++    declaration_index::{IndexLimits, WorkMeter},
+     diagnostic::{json_string, Diagnostic},
+     oir,
+     options::{self, Operation, Route},
+-    project::{ProjectLimits, ProjectSources},
++    project::{budget::Allocator, ProjectLimits, ProjectSources, SyntaxFlavor},
+     source::SourceMap,
+ };
+ 
+@@ -104,7 +105,7 @@ fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
+ }
+ 
+ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&str>) -> i32 {
+-    let project = match ProjectSources::load_original(path, ProjectLimits::default()) {
++    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
+         Ok(project) => project,
+         Err(failure) => {
+             return report(
+@@ -115,22 +116,25 @@ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&st
+             )
+         }
+     };
+-    let sources = project.sources();
+-    let (source, ast) = project
+-        .original_file()
+-        .expect("public source facade remains one-file");
+-    debug_assert!(!ast.tokens.is_empty());
+-    process_loaded(
+-        &project,
+-        json,
+-        operation,
+-        output,
+-        oir::check_source(source, ast, sources),
+-    )
++    let executable = match project.syntax_flavor() {
++        SyntaxFlavor::OriginalSingleFile => {
++            let (source, ast) = project
++                .original_file()
++                .expect("original syntax retains one source file");
++            debug_assert!(!ast.tokens.is_empty());
++            oir::check_source(source, ast, project.sources())
++        }
++        SyntaxFlavor::ProjectSyntax => {
++            let limits = IndexLimits::default();
++            let work = WorkMeter::new(limits.work);
++            let mut allocator = Allocator::default();
++            oir::project::check_project_executable(&project, limits, &work, &mut allocator)
++        }
++    };
++    process_loaded(&project, json, operation, output, executable)
+ }
+ 
+-/// Shared post-load operation path; private candidate adapters supply a checked
+-/// project result, while public dispatch continues to load only original syntax.
++/// Shared post-load operation path for both original and project source syntax.
+ fn process_loaded(
+     project: &ProjectSources,
+     json: bool,
+diff --git a/src/frontend/oir/project.rs b/src/frontend/oir/project.rs
+index 1385bed..bd76d78 100644
+--- a/src/frontend/oir/project.rs
++++ b/src/frontend/oir/project.rs
+@@ -1,5 +1,5 @@
+-//! Private typed-project facades. Both depths share the source sealing leaf schedule.
+-#![allow(dead_code)] // Complete private type qualification; no public activation.
++//! Typed-project facades. Both depths share the source sealing leaf schedule.
++#![allow(dead_code)] // Historical qualification adapters retain their private API.
+ use super::*;
+ use crate::frontend::{
+     declaration_index::{IndexLimits, WorkMeter},
+@@ -49,7 +49,6 @@ impl CheckedProjectTypes {
+     }
+ }
+ 
+-#[allow(dead_code)] // Private candidate driver; public loader is still closed.
+ pub(in crate::frontend) fn check_project_candidate(
+     project: &ProjectSources,
+     limits: IndexLimits,
+@@ -59,7 +58,7 @@ pub(in crate::frontend) fn check_project_candidate(
+     super::source::check_project_candidate(project, limits, work, allocator)
+ }
+ 
+-pub(in crate::frontend) fn check_project_executable_candidate<'s>(
++pub(in crate::frontend) fn check_project_executable<'s>(
+     project: &'s ProjectSources,
+     limits: IndexLimits,
+     work: &WorkMeter,
+@@ -68,6 +67,16 @@ pub(in crate::frontend) fn check_project_executable_candidate<'s>(
+     super::source::check_project_executable_candidate(project, limits, work, allocator)
+ }
+ 
++/// Historical qualification adapter for the same complete source checker.
++pub(in crate::frontend) fn check_project_executable_candidate<'s>(
++    project: &'s ProjectSources,
++    limits: IndexLimits,
++    work: &WorkMeter,
++    allocator: &mut Allocator,
++) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
++    check_project_executable(project, limits, work, allocator)
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+diff --git a/src/frontend/parser.rs b/src/frontend/parser.rs
+index df64df0..b7e939f 100644
+--- a/src/frontend/parser.rs
++++ b/src/frontend/parser.rs
+@@ -102,6 +102,7 @@ pub(super) fn parse_counted(
+         source,
+         allocator,
+         mode,
++        project_recovery: false,
+         tokens,
+         cursor: 0,
+         expressions: Vec::new(),
+@@ -163,7 +164,10 @@ pub(super) fn parse_counted(
+                 && parser.peek().kind == Kind::Pub
+                 && matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
+             {
+-                parser.take(Kind::Pub).map(|token| token.span)
++                parser.take(Kind::Pub).map(|token| {
++                    parser.project_recovery = true;
++                    token.span
++                })
+             } else {
+                 None
+             };
+@@ -190,6 +194,7 @@ pub(super) fn parse_counted(
+                 && !(mode == SourceMode::ModuleCandidate
+                     && matches!(parser.peek().kind, Kind::Mod | Kind::Pub))
+                 && !(mode == SourceMode::ProjectCandidate
++                    && parser.project_recovery
+                     && matches!(parser.peek().kind, Kind::Mod | Kind::Pub | Kind::Use))
+             {
+                 parser.bump();
+@@ -220,6 +225,9 @@ struct Parser<'a> {
+     source: &'a SourceFile,
+     allocator: &'a mut Allocator,
+     mode: SourceMode,
++    // Sticky only after ordinary parsing enters project grammar. Recovery
++    // scans never set it; successful source flavor comes from the AST instead.
++    project_recovery: bool,
+     tokens: Vec<Token>,
+     cursor: usize,
+     expressions: Vec<Expr>,
+@@ -289,6 +297,8 @@ impl Parser<'_> {
+         if self.mode != SourceMode::ProjectCandidate || !self.double_colon() {
+             return Ok((ItemPath::Unqualified(first), first));
+         }
++        // Recognition precedes both denied field paths and denied prefixes.
++        self.project_recovery = true;
+         if !paths {
+             return Err(self.diagnostic(
+                 "E0101",
+@@ -387,6 +397,7 @@ impl Parser<'_> {
+     fn import(&mut self) -> Result<ImportDecl, Box<Diagnostic>> {
+         self.node()?;
+         let start = self.expect(Kind::Use, "expected import declaration")?.span;
++        self.project_recovery = true;
+         if matches!(self.peek().kind, Kind::Star | Kind::LBrace) {
+             return Err(self.diagnostic(
+                 "E0101",
+@@ -493,8 +504,16 @@ impl Parser<'_> {
+         {
+             return Err(self.error("expected module declaration"));
+         }
+-        let public = self.take(Kind::Pub).map(|token| token.span);
++        let public = self.take(Kind::Pub).map(|token| {
++            if self.mode == SourceMode::ProjectCandidate {
++                self.project_recovery = true;
++            }
++            token.span
++        });
+         self.expect(Kind::Mod, "expected module declaration")?;
++        if self.mode == SourceMode::ProjectCandidate {
++            self.project_recovery = true;
++        }
+         let name = self.expect(Kind::Ident, "expected module name")?.span;
+         if self.peek().kind == Kind::LBrace {
+             return Err(self.diagnostic(
+@@ -641,8 +660,14 @@ impl Parser<'_> {
+         let mut fields = Vec::new();
+         while self.peek().kind != Kind::RBrace {
+             self.node()?;
+-            let public = if self.mode == SourceMode::ProjectCandidate {
+-                self.take(Kind::Pub).map(|token| token.span)
++            let public = if self.mode == SourceMode::ProjectCandidate
++                && self.peek().kind == Kind::Pub
++                && self.next_kind() == Kind::Ident
++            {
++                self.take(Kind::Pub).map(|token| {
++                    self.project_recovery = true;
++                    token.span
++                })
+             } else {
+                 None
+             };
+@@ -688,6 +713,7 @@ impl Parser<'_> {
+                 .expect(Kind::Ident, "borrow argument requires a binding name")?
+                 .span;
+             if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
++                self.project_recovery = true;
+                 return Err(self.diagnostic(
+                     "E0101",
+                     "parse",
+@@ -1123,6 +1149,7 @@ impl Parser<'_> {
+                     // A qualified field assignment also reaches this branch:
+                     // assignment lookahead requires `.` + Ident + `=`.
+                     if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
++                        self.project_recovery = true;
+                         return Err(self.diagnostic(
+                             "E0101",
+                             "parse",
+@@ -1204,3 +1231,7 @@ pub(super) fn parse_with_lowered_node_limit(
+ #[cfg(test)]
+ #[path = "parser/project_tests.rs"]
+ mod project_tests;
++
++#[cfg(test)]
++#[path = "parser/activation_tests.rs"]
++mod activation_tests;
+diff --git a/src/frontend/parser/activation_tests.rs b/src/frontend/parser/activation_tests.rs
+new file mode 100644
+index 0000000..d82a66b
+--- /dev/null
++++ b/src/frontend/parser/activation_tests.rs
+@@ -0,0 +1,162 @@
++use super::*;
++use crate::frontend::source::{SourceFileId, SourceMap};
++
++#[test]
++fn original_recovery_is_preserved_before_project_grammar_entry() {
++    println!("PARSER_LAYOUT {}", std::mem::size_of::<Parser<'_>>());
++    // These inputs never enter a new project production. Compare every
++    // diagnostic field through both public renderers, including ordering.
++    let cases = [
++        "fn pub() -> i32 { return 0; }\nfn good() -> i32 { return 1; }\n",
++        "struct R { pub: i32 }\nfn pub()->i32{return 0;}\n",
++        "struct R { pub pub n: i32 }\nfn pub()->i32{return 0;}\n",
++        "struct R { pub",
++        "struct R { pub /* trailing trivia */",
++        "struct R { n: crate: :T }\nfn pub()->i32{return 0;}\n",
++        "struct R { n: crate:/*note*/:T }\nfn pub()->i32{return 0;}\n",
++        "fn main()::i32 {}\nfn pub()->i32{return 0;}\n",
++        "fn bad(\nmod skipped;\nuse crate::skipped;\npub fn pub()->i32{return 0;}\n",
++    ];
++    let mut mismatches = Vec::new();
++    for text in cases {
++        let mut map = SourceMap::new();
++        map.add("activation.ox".into(), text.into());
++        let file = map.get(SourceFileId(0));
++        let diagnostics = |mode| {
++            parse_with_mode(file, crate::frontend::lexer::lex(file).unwrap(), mode).unwrap_err()
++        };
++        let original = diagnostics(SourceMode::OwnedCandidate);
++        let project = diagnostics(SourceMode::ProjectCandidate);
++        let render = |diagnostics: &[Diagnostic]| {
++            diagnostics
++                .iter()
++                .map(|d| (d.render_json(&map), d.render_human(&map)))
++                .collect::<Vec<_>>()
++        };
++        let original = render(&original);
++        let project = render(&project);
++        println!("SOURCE {text:?}\nORIGINAL {original:#?}\nPROJECT {project:#?}");
++        if original != project {
++            mismatches.push(text);
++        }
++    }
++    assert!(
++        mismatches.is_empty(),
++        "old recovery differences: {mismatches:#?}"
++    );
++}
++
++#[test]
++fn recognized_project_attempts_keep_project_recovery_even_when_denied() {
++    // The first grammar error and the two later reserved-name errors are the
++    // intentional migration vector, including paths rejected before lowering.
++    let cases = [
++        ("mod ;", "E0100", "expected module name", ";"),
++        ("use crate::;", "E0100", "expected item path segment", ";"),
++        (
++            "struct R { pub n: }",
++            "E0100",
++            "expected `bool`, `i32` or `()` type",
++            "}",
++        ),
++        (
++            "struct R { n: crate::T }",
++            "E0101",
++            "qualified paths are unavailable in scalar record fields",
++            "crate",
++        ),
++        (
++            "struct R { n: self::T }",
++            "E0101",
++            "qualified paths are unavailable in scalar record fields",
++            "self",
++        ),
++        (
++            "fn f()->(){ self::f(); }",
++            "E0101",
++            "only absolute item paths beginning with `crate::` are supported",
++            "self",
++        ),
++        (
++            "fn f()->(){ g(&crate::x); }",
++            "E0101",
++            "qualified borrow places are unavailable in typed-preview",
++            ":",
++        ),
++        (
++            "fn f()->(){ x.crate::n; }",
++            "E0101",
++            "qualified field names are unavailable in typed-preview",
++            ":",
++        ),
++    ];
++    for (prefix, code, message, spelling) in cases {
++        let text = format!("{prefix}\nfn pub()->i32{{return 0;}}\nfn good()->i32{{return 1;}}\n");
++        let mut map = SourceMap::new();
++        map.add("activation.ox".into(), text.clone());
++        let file = map.get(SourceFileId(0));
++        let diagnostics = parse_with_mode(
++            file,
++            crate::frontend::lexer::lex(file).unwrap(),
++            SourceMode::ProjectCandidate,
++        )
++        .unwrap_err();
++        let first = text.find(spelling).unwrap();
++        let reserved = text.find("fn pub").unwrap() + 3;
++        let expected = [
++            (code, message, first, first + spelling.len()),
++            (
++                "E0101",
++                "unsupported typed-preview construct `pub`",
++                reserved,
++                reserved + 3,
++            ),
++            (
++                "E0101",
++                "unsupported typed-preview construct `pub`",
++                reserved,
++                reserved + 3,
++            ),
++        ];
++        assert_eq!(diagnostics.len(), expected.len(), "{text}");
++        for (diagnostic, (code, message, start, end)) in diagnostics.iter().zip(expected) {
++            assert_eq!(diagnostic.code, code, "{text}");
++            assert_eq!(diagnostic.stage, "parse", "{text}");
++            assert_eq!(diagnostic.message, message, "{text}");
++            assert_eq!(diagnostic.primary, Some(file.span(start, end)), "{text}");
++            assert!(diagnostic.secondary.is_empty(), "{text}");
++            assert!(diagnostic.notes.is_empty(), "{text}");
++        }
++    }
++}
++
++#[test]
++fn successful_original_syntax_retains_ast_local_ids_nodes_and_provenance() {
++    for text in [
++        "",
++        "// pub mod use crate::\r\nfn crate()->i32{return 2;} fn as()->i32{return crate();}",
++        "struct R { n:i32 } fn main()->i32{let r:R=R{n:5};return r.n;}",
++        "fn bool()->bool{return true;} fn i32()->i32{return 1;}",
++    ] {
++        let mut map = SourceMap::new();
++        map.add("activation.ox".into(), text.into());
++        let file = map.get(SourceFileId(0));
++        let parse = |mode| {
++            parse_counted(
++                file,
++                crate::frontend::lexer::lex(file).unwrap(),
++                mode,
++                MAX_NODES,
++                &mut Allocator::default(),
++            )
++            .unwrap()
++        };
++        let (original, original_nodes) = parse(SourceMode::OwnedCandidate);
++        let (project, project_nodes) = parse(SourceMode::ProjectCandidate);
++        assert_eq!(original_nodes, project_nodes, "{text}");
++        assert_eq!(format!("{original:?}"), format!("{project:?}"), "{text}");
++        assert!(original.belongs_to(file));
++        assert!(project.belongs_to(file));
++        assert!(!project.uses_project_syntax());
++    }
++}
+diff --git a/src/frontend/parser/project_tests.rs b/src/frontend/parser/project_tests.rs
+index da64ca8..fe29805 100644
+--- a/src/frontend/parser/project_tests.rs
++++ b/src/frontend/parser/project_tests.rs
+@@ -548,6 +548,7 @@ fn checked_segment_count_overflow_precedes_all_admission_and_reserves() {
+         source: file,
+         allocator: &mut allocator,
+         mode: SourceMode::ProjectCandidate,
++        project_recovery: false,
+         tokens: super::super::lexer::lex(file).unwrap(),
+         cursor: 0,
+         expressions: Vec::new(),
+diff --git a/src/frontend/project.rs b/src/frontend/project.rs
+index f11f60e..6a07d21 100644
+--- a/src/frontend/project.rs
++++ b/src/frontend/project.rs
+@@ -1,8 +1,7 @@
+-//! Immutable source ownership and privately gated, declaration-only loading.
++//! Immutable source ownership and bounded, declaration-only loading.
+ //!
+-//! Public dispatch uses `load_original`: modules/imports/pub/paths stay disabled.
+-//! Private candidate loading shares the parser and source-discovery owner.
+-#![allow(dead_code)] // Private project facade is staged ahead of linked resolution.
++//! Public typed dispatch and historical adapters share one source-discovery owner.
++#![allow(dead_code)] // Historical qualification adapters retain their private API.
+ 
+ pub(super) mod budget;
+ mod filesystem;
+@@ -54,6 +53,7 @@ pub(super) struct BlockKey {
+     pub block: ast::BodyBlockId,
+ }
+ 
++/// Aggregate successful AST syntax, independent of parser recovery state.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(super) enum SyntaxFlavor {
+     OriginalSingleFile,
+@@ -154,7 +154,8 @@ impl ProjectSources {
+             &mut Allocator::default(),
+         )
+     }
+-    pub fn load_project_candidate(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
++    /// Parse and load the bounded typed grammar once for public typed dispatch.
++    pub fn load_typed(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
+         Self::load(
+             entry,
+             limits,
+@@ -162,6 +163,10 @@ impl ProjectSources {
+             &mut Allocator::default(),
+         )
+     }
++    /// Historical qualification adapter for the same typed loader.
++    pub fn load_project_candidate(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
++        Self::load_typed(entry, limits)
++    }
+     fn load(
+         entry: &str,
+         limits: ProjectLimits,
+@@ -269,7 +274,7 @@ impl ProjectSources {
+                 })
+             })
+     }
+-    /// Only the compatibility constructor may feed the old one-file consumers.
++    /// Only successful original syntax may feed the old one-file consumers.
+     pub fn original_file(&self) -> Option<(&super::source::SourceFile, &ast::Program)> {
+         (self.syntax_flavor == SyntaxFlavor::OriginalSingleFile && self.programs.len() == 1)
+             .then(|| (self.sources.get(SourceFileId(0)), &self.programs[0]))
+diff --git a/src/frontend/project/unit2_tests.rs b/src/frontend/project/unit2_tests.rs
+index 817cad8..d1a77ee 100644
+--- a/src/frontend/project/unit2_tests.rs
++++ b/src/frontend/project/unit2_tests.rs
+@@ -54,6 +54,77 @@ fn single_file_private_syntax_selects_project_flavor_without_filesystem_policy()
+     }
+ }
+ 
++#[test]
++fn typed_loader_uses_successful_ast_flavor_with_no_single_file_host_gate() {
++    let f = Fixture::new();
++    let limits = ProjectLimits {
++        path_bytes: 0,
++        component_bytes: 0,
++        relative_bytes: 0,
++        probes: 0,
++        directory_entries: 0,
++        directory_name_units: 0,
++        ..ProjectLimits::default()
++    };
++    for (text, expected) in [
++        ("", SyntaxFlavor::OriginalSingleFile),
++        (
++            "fn main()->i32{return 1;}",
++            SyntaxFlavor::OriginalSingleFile,
++        ),
++        ("struct R {n:i32}", SyntaxFlavor::OriginalSingleFile),
++        ("pub fn main()->i32{return 1;}", SyntaxFlavor::ProjectSyntax),
++        ("struct R {pub n:i32}", SyntaxFlavor::ProjectSyntax),
++        (
++            "use crate::f; fn f()->(){return;}",
++            SyntaxFlavor::ProjectSyntax,
++        ),
++        (
++            "fn f()->(){crate::f();return;}",
++            SyntaxFlavor::ProjectSyntax,
++        ),
++    ] {
++        f.write("app.ox", text);
++        let project =
++            ProjectSources::load_typed(f.0.join("app.ox").to_str().unwrap(), limits).unwrap();
++        assert_eq!(project.syntax_flavor(), expected, "{text}");
++        assert_eq!(
++            project.original_file().is_some(),
++            expected == SyntaxFlavor::OriginalSingleFile
++        );
++        assert_eq!(project.usage().modules, 1);
++        assert_eq!(project.usage().probes, 0);
++        assert!(project.canonical_root.is_none());
++        let source = project.sources().get(SourceFileId(0));
++        assert_eq!(source.text(), text);
++        assert!(project
++            .try_file_ast(SourceFileId(0))
++            .unwrap()
++            .belongs_to(source));
++    }
++}
++
++#[test]
++fn failed_typed_loader_retains_sources_and_does_not_discover_children() {
++    let f = Fixture::new();
++    for text in [
++        "fn pub()->i32{return 0;} mod missing;",
++        "mod missing; struct R {pub n:}",
++        "mod missing; struct R {n:crate::T}",
++    ] {
++        f.write("app.ox", text);
++        let failure = ProjectSources::load_typed(
++            f.0.join("app.ox").to_str().unwrap(),
++            ProjectLimits::default(),
++        )
++        .unwrap_err();
++        assert!(failure.diagnostics.iter().all(|d| d.stage == "parse"));
++        assert_eq!(failure.sources.files().len(), 1);
++        assert_eq!(failure.sources.get(SourceFileId(0)).text(), text);
++        assert_eq!(failure.usage.probes, 0);
++    }
++}
++
+ #[cfg(target_os = "linux")]
+ #[test]
+ fn global_owned_selection_scans_even_unused_loaded_modules() {
+diff --git a/tests/typed_frontend.rs b/tests/typed_frontend.rs
+index 8c3235e..b3cd068 100644
+--- a/tests/typed_frontend.rs
++++ b/tests/typed_frontend.rs
+@@ -126,7 +126,6 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
+             "fn f() -> () { 9007199254740993.0; return; }",
+             "9007199254740993.0",
+         ),
+-        ("use \"side.ox\";", "use"),
+         ("macro hi { }", "macro"),
+         ("fn f() -> () { const x = true; return; }", "const"),
+         ("fn f() -> () { let x = true; x & false; return; }", "&"),
+@@ -138,6 +137,11 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
+     }
+ }
+ #[test]
++fn project_import_migration_rejects_legacy_string_targets_at_the_string() {
++    // `use` enters the bounded import grammar, which requires an item path.
++    failure("use \"side.ox\";", "E0101", "\"side.ox\"");
++}
++#[test]
+ fn unicode_crlf_and_eof_diagnostics_are_source_based() {
+     let source = "// 雪\r\nfn f() -> bool { return absent; }";
+     failure(source, "E0200", "absent");
+diff --git a/tests/typed_project_dispatch.rs b/tests/typed_project_dispatch.rs
+new file mode 100644
+index 0000000..66211e6
+--- /dev/null
++++ b/tests/typed_project_dispatch.rs
+@@ -0,0 +1,150 @@
++//! Public dispatch controls for the bounded typed-project activation.
++use std::{
++    fs,
++    path::PathBuf,
++    process::{Command, Output},
++    sync::atomic::{AtomicU64, Ordering},
++};
++
++static NEXT: AtomicU64 = AtomicU64::new(0);
++const SENTINEL: &[u8] = b"keep existing output\n";
++
++struct Scratch(PathBuf);
++impl Scratch {
++    fn new(files: &[(&str, &str)]) -> Self {
++        let dir = std::env::temp_dir().join(format!(
++            "oxid-project-dispatch-{}-{}",
++            std::process::id(),
++            NEXT.fetch_add(1, Ordering::Relaxed)
++        ));
++        fs::create_dir(&dir).unwrap();
++        for (name, text) in files {
++            fs::write(dir.join(name), text).unwrap();
++        }
++        fs::write(dir.join("output"), SENTINEL).unwrap();
++        Self(dir)
++    }
++    fn typed(&self, operation: &str) -> Output {
++        let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
++        command
++            .current_dir(&self.0)
++            .env("OXID_LLVM_BIN", self.0.join("missing-tools"))
++            .env("OXID_CACHE_DIR", self.0.join("cache"))
++            .env_remove("OXID_PATH")
++            .args([
++                operation,
++                "main.ox",
++                "--edition=typed-preview",
++                "--message-format=json",
++            ]);
++        if operation == "compile" {
++            command.args(["--backend=llvm", "--output=output"]);
++        }
++        let output = command.output().unwrap();
++        assert!(output.stderr.is_empty(), "{output:?}");
++        assert_eq!(fs::read(self.0.join("output")).unwrap(), SENTINEL);
++        assert!(!self.0.join("cache").exists());
++        assert!(!self.0.join("main.oxb").exists());
++        output
++    }
++}
++impl Drop for Scratch {
++    fn drop(&mut self) {
++        let _ = fs::remove_dir_all(&self.0);
++    }
++}
++fn success(output: Output, summary: &str) {
++    assert_eq!(output.status.code(), Some(0), "{output:?}");
++    assert_eq!(String::from_utf8(output.stdout).unwrap(), summary);
++}
++fn failure(output: Output, code: &str, stage: &str, path: &str) {
++    assert_eq!(output.status.code(), Some(1), "{output:?}");
++    let text = String::from_utf8(output.stdout).unwrap();
++    for field in [
++        format!("\"code\":\"{code}\""),
++        format!("\"stage\":\"{stage}\""),
++        format!("\"path\":\"{path}\""),
++        "\"success\":false".into(),
++    ] {
++        assert!(text.contains(&field), "{text}");
++    }
++    assert!(!text.contains("E0500"), "{text}");
++}
++
++#[test]
++fn module_free_project_syntax_keeps_public_check_and_run_portable() {
++    for source in [
++        "pub fn main()->i32{return 7;}",
++        "struct State{n:i32} pub fn main()->i32{let s=State{n:7};return s.n;}",
++        "fn value()->i32{return 7;} fn main()->i32{return crate::value();}",
++    ] {
++        let scratch = Scratch::new(&[("main.ox", source)]);
++        let functions = if source.contains("fn value") { 2 } else { 1 };
++        success(scratch.typed("check"), &format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":{functions}}}\n"));
++        success(scratch.typed("run"), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":7}}\n");
++    }
++}
++
++#[test]
++fn module_free_native_denial_keeps_the_existing_output() {
++    let scratch = Scratch::new(&[(
++        "main.ox",
++        "pub fn main()->i32{return again();} fn again()->i32{return again();}",
++    )]);
++    failure(
++        scratch.typed("compile"),
++        "E0700",
++        "native-admission",
++        "main.ox",
++    );
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn linked_scalar_count_and_root_main_identity_reach_public_consumers() {
++    let scratch = Scratch::new(&[
++        ("main.ox", "mod child; use crate::child::value as imported; fn helper()->i32{return 1;} fn main()->i32{return helper()+imported();}"),
++        ("child.ox", "pub fn value()->i32{return 6;} fn main()->i32{return 99;}"),
++    ]);
++    success(scratch.typed("check"), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":4}\n");
++    success(scratch.typed("run"), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":7}}\n");
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn imported_main_is_not_an_entry_and_check_needs_no_entry() {
++    let scratch = Scratch::new(&[
++        ("main.ox", "mod child; use crate::child::value as main;"),
++        ("child.ox", "pub fn value()->i32{return 99;}"),
++    ]);
++    success(scratch.typed("check"), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":1}\n");
++    for operation in ["run", "compile"] {
++        let output = scratch.typed(operation);
++        assert_eq!(output.status.code(), Some(1), "{output:?}");
++        let text = String::from_utf8(output.stdout).unwrap();
++        assert!(text.contains("main"), "{text}");
++        assert!(text.contains("\"success\":false"), "{text}");
++        assert!(!text.contains("native-toolchain"), "{text}");
++    }
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn unused_child_is_checked_before_entry_or_native_admission() {
++    let scratch = Scratch::new(&[
++        ("main.ox", "mod child;"),
++        ("child.ox", "fn bad()->i32{return true;}"),
++    ]);
++    for operation in ["check", "run", "compile"] {
++        failure(scratch.typed(operation), "E0300", "type", "child.ox");
++    }
++}
++
++#[cfg(not(target_os = "linux"))]
++#[test]
++fn child_discovery_is_rejected_at_the_root_declaration() {
++    let scratch = Scratch::new(&[("main.ox", "mod child; fn main()->i32{return 7;}")]);
++    for operation in ["check", "run", "compile"] {
++        failure(scratch.typed(operation), "E0005", "source", "main.ox");
++    }
++}

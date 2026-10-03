@@ -102,6 +102,7 @@ pub(super) fn parse_counted(
         source,
         allocator,
         mode,
+        project_recovery: false,
         tokens,
         cursor: 0,
         expressions: Vec::new(),
@@ -163,7 +164,10 @@ pub(super) fn parse_counted(
                 && parser.peek().kind == Kind::Pub
                 && matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
             {
-                parser.take(Kind::Pub).map(|token| token.span)
+                parser.take(Kind::Pub).map(|token| {
+                    parser.project_recovery = true;
+                    token.span
+                })
             } else {
                 None
             };
@@ -190,6 +194,7 @@ pub(super) fn parse_counted(
                 && !(mode == SourceMode::ModuleCandidate
                     && matches!(parser.peek().kind, Kind::Mod | Kind::Pub))
                 && !(mode == SourceMode::ProjectCandidate
+                    && parser.project_recovery
                     && matches!(parser.peek().kind, Kind::Mod | Kind::Pub | Kind::Use))
             {
                 parser.bump();
@@ -220,6 +225,9 @@ struct Parser<'a> {
     source: &'a SourceFile,
     allocator: &'a mut Allocator,
     mode: SourceMode,
+    // Sticky only after ordinary parsing enters project grammar. Recovery
+    // scans never set it; successful source flavor comes from the AST instead.
+    project_recovery: bool,
     tokens: Vec<Token>,
     cursor: usize,
     expressions: Vec<Expr>,
@@ -289,6 +297,8 @@ impl Parser<'_> {
         if self.mode != SourceMode::ProjectCandidate || !self.double_colon() {
             return Ok((ItemPath::Unqualified(first), first));
         }
+        // Recognition precedes both denied field paths and denied prefixes.
+        self.project_recovery = true;
         if !paths {
             return Err(self.diagnostic(
                 "E0101",
@@ -387,6 +397,7 @@ impl Parser<'_> {
     fn import(&mut self) -> Result<ImportDecl, Box<Diagnostic>> {
         self.node()?;
         let start = self.expect(Kind::Use, "expected import declaration")?.span;
+        self.project_recovery = true;
         if matches!(self.peek().kind, Kind::Star | Kind::LBrace) {
             return Err(self.diagnostic(
                 "E0101",
@@ -493,8 +504,16 @@ impl Parser<'_> {
         {
             return Err(self.error("expected module declaration"));
         }
-        let public = self.take(Kind::Pub).map(|token| token.span);
+        let public = self.take(Kind::Pub).map(|token| {
+            if self.mode == SourceMode::ProjectCandidate {
+                self.project_recovery = true;
+            }
+            token.span
+        });
         self.expect(Kind::Mod, "expected module declaration")?;
+        if self.mode == SourceMode::ProjectCandidate {
+            self.project_recovery = true;
+        }
         let name = self.expect(Kind::Ident, "expected module name")?.span;
         if self.peek().kind == Kind::LBrace {
             return Err(self.diagnostic(
@@ -641,8 +660,14 @@ impl Parser<'_> {
         let mut fields = Vec::new();
         while self.peek().kind != Kind::RBrace {
             self.node()?;
-            let public = if self.mode == SourceMode::ProjectCandidate {
-                self.take(Kind::Pub).map(|token| token.span)
+            let public = if self.mode == SourceMode::ProjectCandidate
+                && self.peek().kind == Kind::Pub
+                && self.next_kind() == Kind::Ident
+            {
+                self.take(Kind::Pub).map(|token| {
+                    self.project_recovery = true;
+                    token.span
+                })
             } else {
                 None
             };
@@ -688,6 +713,7 @@ impl Parser<'_> {
                 .expect(Kind::Ident, "borrow argument requires a binding name")?
                 .span;
             if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
+                self.project_recovery = true;
                 return Err(self.diagnostic(
                     "E0101",
                     "parse",
@@ -1123,6 +1149,7 @@ impl Parser<'_> {
                     // A qualified field assignment also reaches this branch:
                     // assignment lookahead requires `.` + Ident + `=`.
                     if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
+                        self.project_recovery = true;
                         return Err(self.diagnostic(
                             "E0101",
                             "parse",
@@ -1204,3 +1231,7 @@ pub(super) fn parse_with_lowered_node_limit(
 #[cfg(test)]
 #[path = "parser/project_tests.rs"]
 mod project_tests;
+
+#[cfg(test)]
+#[path = "parser/activation_tests.rs"]
+mod activation_tests;

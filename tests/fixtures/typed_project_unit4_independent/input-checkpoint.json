@@ -1,0 +1,223 @@
+{
+  "schema": 1,
+  "purpose": "Typed-project public and logical-lifecycle validation inputs",
+  "compiler_commit": "d1fecf4403165002de3f310f4dbecd14b8621190",
+  "compiler_patch_sha256": "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8",
+  "files": [
+    {
+      "path": "components/lifecycle/build_observer_v1.py",
+      "bytes": 2174,
+      "sha256": "394d38a9b64307233b527a37b3ad19e3b512300beb91c0c453a79220b9eade5b",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/freeze_lifecycle_expectations_v1.py",
+      "bytes": 4916,
+      "sha256": "ccc53a5273e09aca90b455a917c14b7458f0ceac74c4c1b094dfc412a60f0b32",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/heldout-lifecycle-expectations.reconstructed-source-only-v1.json.gz",
+      "bytes": 3892,
+      "sha256": "d9190ead4c5c11d91d9cdcb6e6c871db01bc29cfbf59802e868b30794cc27d49",
+      "provenance": "new source-only 15-case subset reconstructed from retained generator; separate from old complete expectations",
+      "historical_sha256": null,
+      "encoding": "gzip level9 mtime0; fixed stored bytes",
+      "decoded_bytes": 2112998,
+      "decoded_sha256": "71a74cd573193dbde6438faaeccdbcef4799b38f70ded2e70b621ecaa6a74afa"
+    },
+    {
+      "path": "components/lifecycle/lifecycle-amendment-v3.json",
+      "bytes": 11197,
+      "sha256": "104aae4e819677cae34b272af2572e918f60a6c4af3aea171d4bc786ba54c920",
+      "provenance": "historical digest match",
+      "historical_sha256": "104aae4e819677cae34b272af2572e918f60a6c4af3aea171d4bc786ba54c920"
+    },
+    {
+      "path": "components/lifecycle/lifecycle_observer.rs",
+      "bytes": 650,
+      "sha256": "31e2eaeb1d42a9449b7209d7b0b4eb52dde4f117db7f2239ca961d3454cb3b45",
+      "provenance": "extracted from hash-verified observer sources",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/lifecycle/observe_lifecycle_v1.py",
+      "bytes": 8457,
+      "sha256": "d32c1412a1068f56ae0a21f80debe80a31dcdcf222663da967d36caede46f5eb",
+      "provenance": "historical digest match",
+      "historical_sha256": "d32c1412a1068f56ae0a21f80debe80a31dcdcf222663da967d36caede46f5eb"
+    },
+    {
+      "path": "components/lifecycle/observer-additive-v1.patch",
+      "bytes": 7013,
+      "sha256": "2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56",
+      "provenance": "historical digest match",
+      "historical_sha256": "2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56"
+    },
+    {
+      "path": "components/lifecycle/prepare_observer_v1.py",
+      "bytes": 6308,
+      "sha256": "8d84f991a0d8b524fdc594973069ce419c04de802b3d0fd464eeb2f3e76f7afe",
+      "provenance": "historical digest match",
+      "historical_sha256": "8d84f991a0d8b524fdc594973069ce419c04de802b3d0fd464eeb2f3e76f7afe"
+    },
+    {
+      "path": "components/public/direct_tool_passivity.py",
+      "bytes": 3683,
+      "sha256": "90b3e705b5215e837f972b5ef9de48d5d6202dbd437aa70b2a5e58b2807675dd",
+      "provenance": "historical digest match",
+      "historical_sha256": "90b3e705b5215e837f972b5ef9de48d5d6202dbd437aa70b2a5e58b2807675dd"
+    },
+    {
+      "path": "components/public/finalize_manifest.py",
+      "bytes": 4701,
+      "sha256": "2e9384de6f44998e7bcc56705405feed7cb8ae6ba3cad44f160ebdced86bd1e4",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/public/history/prepare_guard_projection.py",
+      "bytes": 2939,
+      "sha256": "19d9db37c826bdc756314f60e15cbc1eaa260bda2971bf6386cd4e7c900c1ea9",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/public/history/prepare_predecessor_projection.py",
+      "bytes": 6329,
+      "sha256": "bfae1afe00e4b942c465bd10fbf2ce4eed344bdf56bd91a0528c623f9fb79b4d",
+      "provenance": "historical digest match",
+      "historical_sha256": "bfae1afe00e4b942c465bd10fbf2ce4eed344bdf56bd91a0528c623f9fb79b4d"
+    },
+    {
+      "path": "components/public/history/recompare_predecessors_v2.py",
+      "bytes": 3409,
+      "sha256": "58f4c320b30d30e86403c7b9699c7c68ce152e124b0e03348a6280a279dd16ea",
+      "provenance": "historical digest match",
+      "historical_sha256": "58f4c320b30d30e86403c7b9699c7c68ce152e124b0e03348a6280a279dd16ea"
+    },
+    {
+      "path": "components/public/history/replay_predecessors.py",
+      "bytes": 13515,
+      "sha256": "d0ae4f83e1521b9a9eea9b4c17520e5876480a37cef22be009ffb4ca104fe4e0",
+      "provenance": "historical digest match",
+      "historical_sha256": "d0ae4f83e1521b9a9eea9b4c17520e5876480a37cef22be009ffb4ca104fe4e0"
+    },
+    {
+      "path": "components/public/preflight_controls.py",
+      "bytes": 3289,
+      "sha256": "d4cf60c7028c7daecab42292cf6378e177cdfd5c61b7f7000fe50a6f00121dc2",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "components/public/public_cli.py",
+      "bytes": 24066,
+      "sha256": "64ce7685979be6d244dbee1a111fa2ed200b90d3fc918699f81401d86ea71d79",
+      "provenance": "historical digest match",
+      "historical_sha256": "64ce7685979be6d244dbee1a111fa2ed200b90d3fc918699f81401d86ea71d79"
+    },
+    {
+      "path": "components/public/race_tool_wrapper.py",
+      "bytes": 2960,
+      "sha256": "4a46e66ab6cf492c5a382a94ad95f387293f8411569a1eb3f3d1fa412c82f9fd",
+      "provenance": "historical digest match",
+      "historical_sha256": "4a46e66ab6cf492c5a382a94ad95f387293f8411569a1eb3f3d1fa412c82f9fd"
+    },
+    {
+      "path": "components/public/replay_guards.py",
+      "bytes": 5915,
+      "sha256": "0af296d2badb1759083f4ada7f3f6f4b5829b0de815038d30501c1716faa8aa4",
+      "provenance": "historical digest match",
+      "historical_sha256": "0af296d2badb1759083f4ada7f3f6f4b5829b0de815038d30501c1716faa8aa4"
+    },
+    {
+      "path": "components/public/replay_output_race.py",
+      "bytes": 12359,
+      "sha256": "1e74329854c245dbf9be380126c295be34028f55e847e80403af1b21faafc769",
+      "provenance": "historical digest match",
+      "historical_sha256": "1e74329854c245dbf9be380126c295be34028f55e847e80403af1b21faafc769"
+    },
+    {
+      "path": "components/public/replay_predecessors_v2.py",
+      "bytes": 13546,
+      "sha256": "ca55f5af66bf0c69960e0835f87cd01c184e7c9d9da8efe852ce570836e5a58b",
+      "provenance": "historical digest match",
+      "historical_sha256": "ca55f5af66bf0c69960e0835f87cd01c184e7c9d9da8efe852ce570836e5a58b"
+    },
+    {
+      "path": "components/public/tool_wrapper.py",
+      "bytes": 1154,
+      "sha256": "b2ff630d2a615c692ba946b2b6ff6520a092f88268aefdfa86b71a1bb58c67f7",
+      "provenance": "historical digest match",
+      "historical_sha256": "b2ff630d2a615c692ba946b2b6ff6520a092f88268aefdfa86b71a1bb58c67f7"
+    },
+    {
+      "path": "historical/authorities/contract-freeze-v3.json",
+      "bytes": 1822,
+      "sha256": "0407021036765aa7c4afbce7b101186ecab4e55c75678628f5bdf9e68a92984d",
+      "provenance": "historical digest match",
+      "historical_sha256": "0407021036765aa7c4afbce7b101186ecab4e55c75678628f5bdf9e68a92984d"
+    },
+    {
+      "path": "historical/authorities/contract-interface-v1.md",
+      "bytes": 4866,
+      "sha256": "796a0d17c1d26a0b7891e088bd58b640ac9a7ee4e04f5293e726b4fde50b462f",
+      "provenance": "reconstructed from retained source; historical standalone digest unavailable",
+      "historical_sha256": null
+    },
+    {
+      "path": "historical/authorities/no-clobber-requests.json",
+      "bytes": 2142,
+      "sha256": "bf2955e64077d12513438ed2cad386287f7ab1f6c5ba6ab13c4e80ad98cc4f68",
+      "provenance": "historical digest match",
+      "historical_sha256": "bf2955e64077d12513438ed2cad386287f7ab1f6c5ba6ab13c4e80ad98cc4f68"
+    },
+    {
+      "path": "historical/authorities/predecessor-reuse-v1.json",
+      "bytes": 8080,
+      "sha256": "6b79cb9a29e948309cb9127e2928db0dfdfa4ff1569ae1bc254d649a4772be96",
+      "provenance": "historical digest match",
+      "historical_sha256": "6b79cb9a29e948309cb9127e2928db0dfdfa4ff1569ae1bc254d649a4772be96"
+    },
+    {
+      "path": "historical/authorities/public-concurrent-output-supplement-v1.json",
+      "bytes": 21663,
+      "sha256": "c9b7d968fb0c95c84af199082ce6b20ac5720bb8766a6a3e750081fb0233ce9a",
+      "provenance": "historical digest match",
+      "historical_sha256": "c9b7d968fb0c95c84af199082ce6b20ac5720bb8766a6a3e750081fb0233ce9a"
+    },
+    {
+      "path": "historical/authorities/request-input-manifest.json",
+      "bytes": 3477,
+      "sha256": "2f5d4be3cfd30a1bc1811d12d5bdd1269f0581166abe76d69df49488c17db987",
+      "provenance": "historical digest match",
+      "historical_sha256": "2f5d4be3cfd30a1bc1811d12d5bdd1269f0581166abe76d69df49488c17db987"
+    },
+    {
+      "path": "historical/authorities/source-bindings-v1.json",
+      "bytes": 3687,
+      "sha256": "a40a6c770300c7581ea89fea345715d8e143d1459b4b17993a35e9f73fc36229",
+      "provenance": "historical digest match",
+      "historical_sha256": "a40a6c770300c7581ea89fea345715d8e143d1459b4b17993a35e9f73fc36229"
+    },
+    {
+      "path": "historical/authorities/unused-nominal-native-supplement-v1.json",
+      "bytes": 10939,
+      "sha256": "f9193fea8d66faff71820b09d4531a9447c22b48ae81f68162fe996a8397ac81",
+      "provenance": "historical digest match",
+      "historical_sha256": "f9193fea8d66faff71820b09d4531a9447c22b48ae81f68162fe996a8397ac81"
+    }
+  ],
+  "execution_status": "Public/guard/race helpers and retained authority records checkpointed; replacement contracts are under independent source-only review before execution.",
+  "prior_full_qualification": "historical; raw artifacts were lost during the cloud workspace replacement",
+  "fresh_compiler_checks": {
+    "debug_passed": 789,
+    "release_passed": 789,
+    "ignored_per_profile": 21,
+    "fmt": "PASS",
+    "strict_clippy": "PASS"
+  }
+}

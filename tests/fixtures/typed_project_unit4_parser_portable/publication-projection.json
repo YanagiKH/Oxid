@@ -1,0 +1,41 @@
+{
+  "checkpoint_bound_members": 67,
+  "execution_receipts_rewritten": false,
+  "original_checkpoint": {
+    "bytes": 12115,
+    "path": "checkpoint.json",
+    "sha256": "8a71652fa28e4c7580112f5e447b8eed7dce56497d1ece1e1b49a2e93dbb2af3"
+  },
+  "original_member": {
+    "bytes": 11834,
+    "path": "DESIGN.md",
+    "sha256": "c97c554fbe79856a04219614461ecaa3aa568b3f2fde9bbd7bdf91b5d3c8de86"
+  },
+  "projected_member": "DESIGN.md",
+  "published_member": {
+    "bytes": 11843,
+    "path": "DESIGN.md",
+    "sha256": "677905d1b53ce4dd60e28442e2ac7989fcbd5e8a1eaa2ad8376f9007330a80d9"
+  },
+  "replacement": {
+    "new_utf8": "Maintainers manage publication and exact-head hosted CI.",
+    "occurrences": 1,
+    "old_utf8": "Root owns publication and exact-head hosted CI."
+  },
+  "runtime_authority_changed": false,
+  "schema": "oxid-unit4-portable-parser-documentation-projection-v1",
+  "scope": "publication wording only; no execution authority or evidence amendment",
+  "top_level_readme": {
+    "original": {
+      "bytes": 845,
+      "path": "README.md",
+      "sha256": "40ce89157cf577fbc1d1a220253c6733b442b4d70d114cead69eafb97f21ad8e"
+    },
+    "published": {
+      "bytes": 1671,
+      "path": "README.md",
+      "sha256": "a124eba7f800321ca09337c1b9e722cc9957cdb957f3bd3832918df6e3852175"
+    }
+  },
+  "unchanged_checkpoint_bound_members": 66
+}

@@ -1,0 +1,17 @@
+{
+  "archives": [
+    {
+      "archive": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-compact-evidence.tar.gz",
+      "status": "pass",
+      "verified_regular_members": 3857
+    },
+    {
+      "archive": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-binaries.tar.gz",
+      "status": "pass",
+      "verified_regular_members": 4
+    }
+  ],
+  "original_receipts_rewritten": 0,
+  "schema": "oxid-portable-parser-real-evidence-transport-verification-v1",
+  "status": "pass"
+}

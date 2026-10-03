@@ -1,0 +1,107 @@
+{
+  "schema": "unit3-no-clobber-source-controls-v1",
+  "requests": [
+    {
+      "id": "pilot-scalar",
+      "output_kind": "regular",
+      "format": "text",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-scalar",
+      "output_kind": "regular",
+      "format": "json",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-scalar",
+      "output_kind": "symlink",
+      "format": "text",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-scalar",
+      "output_kind": "symlink",
+      "format": "json",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "output_kind": "regular",
+      "format": "text",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "output_kind": "regular",
+      "format": "json",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "output_kind": "symlink",
+      "format": "text",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "pilot-counter",
+      "output_kind": "symlink",
+      "format": "json",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "id": "negative-native_recursion-scalar-false",
+      "output_kind": "regular",
+      "format": "json",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ],
+      "mutation_id": "driver-recursion_occupied_output"
+    },
+    {
+      "id": "negative-native_recursion-owned-false",
+      "output_kind": "symlink",
+      "format": "json",
+      "operation": "compile",
+      "profiles": [
+        "debug",
+        "release"
+      ],
+      "mutation_id": "driver-recursion_symlink_output"
+    }
+  ]
+}

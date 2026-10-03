@@ -1,0 +1,54 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-B",
+    "/workspace/shared/oxid-reset-recovery-20261003/parser-comparator-v8b/comparator.py",
+    "--contract-dir",
+    "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser",
+    "--authorization",
+    "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/comparison-authorization-v3.json",
+    "--authorization-sha256",
+    "256fa85fec4a55d7fe6644d409452ff96c3b0f60b3e457270381e3b1be55099d",
+    "--execution-manifest",
+    "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/full-v7-debug/execution-manifest.json",
+    "--execution-manifest",
+    "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/full-v7-release/execution-manifest.json",
+    "--output",
+    "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/full-v7-amended-comparison-v1.json"
+  ],
+  "compiler_invocations": 0,
+  "elapsed_seconds": 78.91450038200128,
+  "exit_code": 0,
+  "input_manifests": [
+    {
+      "bytes": 410750,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/full-v7-debug/execution-manifest.json",
+      "sha256": "16d37012d5d363f2ef5d141a75f9135018719530a19cefa1a12be8f2537cf1c3"
+    },
+    {
+      "bytes": 413732,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/full-v7-release/execution-manifest.json",
+      "sha256": "f93546f405265d0e3cfdec439d648bb9acbe7d78e1012baeff4710ac4ffd4b4f"
+    }
+  ],
+  "max_rss_kib": 2591984,
+  "original_failed_result_preserved": true,
+  "raw_execution_identities_preserved": true,
+  "result": {
+    "bytes": 1348,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/full-v7-amended-comparison-v1.json",
+    "sha256": "174583a5c32fbe194969a1455ab917992d49696f8b300235ca9fcd64d9f8ba5a"
+  },
+  "schema": "oxid-unit4-independent-amended-comparator-command-v1",
+  "started_utc": "2026-10-03T08:20:03.478095+00:00",
+  "stderr": {
+    "bytes": 0,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/full-v7-amended-comparison-v1.stderr",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stdout": {
+    "bytes": 1348,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/full-v7-amended-comparison-v1.stdout",
+    "sha256": "174583a5c32fbe194969a1455ab917992d49696f8b300235ca9fcd64d9f8ba5a"
+  }
+}

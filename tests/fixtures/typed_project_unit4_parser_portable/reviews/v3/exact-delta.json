@@ -1,0 +1,111 @@
+{
+  "adapter_added_definitions": [
+    "effective_authority"
+  ],
+  "adapter_changed_definitions": [
+    "build",
+    "compare",
+    "session_at",
+    "verify_passivity"
+  ],
+  "adapter_unchanged_definitions": [
+    "Rejected",
+    "admit_execution",
+    "artifact",
+    "authority",
+    "cargo_cache",
+    "check_host",
+    "collect",
+    "comparator",
+    "compiler_map",
+    "create_executable_view",
+    "fresh",
+    "git",
+    "identity",
+    "invoke",
+    "load",
+    "main",
+    "measured_host",
+    "minimal_env",
+    "no_cargo_configs",
+    "passivity",
+    "prepare",
+    "process_tools",
+    "read",
+    "regular",
+    "require",
+    "safe_relative",
+    "same",
+    "selected_compiler_path",
+    "sha",
+    "verify_build",
+    "verify_cargo",
+    "verify_checkout",
+    "verify_executable_view",
+    "verify_map",
+    "verify_overlay",
+    "verify_process_tools",
+    "verify_sysroot",
+    "verify_toolchain",
+    "write"
+  ],
+  "approved_v8b_members": {
+    "comparator.py": {
+      "byte_identical_to_approved_v8b": true,
+      "sha256": "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
+    },
+    "debug_decoder.py": {
+      "byte_identical_to_approved_v8b": true,
+      "sha256": "8fb1708d7824eb453db5c036ac2e7d49ca76e69ff222f1c3cf1e16f41272aa41"
+    },
+    "test_mutations.py": {
+      "byte_identical_to_approved_v8b": true,
+      "sha256": "755b8364d459d8dc058e3360289155290771ec8941738583102290ff665848e3"
+    }
+  },
+  "schema": "oxid-portable-v3-independent-exact-delta-v1",
+  "v7b_definitions_changed_in_v8b": [
+    "authorization",
+    "main"
+  ],
+  "v7b_definitions_retained": [
+    "Rejected",
+    "Source",
+    "artifact",
+    "ast_record",
+    "b64",
+    "check_observation",
+    "collector_helpers",
+    "compare_relation",
+    "compare_rows",
+    "diagnostics",
+    "equal",
+    "events",
+    "execution_manifest",
+    "expected_predicates",
+    "field_scans",
+    "fields",
+    "integer",
+    "inventory",
+    "load_contract",
+    "loads",
+    "measured_host",
+    "next_significant",
+    "normalize_raw",
+    "normalizer_rebind",
+    "obj",
+    "previous_significant",
+    "projection",
+    "read_json",
+    "recognition_trigger",
+    "require",
+    "required_first_admission",
+    "same",
+    "sha",
+    "source_tokens",
+    "text",
+    "typed_ast",
+    "vector",
+    "verify_file"
+  ]
+}

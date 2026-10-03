@@ -54,6 +54,77 @@ fn single_file_private_syntax_selects_project_flavor_without_filesystem_policy()
     }
 }
 
+#[test]
+fn typed_loader_uses_successful_ast_flavor_with_no_single_file_host_gate() {
+    let f = Fixture::new();
+    let limits = ProjectLimits {
+        path_bytes: 0,
+        component_bytes: 0,
+        relative_bytes: 0,
+        probes: 0,
+        directory_entries: 0,
+        directory_name_units: 0,
+        ..ProjectLimits::default()
+    };
+    for (text, expected) in [
+        ("", SyntaxFlavor::OriginalSingleFile),
+        (
+            "fn main()->i32{return 1;}",
+            SyntaxFlavor::OriginalSingleFile,
+        ),
+        ("struct R {n:i32}", SyntaxFlavor::OriginalSingleFile),
+        ("pub fn main()->i32{return 1;}", SyntaxFlavor::ProjectSyntax),
+        ("struct R {pub n:i32}", SyntaxFlavor::ProjectSyntax),
+        (
+            "use crate::f; fn f()->(){return;}",
+            SyntaxFlavor::ProjectSyntax,
+        ),
+        (
+            "fn f()->(){crate::f();return;}",
+            SyntaxFlavor::ProjectSyntax,
+        ),
+    ] {
+        f.write("app.ox", text);
+        let project =
+            ProjectSources::load_typed(f.0.join("app.ox").to_str().unwrap(), limits).unwrap();
+        assert_eq!(project.syntax_flavor(), expected, "{text}");
+        assert_eq!(
+            project.original_file().is_some(),
+            expected == SyntaxFlavor::OriginalSingleFile
+        );
+        assert_eq!(project.usage().modules, 1);
+        assert_eq!(project.usage().probes, 0);
+        assert!(project.canonical_root.is_none());
+        let source = project.sources().get(SourceFileId(0));
+        assert_eq!(source.text(), text);
+        assert!(project
+            .try_file_ast(SourceFileId(0))
+            .unwrap()
+            .belongs_to(source));
+    }
+}
+
+#[test]
+fn failed_typed_loader_retains_sources_and_does_not_discover_children() {
+    let f = Fixture::new();
+    for text in [
+        "fn pub()->i32{return 0;} mod missing;",
+        "mod missing; struct R {pub n:}",
+        "mod missing; struct R {n:crate::T}",
+    ] {
+        f.write("app.ox", text);
+        let failure = ProjectSources::load_typed(
+            f.0.join("app.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        )
+        .unwrap_err();
+        assert!(failure.diagnostics.iter().all(|d| d.stage == "parse"));
+        assert_eq!(failure.sources.files().len(), 1);
+        assert_eq!(failure.sources.get(SourceFileId(0)).text(), text);
+        assert_eq!(failure.usage.probes, 0);
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn global_owned_selection_scans_even_unused_loaded_modules() {

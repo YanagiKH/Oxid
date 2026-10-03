@@ -1,0 +1,7 @@
+test_initial_rustc_version_timeout_is_explicit_and_propagates (test_recipe_fixes.RecipeFixControls.test_initial_rustc_version_timeout_is_explicit_and_propagates) ... ok
+test_relative_session_passivity_and_symlink_rejection (test_recipe_fixes.RecipeFixControls.test_relative_session_passivity_and_symlink_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 12.038s
+
+OK

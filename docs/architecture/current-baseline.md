@@ -26,26 +26,25 @@ x86_64, LLVM 19.1.7 and O0. The historical
 fixtures; it does not establish source qualification. Default legacy records retain their
 dynamic shared-storage behavior.
 
-The public typed source route remains single-file and rejects `mod`, `use`,
-`pub` and qualified item paths. It uses immutable file-aware sources and one
-shared declaration/import/visibility index through its original scalar and owned
-schedules. Private Unit1 discovery and Unit2 project parsing/indexing reach real
-scalar/owned resolution and type checking. Private loading is qualified on Linux
-x86_64; non-Linux discovery is rejected and other Linux architectures have not
-been qualified. Private Unit3 now produces one linked scalar or owned OIR program
-and feeds the existing verifier and reference/native consumers. Its source seal
-binds the immutable map, verified body and original root-main identity. The finite
-source/reference, native/driver, mutation and bounded local portability gates
-passed; exact-head hosted CI remains pending. Public activation is separately staged as Unit4.
+The public typed source route now accepts bounded declaration-only modules,
+direct imports, visibility and absolute item paths. One `load_typed` call retains
+immutable file-aware sources and AST-derived OriginalSingleFile/ProjectSyntax
+flavor. Original syntax preserves its scalar/owned schedules; project syntax
+uses one shared declaration/import/visibility index and one complete verified
+program. All declared bodies are checked before entry or native admission.
+The original root-main identity is retained; imports cannot supply an entry.
+Declared-child loading admits Linux; root-only syntax has no discovery host gate.
+Exact current, archived and platform qualification is recorded in the
+[Unit4 ledger](typed-project-unit4-validation.md).
 
-The complete capability is proposed in
+The complete bounded capability is specified in
 [RFC 0015](../../rfcs/0015-bounded-typed-projects.md). The historical
 [Unit1 ledger](typed-project-unit1-validation.md) and
 [Unit2 ledger](typed-project-unit2-validation.md) distinguish each source
 representation and qualification. Unit2 measures ten flat index vectors, a fresh
 288N AST payload envelope and explicit I/J/W admissions; it does not inherit the
-old Unit1 280N envelope. Private groundwork adds no feature-inventory entry,
-new frontend/native host claim or milestone completion claim. Historical
+old Unit1 280N envelope. The public capability has one experimental feature-inventory entry. It adds no
+native target or milestone completion claim. Historical
 ownership and Unit1 evidence keep their original identities.
 
 The [Unit3 ledger](typed-project-unit3-validation.md) separates the 304 finite

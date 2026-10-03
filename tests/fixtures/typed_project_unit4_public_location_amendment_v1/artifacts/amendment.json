@@ -1,0 +1,48 @@
+{
+  "base_document": {
+    "bytes": 170868,
+    "name": "public-cli-contract-replacement-v3.json",
+    "sha256": "b4f1549baf04b8f8a5eed88bb23ee185b7f5b9e899dd0a80b712436f1ae8fe92"
+  },
+  "base_public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85",
+  "canonicalization": "UTF-8 json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False), without trailing newline",
+  "case_id": "host-malformed-root-first",
+  "case_pointer": "/inherited_negative_and_route_cases/13",
+  "identity": "oxid-unit4-public-v3-location-amendment-v1",
+  "new_case_canonical_sha256": "ff504a6722f1ccc37bdb34b8c8a768167fcb99aab9be86f90662a2d141865d9b",
+  "new_diagnostic_canonical_sha256": "38d52860b740444ec0c33e2f561805a542b68834605da063df3ea8d1fb36674a",
+  "old_case_canonical_sha256": "0e761a4482a3938858eca9aa358c4e79161894ac5064cf9b1528cc2d07c16d46",
+  "old_diagnostic_canonical_sha256": "9ae3b0642b87d82746e7d2aae2264eb939716810fc9b76866a68e1afc366405f",
+  "operation": {
+    "old_value": {
+      "end": 16,
+      "end_line": 1,
+      "end_scalar_column": 17,
+      "file": 0,
+      "line": 1,
+      "path": "main.ox",
+      "scalar_column": 14,
+      "start": 13
+    },
+    "op": "replace",
+    "pointer": "/inherited_negative_and_route_cases/13/expected_public_projection/first_diagnostic/location",
+    "value": {
+      "end": 17,
+      "end_line": 1,
+      "end_scalar_column": 18,
+      "file": 0,
+      "line": 1,
+      "path": "main.ox",
+      "scalar_column": 15,
+      "start": 14
+    }
+  },
+  "reason": "The unique reserved function-name token pub occupies UTF-8 bytes [14,17), line 1 scalar columns [15,18). The prior [13,16) range selects a space followed by pu.",
+  "schema_version": 1,
+  "scope": "Only four coordinate integers change. Source bytes, diagnostic code/stage/message, operation roster, all other cases and companion authorities remain unchanged.",
+  "source": {
+    "bytes": 35,
+    "path": "sources/host-malformed-root-first/main.ox",
+    "sha256": "5aaf30a3b8fac37e0745f7211ffd13fa0fae5b3903ff03bd285c6ce2d9025e9e"
+  }
+}

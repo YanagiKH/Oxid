@@ -35,3 +35,6 @@ Start with a small program, then follow the guide for what you want to build. Th
 - [Feature status definitions](architecture/feature-status.md) and [machine-readable inventory](feature-status.json)
 - [Legacy module contract](../spec/legacy-modules.md) and [baseline CI evidence](architecture/ci-evidence-24b554d.md)
 - [Local baseline validation](architecture/baseline-validation.md) and [RFC process](../rfcs/README.md)
+
+- [Public typed projects and exact qualification](architecture/typed-project-unit4-validation.md)
+- [Three-file typed Batch example](../fixtures/typed-project-batch/README.md)

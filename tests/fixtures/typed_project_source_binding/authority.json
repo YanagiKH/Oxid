@@ -1,0 +1,66 @@
+{
+  "current_source_sha256": "2ce302c0d3182b2b7c57d9cc99d65b9d3b40fd60761331fdec9db5ec8cf3bd5e",
+  "derived_resource": {
+    "bytes": 1974,
+    "path": "archive/resource/parser-resource-review-tests.rs",
+    "sha256": "4052ec3b5e7e57c9cf0df9ef1f7522f6ea97b16c770907f68293f96547461af6"
+  },
+  "derived_resource_scope": "Single initializer field project_recovery:false; every assertion remains byte-identical; historical artifact-manifest.json is preserved historical evidence, not retargeted",
+  "inverse_only_inputs": [
+    {
+      "bytes": 16357,
+      "path": "tests/typed_frontend.rs",
+      "sha256": "fd305fa8b4608819a286fde53e1d287badccee42dcf65d5212e488e9a4b35014"
+    }
+  ],
+  "repository_inputs": [
+    {
+      "bytes": 5836,
+      "path": "tests/fixtures/typed_project_unit2_independent/package-inputs.json",
+      "sha256": "4dae6a8de321b09d972d7dc345d19001332fe397ed05ccd3edaaf4f38a5db916"
+    },
+    {
+      "bytes": 7162,
+      "path": "tests/fixtures/typed_project_unit3_compatibility/run.py",
+      "sha256": "5e2a7daec99812fcc709afc9356537172d10c2dad991a5d91a9407e5b92cd73e"
+    },
+    {
+      "bytes": 19899,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/core-v1.json",
+      "sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910"
+    },
+    {
+      "bytes": 2581,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/platform-scope.patch",
+      "sha256": "a6c0a70927fcc44f68244038e88ceb371fe0a78a8b8d4c0aa1d83475d415a1d9"
+    },
+    {
+      "bytes": 6567,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/project_execution_tests.core-v1.rs",
+      "sha256": "1185aa4c2e86644c3b14acae290adb043ec27d2a222018b1e67997317dc5851d"
+    },
+    {
+      "bytes": 20051,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/selected-current.json",
+      "sha256": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963"
+    },
+    {
+      "bytes": 5487,
+      "path": "tests/fixtures/typed_project_unit3_independent/portable/assemble.py",
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965"
+    },
+    {
+      "bytes": 3844,
+      "path": "tests/fixtures/typed_project_unit3_independent/portable/bridge.py",
+      "sha256": "0a67058d7592c1ce50ba52933784826f6883f566445bfe3da4aff49662f12e25"
+    },
+    {
+      "bytes": 3521,
+      "path": "tests/fixtures/typed_project_unit3_independent/portable/common.py",
+      "sha256": "7b8b6d476c66eb7c2e833dff9dfe7eb42308bf8a67fd38a9a501f3b490eb7297"
+    }
+  ],
+  "schema": 1,
+  "transition_patch_bytes": 28881,
+  "transition_patch_sha256": "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
+}

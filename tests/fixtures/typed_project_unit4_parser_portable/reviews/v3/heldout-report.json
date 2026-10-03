@@ -1,0 +1,266 @@
+{
+  "candidate_executions": 0,
+  "compiler_build_executions": 0,
+  "native_and_rust_identity_probes": true,
+  "records": [
+    {
+      "detail": {
+        "actual": {
+          "head": "02281a24a2bfa029720c7be243e65c0ed2d518e4",
+          "tree": "f0180761c9cf44ab7a74f2a381f4238f14c32ee2"
+        },
+        "expected": {
+          "head": "02281a24a2bfa029720c7be243e65c0ed2d518e4",
+          "tree": "f0180761c9cf44ab7a74f2a381f4238f14c32ee2"
+        }
+      },
+      "name": "git_directory_oxid-recovery-main",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "actual": {
+          "head": "02281a24a2bfa029720c7be243e65c0ed2d518e4",
+          "tree": "f0180761c9cf44ab7a74f2a381f4238f14c32ee2"
+        },
+        "expected": {
+          "head": "02281a24a2bfa029720c7be243e65c0ed2d518e4",
+          "tree": "f0180761c9cf44ab7a74f2a381f4238f14c32ee2"
+        }
+      },
+      "name": "git_config_oxid-recovery-main",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "actual": {
+          "head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+          "tree": "305a1226d6ca1abd3bdea765200da082b9d9bc75"
+        },
+        "expected": {
+          "head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+          "tree": "305a1226d6ca1abd3bdea765200da082b9d9bc75"
+        }
+      },
+      "name": "git_directory_oxid-parser-unit4-adapter",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "actual": {
+          "head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+          "tree": "305a1226d6ca1abd3bdea765200da082b9d9bc75"
+        },
+        "expected": {
+          "head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+          "tree": "305a1226d6ca1abd3bdea765200da082b9d9bc75"
+        }
+      },
+      "name": "git_config_oxid-parser-unit4-adapter",
+      "status": "pass"
+    },
+    {
+      "detail": "Git worktree differs from intended directory",
+      "name": "nested_worktree_directory_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "verified narrow executable view required",
+      "name": "no_narrow_view_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "as": "/usr/bin/as",
+        "cargo": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3-independent-review/narrow-rust-bin/cargo",
+        "rustc": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3-independent-review/narrow-rust-bin/rustc",
+        "which": "/usr/bin/which"
+      },
+      "name": "old_shadow_scripts_excluded",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "original_selected_sysroot_retained",
+      "status": "pass"
+    },
+    {
+      "detail": "closed Rust executable view inventory",
+      "name": "native_tool_in_view_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "Rust executable link target",
+      "name": "view_cargo_target_substitution_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "one_case_synthetic_admission",
+      "status": "pass"
+    },
+    {
+      "detail": "build/session host snapshot",
+      "name": "coherent_build_collection_host_change_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "preparation/session host snapshot",
+      "name": "rehashed_prepare_host_change_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "six_synthetic_ordinary_pairs",
+      "status": "pass"
+    },
+    {
+      "detail": "successful passivity node ledger",
+      "name": "successful_node_ledger_difference_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "passivity exact executed mode roster",
+      "name": "swapped_mode_order_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "passivity actual execution",
+      "name": "unexecuted_ordinary_mode_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "passivity control build",
+      "name": "instrumented_receipt_as_control_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "passivity envelope profile",
+      "name": "passivity_profile_relabel_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "reused passivity execution nonce",
+      "name": "passivity_cross_gate_nonce_reuse_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "relative_session_passivity_now_accepted",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "relative_session_admission_now_accepted",
+      "status": "pass"
+    },
+    {
+      "detail": "symlink ancestry: /workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3-independent-review/linked-session/session.json",
+      "name": "relative_symlink_session_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "symlink ancestry: /workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3-independent-review/linked-session/session.json",
+      "name": "relative_symlink_passivity_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "actual_build_preamble_has_15s_probe_timeout",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "timed_out_probe_creates_no_build_output",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "base_contract_unchanged_after_amendment",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "full_effective_document_exact_identity",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "actual": {
+          "column": 15,
+          "end": 17,
+          "end_column": 18,
+          "start": 14
+        },
+        "expected": {
+          "column": 15,
+          "end": 17,
+          "end_column": 18,
+          "start": 14
+        }
+      },
+      "name": "effective_coordinates_match_independent_source_anchor",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "changed_leaves": [
+          "/cases/246/expected/first_diagnostic_projection/primary/column",
+          "/cases/246/expected/first_diagnostic_projection/primary/end",
+          "/cases/246/expected/first_diagnostic_projection/primary/end_column",
+          "/cases/246/expected/first_diagnostic_projection/primary/start"
+        ]
+      },
+      "name": "only_exact_four_primary_leaves_change",
+      "status": "pass"
+    },
+    {
+      "detail": "mismatch: exact unchanged base contract before amendment",
+      "name": "already_applied_effective_base_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "mismatch: exact unchanged base contract before amendment",
+      "name": "truncated_base_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "mismatch: effective comparison document, not summary-only relabeling",
+      "name": "summary_only_effective_document_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": "mismatch: exact effective comparison receipt",
+      "name": "duplicate_amendment_receipt_rejected",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "zero_rows_fail_effective638",
+      "status": "pass"
+    },
+    {
+      "detail": null,
+      "name": "original_raw_identity_remains_separate",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "functions": 44
+      },
+      "name": "non_admission_functions_unchanged",
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "statements": 16
+      },
+      "name": "raw_suffix_unchanged",
+      "status": "pass"
+    }
+  ],
+  "schema": "oxid-portable-v3-independent-heldout-controls-v1",
+  "scope": "source/recipe admission and synthetic ordinary passivity only",
+  "status": "pass",
+  "target_adapter_sha256": "cbbd81c6461dc26498fa1551efacb23b219d0fed78048e4ead5929154b823eed"
+}

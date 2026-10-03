@@ -1,0 +1,41 @@
+{
+  "authorization_sha256": "bbea0b2a0f50399b4085e5291e6e82f2fa68d4718aaa3960b62cb4f7f812329b",
+  "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "expected_observations": 638,
+  "issues": [
+    {
+      "code": "mismatch",
+      "detail": "mismatch: required real event order",
+      "row": 267
+    },
+    {
+      "code": "mismatch",
+      "detail": "mismatch: required real event order",
+      "row": 268
+    },
+    {
+      "code": "mismatch",
+      "detail": "mismatch: first_diagnostic_projection.primary.column",
+      "row": 318
+    },
+    {
+      "code": "mismatch",
+      "detail": "mismatch: required real event order",
+      "row": 586
+    },
+    {
+      "code": "mismatch",
+      "detail": "mismatch: required real event order",
+      "row": 587
+    },
+    {
+      "code": "mismatch",
+      "detail": "mismatch: first_diagnostic_projection.primary.column",
+      "row": 637
+    }
+  ],
+  "observations": 638,
+  "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "schema": "oxid-unit4-parser-comparison-v1",
+  "status": "fail"
+}

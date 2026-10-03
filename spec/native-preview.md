@@ -40,12 +40,12 @@ This is not a portable-binary or minimum-glibc-version promise.
 ## Admission before tools or output
 
 Compilation first runs the complete source → typed HIR → verified OIR path,
-including unused functions and unchosen branches. Only the immutable verified
+including all declared files, unused functions and unchosen branches. Only the immutable verified
 witness for the selected module-wide scalar or owned route can enter native
 admission. The owned source contract is specified in
 [typed preview](typed-preview.md#nominal-owned-structs-and-call-only-borrowing).
 Any owned syntax, even an unused declaration, selects owned lowering for the
-whole module; scalar-only modules retain their existing emitter/admission.
+whole linked project; scalar-only projects retain their existing emitter/admission.
 No source or admission failure falls back to scalar, legacy or reference execution. A declared zero-argument scalar `main` is
 required, carried by its resolved DefId rather than reconstructed from spans.
 
@@ -64,7 +64,13 @@ follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-conditi
 whole-value transfers/replacement, scalar field access, owned helper returns and
 explicit call-only shared/exclusive loans and reborrows through its sealed
 witness. There are no source I/O operations, address values, heap containers,
-indirect calls, modules or implicit legacy adapters in this subset.
+indirect calls, module initialization or implicit legacy adapters in this subset.
+Bounded declaration-only modules, direct imports and visibility are resolved before
+emission, as specified by [RFC 0015](../rfcs/0015-bounded-typed-projects.md).
+Their metadata adds no runtime import, entry call or fuel charge. The required
+main is the original root declaration; an imported/child main does not qualify.
+The [project validation ledger](../docs/architecture/typed-project-unit4-validation.md)
+separates public source qualification from historical private-consumer evidence.
 
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.

@@ -1,0 +1,46 @@
+{
+  "actual_fresh_builds": 4,
+  "all_original_evidence_hashes_and_symlink_targets_unchanged": true,
+  "all_package_hashes_unchanged": true,
+  "bounds": {
+    "address_space_bytes": 6442450944,
+    "cpu_soft_seconds": 240,
+    "wall_timeout_seconds": 300
+  },
+  "candidate_executions_by_reviewer": 0,
+  "cases_per_profile": 248,
+  "compiler_builds_executed_by_reviewer": 0,
+  "duration_seconds": 94.85886500100241,
+  "identical_result_json_and_bytes": true,
+  "identity_probes_only": true,
+  "independent_comparison": {
+    "bytes": 3334,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-independent-review/independent-comparison.json",
+    "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+  },
+  "intercepted_output_calls": [
+    {
+      "requested_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/comparison.json",
+      "sink": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-independent-review/independent-comparison.json"
+    }
+  ],
+  "issues": [],
+  "observations_per_profile": 319,
+  "observations_total": 638,
+  "ordinary_passivity_pairs": 12,
+  "original_comparison": {
+    "bytes": 3334,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/comparison.json",
+    "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+  },
+  "original_regular_file_bytes": 631316498,
+  "original_regular_files": 4371,
+  "original_symlinks": 8,
+  "original_tree_members": 4379,
+  "review_cpu_seconds": 91.76913099999999,
+  "review_maxrss_kib": 2607560,
+  "schema": "oxid-portable-fresh-v3-independent-replay-v1",
+  "scope": "read-only actual-evidence audit and exact comparator replay; hosted CI separate",
+  "stage_count": 13,
+  "status": "PASS_FRESH_LOCAL_PORTABLE_638"
+}

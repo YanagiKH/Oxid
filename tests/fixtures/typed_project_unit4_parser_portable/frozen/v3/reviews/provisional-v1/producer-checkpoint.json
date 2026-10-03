@@ -1,0 +1,168 @@
+{
+  "authority_sha256": "8c2699170926e4bf4bb1b004b9e30980b9f5e66fa719f450f5474e40a76257db",
+  "comparator_sha256": "3c63bd67a6c85ad5fba02519427c21b709627bc19ea7160db965f801ec32b666",
+  "compiler_invocations": 0,
+  "compiler_source_changes": 0,
+  "expectation_changes": 0,
+  "files": [
+    {
+      "bytes": 6760,
+      "path": "DESIGN.md",
+      "sha256": "478d2eb469ec10b95c80406542e5091400206098647bb15b9e10e18c9f25bae3"
+    },
+    {
+      "bytes": 3270,
+      "path": "README.md",
+      "sha256": "38d6a29f15c57ed1da052342805405b66e826d74f586f518c78f668ed0ae984c"
+    },
+    {
+      "bytes": 125853,
+      "path": "authority.json",
+      "sha256": "8c2699170926e4bf4bb1b004b9e30980b9f5e66fa719f450f5474e40a76257db"
+    },
+    {
+      "bytes": 2013,
+      "path": "controls-report.json",
+      "sha256": "09c8aa7b2e048f877ac67ced3bc8c13bd394e78c09e7350594f99e27d7d96bfa"
+    },
+    {
+      "bytes": 669,
+      "path": "derivation-proof.json",
+      "sha256": "2592cf65a122ba8bb89db2dea005d3c11dcc2e413016a4fb8d63998b5b51ea9c"
+    },
+    {
+      "bytes": 84200,
+      "path": "frozen/comparator/comparator.py",
+      "sha256": "3c63bd67a6c85ad5fba02519427c21b709627bc19ea7160db965f801ec32b666"
+    },
+    {
+      "bytes": 4081,
+      "path": "frozen/comparator/debug_decoder.py",
+      "sha256": "8fb1708d7824eb453db5c036ac2e7d49ca76e69ff222f1c3cf1e16f41272aa41"
+    },
+    {
+      "bytes": 42762,
+      "path": "frozen/comparator/test_mutations.py",
+      "sha256": "f22a432179498edb1671d2d38883947cb64bb33a9b88c19674c7688de8dafd92"
+    },
+    {
+      "bytes": 6952,
+      "path": "frozen/helpers/API.md",
+      "sha256": "bcf69d653c297ec11fd537ed5cd3b6b0f54f5bca445cd94f7e3c40c0eef929a1"
+    },
+    {
+      "bytes": 4755,
+      "path": "frozen/helpers/HISTORY.md",
+      "sha256": "5672ff074676f4f1e130a8ebef0e9948ffd9ed4747831ff33f4d6748c91ff2dc"
+    },
+    {
+      "bytes": 2709,
+      "path": "frozen/helpers/README.md",
+      "sha256": "a9363683144c7de31f77a26ca27f4409e648a5ac9fecf249ff7c280c1fb8785e"
+    },
+    {
+      "bytes": 3059,
+      "path": "frozen/helpers/build.py",
+      "sha256": "4a81dcd5a2252f7dbd5045075e23f54d7f08844a1617abab4180ab7181c3d793"
+    },
+    {
+      "bytes": 19856,
+      "path": "frozen/helpers/observer.rs",
+      "sha256": "6c48934b5f690ad65671c62bd3968a933ae79c5a576d641133de2eacf0e18d9a"
+    },
+    {
+      "bytes": 4192,
+      "path": "frozen/helpers/parse_debug.py",
+      "sha256": "89c77305d8b51bebbe71b06c8e3b2d82a09ae76a05f53eadae5e2820d48b2822"
+    },
+    {
+      "bytes": 3903,
+      "path": "frozen/helpers/passivity.py",
+      "sha256": "2f1977e2e8694d676441d04c0301ac84826057320c6d64014d711a693d297f6e"
+    },
+    {
+      "bytes": 12616,
+      "path": "frozen/helpers/prepare.py",
+      "sha256": "736933f3b966aa5ec2ed3aece40fa3837674ef11144b58fbad0ce8d58f907864"
+    },
+    {
+      "bytes": 10906,
+      "path": "frozen/helpers/run.py",
+      "sha256": "78814a6f57713cbde350abd526e04d3cfec63092b06fd4a38034f985ed225997"
+    },
+    {
+      "bytes": 8327,
+      "path": "frozen/helpers/test_adapter_shape.py",
+      "sha256": "215659e7e76c3d7ff4b3687c94a2cd9812e94ecb5530a59e12de4759f0a9a629"
+    },
+    {
+      "bytes": 5303,
+      "path": "frozen-normal.stderr",
+      "sha256": "d1cb4b5c880dd7addc5ee6becb23649bf3471cf50f0848f958da0022a943e6e1"
+    },
+    {
+      "bytes": 0,
+      "path": "frozen-normal.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 5303,
+      "path": "frozen-optimized.stderr",
+      "sha256": "77a84417a49ca0aa7351bdb6807b2e096b1305d023f23eae963b2c9b7300c526"
+    },
+    {
+      "bytes": 0,
+      "path": "frozen-optimized.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 32122,
+      "path": "portable.py",
+      "sha256": "879390cfc59eef3fbff432bba04b79f245bccb3e80e3139321f13cae22dec59c"
+    },
+    {
+      "bytes": 2551,
+      "path": "reviews/comparator-checkpoint.json",
+      "sha256": "89d443cac2e1394d3fc8075b8a808dd9e2c861da484800c87e761c00787e90c4"
+    },
+    {
+      "bytes": 2089,
+      "path": "reviews/comparator-review.json",
+      "sha256": "762d3542af9d76a55c2a8af49df4c88b02ebc3e05e84b53a7ef9c8b5abda36e7"
+    },
+    {
+      "bytes": 1813,
+      "path": "reviews/helper-checkpoint.json",
+      "sha256": "ac7c9de19f1d123a935c6c658063b6f9324378465dd42280e6b76e350ef536c8"
+    },
+    {
+      "bytes": 2703,
+      "path": "reviews/helper-review.json",
+      "sha256": "e655e3740ad8be86f49a2d2f7ebadc84e4b3597dee4a7d218a8ad446b57dca85"
+    },
+    {
+      "bytes": 168,
+      "path": "selected-toolchain-check.json",
+      "sha256": "fbb40a5b0c62555c3c1c5ed0f0f27f1de6782c5cd5b2046847cec28809fd3463"
+    },
+    {
+      "bytes": 1229,
+      "path": "source-controls.stderr",
+      "sha256": "e0a5760a5655ebc677f14c442e8739c039d121b8b8bf5b6dc91a25c4a1d51207"
+    },
+    {
+      "bytes": 0,
+      "path": "source-controls.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 13409,
+      "path": "test_portable.py",
+      "sha256": "cf5f5ad7420455d29e2541e68570f6131779233c3c9977f9a26ad982ff5e5c97"
+    }
+  ],
+  "implementation_sha256": "879390cfc59eef3fbff432bba04b79f245bccb3e80e3139321f13cae22dec59c",
+  "remote_writes": 0,
+  "schema": "oxid-unit4-portable-parser-provisional-checkpoint-v1",
+  "status": "draft frozen awaiting reviewed comparator/contract successors"
+}

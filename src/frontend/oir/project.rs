@@ -1,5 +1,5 @@
-//! Private typed-project facades. Both depths share the source sealing leaf schedule.
-#![allow(dead_code)] // Complete private type qualification; no public activation.
+//! Typed-project facades. Both depths share the source sealing leaf schedule.
+#![allow(dead_code)] // Historical qualification adapters retain their private API.
 use super::*;
 use crate::frontend::{
     declaration_index::{IndexLimits, WorkMeter},
@@ -49,7 +49,6 @@ impl CheckedProjectTypes {
     }
 }
 
-#[allow(dead_code)] // Private candidate driver; public loader is still closed.
 pub(in crate::frontend) fn check_project_candidate(
     project: &ProjectSources,
     limits: IndexLimits,
@@ -59,13 +58,23 @@ pub(in crate::frontend) fn check_project_candidate(
     super::source::check_project_candidate(project, limits, work, allocator)
 }
 
-pub(in crate::frontend) fn check_project_executable_candidate<'s>(
+pub(in crate::frontend) fn check_project_executable<'s>(
     project: &'s ProjectSources,
     limits: IndexLimits,
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
     super::source::check_project_executable_candidate(project, limits, work, allocator)
+}
+
+/// Historical qualification adapter for the same complete source checker.
+pub(in crate::frontend) fn check_project_executable_candidate<'s>(
+    project: &'s ProjectSources,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
+    check_project_executable(project, limits, work, allocator)
 }
 
 #[cfg(test)]

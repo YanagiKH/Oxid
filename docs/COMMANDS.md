@@ -15,7 +15,21 @@ Run `oxid --version` to check the installed version, or `oxid help` for built-in
 | `oxid repl` | Start the interactive interpreter |
 | `oxid watch <file.ox>` | Rerun after project files change |
 
-`check` does not type-check or enforce ownership. `compile` does not emit native machine code. See [artifact format](COMPILER.md) and [module ordering](MODULES.md).
+The default legacy `check` does not type-check or enforce ownership. Legacy `compile` does not emit native machine code. See [artifact format](COMPILER.md) and [module ordering](MODULES.md).
+
+## Experimental typed commands
+
+`oxid check entry.ox --edition typed-preview` checks the complete explicitly
+declared project without execution. `run` selects bounded reference execution;
+`compile --backend llvm --output ./new-program` selects the Linux x86_64 native
+preview. Each requires one entry source; a manifest build is not a typed build.
+Run/compile require an original zero-argument scalar main in the root file.
+Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
+`pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),
+[native preview](../spec/native-preview.md) and the
+[three-file example](../fixtures/typed-project-batch/README.md) for limits and
+reproduction. Module-free syntax has no discovery host gate; child loading
+currently admits Linux only.
 
 ## Create and maintain a project
 

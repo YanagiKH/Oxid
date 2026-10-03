@@ -1,0 +1,1505 @@
+{
+  "active_contracts": {
+    "parser": {
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/package-freeze.json",
+      "sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027"
+    },
+    "public": {
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/PUBLIC-FREEZE-v3.json",
+      "sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85"
+    }
+  },
+  "archive": {
+    "bytes": 2301283,
+    "decoded_bytes": 8755200,
+    "decoded_sha256": "304a9eb921ff3869d65f03a22e23834bf048b94bbed49cafe477bd8bdf7f1d13",
+    "format": "canonical sorted USTAR regular files, mode0644 uid/gid/mtime0, empty owner names; single gzip member, level9,mtime0,empty filename",
+    "member_bytes": 8609022,
+    "member_count": 158,
+    "path": "authorities.tar.gz",
+    "sha256": "3814e436ee6364c42e7942da68141bfada99ba692eb5b491c30520ea2e881c3a"
+  },
+  "historical_missing_contracts": {
+    "parser_sha256": "2c2b44cf895c2499821a3cc7ab31f6244840a8a44e876a0f82006d84e1f2ed71",
+    "public_sha256": "1cd3b42d2f93158e88b6a37ac99b89b9a10e85c926e2e7eb4d63675ab170073f",
+    "recovery_claim": false
+  },
+  "members": [
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/rfcs/0014-owned-structs-call-borrows.md",
+      "bytes": 33204,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/rfcs/0014-owned-structs-call-borrows.md",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "0685326d0a5da434449fe2aa8fb4f9a9d4ff542d0e2f1b4b410846901b4fc89a"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/rfcs/0015-bounded-typed-projects.md",
+      "bytes": 64517,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/rfcs/0015-bounded-typed-projects.md",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "62cb974d4f3ace63c9b54f281ef7895279021476496abe91354946a673361d75"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/spec/native-preview.md",
+      "bytes": 21474,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/spec/native-preview.md",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "2d28c38421abbdcb363b3b20d43e4c5ddeee6664076190dc874256baad81c2cc"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/spec/typed-preview.md",
+      "bytes": 55705,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/spec/typed-preview.md",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "7bdeab5da33ccb900cf3d4760311f4ca777505417c3fecacb832c751ff5add71"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_compatibility/expected-results.json",
+      "bytes": 139863,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_compatibility/expected-results.json",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "89edaad688614797e7a8b0c09f287f4577daca753a5fbb76fbec7d716c6db952"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_compatibility/generate_fixtures.py",
+      "bytes": 11935,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_compatibility/generate_fixtures.py",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "d4f3d7da312b2eaf59bc94780fe8ae351d74529955eacffd8cc1493a642b4fb7"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_compatibility/suite-intent.json",
+      "bytes": 25608,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_compatibility/suite-intent.json",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "17e7aba629436896e34cdf7d6ee3392080c6a2792edde4036192e312d5151080"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/expected-fixtures.json",
+      "bytes": 30911,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/expected-fixtures.json",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "33cc6d06bd4487f7ef6b34d626278d6b2a8e6979526b999ef6beffa48ba21965"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/expected-resources.json",
+      "bytes": 758448,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/expected-resources.json",
+      "roles": [
+        "parser-authority"
+      ],
+      "sha256": "5ecc8e2e085c8f576db81450503f5e36d1f26bd8a3fa23e34ae22bd686c1c246"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/materialize_fixtures.py",
+      "bytes": 10286,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/materialize_fixtures.py",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "c451d2eb217987ca0fb4eaaf5550d3d28e7e261f323cfaef786b36ae4463e5d4"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/origin_oracle.py",
+      "bytes": 2048,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit1_independent/origin_oracle.py",
+      "roles": [
+        "parser-authority"
+      ],
+      "sha256": "0609720e521cf429e5ddaf57eb836896e296bf58d427e43a4f03501e9eec4087"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/archive/resource/parser-resource-review-tests.rs",
+      "bytes": 1951,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/archive/resource/parser-resource-review-tests.rs",
+      "roles": [
+        "parser-authority"
+      ],
+      "sha256": "5a26942d2864979a430b28aa5714ceea43edf8e80cf9a6f7c789d66c12a11b73"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/archive/resource/resource-review-tests.rs",
+      "bytes": 22687,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/archive/resource/resource-review-tests.rs",
+      "roles": [
+        "parser-authority"
+      ],
+      "sha256": "a5472f85b6dca1ed9e649c96575b0cf8a45fe37f204040806cd0747a237f1669"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/corpus-manifest.json",
+      "bytes": 609,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/corpus-manifest.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "9457c6182f4a45e15308c5fe73512415ecef2ea6e0ec8fac37eb42f4fb8a8933"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/corpus.jsonl.gz",
+      "bytes": 1050383,
+      "decoded": {
+        "bytes": 13747865,
+        "sha256": "cfc9be2c3c53c362fabee3a80f2332e91725ac7496708db9d90c72c1739c1a33"
+      },
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/corpus.jsonl.gz",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "a5b1853d854b307ca31c79154b518fb9eddf19218467b5562af81979d1369994"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/legacy-scalar-schedule-clarification.json",
+      "bytes": 1457,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/legacy-scalar-schedule-clarification.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "18472233e83df397f1a0a2eb67df339380b4ca15a860558d9851906ad300ea00"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/original93-prose-expectations.json",
+      "bytes": 13035,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/original93-prose-expectations.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "4742fee4eb4d5b09f2da3698ded582fcb08a7af9f13d9bf1369d9d547332187c"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/package-manifest.json",
+      "bytes": 2531,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit2_independent/semantic/package-manifest.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "710c79c5c39c2aea8d3b8c51de3251adce9a755d4190e2434d289696d85c1936"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/expected.jsonl.gz",
+      "bytes": 437562,
+      "decoded": {
+        "bytes": 3919423,
+        "sha256": "41737ae397a68c2e75a57227d9fbc54f8b78a86d0a63f74e755bd6e64f5700c8"
+      },
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/expected.jsonl.gz",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "4c2753e8ab1c42a8965f5e07a02973ce99bccbdf22dbfa55de78ff33f06831aa"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/pre-execution-manifest.json",
+      "bytes": 87817,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/pre-execution-manifest.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/requests.jsonl",
+      "bytes": 97143,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/requests.jsonl",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "f405bf46d8945027cd1d79d3c125692b4c00b8fe57b97c0d55c68b83b9795113"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/supplements/native-diagnostics-v1/expectations.json",
+      "bytes": 138947,
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/components/oracles/supplements/native-diagnostics-v1/expectations.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "28f5161109d38b8abeb1e5465c5e2bd3006fa313e2580e07f06eba5a9a04c998"
+    },
+    {
+      "archive_path": "workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/source-transport/sources.tar.gz",
+      "bytes": 13128,
+      "decoded": {
+        "bytes": 450560,
+        "sha256": "420ff7d586442080d4ecba180f1bde4e8c97388cb383b95d9f169480f55cfd80"
+      },
+      "logical_path": "/workspace/scratch/8266abf56995/oxid-recovery-main/tests/fixtures/typed_project_unit3_independent/source-transport/sources.tar.gz",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "1e6107e272f4cec23a7183eea8be23350b81b6702fe73c1c6e8d7687fe744293"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/groundwork-review/activation_tests.rs",
+      "bytes": 6197,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/groundwork-review/activation_tests.rs",
+      "roles": [
+        "parser-authority"
+      ],
+      "sha256": "6712a7990bc346434cd4113613673f8f1924355fa1178b89ee754189bf48897c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/lifecycle/heldout-lifecycle-expectations.reconstructed-source-only-v1.json",
+      "bytes": 2112998,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/lifecycle/heldout-lifecycle-expectations.reconstructed-source-only-v1.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "71a74cd573193dbde6438faaeccdbcef4799b38f70ded2e70b621ecaa6a74afa"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/lifecycle/lifecycle-amendment-v3.json",
+      "bytes": 11197,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/lifecycle/lifecycle-amendment-v3.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "104aae4e819677cae34b272af2572e918f60a6c4af3aea171d4bc786ba54c920"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/build_public_contracts_v3.py",
+      "bytes": 43375,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/build_public_contracts_v3.py",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "9d1318db95bf6abed8c758b5f9b7c6e63d851c06f608492c09f49d5ba1f6d26a"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/README.md",
+      "bytes": 8291,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/README.md",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "72411a40cbf735f44a18a24a8c2c14e47b162bf273b5fea498d4223b01104283"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/authorities.json",
+      "bytes": 5670,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/authorities.json",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "d71bc78fba8fada60874e55d3ec9b5cc4027a8e9e59379c7e7a2764a71440c71"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/freeze_package.py",
+      "bytes": 2007,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/freeze_package.py",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "97815aa97ed4a30511313bed7a50fc344adb757fcaef043ce7fece64974025b2"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/generate_contract.py",
+      "bytes": 35946,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/generate_contract.py",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "2a07670e537267b877fb92e98820e4c44959b9fb94345aea0e3d5580273f051e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/generation-summary.json",
+      "bytes": 1238,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/generation-summary.json",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "a5b799a0d3e675b047d7b6d886f70bf25e8233951fbb48d1297a61f384158de1"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/identity.json",
+      "bytes": 1072,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/identity.json",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "a24e0e9de0197e3712f91b12d35be917a66c6305b4a1613baa3ab1e0e4070a54"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/observer-interface.json",
+      "bytes": 8152,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/observer-interface.json",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "e007789b882664d1260c0f09cbddf41d292074c490c42b143bdaedf895ccf9d4"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/package-freeze.json",
+      "bytes": 1863,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/package-freeze.json",
+      "roles": [
+        "active-parser-freeze"
+      ],
+      "sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/parser-contract-new-v1.json.gz",
+      "bytes": 45324,
+      "decoded": {
+        "bytes": 2113466,
+        "sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc"
+      },
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/parser-contract-new-v1.json.gz",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "ce2b6f72448def28b0cfaecfab2b8cc8b0f7c5a3bf340511e040dd28421839bb"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/roster.json",
+      "bytes": 39696,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/roster.json",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "cfecc6247a26848248fa047489b29833964704241fcaa8b499fa4fd5e2a97edb"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/source-only-validation.json",
+      "bytes": 482,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/source-only-validation.json",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "fb36b8b9313853dbbff45d365d65bdee48138e41ad1a735c0ee9f24c13782422"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/validate_source_contract.py",
+      "bytes": 6766,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/validate_source_contract.py",
+      "roles": [
+        "parser-frozen-package"
+      ],
+      "sha256": "1fb2ff84a0d3adc1abf66b1988a941fe35866eaec78aca18769ea2acc25190a0"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/ADAPTER-CONTRACT.md",
+      "bytes": 8424,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/ADAPTER-CONTRACT.md",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "e2b8dbcd03247aefeb5b14dfb472d57ab74dc484f5312d2ad0de6df5948447dc"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/AMENDMENT-v3.json",
+      "bytes": 863,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/AMENDMENT-v3.json",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "9ad21e5540b333c046b4fb7d540a617a6e68b878291d21f061c6eaade53f84cb"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/PUBLIC-FREEZE-v3.json",
+      "bytes": 3564,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/PUBLIC-FREEZE-v3.json",
+      "roles": [
+        "active-public-freeze"
+      ],
+      "sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/authority-bindings-replacement-v3.json",
+      "bytes": 6560,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/authority-bindings-replacement-v3.json",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "87e37440455942440c0bbcbc9f1a12ba85554796527dad46fbea034954274179"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/lifecycle-contract-replacement-v3.json.gz",
+      "bytes": 7167,
+      "decoded": {
+        "bytes": 2239490,
+        "sha256": "9078d75ac5e42ef1798a26fde1b53d35f0e08dc944d4f6ead85f582556c7a631"
+      },
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/lifecycle-contract-replacement-v3.json.gz",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "c16bc01e820ecfa02658af1be65500467c641bd29c879d5767bab0dab1804d51"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/original-compatibility-contract-replacement-v3.json.gz",
+      "bytes": 14489,
+      "decoded": {
+        "bytes": 178603,
+        "sha256": "09a830dbf9005c4a0179cbec6b7596d59c8d5010a682c548d234817f800ada98"
+      },
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/original-compatibility-contract-replacement-v3.json.gz",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "fa173a61d1d96d851bc27d3b9a9b1908f245dc8e7261862c966a579cc4d5a20c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/output-guards-contract-replacement-v3.json",
+      "bytes": 28198,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/output-guards-contract-replacement-v3.json",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "13de7dd2f54f2895241dddbb034ba4f9d2df757bb41d79c6832f03ce07f0ebc1"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/pilot-semantic-derivations-v3.json",
+      "bytes": 10358,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/pilot-semantic-derivations-v3.json",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "4ba000cb717b868827101cb79e6ba3851df8acdb51e99a68c3b9ad845d9abe47"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/predecessor-public-projections-replacement-v3.json.gz",
+      "bytes": 512328,
+      "decoded": {
+        "bytes": 6106926,
+        "sha256": "65c764245b748c7941fc6683740c5f72ba44cfb56694554d01973800c777ffb0"
+      },
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/predecessor-public-projections-replacement-v3.json.gz",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "408cc0bdcf7ca17d3c6d76a3ea1469819cac9777a457852fa2eca786b2a50b72"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/public-cli-contract-replacement-v3.json",
+      "bytes": 170868,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/public-cli-contract-replacement-v3.json",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "b4f1549baf04b8f8a5eed88bb23ee185b7f5b9e899dd0a80b712436f1ae8fe92"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_import/fixtures/migration_import.ox",
+      "bytes": 100,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_import/fixtures/migration_import.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "1beafd6b78741a1fa7e9ef0035ca3d89a5af4d13889518494ee28745be09d438"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_module/fixtures/migration_module.ox",
+      "bytes": 43,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_module/fixtures/migration_module.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "176be494b4b18470d7090ad857bce4db7d5cdf875b75c2fc26af9e4216aa3011"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_qualified_call/fixtures/migration_qualified_call.ox",
+      "bytes": 79,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_qualified_call/fixtures/migration_qualified_call.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "cb0f2cb49b0d45ba7e67d8b5692c8ecfe802e03a1e3e63f35c1849976ea84635"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_visibility/fixtures/migration_visibility.ox",
+      "bytes": 36,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/activation-migration_visibility/fixtures/migration_visibility.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "a14868b8de7400fb2ccfd7a0d1dd305551413c8a3cf2d0dda702788398dfecdc"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-invalid-utf8/a.ox",
+      "bytes": 1,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-invalid-utf8/a.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-invalid-utf8/app.ox",
+      "bytes": 7,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-invalid-utf8/app.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-ascii/a.ox",
+      "bytes": 2,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-ascii/a.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "766e0153d3f7ec95c97e755b1ea7b1681566923b9299365fdc8399443ca20c1d"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-ascii/app.ox",
+      "bytes": 19,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-ascii/app.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "5f59250dc56dd1fce3620d3a4c9aac66bbd5b29aec995cdbb07526b71efcff4f"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-unicode-crlf/a.ox",
+      "bytes": 13,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-unicode-crlf/a.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e125e8510b905cd94e3801f368c2917e58db0590a17de3762480c13a7578c380"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-unicode-crlf/app.ox",
+      "bytes": 19,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-lex-unicode-crlf/app.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "5f59250dc56dd1fce3620d3a4c9aac66bbd5b29aec995cdbb07526b71efcff4f"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-main-is-ordinary/child.ox",
+      "bytes": 89,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-main-is-ordinary/child.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "d0d7632186f6c73b16304e8f8bb3ffa8862184e458a8279e99b1016f08996a5d"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-main-is-ordinary/main.ox",
+      "bytes": 63,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-main-is-ordinary/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "f0bb3d9bebc7722aa14384a7522df0775cd94be56703619261470ecad6b71c27"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-oxbc-before-utf8/a.ox",
+      "bytes": 5,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-oxbc-before-utf8/a.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "864d93deedaef7695b15206c4335e8252cb24367df0f6a9c8a195c1282f4aa8b"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-oxbc-before-utf8/app.ox",
+      "bytes": 7,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-oxbc-before-utf8/app.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "3a87bc510b36c64996160a38d0f650851bea77e4b5ac6ffaa80ec7e0ace0ad24"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-unreadable/a.ox",
+      "bytes": 32,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-unreadable/a.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "38396c6511b71f19fb62830f36884b24c33cff3531fc3a13a81ffe5dc53a275a"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-unreadable/later.ox",
+      "bytes": 37,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-unreadable/later.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "b94d332182255fd4bfa0a0835868fb7d7528d5d154d1a4f5ad7c0d129d33465d"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-unreadable/main.ox",
+      "bytes": 18,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/child-unreadable/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e2167d0c8b07e44c40d61e977d83e10db6f5e45b44efe8156913c5fee9562e78"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-owned-entry-id1/main.ox",
+      "bytes": 271,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-owned-entry-id1/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "5bee09b7d42bc5d42c77c180d36059a6fbb3f22004ef1945386fb97a8faa56ed"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-owned-entry-id1/state.ox",
+      "bytes": 306,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-owned-entry-id1/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "8b98abc97443a52943a87f6b77b7ca75a2995a0cf26ca0b3fb815c85a4537da0"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-false/main.ox",
+      "bytes": 79,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-false/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "41b51e9273965ac9b68d6490a769f49216a8706d08984e113a608d8481a70565"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-false/other.ox",
+      "bytes": 0,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-false/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-false/state.ox",
+      "bytes": 51,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-false/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "c2d9e42cdcb50beb4426f5abbc3a60151f6a0efaf00170256be118bbe9e204f1"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-true/main.ox",
+      "bytes": 79,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-true/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "41b51e9273965ac9b68d6490a769f49216a8706d08984e113a608d8481a70565"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-true/other.ox",
+      "bytes": 21,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-true/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "a1b93c411922b3deccad2f887bacbd4dca3d6fffa260801e75a756cadd3c2527"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-true/state.ox",
+      "bytes": 51,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/control-unused_nominal-true/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "c2d9e42cdcb50beb4426f5abbc3a60151f6a0efaf00170256be118bbe9e204f1"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-child-denied/child.ox",
+      "bytes": 36,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-child-denied/child.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "26d1713c38b5842892efd9e140d1c32aa40e195826f82aa89045ed21705c7dfd"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-child-denied/main.ox",
+      "bytes": 42,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-child-denied/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "1e44170a7782388a7f08b6bee0de22d8343402b193796e971f27cd8f6947de8e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-root-first/child.ox",
+      "bytes": 36,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-root-first/child.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "26d1713c38b5842892efd9e140d1c32aa40e195826f82aa89045ed21705c7dfd"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-root-first/main.ox",
+      "bytes": 35,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-root-first/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "5aaf30a3b8fac37e0745f7211ffd13fa0fae5b3903ff03bd285c6ce2d9025e9e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-signature-first/child.ox",
+      "bytes": 36,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-signature-first/child.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "26d1713c38b5842892efd9e140d1c32aa40e195826f82aa89045ed21705c7dfd"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-signature-first/main.ox",
+      "bytes": 28,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-malformed-signature-first/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2f98ea10d78fc1e93c825e2eabc2c5bffa0c6b3ae52595f274930c2633230a35"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-native-denied/main.ox",
+      "bytes": 35,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-native-denied/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "85baaab7af01a7e689afe3f4a5dfe6f221942abd3a0cbdfd9864684a717f65ca"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-no-main/main.ox",
+      "bytes": 37,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-no-main/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "41acde675ab29b2be23f96db6c5e3c764f070c416f636b93ba79313189196590"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-old-reserved-name/main.ox",
+      "bytes": 24,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/host-old-reserved-name/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "411d78f07365655b8e4dd6f55f0bb9789c3ee90bcb231dc6775823e7bc33baf9"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-owned/main.ox",
+      "bytes": 68,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-owned/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "5f56ddc0ea36989f15b5926c05c30a2d9b1faed91ed9cb80cc877d987c4dbb74"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-owned/state.ox",
+      "bytes": 71,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-owned/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "ea51c3710fb9b5990825bec8aba604619d0014c4f07e0644ad5909a44ee5c905"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-scalar/main.ox",
+      "bytes": 68,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-scalar/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "5f56ddc0ea36989f15b5926c05c30a2d9b1faed91ed9cb80cc877d987c4dbb74"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-scalar/state.ox",
+      "bytes": 36,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-imported_main-scalar/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "b8d6eb2e302608c732d8cf10db66e69a61701c900d99f3b6fe15345cba865bd8"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-false/main.ox",
+      "bytes": 57,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-false/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "83210c39172b353667cc9a9d33751c815e8683b6520d7920475f8e11a26975b1"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-false/other.ox",
+      "bytes": 151,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-false/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "d5f02f2e31566ae93a0a3fbbfbe04727f4f237a5eeeedaf48a2e8bb3e28eaa6a"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-false/state.ox",
+      "bytes": 130,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-false/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-true/main.ox",
+      "bytes": 77,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-true/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e9813b10ec141d05d98b42349cb33cd052dda357e6ea9e659eb2206da77325c6"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-true/other.ox",
+      "bytes": 151,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-true/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "d5f02f2e31566ae93a0a3fbbfbe04727f4f237a5eeeedaf48a2e8bb3e28eaa6a"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-true/state.ox",
+      "bytes": 130,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-owned-true/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-false/main.ox",
+      "bytes": 57,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-false/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "83210c39172b353667cc9a9d33751c815e8683b6520d7920475f8e11a26975b1"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-false/other.ox",
+      "bytes": 130,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-false/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "3799a5f0a0c8a2b85b0cabaad5b5603ef81177b6ee527eb0b468cb48e51d1e54"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-false/state.ox",
+      "bytes": 130,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-false/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-true/main.ox",
+      "bytes": 77,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-true/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e9813b10ec141d05d98b42349cb33cd052dda357e6ea9e659eb2206da77325c6"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-true/other.ox",
+      "bytes": 130,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-true/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "3799a5f0a0c8a2b85b0cabaad5b5603ef81177b6ee527eb0b468cb48e51d1e54"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-true/state.ox",
+      "bytes": 130,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-native_recursion-scalar-true/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-unused_move_beats_missing_main/main.ox",
+      "bytes": 22,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-unused_move_beats_missing_main/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "892935f4877f9f58cc384537cf79d445b61430bcd23522c6a90890a3872e5bf3"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-unused_move_beats_missing_main/other.ox",
+      "bytes": 196,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-unused_move_beats_missing_main/other.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "db24609bf70477442fd3bf97b88804f2be14f1b2f0c8613bfaa14fcfd0c01129"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-unused_move_beats_missing_main/state.ox",
+      "bytes": 272,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/negative-unused_move_beats_missing_main/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "635f800cc493cf026ea90c5bca76e851c6e5119e1827d2ef163728af44936c01"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-counter/main.ox",
+      "bytes": 237,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-counter/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "70b2dbd65aee46a95d4467f839e0d120e18070ebd1d36ff55039b264bdd89cd5"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-counter/state.ox",
+      "bytes": 249,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-counter/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "55fb395700dd61127be9f16fd58fb50ee9d4d1a6a2673c50e83cc90cd6ad76eb"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-mechanical-batch/jobs.ox",
+      "bytes": 148,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-mechanical-batch/jobs.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "d9b30716a82699667deae97309fbc98be74cb6f2654b92bcebade49ad021faa6"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-mechanical-batch/main.ox",
+      "bytes": 786,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-mechanical-batch/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "792e79026351745d16bdf3d9f3e81f280ac74cc7440430996e849f01f34c7cce"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-mechanical-batch/state.ox",
+      "bytes": 572,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-mechanical-batch/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "b8f45bff862f13c9daa24382a9807c73cb87651cc0292a926855187131419991"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-opaque-batch/jobs.ox",
+      "bytes": 148,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-opaque-batch/jobs.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "d9b30716a82699667deae97309fbc98be74cb6f2654b92bcebade49ad021faa6"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-opaque-batch/main.ox",
+      "bytes": 809,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-opaque-batch/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "bce6c43248900a7118a1a0390cc5edc9a2762df7b73621feaa15a44df86c0ae5"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-opaque-batch/state.ox",
+      "bytes": 863,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-opaque-batch/state.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "25bc65ea0e2d189fdbeb5774d2f3294ed02dab13aa7fdeb608f99901202ebefd"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-original-batch/main.ox",
+      "bytes": 1238,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-original-batch/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-scalar/loops.ox",
+      "bytes": 248,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-scalar/loops.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "1df18a7d2dcfd400ac4ae499e97225c1df593c19b32511df7d103e4a907d8ae6"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-scalar/main.ox",
+      "bytes": 151,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-scalar/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "945fee241105224a5f0f03a538ae0c5e3d77b643a5ea3e53414c862c87d6a99a"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-scalar/maths.ox",
+      "bytes": 224,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/pilot-scalar/maths.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "9e32ccfbeb54ab85be914456ad3ac50605a83485787adbf622c7860d77a6154e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-absolute-owned/main.ox",
+      "bytes": 176,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-absolute-owned/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "1a845c62e00de012789dee175f0138ce040f6efbbac17ae13d94123c523aca4e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-contextual-absolute-scalar/main.ox",
+      "bytes": 149,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-contextual-absolute-scalar/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "a8800fe380a69c989f531670ade0a0e21929d237d9ee938bfba2634acb05801b"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-imported-main/main.ox",
+      "bytes": 60,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-imported-main/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "7b7cb9130c0e2528db6b4b0ca6751ea0e405faf19e65801b0705dba67cc3d18c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-invalid-utf8/main.ox",
+      "bytes": 1,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-invalid-utf8/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-oxbc-before-utf8/main.ox",
+      "bytes": 5,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-oxbc-before-utf8/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "864d93deedaef7695b15206c4335e8252cb24367df0f6a9c8a195c1282f4aa8b"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-public-field-trivia/main.ox",
+      "bytes": 132,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-public-field-trivia/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "ca8a1ad110a7adf4a4da865e63d9b1d3730027fea644ab70f152428ec2ad933f"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-public-field/main.ox",
+      "bytes": 109,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/root-public-field/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "bfe9ddc3b146b796a297bb6d83ab106174d3d5b03bf6ca745f642f63f254d666"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/source-byte-exact/main.ox",
+      "bytes": 1048576,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/source-byte-exact/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "23edb4189d1107ff2f7676f1f23dee17ef6b13ddffc33031fdd15aa9b42e1fc7"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/source-byte-over/main.ox",
+      "bytes": 1048577,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/source-byte-over/main.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "9d78de4e5b12fc166bed811cd230621ea1e1e353553fe31b92a73bfbf45d68ee"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-builtin_value_names/fixtures/builtin_value_names.ox",
+      "bytes": 105,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-builtin_value_names/fixtures/builtin_value_names.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "58a6ee45962ab197809b05b48777c1607857158dadc99cdff536f0905d2e1081"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-cast_owned/fixtures/cast_owned.ox",
+      "bytes": 80,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-cast_owned/fixtures/cast_owned.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "26997be2804eca3f8e30b9c23fea9266c27d0b33c5a7c0a09add090a6ddb390d"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-cast_scalar/fixtures/cast_scalar.ox",
+      "bytes": 44,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-cast_scalar/fixtures/cast_scalar.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2bf396b6e55a70ed62639da5225797dd893926461dbfd85bb705ab389310ee82"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-check_without_entry/fixtures/check_without_entry.ox",
+      "bytes": 33,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-check_without_entry/fixtures/check_without_entry.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "c6add1916cb439191bd7ccb04d8eaf45ceec82e98b814b68340d1b2f7115a4fe"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-colon_token_cap/fixtures/colon_token_cap.ox",
+      "bytes": 100000,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-colon_token_cap/fixtures/colon_token_cap.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "2075568fd55440b5b97990974d3abfe134d4a8cfa08ae7cc85e87a2728e5441c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-colon_token_one_over/fixtures/colon_token_one_over.ox",
+      "bytes": 100001,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-colon_token_one_over/fixtures/colon_token_one_over.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "8a47dd18c25137087f392c322cfa4cdaba514c8ed981a89f728e91155aa200f0"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-contextual_functions/fixtures/contextual_functions.ox",
+      "bytes": 187,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-contextual_functions/fixtures/contextual_functions.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "0608e559af4831f28b88f6666c7aa6ac47d9de197a9ed8004570bb3801d01ced"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-contextual_locals/fixtures/contextual_locals.ox",
+      "bytes": 111,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-contextual_locals/fixtures/contextual_locals.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "6c7f2aacf5b1c2485ee7d4d17328d6e007941f066706a8dd1f4b26e6a078f161"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-contextual_type_value_pairs/fixtures/contextual_type_value_pairs.ox",
+      "bytes": 423,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-contextual_type_value_pairs/fixtures/contextual_type_value_pairs.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "bdce61589e3f05d42513bbf28285c2e548de1af52a36c3b0e7e47fbb9b47b46e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-control_text_origin/fixtures/control_text_origin.ox",
+      "bytes": 46,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-control_text_origin/fixtures/control_text_origin.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "3d7fe9cea783b53532c027efa7e182fa640ffdc60a3dffed2f8a4e1f36bf7533"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-double_colon_return/fixtures/double_colon_return.ox",
+      "bytes": 18,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-double_colon_return/fixtures/double_colon_return.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "1f7043314f949dc5c9af73976badb3675f8d7a071e5bf19bf8796b5b317851dc"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-long_common_prefix/fixtures/long_common_prefix.ox",
+      "bytes": 32865,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-long_common_prefix/fixtures/long_common_prefix.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "40da897188c61b339176c0ddda97a7669beb5331fae510856700f110cbb77ce5"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-number_token_cap/fixtures/number_token_cap.ox",
+      "bytes": 65566,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-number_token_cap/fixtures/number_token_cap.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "7623a018db025482cb97b18db9938f1dec856a795331113b87763ce4acafb68b"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-number_token_one_over/fixtures/number_token_one_over.ox",
+      "bytes": 65567,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-number_token_one_over/fixtures/number_token_one_over.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "cb9ca571b279de3bb9967e9f8d79c8a6bb8baa3e42d3dcc14e3205ddab66b7f9"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-origins_ascii_crlf/fixtures/origins_ascii_crlf.ox",
+      "bytes": 77,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-origins_ascii_crlf/fixtures/origins_ascii_crlf.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "ff22326dbba572109362b31ab5c5827609cec31feece7e089fcf45346940b1b9"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-origins_unicode_crlf/fixtures/origins_unicode_crlf.ox",
+      "bytes": 77,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-origins_unicode_crlf/fixtures/origins_unicode_crlf.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e22abc90ba61d150033bdc6b8f48c0602be9a2cd7aeabfb51724e92d8c5994c9"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_conflicting_borrows/fixtures/owned_conflicting_borrows.ox",
+      "bytes": 139,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_conflicting_borrows/fixtures/owned_conflicting_borrows.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "09fd58cb91be3abb5402992231fba301686c4414623ecf98936b6b53dc6e9220"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_declaration_order/fixtures/owned_declaration_order.ox",
+      "bytes": 148,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_declaration_order/fixtures/owned_declaration_order.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "1a9c89b86058fbf99be38d9ca639455958d2466922102ef964768cbb52286d75"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_fields_before_signatures/fixtures/owned_fields_before_signatures.ox",
+      "bytes": 121,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_fields_before_signatures/fixtures/owned_fields_before_signatures.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "ad15039dde9bb140bf218fe185fa281c2d99804d21710408c6b08841f4ef554c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_fuel_reborrow/fixtures/owned_fuel_reborrow.ox",
+      "bytes": 195,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_fuel_reborrow/fixtures/owned_fuel_reborrow.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "d069a14ddde06a6dc6bd6037f08d3e859419b0f4efb590ad32376cc1e988624c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_helpers_moves_reborrows/fixtures/owned_helpers_moves_reborrows.ox",
+      "bytes": 591,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_helpers_moves_reborrows/fixtures/owned_helpers_moves_reborrows.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e0743fb616272f7d521c605ca839d56a28291bdc962449cd20a27202d30be4a2"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_mutability_before_assignment_type/fixtures/owned_mutability_before_assignment_type.ox",
+      "bytes": 85,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_mutability_before_assignment_type/fixtures/owned_mutability_before_assignment_type.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "8658c4ccba4d8f2bc213e2d13532d69a674ae502d32f4981312c895d2ad2481e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_rhs_before_mutability/fixtures/owned_rhs_before_mutability.ox",
+      "bytes": 89,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_rhs_before_mutability/fixtures/owned_rhs_before_mutability.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "8ffc21d82e4e1869c9f32e3f7cfb2d40fb77c8f80f984a1210be610dae637131"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_use_after_move/fixtures/owned_use_after_move.ox",
+      "bytes": 131,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-owned_use_after_move/fixtures/owned_use_after_move.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "102f929f56e199185d6de7ce8da40ee601ff3e24a0e2b8d85a391f925da91510"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_duplicate_before_body/fixtures/scalar_duplicate_before_body.ox",
+      "bytes": 104,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_duplicate_before_body/fixtures/scalar_duplicate_before_body.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "e78b34b3dd37d388f33828eaad2cb0517090130b9ebb0c5211609fd7a412864c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_fuel_loop/fixtures/scalar_fuel_loop.ox",
+      "bytes": 45,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_fuel_loop/fixtures/scalar_fuel_loop.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "569e26ec173fc3889b9c3838ad086803a1e5d43a253bbc478ba668ccfc824c9e"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_helpers_loop/fixtures/scalar_helpers_loop.ox",
+      "bytes": 182,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_helpers_loop/fixtures/scalar_helpers_loop.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "b1fd7bf017499eb1e5c96f6a3252397914bdc6a59e849341e25fdb3521c8a3d9"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_short_circuit/fixtures/scalar_short_circuit.ox",
+      "bytes": 100,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-scalar_short_circuit/fixtures/scalar_short_circuit.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "f49fca9874e997a016b1e203ca5b57a568ee6c1968b6c64f68a0cf57e0fc304a"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-spaced_colons/fixtures/spaced_colons.ox",
+      "bytes": 19,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-spaced_colons/fixtures/spaced_colons.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "f1bdda5de9174a80eaf55729527f0dbdb8fb42c1a7bc8ee9b548f5d228b2218c"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-unicode_runtime_overflow/fixtures/unicode_runtime_overflow.ox",
+      "bytes": 66,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-unicode_runtime_overflow/fixtures/unicode_runtime_overflow.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "186a1d21f1dec522409dd89d39cb7ff356655c7a76de1d3134a2d3c83f118c5d"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-unknown_signature_plus_duplicate/fixtures/unknown_signature_plus_duplicate.ox",
+      "bytes": 103,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/public-v3/sources/unit1-unknown_signature_plus_duplicate/fixtures/unknown_signature_plus_duplicate.ox",
+      "roles": [
+        "public-source"
+      ],
+      "sha256": "cf00f742a79795aae89290b5c8be2ea248b75f5d3ae2753234cc5d410080b234"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/new-contracts/validate_public_contracts_v3.py",
+      "bytes": 6871,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/validate_public_contracts_v3.py",
+      "roles": [
+        "public-frozen-package"
+      ],
+      "sha256": "7354e5034dfd501a8a66b33ee485323928d366e17570c4361166b095b78c2bcd"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/parser/IMPLEMENTATION.md",
+      "bytes": 4742,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/parser/IMPLEMENTATION.md",
+      "roles": [
+        "parser-authority",
+        "public-authority"
+      ],
+      "sha256": "7bb47b12d9f552e47094c63adea913ca2727e4640c9d27e3d4bbbf7716eedea2"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/public-qualification/prepare_predecessor_projection.py",
+      "bytes": 6329,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/public-qualification/prepare_predecessor_projection.py",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "bfae1afe00e4b942c465bd10fbf2ce4eed344bdf56bd91a0528c623f9fb79b4d"
+    },
+    {
+      "archive_path": "workspace/shared/oxid-reset-recovery-20261003/public-qualification/source-only-inputs/no-clobber-requests.json",
+      "bytes": 2142,
+      "logical_path": "/workspace/shared/oxid-reset-recovery-20261003/public-qualification/source-only-inputs/no-clobber-requests.json",
+      "roles": [
+        "public-authority"
+      ],
+      "sha256": "bf2955e64077d12513438ed2cad386287f7ab1f6c5ba6ab13c4e80ad98cc4f68"
+    }
+  ],
+  "path_resolution": "Exact logical_path lookup; destination/archive_path. Frozen absolute-path references stay byte-identical. Never fall back to the original machine paths.",
+  "rejected_review_candidates": {
+    "public_v1_findings": [
+      "per-observation lifecycle scope",
+      "flavor vocabulary",
+      "complete observation inventory",
+      "root/child source diagnostic coverage",
+      "numeric policy diagnostic bounds"
+    ],
+    "public_v1_freeze_sha256": "3888f4bc5c8a93c868f33d6d3e4d9b64bc818f739f86b274da3a5489ee163f85",
+    "public_v2_findings": [
+      "exact-cap fixture contained oversized whitespace token; v3 uses independently inventoried bounded comment tokens"
+    ],
+    "public_v2_freeze_sha256": "856a9a38132e6ff7d1c854d6f810d928efa65ed006a6028a56cf52b2fd09ceed",
+    "rejected_payloads_included": false
+  },
+  "schema": "oxid-unit4-contract-transport-v1",
+  "source_only": true
+}

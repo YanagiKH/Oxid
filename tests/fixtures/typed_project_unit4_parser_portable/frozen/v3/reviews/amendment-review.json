@@ -1,0 +1,52 @@
+{
+  "status": "PASS_SOURCE_ONLY_AMENDMENT",
+  "checkpoint_sha256": "5737321c95c0c293f80f89455024611d250908a4c039364059ca393f33fd2679",
+  "amendment_sha256": "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451",
+  "descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+  "effective_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "independent_token_anchors": [
+    {
+      "case_id": "public-root-original-reserved-function",
+      "source_sha256": "411d78f07365655b8e4dd6f55f0bb9789c3ee90bcb231dc6775823e7bc33baf9",
+      "target": "pub",
+      "changes": {}
+    },
+    {
+      "case_id": "public-root-module-before-reserved-function",
+      "source_sha256": "5aaf30a3b8fac37e0745f7211ffd13fa0fae5b3903ff03bd285c6ce2d9025e9e",
+      "target": "pub",
+      "changes": {
+        "column": [
+          14,
+          15
+        ],
+        "end": [
+          16,
+          17
+        ],
+        "end_column": [
+          17,
+          18
+        ],
+        "start": [
+          13,
+          14
+        ]
+      }
+    },
+    {
+      "case_id": "public-root-module-before-signature-error",
+      "source_sha256": "2f98ea10d78fc1e93c825e2eabc2c5bffa0c6b3ae52595f274930c2633230a35",
+      "target": ":",
+      "changes": {}
+    }
+  ],
+  "exact_changed_integer_leaves": 4,
+  "unchanged_cases": 247,
+  "deterministic_artifacts_byte_equal": 3,
+  "base_files_unchanged": true,
+  "compiler_invocations": 0,
+  "candidate_observations_used_to_derive_coordinates": 0,
+  "adoption_requirement": "Strict comparator loader review and exact new comparison authorization still required. Original execution identities must remain separate from effective comparison authority.",
+  "earlier_audit_limit": "533 coordinate-consistency checks did not independently select all offending-token anchors; this proof closes the three first-error roots."
+}

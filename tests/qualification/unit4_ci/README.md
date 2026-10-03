@@ -1,0 +1,58 @@
+# Mandatory current Unit4 qualification
+
+This additive CI integration admits156 exact component members plus the unchanged
+120-file current compiler authority before any component use. The source compiler,
+public14-file adapter, hosted4-file controller, portable parser, and all existing
+Unit1/2/3/ordinary/native CI gates remain unchanged.
+
+The three added job definitions require four actual host executions and an
+always-running final join. The new jobs explicitly check out the event PR head,
+record its full Git tree, and separately retain GitHub's event SHA, which may be
+the synthetic merge SHA. Existing jobs keep their previous checkout behavior.
+The portable-host checkout restores committed blobs using only scoped Git
+settings. LF, intentionally committed CRLF and binary fixtures retain their exact
+bytes; there is no source or observation hash normalization.
+
+Run bounded admission, roster, transport and exit controls:
+
+    python3 -B tests/qualification/unit4_ci/test_integration.py
+
+`gate.py host` is the CI entry point described in DESIGN.md. It requires actual
+root on Linux before any build and then an incomplete root collection (exit2),
+exactly12 raw nonroot permission replacements, four fresh parser binaries,
+twelve passivity pairs and638 actual parser observations. Every host executes
+ordinary and lifecycle debug/release binaries. Non-Linux hosts must actually
+build and exercise the frozen native-tool trap; zero applicable predecessor and
+guard scopes are explicit full-roster exclusions.
+
+`gate.py prepare-only` performs the identical admission/materialization/observer
+preparation prefix and produces only PREPARATION_ONLY. `gate.py local-only` can
+exercise the complete local sequence with an explicitly verified selected LLVM
+runtime and produces LOCAL_ONLY_PASS. It never invokes the root controller. Its
+compact capsule is unconditionally rejected by the hosted reader. Inputs must be
+committed for all entry points.
+
+`evidence.py` preserves an unchanged compact raw capsule under32MiB and a separate
+full raw/source/binary archive. Compact JSON data uses xz compression. Cargo target
+caches, private crate caches and copied Rust sysroots are omitted from the full
+archive, except that every produced parser executable is explicitly retained.
+Exact toolchains, published authorities and original paths remain necessary for
+complete binary replay. Failed runs preserve their available full evidence but
+cannot export a qualifying compact capsule. A packaging failure propagates.
+
+The parser comparison seal binds its complete input closure before and after the
+fresh comparison, including collection manifests, normalized and raw records,
+passivity, build receipts and executable identities. It also binds the exact
+command, exit, snapshot ordering and comparison bytes. The closure requires every
+consumed input and all four executable identities; only the exact fixed compiler
+source members and four binaries can be omitted from the compact capsule. The
+final join reconstructs each normalized
+row from the unchanged raw case using the frozen normalizer and derives the
+complete case/mode/profile roster. Source/binary replay at original paths was
+performed by the actual host; the compact join does not claim it can reexecute
+omitted binaries or turn serialized records into cryptographic execution proof.
+
+Counts are derived from frozen host rosters:10286 public section observations
+across four hosts, separately638 parser observations and12 ordinary passivity
+pairs. Existing local public or parser evidence is useful for transport/replay
+controls only; it never supplies a hosted execution row.

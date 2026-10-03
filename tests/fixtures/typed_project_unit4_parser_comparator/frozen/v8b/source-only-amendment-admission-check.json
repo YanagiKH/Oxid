@@ -1,0 +1,48 @@
+{
+  "authority": {
+    "amendment": {
+      "bytes": 3473,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser-v1-location-amendment-v1/artifacts/amendment.json",
+      "sha256": "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    },
+    "checkpoint": {
+      "bytes": 2634,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser-v1-location-amendment-v1/AMENDMENT-CHECKPOINT-v1.json",
+      "sha256": "5737321c95c0c293f80f89455024611d250908a4c039364059ca393f33fd2679"
+    },
+    "descriptor": {
+      "bytes": 2538,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser-v1-location-amendment-v1/artifacts/effective-contract.json",
+      "sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020"
+    },
+    "review": {
+      "bytes": 1921,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-amendment-independent-review/review.json",
+      "sha256": "a87d877c7e31d76ca0431188e3b862b94432baeb6bf3469017bab65e307ff89f"
+    }
+  },
+  "base_document_unchanged": true,
+  "candidate_comparisons": 0,
+  "candidate_raw_or_normalized_files_read": 0,
+  "compiler_invocations": 0,
+  "effective_identity": {
+    "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+    "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+    "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+    "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+    "ordered_amendment_sha256": [
+      "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    ]
+  },
+  "exact_changed_leaves": [
+    "/cases/246/expected/first_diagnostic_projection/primary/column",
+    "/cases/246/expected/first_diagnostic_projection/primary/end",
+    "/cases/246/expected/first_diagnostic_projection/primary/end_column",
+    "/cases/246/expected/first_diagnostic_projection/primary/start"
+  ],
+  "execution_contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "execution_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "schema": "oxid-unit4-source-only-amendment-admission-check-v1",
+  "status": "pass"
+}

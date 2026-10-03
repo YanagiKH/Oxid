@@ -1,0 +1,492 @@
+{
+  "base_public_document_sha256": "b4f1549baf04b8f8a5eed88bb23ee185b7f5b9e899dd0a80b712436f1ae8fe92",
+  "base_public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85",
+  "candidate_result_files_read": 0,
+  "canonicalization": "UTF-8 json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False), without trailing newline",
+  "cases": [
+    {
+      "byte_index": [
+        {
+          "hex": "6d",
+          "offset": 0
+        },
+        {
+          "hex": "6f",
+          "offset": 1
+        },
+        {
+          "hex": "64",
+          "offset": 2
+        },
+        {
+          "hex": "20",
+          "offset": 3
+        },
+        {
+          "hex": "63",
+          "offset": 4
+        },
+        {
+          "hex": "68",
+          "offset": 5
+        },
+        {
+          "hex": "69",
+          "offset": 6
+        },
+        {
+          "hex": "6c",
+          "offset": 7
+        },
+        {
+          "hex": "64",
+          "offset": 8
+        },
+        {
+          "hex": "3b",
+          "offset": 9
+        },
+        {
+          "hex": "20",
+          "offset": 10
+        },
+        {
+          "hex": "66",
+          "offset": 11
+        },
+        {
+          "hex": "6e",
+          "offset": 12
+        },
+        {
+          "hex": "20",
+          "offset": 13
+        },
+        {
+          "hex": "70",
+          "offset": 14
+        },
+        {
+          "hex": "75",
+          "offset": 15
+        },
+        {
+          "hex": "62",
+          "offset": 16
+        },
+        {
+          "hex": "28",
+          "offset": 17
+        },
+        {
+          "hex": "29",
+          "offset": 18
+        },
+        {
+          "hex": "2d",
+          "offset": 19
+        },
+        {
+          "hex": "3e",
+          "offset": 20
+        },
+        {
+          "hex": "69",
+          "offset": 21
+        },
+        {
+          "hex": "33",
+          "offset": 22
+        },
+        {
+          "hex": "32",
+          "offset": 23
+        },
+        {
+          "hex": "7b",
+          "offset": 24
+        },
+        {
+          "hex": "72",
+          "offset": 25
+        },
+        {
+          "hex": "65",
+          "offset": 26
+        },
+        {
+          "hex": "74",
+          "offset": 27
+        },
+        {
+          "hex": "75",
+          "offset": 28
+        },
+        {
+          "hex": "72",
+          "offset": 29
+        },
+        {
+          "hex": "6e",
+          "offset": 30
+        },
+        {
+          "hex": "20",
+          "offset": 31
+        },
+        {
+          "hex": "31",
+          "offset": 32
+        },
+        {
+          "hex": "3b",
+          "offset": 33
+        },
+        {
+          "hex": "7d",
+          "offset": 34
+        }
+      ],
+      "case_id": "host-malformed-root-first",
+      "case_index": 13,
+      "computed_location": {
+        "end": 17,
+        "end_line": 1,
+        "end_scalar_column": 18,
+        "file": 0,
+        "line": 1,
+        "path": "main.ox",
+        "scalar_column": 15,
+        "start": 14
+      },
+      "coordinate_change_required": true,
+      "derivation": "Unique reserved function-name token pub; ASCII word boundaries identify the complete token.",
+      "original_location": {
+        "end": 16,
+        "end_line": 1,
+        "end_scalar_column": 17,
+        "file": 0,
+        "line": 1,
+        "path": "main.ox",
+        "scalar_column": 14,
+        "start": 13
+      },
+      "original_slice_utf8": " pu",
+      "source_bytes": 35,
+      "source_hex": "6d6f64206368696c643b20666e2070756228292d3e6933327b72657475726e20313b7d",
+      "source_path": "sources/host-malformed-root-first/main.ox",
+      "source_sha256": "5aaf30a3b8fac37e0745f7211ffd13fa0fae5b3903ff03bd285c6ce2d9025e9e",
+      "source_utf8": "mod child; fn pub()->i32{return 1;}",
+      "target_utf8": "pub"
+    },
+    {
+      "byte_index": [
+        {
+          "hex": "66",
+          "offset": 0
+        },
+        {
+          "hex": "6e",
+          "offset": 1
+        },
+        {
+          "hex": "20",
+          "offset": 2
+        },
+        {
+          "hex": "70",
+          "offset": 3
+        },
+        {
+          "hex": "75",
+          "offset": 4
+        },
+        {
+          "hex": "62",
+          "offset": 5
+        },
+        {
+          "hex": "28",
+          "offset": 6
+        },
+        {
+          "hex": "29",
+          "offset": 7
+        },
+        {
+          "hex": "2d",
+          "offset": 8
+        },
+        {
+          "hex": "3e",
+          "offset": 9
+        },
+        {
+          "hex": "69",
+          "offset": 10
+        },
+        {
+          "hex": "33",
+          "offset": 11
+        },
+        {
+          "hex": "32",
+          "offset": 12
+        },
+        {
+          "hex": "7b",
+          "offset": 13
+        },
+        {
+          "hex": "72",
+          "offset": 14
+        },
+        {
+          "hex": "65",
+          "offset": 15
+        },
+        {
+          "hex": "74",
+          "offset": 16
+        },
+        {
+          "hex": "75",
+          "offset": 17
+        },
+        {
+          "hex": "72",
+          "offset": 18
+        },
+        {
+          "hex": "6e",
+          "offset": 19
+        },
+        {
+          "hex": "20",
+          "offset": 20
+        },
+        {
+          "hex": "31",
+          "offset": 21
+        },
+        {
+          "hex": "3b",
+          "offset": 22
+        },
+        {
+          "hex": "7d",
+          "offset": 23
+        }
+      ],
+      "case_id": "host-old-reserved-name",
+      "case_index": 14,
+      "computed_location": {
+        "end": 6,
+        "end_line": 1,
+        "end_scalar_column": 7,
+        "file": 0,
+        "line": 1,
+        "path": "main.ox",
+        "scalar_column": 4,
+        "start": 3
+      },
+      "coordinate_change_required": false,
+      "derivation": "Unique reserved function-name token pub; ASCII word boundaries identify the complete token.",
+      "original_location": {
+        "end": 6,
+        "end_line": 1,
+        "end_scalar_column": 7,
+        "file": 0,
+        "line": 1,
+        "path": "main.ox",
+        "scalar_column": 4,
+        "start": 3
+      },
+      "original_slice_utf8": "pub",
+      "source_bytes": 24,
+      "source_hex": "666e2070756228292d3e6933327b72657475726e20313b7d",
+      "source_path": "sources/host-old-reserved-name/main.ox",
+      "source_sha256": "411d78f07365655b8e4dd6f55f0bb9789c3ee90bcb231dc6775823e7bc33baf9",
+      "source_utf8": "fn pub()->i32{return 1;}",
+      "target_utf8": "pub"
+    },
+    {
+      "byte_index": [
+        {
+          "hex": "6d",
+          "offset": 0
+        },
+        {
+          "hex": "6f",
+          "offset": 1
+        },
+        {
+          "hex": "64",
+          "offset": 2
+        },
+        {
+          "hex": "20",
+          "offset": 3
+        },
+        {
+          "hex": "63",
+          "offset": 4
+        },
+        {
+          "hex": "68",
+          "offset": 5
+        },
+        {
+          "hex": "69",
+          "offset": 6
+        },
+        {
+          "hex": "6c",
+          "offset": 7
+        },
+        {
+          "hex": "64",
+          "offset": 8
+        },
+        {
+          "hex": "3b",
+          "offset": 9
+        },
+        {
+          "hex": "0a",
+          "offset": 10
+        },
+        {
+          "hex": "66",
+          "offset": 11
+        },
+        {
+          "hex": "6e",
+          "offset": 12
+        },
+        {
+          "hex": "20",
+          "offset": 13
+        },
+        {
+          "hex": "6d",
+          "offset": 14
+        },
+        {
+          "hex": "61",
+          "offset": 15
+        },
+        {
+          "hex": "69",
+          "offset": 16
+        },
+        {
+          "hex": "6e",
+          "offset": 17
+        },
+        {
+          "hex": "28",
+          "offset": 18
+        },
+        {
+          "hex": "29",
+          "offset": 19
+        },
+        {
+          "hex": "3a",
+          "offset": 20
+        },
+        {
+          "hex": "3a",
+          "offset": 21
+        },
+        {
+          "hex": "69",
+          "offset": 22
+        },
+        {
+          "hex": "33",
+          "offset": 23
+        },
+        {
+          "hex": "32",
+          "offset": 24
+        },
+        {
+          "hex": "20",
+          "offset": 25
+        },
+        {
+          "hex": "7b",
+          "offset": 26
+        },
+        {
+          "hex": "7d",
+          "offset": 27
+        }
+      ],
+      "case_id": "host-malformed-signature-first",
+      "case_index": 15,
+      "computed_location": {
+        "end": 21,
+        "end_line": 2,
+        "end_scalar_column": 11,
+        "file": 0,
+        "line": 2,
+        "path": "main.ox",
+        "scalar_column": 10,
+        "start": 20
+      },
+      "coordinate_change_required": false,
+      "derivation": "First colon immediately after the function parameter list; the frozen diagnostic selects one colon token, not the adjacent pair.",
+      "original_location": {
+        "end": 21,
+        "end_line": 2,
+        "end_scalar_column": 11,
+        "file": 0,
+        "line": 2,
+        "path": "main.ox",
+        "scalar_column": 10,
+        "start": 20
+      },
+      "original_slice_utf8": ":",
+      "source_bytes": 28,
+      "source_hex": "6d6f64206368696c643b0a666e206d61696e28293a3a693332207b7d",
+      "source_path": "sources/host-malformed-signature-first/main.ox",
+      "source_sha256": "2f98ea10d78fc1e93c825e2eabc2c5bffa0c6b3ae52595f274930c2633230a35",
+      "source_utf8": "mod child;\nfn main()::i32 {}",
+      "target_utf8": ":"
+    }
+  ],
+  "compiler_invocations": 0,
+  "effective_document_canonical_sha256": "bb31b5b4ddd5467170ade55e7cc81f92378570f860ff17bfa86d821feab651ec",
+  "exact_changed_json_pointers": [
+    "/inherited_negative_and_route_cases/13/expected_public_projection/first_diagnostic/location/end",
+    "/inherited_negative_and_route_cases/13/expected_public_projection/first_diagnostic/location/end_scalar_column",
+    "/inherited_negative_and_route_cases/13/expected_public_projection/first_diagnostic/location/scalar_column",
+    "/inherited_negative_and_route_cases/13/expected_public_projection/first_diagnostic/location/start"
+  ],
+  "method": "Strict frozen-source bytes, unique lexical anchors, UTF-8 prefix decoding and scalar counting; no compiler invocation or candidate-output input.",
+  "original_document_canonical_sha256": "0338ea9073573448d1eb5ce43f645e261ed66cf4b5695407b4814bff9a4a243a",
+  "schema_version": 1,
+  "unchanged_inherited_case_count": 25,
+  "unchanged_literal_case_count": 15,
+  "unchanged_top_level_keys": [
+    "authoring",
+    "coverage_companions",
+    "declared_hosts",
+    "historical_nonidentity",
+    "host_normalization",
+    "host_selection",
+    "identity",
+    "literal_cases",
+    "native_scope",
+    "new_policy_diagnostic_bounds",
+    "observation_inventory",
+    "observation_lifecycle",
+    "profiles",
+    "schema_version",
+    "source_integrity",
+    "status"
+  ]
+}
