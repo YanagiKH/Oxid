@@ -9,6 +9,7 @@ pub(super) const MAX_PAYLOAD_BYTES: usize = MAX_SNAPSHOTS * 4096;
 pub(in super::super) struct ObservationControl {
     pub poison_destinations: bool,
     pub fault: Option<FaultInjection>,
+    pub allocation_failure: Option<ObservationAllocationSite>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) enum StorageObservationKind {
@@ -40,15 +41,18 @@ pub(in super::super) struct ReferenceObservation {
     pub remaining_fuel: usize,
     pub truncated: bool,
     pub fault_applied: bool,
+    pub allocation_fault_applied: bool,
 }
 #[derive(Default)]
 pub(super) struct Observer {
+    pub(super) fault_attempted: bool,
     pub enabled: bool,
     pub control: ObservationControl,
     pub storage: Vec<StorageSnapshot>,
     pub payload_bytes: usize,
     pub truncated: bool,
     pub fault_applied: bool,
+    pub allocation_fault_applied: bool,
 }
 pub(super) struct Before {
     kind: StorageObservationKind,
@@ -67,7 +71,21 @@ fn guards(bytes: &[u8], extent: &std::ops::Range<usize>) -> [Option<u8>; 2] {
         bytes.get(extent.end).copied(),
     ]
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) enum ObservationAllocationSite {
+    Event,
+    StorageHeader,
+    Payload,
+}
 impl Observer {
+    pub(super) fn reject_allocation(&mut self, site: ObservationAllocationSite) -> bool {
+        if self.control.allocation_failure == Some(site) && !self.allocation_fault_applied {
+            self.allocation_fault_applied = true;
+            true
+        } else {
+            false
+        }
+    }
     pub fn collecting(&self) -> bool {
         self.enabled && !self.truncated
     }
@@ -138,12 +156,16 @@ impl Observer {
             return;
         };
         // Observer allocations do not pass through production plan/frame failpoints.
-        if self.storage.try_reserve_exact(1).is_err() {
+        if self.reject_allocation(ObservationAllocationSite::StorageHeader)
+            || self.storage.try_reserve_exact(1).is_err()
+        {
             self.truncated = true;
             return;
         }
         let mut copy = Vec::new();
-        if copy.try_reserve_exact(payload.len()).is_err() {
+        if self.reject_allocation(ObservationAllocationSite::Payload)
+            || copy.try_reserve_exact(payload.len()).is_err()
+        {
             self.truncated = true;
             return;
         }
@@ -176,6 +198,9 @@ impl Machine<'_, '_> {
             .and_then(|n| n.checked_mul(size_of::<Event>()))
             .is_none_or(|n| n > MAX_EVENTS * 80)
             || self.events.len() >= MAX_EVENTS
+            || self
+                .observer
+                .reject_allocation(ObservationAllocationSite::Event)
             || self.events.try_reserve_exact(1).is_err()
         {
             self.observer.truncated = true;
@@ -288,15 +313,18 @@ pub(in super::super) enum FaultKind {
     IncomingReferenceDifferentType,
 }
 impl Machine<'_, '_> {
-    fn pending_fault(&self, span: Span) -> Option<FaultKind> {
-        if !self.observer.collecting() || self.observer.fault_applied {
+    fn pending_fault(&mut self, span: Span) -> Option<FaultKind> {
+        if !self.observer.collecting() || self.observer.fault_attempted {
             return None;
         }
-        self.observer
+        let fault = self
+            .observer
             .control
             .fault
-            .filter(|fault| fault.at == span)
-            .map(|fault| fault.kind)
+            .filter(|fault| fault.at == span)?;
+        // Even an inapplicable first matching charged operation consumes the selector.
+        self.observer.fault_attempted = true;
+        Some(fault.kind)
     }
     fn other_root(&self, root: OwnerKey, different_type: bool, span: Span) -> Option<OwnerKey> {
         let frame = usize::try_from(root.frame).ok()?;
@@ -442,3 +470,6 @@ impl Machine<'_, '_> {
         self.observer.fault_applied = true;
     }
 }
+
+#[path = "reviewer_array_observer_tests.rs"]
+mod reviewer;

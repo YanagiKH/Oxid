@@ -1683,7 +1683,8 @@ pub(super) fn run_observed(
 mod array_observe;
 #[cfg(test)]
 pub(super) use array_observe::{
-    FaultInjection, FaultKind, ObservationControl, ReferenceObservation, StorageObservationKind,
+    FaultInjection, FaultKind, ObservationAllocationSite, ObservationControl, ReferenceObservation,
+    StorageObservationKind,
 };
 #[cfg(test)]
 pub(super) type StorageSnapshot = array_observe::StorageSnapshot;
@@ -1715,6 +1716,7 @@ pub(super) fn run_array_observed(
     })();
     ReferenceObservation {
         fault_applied: observer.fault_applied,
+        allocation_fault_applied: observer.allocation_fault_applied,
         result,
         events,
         storage: observer.storage,

@@ -386,3 +386,6 @@ mod reviewer_origins;
 
 #[cfg(test)]
 mod array_reference_tests;
+
+#[cfg(test)]
+mod reviewer_array_reference_tests;

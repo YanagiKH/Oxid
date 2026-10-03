@@ -856,7 +856,7 @@ fn relay_storage(
             }
             StorageKind::Transfer => {
                 let state = match (snapshot.key.owner, snapshot.key.generation) {
-                    (2 | 3 | 4, 1) => 1,
+                    (2..=4, 1) => 1,
                     (0, 2) => 2,
                     (0, 4) => 3,
                     (5, 0) => 0,
