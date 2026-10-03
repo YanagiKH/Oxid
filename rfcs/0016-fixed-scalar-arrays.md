@@ -1,7 +1,7 @@
 # RFC 0016: fixed scalar arrays and checked indexing
 
-Status: proposed language capability; Unit 1 groundwork and gated Unit 2A
-private identity carriers.
+Status: proposed language capability; Unit 1 groundwork and gated Unit 2A–2B
+private identity carriers and raw verification.
 Array syntax and executable raw array operations are not enabled by this RFC or
 the current preparatory slices. The current public contract remains
 [RFC 0014](0014-owned-structs-call-borrows.md) and
@@ -364,6 +364,30 @@ The gate covers every result, owner, reference and loan, including unused and
 infinite-loop cases. The declaration query facade may still describe arrays.
 No opcode, source grammar, routing selector or array consumer is enabled. The
 gate remains until subsequent Unit 2 verifier and consumer work is complete.
+
+### 7.2 Gated Unit 2B raw-verifier slice
+
+The [Unit 2B ledger](../docs/architecture/fixed-array-unit2b-validation.md) records
+four private raw operations: `ConstructArray`, `ReadIndex`, `WriteIndex` and
+`ArrayLength`. Their constructor operands, scalar definitions/uses, whole-owner
+availability, permissions, loan accesses and denial origins use the existing
+authoritative shape/CFG/flow pipeline. The cfg(test)-only probe borrows raw input
+and returns only usage or failure; it cannot produce an executable witness.
+
+Production admission still rejects every array carrier and now every array
+opcode before seal construction, including inactive and malformed opcode-only
+inputs. Reference dispatch rejects unsupported execution, while infallible
+consumer matches have explicit sealed-invariant assertions. These temporary
+arms must be replaced before the gate is removed. This slice does not implement
+array reference/native execution, bounds diagnostics or source syntax/routing.
+
+Raw preflight independently counts actual constructor operands as Q and rejects
+a vector above 1024 before inspecting its elements. Q contributes to expanded
+events, verification work and the exact Operand payload in ownership/source
+metadata; no per-element verifier scratch is introduced. Source lowering still
+emits Q=0. FunctionCounts gains one transient usize, while retained raw, AST and
+runtime row envelopes remain unchanged. Source association separately walks all
+new operand spans without providing source grammar or lowering authority.
 
 ## 8. Resource and compatibility obligations
 

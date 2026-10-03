@@ -152,6 +152,10 @@ enum OwnedInstruction {
         destination: OwnerPlaceId,
         fields: Vec<(FieldId, Operand)>,
     },
+    ConstructArray {
+        destination: OwnerPlaceId,
+        elements: Vec<Operand>,
+    },
     MoveInitialize {
         destination: OwnerPlaceId,
         source: OwnerPlaceId,
@@ -170,6 +174,20 @@ enum OwnedInstruction {
         base: AccessBase,
         field: FieldId,
         value: Operand,
+    },
+    ReadIndex {
+        destination: LocalId,
+        base: AccessBase,
+        index: Operand,
+    },
+    WriteIndex {
+        base: AccessBase,
+        index: Operand,
+        value: Operand,
+    },
+    ArrayLength {
+        destination: LocalId,
+        base: AccessBase,
     },
     OpenCall(CallSiteId),
     PrepareScalar {

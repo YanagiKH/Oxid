@@ -60,6 +60,16 @@ fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<()
                         visitor.span(operand.span)?;
                     }
                 }
+                OwnedInstruction::ConstructArray { elements, .. } => {
+                    for operand in elements {
+                        visitor.span(operand.span)?;
+                    }
+                }
+                OwnedInstruction::ReadIndex { index, .. } => visitor.span(index.span)?,
+                OwnedInstruction::WriteIndex { value, index, .. } => {
+                    visitor.span(value.span)?;
+                    visitor.span(index.span)?;
+                }
                 OwnedInstruction::WriteField { value, .. }
                 | OwnedInstruction::PrepareScalar { value, .. } => visitor.span(value.span)?,
                 OwnedInstruction::StorageLive(_)
@@ -68,6 +78,7 @@ fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<()
                 | OwnedInstruction::Replace { .. }
                 | OwnedInstruction::Discard(_)
                 | OwnedInstruction::ReadField { .. }
+                | OwnedInstruction::ArrayLength { .. }
                 | OwnedInstruction::OpenCall(_)
                 | OwnedInstruction::PrepareOwned { .. }
                 | OwnedInstruction::PrepareBorrow { .. } => (),
@@ -139,4 +150,134 @@ pub(super) fn check(
         function(declaration, &mut visitor)?;
     }
     visitor.finish(count)
+}
+
+#[cfg(test)]
+mod array_tests {
+    use super::*;
+    use crate::frontend::{lexer, parser};
+
+    #[test]
+    fn unit2b_association_walks_every_array_operand_in_both_passes() {
+        let mut sources = SourceMap::new();
+        let text = "struct C {} fn main()->(){let a=C{};return;}";
+        let file = sources.add("array-association.ox".into(), text.into());
+        let foreign = sources.add("unrelated.ox".into(), text.into());
+        let source = sources.get(file);
+        let ast = parser::parse_with_mode(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let typed =
+            super::super::typeck::check(super::super::resolve::resolve(source, &ast).unwrap())
+                .unwrap();
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        let baseline = check(&raw, typed.index(), &sources).unwrap();
+        let span = raw.functions[0].span;
+        let operand = Operand {
+            local: LocalId(0),
+            span,
+        };
+        let base = AccessBase::Owner(OwnerPlaceId(0));
+        let kinds = [
+            (
+                OwnedInstruction::ConstructArray {
+                    destination: OwnerPlaceId(0),
+                    elements: vec![operand; 1024],
+                },
+                1025,
+            ),
+            (
+                OwnedInstruction::ReadIndex {
+                    destination: LocalId(0),
+                    base,
+                    index: operand,
+                },
+                2,
+            ),
+            (
+                OwnedInstruction::WriteIndex {
+                    base,
+                    index: operand,
+                    value: operand,
+                },
+                3,
+            ),
+            (
+                OwnedInstruction::ArrayLength {
+                    destination: LocalId(0),
+                    base,
+                },
+                1,
+            ),
+        ];
+        for (kind, span_count) in kinds {
+            raw.functions[0].blocks[0].statements.push(OwnedStatement {
+                kind,
+                span,
+                diagnostic_origins: None,
+            });
+            let (result, allocations) =
+                super::super::super::reviewer_origins::integration_counted(|| {
+                    check(&raw, typed.index(), &sources)
+                });
+            assert_eq!(allocations, 0);
+            let usage = result.unwrap();
+            assert_eq!(usage.count.spans, baseline.count.spans + span_count);
+            assert_eq!(
+                usage.validation.spans,
+                baseline.validation.spans + span_count
+            );
+            assert_eq!(usage.count.declarations, baseline.count.declarations);
+            assert_eq!(usage.dimensions, baseline.dimensions);
+            let original = raw.functions[0].blocks[0].statements.pop().unwrap();
+            // One mutation per actual operand, plus the instruction and both
+            // diagnostic origins. These spans are valid in SourceMap, but do
+            // not belong to the indexed source function.
+            let operand_count = span_count - 1;
+            for location in 0..operand_count + 3 {
+                let mut changed = original.clone();
+                let wrong = Span {
+                    file: foreign,
+                    ..span
+                };
+                assert!(sources.is_valid_span(wrong));
+                if location == operand_count {
+                    changed.span = wrong;
+                } else if location == operand_count + 1 {
+                    changed.diagnostic_origins = Some(DiagnosticOrigins {
+                        primary: wrong,
+                        cause: span,
+                    });
+                } else if location == operand_count + 2 {
+                    changed.diagnostic_origins = Some(DiagnosticOrigins {
+                        primary: span,
+                        cause: wrong,
+                    });
+                } else {
+                    match &mut changed.kind {
+                        OwnedInstruction::ConstructArray { elements, .. } => {
+                            elements[location].span = wrong
+                        }
+                        OwnedInstruction::ReadIndex { index, .. } => index.span = wrong,
+                        OwnedInstruction::WriteIndex { value, index, .. } => {
+                            if location == 0 {
+                                value.span = wrong;
+                            } else {
+                                index.span = wrong;
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                raw.functions[0].blocks[0].statements.push(changed);
+                let e = check(&raw, typed.index(), &sources).unwrap_err();
+                assert_eq!(e.code, "E0500");
+                assert_eq!(e.stage, "oir-project-bind");
+                raw.functions[0].blocks[0].statements.pop();
+            }
+        }
+    }
 }

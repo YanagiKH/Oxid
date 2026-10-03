@@ -198,6 +198,8 @@ fn array_groundwork_does_not_open_source_syntax() {
         "fn main()->(){let a=[1];return;}",
         "fn f(a:[i32;1])->(){return;}",
         "fn f(a:&[i32;1])->(){return;}",
+        "fn f(a:&mut [i32;1])->(){return;}",
+        "fn f()->[i32;1]{return [1];}",
         "fn main()->(){let a:[i32;0]=[];return;}",
         "fn main()->i32{let a=1;return a[0];}",
         "fn main()->(){let mut a=1;a[0]=2;return;}",
@@ -206,11 +208,17 @@ fn array_groundwork_does_not_open_source_syntax() {
         let mut sources = SourceMap::new();
         let file = sources.add("array-closed.ox".into(), text.into());
         let file = sources.get(file);
-        let tokens = lexer::lex(file).unwrap();
-        assert!(
-            parser::parse(file, tokens).is_err(),
-            "unexpected admission: {text}"
-        );
+        for mode in [
+            parser::SourceMode::ScalarOnly,
+            parser::SourceMode::OwnedCandidate,
+            parser::SourceMode::ModuleCandidate,
+            parser::SourceMode::ProjectCandidate,
+        ] {
+            assert!(
+                parser::parse_with_mode(file, lexer::lex(file).unwrap(), mode).is_err(),
+                "unexpected admission: {text}"
+            );
+        }
     }
 }
 

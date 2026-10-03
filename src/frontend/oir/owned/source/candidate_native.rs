@@ -122,6 +122,12 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
+        OwnedInstruction::ConstructArray { .. }
+        | OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ArrayLength { .. } => {
+            unreachable!("source array production and executable witnesses remain gated")
+        }
         OwnedInstruction::Scalar(Statement::Assign(_)) => "Scalar(Assign)",
         OwnedInstruction::Scalar(Statement::Initialize { .. }) => "Scalar(Initialize)",
         OwnedInstruction::Scalar(Statement::Store { .. }) => "Scalar(Store)",

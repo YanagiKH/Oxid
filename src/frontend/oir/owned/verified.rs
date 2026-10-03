@@ -32,20 +32,50 @@ pub(super) fn verify_with_limits(
     sources: &SourceMap,
     limits: budget::Limits,
 ) -> Result<VerifiedOwnedProgram, OwnedFailure> {
-    let mut usage = budget::preflight(&raw, limits)?;
-    let mut meter = budget::Meter {
-        visits: 0,
-        ceiling: usage.work,
-    };
-    let declarations = Declarations::check(&raw.records, sources)?;
-    // Temporary Unit2A boundary: semantic carriers may describe arrays, but
-    // neither unused carriers nor loop-only functions may obtain a witness.
+    let (mut usage, declarations, mut meter) = prepare(&raw, sources, limits)?;
+    // Mandatory production boundary until both array consumers are complete.
+    // This call cannot be selected away by a caller or by a test-only flag.
     reject_array_carriers(&raw, &mut meter)?;
-    shape::signatures(&raw, &declarations, sources)?;
+    validate(&raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    })
+}
+
+fn prepare(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
+    let usage = budget::preflight(raw, limits)?;
+    let declarations = Declarations::check(&raw.records, sources)?;
+    Ok((
+        usage,
+        declarations,
+        budget::Meter {
+            visits: 0,
+            ceiling: usage.work,
+        },
+    ))
+}
+
+/// One authoritative continuation for production and the non-executable test
+/// probe. It never constructs a seal and cannot return an executable value.
+fn validate(
+    raw: &RawOwnedProgram,
+    declarations: &Declarations,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    shape::signatures(raw, declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
     for f in &raw.functions {
-        shape::check(f, &raw, &declarations, sources, &mut meter)?;
+        shape::check(f, raw, declarations, sources, meter)?;
     }
     for f in &raw.functions {
         super::super::verify::cfg(f)?;
@@ -62,16 +92,25 @@ pub(super) fn verify_with_limits(
             )?;
         }
         if budget::active(f) {
-            let checked = shape::check(f, &raw, &declarations, sources, &mut meter)?;
-            flow::check(f, &checked, &mut meter)?;
+            let checked = shape::check(f, raw, declarations, sources, meter)?;
+            flow::check(f, &checked, meter)?;
         }
     }
-    Ok(VerifiedOwnedProgram {
-        program: raw,
-        declarations,
-        usage,
-        seal: OwnershipSeal,
-    })
+    Ok(())
+}
+
+/// Exercise the exact authoritative checks while array execution is gated.
+/// Only unprivileged usage or a failure escapes; neither raw data, declarations,
+/// a plan nor an executable witness is returned, even under cfg(test).
+#[cfg(test)]
+pub(super) fn probe_array_validation(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
+    validate(raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(usage)
 }
 
 /// One fixed inventory pass, no allocation. Active rows fit the existing
@@ -106,6 +145,26 @@ fn reject_array_carriers(
         for loan in &f.loans {
             meter.visit()?;
             check(loan.aggregate(), loan.span)?;
+        }
+        // A malformed array operation may have no array carrier at all. It
+        // must not reach a seal merely because the carrier inventory was empty.
+        // This fixed scan is bounded by the already admitted statement count;
+        // it allocates nothing and does not alter array-free admission costs.
+        for block in &f.blocks {
+            for instruction in &block.statements {
+                if matches!(
+                    instruction.kind,
+                    OwnedInstruction::ConstructArray { .. }
+                        | OwnedInstruction::ReadIndex { .. }
+                        | OwnedInstruction::WriteIndex { .. }
+                        | OwnedInstruction::ArrayLength { .. }
+                ) {
+                    return Err(OwnedFailure::malformed(
+                        Malformed::UnsupportedArray,
+                        instruction.span,
+                    ));
+                }
+            }
         }
     }
     Ok(())

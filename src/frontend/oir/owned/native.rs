@@ -939,6 +939,12 @@ fn emit_statement(
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     match &statement.kind {
+        OwnedInstruction::ConstructArray { .. }
+        | OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ArrayLength { .. } => {
+            unreachable!("production array admission is closed until both consumers are complete")
+        }
         OwnedInstruction::Scalar(s) => emit_scalar(plan, id, name, s, diagnostics, out),
         OwnedInstruction::Construct {
             destination,

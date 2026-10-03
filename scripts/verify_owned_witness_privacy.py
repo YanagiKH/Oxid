@@ -14,6 +14,23 @@ import tempfile
 
 
 PROBES = [
+    ("compact-slot-checked-construction", True, (), """
+        fn construct() {
+            let slot = AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap();
+            let _ = slot.aggregate();
+        }
+    """),
+    ("compact-slot-private-representation", False, ("E0616",), """
+        fn inspect(slot: AggregateSlot) { let _ = slot.0; }
+    """),
+    ("compact-slot-no-infallible-record-conversion", False, ("E0277",), """
+        fn construct(record: RecordId) -> AggregateSlot { record.into() }
+    """),
+    ("array-validation-probe-absent-in-production", False, ("E0425",), """
+        fn probe(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = verified::probe_array_validation(raw, sources, budget::Limits::DEFAULT);
+        }
+    """),
     ("source-facade-immutable-methods", True, (), """
         fn inspect(w: &SourceProgram, sources: &SourceMap) {
             let _ = w.function_count();

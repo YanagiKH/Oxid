@@ -138,6 +138,14 @@ impl<'a> ExecutionPlan<'a> {
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
+            OwnedInstruction::ConstructArray { .. }
+            | OwnedInstruction::ReadIndex { .. }
+            | OwnedInstruction::WriteIndex { .. }
+            | OwnedInstruction::ArrayLength { .. } => {
+                unreachable!(
+                    "production array admission is closed until both consumers are complete"
+                )
+            }
             OwnedInstruction::StorageEnd(o) | OwnedInstruction::Discard(o) => {
                 1 + self.owner_width(f, *o)
             }
@@ -370,6 +378,9 @@ fn usage(
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {
         OwnedInstruction::Scalar(s) => s.span(),
+        OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ArrayLength { .. } => statement.primary_span(),
         _ => statement.span,
     }
 }
@@ -417,7 +428,9 @@ mod tests {
             AggregateSlot => 8,
             AggregateTy => 16,
             ValueTy => 16,
+            Option<ValueTy> => 16,
             ParameterTy => 24,
+            Option<ParameterTy> => 24,
             RawOwnedProgram => 48,
             RawOwnedFunction => 248,
             OwnerDecl => 56,
@@ -425,6 +438,9 @@ mod tests {
             LoanDecl => 72,
             CallDecl => 96,
             OwnedInstruction => 128,
+            OwnedStatement => 208,
+            OwnedBlock => 328,
+            Operand => 32,
             ParameterBinding => 16,
             FunctionPlan => 184,
             CallPlan => 48,
@@ -435,6 +451,8 @@ mod tests {
             CallRuntime => 16,
             flow::DenialContext => 136,
             flow::DenialFacts => 136,
+            flow::OwnerSubject => 64,
+            flow::DeniedSubject => 64,
             OwnedFailure => 240
         );
     }

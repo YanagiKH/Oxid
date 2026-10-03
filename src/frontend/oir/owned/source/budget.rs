@@ -79,10 +79,28 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.blocks, size_of::<OwnedBlock>()),
         (c.statements, size_of::<OwnedStatement>()),
         (c.constructed_fields, size_of::<(FieldId, Operand)>()),
+        (c.constructed_elements, size_of::<Operand>()),
     ] {
         bytes = add(bytes, mul(n, width)?)?;
     }
     Ok(bytes)
+}
+
+#[test]
+fn unit2b_q_adds_only_actual_operand_payload_to_source_inventory() {
+    let without = raw_budget::FunctionCounts::default();
+    for elements in [0, 1, 1024] {
+        let with = raw_budget::FunctionCounts {
+            constructed_elements: elements,
+            ..without
+        };
+        assert_eq!(
+            function_bytes(with).unwrap() - function_bytes(without).unwrap(),
+            elements * size_of::<Operand>()
+        );
+    }
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 144);
 }
 pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,

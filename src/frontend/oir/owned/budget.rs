@@ -88,6 +88,7 @@ pub(super) struct FunctionCounts {
     pub descriptor_arguments: usize,
     pub preparations: usize,
     pub constructed_fields: usize,
+    pub constructed_elements: usize,
     pub diagnostic_origins: usize,
     pub max_constructor_fields: usize,
     pub ownership_active: bool,
@@ -139,7 +140,13 @@ pub(super) fn account_function(
         let a = add(c.descriptor_arguments, c.preparations)?;
         u.owners = cap(add(u.owners, c.owners)?, limits.owners, "owners")?;
         u.expanded_events = cap(
-            add(u.expanded_events, add(add(s, a)?, c.constructed_fields)?)?,
+            add(
+                u.expanded_events,
+                add(
+                    add(add(s, a)?, c.constructed_fields)?,
+                    c.constructed_elements,
+                )?,
+            )?,
             limits.events,
             "expanded ownership events",
         )?;
@@ -150,6 +157,7 @@ pub(super) fn account_function(
             s,
             a,
             c.constructed_fields,
+            c.constructed_elements,
             c.owners,
             c.loans,
             c.calls,
@@ -174,6 +182,7 @@ pub(super) fn account_function(
             (c.references, size_of::<ReferenceDecl>()),
             (c.loans, size_of::<LoanDecl>()),
             (c.constructed_fields, size_of::<(FieldId, Operand)>()),
+            (c.constructed_elements, size_of::<Operand>()),
         ] {
             metadata = add(metadata, mul(count, size)?)?;
         }
@@ -283,6 +292,12 @@ pub(super) fn preflight(
                     OwnedInstruction::Construct { fields, .. } => {
                         c.constructed_fields = add(c.constructed_fields, fields.len())?;
                         c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
+                    }
+                    OwnedInstruction::ConstructArray { elements, .. } => {
+                        // Inspect only the caller-owned vector length here. The
+                        // envelope precedes every element/span/type/CFG walk.
+                        cap(elements.len(), 1024, "array constructor elements")?;
+                        c.constructed_elements = add(c.constructed_elements, elements.len())?;
                     }
                     OwnedInstruction::PrepareScalar { .. }
                     | OwnedInstruction::PrepareOwned { .. }

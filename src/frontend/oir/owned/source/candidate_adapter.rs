@@ -261,6 +261,12 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
+        OwnedInstruction::ConstructArray { .. }
+        | OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ArrayLength { .. } => {
+            unreachable!("source array production and executable witnesses remain gated")
+        }
         OwnedInstruction::Scalar(value) => object([
             ("operation", json_string("Scalar")),
             ("scalar", scalar_statement(value)),

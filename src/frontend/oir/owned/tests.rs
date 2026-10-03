@@ -1443,3 +1443,72 @@ fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
         assert_eq!(failure.primary.get(), None);
     }
 }
+
+#[path = "array_tests.rs"]
+mod arrays;
+
+#[test]
+fn unit2b_promoted_record_loan_defects_preserve_all_short_circuits() {
+    let (sources, s) = context();
+    let at = |n| Span {
+        start: n,
+        end: n + 1,
+        ..s
+    };
+    for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
+        for defects in 0usize..64 {
+            let mut raw = borrowed(s, kind);
+            let f = &mut raw.functions[0];
+            f.calls[0].span = at(10);
+            f.loans[0].span = at(20);
+            for b in &mut f.blocks {
+                for i in &mut b.statements {
+                    if matches!(i.kind, OwnedInstruction::PrepareBorrow { .. }) {
+                        i.span = at(20);
+                    }
+                }
+            }
+            if defects & 1 != 0 {
+                f.loans[0].aggregate =
+                    AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(4096))).unwrap();
+            }
+            if defects & 2 != 0 {
+                f.loans[0].call = CallSiteId(4096);
+            }
+            if defects & 4 != 0 {
+                f.loans[0].argument = 4096;
+            }
+            if defects & 8 != 0 {
+                f.loans[0].kind = if kind == BorrowKind::Shared {
+                    BorrowKind::Exclusive
+                } else {
+                    BorrowKind::Shared
+                };
+            }
+            if defects & 16 != 0 {
+                f.loans[0].span = Span { end: 201, ..s };
+            }
+            if defects & 32 != 0 {
+                f.loans[0].authority = AccessBase::Owner(OwnerPlaceId(4096));
+            }
+            if defects == 0 {
+                assert!(verify_owned(raw, &sources).is_ok());
+                continue;
+            }
+            let e = error(raw, &sources);
+            let (expected, origin) = if defects & 15 != 0 {
+                (Malformed::Binding, at(10))
+            } else if defects & 16 != 0 {
+                (Malformed::Span, Span { end: 201, ..s })
+            } else {
+                (Malformed::Id, at(20))
+            };
+            assert_eq!(
+                e.kind,
+                OwnedFailureKind::Malformed(expected),
+                "mode {kind:?}, defects {defects}"
+            );
+            assert_eq!(e.primary.get(), Some(origin));
+        }
+    }
+}

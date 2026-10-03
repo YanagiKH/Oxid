@@ -108,6 +108,12 @@ fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
         AggregateTy::FixedArray(_) => Err(bad(Malformed::Type, s)),
     }
 }
+fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
+    match aggregate {
+        AggregateTy::FixedArray(array) => Ok(array),
+        AggregateTy::Record(_) => Err(bad(Malformed::Type, s)),
+    }
+}
 pub(super) fn base(
     f: &RawOwnedFunction,
     b: AccessBase,
@@ -432,6 +438,30 @@ pub(super) fn check(
                         equal(operand(f, *value, sources)?, field.ty(), value.span)?;
                     }
                 }
+                OwnedInstruction::ConstructArray {
+                    destination,
+                    elements,
+                } => {
+                    let o = ordinary(f, *destination, s)?;
+                    if !matches!(o.kind, OwnerKind::Local { .. } | OwnerKind::Temporary) {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    let prev = &mut owners[destination.0].initialize;
+                    if prev.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *prev = Some(site);
+                    let declared = array(o.aggregate(), s)?;
+                    if elements.len() != declared.length() {
+                        return Err(bad(Malformed::Type, s));
+                    }
+                    // Both all-shape passes charge actual admitted operands;
+                    // arrays need no element-sized scratch or field-ID table.
+                    for value in elements {
+                        meter.visit()?;
+                        equal(operand(f, *value, sources)?, declared.element(), value.span)?;
+                    }
+                }
                 OwnedInstruction::MoveInitialize {
                     destination,
                     source,
@@ -484,6 +514,34 @@ pub(super) fn check(
                         d.field(record(r, s)?, *field)?.ty(),
                         value.span,
                     )?;
+                }
+                OwnedInstruction::ReadIndex {
+                    destination,
+                    base: b,
+                    index,
+                } => {
+                    let (aggregate, _) = base(f, *b, s)?;
+                    let declared = array(aggregate, s)?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                    equal(local(f, *destination, s)?, declared.element(), s)?;
+                }
+                OwnedInstruction::WriteIndex {
+                    base: b,
+                    index,
+                    value,
+                } => {
+                    let (aggregate, _) = base(f, *b, s)?;
+                    let declared = array(aggregate, s)?;
+                    equal(operand(f, *value, sources)?, declared.element(), value.span)?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                }
+                OwnedInstruction::ArrayLength {
+                    destination,
+                    base: b,
+                } => {
+                    let (aggregate, _) = base(f, *b, s)?;
+                    array(aggregate, s)?;
+                    equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
                 }
                 OwnedInstruction::OpenCall(c) => {
                     call(f, *c, s)?;

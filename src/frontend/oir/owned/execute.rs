@@ -788,6 +788,12 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ConstructArray { .. }
+            | OwnedInstruction::ReadIndex { .. }
+            | OwnedInstruction::WriteIndex { .. }
+            | OwnedInstruction::ArrayLength { .. } => {
+                return Err(bad("unsupported array execution", span));
+            }
             OwnedInstruction::Scalar(s) => self.scalar_statement(frame, s)?,
             OwnedInstruction::StorageLive(o) => {
                 self.expect_owner(frame, *o, &[DEAD], span)?;
