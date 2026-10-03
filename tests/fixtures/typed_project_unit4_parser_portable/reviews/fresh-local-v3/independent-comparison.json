@@ -1,0 +1,61 @@
+{
+  "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "derivation": {
+    "derived_sha256": "f9b62944dd1fbe057c0dbb2ded2de78de7f87801d33357dc3276ed954f0c859a",
+    "original_sha256": "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b",
+    "replaced_region_sha256": "2125feadc38c835b5f132fc83b8dec02be5afa3905bd7546999fe12e4a2dd4ca",
+    "replacement_sha256": "8fc59a5f29b1c3c50eaf5df0b7b36cc212ecf4a781e44df449834fe8ef720402",
+    "schema": "oxid-unit4-portable-comparator-derivation-v1",
+    "semantic_predicate_handlers_unchanged": 22,
+    "unchanged_prefix_sha256": "c018ad1927e861ba2abdd5609b99f8593367383bf7dfdfa3437c66bb669d979f",
+    "unchanged_suffix_sha256": "8dd8daea94ee2085aceeeb7a56a71242d285653685997995c5e047c2fe98c545"
+  },
+  "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+  "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+  "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "evidence_scope": "fresh execution at recorded paths; hosting is not inferred",
+  "execution_contract": {
+    "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "contract_id": "oxid-unit4-parser-source-contract-20261003-v1",
+    "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027"
+  },
+  "expected_observations": 638,
+  "issues": [],
+  "observations": 638,
+  "ordered_amendment_sha256": [
+    "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+  ],
+  "ordinary_passivity": [
+    {
+      "pairs": 6,
+      "profile": "debug",
+      "report": {
+        "bytes": 11405,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/passivity-debug/result/report.json",
+        "sha256": "abcaff3e99b430dab4ef08209e1d6b42062d37a77c0ba29489884fa1e99ab3bc"
+      },
+      "scope": "three prescribed ordinary sources in both parser modes; no seam equivalence or full-corpus assertion"
+    },
+    {
+      "pairs": 6,
+      "profile": "release",
+      "report": {
+        "bytes": 11475,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/passivity-release/result/report.json",
+        "sha256": "4845b2f4868afbb5970fe5dde3b43fd8892eef1d1ca187cf0dff347811575552"
+      },
+      "scope": "three prescribed ordinary sources in both parser modes; no seam equivalence or full-corpus assertion"
+    }
+  ],
+  "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "portable_authority_sha256": "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0",
+  "schema": "oxid-unit4-parser-comparison-v1",
+  "session": {
+    "bytes": 22834,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+    "sha256": "dc8ad4b2cf003893446de4cbdfb80bfc40c29e8a26ec096a7c7373bdf5bc746f"
+  },
+  "status": "pass"
+}

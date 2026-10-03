@@ -1,0 +1,99 @@
+{
+  "authority_sha256": "8c2699170926e4bf4bb1b004b9e30980b9f5e66fa719f450f5474e40a76257db",
+  "candidate_executions": 0,
+  "compiler_executions": 0,
+  "external_writes": 0,
+  "records": [
+    {
+      "details": {
+        "poisoned_GIT_DIR": "/workspace/scratch/8266abf56995/oxid-recovery-main/.git/worktrees/oxid-parser-unit4-adapter",
+        "source_map_still_pinned": true,
+        "target": "/workspace/scratch/8266abf56995/oxid-recovery-main"
+      },
+      "expected": {
+        "head": "02281a24a2bfa029720c7be243e65c0ed2d518e4",
+        "tree": "f0180761c9cf44ab7a74f2a381f4238f14c32ee2"
+      },
+      "name": "git_repository_override_oxid-recovery-main",
+      "observed": {
+        "head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+        "tree": "305a1226d6ca1abd3bdea765200da082b9d9bc75"
+      },
+      "status": "fail"
+    },
+    {
+      "details": {
+        "poisoned_GIT_DIR": "/workspace/scratch/8266abf56995/oxid-recovery-main/.git",
+        "source_map_still_pinned": true,
+        "target": "/workspace/scratch/8266abf56995/oxid-parser-unit4-adapter"
+      },
+      "expected": {
+        "head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+        "tree": "305a1226d6ca1abd3bdea765200da082b9d9bc75"
+      },
+      "name": "git_repository_override_oxid-parser-unit4-adapter",
+      "observed": {
+        "head": "02281a24a2bfa029720c7be243e65c0ed2d518e4",
+        "tree": "f0180761c9cf44ab7a74f2a381f4238f14c32ee2"
+      },
+      "status": "fail"
+    },
+    {
+      "details": {
+        "compiler_executions": 0,
+        "extra_path": "/workspace/scratch/8266abf56995/portable-parser-review-selected-toolchain-plus-extra/bin/which",
+        "probe_argv": [
+          "which",
+          "rustc"
+        ],
+        "probe_exit": 0,
+        "probe_stdout": "UNPINNED_WHICH_EXECUTED\n",
+        "selected_files": 62
+      },
+      "expected": false,
+      "name": "unselected_toolchain_executable_shadow",
+      "observed": true,
+      "status": "fail"
+    },
+    {
+      "details": {
+        "compiler_executions": 0,
+        "extra_path": "/workspace/scratch/8266abf56995/portable-parser-review-selected-toolchain-plus-extra/bin/as",
+        "probe_argv": [
+          "as",
+          "--version"
+        ],
+        "probe_exit": 0,
+        "probe_stdout": "UNPINNED_AS_EXECUTED\n",
+        "qualification": "demonstrates native subtool PATH resolution, not a real compiler invocation",
+        "selected_files": 62
+      },
+      "expected": false,
+      "name": "unselected_native_assembler_shadow",
+      "observed": true,
+      "status": "fail"
+    },
+    {
+      "details": {
+        "function_count": 36
+      },
+      "expected": "identical AST",
+      "name": "all_non_admission_function_asts_retained",
+      "observed": "identical AST",
+      "status": "pass"
+    },
+    {
+      "details": {
+        "retained_statement_count": 16
+      },
+      "expected": "identical AST",
+      "name": "raw_receipt_and_roster_suffix_asts_retained",
+      "observed": "identical AST",
+      "status": "pass"
+    }
+  ],
+  "schema": "oxid-portable-independent-heldout-controls-v1",
+  "scope": "local source/recipe review, no compiler or candidate execution",
+  "target_checkpoint_sha256": "37ffb1cf0c9b4be7f324079c39d472fb81f09cc0473219f582939befb0b8d659",
+  "target_implementation_sha256": "879390cfc59eef3fbff432bba04b79f245bccb3e80e3139321f13cae22dec59c"
+}

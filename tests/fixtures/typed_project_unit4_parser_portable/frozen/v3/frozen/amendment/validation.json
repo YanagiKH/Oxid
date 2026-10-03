@@ -1,0 +1,44 @@
+{
+  "candidate_code_files_read": 0,
+  "candidate_result_files_read": 0,
+  "changed_json_leaf_count": 4,
+  "compiler_invocations": 0,
+  "coordinate_findings": 1,
+  "deterministic_artifacts_verified": 3,
+  "frozen_members_verified_unchanged": 11,
+  "negative_controls": [
+    {
+      "message": "unapproved base package freeze",
+      "name": "stale-freeze",
+      "result": "rejected"
+    },
+    {
+      "message": "frozen member changed: parser-contract-new-v1.json.gz",
+      "name": "changed-compressed-corpus",
+      "result": "rejected"
+    },
+    {
+      "message": "frozen member changed: validate_source_contract.py",
+      "name": "changed-bound-validator",
+      "result": "rejected"
+    },
+    {
+      "message": "unapproved decoded corpus",
+      "name": "decoded-identity-mismatch",
+      "result": "rejected"
+    },
+    {
+      "message": "frozen member changed: parser-contract-new-v1.json.gz",
+      "name": "already-amended-corpus",
+      "result": "rejected"
+    },
+    {
+      "message": "frozen member changed: parser-contract-new-v1.json.gz",
+      "name": "changed-other-expectation",
+      "result": "rejected"
+    }
+  ],
+  "schema_version": 1,
+  "source_roots_audited": 3,
+  "status": "PASS_SOURCE_ONLY_CHECKS"
+}

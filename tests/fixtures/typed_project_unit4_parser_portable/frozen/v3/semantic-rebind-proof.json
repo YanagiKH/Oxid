@@ -1,0 +1,49 @@
+{
+  "additional_recipe_deltas": [
+    "15-second initial Rust version probe timeout",
+    "absolute passivity session paths plus explicit regular-file/symlink ancestry admission"
+  ],
+  "additional_reviewer_requested_recipe_definition_deltas": [
+    "build",
+    "session_at",
+    "verify_passivity"
+  ],
+  "authored_base_expectation_changes": 0,
+  "candidate_executions": 0,
+  "changed_existing_adapter_definitions": [
+    "build",
+    "compare",
+    "session_at",
+    "verify_passivity"
+  ],
+  "compiler_input_members": 283,
+  "control_members": 286,
+  "helper_members": 10,
+  "instrumented_members": 286,
+  "new_adapter_definitions": [
+    "effective_authority"
+  ],
+  "original_execution_identity_preserved": true,
+  "predecessor_checkpoint_sha256": "ead24771bd5ba5a34664de68b7cd5e24e0fe247baed076de81da69d86b0d5e44",
+  "schema": "oxid-portable-v3-semantic-rebind-proof",
+  "semantic_rebind_existing_definition": "compare",
+  "separately_approved_effective_coordinate_leaf_changes": 4,
+  "source_recipe_authority_fields_unchanged": [
+    "base_commit",
+    "freeze_sha256",
+    "contract_sha256",
+    "candidate_source_manifest_sha256",
+    "original_files",
+    "derived_files",
+    "control_derived_files",
+    "instrumentation",
+    "control_instrumentation",
+    "helper_files",
+    "helper_manifest_sha256",
+    "compiler_files",
+    "dependency_files",
+    "recipe",
+    "portable_recipe_version"
+  ],
+  "unchanged_existing_adapter_definitions": 39
+}

@@ -1,0 +1,16 @@
+{
+  "authority_sha256": "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0",
+  "candidate_executions": 0,
+  "derivation": {
+    "derived_sha256": "f9b62944dd1fbe057c0dbb2ded2de78de7f87801d33357dc3276ed954f0c859a",
+    "original_sha256": "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b",
+    "replaced_region_sha256": "2125feadc38c835b5f132fc83b8dec02be5afa3905bd7546999fe12e4a2dd4ca",
+    "replacement_sha256": "8fc59a5f29b1c3c50eaf5df0b7b36cc212ecf4a781e44df449834fe8ef720402",
+    "schema": "oxid-unit4-portable-comparator-derivation-v1",
+    "semantic_predicate_handlers_unchanged": 22,
+    "unchanged_prefix_sha256": "c018ad1927e861ba2abdd5609b99f8593367383bf7dfdfa3437c66bb669d979f",
+    "unchanged_suffix_sha256": "8dd8daea94ee2085aceeeb7a56a71242d285653685997995c5e047c2fe98c545"
+  },
+  "derived_files": 286,
+  "original_files": 283
+}

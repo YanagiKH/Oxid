@@ -1,0 +1,498 @@
+{
+  "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "candidate_result_files_read": 0,
+  "cases": [
+    {
+      "byte_index": [
+        {
+          "hex": "66",
+          "offset": 0
+        },
+        {
+          "hex": "6e",
+          "offset": 1
+        },
+        {
+          "hex": "20",
+          "offset": 2
+        },
+        {
+          "hex": "70",
+          "offset": 3
+        },
+        {
+          "hex": "75",
+          "offset": 4
+        },
+        {
+          "hex": "62",
+          "offset": 5
+        },
+        {
+          "hex": "28",
+          "offset": 6
+        },
+        {
+          "hex": "29",
+          "offset": 7
+        },
+        {
+          "hex": "2d",
+          "offset": 8
+        },
+        {
+          "hex": "3e",
+          "offset": 9
+        },
+        {
+          "hex": "69",
+          "offset": 10
+        },
+        {
+          "hex": "33",
+          "offset": 11
+        },
+        {
+          "hex": "32",
+          "offset": 12
+        },
+        {
+          "hex": "7b",
+          "offset": 13
+        },
+        {
+          "hex": "72",
+          "offset": 14
+        },
+        {
+          "hex": "65",
+          "offset": 15
+        },
+        {
+          "hex": "74",
+          "offset": 16
+        },
+        {
+          "hex": "75",
+          "offset": 17
+        },
+        {
+          "hex": "72",
+          "offset": 18
+        },
+        {
+          "hex": "6e",
+          "offset": 19
+        },
+        {
+          "hex": "20",
+          "offset": 20
+        },
+        {
+          "hex": "31",
+          "offset": 21
+        },
+        {
+          "hex": "3b",
+          "offset": 22
+        },
+        {
+          "hex": "7d",
+          "offset": 23
+        }
+      ],
+      "case_id": "public-root-original-reserved-function",
+      "case_index": 245,
+      "computed_primary": {
+        "column": 4,
+        "end": 6,
+        "end_column": 7,
+        "end_line": 1,
+        "file_id": 0,
+        "line": 1,
+        "path": "activation.ox",
+        "start": 3
+      },
+      "coordinate_change_required": false,
+      "derivation": "Unique complete reserved function-name token pub, identified by ASCII word boundaries.",
+      "original_primary": {
+        "column": 4,
+        "end": 6,
+        "end_column": 7,
+        "end_line": 1,
+        "file_id": 0,
+        "line": 1,
+        "path": "activation.ox",
+        "start": 3
+      },
+      "original_slice_utf8": "pub",
+      "source": {
+        "base64": "Zm4gcHViKCktPmkzMntyZXR1cm4gMTt9",
+        "bytes": 24,
+        "path": "activation.ox",
+        "sha256": "411d78f07365655b8e4dd6f55f0bb9789c3ee90bcb231dc6775823e7bc33baf9"
+      },
+      "source_utf8": "fn pub()->i32{return 1;}",
+      "target_utf8": "pub"
+    },
+    {
+      "byte_index": [
+        {
+          "hex": "6d",
+          "offset": 0
+        },
+        {
+          "hex": "6f",
+          "offset": 1
+        },
+        {
+          "hex": "64",
+          "offset": 2
+        },
+        {
+          "hex": "20",
+          "offset": 3
+        },
+        {
+          "hex": "63",
+          "offset": 4
+        },
+        {
+          "hex": "68",
+          "offset": 5
+        },
+        {
+          "hex": "69",
+          "offset": 6
+        },
+        {
+          "hex": "6c",
+          "offset": 7
+        },
+        {
+          "hex": "64",
+          "offset": 8
+        },
+        {
+          "hex": "3b",
+          "offset": 9
+        },
+        {
+          "hex": "20",
+          "offset": 10
+        },
+        {
+          "hex": "66",
+          "offset": 11
+        },
+        {
+          "hex": "6e",
+          "offset": 12
+        },
+        {
+          "hex": "20",
+          "offset": 13
+        },
+        {
+          "hex": "70",
+          "offset": 14
+        },
+        {
+          "hex": "75",
+          "offset": 15
+        },
+        {
+          "hex": "62",
+          "offset": 16
+        },
+        {
+          "hex": "28",
+          "offset": 17
+        },
+        {
+          "hex": "29",
+          "offset": 18
+        },
+        {
+          "hex": "2d",
+          "offset": 19
+        },
+        {
+          "hex": "3e",
+          "offset": 20
+        },
+        {
+          "hex": "69",
+          "offset": 21
+        },
+        {
+          "hex": "33",
+          "offset": 22
+        },
+        {
+          "hex": "32",
+          "offset": 23
+        },
+        {
+          "hex": "7b",
+          "offset": 24
+        },
+        {
+          "hex": "72",
+          "offset": 25
+        },
+        {
+          "hex": "65",
+          "offset": 26
+        },
+        {
+          "hex": "74",
+          "offset": 27
+        },
+        {
+          "hex": "75",
+          "offset": 28
+        },
+        {
+          "hex": "72",
+          "offset": 29
+        },
+        {
+          "hex": "6e",
+          "offset": 30
+        },
+        {
+          "hex": "20",
+          "offset": 31
+        },
+        {
+          "hex": "31",
+          "offset": 32
+        },
+        {
+          "hex": "3b",
+          "offset": 33
+        },
+        {
+          "hex": "7d",
+          "offset": 34
+        }
+      ],
+      "case_id": "public-root-module-before-reserved-function",
+      "case_index": 246,
+      "computed_primary": {
+        "column": 15,
+        "end": 17,
+        "end_column": 18,
+        "end_line": 1,
+        "file_id": 0,
+        "line": 1,
+        "path": "activation.ox",
+        "start": 14
+      },
+      "coordinate_change_required": true,
+      "derivation": "Unique complete reserved function-name token pub, identified by ASCII word boundaries.",
+      "original_primary": {
+        "column": 14,
+        "end": 16,
+        "end_column": 17,
+        "end_line": 1,
+        "file_id": 0,
+        "line": 1,
+        "path": "activation.ox",
+        "start": 13
+      },
+      "original_slice_utf8": " pu",
+      "source": {
+        "base64": "bW9kIGNoaWxkOyBmbiBwdWIoKS0+aTMye3JldHVybiAxO30=",
+        "bytes": 35,
+        "path": "activation.ox",
+        "sha256": "5aaf30a3b8fac37e0745f7211ffd13fa0fae5b3903ff03bd285c6ce2d9025e9e"
+      },
+      "source_utf8": "mod child; fn pub()->i32{return 1;}",
+      "target_utf8": "pub"
+    },
+    {
+      "byte_index": [
+        {
+          "hex": "6d",
+          "offset": 0
+        },
+        {
+          "hex": "6f",
+          "offset": 1
+        },
+        {
+          "hex": "64",
+          "offset": 2
+        },
+        {
+          "hex": "20",
+          "offset": 3
+        },
+        {
+          "hex": "63",
+          "offset": 4
+        },
+        {
+          "hex": "68",
+          "offset": 5
+        },
+        {
+          "hex": "69",
+          "offset": 6
+        },
+        {
+          "hex": "6c",
+          "offset": 7
+        },
+        {
+          "hex": "64",
+          "offset": 8
+        },
+        {
+          "hex": "3b",
+          "offset": 9
+        },
+        {
+          "hex": "0a",
+          "offset": 10
+        },
+        {
+          "hex": "66",
+          "offset": 11
+        },
+        {
+          "hex": "6e",
+          "offset": 12
+        },
+        {
+          "hex": "20",
+          "offset": 13
+        },
+        {
+          "hex": "6d",
+          "offset": 14
+        },
+        {
+          "hex": "61",
+          "offset": 15
+        },
+        {
+          "hex": "69",
+          "offset": 16
+        },
+        {
+          "hex": "6e",
+          "offset": 17
+        },
+        {
+          "hex": "28",
+          "offset": 18
+        },
+        {
+          "hex": "29",
+          "offset": 19
+        },
+        {
+          "hex": "3a",
+          "offset": 20
+        },
+        {
+          "hex": "3a",
+          "offset": 21
+        },
+        {
+          "hex": "69",
+          "offset": 22
+        },
+        {
+          "hex": "33",
+          "offset": 23
+        },
+        {
+          "hex": "32",
+          "offset": 24
+        },
+        {
+          "hex": "20",
+          "offset": 25
+        },
+        {
+          "hex": "7b",
+          "offset": 26
+        },
+        {
+          "hex": "7d",
+          "offset": 27
+        }
+      ],
+      "case_id": "public-root-module-before-signature-error",
+      "case_index": 247,
+      "computed_primary": {
+        "column": 10,
+        "end": 21,
+        "end_column": 11,
+        "end_line": 2,
+        "file_id": 0,
+        "line": 2,
+        "path": "activation.ox",
+        "start": 20
+      },
+      "coordinate_change_required": false,
+      "derivation": "First colon immediately after the parameter list; the preserved projection identifies one colon, not the adjacent pair.",
+      "original_primary": {
+        "column": 10,
+        "end": 21,
+        "end_column": 11,
+        "end_line": 2,
+        "file_id": 0,
+        "line": 2,
+        "path": "activation.ox",
+        "start": 20
+      },
+      "original_slice_utf8": ":",
+      "source": {
+        "base64": "bW9kIGNoaWxkOwpmbiBtYWluKCk6OmkzMiB7fQ==",
+        "bytes": 28,
+        "path": "activation.ox",
+        "sha256": "2f98ea10d78fc1e93c825e2eabc2c5bffa0c6b3ae52595f274930c2633230a35"
+      },
+      "source_utf8": "mod child;\nfn main()::i32 {}",
+      "target_utf8": ":"
+    }
+  ],
+  "compiler_invocations": 0,
+  "exact_changed_json_pointers": [
+    "/cases/246/expected/first_diagnostic_projection/primary/column",
+    "/cases/246/expected/first_diagnostic_projection/primary/end",
+    "/cases/246/expected/first_diagnostic_projection/primary/end_column",
+    "/cases/246/expected/first_diagnostic_projection/primary/start"
+  ],
+  "method": "Strict source bytes and independent unique lexical anchors, then UTF-8 prefix decoding and scalar counts. No compiler invocation, candidate-code read or candidate-output input.",
+  "prior_audit_scope": {
+    "current_closure": "This proof locates the unique pub token or first post-parameter colon directly in each of the three exact frozen sources before comparing its coordinates.",
+    "independent_audit": "new-contract-review/audit_parser_source_only.py:42-56",
+    "not_verified": "Neither location walk independently located the intended offending token for these three public-root-first-error rows. The wrong [13,16) offset and its internally consistent columns therefore passed. The count 533 measures coordinate consistency checks, not 533 independently established offending-token origins.",
+    "validator": "parser/validate_source_contract.py:36-40,64-66",
+    "verified": "The 533-location audit verified file ownership, in-range byte offsets, valid UTF-8 boundary decoding and consistent line/scalar-column coordinates computed from the supplied offsets. The validator made the same coordinate-consistency check. Separate semantic token checks existed for Q35 and diagnostic-cap rows."
+  },
+  "schema_version": 1,
+  "unchanged_case_count": 247,
+  "unchanged_top_level_keys": [
+    "case_count",
+    "category_counts",
+    "contract_id",
+    "default_limits",
+    "global_invariants",
+    "historical_migrations",
+    "non_claims",
+    "platform_applicability",
+    "provenance",
+    "required_platforms",
+    "required_profiles",
+    "schema",
+    "status"
+  ]
+}

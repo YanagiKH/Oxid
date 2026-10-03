@@ -1,0 +1,26 @@
+test_complete_identity_inventory_controls (test_portable.PortableControls.test_complete_identity_inventory_controls) ... ok
+test_configs_and_inherited_environment (test_portable.PortableControls.test_configs_and_inherited_environment) ... ok
+test_exact_authority_and_unchanged_comparator_regions (test_portable.PortableControls.test_exact_authority_and_unchanged_comparator_regions) ... ok
+test_helper_same_path_content_substitutions (test_portable.PortableControls.test_helper_same_path_content_substitutions) ... ok
+test_measured_host_rejections (test_portable.PortableControls.test_measured_host_rejections) ... ok
+test_missing_complete_evidence_is_failure (test_portable.PortableControls.test_missing_complete_evidence_is_failure) ... ok
+test_optimized_cli_rejected (test_portable.PortableControls.test_optimized_cli_rejected) ... ok
+test_two_root_real_source_materialization_and_coherent_substitutions (test_portable.PortableControls.test_two_root_real_source_materialization_and_coherent_substitutions) ... ok
+test_two_root_synthetic_cargo_positive_and_closed_mutations (test_portable.PortableControls.test_two_root_synthetic_cargo_positive_and_closed_mutations) ... ok
+test_git_overrides_both_directions_and_false_index_objects_config (test_review_regressions.ReviewRegressions.test_git_overrides_both_directions_and_false_index_objects_config) ... ok
+test_unselected_which_and_assembler_cannot_enter_lookup (test_review_regressions.ReviewRegressions.test_unselected_which_and_assembler_cannot_enter_lookup) ... ok
+test_integrated_positive_and_negative_controls (test_receipts.ReceiptControls.test_integrated_positive_and_negative_controls) ... ok
+test_relocated_release_session (test_receipts.ReceiptControls.test_relocated_release_session) ... ok
+test_six_pairs_and_coherently_rehashed_negative_controls (test_passivity.PassivityControls.test_six_pairs_and_coherently_rehashed_negative_controls) ... ok
+test_base_execution_identity_and_strict_effective_comparison_identity (test_semantic_rebind.SemanticRebindControls.test_base_execution_identity_and_strict_effective_comparison_identity) ... ok
+test_complete_authority_and_coherent_same_path_tampering (test_semantic_rebind.SemanticRebindControls.test_complete_authority_and_coherent_same_path_tampering) ... ok
+test_exact_v8b_transform_retains_all_other_functions_and_case_tail (test_semantic_rebind.SemanticRebindControls.test_exact_v8b_transform_retains_all_other_functions_and_case_tail) ... ok
+test_no_already_applied_truncated_or_mutated_base (test_semantic_rebind.SemanticRebindControls.test_no_already_applied_truncated_or_mutated_base) ... ok
+test_portable_authority_cannot_substitute_amendment (test_semantic_rebind.SemanticRebindControls.test_portable_authority_cannot_substitute_amendment) ... ok
+test_initial_rustc_version_timeout_is_explicit_and_propagates (test_recipe_fixes.RecipeFixControls.test_initial_rustc_version_timeout_is_explicit_and_propagates) ... ok
+test_relative_session_passivity_and_symlink_rejection (test_recipe_fixes.RecipeFixControls.test_relative_session_passivity_and_symlink_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 142.159s
+
+OK

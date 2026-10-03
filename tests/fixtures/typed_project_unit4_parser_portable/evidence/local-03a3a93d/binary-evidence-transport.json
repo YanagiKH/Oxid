@@ -1,0 +1,33 @@
+{
+  "archive": {
+    "bytes": 14285670,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-binaries.tar.gz",
+    "sha256": "833e42ec5495358e0bb7f0b48bfda86db0db613d590f7d2f7ae3b8dc330314d2"
+  },
+  "binary_identities": [
+    {
+      "bytes": 16896272,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8",
+      "sha256": "0de5151ca613f5bf2c8381dcc7d0042f54ac27db90e49e2e4423b54fedb1832a"
+    },
+    {
+      "bytes": 16838528,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8",
+      "sha256": "f87b6bad9b8f00f30b3eddb2f58450652f31d06d630e5772d17b5adab4702683"
+    },
+    {
+      "bytes": 8296296,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960",
+      "sha256": "30311ebeb80fefb90669dc5f3865bb87a635a5ffee3d0b2c995ef3861f3719a0"
+    },
+    {
+      "bytes": 8244824,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960",
+      "sha256": "f6958821eb525724c49e7f1aab9c58caeaed275fdc2afb0e54b3b30278d6e38c"
+    }
+  ],
+  "creation_seconds": 2.5648563230024592,
+  "hosting_claim": false,
+  "members": 4,
+  "uncompressed_file_bytes": 50275920
+}

@@ -1,0 +1,75 @@
+{
+  "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "candidate_code_files_read": 0,
+  "candidate_result_files_read": 0,
+  "compiler_invocations": 0,
+  "files": [
+    {
+      "bytes": 5738,
+      "path": "README.md",
+      "sha256": "4ace9224a08cc7de4031846a83daccbc61724396da2832a09d63056ac74203ea"
+    },
+    {
+      "bytes": 3473,
+      "path": "artifacts/amendment.json",
+      "sha256": "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    },
+    {
+      "bytes": 2538,
+      "path": "artifacts/effective-contract.json",
+      "sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020"
+    },
+    {
+      "bytes": 11237,
+      "path": "artifacts/source-coordinate-proof.json",
+      "sha256": "3be833baa8aff4d1d26a0c3351ecf39950873f8a2ef2768283847c08440fd63d"
+    },
+    {
+      "bytes": 12051,
+      "path": "build_amendment.py",
+      "sha256": "6f51be43ce2f921247c7bf90e7fd9257aea2b89150d7d9e5cf1fca654ec4e508"
+    },
+    {
+      "bytes": 630,
+      "path": "receipt-identity.json",
+      "sha256": "be620a01f51104d9d61acec3427c237e4d48c1e9ced20e757614b19e4ae9d2e8"
+    },
+    {
+      "bytes": 1236,
+      "path": "validation.json",
+      "sha256": "ff4d3679ed3c874cfa8f7f12e1cb0da6f7e2679bae025388b4d1f783d468b755"
+    }
+  ],
+  "identity": "oxid-unit4-parser-v1-location-amendment-v1",
+  "preserved_provisional_history": [
+    {
+      "bytes": 5005,
+      "path": "history/provisional-v1/README.md",
+      "sha256": "7475997edc06c7b1c522d27d901d50f038ebfefbd006c7f315786e21f0210d73"
+    },
+    {
+      "bytes": 3473,
+      "path": "history/provisional-v1/artifacts/amendment.json",
+      "sha256": "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    },
+    {
+      "bytes": 2321,
+      "path": "history/provisional-v1/artifacts/effective-contract.json",
+      "sha256": "8d3bf7cdb027e1c9589275787dafbd8c6b89439521f51201dcc47571cd014c72"
+    },
+    {
+      "bytes": 11237,
+      "path": "history/provisional-v1/artifacts/source-coordinate-proof.json",
+      "sha256": "3be833baa8aff4d1d26a0c3351ecf39950873f8a2ef2768283847c08440fd63d"
+    },
+    {
+      "bytes": 11834,
+      "path": "history/provisional-v1/build_amendment.py",
+      "sha256": "1b5ee10bbece4710029a5ab787a63fdaea729e7594f2033a5e315dad0d3c896b"
+    }
+  ],
+  "publication_directory": "tests/fixtures/typed_project_unit4_parser_location_amendment_v1",
+  "schema_version": 1,
+  "status": "SOURCE_ONLY_AMENDMENT_AWAITING_INDEPENDENT_REVIEW"
+}

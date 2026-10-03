@@ -1,0 +1,681 @@
+{
+  "admitted_inputs": [
+    {
+      "bytes": 12115,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/checkpoint.json",
+      "sha256": "8a71652fa28e4c7580112f5e447b8eed7dce56497d1ece1e1b49a2e93dbb2af3"
+    },
+    {
+      "bytes": 47092,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+      "sha256": "cbbd81c6461dc26498fa1551efacb23b219d0fed78048e4ead5929154b823eed"
+    },
+    {
+      "bytes": 3432,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3-independent-review/review-checkpoint.json",
+      "sha256": "3cfd3aed59a11b02dab37156fbbf5fdd4799c874ee6540b48a376e27394dc412"
+    }
+  ],
+  "after": {
+    "child_maxrss_kib": 2603792,
+    "child_system_seconds": 35.838152,
+    "child_user_seconds": 333.359299,
+    "disk_free_bytes": 25865027584,
+    "evidence_bytes": 630458308
+  },
+  "comparison": {
+    "bytes": 3334,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/comparison.json",
+    "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+  },
+  "contract_directory": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser",
+  "current_head": "03a3a93dd90074484cfc2d0aa976b1327d757c79",
+  "current_tree": "06caab7624ddc17dd3d41f85871b534b7cf1dce4",
+  "driver": {
+    "bytes": 7726,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/run_qualification.py",
+    "sha256": "bc4ce761466245f936479140c59b2bac30ff40158651fd5c7b6fe67feb4dad31"
+  },
+  "environment": {
+    "HOME": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/driver-home",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "PATH": "/usr/bin:/bin",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONNOUSERSITE": "1"
+  },
+  "finished_ns": 1791017356407085514,
+  "historical_head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+  "limits": {
+    "evidence_bytes": 12884901888,
+    "incremental": 0,
+    "jobs": 2,
+    "minimum_free_bytes": 3221225472,
+    "monitor_interval_seconds": 2,
+    "total_seconds": 5400
+  },
+  "observations": 638,
+  "ordinary_passivity_pairs": 12,
+  "schema": "oxid-portable-parser-real-qualification-v3",
+  "scope": "fresh local portable qualification; no hosted result claim",
+  "stages": [
+    {
+      "after": {
+        "child_maxrss_kib": 51928,
+        "child_system_seconds": 0.027271999999999998,
+        "child_user_seconds": 0.153997,
+        "disk_free_bytes": 26518921216,
+        "evidence_bytes": 11945
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d/tests/fixtures/typed_project_unit4_contracts/transport.py",
+        "verify"
+      ],
+      "before": {
+        "child_maxrss_kib": 0,
+        "child_system_seconds": 0.0,
+        "child_user_seconds": 0.0,
+        "disk_free_bytes": 26518929408,
+        "evidence_bytes": 10594
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 2.000920758000575,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017060993019510,
+      "name": "01-transport-verify",
+      "peak_evidence_bytes": 11376,
+      "started_ns": 1791017058991532811,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/01-transport-verify.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 569,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/01-transport-verify.stdout",
+        "sha256": "783c222f52b1e3c0e396680f61871b3dbb2e45dea239b48b64119b72a5ca3a15"
+      },
+      "timeout_seconds": 120
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 51944,
+        "child_system_seconds": 0.096801,
+        "child_user_seconds": 0.365884,
+        "disk_free_bytes": 26509221888,
+        "evidence_bytes": 8623483
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d/tests/fixtures/typed_project_unit4_contracts/transport.py",
+        "extract",
+        "--destination",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport"
+      ],
+      "before": {
+        "child_maxrss_kib": 51928,
+        "child_system_seconds": 0.027271999999999998,
+        "child_user_seconds": 0.153997,
+        "disk_free_bytes": 26518921216,
+        "evidence_bytes": 12947
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 2.000838964999275,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017062995260914,
+      "name": "02-transport-extract",
+      "peak_evidence_bytes": 13891,
+      "started_ns": 1791017060993846019,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/02-transport-extract.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 570,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/02-transport-extract.stdout",
+        "sha256": "b287c85175711e4e03f1258f6f08401db5da9c26b8a99170a5fe9ed176d3a953"
+      },
+      "timeout_seconds": 120
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 51944,
+        "child_system_seconds": 0.137987,
+        "child_user_seconds": 0.571785,
+        "disk_free_bytes": 26509217792,
+        "evidence_bytes": 8625723
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d/tests/fixtures/typed_project_unit4_contracts/transport.py",
+        "resolve",
+        "--destination",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport",
+        "--logical-path",
+        "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/package-freeze.json"
+      ],
+      "before": {
+        "child_maxrss_kib": 51944,
+        "child_system_seconds": 0.096801,
+        "child_user_seconds": 0.365884,
+        "disk_free_bytes": 26509221888,
+        "evidence_bytes": 8624478
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 2.0052621020004153,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017065011248409,
+      "name": "03-transport-resolve",
+      "peak_evidence_bytes": 8625537,
+      "started_ns": 1791017063001251794,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/03-transport-resolve.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 186,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/03-transport-resolve.stdout",
+        "sha256": "d9b70f4c8e32b29a0c4200e37caff0175962d39e940c8512cebe066f29b30709"
+      },
+      "timeout_seconds": 120
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 51944,
+        "child_system_seconds": 1.6879819999999999,
+        "child_user_seconds": 3.545965,
+        "disk_free_bytes": 26499735552,
+        "evidence_bytes": 16342489
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "prepare",
+        "--repo",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-authority-d9e6b9bf",
+        "--checkout",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d",
+        "--output",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session"
+      ],
+      "before": {
+        "child_maxrss_kib": 51944,
+        "child_system_seconds": 0.137987,
+        "child_user_seconds": 0.571785,
+        "disk_free_bytes": 26509217792,
+        "evidence_bytes": 8626914
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 6.053288531002181,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017071077637108,
+      "name": "04-prepare",
+      "peak_evidence_bytes": 14953809,
+      "started_ns": 1791017065018740327,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/04-prepare.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 221,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/04-prepare.stdout",
+        "sha256": "cdd227577d709fbdbfbc278fa910e2b010a8c06268ef68972d427bc87013dd21"
+      },
+      "timeout_seconds": 180
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 854764,
+        "child_system_seconds": 5.162741,
+        "child_user_seconds": 21.869255,
+        "disk_free_bytes": 26475511808,
+        "evidence_bytes": 41656008
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home"
+      ],
+      "before": {
+        "child_maxrss_kib": 51944,
+        "child_system_seconds": 1.6879819999999999,
+        "child_user_seconds": 3.545965,
+        "disk_free_bytes": 26499735552,
+        "evidence_bytes": 16343468
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 20.171119717000693,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017091275984130,
+      "name": "05-build-debug",
+      "peak_evidence_bytes": 52102945,
+      "started_ns": 1791017071092423591,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/05-build-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 239,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/05-build-debug.stdout",
+        "sha256": "247c39bebfbbcafe1f492c27542e40133e7428f929937b59334ff5ea54f4a0a3"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 860620,
+        "child_system_seconds": 8.122864,
+        "child_user_seconds": 41.416286,
+        "disk_free_bytes": 26451296256,
+        "evidence_bytes": 66969517
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home",
+        "--control"
+      ],
+      "before": {
+        "child_maxrss_kib": 854764,
+        "child_system_seconds": 5.162741,
+        "child_user_seconds": 21.869255,
+        "disk_free_bytes": 26475511808,
+        "evidence_bytes": 41656993
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 20.195497251999768,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017111505531978,
+      "name": "06-build-control-debug",
+      "peak_evidence_bytes": 73167975,
+      "started_ns": 1791017091293934499,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/06-build-control-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 247,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/06-build-control-debug.stdout",
+        "sha256": "27cc7f352361bc31cf70a83b70ad999289158384ccf653bba5bb624249e01994"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 860620,
+        "child_system_seconds": 10.057547,
+        "child_user_seconds": 44.750112,
+        "disk_free_bytes": 26451050496,
+        "evidence_bytes": 67123692
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "passivity",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug"
+      ],
+      "before": {
+        "child_maxrss_kib": 860620,
+        "child_system_seconds": 8.122864,
+        "child_user_seconds": 41.416286,
+        "disk_free_bytes": 26451296256,
+        "evidence_bytes": 66970526
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 6.052792761998717,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017117594156285,
+      "name": "07-passivity-debug",
+      "peak_evidence_bytes": 67123446,
+      "started_ns": 1791017111523319872,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/07-passivity-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 246,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/07-passivity-debug.stdout",
+        "sha256": "e5b0b461ccd69d13f302ccb36a504bb3d4eb75e69ab84b21e4a2da23a888deaa"
+      },
+      "timeout_seconds": 300
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 860620,
+        "child_system_seconds": 12.620738,
+        "child_user_seconds": 57.149026,
+        "disk_free_bytes": 26181152768,
+        "evidence_bytes": 332266707
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "collect",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug",
+        "--contract-dir",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser"
+      ],
+      "before": {
+        "child_maxrss_kib": 860620,
+        "child_system_seconds": 10.057547,
+        "child_user_seconds": 44.750112,
+        "disk_free_bytes": 26451050496,
+        "evidence_bytes": 67124688
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 16.19664164799906,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017133827359430,
+      "name": "08-collect-debug",
+      "peak_evidence_bytes": 299567259,
+      "started_ns": 1791017117614291344,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/08-collect-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 246,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/08-collect-debug.stdout",
+        "sha256": "2d6cfb6fccd4ca74d0ad3858332e5baf9ab6a1b81a4d24b300ca225c9a2787e1"
+      },
+      "timeout_seconds": 1800
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 16.516765,
+        "child_user_seconds": 155.73471,
+        "disk_free_bytes": 26165747712,
+        "evidence_bytes": 348701772
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home"
+      ],
+      "before": {
+        "child_maxrss_kib": 860620,
+        "child_system_seconds": 12.620738,
+        "child_user_seconds": 57.149026,
+        "disk_free_bytes": 26181148672,
+        "evidence_bytes": 332267700
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 62.359675396000966,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017196270184919,
+      "name": "09-build-release",
+      "peak_evidence_bytes": 358345310,
+      "started_ns": 1791017133872580326,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/09-build-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 241,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/09-build-release.stdout",
+        "sha256": "69b552ef8523050633109d9601aa3d259e69ad70f0ad871b2e11b7a0d897120a"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 20.761733,
+        "child_user_seconds": 255.002363,
+        "disk_free_bytes": 26150338560,
+        "evidence_bytes": 365143104
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home",
+        "--control"
+      ],
+      "before": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 16.516765,
+        "child_user_seconds": 155.73471,
+        "disk_free_bytes": 26165747712,
+        "evidence_bytes": 348702765
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 62.05843870299941,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017258483859767,
+      "name": "10-build-control-release",
+      "peak_evidence_bytes": 374182784,
+      "started_ns": 1791017196359769675,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/10-build-control-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 249,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/10-build-control-release.stdout",
+        "sha256": "7627772bb65c3fa385eef89e6bcd80ece71d517b2dc44a21c5bcc23385450cfe"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 22.476823,
+        "child_user_seconds": 258.047665,
+        "disk_free_bytes": 26150088704,
+        "evidence_bytes": 365297387
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "passivity",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release"
+      ],
+      "before": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 20.761733,
+        "child_user_seconds": 255.002363,
+        "disk_free_bytes": 26150334464,
+        "evidence_bytes": 365144122
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 6.186279719000595,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017264806562262,
+      "name": "11-passivity-release",
+      "peak_evidence_bytes": 365297139,
+      "started_ns": 1791017258554722793,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/11-passivity-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 248,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/11-passivity-release.stdout",
+        "sha256": "7a0d233844afe39e7d14d3eb76f67157fc705700a3ab6e206c8f80094c5ee97f"
+      },
+      "timeout_seconds": 300
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 24.76123,
+        "child_user_seconds": 267.955139,
+        "disk_free_bytes": 25865080832,
+        "evidence_bytes": 630448521
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "collect",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release",
+        "--contract-dir",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser"
+      ],
+      "before": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 22.476823,
+        "child_user_seconds": 258.047665,
+        "disk_free_bytes": 26150088704,
+        "evidence_bytes": 365298392
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 14.525541895996867,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017279471443985,
+      "name": "12-collect-release",
+      "peak_evidence_bytes": 625884947,
+      "started_ns": 1791017264877822808,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/12-collect-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 248,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/12-collect-release.stdout",
+        "sha256": "4873e0ea84619a2de102d7e27a945fa3a8d34a57b6daf1b0399335779bd0dbe4"
+      },
+      "timeout_seconds": 1800
+    },
+    {
+      "after": {
+        "child_maxrss_kib": 2603792,
+        "child_system_seconds": 35.838152,
+        "child_user_seconds": 333.359299,
+        "disk_free_bytes": 25865027584,
+        "evidence_bytes": 630457292
+      },
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "compare",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--contract-dir",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser"
+      ],
+      "before": {
+        "child_maxrss_kib": 939368,
+        "child_system_seconds": 24.76123,
+        "child_user_seconds": 267.955139,
+        "disk_free_bytes": 25865076736,
+        "evidence_bytes": 630449521
+      },
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 76.7452195529986,
+      "exit_code": 0,
+      "failure_reason": null,
+      "finished_ns": 1791017356337576076,
+      "name": "13-effective-comparison",
+      "peak_evidence_bytes": 630450624,
+      "started_ns": 1791017279534911115,
+      "status": "pass",
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/13-effective-comparison.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 3334,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/13-effective-comparison.stdout",
+        "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+      },
+      "timeout_seconds": 1200
+    }
+  ],
+  "started_ns": 1791017058991004898,
+  "status": "pass"
+}

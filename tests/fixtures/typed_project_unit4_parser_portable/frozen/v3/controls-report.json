@@ -1,0 +1,93 @@
+{
+  "approved_comparator_sha256": "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b",
+  "authority_sha256": "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0",
+  "broad_test_implementation_sha256": "866754b1c145dc2b50981a2fcee03225a3c6eb9653254a0e25fb21234a14fb0d",
+  "broad_test_methods_before_two_recipe_fixes": 19,
+  "candidate_executions": 0,
+  "compiler_build_executions": 0,
+  "effective_comparison_receipt": {
+    "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+    "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+    "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+    "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+    "ordered_amendment_sha256": [
+      "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    ]
+  },
+  "execution_contract_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "execution_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "final_implementation_sha256": "cbbd81c6461dc26498fa1551efacb23b219d0fed78048e4ead5929154b823eed",
+  "focused_final_recipe_test_methods": 2,
+  "focused_recipe_controls": [
+    "deterministic initial rustc-version timeout with explicit15seconds",
+    "relative-session synthetic passivity plus session/ancestor symlink rejection"
+  ],
+  "frozen_comparator_normal_tests": 52,
+  "frozen_comparator_optimized_tests": 52,
+  "integrated_session_outcomes": 36,
+  "logs": [
+    {
+      "bytes": 0,
+      "path": "controls.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2870,
+      "path": "controls.stderr",
+      "sha256": "01abc5a2469c7ac05dc0fc078c407fcac33ff730867b1aed45a97434f4403c3c"
+    },
+    {
+      "bytes": 0,
+      "path": "recipe-fix-controls.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 421,
+      "path": "recipe-fix-controls.stderr",
+      "sha256": "7d352bcef04942a64b88991a10d83202b3bc3184444ee3d58bf747ce6b9da4aa"
+    },
+    {
+      "bytes": 5294,
+      "path": "integrated-controls-report.json",
+      "sha256": "2ee838736de67afa0ff060273a4e8bb1553a39cbcfcf21bc20bced46a8413e9c"
+    },
+    {
+      "bytes": 1684,
+      "path": "passivity-controls-report.json",
+      "sha256": "8431121b6d3645828b1069287d5dba42a6b344f23383d98da5017193fcb55d10"
+    },
+    {
+      "bytes": 0,
+      "path": "frozen-normal.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7881,
+      "path": "frozen-normal.stderr",
+      "sha256": "e4695029a3259d2efaf155b51783c8b2c51c7f1ff621bb64d60efaba56ffd02a"
+    },
+    {
+      "bytes": 0,
+      "path": "frozen-optimized.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7881,
+      "path": "frozen-optimized.stderr",
+      "sha256": "145f4139b2ddb2e446c9794e043a298a19f9478cf759ee7df9c1294a25049e03"
+    }
+  ],
+  "native_and_rust_identity_probes": true,
+  "new_semantic_rebind_test_methods": 5,
+  "not_completed": [
+    "independent final v3 adapter review",
+    "fresh real four builds plus twelve ordinary passivity pairs and638 comparison",
+    "exact-head hosted gate and hosted job resource bounds"
+  ],
+  "real_source_sessions": 6,
+  "real_source_views": 12,
+  "schema": "oxid-unit4-portable-parser-controls-v3",
+  "status": "source-recipe-and-semantic-rebind-controls-pass; independent final review and real qualification pending",
+  "synthetic_passivity_outcomes": 11
+}

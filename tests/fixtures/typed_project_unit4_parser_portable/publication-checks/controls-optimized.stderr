@@ -1,0 +1,18 @@
+test_coherently_rehashed_document_and_ledger (__main__.PublicationControls.test_coherently_rehashed_document_and_ledger) ... ok
+test_every_unchanged_checkpoint_member_is_enforced (__main__.PublicationControls.test_every_unchanged_checkpoint_member_is_enforced) ... ok
+test_exact_projection_and_runtime_inspect (__main__.PublicationControls.test_exact_projection_and_runtime_inspect) ... ok
+test_extra_directory (__main__.PublicationControls.test_extra_directory) ... ok
+test_extra_file (__main__.PublicationControls.test_extra_file) ... ok
+test_missing_member (__main__.PublicationControls.test_missing_member) ... ok
+test_original_document_requires_explicit_projection (__main__.PublicationControls.test_original_document_requires_explicit_projection) ... ok
+test_runtime_mutation_with_rehashed_checkpoint (__main__.PublicationControls.test_runtime_mutation_with_rehashed_checkpoint) ... ok
+test_symlink_member (__main__.PublicationControls.test_symlink_member) ... ok
+test_symlink_package_ancestry (__main__.PublicationControls.test_symlink_package_ancestry) ... ok
+test_top_readme_identity (__main__.PublicationControls.test_top_readme_identity) ... ok
+test_widened_exception_is_rejected (__main__.PublicationControls.test_widened_exception_is_rejected) ... ok
+test_wrong_document_body (__main__.PublicationControls.test_wrong_document_body) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.421s
+
+OK

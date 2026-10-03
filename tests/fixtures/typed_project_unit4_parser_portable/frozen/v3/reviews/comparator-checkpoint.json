@@ -1,0 +1,99 @@
+{
+  "candidate_comparisons": 0,
+  "candidate_source_manifest_sha256": "2e96ea16fe01532366a4af1d69f4fc8c18dfb2cca305da131aced3c9565b167a",
+  "collector_helper_rebind_sha256": "9708016e83207a33d27db3ee6a67a4186f05347d5464ecb59aeaad93e1240b8a",
+  "collector_helper_review_sha256": "e655e3740ad8be86f49a2d2f7ebadc84e4b3597dee4a7d218a8ad446b57dca85",
+  "compiler_invocations": 0,
+  "contract_amendment_review_sha256": "a87d877c7e31d76ca0431188e3b862b94432baeb6bf3469017bab65e307ff89f",
+  "contract_amendment_sha256": "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451",
+  "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "durable_authority_sha256": "f2d63a287f4910676306e1eb3165958cc3978151961e6af54e11355def31fa5f",
+  "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+  "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+  "effective_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "files": [
+    {
+      "bytes": 21288,
+      "path": "README.md",
+      "sha256": "fef9692d846c6d5561ca41b6a0ed3291edb51fd806e7a4ab81531435aef48410"
+    },
+    {
+      "bytes": 97198,
+      "path": "comparator.py",
+      "sha256": "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
+    },
+    {
+      "bytes": 4081,
+      "path": "debug_decoder.py",
+      "sha256": "8fb1708d7824eb453db5c036ac2e7d49ca76e69ff222f1c3cf1e16f41272aa41"
+    },
+    {
+      "bytes": 62411,
+      "path": "test_mutations.py",
+      "sha256": "755b8364d459d8dc058e3360289155290771ec8941738583102290ff665848e3"
+    },
+    {
+      "bytes": 1356,
+      "path": "inventory.json",
+      "sha256": "9c2d6576a65c058aee3c3c2b06a6c70ee5c83e9a3b5ad337c8ea8b692f158cb0"
+    },
+    {
+      "bytes": 1174,
+      "path": "synthetic-controls.json",
+      "sha256": "a6d777f332a889d2394eaf67e349671edf14b56f60206473af7e6b02602ca275"
+    },
+    {
+      "bytes": 7881,
+      "path": "normal-controls.log",
+      "sha256": "47adc20949cd009ab861bafaf1de8feeeec3cf5ec7d58dc303594459fba03e6d"
+    },
+    {
+      "bytes": 7881,
+      "path": "optimized-controls.log",
+      "sha256": "2dee7523b63e094f2ffd92faf2df9f9d4c675760adb7df20f0c5ea90ee51a728"
+    },
+    {
+      "bytes": 1509,
+      "path": "unchanged-predicate-bodies.json",
+      "sha256": "748bff25cc6bb4e96d927632a5a77f4f866ef1f2163192826e5a0c62a48af44c"
+    },
+    {
+      "bytes": 762,
+      "path": "source-only-helper-rebind-check.json",
+      "sha256": "a854150a6a64ae6d6172bbc32ef6c7b5f9f52e4d0207a0f3c70eced62a7a7315"
+    },
+    {
+      "bytes": 4125,
+      "path": "amendment-admission-design.md",
+      "sha256": "b9b0698a38d5ee34c3a963434aeec76ebaf44f3785fef401b3aa9350e8e82f3b"
+    },
+    {
+      "bytes": 309,
+      "path": "independent-reserve-replay.json",
+      "sha256": "279d4a50985da0c1d81c332ccc7968ffc71ffae1e4a7468d822886440a17c261"
+    },
+    {
+      "bytes": 278,
+      "path": "independent-seam-replay.json",
+      "sha256": "7344a17f97a29b7f9d0493e3a4a1f77fe344f328a09b9dbfb813a9250fc2d76a"
+    },
+    {
+      "bytes": 2498,
+      "path": "source-only-amendment-admission-check.json",
+      "sha256": "2d708abd6089c862b6cd8541fe65d3c967be6faa6f93318ed33ebd23531f8a88"
+    },
+    {
+      "bytes": 509,
+      "path": "documentation-correction.json",
+      "sha256": "94fdbfe74f8595447fba74e36c0b443ecf000052c562f403ac42ff51fa0a4be9"
+    }
+  ],
+  "observer_source_sha256": "738dc9b47747889414859b9286e376c762dc75292ed3dedc5306e9eed881f625",
+  "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "preserved_preliminary_v7_sha256": "3440f827a9f35624ba33a1698fbcdf19a8e4b8f749a5e8e781d1d42fbc0ff5a8",
+  "revision": "8b",
+  "schema": "oxid-unit4-parser-comparator-checkpoint-v1",
+  "status": "source-only-awaiting-independent-review",
+  "supersedes_sha256": "654541115ba5fae1a0f25ccab45713d4de90a59d0e0aa5b7823acc5e8bfec45b",
+  "validation_inherited_from_checkpoint_sha256": "654541115ba5fae1a0f25ccab45713d4de90a59d0e0aa5b7823acc5e8bfec45b"
+}

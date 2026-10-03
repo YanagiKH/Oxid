@@ -1,0 +1,1247 @@
+{
+  "archive_identities_verified": [
+    {
+      "bytes": 33733523,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-compact-evidence.tar.gz",
+      "sha256": "adb70750ddf2b15d07a927176b58b127699f60d10a23885d5683f898f5b66aa6"
+    },
+    {
+      "bytes": 14285670,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-binaries.tar.gz",
+      "sha256": "833e42ec5495358e0bb7f0b48bfda86db0db613d590f7d2f7ae3b8dc330314d2"
+    }
+  ],
+  "builds": [
+    {
+      "binary": {
+        "bytes": 16896272,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8",
+        "sha256": "0de5151ca613f5bf2c8381dcc7d0042f54ac27db90e49e2e4423b54fedb1832a"
+      },
+      "cargo_argv": [
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/rust-bin/cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--no-run",
+        "--bin",
+        "oxid",
+        "--jobs",
+        "2",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--message-format=json"
+      ],
+      "cargo_artifact": {
+        "executable": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8",
+        "features": [],
+        "filenames": [
+          "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8"
+        ],
+        "fresh": false,
+        "manifest_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source/Cargo.toml",
+        "package_id": "path+file:///workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source#oxid@0.9.0",
+        "profile": {
+          "debug_assertions": true,
+          "debuginfo": 0,
+          "opt_level": "0",
+          "overflow_checks": true,
+          "test": true
+        },
+        "reason": "compiler-artifact",
+        "target": {
+          "crate_types": [
+            "bin"
+          ],
+          "doc": true,
+          "doctest": false,
+          "edition": "2021",
+          "kind": [
+            "bin"
+          ],
+          "name": "oxid",
+          "src_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source/src/cli.rs",
+          "test": true
+        }
+      },
+      "cargo_environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0"
+      },
+      "host": {
+        "architecture": "x86_64",
+        "os": "linux",
+        "python_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "python_pointer_width": 64,
+        "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "uname": {
+          "machine": "x86_64",
+          "release": "6.18.44",
+          "system": "Linux",
+          "version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026"
+        }
+      },
+      "invocation": {
+        "bytes": 5897,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/invocation.json",
+        "sha256": "63595a2f6cd6001024491288c372cf4ce6a0c29d84c17f710d55a3a22797df1d"
+      },
+      "overlay": {
+        "bytes": 49781,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source/overlay-manifest.json",
+        "sha256": "964365a5ae9f7123b41a5fb1502a72c738f4c4835f7055fe83b6591bf6488be6"
+      },
+      "portable_receipt": {
+        "bytes": 1230,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/portable-build.json",
+        "sha256": "9b32135307a81ecaa845d8ced8c9a47085ae637da345e98853169529f0e65ed7"
+      },
+      "profile": "debug",
+      "receipt": {
+        "bytes": 2531,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-debug/result/build-receipt.json",
+        "sha256": "5f1a8634e69cac2c84af4fddb60fe4fa3a816cfc14b60f3979b2d5f5352474c8"
+      },
+      "role": "instrumented",
+      "rust_sysroot": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "rustc": {
+        "bytes": 647376,
+        "path": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/rustc",
+        "sha256": "f3834d26669b03f6855fa54bd2381443123e860167bc0c7a8dd137e5cf6e5e4f"
+      },
+      "rustc_version": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "source_cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source",
+      "toolchain": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "tools": {
+        "AR": {
+          "binary": {
+            "bytes": 52480,
+            "path": "/usr/bin/x86_64-linux-gnu-ar",
+            "sha256": "f8fe09d485b40b1d47c534c96f5cbaaa9148e247aa0494c087104421f48ac5eb"
+          },
+          "version": "GNU ar (GNU Binutils for Debian) 2.44\nCopyright (C) 2025 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) any later version.\nThis program has absolutely no warranty.\n"
+        },
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CC": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CXX": {
+          "binary": {
+            "bytes": 1166360,
+            "path": "/usr/bin/x86_64-linux-gnu-g++-14",
+            "sha256": "6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d"
+          },
+          "version": "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "as": {
+          "binary": {
+            "bytes": 795184,
+            "path": "/usr/bin/x86_64-linux-gnu-as",
+            "sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9"
+          }
+        },
+        "c_compiler_body": {
+          "binary": {
+            "bytes": 34148896,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1",
+            "sha256": "02675980109a4a5496cddf67d5286de57942759edc830deaa525e36f9a2a0291"
+          }
+        },
+        "cpp_compiler_body": {
+          "binary": {
+            "bytes": 36389344,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1plus",
+            "sha256": "3064a74d411cc6a72fa3d8d2ce47d72925a42807d89d60618d8467b0eb10c948"
+          }
+        },
+        "native_linker": {
+          "binary": {
+            "bytes": 1861256,
+            "path": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+            "sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b"
+          }
+        },
+        "python": {
+          "binary": {
+            "bytes": 30894944,
+            "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12",
+            "sha256": "fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7"
+          },
+          "version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]"
+        },
+        "which": {
+          "binary": {
+            "bytes": 1080,
+            "path": "/usr/bin/which.debianutils",
+            "sha256": "59e7cf8b9bd8711ae1aa6f7bbbd4132b61492409c3afe8e1505225efda1cb8f6"
+          }
+        }
+      }
+    },
+    {
+      "binary": {
+        "bytes": 16838528,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8",
+        "sha256": "f87b6bad9b8f00f30b3eddb2f58450652f31d06d630e5772d17b5adab4702683"
+      },
+      "cargo_argv": [
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/rust-bin/cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--no-run",
+        "--bin",
+        "oxid",
+        "--jobs",
+        "2",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--message-format=json"
+      ],
+      "cargo_artifact": {
+        "executable": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8",
+        "features": [],
+        "filenames": [
+          "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/result/target/x86_64-unknown-linux-gnu/debug/deps/oxid-420fa0653cf903d8"
+        ],
+        "fresh": false,
+        "manifest_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source/Cargo.toml",
+        "package_id": "path+file:///workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source#oxid@0.9.0",
+        "profile": {
+          "debug_assertions": true,
+          "debuginfo": 0,
+          "opt_level": "0",
+          "overflow_checks": true,
+          "test": true
+        },
+        "reason": "compiler-artifact",
+        "target": {
+          "crate_types": [
+            "bin"
+          ],
+          "doc": true,
+          "doctest": false,
+          "edition": "2021",
+          "kind": [
+            "bin"
+          ],
+          "name": "oxid",
+          "src_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source/src/cli.rs",
+          "test": true
+        }
+      },
+      "cargo_environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0"
+      },
+      "host": {
+        "architecture": "x86_64",
+        "os": "linux",
+        "python_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "python_pointer_width": 64,
+        "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "uname": {
+          "machine": "x86_64",
+          "release": "6.18.44",
+          "system": "Linux",
+          "version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026"
+        }
+      },
+      "invocation": {
+        "bytes": 5953,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/invocation.json",
+        "sha256": "f2239250ac727a54c0afd699c8091c5cf7461fb7a1e930bd63c7790128ee8f92"
+      },
+      "overlay": {
+        "bytes": 48827,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source/overlay-manifest.json",
+        "sha256": "60db9fa85aacaf373ef6862735f52a60efb999e3f416d210e3b5b08bd78a7273"
+      },
+      "portable_receipt": {
+        "bytes": 1253,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/portable-build.json",
+        "sha256": "f775a10b09d7c8d3210675337abd80366e845da0a6e3304242c62fd29f89aaba"
+      },
+      "profile": "debug",
+      "receipt": {
+        "bytes": 2579,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-debug/result/build-receipt.json",
+        "sha256": "cd7beb087d6e2c98657818707ed9307fe5781b5fda6a1133fb1f0595ff47338a"
+      },
+      "role": "control",
+      "rust_sysroot": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "rustc": {
+        "bytes": 647376,
+        "path": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/rustc",
+        "sha256": "f3834d26669b03f6855fa54bd2381443123e860167bc0c7a8dd137e5cf6e5e4f"
+      },
+      "rustc_version": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "source_cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source",
+      "toolchain": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "tools": {
+        "AR": {
+          "binary": {
+            "bytes": 52480,
+            "path": "/usr/bin/x86_64-linux-gnu-ar",
+            "sha256": "f8fe09d485b40b1d47c534c96f5cbaaa9148e247aa0494c087104421f48ac5eb"
+          },
+          "version": "GNU ar (GNU Binutils for Debian) 2.44\nCopyright (C) 2025 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) any later version.\nThis program has absolutely no warranty.\n"
+        },
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CC": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CXX": {
+          "binary": {
+            "bytes": 1166360,
+            "path": "/usr/bin/x86_64-linux-gnu-g++-14",
+            "sha256": "6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d"
+          },
+          "version": "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "as": {
+          "binary": {
+            "bytes": 795184,
+            "path": "/usr/bin/x86_64-linux-gnu-as",
+            "sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9"
+          }
+        },
+        "c_compiler_body": {
+          "binary": {
+            "bytes": 34148896,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1",
+            "sha256": "02675980109a4a5496cddf67d5286de57942759edc830deaa525e36f9a2a0291"
+          }
+        },
+        "cpp_compiler_body": {
+          "binary": {
+            "bytes": 36389344,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1plus",
+            "sha256": "3064a74d411cc6a72fa3d8d2ce47d72925a42807d89d60618d8467b0eb10c948"
+          }
+        },
+        "native_linker": {
+          "binary": {
+            "bytes": 1861256,
+            "path": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+            "sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b"
+          }
+        },
+        "python": {
+          "binary": {
+            "bytes": 30894944,
+            "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12",
+            "sha256": "fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7"
+          },
+          "version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]"
+        },
+        "which": {
+          "binary": {
+            "bytes": 1080,
+            "path": "/usr/bin/which.debianutils",
+            "sha256": "59e7cf8b9bd8711ae1aa6f7bbbd4132b61492409c3afe8e1505225efda1cb8f6"
+          }
+        }
+      }
+    },
+    {
+      "binary": {
+        "bytes": 8296296,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960",
+        "sha256": "30311ebeb80fefb90669dc5f3865bb87a635a5ffee3d0b2c995ef3861f3719a0"
+      },
+      "cargo_argv": [
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/rust-bin/cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--no-run",
+        "--bin",
+        "oxid",
+        "--jobs",
+        "2",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--message-format=json",
+        "--release"
+      ],
+      "cargo_artifact": {
+        "executable": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960",
+        "features": [],
+        "filenames": [
+          "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960"
+        ],
+        "fresh": false,
+        "manifest_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source/Cargo.toml",
+        "package_id": "path+file:///workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source#oxid@0.9.0",
+        "profile": {
+          "debug_assertions": false,
+          "debuginfo": 0,
+          "opt_level": "3",
+          "overflow_checks": false,
+          "test": true
+        },
+        "reason": "compiler-artifact",
+        "target": {
+          "crate_types": [
+            "bin"
+          ],
+          "doc": true,
+          "doctest": false,
+          "edition": "2021",
+          "kind": [
+            "bin"
+          ],
+          "name": "oxid",
+          "src_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source/src/cli.rs",
+          "test": true
+        }
+      },
+      "cargo_environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0"
+      },
+      "host": {
+        "architecture": "x86_64",
+        "os": "linux",
+        "python_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "python_pointer_width": 64,
+        "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "uname": {
+          "machine": "x86_64",
+          "release": "6.18.44",
+          "system": "Linux",
+          "version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026"
+        }
+      },
+      "invocation": {
+        "bytes": 5911,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/invocation.json",
+        "sha256": "638e65bc8dca8d7f9730dfcc51a09db8ab77f58fc11e506330954b6006f5bf62"
+      },
+      "overlay": {
+        "bytes": 49781,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source/overlay-manifest.json",
+        "sha256": "964365a5ae9f7123b41a5fb1502a72c738f4c4835f7055fe83b6591bf6488be6"
+      },
+      "portable_receipt": {
+        "bytes": 1238,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/portable-build.json",
+        "sha256": "a73d86b346998f2f4aa3ddc2296d9df893d1681293703ef67d50a6f00dcaa34a"
+      },
+      "profile": "release",
+      "receipt": {
+        "bytes": 2559,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-release/result/build-receipt.json",
+        "sha256": "37692497362b56c73783965194ea3da64118566b12d200f6767a2644d3a8d2a6"
+      },
+      "role": "instrumented",
+      "rust_sysroot": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "rustc": {
+        "bytes": 647376,
+        "path": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/rustc",
+        "sha256": "f3834d26669b03f6855fa54bd2381443123e860167bc0c7a8dd137e5cf6e5e4f"
+      },
+      "rustc_version": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "source_cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/source",
+      "toolchain": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "tools": {
+        "AR": {
+          "binary": {
+            "bytes": 52480,
+            "path": "/usr/bin/x86_64-linux-gnu-ar",
+            "sha256": "f8fe09d485b40b1d47c534c96f5cbaaa9148e247aa0494c087104421f48ac5eb"
+          },
+          "version": "GNU ar (GNU Binutils for Debian) 2.44\nCopyright (C) 2025 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) any later version.\nThis program has absolutely no warranty.\n"
+        },
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CC": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CXX": {
+          "binary": {
+            "bytes": 1166360,
+            "path": "/usr/bin/x86_64-linux-gnu-g++-14",
+            "sha256": "6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d"
+          },
+          "version": "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "as": {
+          "binary": {
+            "bytes": 795184,
+            "path": "/usr/bin/x86_64-linux-gnu-as",
+            "sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9"
+          }
+        },
+        "c_compiler_body": {
+          "binary": {
+            "bytes": 34148896,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1",
+            "sha256": "02675980109a4a5496cddf67d5286de57942759edc830deaa525e36f9a2a0291"
+          }
+        },
+        "cpp_compiler_body": {
+          "binary": {
+            "bytes": 36389344,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1plus",
+            "sha256": "3064a74d411cc6a72fa3d8d2ce47d72925a42807d89d60618d8467b0eb10c948"
+          }
+        },
+        "native_linker": {
+          "binary": {
+            "bytes": 1861256,
+            "path": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+            "sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b"
+          }
+        },
+        "python": {
+          "binary": {
+            "bytes": 30894944,
+            "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12",
+            "sha256": "fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7"
+          },
+          "version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]"
+        },
+        "which": {
+          "binary": {
+            "bytes": 1080,
+            "path": "/usr/bin/which.debianutils",
+            "sha256": "59e7cf8b9bd8711ae1aa6f7bbbd4132b61492409c3afe8e1505225efda1cb8f6"
+          }
+        }
+      }
+    },
+    {
+      "binary": {
+        "bytes": 8244824,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960",
+        "sha256": "f6958821eb525724c49e7f1aab9c58caeaed275fdc2afb0e54b3b30278d6e38c"
+      },
+      "cargo_argv": [
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/rust-bin/cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--no-run",
+        "--bin",
+        "oxid",
+        "--jobs",
+        "2",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--message-format=json",
+        "--release"
+      ],
+      "cargo_artifact": {
+        "executable": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960",
+        "features": [],
+        "filenames": [
+          "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/result/target/x86_64-unknown-linux-gnu/release/deps/oxid-02f4070df99eb960"
+        ],
+        "fresh": false,
+        "manifest_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source/Cargo.toml",
+        "package_id": "path+file:///workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source#oxid@0.9.0",
+        "profile": {
+          "debug_assertions": false,
+          "debuginfo": 0,
+          "opt_level": "3",
+          "overflow_checks": false,
+          "test": true
+        },
+        "reason": "compiler-artifact",
+        "target": {
+          "crate_types": [
+            "bin"
+          ],
+          "doc": true,
+          "doctest": false,
+          "edition": "2021",
+          "kind": [
+            "bin"
+          ],
+          "name": "oxid",
+          "src_path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source/src/cli.rs",
+          "test": true
+        }
+      },
+      "cargo_environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0"
+      },
+      "host": {
+        "architecture": "x86_64",
+        "os": "linux",
+        "python_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "python_pointer_width": 64,
+        "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "uname": {
+          "machine": "x86_64",
+          "release": "6.18.44",
+          "system": "Linux",
+          "version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026"
+        }
+      },
+      "invocation": {
+        "bytes": 5967,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/invocation.json",
+        "sha256": "eb3e584c0b7be6464773334055c9696683ad06f19fb868fdf3f73149a602ab54"
+      },
+      "overlay": {
+        "bytes": 48827,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source/overlay-manifest.json",
+        "sha256": "60db9fa85aacaf373ef6862735f52a60efb999e3f416d210e3b5b08bd78a7273"
+      },
+      "portable_receipt": {
+        "bytes": 1261,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/portable-build.json",
+        "sha256": "f348c88f24f9e9726fa99536f97a375c950bf0d41be898bda4e3c0efd4bcbd3d"
+      },
+      "profile": "release",
+      "receipt": {
+        "bytes": 2607,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/build-control-release/result/build-receipt.json",
+        "sha256": "1093c230da861c8c8389b57976571a9990ce9355463be49f719c20c190dd26df"
+      },
+      "role": "control",
+      "rust_sysroot": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "rustc": {
+        "bytes": 647376,
+        "path": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/rustc",
+        "sha256": "f3834d26669b03f6855fa54bd2381443123e860167bc0c7a8dd137e5cf6e5e4f"
+      },
+      "rustc_version": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "source_cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/control-source",
+      "toolchain": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+      "tools": {
+        "AR": {
+          "binary": {
+            "bytes": 52480,
+            "path": "/usr/bin/x86_64-linux-gnu-ar",
+            "sha256": "f8fe09d485b40b1d47c534c96f5cbaaa9148e247aa0494c087104421f48ac5eb"
+          },
+          "version": "GNU ar (GNU Binutils for Debian) 2.44\nCopyright (C) 2025 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) any later version.\nThis program has absolutely no warranty.\n"
+        },
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CC": {
+          "binary": {
+            "bytes": 1162264,
+            "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+            "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+          },
+          "version": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "CXX": {
+          "binary": {
+            "bytes": 1166360,
+            "path": "/usr/bin/x86_64-linux-gnu-g++-14",
+            "sha256": "6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d"
+          },
+          "version": "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
+        },
+        "as": {
+          "binary": {
+            "bytes": 795184,
+            "path": "/usr/bin/x86_64-linux-gnu-as",
+            "sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9"
+          }
+        },
+        "c_compiler_body": {
+          "binary": {
+            "bytes": 34148896,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1",
+            "sha256": "02675980109a4a5496cddf67d5286de57942759edc830deaa525e36f9a2a0291"
+          }
+        },
+        "cpp_compiler_body": {
+          "binary": {
+            "bytes": 36389344,
+            "path": "/usr/libexec/gcc/x86_64-linux-gnu/14/cc1plus",
+            "sha256": "3064a74d411cc6a72fa3d8d2ce47d72925a42807d89d60618d8467b0eb10c948"
+          }
+        },
+        "native_linker": {
+          "binary": {
+            "bytes": 1861256,
+            "path": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+            "sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b"
+          }
+        },
+        "python": {
+          "binary": {
+            "bytes": 30894944,
+            "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12",
+            "sha256": "fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7"
+          },
+          "version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]"
+        },
+        "which": {
+          "binary": {
+            "bytes": 1080,
+            "path": "/usr/bin/which.debianutils",
+            "sha256": "59e7cf8b9bd8711ae1aa6f7bbbd4132b61492409c3afe8e1505225efda1cb8f6"
+          }
+        }
+      }
+    }
+  ],
+  "collections": [
+    {
+      "actual_mode_counts": {
+        "OwnedCandidate": 71,
+        "ProjectCandidate": 248
+      },
+      "cases": 248,
+      "manifest": {
+        "bytes": 460485,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/collect-debug/result/execution-manifest.json",
+        "sha256": "2065f7ecf1366c864ab693eef878136d5375c42673269170a9b84a4371220803"
+      },
+      "observations": {
+        "bytes": 133150883,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/collect-debug/result/observations.jsonl",
+        "sha256": "e0314dffab163277ac2c144c1c30bf8071d5204b9fb9e07f18c6230d43157850"
+      },
+      "profile": "debug",
+      "rows": 319,
+      "unique_case_mode_pairs": 319
+    },
+    {
+      "actual_mode_counts": {
+        "OwnedCandidate": 71,
+        "ProjectCandidate": 248
+      },
+      "cases": 248,
+      "manifest": {
+        "bytes": 463467,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/collect-release/result/execution-manifest.json",
+        "sha256": "7a9ce82c8f6ac4a37530f1980a00be7a510938e6d4e67b0f04d7dd50e594aab8"
+      },
+      "observations": {
+        "bytes": 133151521,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/collect-release/result/observations.jsonl",
+        "sha256": "e720e525933722b7f28aa88ea9b81fc9840ce15688f38fef556f338c7f9bd560"
+      },
+      "profile": "release",
+      "rows": 319,
+      "unique_case_mode_pairs": 319
+    }
+  ],
+  "historical_head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
+  "original_comparison": {
+    "bytes": 3334,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/comparison.json",
+    "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+  },
+  "outer_limits": {
+    "evidence_bytes": 12884901888,
+    "incremental": 0,
+    "jobs": 2,
+    "minimum_free_bytes": 3221225472,
+    "monitor_interval_seconds": 2,
+    "total_seconds": 5400
+  },
+  "passivity": [
+    {
+      "cases": [
+        "original",
+        "project",
+        "malformed"
+      ],
+      "pairs": 6,
+      "profile": "debug",
+      "report": {
+        "bytes": 11405,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/passivity-debug/result/report.json",
+        "sha256": "abcaff3e99b430dab4ef08209e1d6b42062d37a77c0ba29489884fa1e99ab3bc"
+      }
+    },
+    {
+      "cases": [
+        "original",
+        "project",
+        "malformed"
+      ],
+      "pairs": 6,
+      "profile": "release",
+      "report": {
+        "bytes": 11475,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/passivity-release/result/report.json",
+        "sha256": "4845b2f4868afbb5970fe5dde3b43fd8892eef1d1ca187cf0dff347811575552"
+      }
+    }
+  ],
+  "reported_run_resources": {
+    "child_maxrss_kib": 2603792,
+    "child_system_seconds": 35.838152,
+    "child_user_seconds": 333.359299,
+    "disk_free_bytes": 25865027584,
+    "evidence_bytes": 630458308
+  },
+  "run_id": "b0dded8574c441e6b8b8ba82d3410e25",
+  "schema": "oxid-portable-fresh-v3-receipt-audit-v1",
+  "session": {
+    "bytes": 22834,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+    "sha256": "dc8ad4b2cf003893446de4cbdfb80bfc40c29e8a26ec096a7c7373bdf5bc746f"
+  },
+  "source_head": "03a3a93dd90074484cfc2d0aa976b1327d757c79",
+  "source_maps": {
+    "compiler_files": 113,
+    "control_derived_files": 286,
+    "dependency_files": 64,
+    "helper_files": 10,
+    "instrumented_derived_files": 286,
+    "original_files": 283,
+    "selected_rust_files": 62
+  },
+  "source_tree": "06caab7624ddc17dd3d41f85871b534b7cf1dce4",
+  "stages": [
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d/tests/fixtures/typed_project_unit4_contracts/transport.py",
+        "verify"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 2.000920758000575,
+      "exit_code": 0,
+      "finished_ns": 1791017060993019510,
+      "name": "01-transport-verify",
+      "started_ns": 1791017058991532811,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/01-transport-verify.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 569,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/01-transport-verify.stdout",
+        "sha256": "783c222f52b1e3c0e396680f61871b3dbb2e45dea239b48b64119b72a5ca3a15"
+      },
+      "timeout_seconds": 120
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d/tests/fixtures/typed_project_unit4_contracts/transport.py",
+        "extract",
+        "--destination",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 2.000838964999275,
+      "exit_code": 0,
+      "finished_ns": 1791017062995260914,
+      "name": "02-transport-extract",
+      "started_ns": 1791017060993846019,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/02-transport-extract.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 570,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/02-transport-extract.stdout",
+        "sha256": "b287c85175711e4e03f1258f6f08401db5da9c26b8a99170a5fe9ed176d3a953"
+      },
+      "timeout_seconds": 120
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d/tests/fixtures/typed_project_unit4_contracts/transport.py",
+        "resolve",
+        "--destination",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport",
+        "--logical-path",
+        "/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser/package-freeze.json"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 2.0052621020004153,
+      "exit_code": 0,
+      "finished_ns": 1791017065011248409,
+      "name": "03-transport-resolve",
+      "started_ns": 1791017063001251794,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/03-transport-resolve.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 186,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/03-transport-resolve.stdout",
+        "sha256": "d9b70f4c8e32b29a0c4200e37caff0175962d39e940c8512cebe066f29b30709"
+      },
+      "timeout_seconds": 120
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "prepare",
+        "--repo",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-authority-d9e6b9bf",
+        "--checkout",
+        "/workspace/scratch/8266abf56995/oxid-parser-portable-current-03a3a93d",
+        "--output",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 6.053288531002181,
+      "exit_code": 0,
+      "finished_ns": 1791017071077637108,
+      "name": "04-prepare",
+      "started_ns": 1791017065018740327,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/04-prepare.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 221,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/04-prepare.stdout",
+        "sha256": "cdd227577d709fbdbfbc278fa910e2b010a8c06268ef68972d427bc87013dd21"
+      },
+      "timeout_seconds": 180
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 20.171119717000693,
+      "exit_code": 0,
+      "finished_ns": 1791017091275984130,
+      "name": "05-build-debug",
+      "started_ns": 1791017071092423591,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/05-build-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 239,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/05-build-debug.stdout",
+        "sha256": "247c39bebfbbcafe1f492c27542e40133e7428f929937b59334ff5ea54f4a0a3"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home",
+        "--control"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 20.195497251999768,
+      "exit_code": 0,
+      "finished_ns": 1791017111505531978,
+      "name": "06-build-control-debug",
+      "started_ns": 1791017091293934499,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/06-build-control-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 247,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/06-build-control-debug.stdout",
+        "sha256": "27cc7f352361bc31cf70a83b70ad999289158384ccf653bba5bb624249e01994"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "passivity",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 6.052792761998717,
+      "exit_code": 0,
+      "finished_ns": 1791017117594156285,
+      "name": "07-passivity-debug",
+      "started_ns": 1791017111523319872,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/07-passivity-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 246,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/07-passivity-debug.stdout",
+        "sha256": "e5b0b461ccd69d13f302ccb36a504bb3d4eb75e69ab84b21e4a2da23a888deaa"
+      },
+      "timeout_seconds": 300
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "collect",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "debug",
+        "--contract-dir",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 16.19664164799906,
+      "exit_code": 0,
+      "finished_ns": 1791017133827359430,
+      "name": "08-collect-debug",
+      "started_ns": 1791017117614291344,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/08-collect-debug.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 246,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/08-collect-debug.stdout",
+        "sha256": "2d6cfb6fccd4ca74d0ad3858332e5baf9ab6a1b81a4d24b300ca225c9a2787e1"
+      },
+      "timeout_seconds": 1800
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 62.359675396000966,
+      "exit_code": 0,
+      "finished_ns": 1791017196270184919,
+      "name": "09-build-release",
+      "started_ns": 1791017133872580326,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/09-build-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 241,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/09-build-release.stdout",
+        "sha256": "69b552ef8523050633109d9601aa3d259e69ad70f0ad871b2e11b7a0d897120a"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "build",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release",
+        "--toolchain",
+        "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu",
+        "--cargo-cache",
+        "/workspace/scratch/8266abf56995/toolchains/cargo-home",
+        "--control"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 62.05843870299941,
+      "exit_code": 0,
+      "finished_ns": 1791017258483859767,
+      "name": "10-build-control-release",
+      "started_ns": 1791017196359769675,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/10-build-control-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 249,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/10-build-control-release.stdout",
+        "sha256": "7627772bb65c3fa385eef89e6bcd80ece71d517b2dc44a21c5bcc23385450cfe"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "passivity",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 6.186279719000595,
+      "exit_code": 0,
+      "finished_ns": 1791017264806562262,
+      "name": "11-passivity-release",
+      "started_ns": 1791017258554722793,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/11-passivity-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 248,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/11-passivity-release.stdout",
+        "sha256": "7a0d233844afe39e7d14d3eb76f67157fc705700a3ab6e206c8f80094c5ee97f"
+      },
+      "timeout_seconds": 300
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "collect",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--profile",
+        "release",
+        "--contract-dir",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 14.525541895996867,
+      "exit_code": 0,
+      "finished_ns": 1791017279471443985,
+      "name": "12-collect-release",
+      "started_ns": 1791017264877822808,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/12-collect-release.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 248,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/12-collect-release.stdout",
+        "sha256": "4873e0ea84619a2de102d7e27a945fa3a8d34a57b6daf1b0399335779bd0dbe4"
+      },
+      "timeout_seconds": 1800
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-B",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-v3/portable.py",
+        "compare",
+        "--session",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/session.json",
+        "--contract-dir",
+        "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/contract-transport/workspace/shared/oxid-reset-recovery-20261003/new-contracts/parser"
+      ],
+      "cwd": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d",
+      "duration_seconds": 76.7452195529986,
+      "exit_code": 0,
+      "finished_ns": 1791017356337576076,
+      "name": "13-effective-comparison",
+      "started_ns": 1791017279534911115,
+      "stderr": {
+        "bytes": 0,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/13-effective-comparison.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 3334,
+        "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/13-effective-comparison.stdout",
+        "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+      },
+      "timeout_seconds": 1200
+    }
+  ],
+  "unique_execution_nonces": 508
+}

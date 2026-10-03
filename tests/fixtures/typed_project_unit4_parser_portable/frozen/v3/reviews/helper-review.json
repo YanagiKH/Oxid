@@ -1,0 +1,45 @@
+{
+  "candidate_compiler_invocations_by_reviewer": 0,
+  "changes_since_v6": [
+    "HISTORY.md",
+    "parse_debug.py"
+  ],
+  "code_delta": "exactly three unchanged unanchored regex patterns precompiled and matched with pos=self.i; unchanged match text lengths/cursor advancement/errors; only HISTORY otherwise changed",
+  "compiled_rust_and_instrumentation_unchanged": true,
+  "decoder_equivalence": {
+    "bytes": 15715,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/decoder-equivalence-v7/report.json",
+    "sha256": "4d4c705b4186b953cc340d03b997fcaba9acf1bfa495ecdd6f6acccb8c6cdcf9"
+  },
+  "derived_build_inputs_identical": 286,
+  "equivalence_controls": 75,
+  "fresh_exit_code": 0,
+  "fresh_skips": 0,
+  "fresh_tests": 13,
+  "frozen_expected_corpus_changes": 0,
+  "helper_rebind_path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/helper-only-rebind-v7.json",
+  "helper_rebind_sha256": "9708016e83207a33d27db3ee6a67a4186f05347d5464ecb59aeaad93e1240b8a",
+  "historical_v6_debug_retained": {
+    "bytes": 410750,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/full-v6-debug/execution-manifest.json",
+    "sha256": "593b15603dffeb452f0781c26ec9ce7c6d8ffe88e5ff827d9e8b8178a1fd89f1"
+  },
+  "independent_decode_seconds": 2.899549438001486,
+  "independent_large_ast_bytes": 8944765,
+  "independent_large_ast_canonical_sha256": "d1bf768082048d65c201804d8bf103114dc069984527ff9f29cc1791b3d5848f",
+  "independent_large_ast_exact_equal": true,
+  "new_normalizer_sha256": "89c77305d8b51bebbe71b06c8e3b2d82a09ae76a05f53eadae5e2820d48b2822",
+  "new_observer_source_sha256": "a4e91899144ef3231af0f3b7333c4d2ff412285b08bb23159123483c68c9e1e7",
+  "old_normalizer_sha256": "ca4bb6e661a5197cf340e7f03ad97e50df3222fec6986328f80792ef0c3b8d41",
+  "old_observer_source_sha256": "738dc9b47747889414859b9286e376c762dc75292ed3dedc5306e9eed881f625",
+  "preceding_guard_host_review": {
+    "bytes": 2852,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/v6-helper-host-review.json",
+    "sha256": "03d144546ad638abc4d0c668d6718fc710fd8ce0fa5855342d711fe9e3e7f13e"
+  },
+  "remaining_requirement": "new comparator admission must bind this exact normalizer-equivalence review and v7 helper rebind; fresh complete profile collections then exact638 gate",
+  "schema": "oxid-unit4-independent-observer-helper-review-v7",
+  "source_checkpoint_path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer/source-checkpoint-v7/manifest.json",
+  "source_checkpoint_sha256": "ac7c9de19f1d123a935c6c658063b6f9324378465dd42280e6b76e350ef536c8",
+  "status": "pass-guard-host-and-equivalent-decoder-rebind"
+}

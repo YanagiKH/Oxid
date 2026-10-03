@@ -1,0 +1,189 @@
+{
+  "candidate_executions": 0,
+  "compiler_build_executions": 0,
+  "native_and_rust_identity_probes": true,
+  "records": [
+    {
+      "name": "single_synthetic_case_admitted",
+      "scope": "not the full contract",
+      "status": "pass"
+    },
+    {
+      "name": "full638_contract_rejects_one_case",
+      "rejection": "mismatch: exact ordered frozen case roster",
+      "status": "pass"
+    },
+    {
+      "name": "cross_profile_nonce_reuse",
+      "rejection": "cross-profile reused execution nonce",
+      "status": "pass"
+    },
+    {
+      "name": "build_host_release",
+      "rejection": "build/session host snapshot",
+      "status": "pass"
+    },
+    {
+      "name": "build_host_version",
+      "rejection": "build/session host snapshot",
+      "status": "pass"
+    },
+    {
+      "name": "build_host_machine",
+      "rejection": "unsupported measured machine",
+      "status": "pass"
+    },
+    {
+      "name": "build_host_system",
+      "rejection": "unsupported measured system",
+      "status": "pass"
+    },
+    {
+      "name": "build_python_identity",
+      "rejection": "build/session host snapshot",
+      "status": "pass"
+    },
+    {
+      "name": "collection_host_release",
+      "rejection": "separately measured collection host",
+      "status": "pass"
+    },
+    {
+      "name": "collection_host_version",
+      "rejection": "separately measured collection host",
+      "status": "pass"
+    },
+    {
+      "name": "collection_host_machine",
+      "rejection": "separately measured collection host",
+      "status": "pass"
+    },
+    {
+      "name": "collection_host_system",
+      "rejection": "separately measured collection host",
+      "status": "pass"
+    },
+    {
+      "name": "collection_python_identity",
+      "rejection": "separately measured collection host",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_profile",
+      "rejection": "[Errno 2] No such file or directory: '/tmp/oxid-portable-integrated-fwz9pcih/synthetic-debug/collect-release/portable-collection.json'",
+      "status": "pass"
+    },
+    {
+      "name": "running_status",
+      "rejection": "complete collection required",
+      "status": "pass"
+    },
+    {
+      "name": "missing_roster",
+      "rejection": "mismatch: exact ordered frozen case roster",
+      "status": "pass"
+    },
+    {
+      "name": "missing_receipts",
+      "rejection": "missing/extra complete execution inventory",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_case_count",
+      "rejection": "mismatch: manifest case count",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_mode_count",
+      "rejection": "mismatch: manifest actual observation count",
+      "status": "pass"
+    },
+    {
+      "name": "duplicate_receipt",
+      "rejection": "cross-profile reused execution nonce",
+      "status": "pass"
+    },
+    {
+      "name": "zero_execution_stdout",
+      "rejection": "zero-execution: test process lacks exact actual execution witness",
+      "status": "pass"
+    },
+    {
+      "name": "missing_raw_file",
+      "rejection": "missing regular file: /tmp/oxid-portable-integrated-fwz9pcih/synthetic-debug/collect-debug/result/ledger-empty/raw.json",
+      "status": "pass"
+    },
+    {
+      "name": "extra_unreported_evidence",
+      "rejection": "missing/extra complete execution inventory",
+      "status": "pass"
+    },
+    {
+      "name": "actual_rust_abi_mismatch",
+      "rejection": "mismatch: raw Rust ABI agrees with independently measured host width",
+      "status": "pass"
+    },
+    {
+      "name": "actual_rust_arch_mismatch",
+      "rejection": "mismatch: raw Rust architecture agrees with independently measured host",
+      "status": "pass"
+    },
+    {
+      "name": "stale_raw_nonce",
+      "rejection": "mismatch: raw execution identity",
+      "status": "pass"
+    },
+    {
+      "name": "forged_normalized_row",
+      "rejection": "mismatch: normalized observations preserve every actual raw field",
+      "status": "pass"
+    },
+    {
+      "name": "zero_raw_observations",
+      "rejection": "mismatch: raw actual mode count",
+      "status": "pass"
+    },
+    {
+      "name": "collection_precedes_build",
+      "rejection": "collection predates build",
+      "status": "pass"
+    },
+    {
+      "name": "build_precedes_session",
+      "rejection": "fresh build ordering",
+      "status": "pass"
+    },
+    {
+      "name": "ambient_environment_added_to_build",
+      "rejection": "actual clean build environment",
+      "status": "pass"
+    },
+    {
+      "name": "stale_session_bytes",
+      "rejection": "artifact content differs: /tmp/oxid-portable-integrated-fwz9pcih/synthetic-debug/session.json",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_collection_session_path",
+      "rejection": "artifact at wrong bound path",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_build_receipt_path",
+      "rejection": "artifact at wrong bound path",
+      "status": "pass"
+    },
+    {
+      "name": "wrong_collection_manifest_path",
+      "rejection": "artifact at wrong bound path",
+      "status": "pass"
+    },
+    {
+      "name": "relocated_synthetic_release_admitted",
+      "scope": "not the full contract",
+      "status": "pass"
+    }
+  ],
+  "schema": "oxid-portable-integrated-synthetic-controls-v2",
+  "status": "pass"
+}

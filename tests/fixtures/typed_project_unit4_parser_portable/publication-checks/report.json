@@ -1,0 +1,56 @@
+{
+  "actual_evidence_receipts_copied_without_edits": 11,
+  "base_publication_changed_members": [
+    "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/DESIGN.md",
+    "tests/fixtures/typed_project_unit4_parser_portable/README.md"
+  ],
+  "base_publication_members_verified_unchanged": 82,
+  "candidate_executions": 0,
+  "compiler_builds": 0,
+  "files": [
+    {
+      "bytes": 1451,
+      "path": "controls-optimized.stderr",
+      "sha256": "2570c7bda5299de30131897d2fd99ec09b0dbb76dd6e76d8ff4789987df07fb9"
+    },
+    {
+      "bytes": 0,
+      "path": "controls-optimized.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1451,
+      "path": "controls.stderr",
+      "sha256": "48d08a2cc0ff9578ccb0e29834c7e04457a1ec0674b638947eda8844aed0fd87"
+    },
+    {
+      "bytes": 0,
+      "path": "controls.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 875,
+      "path": "original-runtime-inspect.json",
+      "sha256": "d260bf7e6399d82d893c2e1a8ac602972f50cbc1cde93430d17296869a8f5bec"
+    },
+    {
+      "bytes": 875,
+      "path": "projected-runtime-inspect.json",
+      "sha256": "d260bf7e6399d82d893c2e1a8ac602972f50cbc1cde93430d17296869a8f5bec"
+    },
+    {
+      "bytes": 478,
+      "path": "projection-admission.json",
+      "sha256": "4ee566c037cf467c0694b1a0a927d8e6e070fc3347417156abe57cdfd10584a0"
+    }
+  ],
+  "original_frozen_members_verified_unchanged": 67,
+  "projected_design_in_execution_authority": false,
+  "remote_writes": 0,
+  "runtime_inspect_original_and_projected_bytes_equal": true,
+  "schema": "oxid-portable-parser-publication-projection-controls-v1",
+  "status": "pass",
+  "test_methods_normal": 13,
+  "test_methods_optimized": 13,
+  "unchanged_member_content_mutation_controls_per_run": 66
+}

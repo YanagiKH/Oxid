@@ -1,0 +1,61 @@
+{
+  "candidate_executions": 0,
+  "compiler_executions": 0,
+  "real_source_materializations": 1,
+  "records": [
+    {
+      "detail": {
+        "admission_result": "accepted mismatched build/collection uname",
+        "build_uname": {
+          "machine": "x86_64",
+          "release": "SYNTHETIC-DIFFERENT-BUILD-KERNEL",
+          "system": "Linux",
+          "version": "SYNTHETIC-DIFFERENT-BUILD-HOST"
+        },
+        "collection_uname": {
+          "machine": "x86_64",
+          "release": "6.18.44",
+          "system": "Linux",
+          "version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026"
+        },
+        "observations": 1,
+        "returned_profile": "debug",
+        "scope": "single synthetic ledger-empty case; no full-corpus qualification claim"
+      },
+      "expected": true,
+      "name": "build_collection_host_consistency",
+      "observed": false,
+      "status": "fail"
+    },
+    {
+      "detail": {
+        "scope": "full exact frozen contract against one synthetic ledger-empty case"
+      },
+      "expected": true,
+      "name": "full_contract_rejects_one_case",
+      "observed": true,
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "scope": "shared nonce admission set contains the same case execution id"
+      },
+      "expected": true,
+      "name": "previous_profile_nonce_reuse_rejected",
+      "observed": true,
+      "status": "pass"
+    },
+    {
+      "detail": {
+        "scope": "unexpected file in fresh result inventory"
+      },
+      "expected": true,
+      "name": "unreported_collection_file_rejected",
+      "observed": true,
+      "status": "pass"
+    }
+  ],
+  "schema": "oxid-portable-independent-session-controls-v1",
+  "scope": "real source preparation plus synthetic one-case admission; no Rust build or candidate execution",
+  "target_implementation_sha256": "879390cfc59eef3fbff432bba04b79f245bccb3e80e3139321f13cae22dec59c"
+}

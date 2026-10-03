@@ -1,0 +1,218 @@
+{
+  "binary_evidence": {
+    "bytes": 14285670,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-binaries.tar.gz",
+    "sha256": "833e42ec5495358e0bb7f0b48bfda86db0db613d590f7d2f7ae3b8dc330314d2"
+  },
+  "compact_evidence": {
+    "bytes": 33733523,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d-compact-evidence.tar.gz",
+    "sha256": "adb70750ddf2b15d07a927176b58b127699f60d10a23885d5683f898f5b66aa6"
+  },
+  "expected_observations": 638,
+  "files": [
+    {
+      "bytes": 33674,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/result-summary.json",
+      "sha256": "e090197770108a98c59c14bf84c3d3ca3bc930ee7a46c5d86aed9f0c12e10d95"
+    },
+    {
+      "bytes": 27400,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/status.json",
+      "sha256": "9582edbce44dae3b9dcc29bef5fe3930758be169d346c829e26fd06c44cdf587"
+    },
+    {
+      "bytes": 7726,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/run_qualification.py",
+      "sha256": "bc4ce761466245f936479140c59b2bac30ff40158651fd5c7b6fe67feb4dad31"
+    },
+    {
+      "bytes": 1884,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/orchestration.stdout",
+      "sha256": "8d3854ba51799f608e648d2ec05576804068995cdd10d7ec4ce477db14138b5d"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/orchestration.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1073,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/worktree-setup.json",
+      "sha256": "a92c866c59f54a07011c936ca01e581268d8b38afeee05b60bf228003512ee0b"
+    },
+    {
+      "bytes": 811003,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/compact-evidence-members.json",
+      "sha256": "e3f2bc7ab93532a5e89b28c14ae84690d046fe74d20c2052a34befe77f93dadc"
+    },
+    {
+      "bytes": 627,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/compact-evidence-transport.json",
+      "sha256": "6926d144c781c8bf1a2320ff8dff2fec37b2275175efcc727b3d28e420bd5fdf"
+    },
+    {
+      "bytes": 1676,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/binary-evidence-transport.json",
+      "sha256": "1dfa97aa2b37f0090049767ee6772f4c35b099d9fec1a5094f9f28471cfdceb9"
+    },
+    {
+      "bytes": 544,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/transport-verification.json",
+      "sha256": "c70d63778530e2676907200c3a4b89cf0ab9087982d0a10fa256e2e3b4a00748"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/01-transport-verify.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 569,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/01-transport-verify.stdout",
+      "sha256": "783c222f52b1e3c0e396680f61871b3dbb2e45dea239b48b64119b72a5ca3a15"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/02-transport-extract.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 570,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/02-transport-extract.stdout",
+      "sha256": "b287c85175711e4e03f1258f6f08401db5da9c26b8a99170a5fe9ed176d3a953"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/03-transport-resolve.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 186,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/03-transport-resolve.stdout",
+      "sha256": "d9b70f4c8e32b29a0c4200e37caff0175962d39e940c8512cebe066f29b30709"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/04-prepare.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 221,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/04-prepare.stdout",
+      "sha256": "cdd227577d709fbdbfbc278fa910e2b010a8c06268ef68972d427bc87013dd21"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/05-build-debug.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 239,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/05-build-debug.stdout",
+      "sha256": "247c39bebfbbcafe1f492c27542e40133e7428f929937b59334ff5ea54f4a0a3"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/06-build-control-debug.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 247,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/06-build-control-debug.stdout",
+      "sha256": "27cc7f352361bc31cf70a83b70ad999289158384ccf653bba5bb624249e01994"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/07-passivity-debug.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 246,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/07-passivity-debug.stdout",
+      "sha256": "e5b0b461ccd69d13f302ccb36a504bb3d4eb75e69ab84b21e4a2da23a888deaa"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/08-collect-debug.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 246,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/08-collect-debug.stdout",
+      "sha256": "2d6cfb6fccd4ca74d0ad3858332e5baf9ab6a1b81a4d24b300ca225c9a2787e1"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/09-build-release.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 241,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/09-build-release.stdout",
+      "sha256": "69b552ef8523050633109d9601aa3d259e69ad70f0ad871b2e11b7a0d897120a"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/10-build-control-release.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 249,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/10-build-control-release.stdout",
+      "sha256": "7627772bb65c3fa385eef89e6bcd80ece71d517b2dc44a21c5bcc23385450cfe"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/11-passivity-release.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 248,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/11-passivity-release.stdout",
+      "sha256": "7a0d233844afe39e7d14d3eb76f67157fc705700a3ab6e206c8f80094c5ee97f"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/12-collect-release.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 248,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/12-collect-release.stdout",
+      "sha256": "4873e0ea84619a2de102d7e27a945fa3a8d34a57b6daf1b0399335779bd0dbe4"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/13-effective-comparison.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3334,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/13-effective-comparison.stdout",
+      "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+    },
+    {
+      "bytes": 3334,
+      "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-real-v3-03a3a93d/fresh-session/comparison.json",
+      "sha256": "b3fde4b8ce24ae22dd2070f602ae8daeecb7d05af55fc5638fab20976e9e7305"
+    }
+  ],
+  "fresh_builds": 4,
+  "head": "03a3a93dd90074484cfc2d0aa976b1327d757c79",
+  "hosting_claim": false,
+  "issues": [],
+  "observations": 638,
+  "ordinary_passivity_pairs": 12,
+  "remaining": [
+    "independent result audit",
+    "exact-head hosted combined qualification"
+  ],
+  "schema": "oxid-portable-parser-fresh-local-result-checkpoint-v3",
+  "source_publication_manifest": {
+    "bytes": 19551,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/portable-parser-publication-v1/manifest.json",
+    "sha256": "cd637cfbfa1ccdd1133921927765320a86ca1ac99ed979e3262594b1f717e9a5"
+  },
+  "status": "PASS_FRESH_LOCAL_PORTABLE_638",
+  "tree": "06caab7624ddc17dd3d41f85871b534b7cf1dce4"
+}

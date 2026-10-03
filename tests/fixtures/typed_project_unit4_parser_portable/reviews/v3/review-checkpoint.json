@@ -1,0 +1,102 @@
+{
+  "adapter_unchanged_definitions": 39,
+  "candidate_executions": 0,
+  "checkpoint_members_verified": 67,
+  "compiler_build_executions": 0,
+  "files": [
+    {
+      "bytes": 9073,
+      "path": "REVIEW.md",
+      "sha256": "d93849c73b33b19392fcba0926505e3782da381cee8baf02735948830474bbb9"
+    },
+    {
+      "bytes": 3192,
+      "path": "core.stderr",
+      "sha256": "5104f9c5ba70703a4ec0b014032fa235e9d503b2b019228b088b6e375b7f9279"
+    },
+    {
+      "bytes": 0,
+      "path": "core.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2338,
+      "path": "exact-delta.json",
+      "sha256": "3241fa9007e3ba99a9f64c01c60239ad842e487023506eee9a6ef928ab00f752"
+    },
+    {
+      "bytes": 7881,
+      "path": "frozen-normal.stderr",
+      "sha256": "0b5a69bf709b27e3a21a2cce95fa423f6688a96b38cecfbb5f94a466caa4f69c"
+    },
+    {
+      "bytes": 0,
+      "path": "frozen-normal.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7881,
+      "path": "frozen-optimized.stderr",
+      "sha256": "a68502dbdb8faea70f2ae1e13b8fe414f33047204d3a1f5c6034fd26a7e3615e"
+    },
+    {
+      "bytes": 0,
+      "path": "frozen-optimized.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7671,
+      "path": "heldout-report.json",
+      "sha256": "b862cac0923349b834fed3036fe8a9c37178abdeed7f165c810871e87f12895d"
+    },
+    {
+      "bytes": 0,
+      "path": "heldout.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 41,
+      "path": "heldout.stdout",
+      "sha256": "aa90e0968a5673500e9d1494e6ab0f1fd8bcb7d56cbab82f94177a75d8cf6c27"
+    },
+    {
+      "bytes": 13628,
+      "path": "heldout_v3.py",
+      "sha256": "b4ca65153ee67802e4c5a3a53c6d9f46fa7a91df1d185c636d647eda2df166d8"
+    },
+    {
+      "bytes": 5294,
+      "path": "integrated-controls-report.json",
+      "sha256": "d58a7723a7749dc2502623adccc1bab117a64f3d8bd28a7527aa0fa533d94853"
+    },
+    {
+      "bytes": 1684,
+      "path": "passivity-controls-report.json",
+      "sha256": "57b6fafebb6e3a689a91ade869104e79578fb917d22e8f03e19953bf2eec3888"
+    }
+  ],
+  "frozen_normal_tests_passed": 52,
+  "frozen_optimized_tests_passed": 52,
+  "independent_heldout_controls_passed": 38,
+  "integrated_session_outcomes_passed": 36,
+  "native_and_rust_identity_probes": true,
+  "passivity_outcomes_passed": 11,
+  "producer_changes": 0,
+  "remote_writes": 0,
+  "required_next_stages": [
+    "four fresh real instrumented/control profile builds",
+    "twelve fresh ordinary passivity pairs",
+    "effective 638-observation gate",
+    "independent result audit and exact-head hosted gate with resource bounds"
+  ],
+  "retained_v7b_semantic_event_definitions": 38,
+  "schema": "oxid-portable-parser-independent-review-v3",
+  "scope": "source/recipe/passivity and exact approved semantic/amendment rebind; no compiler/candidate/hosted pass claim",
+  "status": "PASS_ADMISSION_TO_FRESH_QUALIFICATION",
+  "target": {
+    "authority.json": "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0",
+    "checkpoint.json": "8a71652fa28e4c7580112f5e447b8eed7dce56497d1ece1e1b49a2e93dbb2af3",
+    "portable.py": "cbbd81c6461dc26498fa1551efacb23b219d0fed78048e4ead5929154b823eed"
+  },
+  "test_methods_passed": 21
+}
