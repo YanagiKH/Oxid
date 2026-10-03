@@ -1,0 +1,15 @@
+{
+  "artifact_sha256": "4d54c7cd009e1e94e8c12ca240d73a60a447b2b847cd52f7870540d7c9dee6d9",
+  "sources": {
+    "inherited-raw-fixtures-v1.rs": "f2cfbdad45c8b6257815765f40e199324a2770e2459a4255129b58ec7aa38c3b",
+    "native-core-fixtures-v1.rs": "668025974a435ecca37d47ada2a6347de8c4269d6adb6b09f45e8e01fbd1d5db",
+    "native-chain-extension-v1.rs": "2f5139388006d80409ab6f8f624331198585594a658e68d365fb8cc5dd1af571",
+    "native-phi-fixtures-v1.rs": "a3f7c280eb791b545570a7c6433d178f8c92c3c13bea06e5339f74ba113a6ebf",
+    "native-semantic-tests-v1.rs": "bc53ee3cff581b4bcfebd1f0c0d0929edcc2cd13c51f9ae6f83dd2d2d89d5fc1",
+    "native-effect-tests-v1.rs": "e221d28d279fc9b45636a5d5e73ab6c50c32c6085968e02c160c94891018584d",
+    "native-identity-tests-v1.rs": "d67606fd576158b08ceee93f01d74ba56ea6cfab0d46cfbd87a30ab7003f340e",
+    "native-work-tests-v1.rs": "58f885565894f2a8cbc7e7c0be96a6e49fa2bb33c51c71ead0d242f5494ef192",
+    "native-external-observer-tests-v1.rs": "88a2bcb1dc48cf579a033207028e3eac38cb527b76f50bd357f9013d10512143"
+  },
+  "mechanical_change": "Remove duplicate top-level use super::* imports; concatenate otherwise byte-exact source chunks."
+}
