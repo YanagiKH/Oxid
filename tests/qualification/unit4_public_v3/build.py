@@ -12,10 +12,14 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from contracts import need, sha, load, save, binding, verify
 from runtime import source_manifest, process
 from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA
+
+def observer_path_order(paths, root):
+    # Preserve the approved POSIX component order on every actual host.
+    return sorted(paths, key=lambda path: PurePosixPath(path.relative_to(root).as_posix()).parts)
 
 def prepare(args):
     source = Path(args.source_root).resolve()
@@ -33,14 +37,15 @@ def prepare(args):
         target.write_bytes(verify(source / row['path'], row))
     patch = Path(args.observer_patch).resolve()
     need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
-    p = subprocess.run(['git', 'apply', '--check', str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    git = ['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', 'apply']
+    p = subprocess.run([*git, '--check', str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     need(p.returncode == 0, 'observer patch precondition: ' + p.stderr.decode())
-    p = subprocess.run(['git', 'apply', str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.run([*git, str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     need(p.returncode == 0, 'observer patch apply: ' + p.stderr.decode())
     files = []
     changed = []
     before = {r['path']: r for r in original['files']}
-    for path in sorted(dest.rglob('*')):
+    for path in observer_path_order(dest.rglob('*'), dest):
         if path.is_file():
             rel = path.relative_to(dest).as_posix()
             row = {'path': rel, 'bytes': path.stat().st_size, 'sha256': sha(path.read_bytes())}

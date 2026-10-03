@@ -6,6 +6,7 @@ import copy
 import io
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import shutil
 import tarfile
 import tempfile
 import subprocess
@@ -127,6 +128,105 @@ class ProvenanceOrderingControls(unittest.TestCase):
             elif mutation == 'missing': changed['integration'].pop()
             else: changed['integration'].append(changed['integration'][0])
             with self.subTest(mutation=mutation): self.assertNotEqual(join.provenance_key(changed), expected)
+
+
+class ObserverPreparationControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.temp.name).resolve()
+        cls.c, cls.runtime, _, _, _ = q.public_modules(REPO)
+        cls.builder = q.module('_unit4_observer_build_controls', REPO / q.PUBLIC / 'build.py')
+        cls.config = cls.root / 'controlled-gitconfig'
+        cls.config.write_bytes(b'[core]\n autocrlf = true\n eol = crlf\n')
+        cls.output = cls.root / 'prepared'
+        command = [sys.executable, '-B', str(REPO / q.PUBLIC / 'build.py'), 'prepare-observer',
+                   '--source-root', str(REPO), '--manifest', str(REPO / q.SOURCE / 'current-source.json'),
+                   '--observer-patch', str(REPO / q.OBSERVER_PATCH), '--observer-patch-sha256', cls.builder.LIFECYCLE_PATCH_SHA,
+                   '--out', str(cls.output)]
+        env = {**gate.clean_environment(), 'GIT_CONFIG_GLOBAL': str(cls.config), 'GIT_CONFIG_NOSYSTEM': '1'}
+        cls.preparation = subprocess.run(command, cwd=cls.root, env=env, capture_output=True, timeout=120)
+        if cls.preparation.returncode:
+            raise AssertionError(cls.preparation.stderr.decode(errors='replace'))
+        cls.manifest = q.read(cls.output / 'observer-source.json')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def test_exact_approved_bodies_under_crlf_git_configuration(self):
+        self.assertEqual(len(self.manifest['files']), 121)
+        self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
+        for row in self.manifest['files']:
+            q.verify(self.output / 'source' / row['path'], row)
+        self.assertEqual(self.config.read_bytes(), b'[core]\n autocrlf = true\n eol = crlf\n')
+        self.assertEqual(q.read(self.output / 'prepared.json')['compiler_invocations'], 0)
+
+    def test_native_path_flavors_emit_identical_frozen_component_order(self):
+        names = [row['path'] for row in self.manifest['files']]
+        native_orders = []
+        for root in (PurePosixPath('/source'), PureWindowsPath('C:/source')):
+            native = sorted(root / name for name in names)
+            native_orders.append([path.relative_to(root).as_posix() for path in native])
+            self.assertEqual([path.relative_to(root).as_posix() for path in self.builder.observer_path_order(native, root)], names)
+        self.assertNotEqual(*native_orders)
+        self.assertNotEqual(names, sorted(names))  # The approved authority uses path components.
+
+    def test_order_preserves_case_and_duplicate_members(self):
+        names = ['a.rs', 'A.rs', 'a/B.rs', 'a.rs', 'a/b.rs']
+        expected = ['A.rs', 'a/B.rs', 'a/b.rs', 'a.rs', 'a.rs']
+        for root in (PurePosixPath('/source'), PureWindowsPath('C:/source')):
+            got = self.builder.observer_path_order([root / name for name in names], root)
+            self.assertEqual([path.relative_to(root).as_posix() for path in got], expected)
+
+    def test_exact_adapter_identity_is_identical_across_path_flavors(self):
+        run = q.public_modules(REPO)[2]
+        class ViewedPath:
+            def __init__(self, actual, flavor):
+                self.actual, self.flavor = actual, flavor(actual.name)
+            def __lt__(self, other):
+                return self.flavor < other.flavor
+            def __getattr__(self, name):
+                return getattr(self.actual, name)
+        expected = run.adapter_identity()
+        results, native_orders = [], []
+        for flavor in (PurePosixPath, PureWindowsPath):
+            members = [ViewedPath(path, flavor) for path in (REPO / q.PUBLIC).iterdir()]
+            native_orders.append([path.name for path in sorted(members)])
+            with patch.object(run, 'ADAPTER_ROOT', SimpleNamespace(iterdir=lambda: iter(members))):
+                results.append(run.adapter_identity())
+        self.assertNotEqual(*native_orders)
+        self.assertEqual(results, [expected, expected])
+        self.assertEqual(len(expected), 14)
+        self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
+        for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
+            self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
+
+    def test_changed_payload_and_missing_member_reject_before_compiler(self):
+        for control in ('changed-payload', 'coherent-changed-payload', 'missing-member', 'coherent-missing-member', 'windows-order'):
+            with self.subTest(control=control), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                shutil.copytree(self.output, root / 'prepared')
+                manifest_path = root / 'prepared/observer-source.json'
+                manifest = q.read(manifest_path)
+                source = root / 'prepared/source'
+                row = next(row for row in manifest['files'] if row['path'] == 'src/frontend/lifecycle_observer.rs')
+                if control.endswith('changed-payload'):
+                    path = source / row['path']
+                    path.write_bytes(path.read_bytes() + b'// altered observer payload\n')
+                    if control.startswith('coherent'):
+                        row.update(bytes=path.stat().st_size, sha256=q.sha(path.read_bytes()))
+                elif control.endswith('missing-member'):
+                    (source / row['path']).unlink()
+                    if control.startswith('coherent'):
+                        manifest['files'].remove(row)
+                else:
+                    manifest['files'].sort(key=lambda row: PureWindowsPath(row['path']))
+                q.save(manifest_path, manifest)
+                args = SimpleNamespace(source_root=source, manifest=manifest_path, kind='unit4-public-v3-lifecycle-observer')
+                with patch.object(self.builder.subprocess, 'check_output', side_effect=AssertionError('compiler must not run')):
+                    with self.assertRaises((self.c.Reject, OSError)):
+                        self.builder.build(args)
 
 
 class PackageControls(unittest.TestCase):

@@ -22,7 +22,7 @@ ADAPTER_ROOT = Path(__file__).resolve().parent
 PACKAGE_FILES = {'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
 
 def adapter_identity():
-    paths = sorted(ADAPTER_ROOT.iterdir())
+    paths = sorted(ADAPTER_ROOT.iterdir(), key=lambda path: path.name)
     need({p.name for p in paths} == PACKAGE_FILES and all(p.is_file() and not p.is_symlink() for p in paths), 'adapter package exact membership')
     return [{'path': p.name, 'bytes': p.stat().st_size, 'sha256': sha(p.read_bytes())} for p in paths]
 

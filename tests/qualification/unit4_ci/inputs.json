@@ -735,9 +735,9 @@
       "sha256": "53a6bcc9f32f114f7cfff6f94eab63142a50c0e44adad6eefdf325ea2e9f4d6b"
     },
     {
-      "bytes": 7720,
+      "bytes": 8020,
       "path": "tests/qualification/unit4_public_v3/build.py",
-      "sha256": "266c6635100fbe162c97636587833746def1f65b3b94b90aa99da83686fc4570"
+      "sha256": "27344411196461d7bb2eb7d2e07da45182a66430392a6ec3dbe8b17e0d81fbe1"
     },
     {
       "bytes": 11016,
@@ -770,9 +770,9 @@
       "sha256": "6b53900e18b33a26c5949bf8905f742e9abe5b67e74748585bbb24b6e4091454"
     },
     {
-      "bytes": 26226,
+      "bytes": 26254,
       "path": "tests/qualification/unit4_public_v3/run.py",
-      "sha256": "2609b737596cadc9ee485a40788de7aa56b8b8e23ee761f637127ff8b83d13aa"
+      "sha256": "394984f2e412394139462c5e3d6a87976f3ecf6f69f4797dda4b50681c485785"
     },
     {
       "bytes": 18540,
