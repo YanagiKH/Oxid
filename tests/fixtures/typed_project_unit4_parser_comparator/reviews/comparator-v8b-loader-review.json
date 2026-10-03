@@ -1,0 +1,152 @@
+{
+  "all22_predicates_and_events_and_first_admission_unchanged": true,
+  "changed_existing_definitions": [
+    "authorization",
+    "main"
+  ],
+  "checkpoint_sha256": "78b152c74d9623ae2a66bc12c169bb6c9ed4077657d9bcde0e60978331a5afdc",
+  "comparator_sha256": "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b",
+  "effective_comparison_identity": {
+    "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+    "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+    "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+    "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+    "ordered_amendment_sha256": [
+      "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    ]
+  },
+  "effective_document_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "exact_changed_leaves": [
+    "/cases/246/expected/first_diagnostic_projection/primary/column",
+    "/cases/246/expected/first_diagnostic_projection/primary/end",
+    "/cases/246/expected/first_diagnostic_projection/primary/end_column",
+    "/cases/246/expected/first_diagnostic_projection/primary/start"
+  ],
+  "execution_identity": "original b19819e2 decoded contract /7a2ec4fd freeze retained on all existing observations",
+  "independent_held_out_controls": [
+    {
+      "code": "mismatch",
+      "control": "coherently rehashed wrong offending-token anchor",
+      "detail": "complete source Pub token coordinates",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "coherently rehashed noncoordinate primary mutation",
+      "detail": "whole-document exact changed integer leaves",
+      "result": "rejected"
+    },
+    {
+      "code": "schema",
+      "control": "strict coordinate type True",
+      "detail": "new coordinate must be an integer",
+      "result": "rejected"
+    },
+    {
+      "code": "schema",
+      "control": "strict coordinate type 15.0",
+      "detail": "new coordinate must be an integer",
+      "result": "rejected"
+    },
+    {
+      "code": "schema",
+      "control": "strict coordinate type '15'",
+      "detail": "new coordinate must be an integer",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "changed base schema",
+      "detail": "exact unchanged base contract before amendment",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "changed base kind",
+      "detail": "exact unchanged base contract before amendment",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "changed base message",
+      "detail": "exact unchanged base contract before amendment",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "changed base notes",
+      "detail": "exact unchanged base contract before amendment",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "already applied amendment cannot be readopted",
+      "detail": "exact unchanged base contract before amendment",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "base with effective receipt",
+      "detail": "effective comparison document, not summary-only relabeling",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "summary object as effective",
+      "detail": "effective comparison document, not summary-only relabeling",
+      "result": "rejected"
+    },
+    {
+      "code": "mismatch",
+      "control": "changed receipt",
+      "detail": "exact effective comparison receipt",
+      "result": "rejected"
+    },
+    {
+      "control": "actual effective document passed to unchanged predicate engine; both identity domains reported",
+      "result": "pass"
+    },
+    {
+      "code": "event-order",
+      "control": "retained CMP-RESERVE-1",
+      "detail": "reserve/append after rejected admission or allocator failure",
+      "result": "rejected"
+    },
+    {
+      "code": "node-ledger",
+      "control": "retained CMP-SEAM-BUDGET-1",
+      "detail": "effective node limit exceeded",
+      "result": "rejected"
+    }
+  ],
+  "new_admission_result_helpers": [
+    "admit_contract_amendment",
+    "amendment_artifacts",
+    "apply_coordinate_amendment",
+    "canonical",
+    "changed_leaves",
+    "compare_effective_rows",
+    "effective_receipt"
+  ],
+  "no_candidate_observations_read_or_compared": true,
+  "no_raw_or_historical_receipt_rewrites": true,
+  "normal_tests": 52,
+  "optimized_tests": 52,
+  "original_base_bytes_and_in_memory_object_unchanged": true,
+  "remaining_requirement": "New coordinator authorization schema v2 must pin v8b checkpoint plus all four reviewed amendment authority artifacts; only then run a separate revised comparison over unchanged full-v7 raw manifests",
+  "schema": "oxid-unit4-independent-amendment-loader-review-v8b",
+  "semantic_baseline_review": {
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/comparator-v7b-semantic-review.json",
+    "sha256": "ab06219cff1133a722115e3e5ed309b46b33cac57625c67fa8d674793eec9e44"
+  },
+  "source_derived_location": {
+    "column": 15,
+    "end": 17,
+    "end_column": 18,
+    "start": 14
+  },
+  "status": "ready-for-explicitly-authorized-recomparison",
+  "unchanged_existing_definitions": 38,
+  "unchanged_other_cases": 247
+}

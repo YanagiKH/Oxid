@@ -1,0 +1,8 @@
+{
+  "candidate_comparisons": 0,
+  "code": "event-order",
+  "detail": "reserve/append after rejected admission or allocator failure",
+  "schema": "oxid-unit4-independent-global-witness-replay-v1",
+  "status": "rejected",
+  "witness_sha256": "9842583d09b1263c7b7bc48e316bbd6d17ef42b3a4a306bc2bb1af5aeefb234d"
+}

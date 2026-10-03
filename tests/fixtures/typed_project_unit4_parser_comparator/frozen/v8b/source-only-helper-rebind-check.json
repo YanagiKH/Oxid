@@ -1,0 +1,11 @@
+{
+  "candidate_comparisons": 0,
+  "compiled_observer_source_sha256": "738dc9b47747889414859b9286e376c762dc75292ed3dedc5306e9eed881f625",
+  "helper_rebind_sha256": "9708016e83207a33d27db3ee6a67a4186f05347d5464ecb59aeaad93e1240b8a",
+  "helper_review_sha256": "e655e3740ad8be86f49a2d2f7ebadc84e4b3597dee4a7d218a8ad446b57dca85",
+  "original_normalizer_sha256": "ca4bb6e661a5197cf340e7f03ad97e50df3222fec6986328f80792ef0c3b8d41",
+  "permitted_collector_run_py_sha256": "78814a6f57713cbde350abd526e04d3cfec63092b06fd4a38034f985ed225997",
+  "permitted_normalizer_sha256": "89c77305d8b51bebbe71b06c8e3b2d82a09ae76a05f53eadae5e2820d48b2822",
+  "scope": "source/helper identity and equivalence metadata only; no raw candidate observation files read",
+  "status": "pass"
+}

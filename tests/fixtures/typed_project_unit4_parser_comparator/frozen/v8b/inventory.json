@@ -1,0 +1,41 @@
+{
+  "candidate_comparisons": 0,
+  "candidate_compiler_invocations": 0,
+  "case_count": 248,
+  "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "original_rows_per_profile": 71,
+  "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "predicates": {
+    "diagnostic_count_exact": 5,
+    "diagnostics_exact": 133,
+    "eof_tokens": 14,
+    "field_lookahead_inspections_bound": 1,
+    "field_pub_lookahead_calls": 2,
+    "field_pub_scans_exact": 6,
+    "field_scans_disjoint": 1,
+    "first_diagnostic_projection": 84,
+    "human_diagnostics_base64_exact": 7,
+    "nodes_exact": 9,
+    "non_eof_tokens": 14,
+    "parse_attempts": 4,
+    "path_segment_count_after": 1,
+    "recognition_transitions_count": 5,
+    "recognition_transitions_exact": 28,
+    "recognized_final": 243,
+    "relation_to_original": 71,
+    "required_order": 6,
+    "reserve_attempts_exact": 10,
+    "reserve_trace_exact": 5,
+    "result": 248,
+    "syntax_flavor": 98
+  },
+  "project_rows_per_profile": 248,
+  "qualification_status": "source-only; independent review and approved execution evidence pending",
+  "required_profiles": [
+    "debug",
+    "release"
+  ],
+  "schema": "oxid-unit4-parser-comparator-inventory-v1",
+  "unsupported_expected_fields": [],
+  "unsupported_source_lexemes": []
+}

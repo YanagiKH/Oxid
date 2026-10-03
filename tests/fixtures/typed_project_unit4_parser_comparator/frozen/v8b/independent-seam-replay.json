@@ -1,0 +1,8 @@
+{
+  "candidate_comparisons": 0,
+  "code": "node-ledger",
+  "detail": "effective node limit exceeded",
+  "schema": "oxid-unit4-independent-global-witness-replay-v1",
+  "status": "rejected",
+  "witness_sha256": "bedda2da10336857cb36046fc9d0be53cb079e3dbc1f659bc57ce4585b95c2b1"
+}

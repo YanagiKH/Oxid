@@ -1,0 +1,8 @@
+{
+  "baseline_checkpoint_sha256": "654541115ba5fae1a0f25ccab45713d4de90a59d0e0aa5b7823acc5e8bfec45b",
+  "candidate_comparisons": 0,
+  "change": "Correct preliminary-v7 source-equality sentence; v7b includes both reserve barrier and permanent targeted node budget repairs",
+  "python_source_files_byte_identical": true,
+  "schema": "oxid-unit4-parser-comparator-documentation-correction-v1",
+  "validation_inherited_from_checkpoint_sha256": "654541115ba5fae1a0f25ccab45713d4de90a59d0e0aa5b7823acc5e8bfec45b"
+}

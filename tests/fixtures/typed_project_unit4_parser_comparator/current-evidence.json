@@ -1,0 +1,22 @@
+{
+  "base_compiler_contract_observer_ci_changes": 0,
+  "candidate_recollection": false,
+  "expected_observations": 638,
+  "failed_history_boundary": "Original failure remains fail under original authority; later pass uses fixed comparator and separately reviewed four-coordinate amendment",
+  "fresh_portable_qualification": "pending separate gate",
+  "hosted_qualification": "pending separate gate",
+  "issues": 0,
+  "loader_review_sha256": "7cc6d3c3291703c1383c76d79b67ffcec30997a1a524fd0272cc6059ce8b0594",
+  "local_authorization_sha256": "256fa85fec4a55d7fe6644d409452ff96c3b0f60b3e457270381e3b1be55099d",
+  "local_command_sha256": "891e3f61051a90000d81b58faccbf110b33ef55df9d3dc392a0517b0b6bbeb2d",
+  "local_result_sha256": "174583a5c32fbe194969a1455ab917992d49696f8b300235ca9fcd64d9f8ba5a",
+  "max_rss_gib_approx": 2.47,
+  "max_rss_kib": 2591984,
+  "new_compiler_invocations_for_comparison": 0,
+  "observations": 638,
+  "omitted_artifacts": "No caches, raw observations, binaries, duplicate previous comparator source snapshots, or private working material",
+  "original_failed_result_sha256": "b9a700424e1fcf48d7bc41e3e0ccce01e24267592484787d51e617afc3938843",
+  "schema": "oxid-unit4-parser-comparator-current-evidence-v1",
+  "semantic_review_sha256": "ab06219cff1133a722115e3e5ed309b46b33cac57625c67fa8d674793eec9e44",
+  "status": "local-amended-comparison-pass"
+}

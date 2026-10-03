@@ -1,0 +1,23 @@
+{
+  "authorization_sha256": "256fa85fec4a55d7fe6644d409452ff96c3b0f60b3e457270381e3b1be55099d",
+  "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+  "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+  "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "execution_contract": {
+    "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "contract_id": "oxid-unit4-parser-source-contract-20261003-v1",
+    "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027"
+  },
+  "expected_observations": 638,
+  "issues": [],
+  "observations": 638,
+  "ordered_amendment_sha256": [
+    "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+  ],
+  "package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+  "schema": "oxid-unit4-parser-comparison-v1",
+  "status": "pass"
+}

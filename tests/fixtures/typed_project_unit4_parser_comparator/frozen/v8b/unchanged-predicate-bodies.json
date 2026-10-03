@@ -1,0 +1,35 @@
+{
+  "baseline_checkpoint_sha256": "086eb205e0ed696983600b7c182a2cac232d69508e2e6f4d38f8de1263682cf1",
+  "candidate_raw_or_normalized_files_read": 0,
+  "change_scope": "Mandatory independently pinned coordinate amendment authority; compare verified effective document and label execution/effective identities separately",
+  "changed_existing_definitions": [
+    "authorization",
+    "main"
+  ],
+  "expected_predicate_branches_unchanged": 22,
+  "first_admission_helper_unchanged": true,
+  "global_event_definition_unchanged": true,
+  "independent_debug_decoder_sha256": "8fb1708d7824eb453db5c036ac2e7d49ca76e69ff222f1c3cf1e16f41272aa41",
+  "new_definitions": [
+    "admit_contract_amendment",
+    "amendment_artifacts",
+    "apply_coordinate_amendment",
+    "canonical",
+    "changed_leaves",
+    "compare_effective_rows",
+    "effective_receipt"
+  ],
+  "new_test_methods": [
+    "test_amendment_noncoordinate_wrong_old_and_typed_changes_reject",
+    "test_amendment_rejects_wrong_base_source_and_already_applied",
+    "test_amendment_requires_exact_complete_reviewed_artifacts",
+    "test_effective_comparison_cannot_relabel_base_or_summary_only",
+    "test_exact_reviewed_amendment_preserves_base_and_execution_identity",
+    "test_new_authorization_requires_schema_and_amendment_authority"
+  ],
+  "original_test_method_count": 46,
+  "original_test_methods_all_unchanged": true,
+  "schema": "oxid-unit4-parser-comparator-definition-delta-v1",
+  "status": "pass",
+  "unchanged_existing_definition_count": 38
+}

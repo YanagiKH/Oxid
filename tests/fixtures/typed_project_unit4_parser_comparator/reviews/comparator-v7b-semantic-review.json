@@ -1,0 +1,40 @@
+{
+  "all22_predicate_branches_unchanged": true,
+  "changed_existing_definitions": [
+    "events"
+  ],
+  "checkpoint_sha256": "086eb205e0ed696983600b7c182a2cac232d69508e2e6f4d38f8de1263682cf1",
+  "closed_findings": [
+    "CMP-RESERVE-1",
+    "CMP-SEAM-BUDGET-1"
+  ],
+  "comparator_sha256": "521263a670cc15f4fc7b41a1383822e2cb6dc40d4c31a90271145234f28005ab",
+  "documentation_note": "v7b README contains a reported inherited historical sentence error; code/definition receipts accurately include both repairs. Final loader successor v8b corrects wording without Python changes.",
+  "fresh_tests": {
+    "exit_codes": [
+      0,
+      0
+    ],
+    "normal": 46,
+    "optimized": 46
+  },
+  "independent_controls": {
+    "count": 30,
+    "path": "/workspace/shared/oxid-reset-recovery-20261003/parser-observer-independent-review/comparator-v7b-held-out-controls.json",
+    "sha256": "403aa9d9dba4eaeb24c2b7058dbfe1be93ada814f953433589e011be6e566058"
+  },
+  "no_candidate_data_read_or_compared_in_this_review": true,
+  "no_expectation_or_production_edits": true,
+  "predecessor": "v6 first-admission prefix accepted; two global boundary counterexamples blocked overall approval",
+  "remaining_requirement": "Separately review strict source-only amendment loader, then await exact new authorization before re-comparing unchanged raw data",
+  "required_first_admission_unchanged": true,
+  "schema": "oxid-unit4-independent-semantic-review-v7b",
+  "source_semantics": [
+    "Prior rejection barrier is enforced before the current failed reserve may update rejection state",
+    "A targeted real node attempt is counted only for its matching production; exact occurrence permanently lowers effective budget to current ledger",
+    "Every later admission and rejection uses that effective budget, including other productions",
+    "Allocator failure does not lower node budget; later source-valid recovery and admitted module reserves remain possible"
+  ],
+  "status": "pass-semantic-corrections-only",
+  "unchanged_existing_definitions": 39
+}

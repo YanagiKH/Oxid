@@ -1,0 +1,41 @@
+{
+  "all_control_data": "approved source/amendment authority and synthetic test values; exact held-out synthetic witnesses",
+  "candidate_comparisons": 0,
+  "candidate_raw_or_normalized_files_read": 0,
+  "compiler_invocations": 0,
+  "runs": [
+    {
+      "command": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "test_mutations.py"
+      ],
+      "exit_code": 0,
+      "log": "normal-controls.log",
+      "log_sha256": "47adc20949cd009ab861bafaf1de8feeeec3cf5ec7d58dc303594459fba03e6d",
+      "mode": "normal",
+      "test_methods": 52
+    },
+    {
+      "command": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+        "-B",
+        "-O",
+        "-m",
+        "unittest",
+        "-v",
+        "test_mutations.py"
+      ],
+      "exit_code": 0,
+      "log": "optimized-controls.log",
+      "log_sha256": "2dee7523b63e094f2ffd92faf2df9f9d4c675760adb7df20f0c5ea90ee51a728",
+      "mode": "optimized",
+      "test_methods": 52
+    }
+  ],
+  "rust_builds": 0,
+  "schema": "oxid-unit4-parser-comparator-synthetic-controls-v1"
+}
