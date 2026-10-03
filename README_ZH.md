@@ -100,6 +100,8 @@ Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器
 
 可選的[所有權基礎擴充](spec/typed-preview.md#nominal-owned-structs-and-call-only-borrowing)適用於 `--edition typed-preview`，支援僅含純量欄位、只能移動的 struct、整體移動與替換，以及僅限函式呼叫的顯式借用。[Batch 範例](fixtures/owned_source/batch.ox)結合迴圈與回傳擁有值的輔助函式，結果為 816；實際證據與限制見[原始碼驗證紀錄](docs/architecture/owned-source-validation.md)。執行與原生編譯的 `main` 仍須無參數並回傳純量；原生範圍仍限 Linux x86_64、LLVM 19.1.7、O0。既有動態 record 語意不變；儲存參照、堆積配置與析構安全，以及 v1.0 完成，均不在本次範圍內。
 
+實驗性的[型別專案路徑](spec/typed-preview.md#bounded-typed-projects)加入只含宣告的模組、直接匯入與可見性。[三檔案 Batch 範例](fixtures/typed-project-batch/README.md)保留私有欄位，依原始碼推導的結果為 816。載入已宣告子模組目前限 Linux；只使用根檔案的專案語法沒有此探索平台限制。實際驗證範圍見[專案驗證紀錄](docs/architecture/typed-project-unit4-validation.md)。
+
 只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。
 
 ## 從原始碼建置

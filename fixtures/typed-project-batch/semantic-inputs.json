@@ -1,0 +1,65 @@
+{
+  "schema": "oxid-typed-project-example-v1",
+  "independent_authority_sha256": "4ba000cb717b868827101cb79e6ba3851df8acdb51e99a68c3b9ad845d9abe47",
+  "pilot": {
+    "activations": 41,
+    "budget_points": [
+      197,
+      198,
+      216,
+      217,
+      227,
+      228,
+      230,
+      231,
+      244,
+      245,
+      280,
+      281,
+      1369,
+      1370,
+      1383,
+      1384,
+      1451,
+      1452,
+      1501,
+      1502,
+      1528,
+      1529,
+      1576,
+      1577
+    ],
+    "complete_execution_fuel": 1577,
+    "entry": 0,
+    "expected_line_1_based": 75,
+    "expected_line_including_lf_sha256": "7171b88e623f8fca6f97a5881e9ef64a0b045625f0fefb75a14ed0ad496599c0",
+    "full_schedule_scope": "Use the complete unchanged independent Unit3 expected row for schedule, operation/effect order, per-budget failures, raw/source map, correspondence and native admission. This summary does not claim those details from CLI alone.",
+    "function_count": 11,
+    "id": "pilot-opaque-batch",
+    "owner_generations": 12,
+    "result": {
+      "check": "accept",
+      "result": 816,
+      "result_type": "i32"
+    },
+    "route": "owned",
+    "source_files": [
+      {
+        "bytes": 809,
+        "path": "main.ox",
+        "sha256": "bce6c43248900a7118a1a0390cc5edc9a2762df7b73621feaa15a44df86c0ae5"
+      },
+      {
+        "bytes": 863,
+        "path": "state.ox",
+        "sha256": "25bc65ea0e2d189fdbeb5774d2f3294ed02dab13aa7fdeb608f99901202ebefd"
+      },
+      {
+        "bytes": 148,
+        "path": "jobs.ox",
+        "sha256": "d9b30716a82699667deae97309fbc98be74cb6f2654b92bcebade49ad021faa6"
+      }
+    ],
+    "source_reasoning": "make starts (completed,retries,checksum,active)=(0,0,0,true). For each next_job=1..6, first attempt retries and continues, second dispatches commit then breaks. done after job 6 leads stop. relay moves the intact Batch. finish=210+600+6=816. Extra query/update helper calls retain their distinct frozen schedule/fuel."
+  }
+}

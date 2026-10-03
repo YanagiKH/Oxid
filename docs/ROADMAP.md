@@ -25,12 +25,12 @@ See the [implementation baseline](architecture/current-baseline.md) for limitati
 
 M0 is in progress. The current inventory and selected legacy tests cover only part of that stage. New semantics require [RFCs](../rfcs/README.md); the legacy interpreter is not the specification for the future static core.
 
-Private typed-project work now reaches the existing checked reference and native
-consumers through one shared declaration/type schedule. Its finite
-[source and native evidence](architecture/typed-project-unit3-validation.md)
-advances the namespace and source-map groundwork; exact-head hosted CI
-remains pending, and public project syntax remains unavailable until Unit4.
-This private increment does not complete a roadmap milestone or v1.0.
+Typed-project public dispatch now uses the shared declaration/type schedule and
+existing verified reference/native consumers. The
+[Unit4 ledger](architecture/typed-project-unit4-validation.md) separates exact
+current-source qualification from archived private-core evidence and future host
+work. This bounded capability advances the static frontend; it does not complete
+a roadmap milestone or v1.0.
 
 ## Native AI work
 

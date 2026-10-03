@@ -1,4 +1,4 @@
-# Modules
+# Legacy modules
 
 For relative imports, matching dependency aliases from the project manifest are tried first. Otherwise, the resolver searches the importing source directory, then its `src`, `stdlib`, `modules`, `deps`, and `vendor` subdirectories, followed by the project's `.oxid/deps`, `deps`, and `vendor` directories and entries in `OXID_PATH`, in that order. Absolute import paths are used directly.
 
@@ -34,3 +34,12 @@ resolution or a self-contained artifact.
 The [module contract and corpus](../spec/legacy-modules.md) records matching
 cases, missing/cyclic import diagnostics, and these known differences. Future
 unified semantics require a separate specification and migration decision.
+
+## Experimental typed modules
+
+The explicit `typed-preview` selector uses declaration-only `mod name;` with a
+bounded expected-file tree, direct original-declaration imports and visibility.
+It performs no legacy initialization, package search or source preprocessing.
+See [the typed project contract](../spec/typed-preview.md#bounded-typed-projects)
+and [Batch example](../fixtures/typed-project-batch/README.md). Default commands
+continue to use the legacy rules above.

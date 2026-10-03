@@ -100,6 +100,8 @@ Oxid 0.9 は実験や小さなツール向けです。`.oxb` にはシリアラ�
 
 任意選択の[所有権基盤拡張](spec/typed-preview.md#nominal-owned-structs-and-call-only-borrowing)は `--edition typed-preview` で、スカラーのフィールドだけを持つムーブ専用 struct、値全体の移動・置換、関数呼び出しに限定した明示的な借用をサポートします。[Batch サンプル](fixtures/owned_source/batch.ox)はループと所有値を返す補助関数を組み合わせ、816 を返します。実際の検証範囲と制限は[ソース検証記録](docs/architecture/owned-source-validation.md)を参照してください。実行・ネイティブコンパイルの `main` は引数を取らずスカラーを返し、ネイティブ対象は引き続き Linux x86_64、LLVM 19.1.7、O0 に限定されます。既存の動的レコードの意味論は変わりません。参照の保存、ヒープ・デストラクターの安全性、v1.0 の完成は今回の範囲外です。
 
+実験的な[型付きプロジェクト経路](spec/typed-preview.md#bounded-typed-projects)では、宣言専用モジュール、直接インポート、可視性を使用できます。[3 ファイルの Batch サンプル](fixtures/typed-project-batch/README.md)はフィールドを非公開に保ち、ソースから導いた結果は 816 です。宣言済み子モジュールの読み込みは現在 Linux に限定され、ルートファイルだけの構文にはこの探索用ホスト制限はありません。実際の検証範囲は[プロジェクト検証記録](docs/architecture/typed-project-unit4-validation.md)を参照してください。
+
 信頼できるプログラムだけを実行し、依存関係を確認してください。生成された C/C++ プロセスアダプターには、信頼できるパスだけを渡してください。脆弱性の非公開報告については[セキュリティポリシー](SECURITY.md)を参照してください。
 
 ## ソースからビルド

@@ -1,21 +1,20 @@
 # RFC 0015: bounded typed modules, direct imports and visibility
 
-Status: proposed complete typed-project capability, with private Unit1 source-set
-and loader groundwork, Unit2 shared declaration/import/visibility indexing, and
-Unit3 linked scalar/owned execution implemented. The finite source/reference, native/driver, mutation and bounded local portable
-gates passed; applicable hosted CI on the exact publication head remains pending.
-Public `typed-preview` check, run and compile remain single-file.
-`mod`, `use`, `pub` and qualified item paths remain rejected by the public parser.
-Private project loading and execution have evidence on Linux
-x86_64 only. The loader rejects non-Linux hosts; other Linux architectures have
-not been qualified. Public activation remains a separate Unit4 decision.
+Status: experimental public integration. Unit1 source-set/loader groundwork,
+Unit2 shared declaration/import/visibility indexing and Unit3 linked execution
+are now selected by public `typed-preview` check, run and compile. Unit4 adds
+one-pass syntax recognition and preserves the original single-file route.
+[Unit4 qualification](../docs/architecture/typed-project-unit4-validation.md)
+records exact current-source, archived-source and platform evidence separately.
+Declared-child loading admits Linux; other hosts return E0005/source. Native
+remains Linux x86_64, LLVM 19.1.7 at O0. This describes the repository capability,
+not support in an older released executable.
 
 Proposal baseline: merged main `fbcfeb2a2de8fe9d335d6c8051d254cccdb663dc`, tree
 `658c83465aed3a1423483dcdcc23a3d10037131f`. This proposal extends
 [RFC 0014](0014-owned-structs-call-borrows.md) and the existing
 [typed](../spec/typed-preview.md) and [native](../spec/native-preview.md) contracts.
-Those specifications continue to describe the available source language until
-separate public activation. The historical
+Those specifications describe the available source language. The historical
 [Unit1 ledger](../docs/architecture/typed-project-unit1-validation.md) and
 [Unit2 ledger](../docs/architecture/typed-project-unit2-validation.md) record their
 separate source identities, representation measurements and qualification.
@@ -31,19 +30,18 @@ completion claim.
 
 ## Implementation status and how to read this RFC
 
-Sections 1–10 specify the complete proposed capability. Their syntax examples,
-namespace/visibility outcomes, cross-file execution and pilots are requirements
-for the full capability. Public commands still accept only the single-file
-language in the typed and native specifications.
+Sections 1–10 specify the bounded capability. Their syntax examples,
+namespace/visibility outcomes, cross-file execution and pilots are requirements.
+Public activation and exact qualification are recorded separately in Unit4.
 
 | Area | Implementation state |
 | --- | --- |
-| Immutable source set, file-aware text, per-file AST handles | Unit1 groundwork; public one-file driver uses the source-set facade |
-| Explicit child discovery with `mod name;` / `pub mod name;` | Private parser/loader; filesystem-policy evidence on Linux x86_64 |
-| `use`, public functions/structs/fields, qualified item paths | Private ProjectCandidate mode in the existing parser; public syntax remains closed |
-| Shared declarations, imports, visibility, global declaration index | Unit2 private implementation and real scalar/owned resolution/type checking; ordinary single-file schedules use the same index |
-| Linked scalar/owned production and multi-file consumers | Private Unit3 implementation; finite source/reference, native/driver, mutation and bounded portability gates passed; exact-head hosted CI pending |
-| Multi-file public syntax and proposed pilots | Unavailable; separate Unit4 activation required |
+| Immutable source set, file-aware text and AST handles | Shared production source-set facade |
+| Explicit child discovery | Declaration-only loader, with Linux admission and bounded filesystem policy |
+| Direct imports, public declarations/fields and absolute item paths | Existing parser selected through one-pass load_typed |
+| Declarations, imports, visibility and global index | Shared scalar/owned resolution and type checking |
+| Linked scalar/owned program and consumers | One sealed program with original root-main identity |
+| Public check/run/native compile | Unit4 dispatch; exact source/target qualification in the Unit4 ledger |
 
 The private parser extends the existing parser. The narrow ModuleCandidate and
 load_modules entry points preserve Unit1 discovery behavior; ProjectCandidate
@@ -464,6 +462,22 @@ preserve exact accepted behavior, route, IDs, runtime costs, diagnostic code,
 stage, count/order, primary/secondary spans and rendering. New metadata bounds
 must be proved redundant for this admitted envelope before activation.
 
+Public dispatch calls `load_typed` once. The parser's sticky recognition bit is
+set only at actual new-grammar entry sites, never by source prescanning, trial
+parsing or a synchronizer inspecting tokens. It does not reset after malformed
+recognized syntax. A failed parse returns retained sources and diagnostics, not
+a fabricated successful syntax flavor. Successful AST metadata remains the
+authoritative OriginalSingleFile/ProjectSyntax selection.
+
+Module/import node admission precedes keyword consumption. Top-level `pub fn`
+and `pub struct` recognition follows pub consumption before the function/record
+node gate; `pub mod` recognition follows its module node gate. Field admission
+precedes public-field lookahead. Adjacent contextual colons recognize project
+syntax before unsupported-prefix/path-context denials; ordinary punctuation and
+nonadjacent colons do not. Forward field-prefix lookahead traverses disjoint
+logical ranges and charges a terminal EOF to the initiating pub. The separately
+bound parser observer qualifies these admission/recovery and resource boundaries.
+
 There is a real predecessor ordering difference to preserve: scalar
 `hir::resolve` collects duplicate-name and signature diagnostics interleaved
 per function; owned resolve completes declaration conflicts before fields and
@@ -559,10 +573,11 @@ notes, like existing owned builders. Keep schema_version 1, summary shapes,
 ordinary exit 1 and internal E0500 exit 2. Check summary function count is total
 original functions across all loaded modules. Never count imports as functions.
 
-At future public activation, predecessor diagnostic results intentionally change
+At public activation, predecessor diagnostic results intentionally change
 for `mod state;`, `use crate::state::Batch;`, `pub fn main` and `crate::value()`
-because they gain grammar and module/name/privacy outcomes. Unit1 preserves
-the public rejection of all four forms. It must stay identical for accepted
+because they gain grammar and module/name/privacy outcomes. The historical Unit1 corpus preserves
+the old rejection of all four forms; current qualification records them as
+explicit migrations and retains the other 31 original cases unchanged. It must stay identical for accepted
 functions/locals named crate/as, the struct+function crate pairing and the
 unsupported cast. Publish these deliberate diagnostic migrations explicitly.
 
@@ -594,10 +609,10 @@ layout sum, 100,000 combined slots and statements/events, 300,000 blocks,
 100,000,000 ownership work, 32 MiB ownership metadata/flow scratch and 64 MiB
 source-produced raw payload. Do not reset a ledger at file boundaries.
 
-### 7.2 Loader caps and proposed index caps
+### 7.2 Loader and shared index caps
 
-Unit1 implements the inclusive loader caps below in its private source-discovery
-path. Q and the shared-index I/J/W caps belong to later work and remain proposed.
+The shared loader implements the inclusive caps below. Qualified-path admission
+and shared-index I/J/W accounting are implemented by the parser and index.
 These are admission ceilings, not performance claims. Changes require a reviewed
 revision before activation, with boundary fixtures and the one-file redundancy
 proof updated. The [Unit1 ledger](../docs/architecture/typed-project-unit1-validation.md)
@@ -707,7 +722,7 @@ new controlled allocations must satisfy the fallible/preflight contract. No
 part of this resource plan is a filesystem sandbox or an ownership soundness
 proof.
 
-## 8. Proposed semantic cases (not enabled by Unit1)
+## 8. Semantic cases
 
 ### 8.1 Positive opaque owned API
 
@@ -789,7 +804,7 @@ Subtree(outer). Signature inclusion is not merely a same-module/public-bit test.
 | Child symlink, symlinked component or repeated canonical file | E0005; distinct hardlinks explicitly remain distinct modules |
 | Same start/end offsets straddling UTF-8 differently in two files | Correct owning SourceFileId chosen; no cross-file slicing/panic |
 
-## 9. Proposed Batch pilots and equivalence controls
+## 9. Batch pilots and equivalence controls
 
 The existing [single-file Batch](../fixtures/owned_source/batch.ox) and its
 independent arithmetic result 816 remain historical input. Neither project
@@ -903,17 +918,17 @@ verifier qualification.
 
 This RFC does not change the default legacy interpreter/module loader or
 `--edition legacy-0.9`. No change is made to the toolchain release, OXBC 1.0,
-serialized AST version 1, lockfile version or public/native ABI. The future
+serialized AST version 1, lockfile version or public/native ABI. The
 capability remains within the explicit experimental `typed-preview` selector;
 it does not establish a stable language edition or Rust compatibility.
 
-| Surface | Current support / proposed qualification |
+| Surface | Current support and qualification boundary |
 | --- | --- |
 | Public original one-file frontend/reference path | Preserves existing hosts and behavior; this work adds no host claim |
 | Private Unit1 multi-file source discovery | Linux x86_64 stable-filesystem qualification only |
 | Private discovery on non-Linux hosts | E0005/source policy rejection when module discovery is needed; a module-free root keeps the ordinary one-file path |
 | Private discovery on other Linux architectures | Not qualified by current execution evidence; the implementation gates the OS, not the architecture |
-| Public typed multi-file frontend/reference path | Unavailable; future host claims require equivalent filesystem-policy evidence |
+| Public typed multi-file frontend/reference path | Unit4 production dispatch; exact current host evidence is recorded in its ledger |
 | Existing native target | Linux x86_64, LLVM 19.1.7, O0, within existing admission limits |
 | New native targets, separate compilation or stable ABI | Out of scope |
 
@@ -946,8 +961,7 @@ present their counts as new project observations.
   contract. Explicit declarations, canonical pathnames and distinct hardlink
   identities keep it bounded and deterministic on a stable filesystem
 
-The semantic choices in this RFC are concrete. Remaining gates concern the
-implementation and its evidence: Unit2 index representation and one-file proof,
-new-host path qualification, linked-program consumer composition, separate Batch
-cost models and final activation review. A material semantic or cap change
+The semantic choices in this RFC are concrete. Qualification remains tied to
+exact source, compiler and target identities. Broader filesystem hosts, separate
+compilation, general package imports and stable ABI remain future work. A material semantic or cap change
 requires a corresponding reviewed RFC revision and updated boundary evidence.

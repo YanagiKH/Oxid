@@ -18,8 +18,9 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0010](../rfcs/0010-boolean-logical-operators.md),
 [RFC 0011](../rfcs/0011-mutable-scalar-locals.md) and
 [RFC 0012](../rfcs/0012-while-runtime-fuel.md),
-[RFC 0013](../rfcs/0013-loop-control.md) and
-[RFC 0014](../rfcs/0014-owned-structs-call-borrows.md).
+[RFC 0013](../rfcs/0013-loop-control.md),
+[RFC 0014](../rfcs/0014-owned-structs-call-borrows.md) and
+[RFC 0015](../rfcs/0015-bounded-typed-projects.md).
 
 ## Command and compatibility boundary
 
@@ -51,7 +52,8 @@ The preview supports `check`, explicit `run`, and the separately specified
 [native `compile --backend llvm`](native-preview.md). Direct-file invocation,
 `ast`, project commands, and every other operation fail before legacy dispatch. The gate runs before interpreter construction, preprocessing,
 dependency resolution, script execution, cache writes, or artifact generation.
-Checking and reference running read only the requested source and create no output/cache files. Native compilation has its own explicit artifact boundary.
+Checking and reference running read the entry and its explicitly declared modules
+and create no output/cache files. Native compilation has its own explicit artifact boundary.
 Checking never executes; run consumes only the completely verified OIR for the selected source route. It rejects OXBC input and does not fall back to the legacy
 parser, dynamic values, macro expander, interpreter, or artifact writer.
 
@@ -61,18 +63,73 @@ Manifest edition propagation and typed project builds are not implemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 
+## Bounded typed projects
+
+The entry file may declare `mod state;`, import original declarations with
+`use crate::state::Batch;`, and mark modules, functions, structs or fields `pub`.
+Absolute item paths work in direct calls, constructors and nominal types.
+Declarations load one bounded tree; they do not execute module initialization.
+The [three-file Batch example](../fixtures/typed-project-batch/README.md) combines
+an opaque record API, moves, call-only borrowing and loops. Its source-derived
+result is 816. Exact execution coverage is recorded in the
+[project qualification ledger](../docs/architecture/typed-project-unit4-validation.md).
+
+A declaration `mod state;` in the root maps only to the entry directory's
+`state.ox`; `mod jobs;` within state maps only to `state/jobs.ox`. There is no
+package search, alternate `mod.ox`, implicit directory discovery or import alias
+chasing. Imports target original functions and/or structs; module imports,
+reexports, grouped/glob imports and `self::`/`super::` relative paths are absent.
+A function and a struct can share a spelling and import together atomically.
+
+A private declaration is accessible to its declaring module and descendants.
+A private module restricts its contents to its parent's subtree. Public exposure
+is checked structurally even when no current caller uses the function. A public
+struct does not expose its fields: construction requires access to every field,
+while whole-value move/borrow/return can use an opaque value. Nominal types remain
+distinct across modules. [RFC 0015](../rfcs/0015-bounded-typed-projects.md) specifies
+the exact namespace, visibility, phase-order and diagnostic contracts.
+
+Root is parsed once before declared children are loaded in depth-first declaration
+order. Every loaded body is checked, including unused modules and functions.
+One whole-project selection preserves the scalar route unless any owned syntax
+occurs. Both routes consume the same declaration/import/visibility index and
+produce one complete verified program. There is no per-file fallback. Run and
+native compile require an original zero-argument scalar `main` declared in root;
+an imported or child `main` never supplies the entry. Check requires no main.
+
+Declared-child filesystem loading currently admits Linux only; non-Linux hosts
+reject it with E0005/source. Linux x86_64 has the predecessor filesystem evidence;
+other Linux architectures are not qualified. A module-free root has no discovery
+host gate, including root-only visibility/import/absolute-path syntax. Native
+remains Linux x86_64 with LLVM 19.1.7 at O0. The loader checks a stable filesystem;
+it does not promise a concurrent-filesystem snapshot or sandbox.
+
+Source bytes (1 MiB), non-EOF tokens including trivia (100,000), syntax nodes
+(100,000), declaration/verifier/storage limits and execution fuel are aggregate,
+not per-file allowances. Modules are capped at 256 including root, module depth
+at 32 edges, and qualified paths at 34 segments including `crate` and endpoint.
+Shared index requested payload is at most 32 MiB, peak scratch 16 MiB and work
+256,000,000 units. Requested payload does not bound capacity, allocator overhead,
+RSS, host I/O time or LLVM memory. Exact loader/path and measured resource limits
+remain in RFC 0015 and its implementation ledgers.
+
 ## Grammar
 
 ```text
 file           := item*
-item           := function | struct_decl
-function       := "fn" name "(" parameters? ")" "->" value_type block
+item           := function | struct_decl | module_decl | import_decl
+module_decl    := "pub"? "mod" name ";"
+import_decl    := "use" absolute_path ("as" name)? ";"
+absolute_path  := "crate" "::" name ("::" name)*
+item_path      := name | absolute_path
+function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
 scalar_type    := "bool" | "i32" | "(" ")"
-value_type     := scalar_type | type_name
-parameter_type := value_type | "&" type_name | "&" "mut" type_name
-struct_decl    := "struct" type_name "{" field_decls? "}"
-field_decls    := name ":" scalar_type ("," name ":" scalar_type)* ","?
+value_type     := scalar_type | item_path
+parameter_type := value_type | "&" item_path | "&" "mut" item_path
+struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
+field_decl     := "pub"? name ":" scalar_type
+field_decls    := field_decl ("," field_decl)* ","?
 block          := "{" statement* "}"
 statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
                 | name "=" expression ";"
@@ -91,8 +148,8 @@ sum            := product (("+" | "-") product)*
 product        := unary ("*" unary)*
 unary          := "!" unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
-                | name "(" arguments? ")" | decimal | "-" decimal
-                | name "." name | type_name "{" field_inits? "}"
+                | item_path "(" arguments? ")" | decimal | "-" decimal
+                | name "." name | item_path "{" field_inits? "}"
 decimal        := ASCII_DIGIT+
 field_inits    := name ":" expression ("," name ":" expression)* ","?
 arguments      := argument ("," argument)*
@@ -105,6 +162,11 @@ Identifiers are case-sensitive ASCII letters/underscore followed by ASCII
 letters/digits/underscore. Keywords are reserved. Whitespace, `//` line comments,
 and non-nested `/* ... */` comments are retained as trivia and ignored by the
 parser. Unicode is permitted in comments; Unicode identifiers are not supported.
+`as`, `crate`, `self` and `super` remain contextual ordinary identifiers;
+`crate` gains path meaning only before adjacent `::` in an item-path position.
+The two colons remain separate lexer tokens and both count in the resource
+ledger. Trivia may surround the delimiter but cannot split its two bytes.
+Public-field recognition requires `pub` followed by a nontrivia identifier.
 Optional trailing commas are confined to struct field declarations and literal
 initializers. Function parameters and call arguments still reject trailing
 commas. Legacy concise-keyword aliases are not supported.
@@ -132,9 +194,9 @@ zero-argument main returning bool/i32/unit.
 - Functions are collected before resolving bodies, so forward direct calls and
   recursive calls resolve. Run uses isolated iterative activations; no termination
   claim follows and recursive programs can exhaust execution limits
-- Function names are unique. Parameters, function bodies, branch arms and while bodies have
+- Function names are unique within a module. Parameters, function bodies, branch arms and while bodies have
   lexical scopes. Bindings cannot duplicate a name in the same scope, shadow an
-  active ancestor, or shadow a top-level function. Sibling arms and declarations
+  active ancestor, or shadow a value declaration/import in the current module. Sibling arms and declarations
   following a closed child scope may reuse names; every declaration has its own ID
 - An arm-local is visible only after its initializer and within that arm or its
   descendants. It cannot escape to a sibling or the surrounding block
@@ -375,7 +437,7 @@ oxid compile fixtures/owned_source/batch.ox --edition typed-preview \
 The source program has its own lowering/fuel schedule; the historical raw
 adaptation's 1,086 fuel is not its cost.
 
-Strings, null, imports/modules, macros, heap containers, for/loop and other
+Strings, null, package imports, module initialization, macros, heap containers, for/loop and other
 control flow, other operators, async, closures, generics, FFI, host I/O,
 and undeclared builtins are unavailable. Recognized unsupported syntax produces
 E0101; other invalid syntax produces E0100 or a resolution error. There is no
@@ -393,18 +455,20 @@ promised for every formerly unsupported ownership token sequence.
 
 The compiler path is UTF-8 source → lossless token tape → spanned AST →
 resolved HIR → typed HIR → verified OIR. The source integration selects one
-route for the entire parsed module. Any struct declaration, non-scalar named
+route for the entire parsed project. Any struct declaration, non-scalar named
 type annotation/signature, reference parameter, struct literal, field access or
 borrow argument selects owned HIR and owned OIR for every function. This
 includes unused declarations and statically skipped paths; comments containing
 owned spellings do not select that route. Unknown nominal names also select it
 and fail resolution. Scalar-only modules retain the existing scalar pipeline,
-diagnostics, costs and native admission. There is no per-function mixture and
+diagnostics, costs and native admission. There is no per-file or per-function mixture and
 no fallback after an owned parse, resolution, type, verification, runtime or
 native-admission failure. It lives in `src/frontend/` independently of the legacy
 syntax module and runtime. The token tape retains trivia and invalid tokens; it
 is not a complete formatter/LSP CST. Parsing synchronizes at the next top-level
-`fn` or `struct`, with a diagnostic limit; erroneous ASTs never enter name resolution.
+`fn` or `struct` for original syntax. After actual project-grammar recognition,
+recovery also recognizes project declaration boundaries. Recovery scanning alone
+does not activate project grammar; erroneous ASTs never enter name resolution.
 
 AST names are source spans. Numeric AST nodes store exact digits spans and a
 literal-only sign; resolution uses checked signed integer accumulation to create
