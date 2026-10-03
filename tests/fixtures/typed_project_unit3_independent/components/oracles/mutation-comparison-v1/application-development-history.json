@@ -1,0 +1,21 @@
+{
+  "corrections": [
+    {
+      "detail": "LoanDecl owner authority field uses authority; corrected from base after inspecting actual shared_nested canonical raw.",
+      "stage": "draft inspection"
+    },
+    {
+      "detail": "Initial in-memory visitor fixture used statements[4]; actual independent inventory identifies statements[3]. Corrected the test anchor; initial v1 run ended before report emission. No expected or observed input files changed.",
+      "stage": "test fixture"
+    },
+    {
+      "detail": "Initially treated count markers as insufficient; review confirmed authenticated overlay captures actual numeric counter reads. Added exact independent inventory/journal joins, checked guard trajectory, and actual bind denial before accepting.",
+      "stage": "counter evidence review"
+    },
+    {
+      "detail": "Added strict optional identity/belongs_to capture support. Original stale-parser marker-only case still reports evidence-missing.",
+      "stage": "supplemental generation evidence"
+    }
+  ],
+  "schema": "unit3-application-validator-development-v1"
+}

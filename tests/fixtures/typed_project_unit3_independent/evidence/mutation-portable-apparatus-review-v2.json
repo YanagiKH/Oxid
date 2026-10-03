@@ -1,0 +1,50 @@
+{
+  "status": "mutation path/build apparatus ready; staged comparator and exact bounded roster gate remain",
+  "wrapper_sha256": "24ddd3bb3b85c1e04a3daf82ac2e1001d71e6e28fa8c8b24f077ba545ee2cac7",
+  "builds": [
+    {
+      "variant": "v2",
+      "profile": "debug",
+      "prepared_sha256": "fa9088f74f096916939874cb3b38478a058de3c9449017036501d1155f2c4cae",
+      "build_sha256": "a764f96c529f12ab8a76ac688b061e8db80fccc2bbc661b522941c3ed99fda8a",
+      "legacy_view_sha256": "334adfd2294c21593e3572ae8c0fc9919c546915ed2968c3b80e25a4cb954bd1",
+      "binary_sha256": "25b4363b40c03d495b68a99eda3a447eaedac90947019fd6d2b28d24fc6657c5",
+      "compiled_files": 123,
+      "omitted_auxiliary": 81
+    },
+    {
+      "variant": "v2",
+      "profile": "release",
+      "prepared_sha256": "fa9088f74f096916939874cb3b38478a058de3c9449017036501d1155f2c4cae",
+      "build_sha256": "8658362f0277897a0f9254883a7eee555ddc88792902f57f82f4c4344144f0a5",
+      "legacy_view_sha256": "afb61c607ec73219e14ac4e4b0ef4e2a8d891a8774272de1d908c879d33fe245",
+      "binary_sha256": "b2fb168e46430579b2643416327482f04b5069c0bc2e9268534dace00cea7f2b",
+      "compiled_files": 123,
+      "omitted_auxiliary": 81
+    },
+    {
+      "variant": "v3",
+      "profile": "debug",
+      "prepared_sha256": "ed2323f6cf889c8f5eaebbb452d63a027468d018f2c0f5a01d455e17d09c7783",
+      "build_sha256": "3a21689212217877c9a54a9e1e63ebad9f44dc49c4bc1a014fbb40fcb595f112",
+      "legacy_view_sha256": "cf7ca16f1b562c06d3740cb94735ba9fdb0dab293d94ddc2fe34d885b3a58a52",
+      "binary_sha256": "222a279b4221027576022dab826b1cfcb14fe7ca3a39ebc2b76bad384ace80e2",
+      "compiled_files": 123,
+      "omitted_auxiliary": 81
+    },
+    {
+      "variant": "v3",
+      "profile": "release",
+      "prepared_sha256": "ed2323f6cf889c8f5eaebbb452d63a027468d018f2c0f5a01d455e17d09c7783",
+      "build_sha256": "f218dca14fc6f273d36ccc61dab377cc3d57fe75803a55a798d3752337c313ae",
+      "legacy_view_sha256": "55ae978d709aa50444d21252bd7194bc6ed0001fe630be63bd97d8e75166e809",
+      "binary_sha256": "95ecadc52557dcbfd2ecfb174682a21d2b38bd829542d4374e85ea7fdffb7864",
+      "compiled_files": 123,
+      "omitted_auxiliary": 81
+    }
+  ],
+  "terminal_controls": 3,
+  "source_member_controls": 2,
+  "actual_candidate_requests": 0,
+  "review_compiler_invocations": 0
+}

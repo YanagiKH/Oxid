@@ -46,14 +46,14 @@ PROBES = [
         }
     """),
     ("checked-source-cannot-use-struct-update", False, ("E0451",), """
-        fn rebind(base: crate::frontend::oir::CheckedSourceProgram)
-            -> crate::frontend::oir::CheckedSourceProgram {
+        fn rebind<'s>(base: crate::frontend::oir::CheckedSourceProgram<'s>)
+            -> crate::frontend::oir::CheckedSourceProgram<'s> {
             crate::frontend::oir::CheckedSourceProgram { entry: None, ..base }
         }
     """),
     ("raw-program-cannot-enter-checked-source", False, ("E0308",), """
         fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
-            let _ = crate::frontend::oir::CheckedSourceProgram::run(raw, sources);
+            let _ = crate::frontend::oir::CheckedSourceProgram::run(raw);
         }
     """),
     ("denial-context-immutable-inspection", True, (), """

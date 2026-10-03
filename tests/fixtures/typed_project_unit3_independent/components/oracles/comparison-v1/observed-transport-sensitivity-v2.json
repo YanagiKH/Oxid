@@ -1,0 +1,162 @@
+{
+  "schema": "unit3-actual-journal-corruption-sensitivity-v2",
+  "scope": "Transport/identity invariants only; no source expectation derived",
+  "input": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/owned-debug-final/observations.json.gz",
+  "input_sha256": "d537e607fa4f6a0f26b23a957bea111fe08a54243657647e6a2798be7f99d967",
+  "normalizer_sha256": "103cc041fdb1a1c3caeb9e20092f8298a0a6f8758ce1a34758ff2a117fc35512",
+  "positive": "PASS",
+  "compiler_invocations": 0,
+  "mutants": [
+    {
+      "id": "transfer-source-owner",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer uses exact current raw source key', {'tag': 'OwnerKey', 'frame': 1, 'activation': 2, 'owner': 0, 'generation': 2}, {'activation': 2, 'frame': 1, 'generation': 2, 'owner': 999999, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-source-activation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer uses exact current raw source key', {'tag': 'OwnerKey', 'frame': 1, 'activation': 2, 'owner': 0, 'generation': 2}, {'activation': 999999, 'frame': 1, 'generation': 2, 'owner': 0, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-source-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer uses exact current raw source key', {'tag': 'OwnerKey', 'frame': 1, 'activation': 2, 'owner': 0, 'generation': 2}, {'activation': 2, 'frame': 999999, 'generation': 2, 'owner': 0, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-source-generation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer uses exact current raw source key', {'tag': 'OwnerKey', 'frame': 1, 'activation': 2, 'owner': 0, 'generation': 2}, {'activation': 2, 'frame': 1, 'generation': 999999, 'owner': 0, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-destination-owner",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer predicts exact next destination epoch', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 0, 'generation': 1}, {'activation': 1, 'frame': 0, 'generation': 1, 'owner': 999999, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-destination-activation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer predicts exact next destination epoch', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 0, 'generation': 1}, {'activation': 999999, 'frame': 0, 'generation': 1, 'owner': 0, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-destination-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer predicts exact next destination epoch', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 0, 'generation': 1}, {'activation': 1, 'frame': 999999, 'generation': 1, 'owner': 0, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transfer-destination-generation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transfer predicts exact next destination epoch', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 0, 'generation': 1}, {'activation': 1, 'frame': 0, 'generation': 999999, 'owner': 0, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "field-target-owner",
+      "status": "REJECTED",
+      "reason": "AssertionError(('physical payload target is the exact current raw base/reference/transfer destination', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 1, 'generation': 2}, {'activation': 1, 'frame': 0, 'generation': 2, 'owner': 999999, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "field-target-activation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('physical payload target is the exact current raw base/reference/transfer destination', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 1, 'generation': 2}, {'activation': 999999, 'frame': 0, 'generation': 2, 'owner': 1, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "field-target-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('physical payload target is the exact current raw base/reference/transfer destination', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 1, 'generation': 2}, {'activation': 1, 'frame': 999999, 'generation': 2, 'owner': 1, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "field-target-generation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('physical payload target is the exact current raw base/reference/transfer destination', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 1, 'generation': 2}, {'activation': 1, 'frame': 0, 'generation': 999999, 'owner': 1, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "transition-function",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transition matches actual raw role/order', (2, 2, 0, 1), (2, 999999, 0, 1)))"
+    },
+    {
+      "id": "transition-state",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transition matches actual raw role/order', (2, 2, 0, 1), (2, 2, 0, 2)))"
+    },
+    {
+      "id": "transition-owner",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transition matches actual raw role/order', (2, 2, 0, 1), (2, 2, 999999, 1)))"
+    },
+    {
+      "id": "transition-activation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transition matches actual raw role/order', (2, 2, 0, 1), (999999, 2, 0, 1)))"
+    },
+    {
+      "id": "transition-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('transition key frame identity', 1, 999999))"
+    },
+    {
+      "id": "transition-generation",
+      "status": "REJECTED",
+      "reason": "AssertionError(('runtime epoch increases exactly once per actual owner transition', 1, 999999))"
+    },
+    {
+      "id": "drop-callback-Charge",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Charge': 1, 'Enter': 1}), Counter({'Enter': 1})))"
+    },
+    {
+      "id": "drop-callback-Return",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Charge': 1, 'Return': 1}), Counter({'Charge': 1})))"
+    },
+    {
+      "id": "drop-callback-Transfer",
+      "status": "REJECTED",
+      "reason": "AssertionError(('all actual raw-required transfers observed', 1, 0))"
+    },
+    {
+      "id": "drop-callback-Acquire",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Charge': 1, 'Acquire': 1}), Counter({'Charge': 1})))"
+    },
+    {
+      "id": "drop-callback-Release",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Charge': 1, 'Return': 1, 'Release': 1}), Counter({'Charge': 1, 'Return': 1})))"
+    },
+    {
+      "id": "drop-callback-WriteField",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Charge': 1, 'WriteField': 1}), Counter({'Charge': 1})))"
+    },
+    {
+      "id": "physical-effect-after-commit",
+      "status": "REJECTED",
+      "reason": "AssertionError(('existing field callback matches physical write identity/value', None, ({'activation': 1, 'frame': 0, 'generation': 2, 'owner': 1, 'tag': 'OwnerKey'}, [0, 0], 5)))"
+    },
+    {
+      "id": "duplicate-physical-field-effect",
+      "status": "REJECTED",
+      "reason": "AssertionError('extra physical payload write')"
+    },
+    {
+      "id": "acquire-loan-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('acquired loan frame belongs to activation', 0, 999999))"
+    },
+    {
+      "id": "acquire-owner-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('acquisition retains complete exact current OwnerKey including frame', {'tag': 'OwnerKey', 'frame': 0, 'activation': 1, 'owner': 1, 'generation': 2}, {'activation': 1, 'frame': 999999, 'generation': 2, 'owner': 1, 'tag': 'OwnerKey'}))"
+    },
+    {
+      "id": "release-loan-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('released loan frame belongs to activation', 0, 999999))"
+    },
+    {
+      "id": "owned-scalar-write-frame",
+      "status": "REJECTED",
+      "reason": "AssertionError(('owned scalar write physical frame belongs to activation', 0, 999999))"
+    }
+  ],
+  "rejected": 30
+}

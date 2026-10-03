@@ -1,0 +1,56 @@
+{
+  "schema": "unit3-portable-platform-bridge-component-v1",
+  "status": "independently reviewed source-only bridge; no direct successor semantic execution",
+  "files": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/bridge.py",
+      "bytes": 3844,
+      "sha256": "0a67058d7592c1ce50ba52933784826f6883f566445bfe3da4aff49662f12e25"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/common.py",
+      "bytes": 3521,
+      "sha256": "7b8b6d476c66eb7c2e833dff9dfe7eb42308bf8a67fd38a9a501f3b490eb7297"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/assemble.py",
+      "bytes": 5487,
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/platform-bridge-check-v1/bridge-receipt.json",
+      "bytes": 22098,
+      "sha256": "49880a3f7c9a681a63ec90e4c0c33894e270a971966bb762e553f1fb59db6943"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/platform-bridge-review.json",
+      "bytes": 1523,
+      "sha256": "08d80e776bcf01bf65df4e11777037fff91239a6ddc63690097fcb48dc5f840b"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/bridge-native-optimized-controls-v1/results.json",
+      "bytes": 4456,
+      "sha256": "803c3041b00c341d9e4154a50e988e01d931dd3eed4f6fc4a007920bae1d4b0f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-evidence/platform-scope-draft-v1/source-inputs-core-platform-v2-reviewed.json",
+      "bytes": 20051,
+      "sha256": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-evidence/source-inputs-core-v1.json",
+      "bytes": 19899,
+      "sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-evidence/platform-scope-draft-v1/platform-scope.patch",
+      "bytes": 2581,
+      "sha256": "a6c0a70927fcc44f68244038e88ceb371fe0a78a8b8d4c0aa1d83475d415a1d9"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-evidence/platform-scope-draft-v1/project_execution_tests.core-v1.rs",
+      "bytes": 6567,
+      "sha256": "1185aa4c2e86644c3b14acae290adb043ec27d2a222018b1e67997317dc5851d"
+    }
+  ]
+}

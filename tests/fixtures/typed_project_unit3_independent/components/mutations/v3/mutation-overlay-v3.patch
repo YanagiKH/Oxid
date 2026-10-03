@@ -1,0 +1,1391 @@
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -38,3 +38,6 @@
+ 
+ #[cfg(test)]
+ mod unit3_observer;
++
++#[cfg(test)]
++mod unit3_mutations;
+--- a/src/frontend/oir/mod.rs
++++ b/src/frontend/oir/mod.rs
+@@ -393,3 +393,6 @@
+ 
+ #[cfg(test)]
+ mod unit3_raw_scalar;
++
++#[cfg(test)]
++mod unit3_mutations_scalar;
+--- a/src/frontend/oir/owned/source/association.rs
++++ b/src/frontend/oir/owned/source/association.rs
+@@ -58,7 +58,14 @@
+                 OwnedInstruction::Scalar(statement) => visitor.statement(statement)?,
+                 OwnedInstruction::Construct { fields, .. } => {
+                     for (_, operand) in fields {
++                        #[cfg(not(test))]
+                         unit3_span!(visitor, operand.span, &operand.span)?;
++                        #[cfg(test)]
++                        match crate::frontend::unit3_mutations::audit_visit(visitor.unit3_validate(),operand.span) {
++                            1=>(),
++                            2=>{unit3_span!(visitor, operand.span, &operand.span)?;unit3_span!(visitor, operand.span, &operand.span)?;},
++                            _=>{unit3_span!(visitor, operand.span, &operand.span)?;},
++                        }
+                     }
+                 }
+                 OwnedInstruction::WriteField { value, .. }
+--- a/src/frontend/oir/owned/source/mod.rs
++++ b/src/frontend/oir/owned/source/mod.rs
+@@ -27,3 +27,6 @@
+ 
+ #[cfg(test)]
+ pub(in crate::frontend::oir::owned) mod resource_fixtures;
++
++#[cfg(test)]
++mod unit3_mutations;
+--- a/src/frontend/oir/owned/source/program.rs
++++ b/src/frontend/oir/owned/source/program.rs
+@@ -31,9 +31,17 @@
+         return Err(vec![*crate::frontend::oir::source::association::bad()]);
+     }
+     let raw = lower::lower(typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
++#[cfg(test)]
++let raw = {let mut raw=raw;super::unit3_mutations::apply(&mut raw,typed);raw};
++
+     super::association::check(&raw, index, sources).map_err(|error| vec![*error])?;
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("raw-verifier-start", &"owned");
+     let witness = verified::verify_owned(raw, sources)
+-        .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
++        .map_err(|error| {
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("raw-verifier-failure", &error);
++vec![*diagnostic::verify(&error, sources)]})?;
+     Ok(SourceProgram { witness })
+ }
+ 
+--- /dev/null
++++ b/src/frontend/oir/owned/source/unit3_mutations.rs
+@@ -0,0 +1,619 @@
++//! Test-only faults in actual owned lowering output, before source binding.
++use super::super::*;
++use super::typeck::TypedOwnedProgram;
++use crate::frontend::oir::unit3_mutations_scalar::{merge, statement};
++use crate::frontend::{declaration_index::SourceOwner, unit3_mutations as fault};
++fn spans(raw: &mut RawOwnedProgram, owner: SourceOwner<'_>) {
++    for (ri, r) in raw.records.iter_mut().enumerate() {
++        let p = format!("records[{ri}]");
++        fault::span(
++            "owned.RawRecordDecl.span",
++            &format!("{p}.span"),
++            &mut r.span,
++            owner,
++        );
++        for (fi, f) in r.fields.iter_mut().enumerate() {
++            fault::span(
++                "owned.RawFieldDecl.span",
++                &format!("{p}.fields[{fi}].span"),
++                &mut f.span,
++                owner,
++            );
++        }
++    }
++    for (fi, f) in raw.functions.iter_mut().enumerate() {
++        let p = format!("functions[{fi}]");
++        fault::span(
++            "owned.Function.span",
++            &format!("{p}.span"),
++            &mut f.span,
++            owner,
++        );
++        for (i, v) in f.locals.iter_mut().enumerate() {
++            fault::span(
++                "owned.locals.span",
++                &format!("{p}.locals[{i}].span"),
++                &mut v.span,
++                owner,
++            );
++        }
++        for (i, v) in f.places.iter_mut().enumerate() {
++            fault::span(
++                "owned.places.span",
++                &format!("{p}.places[{i}].span"),
++                &mut v.span,
++                owner,
++            );
++        }
++        for (i, v) in f.owners.iter_mut().enumerate() {
++            fault::span(
++                "owned.owners.span",
++                &format!("{p}.owners[{i}].span"),
++                &mut v.span,
++                owner,
++            );
++        }
++        for (i, v) in f.references.iter_mut().enumerate() {
++            fault::span(
++                "owned.references.span",
++                &format!("{p}.references[{i}].span"),
++                &mut v.span,
++                owner,
++            );
++        }
++        for (i, v) in f.calls.iter_mut().enumerate() {
++            fault::span(
++                "owned.calls.span",
++                &format!("{p}.calls[{i}].span"),
++                &mut v.span,
++                owner,
++            );
++        }
++        for (i, v) in f.loans.iter_mut().enumerate() {
++            fault::span(
++                "owned.loans.span",
++                &format!("{p}.loans[{i}].span"),
++                &mut v.span,
++                owner,
++            );
++        }
++        for (bi, b) in f.blocks.iter_mut().enumerate() {
++            let p = format!("{p}.blocks[{bi}]");
++            fault::span("owned.Block.span", &format!("{p}.span"), &mut b.span, owner);
++            if let Some(m) = &mut b.merge {
++                merge(m, &format!("{p}.merge"), "owned", owner);
++            }
++            for (si, s) in b.statements.iter_mut().enumerate() {
++                let p = format!("{p}.statements[{si}]");
++                fault::span(
++                    "owned.Statement.span",
++                    &format!("{p}.span"),
++                    &mut s.span,
++                    owner,
++                );
++                origins(&mut s.diagnostic_origins, &p, owner);
++                match &mut s.kind {
++                    OwnedInstruction::Scalar(v) => statement(v, &format!("{p}.kind.scalar"), owner),
++                    OwnedInstruction::Construct { fields, .. } => {
++                        for (i, (_, v)) in fields.iter_mut().enumerate() {
++                            fault::span(
++                                "owned.Construct.fields.value.span",
++                                &format!("{p}.kind.fields[{i}].value.span"),
++                                &mut v.span,
++                                owner,
++                            );
++                        }
++                    }
++                    OwnedInstruction::WriteField { value, .. } => fault::span(
++                        "owned.WriteField.value.span",
++                        &format!("{p}.kind.value.span"),
++                        &mut value.span,
++                        owner,
++                    ),
++                    OwnedInstruction::PrepareScalar { value, .. } => fault::span(
++                        "owned.PrepareScalar.value.span",
++                        &format!("{p}.kind.value.span"),
++                        &mut value.span,
++                        owner,
++                    ),
++                    OwnedInstruction::StorageLive(_)
++                    | OwnedInstruction::StorageEnd(_)
++                    | OwnedInstruction::MoveInitialize { .. }
++                    | OwnedInstruction::Replace { .. }
++                    | OwnedInstruction::Discard(_)
++                    | OwnedInstruction::ReadField { .. }
++                    | OwnedInstruction::OpenCall(_)
++                    | OwnedInstruction::PrepareOwned { .. }
++                    | OwnedInstruction::PrepareBorrow { .. } => (),
++                }
++            }
++            if let Some(t) = &mut b.terminator {
++                let p = format!("{p}.terminator");
++                fault::span(
++                    "owned.Terminator.span",
++                    &format!("{p}.span"),
++                    &mut t.span,
++                    owner,
++                );
++                origins(&mut t.diagnostic_origins, &p, owner);
++                match &mut t.kind {
++                    OwnedTerminatorKind::Branch { condition, .. } => fault::span(
++                        "owned.Branch.condition.span",
++                        &format!("{p}.condition.span"),
++                        &mut condition.span,
++                        owner,
++                    ),
++                    OwnedTerminatorKind::ReturnScalar(v) => fault::span(
++                        "owned.ReturnScalar.value.span",
++                        &format!("{p}.value.span"),
++                        &mut v.span,
++                        owner,
++                    ),
++                    OwnedTerminatorKind::Goto(_)
++                    | OwnedTerminatorKind::Invoke { .. }
++                    | OwnedTerminatorKind::ReturnOwned(_) => (),
++                }
++            }
++        }
++    }
++}
++fn origins(v: &mut Option<DiagnosticOrigins>, p: &str, owner: SourceOwner<'_>) {
++    if let Some(v) = v {
++        fault::span(
++            "owned.DiagnosticOrigins.primary",
++            &format!("{p}.diagnostic_origins.primary"),
++            &mut v.primary,
++            owner,
++        );
++        fault::span(
++            "owned.DiagnosticOrigins.cause",
++            &format!("{p}.diagnostic_origins.cause"),
++            &mut v.cause,
++            owner,
++        );
++    }
++}
++fn generic_probe(raw: &RawOwnedProgram, sources: &SourceMap) {
++    let cloned = RawOwnedProgram {
++        records: raw
++            .records
++            .iter()
++            .map(|r| RawRecordDecl {
++                id: r.id,
++                span: r.span,
++                fields: r.fields.clone(),
++            })
++            .collect(),
++        functions: raw.functions.clone(),
++    };
++    // The controller hashes these independent structural serializations. This
++    // witness/result is never returned to source construction or either consumer.
++    crate::frontend::unit3_observer::capture("generic-probe-input-original", raw);
++    crate::frontend::unit3_observer::capture("generic-probe-input-clone", &cloned);
++    let result = super::super::verified::verify_owned(cloned, sources);
++    match result {
++        Ok(_witness) => crate::frontend::unit3_observer::capture(
++            "generic-probe-result",
++            &"accepted-and-discarded",
++        ),
++        Err(error) => crate::frontend::unit3_observer::capture("generic-probe-result", &error),
++    }
++}
++fn cleanup(raw: &mut RawOwnedProgram, owner: SourceOwner<'_>, id: &str, kind: &str) {
++    let edge = if id.contains("continue") || id == "correspondence-reverse-cleanup" {
++        "continue"
++    } else if id.contains("break") {
++        "break"
++    } else if id.contains("join") && !id.contains("return") {
++        "join"
++    } else {
++        "return"
++    };
++    let mut selected = Vec::new();
++    for (fi, f) in raw.functions.iter().enumerate() {
++        for (bi, b) in f.blocks.iter().enumerate() {
++            let Some(t) = &b.terminator else { continue };
++            let text = owner.text(t.span).unwrap().trim();
++            let edge_matches = match edge {
++                "continue" => text.starts_with("continue"),
++                "break" => text.starts_with("break"),
++                "return" => text.starts_with("return"),
++                "join" => text == "}",
++                _ => false,
++            };
++            if !edge_matches {
++                continue;
++            }
++            let ends: Vec<_> = b
++                .statements
++                .iter()
++                .enumerate()
++                .filter_map(|(si, s)| match s.kind {
++                    OwnedInstruction::StorageEnd(o)
++                        if matches!(f.owners[o.0].kind, OwnerKind::Local { .. })
++                            && s.span == t.span =>
++                    {
++                        Some((si, o))
++                    }
++                    _ => None,
++                })
++                .collect();
++            if !ends.is_empty() {
++                selected.push((fi, bi, ends));
++            }
++        }
++    }
++    // Global source/CFG order defines the first lexical cleanup edge; no trial
++    // verification or result-based search may choose another site.
++    assert!(
++        !selected.is_empty(),
++        "MUTATION_SELECTION: cleanup anchor absent"
++    );
++    let (fi, bi, ends) = selected.remove(0);
++    let b = &mut raw.functions[fi].blocks[bi];
++    let (si, _) = ends[0];
++    let path = format!("functions[{fi}].blocks[{bi}].statements[{si}]");
++    match kind {
++        "swap-two-independent-StorageEnd" => {
++            assert!(
++                ends.len() >= 2,
++                "MUTATION_SELECTION: two independent cleanup owners required"
++            );
++            let sj = ends[1].0;
++            let before = (b.statements[si].clone(), b.statements[sj].clone());
++            b.statements.swap(si, sj);
++            fault::applied(&path, &before, &(&b.statements[si], &b.statements[sj]));
++        }
++        "duplicate-StorageEnd" => {
++            let before = b.statements[si].clone();
++            b.statements.insert(si, before.clone());
++            fault::applied(&path, &before, &"duplicated once");
++        }
++        "remove-StorageEnd" | "remove-required-StorageEnd" => {
++            let before = b.statements.remove(si);
++            fault::applied(&path, &before, &"removed once");
++        }
++        _ => unreachable!(),
++    }
++}
++pub(super) fn apply(raw: &mut RawOwnedProgram, typed: &TypedOwnedProgram<'_>) {
++    let Some(s) = fault::spec() else { return };
++    if matches!(
++        s.kind.as_str(),
++        "source-seal-seam-entry"
++            | "original-source-constructor-substitution"
++            | "original-source-map-file-id"
++            | "audit-visitor-suppress-one-visit"
++            | "audit-visitor-repeat-one-visit"
++            | "audit-count-seam"
++            | "audit-count-seam-overflow"
++    ) {
++        return;
++    }
++    let owner = typed.index().sources();
++    let sources = fault::map(owner);
++    crate::frontend::unit3_observer::capture("mutation-before-raw", raw);
++    match s.kind.as_str() {
++        "replace-span" => spans(raw, owner),
++        "replace-span-file" | "replace-span-range" => {
++            let mut candidates = Vec::new();
++            for (fi, f) in raw.functions.iter().enumerate() {
++                if f.locals.is_empty() {
++                    continue;
++                }
++                if s.id == "bind-utf8_continuation"
++                    && !sources
++                        .get(f.span.file)
++                        .text()
++                        .chars()
++                        .any(|c| c.len_utf8() > 1)
++                {
++                    continue;
++                }
++                candidates.push(fi);
++            }
++            let fi = *candidates
++                .first()
++                .expect("MUTATION_SELECTION: nondeclaration range target absent");
++            let span = &mut raw.functions[fi].locals[0].span;
++            let before = *span;
++            match s.id.as_str() {
++                "bind-invalid_file" => {
++                    span.file = crate::frontend::source::SourceFileId(sources.files().len())
++                }
++                "bind-reversed_range" => {
++                    span.start = 2;
++                    span.end = 1;
++                }
++                "bind-past_eof" => span.end = sources.get(span.file).text().len() + 1,
++                "bind-utf8_continuation" => {
++                    let start = sources
++                        .get(span.file)
++                        .text()
++                        .char_indices()
++                        .find(|(_, c)| c.len_utf8() > 1)
++                        .unwrap()
++                        .0
++                        + 1;
++                    span.start = start;
++                    span.end = start;
++                }
++                _ => panic!("unknown range fault"),
++            };
++            fault::applied(&format!("functions[{fi}].locals[0].span"), &before, span);
++        }
++        "set-function-id" => {
++            let n = raw.functions.len();
++            let before = raw.functions[0].id;
++            raw.functions[0].id = hir::DefId(n);
++            fault::applied("functions[0].id", &before, &raw.functions[0].id);
++        }
++        "append-duplicate-function" => {
++            let before = raw.functions.len();
++            raw.functions.push(raw.functions[0].clone());
++            fault::applied("functions.length", &before, &raw.functions.len());
++        }
++        "set-record-id" => {
++            let before = raw.records[0].id;
++            raw.records[0].id = RecordId(1);
++            assert_ne!(before, raw.records[0].id);
++            fault::applied("records[0].id", &before, &raw.records[0].id);
++        }
++        "set-field-id" => {
++            let field = &mut raw.records[0].fields[0];
++            let before = field.id;
++            field.id = FieldId {
++                record: RecordId(0),
++                index: 1,
++            };
++            assert_ne!(before, field.id);
++            fault::applied("records[0].fields[0].id", &before, &field.id);
++        }
++        "append-duplicate-field" => {
++            let r = &mut raw.records[0];
++            let before = r.fields.len();
++            r.fields.push(r.fields[0]);
++            fault::applied("records[0].fields.length", &before, &r.fields.len());
++        }
++        "call-target" => {
++            let targets = |tail: &str| {
++                raw.functions
++                    .iter()
++                    .filter(|f| {
++                        sources.get(f.span.file).path().ends_with(tail)
++                            && owner.text(f.span).unwrap() == "helper"
++                    })
++                    .map(|f| f.id)
++                    .collect::<Vec<_>>()
++            };
++            let left = targets("/left.ox");
++            let right = targets("/right.ox");
++            assert_eq!(left.len(), 1);
++            assert_eq!(right.len(), 1);
++            let (l, r) = (left[0], right[0]);
++            let a = &typed.signatures()[l.0];
++            let b = &typed.signatures()[r.0];
++            assert_eq!(a.params, b.params);
++            assert_eq!(a.result, b.result);
++            let sites: Vec<_> = raw
++                .functions
++                .iter()
++                .enumerate()
++                .flat_map(|(fi, f)| {
++                    f.calls
++                        .iter()
++                        .enumerate()
++                        .filter(move |(_, c)| c.target == l)
++                        .map(move |(ci, _)| (fi, ci))
++                })
++                .collect();
++            assert_eq!(sites.len(), 1, "MUTATION_SELECTION: helper call ambiguous");
++            let (fi, ci) = sites[0];
++            let before = raw.functions[fi].calls[ci].target;
++            raw.functions[fi].calls[ci].target = r;
++            fault::applied(&format!("functions[{fi}].calls[{ci}].target"), &before, &r);
++        }
++        "call-argument-mode" => {
++            let mut candidates = Vec::new();
++            for (fi, f) in raw.functions.iter().enumerate() {
++                for (ci, c) in f.calls.iter().enumerate() {
++                    if c.parent.is_none() {
++                        if let Some(ArgumentSlot::Borrow(loan)) = c.arguments.first() {
++                            if f.loans[loan.0].kind == BorrowKind::Shared {
++                                candidates.push((fi, ci, *loan));
++                            }
++                        }
++                    }
++                }
++            }
++            let (fi, ci, loan) = *candidates
++                .first()
++                .expect("MUTATION_SELECTION: shared argument absent");
++            let before = raw.functions[fi].loans[loan.0].kind;
++            raw.functions[fi].loans[loan.0].kind = BorrowKind::Exclusive;
++            fault::applied(
++                &format!("functions[{fi}].calls[{ci}].argument[0].loan.kind"),
++                &before,
++                &BorrowKind::Exclusive,
++            );
++        }
++        "projection-field-record" => {
++            'outer: for (fi, f) in raw.functions.iter_mut().enumerate() {
++                for (bi, b) in f.blocks.iter_mut().enumerate() {
++                    for (si, st) in b.statements.iter_mut().enumerate() {
++                        if let OwnedInstruction::ReadField { field, .. }
++                        | OwnedInstruction::WriteField { field, .. } = &mut st.kind
++                        {
++                            let before = *field;
++                            assert_ne!(field.record, RecordId(1));
++                            field.record = RecordId(1);
++                            fault::applied(
++                                &format!("functions[{fi}].blocks[{bi}].statements[{si}].field"),
++                                &before,
++                                field,
++                            );
++                            break 'outer;
++                        }
++                    }
++                }
++            }
++        }
++        "owner-kind" => {
++            'outer: for (fi, f) in raw.functions.iter_mut().enumerate() {
++                for (oi, o) in f.owners.iter_mut().enumerate() {
++                    if matches!(o.kind, OwnerKind::StagedArgument { .. }) {
++                        let before = o.kind;
++                        o.kind = OwnerKind::Temporary;
++                        fault::applied(
++                            &format!("functions[{fi}].owners[{oi}].kind"),
++                            &before,
++                            &o.kind,
++                        );
++                        break 'outer;
++                    }
++                }
++            }
++        }
++        "ReturnOwned-source" => {
++            let candidates: Vec<_> = raw
++                .functions
++                .iter()
++                .enumerate()
++                .filter(|(_, f)| {
++                    owner.text(f.span).unwrap() == "helper"
++                        && sources.get(f.span.file).path().ends_with("/left.ox")
++                })
++                .map(|(i, _)| i)
++                .collect();
++            assert_eq!(candidates.len(), 1);
++            let fi = candidates[0];
++            let f = &mut raw.functions[fi];
++            let parameters: Vec<_> = f
++                .owners
++                .iter()
++                .enumerate()
++                .filter(|(_, o)| matches!(o.kind, OwnerKind::Parameter { .. }))
++                .map(|(i, _)| OwnerPlaceId(i))
++                .collect();
++            assert_eq!(parameters.len(), 1);
++            let parameter = parameters[0];
++            assert!(f.blocks.iter().flat_map(|b|&b.statements).any(|s|matches!(s.kind,OwnedInstruction::MoveInitialize{source,..}if source==parameter)),"MUTATION_SELECTION: parameter was not moved");
++            let sites: Vec<_> = f
++                .blocks
++                .iter()
++                .enumerate()
++                .filter(|(_, b)| {
++                    matches!(
++                        b.terminator.as_ref().map(|t| &t.kind),
++                        Some(OwnedTerminatorKind::ReturnOwned(_))
++                    )
++                })
++                .map(|(i, _)| i)
++                .collect();
++            assert_eq!(sites.len(), 1);
++            let bi = sites[0];
++            let t = f.blocks[bi].terminator.as_mut().unwrap();
++            let OwnedTerminatorKind::ReturnOwned(at) = &mut t.kind else {
++                unreachable!()
++            };
++            let before = *at;
++            assert_ne!(before, parameter);
++            assert_eq!(f.owners[before.0].record, f.owners[parameter.0].record);
++            *at = parameter;
++            fault::applied(
++                &format!("functions[{fi}].blocks[{bi}].terminator.owner"),
++                &before,
++                at,
++            );
++        }
++        "nested-call-parent" => {
++            'outer: for (fi, f) in raw.functions.iter_mut().enumerate() {
++                for (ci, c) in f.calls.iter_mut().enumerate() {
++                    if let Some((_, arg)) = c.parent {
++                        let before = c.parent;
++                        c.parent = Some((CallSiteId(ci), arg));
++                        fault::applied(
++                            &format!("functions[{fi}].calls[{ci}].parent"),
++                            &before,
++                            &c.parent,
++                        );
++                        break 'outer;
++                    }
++                }
++            }
++        }
++        "remove-outer-PrepareBorrow" => {
++            'outer: for (fi, f) in raw.functions.iter_mut().enumerate() {
++                for (bi, b) in f.blocks.iter_mut().enumerate() {
++                    let selected=b.statements.iter().position(|s|matches!(s.kind,OwnedInstruction::PrepareBorrow{call,..}if f.calls[call.0].parent.is_none()));
++                    if let Some(si) = selected {
++                        let before = b.statements.remove(si);
++                        fault::applied(
++                            &format!("functions[{fi}].blocks[{bi}].statements[{si}]"),
++                            &before,
++                            &"removed, descriptors retained",
++                        );
++                        break 'outer;
++                    }
++                }
++            }
++        }
++        "remove-required-StorageEnd"
++        | "duplicate-StorageEnd"
++        | "remove-StorageEnd"
++        | "swap-two-independent-StorageEnd" => cleanup(raw, owner, &s.id, &s.kind),
++        "replace-diagnostic-origin" => {
++            let sites: Vec<_> = raw
++                .functions
++                .iter()
++                .enumerate()
++                .flat_map(|(fi, f)| {
++                    f.blocks.iter().enumerate().flat_map(move |(bi, b)| {
++                        b.statements
++                            .iter()
++                            .enumerate()
++                            .filter(move |(_, st)| {
++                                matches!(st.kind, OwnedInstruction::ReadField { .. })
++                                    && owner.text(f.span).unwrap() == "main"
++                            })
++                            .map(move |(si, _)| (fi, bi, si))
++                    })
++                })
++                .collect();
++            assert_eq!(
++                sites.len(),
++                1,
++                "MUTATION_SELECTION: failing main ReadField ambiguous"
++            );
++            let (fi, bi, si) = sites[0];
++            let name = raw.functions[fi].span;
++            let meta = raw.functions[fi].blocks[bi].statements[si]
++                .diagnostic_origins
++                .as_mut()
++                .expect("real metadata");
++            let target = if s.id.ends_with("primary") {
++                &mut meta.primary
++            } else {
++                &mut meta.cause
++            };
++            let before = *target;
++            *target = if s.id == "metadata-wrong-file" {
++                fault::foreign(owner, before)
++            } else {
++                name
++            };
++            assert_ne!(before, *target);
++            fault::applied(
++                &format!("functions[{fi}].blocks[{bi}].statements[{si}].diagnostic_origins"),
++                &before,
++                target,
++            );
++        }
++        _ => panic!("MUTATION_SELECTION: unknown owned raw kind {}", s.kind),
++    }
++    fault::finish();
++    crate::frontend::unit3_observer::capture("mutation-after-raw", raw);
++    if s.kind == "replace-diagnostic-origin" {
++        generic_probe(raw, sources);
++    }
++}
+--- a/src/frontend/oir/source/association.rs
++++ b/src/frontend/oir/source/association.rs
+@@ -78,6 +78,8 @@
+         increment(&mut self.counts.declarations)
+     }
+     pub fn span(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
++#[cfg(test)]
++if crate::frontend::unit3_mutations::count_overflow(self.sources.is_some()) {let before=self.counts.spans;self.counts.spans=usize::MAX;crate::frontend::unit3_mutations::applied("count.spans.before_actual_increment",&before,&self.counts.spans);}
+         increment(&mut self.counts.spans)?;
+         if self
+             .sources
+@@ -148,6 +150,9 @@
+         Ok(())
+     }
+     pub fn finish(self, count: Self) -> Result<BindUsage, Box<Diagnostic>> {
++#[cfg(test)]
++let count = {let mut count=count;if crate::frontend::unit3_mutations::count_delta(){let before=count.counts.spans;count.counts.spans=count.counts.spans.checked_add(1).expect("bounded count");crate::frontend::unit3_mutations::applied("count.spans.before_finish",&before,&count.counts.spans);}count};
++
+         // This equality is deliberately not a debug assertion.
+         if self.counts != count.counts {
+             return Err(bad());
+--- a/src/frontend/oir/source/sealed.rs
++++ b/src/frontend/oir/source/sealed.rs
+@@ -53,8 +53,16 @@
+             .map(|(_, function)| function.id);
+         let typed = typeck::check(resolved)?;
+         let raw = lower::lower(&typed).map_err(|e| vec![*e.diagnostic(sources)])?;
++#[cfg(test)]
++let raw = {let mut raw=raw; super::super::unit3_mutations_scalar::apply(&mut raw, owner);raw};
++
+         association::scalar(&raw, sources, Declarations::Original(ast)).map_err(|e| vec![*e])?;
+-        let verified = verify::verify(raw, sources).map_err(|e| vec![*e.diagnostic(sources)])?;
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("raw-verifier-start", &"scalar");
++        let verified = verify::verify(raw, sources).map_err(|e| {
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("raw-verifier-failure", &e);
++vec![*e.diagnostic(sources)]})?;
+         (CheckedBody::Scalar(verified), entry)
+     };
+     Ok(CheckedSourceProgram {
+@@ -127,6 +135,9 @@
+ #[cfg(test)]
+ crate::frontend::unit3_observer::capture("index", &frozen);
+     let entry = frozen.root_original_main();
++#[cfg(test)]
++let entry = crate::frontend::unit3_mutations::entry(entry);
++
+     let summary =
+         || CheckedProjectTypes::new(route, frozen.function_count(), frozen.record_count(), entry);
+     let body = match route {
+@@ -145,11 +156,19 @@
+                 return Ok(Checked::Types(summary()));
+             }
+             let raw = lower::lower(&typed).map_err(|e| vec![*e.diagnostic(project.sources())])?;
++#[cfg(test)]
++let raw = {let mut raw=raw; super::super::unit3_mutations_scalar::apply(&mut raw, sources);raw};
++
+             association::scalar(&raw, project.sources(), Declarations::Project(&frozen))
+                 .map_err(|e| vec![*e])?;
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("raw-verifier-start", &"scalar");
+             CheckedBody::Scalar(
+                 verify::verify(raw, project.sources())
+-                    .map_err(|e| vec![*e.diagnostic(project.sources())])?,
++                    .map_err(|e| {
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("raw-verifier-failure", &e);
++vec![*e.diagnostic(project.sources())]})?,
+             )
+         }
+         ProjectRoute::Owned => {
+@@ -158,6 +177,8 @@
+             if matches!(depth, CheckDepth::Types) {
+                 return Ok(Checked::Types(summary()));
+             }
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("mutation-entry-agreement", &(entry,typed.entry(),frozen.root_original_main()));
+             if typed.entry() != entry {
+                 return Err(vec![*association::bad()]);
+             }
+--- /dev/null
++++ b/src/frontend/oir/unit3_mutations_scalar.rs
+@@ -0,0 +1,332 @@
++//! Test-only mutation of actual scalar raw lowering output.
++use super::*;
++use crate::frontend::{declaration_index::SourceOwner, unit3_mutations as fault};
++pub(super) fn statement(s: &mut Statement, p: &str, owner: SourceOwner<'_>) {
++    let mut visit = |cat: &str, suffix: &str, span: &mut Span| {
++        fault::span(cat, &format!("{p}.{suffix}"), span, owner)
++    };
++    match s {
++        Statement::Assign(a) => {
++            visit("scalar.Statement.Assign.span", "span", &mut a.span);
++            match &mut a.value {
++                Rvalue::Load(x) => visit(
++                    "scalar.Rvalue.Load.place.span",
++                    "value.place.span",
++                    &mut x.span,
++                ),
++                Rvalue::Copy(x) => visit(
++                    "scalar.Rvalue.Copy.operand.span",
++                    "value.operand.span",
++                    &mut x.span,
++                ),
++                Rvalue::NotBool {
++                    operand,
++                    operator_span,
++                } => {
++                    visit(
++                        "scalar.Rvalue.NotBool.operand.span",
++                        "value.operand.span",
++                        &mut operand.span,
++                    );
++                    visit(
++                        "scalar.Rvalue.NotBool.operator_span",
++                        "value.operator_span",
++                        operator_span,
++                    );
++                }
++                Rvalue::CompareScalar {
++                    left,
++                    right,
++                    operator_span,
++                    ..
++                } => {
++                    visit(
++                        "scalar.Rvalue.CompareScalar.left.span",
++                        "value.left.span",
++                        &mut left.span,
++                    );
++                    visit(
++                        "scalar.Rvalue.CompareScalar.right.span",
++                        "value.right.span",
++                        &mut right.span,
++                    );
++                    visit(
++                        "scalar.Rvalue.CompareScalar.operator_span",
++                        "value.operator_span",
++                        operator_span,
++                    );
++                }
++                Rvalue::CheckedI32 {
++                    left,
++                    right,
++                    operator_span,
++                    ..
++                } => {
++                    visit(
++                        "scalar.Rvalue.CheckedI32.left.span",
++                        "value.left.span",
++                        &mut left.span,
++                    );
++                    visit(
++                        "scalar.Rvalue.CheckedI32.right.span",
++                        "value.right.span",
++                        &mut right.span,
++                    );
++                    visit(
++                        "scalar.Rvalue.CheckedI32.operator_span",
++                        "value.operator_span",
++                        operator_span,
++                    );
++                }
++                Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => (),
++            }
++        }
++        Statement::Initialize { place, value, span } => {
++            visit("scalar.Statement.Initialize.span", "span", span);
++            visit(
++                "scalar.Statement.Initialize.place.span",
++                "place.span",
++                &mut place.span,
++            );
++            visit(
++                "scalar.Statement.Initialize.value.span",
++                "value.span",
++                &mut value.span,
++            );
++        }
++        Statement::Store {
++            place,
++            value,
++            operator_span,
++            span,
++        } => {
++            visit("scalar.Statement.Store.span", "span", span);
++            visit(
++                "scalar.Statement.Store.operator_span",
++                "operator_span",
++                operator_span,
++            );
++            visit(
++                "scalar.Statement.Store.place.span",
++                "place.span",
++                &mut place.span,
++            );
++            visit(
++                "scalar.Statement.Store.value.span",
++                "value.span",
++                &mut value.span,
++            );
++        }
++    }
++}
++pub(super) fn merge(m: &mut BoolMerge, p: &str, route: &str, owner: SourceOwner<'_>) {
++    fault::span(
++        &format!("{route}.BoolMerge.span"),
++        &format!("{p}.span"),
++        &mut m.span,
++        owner,
++    );
++    fault::span(
++        &format!("{route}.BoolMerge.operator_span"),
++        &format!("{p}.operator_span"),
++        &mut m.operator_span,
++        owner,
++    );
++    for (i, x) in m.incoming.iter_mut().enumerate() {
++        fault::span(
++            &format!("{route}.BoolMerge.incoming[{i}].value.span"),
++            &format!("{p}.incoming[{i}].value.span"),
++            &mut x.value.span,
++            owner,
++        );
++    }
++}
++pub(super) fn apply(raw: &mut Program, owner: SourceOwner<'_>) {
++    let Some(spec) = fault::spec() else { return };
++    if !matches!(
++        spec.kind.as_str(),
++        "replace-span" | "call-target" | "remove-last-call-argument" | "call-result-slot-type"
++    ) {
++        return;
++    }
++    crate::frontend::unit3_observer::capture("mutation-before-raw", raw);
++    if spec.kind == "replace-span" {
++        for (fi, f) in raw.functions.iter_mut().enumerate() {
++            let p = format!("functions[{fi}]");
++            fault::span(
++                "scalar.Function.span",
++                &format!("{p}.span"),
++                &mut f.span,
++                owner,
++            );
++            for (i, v) in f.locals.iter_mut().enumerate() {
++                fault::span(
++                    "scalar.locals.span",
++                    &format!("{p}.locals[{i}].span"),
++                    &mut v.span,
++                    owner,
++                );
++            }
++            for (i, v) in f.places.iter_mut().enumerate() {
++                fault::span(
++                    "scalar.places.span",
++                    &format!("{p}.places[{i}].span"),
++                    &mut v.span,
++                    owner,
++                );
++            }
++            for (bi, b) in f.blocks.iter_mut().enumerate() {
++                let p = format!("{p}.blocks[{bi}]");
++                fault::span(
++                    "scalar.Block.span",
++                    &format!("{p}.span"),
++                    &mut b.span,
++                    owner,
++                );
++                if let Some(m) = &mut b.merge {
++                    merge(m, &format!("{p}.merge"), "scalar", owner);
++                }
++                for (si, s) in b.statements.iter_mut().enumerate() {
++                    statement(s, &format!("{p}.statements[{si}]"), owner);
++                }
++                if let Some(t) = &mut b.terminator {
++                    let p = format!("{p}.terminator");
++                    fault::span(
++                        "scalar.Terminator.span",
++                        &format!("{p}.span"),
++                        &mut t.span,
++                        owner,
++                    );
++                    match &mut t.kind {
++                        TerminatorKind::Branch { condition, .. } => fault::span(
++                            "scalar.Branch.condition.span",
++                            &format!("{p}.condition.span"),
++                            &mut condition.span,
++                            owner,
++                        ),
++                        TerminatorKind::Call { args, .. } => {
++                            for (i, a) in args.iter_mut().enumerate() {
++                                fault::span(
++                                    "scalar.Call.args.span",
++                                    &format!("{p}.args[{i}].span"),
++                                    &mut a.span,
++                                    owner,
++                                );
++                            }
++                        }
++                        TerminatorKind::Return(v) => fault::span(
++                            "scalar.Return.value.span",
++                            &format!("{p}.value.span"),
++                            &mut v.span,
++                            owner,
++                        ),
++                        TerminatorKind::Goto { .. } => (),
++                    }
++                }
++            }
++        }
++    } else {
++        let count = raw.functions.len();
++        let right = if spec.id == "correspondence-wrong-target-scalar" {
++            let matches: Vec<_> = raw
++                .functions
++                .iter()
++                .filter(|f| {
++                    fault::map(owner)
++                        .get(f.span.file)
++                        .path()
++                        .ends_with("/right.ox")
++                        && owner.text(f.span).unwrap() == "helper"
++                })
++                .map(|f| f.id)
++                .collect();
++            assert_eq!(
++                matches.len(),
++                1,
++                "MUTATION_SELECTION: right helper ambiguous"
++            );
++            Some(matches[0])
++        } else {
++            None
++        };
++        let left = if right.is_some() {
++            let v: Vec<_> = raw
++                .functions
++                .iter()
++                .filter(|f| {
++                    fault::map(owner)
++                        .get(f.span.file)
++                        .path()
++                        .ends_with("/left.ox")
++                        && owner.text(f.span).unwrap() == "helper"
++                })
++                .map(|f| f.id)
++                .collect();
++            assert_eq!(v.len(), 1, "MUTATION_SELECTION: left helper ambiguous");
++            Some(v[0])
++        } else {
++            None
++        };
++        if let (Some(l), Some(r)) = (left, right) {
++            let a = &raw.functions[l.0];
++            let b = &raw.functions[r.0];
++            assert_eq!(a.result, b.result);
++            assert_eq!(a.param_count, b.param_count);
++            assert!(a.locals[..a.param_count]
++                .iter()
++                .zip(&b.locals[..b.param_count])
++                .all(|(a, b)| a.ty == b.ty));
++        }
++        'outer: for (fi, f) in raw.functions.iter_mut().enumerate() {
++            for (bi, b) in f.blocks.iter_mut().enumerate() {
++                let Some(t) = &mut b.terminator else { continue };
++                let TerminatorKind::Call {
++                    target,
++                    args,
++                    destination,
++                    ..
++                } = &mut t.kind
++                else {
++                    continue;
++                };
++                let p = format!("functions[{fi}].blocks[{bi}].terminator");
++                match spec.kind.as_str() {
++                    "call-target" => {
++                        if left.is_some() && Some(*target) != left {
++                            continue;
++                        }
++                        let before = *target;
++                        *target = right.unwrap_or(hir::DefId(count));
++                        fault::applied(&format!("{p}.target"), &before, target);
++                    }
++                    "remove-last-call-argument" => {
++                        if args.is_empty() {
++                            continue;
++                        }
++                        let before = args.clone();
++                        args.pop();
++                        fault::applied(&format!("{p}.args"), &before, args);
++                    }
++                    "call-result-slot-type" => {
++                        let ty = &mut f.locals[destination.0].ty;
++                        let before = *ty;
++                        *ty = match ty {
++                            hir::Ty::I32 => hir::Ty::Bool,
++                            hir::Ty::Bool => hir::Ty::I32,
++                            hir::Ty::Unit => continue,
++                        };
++                        fault::applied(
++                            &format!("functions[{fi}].locals[{}].ty", destination.0),
++                            &before,
++                            ty,
++                        );
++                    }
++                    _ => unreachable!(),
++                }
++                break 'outer;
++            }
++        }
++    }
++    fault::finish();
++    crate::frontend::unit3_observer::capture("mutation-after-raw", raw);
++}
+--- /dev/null
++++ b/src/frontend/unit3_mutations.rs
+@@ -0,0 +1,230 @@
++//! Test-only fault input and exact application journal. No expected outcomes.
++use super::{
++    ast,
++    declaration_index::SourceOwner,
++    hir, lexer, oir,
++    project::{ModuleId, ProjectSources},
++    source::{SourceFileId, SourceMap, SourceView, Span},
++};
++use std::{cell::RefCell, fmt::Debug};
++#[derive(Clone, Debug)]
++pub(super) struct Spec {
++    pub id: String,
++    pub kind: String,
++    pub category: String,
++    pub occurrence: usize,
++}
++#[derive(Default)]
++struct State {
++    applied: usize,
++    seen: usize,
++}
++thread_local! {static STATE:RefCell<State>=RefCell::new(State::default());}
++pub(super) fn reset() {
++    STATE.with_borrow_mut(|s| *s = State::default());
++}
++pub(super) fn spec() -> Option<Spec> {
++    std::env::var("OXID_UNIT3_MUTATION_ID").ok().map(|id| Spec {
++        id,
++        kind: std::env::var("OXID_UNIT3_MUTATION_KIND").expect("mutation kind"),
++        category: std::env::var("OXID_UNIT3_MUTATION_CATEGORY").unwrap_or_default(),
++        occurrence: std::env::var("OXID_UNIT3_MUTATION_OCCURRENCE")
++            .unwrap_or_else(|_| "0".into())
++            .parse()
++            .expect("mutation occurrence"),
++    })
++}
++pub(super) fn applied(path: &str, before: &impl Debug, after: &impl Debug) {
++    STATE.with_borrow_mut(|s| {
++        s.applied += 1;
++        assert_eq!(
++            s.applied, 1,
++            "MUTATION_SELECTION: more than one application"
++        );
++    });
++    super::unit3_observer::capture(
++        "mutation-applied",
++        &(
++            spec().unwrap(),
++            path,
++            format!("{before:?}"),
++            format!("{after:?}"),
++        ),
++    );
++}
++pub(super) fn pending() -> bool {
++    STATE.with_borrow(|s| s.applied == 0)
++}
++pub(super) fn finish() {
++    if spec().is_some() {
++        STATE.with_borrow(|s| assert_eq!(s.applied, 1, "MUTATION_SELECTION: no application"));
++    }
++}
++pub(super) fn map(owner: SourceOwner<'_>) -> &SourceMap {
++    match owner.view() {
++        SourceView::Map(m) => m,
++        SourceView::Single(_) => panic!("MUTATION_SELECTION: map-backed owner required"),
++    }
++}
++pub(super) fn foreign(owner: SourceOwner<'_>, old: Span) -> Span {
++    let map = map(owner);
++    assert!(map.files().len() > 1, "MUTATION_SELECTION: no foreign file");
++    let file = SourceFileId((old.file.0 + 1) % map.files().len());
++    let same = Span { file, ..old };
++    if map.is_valid_span(same) {
++        return same;
++    }
++    let module = owner.module_for_file(file).unwrap();
++    let span = owner
++        .ast(module)
++        .unwrap()
++        .tokens
++        .iter()
++        .find(|t| t.kind == lexer::Kind::Ident)
++        .expect("MUTATION_SELECTION: no checked foreign identifier")
++        .span;
++    assert!(map.is_valid_span(span));
++    span
++}
++pub(super) fn span(category: &str, path: &str, at: &mut Span, owner: SourceOwner<'_>) {
++    let Some(s) = spec() else { return };
++    if s.kind != "replace-span" || s.category != category {
++        return;
++    }
++    let selected = STATE.with_borrow_mut(|state| {
++        let n = state.seen;
++        state.seen += 1;
++        n == s.occurrence
++    });
++    if selected {
++        let before = *at;
++        *at = foreign(owner, before);
++        applied(path, &before, at);
++    }
++}
++pub(super) fn entry(entry: Option<hir::DefId>) -> Option<hir::DefId> {
++    if spec().is_some_and(|s| s.kind == "source-seal-seam-entry") {
++        let changed = Some(hir::DefId(0));
++        assert_ne!(
++            entry, changed,
++            "MUTATION_SELECTION: entry control must differ"
++        );
++        applied("constructor.local.entry", &entry, &changed);
++        changed
++    } else {
++        entry
++    }
++}
++pub(super) fn audit_visit(validate: bool, span: Span) -> u8 {
++    let Some(s) = spec() else { return 0 };
++    if validate
++        && pending()
++        && matches!(
++            s.kind.as_str(),
++            "audit-visitor-suppress-one-visit" | "audit-visitor-repeat-one-visit"
++        )
++    {
++        let n = if s.kind == "audit-visitor-suppress-one-visit" {
++            1
++        } else {
++            2
++        };
++        applied(
++            "validate.Construct.fields[0].value.span",
++            &(span, "once"),
++            &(span, if n == 1 { "omitted" } else { "twice" }),
++        );
++        n
++    } else {
++        0
++    }
++}
++pub(super) fn count_delta() -> bool {
++    spec().is_some_and(|s| s.kind == "audit-count-seam") && pending()
++}
++pub(super) fn count_overflow(validate: bool) -> bool {
++    !validate && spec().is_some_and(|s| s.kind == "audit-count-seam-overflow") && pending()
++}
++
++pub(super) enum Constructor {
++    Map(SourceMap),
++    Ast(ast::Program),
++    Nonzero(SourceMap, ast::Program),
++}
++pub(super) fn constructor(project: &ProjectSources) -> Option<Constructor> {
++    let s = spec()?;
++    if !matches!(
++        s.kind.as_str(),
++        "original-source-constructor-substitution" | "original-source-map-file-id"
++    ) {
++        return None;
++    }
++    let (source, original_ast) = project
++        .original_file()
++        .expect("MUTATION_SELECTION: original source fixture required");
++    let text = source.text();
++    if s.kind == "original-source-map-file-id" {
++        let mut map = SourceMap::new();
++        map.add("mutation-decoy.ox".into(), String::new());
++        let id = map.add(source.path().into(), text.into());
++        assert_eq!(id, SourceFileId(1));
++        let ast = super::parser::parse(map.get(id), lexer::lex(map.get(id)).unwrap()).unwrap();
++        applied("constructor.actual_file", &0usize, &1usize);
++        return Some(Constructor::Nonzero(map, ast));
++    }
++    let mut substitute = SourceMap::new();
++    let (path, bytes) = if s.id.ends_with("same_bytes_new_map") {
++        ("different-allocation.ox".into(), text.into())
++    } else if s.id.ends_with("same_offsets_other_map") {
++        (source.path().into(), " ".repeat(text.len()))
++    } else {
++        (source.path().into(), text.into())
++    };
++    let id = substitute.add(path, bytes);
++    if s.id.ends_with("stale_parser_generation") {
++        let ast = super::parser::parse(substitute.get(id), lexer::lex(substitute.get(id)).unwrap())
++            .unwrap();
++        super::unit3_observer::capture(
++            "constructor-parser-identity",
++            &(
++                source.identity(),
++                substitute.get(id).identity(),
++                original_ast.belongs_to(source),
++                ast.belongs_to(substitute.get(id)),
++                ast.belongs_to(source),
++            ),
++        );
++        applied(
++            "constructor.parser_generation",
++            &"actual-source",
++            &"different-source-generation",
++        );
++        Some(Constructor::Ast(ast))
++    } else {
++        applied(
++            "constructor.map",
++            &"actual-map-allocation",
++            &"different-map-allocation",
++        );
++        Some(Constructor::Map(substitute))
++    }
++}
++impl Constructor {
++    pub(super) fn check<'a>(
++        &'a self,
++        p: &'a ProjectSources,
++    ) -> Result<oir::CheckedSourceProgram<'a>, Vec<super::diagnostic::Diagnostic>> {
++        let (source, ast) = p.original_file().unwrap();
++        match self {
++            Self::Map(map) => oir::check_source(source, ast, map),
++            Self::Ast(other) => oir::check_source(source, other, p.sources()),
++            Self::Nonzero(map, ast) => oir::check_source(map.get(SourceFileId(1)), ast, map),
++        }
++    }
++    pub(super) fn sources<'a>(&'a self, p: &'a ProjectSources) -> &'a SourceMap {
++        match self {
++            Self::Map(map) | Self::Nonzero(map, _) => map,
++            Self::Ast(_) => p.sources(),
++        }
++    }
++}
+--- a/src/frontend/unit3_observer.rs
++++ b/src/frontend/unit3_observer.rs
+@@ -124,6 +124,7 @@
+     let request=std::env::var("OXID_UNIT3_REQUEST_SHA256").expect("source request identity");
+     assert!([&nonce,&request].iter().all(|s|s.len()==64 && s.bytes().all(|b|b.is_ascii_hexdigit())),"request identity encoding");
+     marker("started.json",&nonce,&request,"started");
++    crate::frontend::unit3_mutations::reset();
+     let mode=std::env::var("OXID_UNIT3_MODE").expect("source mode");
+     let operations=std::env::var("OXID_UNIT3_OPERATIONS").expect("operation subset");
+     let operations:Vec<_>=operations.split(',').collect();
+@@ -143,11 +144,15 @@
+         }
+     };
+     capture("loaded",&loaded);
++    let constructor=crate::frontend::unit3_mutations::constructor(&loaded);
++    let active_sources=constructor.as_ref().map_or_else(||loaded.sources(),|c|c.sources(&loaded));
++    capture("active-constructor-map",active_sources);
+     let checked={
+         let work=declaration_index::WorkMeter::default();
+         let mut allocator=project::budget::Allocator::default();
+-        let result=oir::project::check_project_executable_candidate(&loaded,declaration_index::IndexLimits::default(),&work,&mut allocator);
+-        capture("namespace-work",&work);
++        let result=match &constructor{Some(c)=>c.check(&loaded),None=>oir::project::check_project_executable_candidate(&loaded,declaration_index::IndexLimits::default(),&work,&mut allocator)};
++        if constructor.is_none(){capture("namespace-work",&work);}else{capture("constructor-path",&"original facade; internal meter not observed");}
++        crate::frontend::unit3_mutations::finish();
+         result
+     };
+     let visits=JOURNAL.with_borrow(|j|debug(&j.visits,true));output("audit-visits.debug",&visits);
+@@ -155,7 +160,7 @@
+         Ok(checked)=>checked,
+         Err(errors)=>{
+             capture("check-failure",&errors);
+-            output("diagnostics.jsonl",&errors.iter().map(|d|d.render_json(loaded.sources())).collect::<Vec<_>>().join("\n"));
++            output("diagnostics.jsonl",&errors.iter().map(|d|d.render_json(active_sources)).collect::<Vec<_>>().join("\n"));
+             marker("completion.json",&nonce,&request,"check-denied");
+             return;
+         }
+@@ -172,7 +177,7 @@
+         capture(&name,&result);
+         let outcome=match result {
+             Ok(value)=>format!("{{\"result\":{}}}",value.json()),
+-            Err(diagnostic)=>diagnostic.render_json(loaded.sources()),
++            Err(diagnostic)=>diagnostic.render_json(active_sources),
+         };
+         output(&format!("{name}.json"),&outcome);
+         write_trace(&name);
+@@ -183,7 +188,7 @@
+         let name=fuel.map_or_else(||"native-default".to_string(),|n|format!("native-fuel-{n}"));
+         match checked.native_module() {
+             Ok(module)=>output(&format!("{name}.ll"),&module),
+-            Err(diagnostic)=>output(&format!("{name}.diagnostic.json"),&diagnostic.render_json(loaded.sources())),
++            Err(diagnostic)=>output(&format!("{name}.diagnostic.json"),&diagnostic.render_json(active_sources)),
+         }
+       }
+     }

@@ -14,7 +14,7 @@ mod native;
 mod plan;
 mod shape;
 pub(super) mod source;
-pub(super) use source::{check_source, SourceProgram};
+pub(super) use source::SourceProgram;
 mod storage;
 mod verified;
 #[cfg(test)]

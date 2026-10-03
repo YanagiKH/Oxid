@@ -1,0 +1,4 @@
+#!/bin/sh
+printf "%s\n" "$0 $*" >> "$OXID_UNIT3_SPY_LOG"
+printf "%s\n" "Qualification rejecting spy: external tool invocation observed" >&2
+exit 89

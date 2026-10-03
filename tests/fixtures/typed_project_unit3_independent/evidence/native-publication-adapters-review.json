@@ -1,0 +1,50 @@
+{
+  "status": "publication source-only adapters cleared",
+  "grouped_wrapper": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_portable_grouped.py",
+    "bytes": 21313,
+    "sha256": "49e857b57b0cf589d4fdf667b4f0b689340e3357122135fa0a4e8786c28245dd"
+  },
+  "group_selector": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_groups.py",
+    "bytes": 2320,
+    "sha256": "cd4a952a3cf72b1abd3f6c146e25fe103ed43eeccc070abf467b56126b7b93bf"
+  },
+  "native_inputs": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_inputs.py",
+    "bytes": 4452,
+    "sha256": "57c6bd65664e7c2ac41f99a837f93f4067846b6d2b4b694a26eb50d79c5992a2"
+  },
+  "unchanged_native_wrapper_functions": [
+    "library_inventory",
+    "load",
+    "prepare",
+    "qualified_environment",
+    "validate_invocation"
+  ],
+  "group_change": "explicit --group and exact frozen row selection; no loader/build/tool/consumer change",
+  "evidence": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/native-explicit-groups-review.json",
+      "bytes": 379,
+      "sha256": "52e3fbfdd73ae6bec5dabf5a19f5775fb7eaeccd8aa56c71cb42435a4a88edfb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/native-auxiliary-inputs-review.json",
+      "bytes": 428,
+      "sha256": "3da617788edee749d81d427429f2ad1e9b778959d2ca3aa081ff6c9ecb075ee8"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/group-dispatch-controls-v1/helper-import-order/result.json",
+      "bytes": 998,
+      "sha256": "7c9bd57e35136199a90b15e01d397fe541cc0c177b19277f066b653ad5d35eae"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/bridge-auxiliary-controls-v1/results.json",
+      "bytes": 609,
+      "sha256": "892f293a2b2036f9a61cc1c1463ac83f2194d4f3d4cf99eb2c3dda7f931beae4"
+    }
+  ],
+  "compiler_invocations": 0,
+  "limits": "Grouped wrapper has static/source-only dispatch qualification; original six ELF replay remains attributed to frozen ungrouped fcc7 wrapper"
+}

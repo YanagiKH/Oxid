@@ -1,0 +1,50 @@
+[
+  {
+    "attempt": "smoke-attempt1",
+    "phase": "Python parse before any specimen comparison",
+    "error": "SyntaxError: cannot assign to __debug__",
+    "cause": "Using reserved __debug__ as a dict() keyword in report construction",
+    "correction": "Use a dictionary literal for the assertion-mode report",
+    "expected_changes": 0,
+    "candidate_invocations": 0
+  },
+  {
+    "attempt": "special-original-file-terminal",
+    "phase": "pre-freeze independent comparator review",
+    "evidence": "original-file-terminal-gap.json",
+    "prior_snapshot": "compare_mutations_pre_terminal_check.py.history",
+    "cause": "Special original-file1 branch omitted final terminal checks already present in ordinary source comparison",
+    "correction": "Require empty activation/loan state and committed final operation for successful original-file1 references",
+    "sensitivity": "original-file-terminal-sensitivity.json",
+    "expected_changes": 0,
+    "candidate_invocations": 0
+  },
+  {
+    "attempt": "original-parser-association-stage",
+    "prior_manifest": "f6894a12bed36bf675d895e2cf3de71d6c72f698063536bbb9540c83e42e2109",
+    "evidence": "original-parser-stage-gap.json",
+    "prior_snapshot": "history/comparator-v1",
+    "cause": "Application helper reused raw-association count stage for original-parser association; synthetic fixture repeated that incorrect stage",
+    "correction": "Explicit stage parameter with original parser resolve-project and unchanged count default oir-project-bind; specimen stage read from frozen expected data",
+    "sensitivity": "original-parser-stage-sensitivity.json",
+    "setup_attempt": "Bounded sensitivity first imported local observed helper; corrected to exported baseline before specimen execution",
+    "expected_changes": 0,
+    "candidate_invocations": 0
+  },
+  {
+    "attempt": "metadata-same-file-cause",
+    "prior_manifest": "4a35807d1505d62cb959737d94e125028e6e890fe9adc92bb63097ce5f21f1d4",
+    "prior_snapshot": "history/comparator-v2",
+    "original_failure": "incremental-actual-attempt2.json",
+    "complete_original_failure": "full220-v2-original-mismatch.json",
+    "observed": "218/220 matched; cause replacement in both profiles remained render-equivalent",
+    "cause": "Driver treated rendered diagnostic difference as the only semantic origin correspondence for an authored negative with no full body facts",
+    "source_authority": "Frozen design section9 already requires independent exact stored metadata origin correspondence; frozen predecessor lowerer defines expression-primary/enclosing-statement-cause",
+    "supplement": "../supplements/diagnostic-origin-correspondence-v1/supplement-manifest.json",
+    "supplement_sha256": "755fcf1e92d695ab5202481e3d88edd349d4faf382be8eb4a5db4e3df759f11d",
+    "correction": "Verify independent source-derived metadata on baseline and reject incorrect stored primary/cause, retaining same E0311 and generic denial kind as prescribed",
+    "sensitivity": "metadata-correspondence-sensitivity.json",
+    "original_expected_edits": 0,
+    "candidate_invocations": 0
+  }
+]

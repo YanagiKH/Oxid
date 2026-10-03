@@ -1,0 +1,36 @@
+{
+  "schema": "unit3-source-native-portable-collection-component-v1",
+  "status": "reviewed source-only orchestration; no real candidate execution",
+  "plan_schema": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/portable-v1/PLAN_SCHEMA.md",
+    "bytes": 3683,
+    "sha256": "c32f2c7ce7a917e571e2b2af5abde6c6ea02a667a9cec8fd97148ac2f8a84e9f"
+  },
+  "files": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/make_plan.py",
+      "bytes": 3418,
+      "sha256": "3963c04c2eff2ee963d13ab1a72f9674a2c7df7da2968a85f7d1246d1b3b3bc6"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/collect.py",
+      "bytes": 14767,
+      "sha256": "c56769e2acea5be894ec3938cdf8a0981c95a9edec75f074dbb9eb8f54ccfd23"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/test_collect.py",
+      "bytes": 3990,
+      "sha256": "6f5100cd1085a3b56c427699ef1564cb864c5ea15103a0aa82f6ccb561d30d0a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/collection-controls-v2/results.json",
+      "bytes": 4545,
+      "sha256": "efd7e4d90c8a5d53d9f33ba6e5bc286d0edfef9c46a7d88717c21294822b622b"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/collection-native-controls-v1/results.json",
+      "bytes": 640,
+      "sha256": "461c54b77e0f75a0f101bf0436210cf111bbcc97eefc14bcb1453e07c0aff99a"
+    }
+  ]
+}

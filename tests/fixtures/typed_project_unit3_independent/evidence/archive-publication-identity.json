@@ -1,0 +1,8 @@
+{
+  "path": "source-transport/sources.tar.gz",
+  "bytes": 13128,
+  "sha256": "1e6107e272f4cec23a7183eea8be23350b81b6702fe73c1c6e8d7687fe744293",
+  "git_blob_sha1": "bda311c05552ddcc406ee65f2f946c1bd32ac08f",
+  "git_object_format": "sha1",
+  "determinism": "Two independent canonical USTAR/gzip assemblies were byte-identical; original445 source bytes/member identities unchanged"
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "unit3-source-only-diagnostic-origin-proof-v1",
+  "all_source_bytes_reproduced": true,
+  "all_frozen_origins_reproduced": 98,
+  "full_module_to_model_bijection_reproduced": true,
+  "statement_tag": "return",
+  "expression_tag": "field",
+  "relationship": "return statement -> call expression -> second argument field read",
+  "producer_contract_locations": [
+    "owned/source/lower.rs:1177-1186 passes statement span to expression",
+    "owned/source/lower.rs:581-844 carries cause through nested expression/call frames",
+    "owned/source/lower.rs:926-941 ReadField uses expression span for primary and inherited cause"
+  ],
+  "design_requirement": "Unit3 design section 9 Metadata authority: independent exact-origin comparator rejects incorrect source placement",
+  "inputs": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/pre-execution-manifest.json",
+      "sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/negative_cases.py",
+      "sha256": "d5359e5e2aa287094269ef0961ca8004ff542f63724c40ef27f2a80d0563f4fe"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/generate.py",
+      "sha256": "89c1d6faeb23755ea048cef9d780136e301f212115f070178fba8c35df77f085"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/vendor/owned_source_model.py",
+      "sha256": "5c2a74e41aaadaf5706fb0ea35931328317e906a05b9d26776837aedddc8dfc7"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/expected.jsonl.gz",
+      "sha256": "4c2753e8ab1c42a8965f5e07a02973ce99bccbdf22dbfa55de78ff33f06831aa"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit2-ci-fix/final-candidate/manifest.json",
+      "sha256": "bcbbebf6f22d5055069cdd61dee663e15470f2d4215d739725ca935fb2f8b24f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/owned/source/lower.rs",
+      "sha256": "efd50cbe64a9c742fc92139f54bc69be5a35239ffa6185c60d4bfc2ae8ce2446"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-design/proposed-design.md",
+      "sha256": "f8351b4e63d68cf11995192bad93fb2b527020e9eeab11572ca0dc15452302a8"
+    }
+  ],
+  "candidate_inputs": [],
+  "compiler_invocations": 0,
+  "original_expected_edits": 0
+}

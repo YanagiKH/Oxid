@@ -1,0 +1,45 @@
+{
+  "status": "passed",
+  "compiler_invocations": 0,
+  "verifier": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/verify_package.py",
+    "bytes": 1815,
+    "sha256": "432dabc4b5c57911b2584eb8658a8be2264661aa4471cb76940d56994938bf15"
+  },
+  "controls": [
+    {
+      "control": "exact",
+      "status": "verified"
+    },
+    {
+      "control": "extra",
+      "status": "rejected",
+      "reason": "package extra/missing members"
+    },
+    {
+      "control": "changed",
+      "status": "rejected",
+      "reason": "byte-size mismatch before hashing: /workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/package-controls-v1/changed/payload.txt"
+    },
+    {
+      "control": "alias",
+      "status": "rejected",
+      "reason": "missing/aliased file"
+    },
+    {
+      "control": "raw-source",
+      "status": "rejected",
+      "reason": "Unit3 corpus must remain in its exact source archive until external materialization"
+    },
+    {
+      "control": "optimized-argument",
+      "status": "rejected-before-worker",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n"
+    },
+    {
+      "control": "optimized-environment",
+      "status": "rejected-before-worker",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n"
+    }
+  ]
+}

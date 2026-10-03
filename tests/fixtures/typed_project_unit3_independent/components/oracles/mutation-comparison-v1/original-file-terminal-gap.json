@@ -1,0 +1,11 @@
+{
+  "schema": "unit3-original-file-terminal-check-gap-v1",
+  "prior_comparator_sha256": "d721631f08b396f3dbd5f64ae897f9174525f1771b91718eceecd2d25f718c70",
+  "actual_receipt_sha256": "80a25f432752942695e103686a14bafd9d816c5ba0295772a8c76d1dc169e9c9",
+  "mutation": "drop final successful root operation_commit in cloned file1 reference-default trace",
+  "outcome": {
+    "normalized": "ACCEPTED_BY_PRE_FIX_COMPARATOR"
+  },
+  "expected_edits": 0,
+  "compiler_invocations": 0
+}

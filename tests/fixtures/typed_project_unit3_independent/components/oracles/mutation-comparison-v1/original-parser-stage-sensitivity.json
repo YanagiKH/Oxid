@@ -1,0 +1,19 @@
+{
+  "schema": "unit3-original-parser-stage-sensitivity-v1",
+  "parser_resolve_project": {
+    "status": "applied",
+    "kind": "original-source-constructor-substitution",
+    "path": "constructor.parser_generation",
+    "proof": "actual-source-identities-belongs-to-and-early-bind-denial"
+  },
+  "parser_wrong_bind_stage": {
+    "status": "invalid",
+    "kind": "original-source-constructor-substitution",
+    "reason": "seam did not fail at its exact source-association stage"
+  },
+  "count_bind_stage": "ACCEPT",
+  "count_wrong_resolve_stage": "Invalid('seam did not fail at its exact source-association stage')",
+  "compiler_runs": 0,
+  "expected_edits": 0,
+  "actual_edits": 0
+}

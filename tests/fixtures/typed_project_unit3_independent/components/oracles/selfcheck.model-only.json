@@ -1,0 +1,55 @@
+{
+  "evidence_kind": "PACKAGE_MODEL_SELF_CHECK_ONLY",
+  "cases": 152,
+  "families": {
+    "scalar24": 24,
+    "owned48": 48,
+    "pilot": 5,
+    "original-control": 1,
+    "owned-entry-control": 1,
+    "negative-control": 18,
+    "source-negative": 26,
+    "entry-negative": 2,
+    "route-control": 2,
+    "cleanup-control": 1,
+    "span-control": 2,
+    "native-negative": 4,
+    "origin16": 16,
+    "collision2": 2
+  },
+  "source_files": 445,
+  "valid_origin_entries": 10478,
+  "mutations": 114,
+  "synthetic_visit_mutants_rejected": 3,
+  "compiler_executions": 0,
+  "native_executions": 0,
+  "no_candidate_outputs_read": true,
+  "scalar_pilot_hand_ledger": {
+    "root_entry": 8,
+    "root_sum_arg": 1,
+    "call_sum": 22,
+    "sum_runtime": 115,
+    "choose_args": 3,
+    "call_choose": 10,
+    "choose_runtime": 4,
+    "root_add": 1,
+    "root_return": 1
+  },
+  "scalar_sum_hand_ledger": {
+    "initializers": 4,
+    "initial_goto": 1,
+    "four_conditions": 16,
+    "four_inc_and_stores": 48,
+    "four_skip_branches": 16,
+    "continue_goto": 1,
+    "three_accumulations": 12,
+    "three_break_conditions": 12,
+    "break_goto": 1,
+    "two_backedges": 2,
+    "return_value_and_return": 2
+  },
+  "scalar_route_fuel": {
+    "without_unused_nominal": 15,
+    "with_unused_nominal": 21
+  }
+}

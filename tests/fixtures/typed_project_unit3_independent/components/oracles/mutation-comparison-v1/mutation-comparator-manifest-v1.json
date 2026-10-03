@@ -1,0 +1,140 @@
+{
+  "schema": "unit3-independent-mutation-comparator-v1",
+  "status": "Frozen for independent final review before full internal execution",
+  "source_comparator": "22666fa44ee61e8ee70dd6f4605e87000f3872f2f2728c20c0843ff35755d32d",
+  "source_expectation_manifest": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "source_applicability_supplement": "a01be26791455c85790abcee37f05373da9a0fe7f77aaae3fbb635378cebb987",
+  "domain": {
+    "mutation_ids": 114,
+    "internal_mutations": 110,
+    "profiles": 2,
+    "separate_driver_requests": 4,
+    "separate_driver_profile_attributions": 8
+  },
+  "bounded_actual_smokes": 12,
+  "offline_application_adversarial_controls": 195,
+  "envelope_adversarial_controls": 11,
+  "original_file_terminal_control": 1,
+  "assertion_mode": {
+    "__debug__": true,
+    "sys_flags_optimize": 0,
+    "PYTHONOPTIMIZE": "0"
+  },
+  "files": [
+    {
+      "path": "APPLICATION.md",
+      "bytes": 5185,
+      "sha256": "5cbae962b6424d5add905f9cb5ff68929b61eb0820647aa1705a4d1a8ed9372d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3784,
+      "sha256": "64b219e44842d66a4afe788a7e752ee2320dbf1bf8e226f5cd88354fd0cadbef"
+    },
+    {
+      "path": "application-development-history.json",
+      "bytes": 1086,
+      "sha256": "eaaa34cbecb0bfee6b126a00fc610a76c253942a2df884d698a335d3222832d1"
+    },
+    {
+      "path": "application-tests-v1.json",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "application-tests-v2.json",
+      "bytes": 61835,
+      "sha256": "2c2abd9b5690843cab69e74d0f1eb1bad5c56bb202d5452c9e25f4e5af043b1e"
+    },
+    {
+      "path": "application-tests-v3.json",
+      "bytes": 62128,
+      "sha256": "38801d852533e55ff7ca604c4006e8a8ce993b600e87a749ca0159d62c7e6f7e"
+    },
+    {
+      "path": "application-tests-v4.json",
+      "bytes": 62529,
+      "sha256": "09a4f373969b2c728d411eaab0b6d240690ef70744e589990fd5d66dfe505c3c"
+    },
+    {
+      "path": "application-validation-summary-v4.json",
+      "bytes": 832,
+      "sha256": "37ff37602a4c6b2398e3ba9caa5f5ec3987cbbe51e81dfc5041b9eeb48714ebe"
+    },
+    {
+      "path": "application.py",
+      "bytes": 37731,
+      "sha256": "d3fc2c40ff933dc4f98614cae438d4a828ab7e89086f425ec83f7610adc44582"
+    },
+    {
+      "path": "compare_mutations.py",
+      "bytes": 19856,
+      "sha256": "9b76dcf509315091cdd0b865f382d7e8e0bc53ef76a4bae84d1738122c4d6f2b"
+    },
+    {
+      "path": "compare_mutations_pre_terminal_check.py.history",
+      "bytes": 18671,
+      "sha256": "d721631f08b396f3dbd5f64ae897f9174525f1771b91718eceecd2d25f718c70"
+    },
+    {
+      "path": "development-corrections.json",
+      "bytes": 988,
+      "sha256": "210910e2f09edb3063ee78d15ed02ab1fb77e26cc886ff541e81af64276dfe3e"
+    },
+    {
+      "path": "envelope-sensitivity.json",
+      "bytes": 5635,
+      "sha256": "c659a9402e8f0f4ad641f59eb1f1ce29f5799f12bc897fb41b9d466f9367ed9b"
+    },
+    {
+      "path": "original-file-terminal-gap.json",
+      "bytes": 476,
+      "sha256": "699006a1a8b3d228aa74e3a7dcd324286bfeadaceca03cd0fc22ad73e89a0dfa"
+    },
+    {
+      "path": "original-file-terminal-sensitivity.json",
+      "bytes": 416,
+      "sha256": "e2ea792a6488da9012ae80b0e816fbc5960232cc648dbe43aaf6bce7970f9e62"
+    },
+    {
+      "path": "smoke-attempt2.json",
+      "bytes": 44715,
+      "sha256": "df62e064b7d35052ac24391ff325a7b9d8de37fbe078fe3945ba55014723bdb3"
+    },
+    {
+      "path": "smoke-build-joins.json",
+      "bytes": 44715,
+      "sha256": "df62e064b7d35052ac24391ff325a7b9d8de37fbe078fe3945ba55014723bdb3"
+    },
+    {
+      "path": "smoke-effective-requests.json",
+      "bytes": 44715,
+      "sha256": "df62e064b7d35052ac24391ff325a7b9d8de37fbe078fe3945ba55014723bdb3"
+    },
+    {
+      "path": "smoke-final-pre-freeze.json",
+      "bytes": 44715,
+      "sha256": "df62e064b7d35052ac24391ff325a7b9d8de37fbe078fe3945ba55014723bdb3"
+    },
+    {
+      "path": "smoke-pinned-final.json",
+      "bytes": 44715,
+      "sha256": "df62e064b7d35052ac24391ff325a7b9d8de37fbe078fe3945ba55014723bdb3"
+    },
+    {
+      "path": "test_application.py",
+      "bytes": 17989,
+      "sha256": "b27b7854b05c6a30eed1e01bf578d9712635294d3c5b8d2e22d99e872b4586d9"
+    },
+    {
+      "path": "test_envelope_sensitivity.py",
+      "bytes": 3078,
+      "sha256": "0d4131b4c2017701023e20697a0dee0d63e9745e546724d9969f7123098a6b97"
+    },
+    {
+      "path": "test_original_file_terminal.py",
+      "bytes": 1357,
+      "sha256": "c1887fa2d2f352f986ac4c4fd37b03d7eb3582b8d1dc040033678c3723d9269d"
+    }
+  ]
+}

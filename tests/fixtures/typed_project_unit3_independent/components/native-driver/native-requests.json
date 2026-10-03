@@ -1,0 +1,1248 @@
+[
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      114,
+      115
+    ],
+    "id": "scalar-root_child-absolute-entry0-i32",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 81,
+        "path": "main.ox",
+        "sha256": "a13398474c73b5c1bea0e709dfed5d485b821c45f1aa10ee6c57d029367faf53"
+      },
+      {
+        "bytes": 257,
+        "path": "left.ox",
+        "sha256": "8067cb8eb73ccd3c3d67cd0fc1cb87b2e7d64325df835b68f1f966964ea66b21"
+      },
+      {
+        "bytes": 48,
+        "path": "right.ox",
+        "sha256": "d49347ccd5fe276f60379900274484342d177daaf1cc5aabbde786d95d5c068a"
+      }
+    ],
+    "source_root": "sources/scalar-root_child-absolute-entry0-i32"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      23,
+      24
+    ],
+    "id": "scalar-sibling-import-entry1-bool",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 160,
+        "path": "main.ox",
+        "sha256": "2f74035f56c718d73dd3258711139962b95128e97774bb6bdd21b0b743c9d5cf"
+      },
+      {
+        "bytes": 216,
+        "path": "left.ox",
+        "sha256": "9bb5d03751f88393a4fe2607c51dfc60f95af5f96cfaae2df699bd5dc13056d4"
+      },
+      {
+        "bytes": 120,
+        "path": "right.ox",
+        "sha256": "f60e1cfdd9f3aed0c1020de70315fc91b03fa18e636e1f738ef59a50dd00deb2"
+      }
+    ],
+    "source_root": "sources/scalar-sibling-import-entry1-bool"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      23,
+      24
+    ],
+    "id": "scalar-child_ancestor-absolute-entry1-bool",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 236,
+        "path": "main.ox",
+        "sha256": "be461b3a20efb52b9a58aec1ca923b8c393761011802939e69b7e4e9352d732f"
+      },
+      {
+        "bytes": 78,
+        "path": "left.ox",
+        "sha256": "29db19eedf7919f25c7c73202ca5f8991e29474de3c4f135b0a539db804770df"
+      },
+      {
+        "bytes": 56,
+        "path": "right.ox",
+        "sha256": "da4a1b5112abc95ee3c5d40d1659f8f10403d46db0c89d02cbd244a3a8886900"
+      }
+    ],
+    "source_root": "sources/scalar-child_ancestor-absolute-entry1-bool"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      68,
+      69,
+      71,
+      72,
+      87,
+      88,
+      94,
+      95,
+      101,
+      102
+    ],
+    "id": "owned-root_child-absolute-root-shared_nested",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 167,
+        "path": "main.ox",
+        "sha256": "412d5e3696430b6746ae0eca9f8b44e75fe07712edc215ee1fe0a60378fb845a"
+      },
+      {
+        "bytes": 134,
+        "path": "left.ox",
+        "sha256": "16a4cd67cbf28fae98ea119442050bc74583cad61706fcd7c6fc75fc964e0084"
+      },
+      {
+        "bytes": 65,
+        "path": "right.ox",
+        "sha256": "35111a7e732fee779ac74f2b2eb632f902dfba3159bf215449384bb07e9910cb"
+      }
+    ],
+    "source_root": "sources/owned-root_child-absolute-root-shared_nested"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      91,
+      92,
+      98,
+      99,
+      103,
+      104,
+      252,
+      253,
+      309,
+      310,
+      318,
+      319,
+      339,
+      340,
+      353,
+      354
+    ],
+    "id": "owned-root_child-import-root-loop_cleanup",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 511,
+        "path": "main.ox",
+        "sha256": "3d7fb6c447655eef1854e0c2e2deab7c6fec1f1c27b1b28d57985d5d201af6f5"
+      },
+      {
+        "bytes": 200,
+        "path": "left.ox",
+        "sha256": "602546a2cc9658d66037c19476962f4fd50485a04b279ddc23c15ba7e62081ff"
+      },
+      {
+        "bytes": 87,
+        "path": "right.ox",
+        "sha256": "9cdaf897b05bce29d547733ada8486c2ba65700e0ecd2eb73af49d80c1ce4196"
+      }
+    ],
+    "source_root": "sources/owned-root_child-import-root-loop_cleanup"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      48,
+      49,
+      57,
+      58,
+      59,
+      60,
+      122,
+      123,
+      125,
+      126,
+      225,
+      226,
+      239,
+      240,
+      243,
+      244,
+      255,
+      256,
+      264,
+      265
+    ],
+    "id": "owned-sibling-import-child-exclusive_forward",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 123,
+        "path": "main.ox",
+        "sha256": "4c4a77793ef98df25059c344e56f39e4075da70646eee4e0a41042ce5c5c787f"
+      },
+      {
+        "bytes": 248,
+        "path": "left.ox",
+        "sha256": "d6bbffcabc2dea20a7dcf469ea905ed863e3e2da8b7527dcad07f924325627b6"
+      },
+      {
+        "bytes": 200,
+        "path": "right.ox",
+        "sha256": "af060258fc0e41efd5d8be5963ac71d78fd8240040ec5294a7f858713e852b5e"
+      },
+      {
+        "bytes": 35,
+        "path": "state.ox",
+        "sha256": "024f449a9c069edf58f4ce2061c4f9bb905fc4e693f2364b88aef7037ab5ebff"
+      }
+    ],
+    "source_root": "sources/owned-sibling-import-child-exclusive_forward"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      78,
+      79,
+      97,
+      98,
+      101,
+      102,
+      149,
+      150,
+      184,
+      185,
+      207,
+      208,
+      212,
+      213,
+      216,
+      217,
+      235,
+      236
+    ],
+    "id": "owned-child_ancestor-absolute-child-owned_staging",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 310,
+        "path": "main.ox",
+        "sha256": "defc0b131a411683407ba2b0b0810898a38845b69979201586bf648804794489"
+      },
+      {
+        "bytes": 150,
+        "path": "left.ox",
+        "sha256": "a076bf3479bde0310e6c3ed29ba9fb6bbc891790f1ea7dd479fc95ca18b70bc7"
+      },
+      {
+        "bytes": 108,
+        "path": "right.ox",
+        "sha256": "8c15cf6837213ac075b6f09d730a17fb036351e857ea59b31467e85a14bd0110"
+      },
+      {
+        "bytes": 35,
+        "path": "state.ox",
+        "sha256": "024f449a9c069edf58f4ce2061c4f9bb905fc4e693f2364b88aef7037ab5ebff"
+      }
+    ],
+    "source_root": "sources/owned-child_ancestor-absolute-child-owned_staging"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      163,
+      164,
+      183,
+      184,
+      197,
+      198,
+      201,
+      202,
+      204,
+      205,
+      1092,
+      1093,
+      1113,
+      1114,
+      1178,
+      1179,
+      1228,
+      1229,
+      1255,
+      1256,
+      1296,
+      1297
+    ],
+    "id": "pilot-mechanical-batch",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 786,
+        "path": "main.ox",
+        "sha256": "792e79026351745d16bdf3d9f3e81f280ac74cc7440430996e849f01f34c7cce"
+      },
+      {
+        "bytes": 572,
+        "path": "state.ox",
+        "sha256": "b8f45bff862f13c9daa24382a9807c73cb87651cc0292a926855187131419991"
+      },
+      {
+        "bytes": 148,
+        "path": "jobs.ox",
+        "sha256": "d9b30716a82699667deae97309fbc98be74cb6f2654b92bcebade49ad021faa6"
+      }
+    ],
+    "source_root": "sources/pilot-mechanical-batch"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      197,
+      198,
+      216,
+      217,
+      227,
+      228,
+      230,
+      231,
+      244,
+      245,
+      280,
+      281,
+      1369,
+      1370,
+      1383,
+      1384,
+      1451,
+      1452,
+      1501,
+      1502,
+      1528,
+      1529,
+      1576,
+      1577
+    ],
+    "id": "pilot-opaque-batch",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 809,
+        "path": "main.ox",
+        "sha256": "bce6c43248900a7118a1a0390cc5edc9a2762df7b73621feaa15a44df86c0ae5"
+      },
+      {
+        "bytes": 863,
+        "path": "state.ox",
+        "sha256": "25bc65ea0e2d189fdbeb5774d2f3294ed02dab13aa7fdeb608f99901202ebefd"
+      },
+      {
+        "bytes": 148,
+        "path": "jobs.ox",
+        "sha256": "d9b30716a82699667deae97309fbc98be74cb6f2654b92bcebade49ad021faa6"
+      }
+    ],
+    "source_root": "sources/pilot-opaque-batch"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      164,
+      165
+    ],
+    "id": "pilot-scalar",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 151,
+        "path": "main.ox",
+        "sha256": "945fee241105224a5f0f03a538ae0c5e3d77b643a5ea3e53414c862c87d6a99a"
+      },
+      {
+        "bytes": 224,
+        "path": "maths.ox",
+        "sha256": "9e32ccfbeb54ab85be914456ad3ac50605a83485787adbf622c7860d77a6154e"
+      },
+      {
+        "bytes": 248,
+        "path": "loops.ox",
+        "sha256": "1df18a7d2dcfd400ac4ae499e97225c1df593c19b32511df7d103e4a907d8ae6"
+      }
+    ],
+    "source_root": "sources/pilot-scalar"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      56,
+      57,
+      63,
+      64,
+      68,
+      69,
+      70,
+      71,
+      88,
+      89,
+      91,
+      92,
+      109,
+      110,
+      116,
+      117,
+      125,
+      126
+    ],
+    "id": "control-owned-entry-id1",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 271,
+        "path": "main.ox",
+        "sha256": "5bee09b7d42bc5d42c77c180d36059a6fbb3f22004ef1945386fb97a8faa56ed"
+      },
+      {
+        "bytes": 306,
+        "path": "state.ox",
+        "sha256": "8b98abc97443a52943a87f6b77b7ca75a2995a0cf26ca0b3fb815c85a4537da0"
+      }
+    ],
+    "source_root": "sources/control-owned-entry-id1"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      56,
+      57,
+      63,
+      64,
+      68,
+      69,
+      70,
+      71,
+      88,
+      89,
+      91,
+      92,
+      109,
+      110,
+      116,
+      117,
+      125,
+      126
+    ],
+    "id": "pilot-counter",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 237,
+        "path": "main.ox",
+        "sha256": "70b2dbd65aee46a95d4467f839e0d120e18070ebd1d36ff55039b264bdd89cd5"
+      },
+      {
+        "bytes": 249,
+        "path": "state.ox",
+        "sha256": "55fb395700dd61127be9f16fd58fb50ee9d4d1a6a2673c50e83cc90cd6ad76eb"
+      }
+    ],
+    "source_root": "sources/pilot-counter"
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-imported_main-scalar",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 68,
+        "path": "main.ox",
+        "sha256": "5f56ddc0ea36989f15b5926c05c30a2d9b1faed91ed9cb80cc877d987c4dbb74"
+      },
+      {
+        "bytes": 36,
+        "path": "state.ox",
+        "sha256": "b8d6eb2e302608c732d8cf10db66e69a61701c900d99f3b6fe15345cba865bd8"
+      }
+    ],
+    "source_root": "sources/negative-imported_main-scalar"
+  },
+  {
+    "entry": "main.ox",
+    "id": "negative-imported_main-owned",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 68,
+        "path": "main.ox",
+        "sha256": "5f56ddc0ea36989f15b5926c05c30a2d9b1faed91ed9cb80cc877d987c4dbb74"
+      },
+      {
+        "bytes": 71,
+        "path": "state.ox",
+        "sha256": "ea51c3710fb9b5990825bec8aba604619d0014c4f07e0644ad5909a44ee5c905"
+      }
+    ],
+    "source_root": "sources/negative-imported_main-owned"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      92,
+      93
+    ],
+    "id": "negative-native_recursion-scalar-true",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 77,
+        "path": "main.ox",
+        "sha256": "e9813b10ec141d05d98b42349cb33cd052dda357e6ea9e659eb2206da77325c6"
+      },
+      {
+        "bytes": 130,
+        "path": "state.ox",
+        "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+      },
+      {
+        "bytes": 130,
+        "path": "other.ox",
+        "sha256": "3799a5f0a0c8a2b85b0cabaad5b5603ef81177b6ee527eb0b468cb48e51d1e54"
+      }
+    ],
+    "source_root": "sources/negative-native_recursion-scalar-true"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      3,
+      4
+    ],
+    "id": "negative-native_recursion-scalar-false",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 57,
+        "path": "main.ox",
+        "sha256": "83210c39172b353667cc9a9d33751c815e8683b6520d7920475f8e11a26975b1"
+      },
+      {
+        "bytes": 130,
+        "path": "state.ox",
+        "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+      },
+      {
+        "bytes": 130,
+        "path": "other.ox",
+        "sha256": "3799a5f0a0c8a2b85b0cabaad5b5603ef81177b6ee527eb0b468cb48e51d1e54"
+      }
+    ],
+    "source_root": "sources/negative-native_recursion-scalar-false"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      24,
+      25,
+      99,
+      100,
+      106,
+      107,
+      120,
+      121
+    ],
+    "id": "negative-native_recursion-owned-true",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 77,
+        "path": "main.ox",
+        "sha256": "e9813b10ec141d05d98b42349cb33cd052dda357e6ea9e659eb2206da77325c6"
+      },
+      {
+        "bytes": 130,
+        "path": "state.ox",
+        "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+      },
+      {
+        "bytes": 151,
+        "path": "other.ox",
+        "sha256": "d5f02f2e31566ae93a0a3fbbfbe04727f4f237a5eeeedaf48a2e8bb3e28eaa6a"
+      }
+    ],
+    "source_root": "sources/negative-native_recursion-owned-true"
+  },
+  {
+    "entry": "main.ox",
+    "fuel_budgets": [
+      3,
+      4
+    ],
+    "id": "negative-native_recursion-owned-false",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 57,
+        "path": "main.ox",
+        "sha256": "83210c39172b353667cc9a9d33751c815e8683b6520d7920475f8e11a26975b1"
+      },
+      {
+        "bytes": 130,
+        "path": "state.ox",
+        "sha256": "2cbdec1049c420f120b84a562263a53e7483474a5374f7cb9c4a2e34b1c1937c"
+      },
+      {
+        "bytes": 151,
+        "path": "other.ox",
+        "sha256": "d5f02f2e31566ae93a0a3fbbfbe04727f4f237a5eeeedaf48a2e8bb3e28eaa6a"
+      }
+    ],
+    "source_root": "sources/negative-native_recursion-owned-false"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-ascii-lf-scalar_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 75,
+        "path": "main.ox",
+        "sha256": "48fa75478721f2dc1fc21bffb77b3b918385b2fcf2325c684444d66c4c206d41"
+      },
+      {
+        "bytes": 62,
+        "path": "state.ox",
+        "sha256": "211e627df1b999c7565fd9a4a68e444a1c1bd01a343fdf024510c0725dadda60"
+      }
+    ],
+    "source_root": "sources/origin-ascii-lf-scalar_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-ascii-lf-owned_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 115,
+        "path": "main.ox",
+        "sha256": "839fb274f801d0dbc3a0cda3fb684c90b47882c09e8b7ea2c7fce5fe1730f160"
+      },
+      {
+        "bytes": 170,
+        "path": "state.ox",
+        "sha256": "b8c75c7dab2e1a06dfc80d9f4be065a6cd182bcdb9f8e15caadb88a157921ff2"
+      }
+    ],
+    "source_root": "sources/origin-ascii-lf-owned_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-ascii-lf-missing_root",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 45,
+        "path": "main.ox",
+        "sha256": "17c826223f417acbc4c8f536cbeaa6de3702fc9ceb49cf377501694e52adaec8"
+      },
+      {
+        "bytes": 45,
+        "path": "state.ox",
+        "sha256": "259ae17ad5aae1136a9be179237bb331cc466ac9254c146904d29936a7dcbbdb"
+      }
+    ],
+    "source_root": "sources/origin-ascii-lf-missing_root"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-lf-scalar_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 76,
+        "path": "main.ox",
+        "sha256": "479bc48d62f6cefa73fd5c8633fea93ca4fa274f16a5267129fc0115c1a1651f"
+      },
+      {
+        "bytes": 63,
+        "path": "state.ox",
+        "sha256": "1e6b2ccc4e2ac7ffb4d47dca33b2eee78d61c70e32ee4101f22ec77a228ca106"
+      }
+    ],
+    "source_root": "sources/origin-unicode-lf-scalar_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-lf-owned_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 116,
+        "path": "main.ox",
+        "sha256": "ac7027ec6ca03be27db131eef4c3e71516e00ec40db9b29f2064f8bdc7643862"
+      },
+      {
+        "bytes": 171,
+        "path": "state.ox",
+        "sha256": "16201e351a0b9524b6f8a17650eeaadfafa41fa850572d90eaa962ec3bd03340"
+      }
+    ],
+    "source_root": "sources/origin-unicode-lf-owned_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-lf-missing_root",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 46,
+        "path": "main.ox",
+        "sha256": "fe7a5200e1301d9771237cb93c152d5af42fcec6e538f1a4fd62476ef975730e"
+      },
+      {
+        "bytes": 46,
+        "path": "state.ox",
+        "sha256": "f52bfbda965b0e0a652faa489acd3e14df140654eeccf170f7d3361529dd490c"
+      }
+    ],
+    "source_root": "sources/origin-unicode-lf-missing_root"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-ascii-crlf-scalar_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 78,
+        "path": "main.ox",
+        "sha256": "1ced75f0d948b9085942faab54e562e63f357586bcd8985045450c7566d5d2bc"
+      },
+      {
+        "bytes": 64,
+        "path": "state.ox",
+        "sha256": "6c79ceedd608dbf1fa4f374adc99cd2dbb3f17d44e958e44e720837286e7e3b9"
+      }
+    ],
+    "source_root": "sources/origin-ascii-crlf-scalar_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-ascii-crlf-owned_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 118,
+        "path": "main.ox",
+        "sha256": "28c1faac02b3d122c732bb4c3e4d98dcc9b9b7f62698481df14530b5d1aba626"
+      },
+      {
+        "bytes": 174,
+        "path": "state.ox",
+        "sha256": "b0cd1ecc842c46649ab79f700db6e4b86e44d907cc765b957acadb318e961e03"
+      }
+    ],
+    "source_root": "sources/origin-ascii-crlf-owned_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-ascii-crlf-missing_root",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 48,
+        "path": "main.ox",
+        "sha256": "7f43a71f17160d3f8d82ff861a26f6a781bcd489bc256fc22252f564eb317fb5"
+      },
+      {
+        "bytes": 47,
+        "path": "state.ox",
+        "sha256": "73571fd60d76ce3e3b5c475ef4d0d58141820466ace6caec07538ea0c4984b64"
+      }
+    ],
+    "source_root": "sources/origin-ascii-crlf-missing_root"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-crlf-scalar_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 79,
+        "path": "main.ox",
+        "sha256": "1b6154d0cb5b87af40aedd56d42b7088774d85a0a6d91d2c3440c2d94a3a6e31"
+      },
+      {
+        "bytes": 65,
+        "path": "state.ox",
+        "sha256": "abdeaabfb093530575ecc8910e9cabe9af37811abc0b8eedcf866ed14b0288f3"
+      }
+    ],
+    "source_root": "sources/origin-unicode-crlf-scalar_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-crlf-owned_overflow",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 119,
+        "path": "main.ox",
+        "sha256": "bdc8fdbba7e58fb9db9f2f840044e719734e7f57b065a0545f2dd0576ddee524"
+      },
+      {
+        "bytes": 175,
+        "path": "state.ox",
+        "sha256": "127004b0adfe7e0c984894bc5f76ab1160035355b8dc09189f9d0cf13125c833"
+      }
+    ],
+    "source_root": "sources/origin-unicode-crlf-owned_overflow"
+  },
+  {
+    "entry": "main.ox",
+    "id": "origin-unicode-crlf-missing_root",
+    "mode": "private-project-candidate",
+    "native": {
+      "admission_only": true,
+      "opt_level": 0
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 49,
+        "path": "main.ox",
+        "sha256": "903fb5eb1b82596a22447b0b55decbec37d41853a09e1923806da15e94a20bd6"
+      },
+      {
+        "bytes": 48,
+        "path": "state.ox",
+        "sha256": "c033004e62bdf7397873f630113358b73eef25466d2e51b1d43c722f5aa736dc"
+      }
+    ],
+    "source_root": "sources/origin-unicode-crlf-missing_root"
+  },
+  {
+    "entry": "main.ox",
+    "id": "diagnostic-collision-scalar",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 101,
+        "path": "main.ox",
+        "sha256": "3858c0878a806494f735b0710755e85d975bbdff1379a212cd3365f6fa441775"
+      },
+      {
+        "bytes": 68,
+        "path": "state.ox",
+        "sha256": "35a4bc9334a5d6a3a60ff706048dd606edf1a6314879bfa415d111dee44736ac"
+      }
+    ],
+    "source_root": "sources/diagnostic-collision-scalar"
+  },
+  {
+    "entry": "main.ox",
+    "id": "diagnostic-collision-owned",
+    "mode": "private-project-candidate",
+    "native": {
+      "opt_level": 0,
+      "source_free": true
+    },
+    "operations": [
+      "check",
+      "run"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "source_files": [
+      {
+        "bytes": 122,
+        "path": "main.ox",
+        "sha256": "f9a333ce4ca8127fc3254f388053c65a610fe74d934b46d7a377864ed9154ebc"
+      },
+      {
+        "bytes": 89,
+        "path": "state.ox",
+        "sha256": "f0d044b095b564f5e0b409e3d03f70f4fee949142d79784ff2146e589d195826"
+      }
+    ],
+    "source_root": "sources/diagnostic-collision-owned"
+  }
+]

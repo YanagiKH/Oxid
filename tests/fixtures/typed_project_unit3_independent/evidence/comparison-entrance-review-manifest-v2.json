@@ -1,0 +1,73 @@
+{
+  "compiler_invocations": 0,
+  "delta": "One pre-read regular-file/no-alias check plus two refusal controls; original v1 retained. All3 admission controls and34 refusals pass.",
+  "files": [
+    {
+      "bytes": 17338,
+      "path": "portable_compare.py",
+      "sha256": "7ee84a91adb97a94677b61ccb3936c548e6f2f6d986b4146366cb4cfe64c372d"
+    },
+    {
+      "bytes": 12896,
+      "path": "protocol.py",
+      "sha256": "3054e47f181035cf91fac81aad421712af920f91f02eb745e426051a4a8e3f44"
+    },
+    {
+      "bytes": 18207,
+      "path": "bindings.py",
+      "sha256": "82bf7457b0c666b0e4a142455e73292ad9432cbdf56bfdc008d0b7ff163f5825"
+    },
+    {
+      "bytes": 16795,
+      "path": "native_plan.py",
+      "sha256": "fc3328c397a728b5e4ef4529fb87744309ccec8f8e54285e06a3a1159f49beba"
+    },
+    {
+      "bytes": 102162,
+      "path": "component-manifest.json",
+      "sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2"
+    },
+    {
+      "bytes": 3904,
+      "path": "PLAN_SCHEMA.md",
+      "sha256": "58f44165cc0df5d1e7224df3e644cff06270d37413b4a54d36b90390ab3c59ae"
+    },
+    {
+      "bytes": 4297,
+      "path": "README.md",
+      "sha256": "877500429f325f9e183cf0cc2171d1ac097423b2627bc81b84e73ab5fcf2856b"
+    },
+    {
+      "bytes": 1442,
+      "path": "runtime-manifest-v2.json",
+      "sha256": "2c3cbff718819d8511679b501b8253d89c54ace6f0f39a986606e3a04a859c12"
+    },
+    {
+      "bytes": 8069,
+      "path": "test_wrapper_controls.py",
+      "sha256": "251429c359e757731e0b0cbfec5559e0c2127baa6a245179cdf414666f3f9e39"
+    },
+    {
+      "bytes": 9371,
+      "path": "native-plan-selfcheck.json",
+      "sha256": "96904002019f2dee9ee365b6c899dc37571e74c6f7037a166eea6983265cb7f7"
+    },
+    {
+      "bytes": 835,
+      "path": "admission-delta-v2.json",
+      "sha256": "63d91db15fdd9c3bfe8e5b90a36c97cf4a6ffe5c3a7b53b42cee6fc404374f54"
+    },
+    {
+      "bytes": 6940,
+      "path": "development-v1/controls-v2/results.json",
+      "sha256": "40ba1c3400847e408f1acdc5b0f468b2e00b6fbf0ce82c09ad8a5d2153680d62"
+    },
+    {
+      "bytes": 3177,
+      "path": "entrance-review-manifest-v1.json",
+      "sha256": "7fc143334560dda993c7aa4ef269d7c1ae2753b4bf1778ca568024e84ff06e45"
+    }
+  ],
+  "schema": "unit3-independent-portable-entrance-review-v2",
+  "semantic_changes": 0
+}

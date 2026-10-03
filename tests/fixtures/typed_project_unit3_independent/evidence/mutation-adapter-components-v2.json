@@ -1,0 +1,174 @@
+{
+  "schema": 2,
+  "status": "220 internal semantic matches and eight separate driver attributions; independent final artifact audit pending",
+  "core_inputs_sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
+  "components": [
+    {
+      "name": "mutation-v2-with-restricted-effective-controller",
+      "source_directory": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations",
+      "files": [
+        {
+          "path": "run.py",
+          "bytes": 12294,
+          "sha256": "e0553a398c61eebe06e3b7f9a763d0313c2f41528b677b153cd979d7d3345510"
+        },
+        {
+          "path": "prepare.py",
+          "bytes": 8535,
+          "sha256": "86735aac46ba92a44dd9700ded41479ffb5043664a3146bd36128fa7428b7f45"
+        },
+        {
+          "path": "build.py",
+          "bytes": 731,
+          "sha256": "e65f373e188783afe6cedc7f9b44c0b97efafa2327315bb1ef1239e3dc6a4b8e"
+        },
+        {
+          "path": "overlay/common.rs",
+          "bytes": 7170,
+          "sha256": "7ea43908608f6b70c895930b769eae1b8f30cd14cea4b5d011d72627a4b4b3b8"
+        },
+        {
+          "path": "overlay/scalar.rs",
+          "bytes": 12243,
+          "sha256": "ad486bdf07b71ddef7edcd77c60d94c06f892c4ee62f85f3dc768d5a9e901beb"
+        },
+        {
+          "path": "overlay/owned.rs",
+          "bytes": 24684,
+          "sha256": "1aed25ae67154447b1a9bd46717f5246240f1069823dbaec580fa000b015f12d"
+        },
+        {
+          "path": "mutation-overlay-v2.patch",
+          "bytes": 54843,
+          "sha256": "c3a9ddc7d95fce4ea25b07ac9de2fdbdcefb43e052dcaeb1042bcf59e87536f9"
+        },
+        {
+          "path": "mutation-manifest-v2.json",
+          "bytes": 37984,
+          "sha256": "d6bc5a6bc88a51be9d109faaebe9eb5471e3977ea56cfb04cc8397eff219c874"
+        },
+        {
+          "path": "seam-plan-v1.md",
+          "bytes": 10505,
+          "sha256": "7b7d27b188e44ec93dbd96bfdce3bc37e49f19cb770e242be03a3a6af69d664a"
+        },
+        {
+          "path": "smoke-roster-v1.json",
+          "bytes": 367,
+          "sha256": "9106a9fb741c731f5499a0ae3051c9676c93c635cebaf32b64675a5933d0be4b"
+        },
+        {
+          "path": "run-effective.py",
+          "bytes": 12942,
+          "sha256": "77e49d23432d8b1f9f0d99f84c3b39115c569fd159b376a1c4d8fd5e7a2cc1a2"
+        },
+        {
+          "path": "effective-controller-delta.patch",
+          "bytes": 4253,
+          "sha256": "0375869c4138a03af8f25986aeb9131db0fd88d7c254b50d4ec333c1a986415d"
+        },
+        {
+          "path": "collect_full.py",
+          "bytes": 8677,
+          "sha256": "312bec08631846cf43c349a64d7b3ba0160527fcb22c8cbe8fe180a92eaab621"
+        },
+        {
+          "path": "check_passivity_v2.py",
+          "bytes": 3963,
+          "sha256": "45c3fdd40ca07eb716505cda208b273ded6bf14c1a8da5d10d32342eda63d5d9"
+        }
+      ]
+    },
+    {
+      "name": "restricted-parser-identity-v3",
+      "source_directory": "/workspace/scratch/8266abf56995/typed-project-unit3-mutation-parser-supplement",
+      "files": [
+        {
+          "path": "run.py",
+          "bytes": 12434,
+          "sha256": "33bec550d9ccc15a054937d54ae448c0fb7200b7e9f727d9dda17ac3cc93159d"
+        },
+        {
+          "path": "build.py",
+          "bytes": 731,
+          "sha256": "e65f373e188783afe6cedc7f9b44c0b97efafa2327315bb1ef1239e3dc6a4b8e"
+        },
+        {
+          "path": "mutation-overlay-v3.patch",
+          "bytes": 55211,
+          "sha256": "3c50051b6ee73c11643158fddcdb113bea7efb2e16fa0234cf02047dd3e1fa60"
+        },
+        {
+          "path": "mutation-manifest-v3.json",
+          "bytes": 38239,
+          "sha256": "6c77a0105d587dccb939f7251c09f99378b63ddeca90ed7dbbdb72e32fabcf83"
+        },
+        {
+          "path": "parser-identity-delta.patch",
+          "bytes": 988,
+          "sha256": "6cdc149270e5471e4754ff6fc8300fcfa015092fbf64b16f82b01a752bb2cffd"
+        },
+        {
+          "path": "controller-delta.patch",
+          "bytes": 5862,
+          "sha256": "ef852a50b9e9b2ac276598205ec8d81bd4b3c9c9c3eb044c710787ddcdc41955"
+        },
+        {
+          "path": "source-delta-inventory.json",
+          "bytes": 710,
+          "sha256": "81df4738f98de1f259e1c2166e2892ed1b43e31b36f1be4d73201b87b7d5be74"
+        }
+      ]
+    }
+  ],
+  "dispatch": {
+    "default": {
+      "controller": "mutation-v2-with-restricted-effective-controller/run.py",
+      "source_revision": "v2",
+      "case_profile_results": 216
+    },
+    "raw-wrong_scalar_result": {
+      "controller": "mutation-v2-with-restricted-effective-controller/run-effective.py",
+      "source_revision": "v2",
+      "case_profile_results": 2
+    },
+    "source-association-stale_parser_generation": {
+      "controller": "restricted-parser-identity-v3/run.py",
+      "source_revision": "v3",
+      "case_profile_results": 2
+    }
+  },
+  "qualification": {
+    "collection": {
+      "path": "typed-project-unit3-mutations/full-mutations-v1/receipt.json",
+      "bytes": 382791,
+      "sha256": "02b8eb6948c5201217bed6e370ff60286147d52b211eba2215bb10a2606fd4ad"
+    },
+    "semantic_comparison": {
+      "path": "typed-project-unit3-oracles/mutation-comparison-v1/full220-v3-qualification.json",
+      "bytes": 1360701,
+      "sha256": "86691bf1857e674b73e1a761761875b3cff51c884900738f45f880c65bf705ff"
+    },
+    "comparator_manifest": {
+      "path": "typed-project-unit3-oracles/mutation-comparison-v1/mutation-comparator-manifest-v3.json",
+      "bytes": 7060,
+      "sha256": "f34a680ebedc8a380d137ffd93eeb6c16fd737299ae4785bb8e473a776537d6e"
+    },
+    "driver_attribution": {
+      "path": "typed-project-unit3-native-driver-review/driver-mutation-attribution.json",
+      "bytes": 7687,
+      "sha256": "0ad7881aa128f65cc9fe8e0a16d39e4b590f1623983ac900ae6d0876780cf487"
+    },
+    "baseline_passivity": {
+      "path": "typed-project-unit3-mutations/passivity-joins-v2-complete.json",
+      "bytes": 443548,
+      "sha256": "45ef279b01383b5a2964d3acf2ae2d1f43fee8ccacef1ebd3a2fbc75266b8ac7"
+    }
+  },
+  "source_inputs": {
+    "original_request_sha256": "228f51304751f2a08d962d95aecbe066fdfa813fdf10b46b144f9cf7ee51846b",
+    "effective_request_sha256": "628d08d0500d9b98acac658ad3c75ac311272cd493913b55c2e2598a48240bd8",
+    "shared_source_transport": "owned by the portable observer package; do not duplicate or regenerate source fixtures"
+  },
+  "historical_inputs_or_receipts_retargeted": false
+}

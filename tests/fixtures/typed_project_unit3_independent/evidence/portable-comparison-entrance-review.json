@@ -1,0 +1,60 @@
+{
+  "status": "cleared for exact six mutation observations and final package integration",
+  "entrance_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/portable-v1/entrance-review-manifest-v1.json",
+    "bytes": 3177,
+    "sha256": "7fc143334560dda993c7aa4ef269d7c1ae2753b4bf1778ca568024e84ff06e45"
+  },
+  "runtime_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/portable-v1/runtime-manifest-v1.json",
+    "bytes": 1339,
+    "sha256": "93f5403db50358442646da9865e2b51c2de255bf8ec41ac92a805e242c4fdff3"
+  },
+  "component_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/portable-v1/component-manifest.json",
+    "bytes": 102162,
+    "sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2"
+  },
+  "retained_semantic_comparisons": {
+    "source": 4,
+    "native": 6
+  },
+  "admission_controls": {
+    "positive": 3,
+    "negative": 32
+  },
+  "mutation_plan": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke-plan.json",
+    "bytes": 7908,
+    "sha256": "8f231c0b64d121edf6b876c7c282873feed25b3ebe55acfabe37c671ce9aa174"
+  },
+  "evidence": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/portable-comparison-independent-v1/prepared/prepared-comparison.json",
+      "bytes": 1550,
+      "sha256": "f2d123a84281f2274b04b06236301bc99d9ddfa77c4a398cf1493c962a7122f8"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/portable-comparison-independent-v1/controls/results.json",
+      "bytes": 6726,
+      "sha256": "113c85b8bebfc349fa78bf60aa756cdabfb42647b499133f1f2ed5a98d141bc0"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/portable-comparison-independent-v1/source/comparison.json",
+      "bytes": 23540,
+      "sha256": "f2833dbb23085726cc32d715ee05e1c5026dfc0bc8a83776b9067082729cae2f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/portable-comparison-independent-v1/native/comparison.json",
+      "bytes": 14329,
+      "sha256": "f6ca510c3f183f9ff87bb49cd05cb8c0a45f1da176928de06fc9194e780c234d"
+    }
+  ],
+  "allowed_translations": [
+    "one checked comparator-only sources alias to physical445 materialization",
+    "byte-identical native receipt/stream view with prescribed fixture prefix",
+    "exact proven original/derived mutation manifest digests only"
+  ],
+  "semantic_helpers_modified": false,
+  "review_compiler_invocations": 0
+}

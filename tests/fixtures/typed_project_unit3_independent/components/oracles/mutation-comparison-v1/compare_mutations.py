@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Independent authority and exact-application comparison of frozen mutants.
+
+No compiler invocation. Original observer journals are read without alteration.
+The checked original-file control has an explicitly declared file-ID relocation;
+only its independently frozen expected span IDs are translated for comparison.
+"""
+import sys
+if sys.flags.optimize: raise RuntimeError('Python assertions required')
+from pathlib import Path
+import argparse,copy,gzip,hashlib,importlib.util,json,traceback
+HERE=Path(__file__).resolve().parent;PACKAGE=HERE.parent;ROOT=PACKAGE.parent
+sys.path.insert(0,str(PACKAGE/'comparison-v1'))
+from expected_projection import load,Case,verify_manifest
+from compare import strict_json,read_actual,compare_case,diagnostic
+from compare_static import eq,association,correspondence
+from actual_trace import normalize
+from loan_groups import project as loan_groups
+import raw_span_oracle
+from application import validate
+from metadata_correspondence import check as metadata_correspondence
+
+PINS={
+ 'mutation_controller':'e0553a398c61eebe06e3b7f9a763d0313c2f41528b677b153cd979d7d3345510',
+ 'observer_controller':'ff51288e0bf90733eafe4690c02feacac06e61ab0608642423fd700e7fca42fc',
+ 'debug_parser':'638fb39b814f637bf21902738edb35bbe775956d2c00a0e307957668e38c4264',
+ 'compiler_overlay':'d6bc5a6bc88a51be9d109faaebe9eb5471e3977ea56cfb04cc8397eff219c874',
+ 'mutation_requests':'228f51304751f2a08d962d95aecbe066fdfa813fdf10b46b144f9cf7ee51846b',
+ 'source_requests':'f405bf46d8945027cd1d79d3c125692b4c00b8fe57b97c0d55c68b83b9795113',
+}
+APPLICABILITY=PACKAGE/'supplements/mutation-applicability-v1'
+APPLICABILITY_SHA='a01be26791455c85790abcee37f05373da9a0fe7f77aaae3fbb635378cebb987'
+EFFECTIVE_REQUESTS_SHA='628d08d0500d9b98acac658ad3c75ac311272cd493913b55c2e2598a48240bd8'
+EFFECTIVE_CONTROLLER_SHA='77e49d23432d8b1f9f0d99f84c3b39115c569fd159b376a1c4d8fd5e7a2cc1a2'
+PARSER_CONTROLLER_SHA='33bec550d9ccc15a054937d54ae448c0fb7200b7e9f727d9dda17ac3cc93159d'
+PARSER_OVERLAY_SHA='6c77a0105d587dccb939f7251c09f99378b63ddeca90ed7dbbdb72e32fabcf83'
+def sha(b):return hashlib.sha256(b).hexdigest()
+def verified(row):
+    data=Path(row['path']).read_bytes();eq(row['bytes'],len(data),'artifact bytes');eq(row['sha256'],sha(data),'artifact hash');return data
+def parser():
+    p=ROOT/'typed-project-unit3-observer/parse_debug.py';eq(PINS['debug_parser'],sha(p.read_bytes()),'mechanical parser pin')
+    spec=importlib.util.spec_from_file_location('unit3_frozen_parser',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+def read_artifacts(envelope):
+    p=parser();out={}
+    for name,row in envelope['mutation_artifacts'].items():
+        data=verified(row['identity']);value=p.parse(data.decode())
+        eq(row['value'],p.canonical(value),'envelope parsed artifact equals exact recorded bytes')
+        out[name]=p.canonical(value,raw=name in ('mutation-before-raw.debug','mutation-after-raw.debug','generic-probe-input-original.debug','generic-probe-input-clone.debug'))
+    return out
+def source_identity(case,actual,source_root):
+    files=actual['loaded']['sources']['files'];eq(list(range(len(case.case['source_manifest']))),[f['id'] for f in files],'loaded dense file identity')
+    for want,got in zip(case.case['source_manifest'],files):
+        data=got['text'].encode();eq(want['sha256'],sha(data),'actual loader original bytes');eq(want['bytes'],len(data),'actual loader original size')
+        eq(str(source_root/want['path']),got['path'],'actual loader display association')
+    if 'route' in actual:eq(case.case['route'],actual['route'],'route')
+def denied(actual,code,stage=None):
+    assert 'raw' not in actual,'denied mutation produced verified wrapper'
+    eq({},actual['reference'],'denied mutation has no reference execution');eq([],actual['native'],'denied mutation has no native execution')
+    eq(1,len(actual.get('diagnostics',[])),'one mutation diagnostic');d=actual['diagnostics'][0]
+    eq(code,d['code'],'denial code')
+    if stage is not None:eq(stage,d['stage'],'denial authority stage')
+    return diagnostic(d,actual['loaded']['sources']['files'])
+def require_failure(fn,label):
+    try:fn()
+    except AssertionError as e:return dict(check=label,rejection=repr(e))
+    raise AssertionError(label+' did not reject')
+def baseline_failure(receipt):
+    row=next(r for r in receipt['artifacts'] if Path(r['path']).name=='raw-verifier-failure.debug')
+    return parser().canonical(parser().parse(verified(row).decode()))
+def generic_probe(artifacts,baseline_receipt):
+    original=artifacts['generic-probe-input-original.debug'];clone=artifacts['generic-probe-input-clone.debug']
+    eq(original,clone,'generic verifier receives identical cloned raw graph')
+    eq(artifacts['mutation-after-raw.debug'],original,'generic probe input is actual mutated graph')
+    probe=artifacts['generic-probe-result.debug'];baseline=baseline_failure(baseline_receipt)
+    eq(baseline['kind'],probe['kind'],'diagnostic-origin mutation preserves generic raw denial kind')
+    return dict(kind=probe['kind'],clone_identical=True)
+def shifted_case(case):
+    def shift(x,key=None):
+        if isinstance(x,dict):
+            return {k:({name:[1,*span[1:]] for name,span in v.items()} if k=='origins' else 1 if k=='file' and v==0 else shift(v,k)) for k,v in x.items()}
+        if isinstance(x,list):
+            if key and key.endswith('span') and len(x)==3 and all(type(v)is int for v in x):
+                eq(0,x[0],'frozen original span source');return [1,*x[1:]]
+            return [shift(v) for v in x]
+        return x
+    return Case(shift(case.case),shift(case.declaration_supplement))
+def original_file_positive(case,actual,artifacts,want):
+    active=artifacts['active-constructor-map.debug']['files'];eq([0,1],[f['id'] for f in active],'actual padded constructor map')
+    original=actual['loaded']['sources']['files'][0];eq(original['text'],active[1]['text'],'original source bytes held at file 1');eq(original['path'],active[1]['path'],'original source path at file 1')
+    eq(want['entry'],actual['entry'],'original root entry');eq(True,actual['checked_immutable'],'source wrapper immutable')
+    eq([],actual.get('diagnostics',[]),'positive constructor diagnostics');c=shifted_case(case)
+    raw=actual['raw'];inv=raw_span_oracle.inventory(raw,actual['route']);eq({1},{s['span'][0] for s in inv['spans']},'all original raw origins belong to file 1')
+    counts={k:dict(D=actual['audit']['usage'][v]['declarations'],Sspan=actual['audit']['usage'][v]['spans'],Vbind=sum(actual['audit']['usage'][v][i] for i in ('declarations','spans'))) for k,v in [('count','count'),('validate','validation')]}
+    eq(1,actual['audit']['usage']['dimensions'],'scalar source audit dimension')
+    spans={s['path']:s['span'] for s in inv['spans']}
+    for phase in ('count','validate'):
+        visits=actual['audit'][phase+'_visits']
+        for row in visits:
+            eq(phase,row['pass'],'audit phase');eq(True,row['succeeded'],'audit success');eq(spans[row['path']] if row['kind']=='span' else None,row['span'],'actual stored origin visitation')
+        raw_span_oracle.check(raw,'scalar',{f['id']:f['text'].encode() for f in active},c.declaration_supplement['declarations'],visits,counts)
+    correspondence(c,raw)
+    eq({'reference-default'}|{'reference-fuel-'+str(b['budget']) for b in c.case['budget_cases']},set(actual['reference']),'positive complete reference inventory')
+    for name,row in actual['reference'].items():
+        budget=None if name=='reference-default' else int(name[len('reference-fuel-'):]);expected=c.expected_reference(budget)
+        if expected.get('failure'):
+            from compare import expected_diagnostic
+            eq(expected_diagnostic(expected['failure']),diagnostic(row['outcome'],active),'relocated reference denial')
+        else:eq({'result':{'type':expected['result_type'],'value':expected['result']}},row['outcome'],'original control result')
+        n=normalize(raw,'scalar',row['trace'],budget)
+        eq(c.expected_charges(budget),n['charges'],'relocated source model complete paid prefix');eq(c.expected_writes(budget),n['writes'],'relocated source model writes')
+        if not expected.get('failure'):
+            eq([],n['active_call_stack'],'original-file success returns every activation');eq([],n['live_loan_handles'],'original-file success leaves no active loans')
+            eq(False,n['ended_with_uncommitted_operation'],'original-file success commits final operation')
+    return dict(status='ACCEPT',entry=actual['entry'],origin_file=1,reference_runs=len(actual['reference']))
+
+def compare_envelope(path,cases,expectations):
+    e=strict_json(path.read_bytes());spec=expectations[e['mutation_id']];case=cases[spec['positive_control']]
+    eq('observed',e['status'],'complete envelope');eq({k:v for k,v in spec.items() if k!='expected'},e['request'],'exact frozen mutation request')
+    pins=dict(PINS)
+    if e['mutation_id']=='raw-wrong_scalar_result':
+        pins.update(mutation_controller=EFFECTIVE_CONTROLLER_SHA,mutation_requests=EFFECTIVE_REQUESTS_SHA)
+        original=next(r for r in strict_json((PACKAGE/'mutation-requests.json').read_bytes())['mutations'] if r['id']==e['mutation_id'])
+        eq(original,e['original_request'],'retained original inapplicable request')
+        eq(PINS['mutation_requests'],sha(verified(e['original_mutation_requests'])),'retained original mutation request package')
+    elif e['mutation_id']=='source-association-stale_parser_generation':
+        pins.update(mutation_controller=PARSER_CONTROLLER_SHA,compiler_overlay=PARSER_OVERLAY_SHA)
+    for key,pin in pins.items():
+        got=sha(verified(e[key]))
+        eq(pin,got,'exact case-restricted pinned '+key)
+    for row in e['pinned_inputs']:verified(row)
+    verified(e['binary']);build=strict_json(verified(e['build_receipt']))
+    eq('built',build['status'],'successful approved build');eq(0,build['exit_code'],'successful build exit');eq(e['profile'],build['profile'],'build profile')
+    eq(e['binary'],build['binary'],'envelope binary is approved build binary');eq(e['compiler_overlay'],build['overlay_manifest'],'build is exact approved overlay')
+    frozen_requests=[strict_json(line) for line in verified(e['source_requests']).splitlines()]
+    source_request=next(r for r in frozen_requests if r['id']==case.id)
+    for command in e['commands']:
+        eq(0,command['exit_status'],'mutation child process completed');verified(command['stdout']);verified(command['stderr'])
+    children={}
+    for role in ('baseline','mutant'):
+        receipt=strict_json(verified(e[role+'_receipt']));eq(case.id,receipt['case'],'exact positive control');eq(e['profile'],receipt['profile'],'same profile')
+        eq(e['build_receipt'],receipt['build_receipt'],'child uses exact envelope build');eq(e['observer_controller'],receipt['observer_controller'],'child uses approved observer')
+        eq(e['debug_parser'],receipt['normalizer'],'child uses approved mechanical parser');eq(e['source_requests'],receipt['request_file'],'child uses exact source request file')
+        eq(source_request,receipt['source_request'],'complete frozen source request including operations and fuel')
+        eq(sha(json.dumps(source_request,sort_keys=True,separators=(',',':')).encode()),receipt['source_request_sha256'],'full child request digest')
+        eq([e['binary']['path'],'frontend::unit3_observer::observe_request','--exact','--ignored','--nocapture','--test-threads=1'],receipt['argv'],'child invokes exact approved observer binary entry')
+        eq(case.case['source_manifest'],receipt['source_request']['source_files'],'frozen source request');actual=read_actual(Path(e[role+'_receipt']['path']),receipt)
+        eq(strict_json(verified(e[role+'_observations'])),actual,'envelope actual identity')
+        root=(Path(receipt['request_file']['path']).parent/receipt['source_request']['source_root']).resolve();source_identity(case,actual,root)
+        children[role]=(receipt,actual,root)
+    br,b,root=children['baseline'];mr,m,mroot=children['mutant'];baseline=compare_case(case,b,root);artifacts=read_artifacts(e)
+    application=validate(spec['mutation'],b,m,artifacts,e['mutation_applied']);eq('applied',application['status'],'exact prescribed mutation applied')
+    want=spec['expected'];authority=want['authority'];result=dict(authority=authority,application=application,baseline=baseline)
+    if want.get('generic_raw_denial_kind'):
+        result['baseline_exact_metadata']=metadata_correspondence(case,b['raw_before_audit'])
+    if authority=='source-association-acceptance':result['outcome']=original_file_positive(case,m,artifacts,want)
+    elif authority in ('source-association-rejection','association-audit-rejection'):
+        d=denied(m,want['code'],want['stage']);assert 'raw-verifier-start.debug' not in artifacts,'association rejection must precede generic verifier'
+        # No unchecked origin may be used to render an association failure.
+        if authority=='source-association-rejection':
+            eq(None,d['span'],'unassociated source map has no primary');eq([],d['related'],'unassociated source map has no related origins')
+        else:
+            trusted={tuple(x['span']) for x in case.declaration_supplement['declarations']}
+            assert d['span'] is None or tuple(d['span']) in trusted,'association primary must be independently known safe declaration or null'
+            assert all(tuple(s) in trusted for s in d['related']),'association related origins must be independently known safe declarations'
+        result['outcome']=d
+    elif authority=='raw-verifier-rejection':
+        eq(case.case['route'],artifacts['raw-verifier-start.debug'],'actual generic verifier entered');failure=artifacts['raw-verifier-failure.debug']
+        d=denied(m,'E0500','oir-verify' if case.case['route']=='scalar' else 'oir-owned-verify');association(case,m);result['outcome']=dict(diagnostic=d,raw_failure=failure)
+    elif authority=='semantic-correspondence-rejection':
+        association(case,m)
+        if want.get('generic_raw_denial_kind'):
+            d=denied(m,want['source_denial_code']);eq('ownership',d['stage'],'source denial authority remains ownership')
+            result['outcome']=require_failure(lambda:metadata_correspondence(case,m['raw_before_audit']),'exact stored diagnostic-origin source correspondence')
+            result['rendered_diagnostics_equal_to_baseline']=m['diagnostics']==b['diagnostics']
+        else:
+            assert 'raw' in m and 'raw-verifier-failure.debug' not in artifacts,'raw-safe correspondence mutant must retain verified witness'
+            eq(case.case['route'],artifacts['raw-verifier-start.debug'],'generic raw verification reached');eq([],m.get('diagnostics',[]),'raw-safe source acceptance')
+            eq({'reference-default'}|{'reference-fuel-'+str(b['budget']) for b in case.case.get('budget_cases',[])},set(m['reference']),'complete requested mutant reference inventory')
+            transport=[]
+            for name,row in m['reference'].items():
+                budget=None if name=='reference-default' else int(name[len('reference-fuel-'):])
+                n=normalize(m['raw'],m['route'],row['trace'],budget)
+                if 'result' in row['outcome']:
+                    eq([],n['active_call_stack'],'mutant successful execution returned all activations');eq([],n['live_loan_handles'],'mutant success releases loans')
+                    eq(False,n['ended_with_uncommitted_operation'],'mutant success commits final operation')
+                transport.append(dict(name=name,charges=len(n['charges']),writes=len(n['writes']),loans=len(n['loans'])))
+            result['actual_transport']=transport
+            if 'result_after_mutation' in want:
+                eq({'result':{'type':'i32','value':want['result_after_mutation']}},m['reference']['reference-default']['outcome'],'frozen wrong-target result')
+                result['outcome']=require_failure(lambda:correspondence(case,m['raw']),'numeric call target source correspondence')
+            else:result['outcome']=require_failure(lambda:compare_case(case,m,mroot),'mandatory lexical cleanup source correspondence')
+    else:raise AssertionError(('unexpected internal mutation authority',authority))
+    if want.get('generic_raw_denial_kind'):result['generic_probe']=generic_probe(artifacts,br)
+    return result
+
+def driver_attributions():
+    base=ROOT/'typed-project-unit3-native-driver-review';path=base/'driver-mutation-attribution.json'
+    eq('0ad7881aa128f65cc9fe8e0a16d39e4b590f1623983ac900ae6d0876780cf487',sha(path.read_bytes()),'reviewed driver attribution')
+    a=strict_json(path.read_bytes());eq(0,a['additional_candidate_executions'],'driver attribution adds no executions');eq(0,a['raw_ir_mutations'],'driver boundaries are separate from raw mutations')
+    original={r['id']:r for r in strict_json((PACKAGE/'mutation-requests.json').read_bytes())['mutations'] if r['mutation']['kind']=='driver-boundary'}
+    semantic=PACKAGE/'comparison-v1/native-full-comparison-v2-assertions.json'
+    eq('b1ee7732601bb29d4a7c603e6a3ff40c8b2ce109e2f0bd14f568fd6f9a217312',sha(semantic.read_bytes()),'independent native exact-stream report')
+    native=strict_json(semantic.read_bytes());compared={str((ROOT/r['receipt']).resolve()):r for r in native['results']}
+    seen=set()
+    for row in a['results']:
+        key=(row['id'],row['profile']);assert key not in seen;seen.add(key);eq(original[key[0]],row['original_request'],'unchanged driver mutation request')
+        for receipt in row['attributed_receipts']:
+            p=base/receipt['path'];eq(receipt['sha256'],sha(p.read_bytes()),'attributed actual receipt identity')
+            checked=compared[str(p.resolve())];eq(receipt['sha256'],checked['receipt_sha256'],'attributed receipt independently semantically compared')
+            eq('EXACT_MATCH',checked['driver_streams'],'driver exact streams')
+    eq({(id,p) for id in original for p in ('debug','release')},seen,'four separate driver boundaries by two profiles')
+    return dict(requests=4,profile_results=8,additional_executions=0,attribution=dict(path=str(path),sha256=sha(path.read_bytes())),semantic_comparison=dict(path=str(semantic),sha256=sha(semantic.read_bytes())))
+
+def main():
+    p=argparse.ArgumentParser();p.add_argument('receipts',type=Path,nargs='+');p.add_argument('--output',required=True,type=Path);p.add_argument('--allow-subset',action='store_true');args=p.parse_args()
+    verify_manifest(PACKAGE/'comparison-v1/comparator-manifest-v5.json','22666fa44ee61e8ee70dd6f4605e87000f3872f2f2728c20c0843ff35755d32d')
+    verify_manifest(APPLICABILITY/'supplement-manifest.json',APPLICABILITY_SHA)
+    cases=load();expectations={s['id']:s for s in strict_json((APPLICABILITY/'expectations.json').read_bytes())['mutations'] if s['expected']['authority']!='driver-consumer-boundary'}
+    results=[];seen=set()
+    for path in sorted(path for root in args.receipts for path in root.glob('*/*/receipt.json')):
+        e=strict_json(path.read_bytes());key=(e['mutation_id'],e['profile']);assert key not in seen;seen.add(key)
+        row=dict(id=key[0],profile=key[1],receipt=str(path),receipt_sha256=sha(path.read_bytes()))
+        try:row.update(status='MATCH',result=compare_envelope(path,cases,expectations))
+        except Exception as err:row.update(status='MISMATCH',error=repr(err),traceback=traceback.format_exc())
+        results.append(row)
+    assert results
+    if not args.allow_subset:eq({(s,p) for s in expectations for p in ('debug','release')},seen,'complete 110 internal mutations by two profiles')
+    report=dict(schema='unit3-independent-mutation-comparison-v1',count=len(results),matched=sum(r['status']=='MATCH' for r in results),mismatches=sum(r['status']=='MISMATCH' for r in results),assertion_mode={'optimize':sys.flags.optimize,'__debug__':__debug__},results=results)
+    if not args.allow_subset:report['separate_driver_attribution']=driver_attributions()
+    args.output.write_text(json.dumps(report,indent=2)+'\n');print({k:v for k,v in report.items() if k!='results'});return bool(report['mismatches'])
+if __name__=='__main__':raise SystemExit(main())

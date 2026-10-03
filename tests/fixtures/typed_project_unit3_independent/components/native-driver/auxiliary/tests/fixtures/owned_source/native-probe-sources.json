@@ -1,0 +1,3234 @@
+{
+  "cases": [
+    {
+      "budget_count": 68,
+      "expectation_sha256": "f433de40a39dc4ff7077ec761b1857b8220432517af50f3aaa9fae206cfa4477",
+      "fuel": 67,
+      "id": "guarded-overflow-after-write",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0000",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0001",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0002",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "read",
+            "parameters": [
+              [
+                "p",
+                "&S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "p",
+                      "name": "value",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "p",
+                              "name": "value"
+                            },
+                            "key": "n0003",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0004",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0005",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0006",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0007",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0008",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0009",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "mutate",
+            "parameters": [
+              [
+                "p",
+                "&mut S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0010",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0011",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0012",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "take",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "p"
+                        },
+                        "key": "n0013",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0014",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0015",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "relay",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "S"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": true,
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "fields": [
+                            [
+                              "value",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0016",
+                                "tag": "int"
+                              }
+                            ]
+                          ],
+                          "record": "S"
+                        },
+                        "key": "n0017",
+                        "tag": "literal"
+                      }
+                    },
+                    "key": "n0018",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "forwarded": false,
+                                "mutable": true,
+                                "name": "x",
+                                "trivia": " "
+                              },
+                              "key": "n0019",
+                              "tag": "borrow"
+                            }
+                          ],
+                          "function": "mutate"
+                        },
+                        "key": "n0020",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0021",
+                    "tag": "discard"
+                  },
+                  {
+                    "data": {
+                      "base": "x",
+                      "name": "value",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "value": 2147483647
+                            },
+                            "key": "n0022",
+                            "tag": "int"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0023",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0024",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0025",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "value": 0
+                        },
+                        "key": "n0026",
+                        "tag": "int"
+                      }
+                    },
+                    "key": "n0027",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0028",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {},
+                              "key": "n80001",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n80002",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "value": false
+                        },
+                        "key": "n80000",
+                        "tag": "bool"
+                      }
+                    },
+                    "key": "n80003",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n80004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "force_guarded_unused",
+            "parameters": [],
+            "result": "()"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [
+              [
+                "value",
+                "i32"
+              ]
+            ],
+            "name": "S"
+          }
+        ]
+      },
+      "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    let mut x = S { value: 0 };\n    mutate(&mut x);\n    x.value = 2147483647 + 1;\n    return 0;\n}\nfn force_guarded_unused() -> () {\n    while false {\n        continue;\n    }\n    return;\n}\n",
+      "source_sha256": "ee03bca68f0ba3c661755f55aa96fbdd7f0a359575991baefec4f2ac92151830"
+    },
+    {
+      "budget_count": 43,
+      "expectation_sha256": "83bbba3830a45703395978bfca6b108b6b039ae9d28af7a31cba2d8ed4900598",
+      "fuel": 42,
+      "id": "guarded-replace-self",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0000",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0001",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0002",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "read",
+            "parameters": [
+              [
+                "p",
+                "&S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "p",
+                      "name": "value",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "p",
+                              "name": "value"
+                            },
+                            "key": "n0003",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0004",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0005",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0006",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0007",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0008",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0009",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "mutate",
+            "parameters": [
+              [
+                "p",
+                "&mut S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0010",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0011",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0012",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "take",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "p"
+                        },
+                        "key": "n0013",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0014",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0015",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "relay",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "S"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": true,
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "fields": [
+                            [
+                              "value",
+                              {
+                                "data": {
+                                  "value": 9
+                                },
+                                "key": "n0016",
+                                "tag": "int"
+                              }
+                            ]
+                          ],
+                          "record": "S"
+                        },
+                        "key": "n0017",
+                        "tag": "literal"
+                      }
+                    },
+                    "key": "n0018",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "name": "x"
+                        },
+                        "key": "n0019",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0020",
+                    "tag": "store"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "x",
+                          "name": "value"
+                        },
+                        "key": "n0021",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0022",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0023",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {},
+                              "key": "n80001",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n80002",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "value": false
+                        },
+                        "key": "n80000",
+                        "tag": "bool"
+                      }
+                    },
+                    "key": "n80003",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n80004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "force_guarded_unused",
+            "parameters": [],
+            "result": "()"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [
+              [
+                "value",
+                "i32"
+              ]
+            ],
+            "name": "S"
+          }
+        ]
+      },
+      "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    let mut x = S { value: 9 };\n    x = x;\n    return x.value;\n}\nfn force_guarded_unused() -> () {\n    while false {\n        continue;\n    }\n    return;\n}\n",
+      "source_sha256": "5529b8348d278ff5715b74843d65e53619d28e153ac201193065d1e4e0e2bc07"
+    },
+    {
+      "budget_count": 87,
+      "expectation_sha256": "59d988695d9c0fa0adcb9f9ce4c42d81d3581ac66b37259024a244fdc71c989a",
+      "fuel": 86,
+      "id": "guarded-replace-relay",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0000",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0001",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0002",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "read",
+            "parameters": [
+              [
+                "p",
+                "&S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "p",
+                      "name": "value",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "p",
+                              "name": "value"
+                            },
+                            "key": "n0003",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0004",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0005",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0006",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0007",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0008",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0009",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "mutate",
+            "parameters": [
+              [
+                "p",
+                "&mut S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0010",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0011",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0012",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "take",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "p"
+                        },
+                        "key": "n0013",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0014",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0015",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "relay",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "S"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": true,
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "fields": [
+                            [
+                              "value",
+                              {
+                                "data": {
+                                  "value": 9
+                                },
+                                "key": "n0016",
+                                "tag": "int"
+                              }
+                            ]
+                          ],
+                          "record": "S"
+                        },
+                        "key": "n0017",
+                        "tag": "literal"
+                      }
+                    },
+                    "key": "n0018",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "name": "x"
+                              },
+                              "key": "n0019",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "relay"
+                        },
+                        "key": "n0020",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0021",
+                    "tag": "store"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "x",
+                          "name": "value"
+                        },
+                        "key": "n0022",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0023",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0024",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {},
+                              "key": "n80001",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n80002",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "value": false
+                        },
+                        "key": "n80000",
+                        "tag": "bool"
+                      }
+                    },
+                    "key": "n80003",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n80004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "force_guarded_unused",
+            "parameters": [],
+            "result": "()"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [
+              [
+                "value",
+                "i32"
+              ]
+            ],
+            "name": "S"
+          }
+        ]
+      },
+      "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    let mut x = S { value: 9 };\n    x = relay(x);\n    return x.value;\n}\nfn force_guarded_unused() -> () {\n    while false {\n        continue;\n    }\n    return;\n}\n",
+      "source_sha256": "d33d77716d15ad81bb38e45bec62e53503165d42f6953bfa4c914815eaa1025b"
+    },
+    {
+      "budget_count": 73,
+      "expectation_sha256": "4bef53d9c2d6f8c11055728fc925ee3972ae9dd0674c9b7f594128c8e2a490d7",
+      "fuel": 72,
+      "id": "guarded-owned-result-assign",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0000",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0001",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0002",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "read",
+            "parameters": [
+              [
+                "p",
+                "&S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "p",
+                      "name": "value",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "p",
+                              "name": "value"
+                            },
+                            "key": "n0003",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0004",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0005",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0006",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0007",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0008",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0009",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "mutate",
+            "parameters": [
+              [
+                "p",
+                "&mut S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "p",
+                          "name": "value"
+                        },
+                        "key": "n0010",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0011",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0012",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "take",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "p"
+                        },
+                        "key": "n0013",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0014",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0015",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "relay",
+            "parameters": [
+              [
+                "p",
+                "S"
+              ]
+            ],
+            "result": "S"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": false,
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "fields": [
+                                  [
+                                    "value",
+                                    {
+                                      "data": {
+                                        "value": 9
+                                      },
+                                      "key": "n0016",
+                                      "tag": "int"
+                                    }
+                                  ]
+                                ],
+                                "record": "S"
+                              },
+                              "key": "n0017",
+                              "tag": "literal"
+                            }
+                          ],
+                          "function": "relay"
+                        },
+                        "key": "n0018",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0019",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "base": "x",
+                          "name": "value"
+                        },
+                        "key": "n0020",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0021",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0022",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {},
+                              "key": "n80001",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n80002",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "value": false
+                        },
+                        "key": "n80000",
+                        "tag": "bool"
+                      }
+                    },
+                    "key": "n80003",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n80004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "force_guarded_unused",
+            "parameters": [],
+            "result": "()"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [
+              [
+                "value",
+                "i32"
+              ]
+            ],
+            "name": "S"
+          }
+        ]
+      },
+      "source": "struct S { value: i32 }\nfn read(p: &S) -> i32 {\n    return p.value;\n}\nfn mutate(p: &mut S) -> i32 {\n    p.value = p.value + 1;\n    return p.value;\n}\nfn take(p: S) -> i32 {\n    return p.value;\n}\nfn relay(p: S) -> S {\n    return p;\n}\nfn main() -> i32 {\n    let x = relay(S { value: 9 });\n    return x.value;\n}\nfn force_guarded_unused() -> () {\n    while false {\n        continue;\n    }\n    return;\n}\n",
+      "source_sha256": "454d275f08820f4e323bc8880b59613aa544bcf7b6c83d4ce3dc942112759495"
+    },
+    {
+      "budget_count": 59,
+      "expectation_sha256": "2b39c8e28689cfa78e1e1dc8453cac48b57dd053939a55cf9accb26adf5610c9",
+      "fuel": 58,
+      "id": "guarded-empty-between-scalars",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "name": "a"
+                            },
+                            "key": "n0000",
+                            "tag": "name"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "name": "z"
+                            },
+                            "key": "n0001",
+                            "tag": "name"
+                          }
+                        },
+                        "key": "n0002",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0003",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0004",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "empty_between",
+            "parameters": [
+              [
+                "a",
+                "i32"
+              ],
+              [
+                "e",
+                "Empty"
+              ],
+              [
+                "z",
+                "i32"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "value": 3
+                              },
+                              "key": "n0005",
+                              "tag": "int"
+                            },
+                            {
+                              "data": {
+                                "fields": [],
+                                "record": "Empty"
+                              },
+                              "key": "n0006",
+                              "tag": "literal"
+                            },
+                            {
+                              "data": {
+                                "value": 5
+                              },
+                              "key": "n0007",
+                              "tag": "int"
+                            }
+                          ],
+                          "function": "empty_between"
+                        },
+                        "key": "n0008",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0009",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0010",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {},
+                              "key": "n80001",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n80002",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "value": false
+                        },
+                        "key": "n80000",
+                        "tag": "bool"
+                      }
+                    },
+                    "key": "n80003",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n80004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "force_guarded_unused",
+            "parameters": [],
+            "result": "()"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [],
+            "name": "Empty"
+          }
+        ]
+      },
+      "source": "struct Empty {}\nfn empty_between(a: i32, e: Empty, z: i32) -> i32 {\n    return a + z;\n}\nfn main() -> i32 {\n    return empty_between(3, Empty {}, 5);\n}\nfn force_guarded_unused() -> () {\n    while false {\n        continue;\n    }\n    return;\n}\n",
+      "source_sha256": "aff49c8c4c891f210647af974028eb6f1ca6e7dd9102fa8524b913f05358f696"
+    },
+    {
+      "budget_count": 16,
+      "expectation_sha256": "26040ff992ee2aa7ee4054c0a9a935f52f4cbe3aa2acd875207f59be0b91be2f",
+      "fuel": 15,
+      "id": "guarded-scalar-store",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": true,
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "value": 1
+                        },
+                        "key": "n80000",
+                        "tag": "int"
+                      }
+                    },
+                    "key": "n80001",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "value": 2
+                        },
+                        "key": "n80002",
+                        "tag": "int"
+                      }
+                    },
+                    "key": "n80003",
+                    "tag": "store"
+                  },
+                  {
+                    "data": {
+                      "name": "x",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "value": 2147483647
+                            },
+                            "key": "n80004",
+                            "tag": "int"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n80005",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n80006",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n80007",
+                    "tag": "store"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "x"
+                        },
+                        "key": "n80008",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n80009",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80010",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {},
+                              "key": "n80012",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n80013",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "value": false
+                        },
+                        "key": "n80011",
+                        "tag": "bool"
+                      }
+                    },
+                    "key": "n80014",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n80015",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n80016",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "force_guarded_unused",
+            "parameters": [],
+            "result": "()"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [],
+            "name": "Empty"
+          }
+        ]
+      },
+      "source": "struct Empty {}\nfn main() -> i32 {\n    let mut x = 1;\n    x = 2;\n    x = 2147483647 + 1;\n    return x;\n}\nfn force_guarded_unused() -> () {\n    while false {\n        continue;\n    }\n    return;\n}\n",
+      "source_sha256": "61d253d7555626ab6e1c2c00c3f407f1358e3127788572c19db8be1ba4d00ffc"
+    },
+    {
+      "budget_count": 288,
+      "expectation_sha256": "b6153e9ccdfef2218151db5dff6e6659877533ee91532b5268acd7784f553540",
+      "fuel": 287,
+      "id": "batch-overflow-after-earlier-write",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "state",
+                      "name": "retries",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "retries"
+                            },
+                            "key": "n0000",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0001",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0002",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0003",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n0004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "retry",
+            "parameters": [
+              [
+                "state",
+                "&mut Batch"
+              ]
+            ],
+            "result": "()"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "state",
+                      "name": "completed",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "completed"
+                            },
+                            "key": "n0006",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0007",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0008",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0009",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "base": "state",
+                      "name": "checksum",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "value": 2147483647
+                            },
+                            "key": "n10000",
+                            "tag": "int"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n10001",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n10002",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0015",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n0016",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0017",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "commit",
+            "parameters": [
+              [
+                "state",
+                "&mut Batch"
+              ],
+              [
+                "job",
+                "i32"
+              ]
+            ],
+            "result": "()"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "forwarded": true,
+                                "mutable": true,
+                                "name": "state",
+                                "trivia": " "
+                              },
+                              "key": "n0018",
+                              "tag": "borrow"
+                            },
+                            {
+                              "data": {
+                                "name": "job"
+                              },
+                              "key": "n0019",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "commit"
+                        },
+                        "key": "n0020",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0021",
+                    "tag": "discard"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n0022",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0023",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "dispatch",
+            "parameters": [
+              [
+                "state",
+                "&mut Batch"
+              ],
+              [
+                "job",
+                "i32"
+              ]
+            ],
+            "result": "()"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "completed"
+                            },
+                            "key": "n0024",
+                            "tag": "field"
+                          },
+                          "op": ">=",
+                          "rhs": {
+                            "data": {
+                              "value": 6
+                            },
+                            "key": "n0025",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0026",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0027",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0028",
+              "tag": "block"
+            },
+            "inline": true,
+            "name": "done",
+            "parameters": [
+              [
+                "state",
+                "&Batch"
+              ]
+            ],
+            "result": "bool"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "state"
+                        },
+                        "key": "n0029",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0030",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0031",
+              "tag": "block"
+            },
+            "inline": true,
+            "name": "relay",
+            "parameters": [
+              [
+                "state",
+                "Batch"
+              ]
+            ],
+            "result": "Batch"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "lhs": {
+                                "data": {
+                                  "base": "state",
+                                  "name": "checksum"
+                                },
+                                "key": "n0032",
+                                "tag": "field"
+                              },
+                              "op": "+",
+                              "rhs": {
+                                "data": {
+                                  "lhs": {
+                                    "data": {
+                                      "base": "state",
+                                      "name": "completed"
+                                    },
+                                    "key": "n0033",
+                                    "tag": "field"
+                                  },
+                                  "op": "*",
+                                  "rhs": {
+                                    "data": {
+                                      "value": 100
+                                    },
+                                    "key": "n0034",
+                                    "tag": "int"
+                                  }
+                                },
+                                "key": "n0035",
+                                "tag": "binary"
+                              }
+                            },
+                            "key": "n0036",
+                            "tag": "binary"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "retries"
+                            },
+                            "key": "n0037",
+                            "tag": "field"
+                          }
+                        },
+                        "key": "n0038",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0039",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0040",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "finish",
+            "parameters": [
+              [
+                "state",
+                "Batch"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": true,
+                      "name": "state",
+                      "value": {
+                        "data": {
+                          "fields": [
+                            [
+                              "completed",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0041",
+                                "tag": "int"
+                              }
+                            ],
+                            [
+                              "retries",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0042",
+                                "tag": "int"
+                              }
+                            ],
+                            [
+                              "checksum",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0043",
+                                "tag": "int"
+                              }
+                            ],
+                            [
+                              "active",
+                              {
+                                "data": {
+                                  "value": true
+                                },
+                                "key": "n0044",
+                                "tag": "bool"
+                              }
+                            ]
+                          ],
+                          "record": "Batch"
+                        },
+                        "key": "n0045",
+                        "tag": "literal"
+                      }
+                    },
+                    "key": "n0046",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {
+                                "annotation": null,
+                                "mutable": true,
+                                "name": "attempt",
+                                "value": {
+                                  "data": {
+                                    "value": 0
+                                  },
+                                  "key": "n0048",
+                                  "tag": "int"
+                                }
+                              },
+                              "key": "n0049",
+                              "tag": "let"
+                            },
+                            {
+                              "data": {
+                                "body": {
+                                  "data": {
+                                    "statements": [
+                                      {
+                                        "data": {
+                                          "name": "attempt",
+                                          "value": {
+                                            "data": {
+                                              "lhs": {
+                                                "data": {
+                                                  "name": "attempt"
+                                                },
+                                                "key": "n0053",
+                                                "tag": "name"
+                                              },
+                                              "op": "+",
+                                              "rhs": {
+                                                "data": {
+                                                  "value": 1
+                                                },
+                                                "key": "n0054",
+                                                "tag": "int"
+                                              }
+                                            },
+                                            "key": "n0055",
+                                            "tag": "binary"
+                                          }
+                                        },
+                                        "key": "n0056",
+                                        "tag": "store"
+                                      },
+                                      {
+                                        "data": {
+                                          "condition": {
+                                            "data": {
+                                              "lhs": {
+                                                "data": {
+                                                  "name": "attempt"
+                                                },
+                                                "key": "n0057",
+                                                "tag": "name"
+                                              },
+                                              "op": "<",
+                                              "rhs": {
+                                                "data": {
+                                                  "value": 2
+                                                },
+                                                "key": "n0058",
+                                                "tag": "int"
+                                              }
+                                            },
+                                            "key": "n0059",
+                                            "tag": "binary"
+                                          },
+                                          "no": null,
+                                          "yes": {
+                                            "data": {
+                                              "statements": [
+                                                {
+                                                  "data": {
+                                                    "value": {
+                                                      "data": {
+                                                        "args": [
+                                                          {
+                                                            "data": {
+                                                              "forwarded": false,
+                                                              "mutable": true,
+                                                              "name": "state",
+                                                              "trivia": " "
+                                                            },
+                                                            "key": "n0060",
+                                                            "tag": "borrow"
+                                                          }
+                                                        ],
+                                                        "function": "retry"
+                                                      },
+                                                      "key": "n0061",
+                                                      "tag": "call"
+                                                    }
+                                                  },
+                                                  "key": "n0062",
+                                                  "tag": "discard"
+                                                },
+                                                {
+                                                  "data": {},
+                                                  "key": "n0063",
+                                                  "tag": "continue"
+                                                }
+                                              ]
+                                            },
+                                            "key": "n0064",
+                                            "tag": "block"
+                                          }
+                                        },
+                                        "key": "n0065",
+                                        "tag": "if"
+                                      },
+                                      {
+                                        "data": {
+                                          "annotation": null,
+                                          "mutable": false,
+                                          "name": "job",
+                                          "value": {
+                                            "data": {
+                                              "lhs": {
+                                                "data": {
+                                                  "base": "state",
+                                                  "name": "completed"
+                                                },
+                                                "key": "n0066",
+                                                "tag": "field"
+                                              },
+                                              "op": "+",
+                                              "rhs": {
+                                                "data": {
+                                                  "value": 1
+                                                },
+                                                "key": "n0067",
+                                                "tag": "int"
+                                              }
+                                            },
+                                            "key": "n0068",
+                                            "tag": "binary"
+                                          }
+                                        },
+                                        "key": "n0069",
+                                        "tag": "let"
+                                      },
+                                      {
+                                        "data": {
+                                          "value": {
+                                            "data": {
+                                              "args": [
+                                                {
+                                                  "data": {
+                                                    "forwarded": false,
+                                                    "mutable": true,
+                                                    "name": "state",
+                                                    "trivia": " "
+                                                  },
+                                                  "key": "n0070",
+                                                  "tag": "borrow"
+                                                },
+                                                {
+                                                  "data": {
+                                                    "name": "job"
+                                                  },
+                                                  "key": "n0071",
+                                                  "tag": "name"
+                                                }
+                                              ],
+                                              "function": "dispatch"
+                                            },
+                                            "key": "n0072",
+                                            "tag": "call"
+                                          }
+                                        },
+                                        "key": "n0073",
+                                        "tag": "discard"
+                                      },
+                                      {
+                                        "data": {},
+                                        "key": "n0074",
+                                        "tag": "break"
+                                      }
+                                    ]
+                                  },
+                                  "key": "n0075",
+                                  "tag": "block"
+                                },
+                                "condition": {
+                                  "data": {
+                                    "lhs": {
+                                      "data": {
+                                        "name": "attempt"
+                                      },
+                                      "key": "n0050",
+                                      "tag": "name"
+                                    },
+                                    "op": "<",
+                                    "rhs": {
+                                      "data": {
+                                        "value": 3
+                                      },
+                                      "key": "n0051",
+                                      "tag": "int"
+                                    }
+                                  },
+                                  "key": "n0052",
+                                  "tag": "binary"
+                                }
+                              },
+                              "key": "n0076",
+                              "tag": "while"
+                            },
+                            {
+                              "data": {
+                                "condition": {
+                                  "data": {
+                                    "args": [
+                                      {
+                                        "data": {
+                                          "forwarded": false,
+                                          "mutable": false,
+                                          "name": "state",
+                                          "trivia": " "
+                                        },
+                                        "key": "n0077",
+                                        "tag": "borrow"
+                                      }
+                                    ],
+                                    "function": "done"
+                                  },
+                                  "key": "n0078",
+                                  "tag": "call"
+                                },
+                                "no": null,
+                                "yes": {
+                                  "data": {
+                                    "statements": [
+                                      {
+                                        "data": {
+                                          "base": "state",
+                                          "name": "active",
+                                          "value": {
+                                            "data": {
+                                              "value": false
+                                            },
+                                            "key": "n0079",
+                                            "tag": "bool"
+                                          }
+                                        },
+                                        "key": "n0080",
+                                        "tag": "write"
+                                      },
+                                      {
+                                        "data": {},
+                                        "key": "n0081",
+                                        "tag": "break"
+                                      }
+                                    ]
+                                  },
+                                  "key": "n0082",
+                                  "tag": "block"
+                                }
+                              },
+                              "key": "n0083",
+                              "tag": "if"
+                            },
+                            {
+                              "data": {},
+                              "key": "n0084",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n0085",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "base": "state",
+                          "name": "active"
+                        },
+                        "key": "n0047",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0086",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": false,
+                      "name": "completed",
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "name": "state"
+                              },
+                              "key": "n0087",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "relay"
+                        },
+                        "key": "n0088",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0089",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "name": "completed"
+                              },
+                              "key": "n0090",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "finish"
+                        },
+                        "key": "n0091",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0092",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0093",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [
+              [
+                "completed",
+                "i32"
+              ],
+              [
+                "retries",
+                "i32"
+              ],
+              [
+                "checksum",
+                "i32"
+              ],
+              [
+                "active",
+                "bool"
+              ]
+            ],
+            "name": "Batch"
+          }
+        ]
+      },
+      "source": "struct Batch { completed: i32, retries: i32, checksum: i32, active: bool }\nfn retry(state: &mut Batch) -> () {\n    state.retries = state.retries + 1;\n    return;\n}\nfn commit(state: &mut Batch, job: i32) -> () {\n    state.completed = state.completed + 1;\n    state.checksum = 2147483647 + 1;\n    return;\n}\nfn dispatch(state: &mut Batch, job: i32) -> () {\n    commit(&mut *state, job);\n    return;\n}\nfn done(state: &Batch) -> bool { return state.completed >= 6; }\nfn relay(state: Batch) -> Batch { return state; }\nfn finish(state: Batch) -> i32 {\n    return state.checksum + state.completed * 100 + state.retries;\n}\nfn main() -> i32 {\n    let mut state = Batch { completed: 0, retries: 0, checksum: 0, active: true };\n    while state.active {\n        let mut attempt = 0;\n        while attempt < 3 {\n            attempt = attempt + 1;\n            if attempt < 2 {\n                retry(&mut state);\n                continue;\n            }\n            let job = state.completed + 1;\n            dispatch(&mut state, job);\n            break;\n        }\n        if done(&state) {\n            state.active = false;\n            break;\n        }\n        continue;\n    }\n    let completed = relay(state);\n    return finish(completed);\n}\n",
+      "source_sha256": "0f7f8b47b28af31edb6d8a574e8ef3832ffd8b7cf0f831ac63df846573ed79c8"
+    },
+    {
+      "budget_count": 1298,
+      "expectation_sha256": "eab234a5bbe66400d7312103d303e27158dcbd908b2d1fdad82cdabd7c8d17e3",
+      "fuel": 1297,
+      "id": "batch",
+      "program": {
+        "functions": [
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "state",
+                      "name": "retries",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "retries"
+                            },
+                            "key": "n0000",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0001",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0002",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0003",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n0004",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0005",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "retry",
+            "parameters": [
+              [
+                "state",
+                "&mut Batch"
+              ]
+            ],
+            "result": "()"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "base": "state",
+                      "name": "completed",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "completed"
+                            },
+                            "key": "n0006",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "value": 1
+                            },
+                            "key": "n0007",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0008",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0009",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "base": "state",
+                      "name": "checksum",
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "checksum"
+                            },
+                            "key": "n0010",
+                            "tag": "field"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "lhs": {
+                                "data": {
+                                  "name": "job"
+                                },
+                                "key": "n0011",
+                                "tag": "name"
+                              },
+                              "op": "*",
+                              "rhs": {
+                                "data": {
+                                  "value": 10
+                                },
+                                "key": "n0012",
+                                "tag": "int"
+                              }
+                            },
+                            "key": "n0013",
+                            "tag": "binary"
+                          }
+                        },
+                        "key": "n0014",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0015",
+                    "tag": "write"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n0016",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0017",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "commit",
+            "parameters": [
+              [
+                "state",
+                "&mut Batch"
+              ],
+              [
+                "job",
+                "i32"
+              ]
+            ],
+            "result": "()"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "forwarded": true,
+                                "mutable": true,
+                                "name": "state",
+                                "trivia": " "
+                              },
+                              "key": "n0018",
+                              "tag": "borrow"
+                            },
+                            {
+                              "data": {
+                                "name": "job"
+                              },
+                              "key": "n0019",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "commit"
+                        },
+                        "key": "n0020",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0021",
+                    "tag": "discard"
+                  },
+                  {
+                    "data": {
+                      "value": null
+                    },
+                    "key": "n0022",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0023",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "dispatch",
+            "parameters": [
+              [
+                "state",
+                "&mut Batch"
+              ],
+              [
+                "job",
+                "i32"
+              ]
+            ],
+            "result": "()"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "completed"
+                            },
+                            "key": "n0024",
+                            "tag": "field"
+                          },
+                          "op": ">=",
+                          "rhs": {
+                            "data": {
+                              "value": 6
+                            },
+                            "key": "n0025",
+                            "tag": "int"
+                          }
+                        },
+                        "key": "n0026",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0027",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0028",
+              "tag": "block"
+            },
+            "inline": true,
+            "name": "done",
+            "parameters": [
+              [
+                "state",
+                "&Batch"
+              ]
+            ],
+            "result": "bool"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "name": "state"
+                        },
+                        "key": "n0029",
+                        "tag": "name"
+                      }
+                    },
+                    "key": "n0030",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0031",
+              "tag": "block"
+            },
+            "inline": true,
+            "name": "relay",
+            "parameters": [
+              [
+                "state",
+                "Batch"
+              ]
+            ],
+            "result": "Batch"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "lhs": {
+                            "data": {
+                              "lhs": {
+                                "data": {
+                                  "base": "state",
+                                  "name": "checksum"
+                                },
+                                "key": "n0032",
+                                "tag": "field"
+                              },
+                              "op": "+",
+                              "rhs": {
+                                "data": {
+                                  "lhs": {
+                                    "data": {
+                                      "base": "state",
+                                      "name": "completed"
+                                    },
+                                    "key": "n0033",
+                                    "tag": "field"
+                                  },
+                                  "op": "*",
+                                  "rhs": {
+                                    "data": {
+                                      "value": 100
+                                    },
+                                    "key": "n0034",
+                                    "tag": "int"
+                                  }
+                                },
+                                "key": "n0035",
+                                "tag": "binary"
+                              }
+                            },
+                            "key": "n0036",
+                            "tag": "binary"
+                          },
+                          "op": "+",
+                          "rhs": {
+                            "data": {
+                              "base": "state",
+                              "name": "retries"
+                            },
+                            "key": "n0037",
+                            "tag": "field"
+                          }
+                        },
+                        "key": "n0038",
+                        "tag": "binary"
+                      }
+                    },
+                    "key": "n0039",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0040",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "finish",
+            "parameters": [
+              [
+                "state",
+                "Batch"
+              ]
+            ],
+            "result": "i32"
+          },
+          {
+            "body": {
+              "data": {
+                "statements": [
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": true,
+                      "name": "state",
+                      "value": {
+                        "data": {
+                          "fields": [
+                            [
+                              "completed",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0041",
+                                "tag": "int"
+                              }
+                            ],
+                            [
+                              "retries",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0042",
+                                "tag": "int"
+                              }
+                            ],
+                            [
+                              "checksum",
+                              {
+                                "data": {
+                                  "value": 0
+                                },
+                                "key": "n0043",
+                                "tag": "int"
+                              }
+                            ],
+                            [
+                              "active",
+                              {
+                                "data": {
+                                  "value": true
+                                },
+                                "key": "n0044",
+                                "tag": "bool"
+                              }
+                            ]
+                          ],
+                          "record": "Batch"
+                        },
+                        "key": "n0045",
+                        "tag": "literal"
+                      }
+                    },
+                    "key": "n0046",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "body": {
+                        "data": {
+                          "statements": [
+                            {
+                              "data": {
+                                "annotation": null,
+                                "mutable": true,
+                                "name": "attempt",
+                                "value": {
+                                  "data": {
+                                    "value": 0
+                                  },
+                                  "key": "n0048",
+                                  "tag": "int"
+                                }
+                              },
+                              "key": "n0049",
+                              "tag": "let"
+                            },
+                            {
+                              "data": {
+                                "body": {
+                                  "data": {
+                                    "statements": [
+                                      {
+                                        "data": {
+                                          "name": "attempt",
+                                          "value": {
+                                            "data": {
+                                              "lhs": {
+                                                "data": {
+                                                  "name": "attempt"
+                                                },
+                                                "key": "n0053",
+                                                "tag": "name"
+                                              },
+                                              "op": "+",
+                                              "rhs": {
+                                                "data": {
+                                                  "value": 1
+                                                },
+                                                "key": "n0054",
+                                                "tag": "int"
+                                              }
+                                            },
+                                            "key": "n0055",
+                                            "tag": "binary"
+                                          }
+                                        },
+                                        "key": "n0056",
+                                        "tag": "store"
+                                      },
+                                      {
+                                        "data": {
+                                          "condition": {
+                                            "data": {
+                                              "lhs": {
+                                                "data": {
+                                                  "name": "attempt"
+                                                },
+                                                "key": "n0057",
+                                                "tag": "name"
+                                              },
+                                              "op": "<",
+                                              "rhs": {
+                                                "data": {
+                                                  "value": 2
+                                                },
+                                                "key": "n0058",
+                                                "tag": "int"
+                                              }
+                                            },
+                                            "key": "n0059",
+                                            "tag": "binary"
+                                          },
+                                          "no": null,
+                                          "yes": {
+                                            "data": {
+                                              "statements": [
+                                                {
+                                                  "data": {
+                                                    "value": {
+                                                      "data": {
+                                                        "args": [
+                                                          {
+                                                            "data": {
+                                                              "forwarded": false,
+                                                              "mutable": true,
+                                                              "name": "state",
+                                                              "trivia": " "
+                                                            },
+                                                            "key": "n0060",
+                                                            "tag": "borrow"
+                                                          }
+                                                        ],
+                                                        "function": "retry"
+                                                      },
+                                                      "key": "n0061",
+                                                      "tag": "call"
+                                                    }
+                                                  },
+                                                  "key": "n0062",
+                                                  "tag": "discard"
+                                                },
+                                                {
+                                                  "data": {},
+                                                  "key": "n0063",
+                                                  "tag": "continue"
+                                                }
+                                              ]
+                                            },
+                                            "key": "n0064",
+                                            "tag": "block"
+                                          }
+                                        },
+                                        "key": "n0065",
+                                        "tag": "if"
+                                      },
+                                      {
+                                        "data": {
+                                          "annotation": null,
+                                          "mutable": false,
+                                          "name": "job",
+                                          "value": {
+                                            "data": {
+                                              "lhs": {
+                                                "data": {
+                                                  "base": "state",
+                                                  "name": "completed"
+                                                },
+                                                "key": "n0066",
+                                                "tag": "field"
+                                              },
+                                              "op": "+",
+                                              "rhs": {
+                                                "data": {
+                                                  "value": 1
+                                                },
+                                                "key": "n0067",
+                                                "tag": "int"
+                                              }
+                                            },
+                                            "key": "n0068",
+                                            "tag": "binary"
+                                          }
+                                        },
+                                        "key": "n0069",
+                                        "tag": "let"
+                                      },
+                                      {
+                                        "data": {
+                                          "value": {
+                                            "data": {
+                                              "args": [
+                                                {
+                                                  "data": {
+                                                    "forwarded": false,
+                                                    "mutable": true,
+                                                    "name": "state",
+                                                    "trivia": " "
+                                                  },
+                                                  "key": "n0070",
+                                                  "tag": "borrow"
+                                                },
+                                                {
+                                                  "data": {
+                                                    "name": "job"
+                                                  },
+                                                  "key": "n0071",
+                                                  "tag": "name"
+                                                }
+                                              ],
+                                              "function": "dispatch"
+                                            },
+                                            "key": "n0072",
+                                            "tag": "call"
+                                          }
+                                        },
+                                        "key": "n0073",
+                                        "tag": "discard"
+                                      },
+                                      {
+                                        "data": {},
+                                        "key": "n0074",
+                                        "tag": "break"
+                                      }
+                                    ]
+                                  },
+                                  "key": "n0075",
+                                  "tag": "block"
+                                },
+                                "condition": {
+                                  "data": {
+                                    "lhs": {
+                                      "data": {
+                                        "name": "attempt"
+                                      },
+                                      "key": "n0050",
+                                      "tag": "name"
+                                    },
+                                    "op": "<",
+                                    "rhs": {
+                                      "data": {
+                                        "value": 3
+                                      },
+                                      "key": "n0051",
+                                      "tag": "int"
+                                    }
+                                  },
+                                  "key": "n0052",
+                                  "tag": "binary"
+                                }
+                              },
+                              "key": "n0076",
+                              "tag": "while"
+                            },
+                            {
+                              "data": {
+                                "condition": {
+                                  "data": {
+                                    "args": [
+                                      {
+                                        "data": {
+                                          "forwarded": false,
+                                          "mutable": false,
+                                          "name": "state",
+                                          "trivia": " "
+                                        },
+                                        "key": "n0077",
+                                        "tag": "borrow"
+                                      }
+                                    ],
+                                    "function": "done"
+                                  },
+                                  "key": "n0078",
+                                  "tag": "call"
+                                },
+                                "no": null,
+                                "yes": {
+                                  "data": {
+                                    "statements": [
+                                      {
+                                        "data": {
+                                          "base": "state",
+                                          "name": "active",
+                                          "value": {
+                                            "data": {
+                                              "value": false
+                                            },
+                                            "key": "n0079",
+                                            "tag": "bool"
+                                          }
+                                        },
+                                        "key": "n0080",
+                                        "tag": "write"
+                                      },
+                                      {
+                                        "data": {},
+                                        "key": "n0081",
+                                        "tag": "break"
+                                      }
+                                    ]
+                                  },
+                                  "key": "n0082",
+                                  "tag": "block"
+                                }
+                              },
+                              "key": "n0083",
+                              "tag": "if"
+                            },
+                            {
+                              "data": {},
+                              "key": "n0084",
+                              "tag": "continue"
+                            }
+                          ]
+                        },
+                        "key": "n0085",
+                        "tag": "block"
+                      },
+                      "condition": {
+                        "data": {
+                          "base": "state",
+                          "name": "active"
+                        },
+                        "key": "n0047",
+                        "tag": "field"
+                      }
+                    },
+                    "key": "n0086",
+                    "tag": "while"
+                  },
+                  {
+                    "data": {
+                      "annotation": null,
+                      "mutable": false,
+                      "name": "completed",
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "name": "state"
+                              },
+                              "key": "n0087",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "relay"
+                        },
+                        "key": "n0088",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0089",
+                    "tag": "let"
+                  },
+                  {
+                    "data": {
+                      "value": {
+                        "data": {
+                          "args": [
+                            {
+                              "data": {
+                                "name": "completed"
+                              },
+                              "key": "n0090",
+                              "tag": "name"
+                            }
+                          ],
+                          "function": "finish"
+                        },
+                        "key": "n0091",
+                        "tag": "call"
+                      }
+                    },
+                    "key": "n0092",
+                    "tag": "return"
+                  }
+                ]
+              },
+              "key": "n0093",
+              "tag": "block"
+            },
+            "inline": false,
+            "name": "main",
+            "parameters": [],
+            "result": "i32"
+          }
+        ],
+        "newline": "\n",
+        "order": [],
+        "preamble": "",
+        "records": [
+          {
+            "fields": [
+              [
+                "completed",
+                "i32"
+              ],
+              [
+                "retries",
+                "i32"
+              ],
+              [
+                "checksum",
+                "i32"
+              ],
+              [
+                "active",
+                "bool"
+              ]
+            ],
+            "name": "Batch"
+          }
+        ]
+      },
+      "source": "struct Batch { completed: i32, retries: i32, checksum: i32, active: bool }\nfn retry(state: &mut Batch) -> () {\n    state.retries = state.retries + 1;\n    return;\n}\nfn commit(state: &mut Batch, job: i32) -> () {\n    state.completed = state.completed + 1;\n    state.checksum = state.checksum + job * 10;\n    return;\n}\nfn dispatch(state: &mut Batch, job: i32) -> () {\n    commit(&mut *state, job);\n    return;\n}\nfn done(state: &Batch) -> bool { return state.completed >= 6; }\nfn relay(state: Batch) -> Batch { return state; }\nfn finish(state: Batch) -> i32 {\n    return state.checksum + state.completed * 100 + state.retries;\n}\nfn main() -> i32 {\n    let mut state = Batch { completed: 0, retries: 0, checksum: 0, active: true };\n    while state.active {\n        let mut attempt = 0;\n        while attempt < 3 {\n            attempt = attempt + 1;\n            if attempt < 2 {\n                retry(&mut state);\n                continue;\n            }\n            let job = state.completed + 1;\n            dispatch(&mut state, job);\n            break;\n        }\n        if done(&state) {\n            state.active = false;\n            break;\n        }\n        continue;\n    }\n    let completed = relay(state);\n    return finish(completed);\n}\n",
+      "source_sha256": "dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2"
+    }
+  ],
+  "model_sha256": "5c2a74e41aaadaf5706fb0ea35931328317e906a05b9d26776837aedddc8dfc7",
+  "pre_observation_manifest_sha256": "32b4bda01aea7741a275826cad6cfc2c9ca0059721b828ba07a5b4acea2d1bb8"
+}

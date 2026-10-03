@@ -1,0 +1,46 @@
+{
+  "schema": "unit3-normal-return-release-equivalence-v1",
+  "source_contract_note": "proposals/same-return-release-contract.md",
+  "input_hashes": {
+    "/workspace/scratch/8266abf56995/typed-project-unit3-observer/full-qualification-v1/debug/positive-exclusive_alias/observations.json.gz": "6c6fcaba8a72bb4cd8a62dc178e6c4e2c28bf5ad1885ccda8c81b282e41f57f7",
+    "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/owned-debug-final/observations.json.gz": "d537e607fa4f6a0f26b23a957bea111fe08a54243657647e6a2798be7f99d967"
+  },
+  "original_physical_order_retained": true,
+  "frozen_model_unchanged": true,
+  "positive_same_return_permutation": "MATCH",
+  "negative_controls": [
+    {
+      "id": "missing-release",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Release': 2, 'Charge': 1, 'Return': 1}), Counter({'Charge': 1, 'Release': 1, 'Return': 1})))"
+    },
+    {
+      "id": "duplicate-release",
+      "status": "REJECTED",
+      "reason": "AssertionError(('release exact active runtime loan', 1, 0))"
+    },
+    {
+      "id": "moved-to-root-return",
+      "status": "REJECTED",
+      "reason": "AssertionError(('exact existing consumer callbacks for committed operation', Counter({'Release': 2, 'Charge': 1, 'Return': 1}), Counter({'Charge': 1, 'Release': 1, 'Return': 1})))"
+    },
+    {
+      "id": "wrong-borrow-owner",
+      "status": "REJECTED",
+      "reason": "AssertionError(('direct owner identity', 1, 3))"
+    },
+    {
+      "id": "shifted-between-repeated-call-returns",
+      "status": "REJECTED",
+      "reason": "AssertionError(('release exact active runtime loan', 1, 0))"
+    },
+    {
+      "id": "wrong-returning-activation",
+      "status": "REJECTED",
+      "reason": "AssertionError({'check': 'wrong returning activation', 'expected': [{'kind': 'acquire', 'handle': 0, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 53, 54], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 169, 175], 'mode': 'exclusive', 'parent': None}, {'kind': 'acquire', 'handle': 1, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 102, 103], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 177, 183], 'mode': 'exclusive', 'parent': None}, {'kind': 'normal-return-release-group', 'return_group': {'return_activation': 1, 'return_function': 5, 'return_span': [1, 325, 350], 'caller_activation': 0, 'caller_function': 0, 'call_span': [0, 150, 184]}, 'members': [{'kind': 'release', 'handle': 0, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 53, 54], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 169, 175]}, {'kind': 'release', 'handle': 1, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 102, 103], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 177, 183]}]}], 'actual': [{'kind': 'acquire', 'handle': 0, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 53, 54], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 169, 175], 'mode': 'exclusive', 'parent': None}, {'kind': 'acquire', 'handle': 1, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 102, 103], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 177, 183], 'mode': 'exclusive', 'parent': None}, {'kind': 'normal-return-release-group', 'return_group': {'return_activation': 2, 'return_function': 5, 'return_span': [1, 325, 350], 'caller_activation': 0, 'caller_function': 0, 'call_span': [0, 150, 184]}, 'members': [{'kind': 'release', 'handle': 0, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 53, 54], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 169, 175]}]}, {'kind': 'normal-return-release-group', 'return_group': {'return_activation': 1, 'return_function': 5, 'return_span': [1, 325, 350], 'caller_activation': 0, 'caller_function': 0, 'call_span': [0, 150, 184]}, 'members': [{'kind': 'release', 'handle': 1, 'owner': {'function': 0, 'role': 'Local', 'span': [0, 102, 103], 'record': 0, 'mutable': True}, 'owner_activation': 0, 'owner_lexical_generation': 1, 'span': [0, 177, 183]}]}]})"
+    }
+  ],
+  "compiler_invocations": 0,
+  "new_source_cases": 0,
+  "scope": "unordered membership only inside an exact charged returning activation and entered resume call"
+}

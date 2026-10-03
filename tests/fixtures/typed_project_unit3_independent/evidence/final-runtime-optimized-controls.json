@@ -1,0 +1,367 @@
+{
+  "status": "passed",
+  "script_count": 20,
+  "compiler_invocations": 0,
+  "controls": [
+    {
+      "path": "portable/assemble.py",
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/assemble.py",
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/bind_components.py",
+      "sha256": "1190b727994267a84e66acc2276f8302c011e0f0111f8aea2c9cea2bdc7303e9",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/bind_components.py",
+      "sha256": "1190b727994267a84e66acc2276f8302c011e0f0111f8aea2c9cea2bdc7303e9",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/bridge.py",
+      "sha256": "0a67058d7592c1ce50ba52933784826f6883f566445bfe3da4aff49662f12e25",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/bridge.py",
+      "sha256": "0a67058d7592c1ce50ba52933784826f6883f566445bfe3da4aff49662f12e25",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/build.py",
+      "sha256": "4beb1790fc4effd92b44ae1a2b1d04aac3e7a76b97d5d28f66bb88db1a46de37",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/build.py",
+      "sha256": "4beb1790fc4effd92b44ae1a2b1d04aac3e7a76b97d5d28f66bb88db1a46de37",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/collect.py",
+      "sha256": "c56769e2acea5be894ec3938cdf8a0981c95a9edec75f074dbb9eb8f54ccfd23",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/collect.py",
+      "sha256": "c56769e2acea5be894ec3938cdf8a0981c95a9edec75f074dbb9eb8f54ccfd23",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/common.py",
+      "sha256": "7b8b6d476c66eb7c2e833dff9dfe7eb42308bf8a67fd38a9a501f3b490eb7297",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/common.py",
+      "sha256": "7b8b6d476c66eb7c2e833dff9dfe7eb42308bf8a67fd38a9a501f3b490eb7297",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/bindings.py",
+      "sha256": "82bf7457b0c666b0e4a142455e73292ad9432cbdf56bfdc008d0b7ff163f5825",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: Python assertions must be enabled\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/bindings.py",
+      "sha256": "82bf7457b0c666b0e4a142455e73292ad9432cbdf56bfdc008d0b7ff163f5825",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: Python assertions must be enabled\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/native_plan.py",
+      "sha256": "fc3328c397a728b5e4ef4529fb87744309ccec8f8e54285e06a3a1159f49beba",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/comparison-v1/native_plan.py\", line 42, in <module>\n    raise NativePlanError(\"PROTOCOL_REFUSED: optimized Python is not admitted\")\nNativePlanError: PROTOCOL_REFUSED: optimized Python is not admitted\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/native_plan.py",
+      "sha256": "fc3328c397a728b5e4ef4529fb87744309ccec8f8e54285e06a3a1159f49beba",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/comparison-v1/native_plan.py\", line 42, in <module>\n    raise NativePlanError(\"PROTOCOL_REFUSED: optimized Python is not admitted\")\nNativePlanError: PROTOCOL_REFUSED: optimized Python is not admitted\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/portable_compare.py",
+      "sha256": "7ee84a91adb97a94677b61ccb3936c548e6f2f6d986b4146366cb4cfe64c372d",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: Python assertions must be enabled\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/portable_compare.py",
+      "sha256": "7ee84a91adb97a94677b61ccb3936c548e6f2f6d986b4146366cb4cfe64c372d",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: Python assertions must be enabled\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/protocol.py",
+      "sha256": "3054e47f181035cf91fac81aad421712af920f91f02eb745e426051a4a8e3f44",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: Python assertions must be enabled\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/comparison-v1/protocol.py",
+      "sha256": "3054e47f181035cf91fac81aad421712af920f91f02eb745e426051a4a8e3f44",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: Python assertions must be enabled\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/make_plan.py",
+      "sha256": "3963c04c2eff2ee963d13ab1a72f9674a2c7df7da2968a85f7d1246d1b3b3bc6",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/make_plan.py",
+      "sha256": "3963c04c2eff2ee963d13ab1a72f9674a2c7df7da2968a85f7d1246d1b3b3bc6",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/mutation_gate.py",
+      "sha256": "788a2989d226a3e64bf6b57444696c675073e7876a28975834d216d9209edddb",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/mutation_gate.py",
+      "sha256": "788a2989d226a3e64bf6b57444696c675073e7876a28975834d216d9209edddb",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/mutations.py",
+      "sha256": "24ddd3bb3b85c1e04a3daf82ac2e1001d71e6e28fa8c8b24f077ba545ee2cac7",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/mutations.py",
+      "sha256": "24ddd3bb3b85c1e04a3daf82ac2e1001d71e6e28fa8c8b24f077ba545ee2cac7",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_groups.py",
+      "sha256": "cd4a952a3cf72b1abd3f6c146e25fe103ed43eeccc070abf467b56126b7b93bf",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_groups.py",
+      "sha256": "cd4a952a3cf72b1abd3f6c146e25fe103ed43eeccc070abf467b56126b7b93bf",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_inputs.py",
+      "sha256": "57c6bd65664e7c2ac41f99a837f93f4067846b6d2b4b694a26eb50d79c5992a2",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_inputs.py",
+      "sha256": "57c6bd65664e7c2ac41f99a837f93f4067846b6d2b4b694a26eb50d79c5992a2",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_portable.py",
+      "sha256": "fcc7f17dd26de7ee20078db8fd6215bc9a62594eb9a5d731bb1cb8676a907501",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_portable.py",
+      "sha256": "fcc7f17dd26de7ee20078db8fd6215bc9a62594eb9a5d731bb1cb8676a907501",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_portable_grouped.py",
+      "sha256": "49e857b57b0cf589d4fdf667b4f0b689340e3357122135fa0a4e8786c28245dd",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/native-v1/native_portable_grouped.py",
+      "sha256": "49e857b57b0cf589d4fdf667b4f0b689340e3357122135fa0a4e8786c28245dd",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/observe.py",
+      "sha256": "14dfc7142d5ce044afe60caaa85b538c3ae8fdcf21878256f2e1d8a44f7d5fb2",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/observe.py",
+      "sha256": "14dfc7142d5ce044afe60caaa85b538c3ae8fdcf21878256f2e1d8a44f7d5fb2",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/transport.py",
+      "sha256": "7e3e8b87ba54cc3c5a6693424fdcd539f48b11c78973ad66e962548016ab3f01",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/transport.py",
+      "sha256": "7e3e8b87ba54cc3c5a6693424fdcd539f48b11c78973ad66e962548016ab3f01",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/verify_package.py",
+      "sha256": "432dabc4b5c57911b2584eb8658a8be2264661aa4471cb76940d56994938bf15",
+      "mode": "argument",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    },
+    {
+      "path": "portable/verify_package.py",
+      "sha256": "432dabc4b5c57911b2584eb8658a8be2264661aa4471cb76940d56994938bf15",
+      "mode": "environment",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "PROTOCOL_REFUSED: optimized Python disables qualification checks; no worker executed\n",
+      "worker_invocations": 0
+    }
+  ]
+}

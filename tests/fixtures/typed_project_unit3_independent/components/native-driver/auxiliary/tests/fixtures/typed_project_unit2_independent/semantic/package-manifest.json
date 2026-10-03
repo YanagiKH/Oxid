@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "created_at_utc": "2026-10-02T16:17:28.880603+00:00",
+  "scope": "Portable static byte corpus and exact source-only adapter/comparator for 3603 private Unit2 cases; compiler execution qualification remains bound to external v4 receipts. Generated comparison outputs and pycache are excluded from the reusable package.",
+  "candidate_manifest_sha256": "9aaadaf0567378a862ddfdbcf163045ba6fb696af88e0eac624b63f3a77abdfb",
+  "files": {
+    "README.md": {
+      "bytes": 3108,
+      "sha256": "dc3b176f8f888fa8b26bdce51cce6d07536175142f7d702a729b1c1b6a8f8c00"
+    },
+    "corpus-manifest.json": {
+      "bytes": 609,
+      "sha256": "9457c6182f4a45e15308c5fe73512415ecef2ea6e0ec8fac37eb42f4fb8a8933"
+    },
+    "corpus.jsonl.gz": {
+      "bytes": 1050383,
+      "sha256": "a5b1853d854b307ca31c79154b518fb9eddf19218467b5562af81979d1369994"
+    },
+    "materialize.py": {
+      "bytes": 3001,
+      "sha256": "1985893a164e16f4a7ad1e0b3c324f4fb8f8eb1fc20d6995c6e82c759a1a7eeb"
+    },
+    "observer.rs": {
+      "bytes": 13965,
+      "sha256": "f2403aace53b6255a94b8b3ec0290db025638c5af94571d5729355672681fb00"
+    },
+    "read-source-callback.patch": {
+      "bytes": 474,
+      "sha256": "ad05189f79f5c8c50dab7aa0b01147159f8bbfc37e161a75b0a5304c7ea1f2fd"
+    },
+    "normalize.py": {
+      "bytes": 12697,
+      "sha256": "1b48ff9de1ca56963fe648290c1f518842f4e633c4c0643abc22f030e4fb2c06"
+    },
+    "compare.py": {
+      "bytes": 5661,
+      "sha256": "6e6642dfc28e37bf5c8c147719f52088ce3e2e5037cf15356ff287d6dd01df5c"
+    },
+    "frozen_compare.py": {
+      "bytes": 4842,
+      "sha256": "b4b343275fd42a798bc6a1aec0d526c828e68040d71d73940a8b819a4b13b74a"
+    },
+    "original93-prose-expectations.json": {
+      "bytes": 13035,
+      "sha256": "4742fee4eb4d5b09f2da3698ded582fcb08a7af9f13d9bf1369d9d547332187c"
+    },
+    "legacy-scalar-schedule-clarification.json": {
+      "bytes": 1457,
+      "sha256": "18472233e83df397f1a0a2eb67df339380b4ca15a860558d9851906ad300ea00"
+    }
+  },
+  "validation": {
+    "roundtrip_receipt": {
+      "path": "../portable-roundtrip-receipt.json",
+      "sha256": "f693b4201129e142390acffc8cc5a10dd8751a28c9401116bf5aa6a42731be43"
+    },
+    "debug_comparison": {
+      "path": "debug-export-comparison.json",
+      "sha256": "3a805ce227391412d9e19dce6ff0eead784a9c848d59ed1da5164993f9b0a49b"
+    },
+    "release_comparison": {
+      "path": "../portable-release-export-comparison.json",
+      "sha256": "aa1703299a63927432d6c7e784dd47565b84ec40c2ca4f3a41805733fc4ea30b"
+    }
+  }
+}

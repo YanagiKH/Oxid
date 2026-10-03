@@ -1,0 +1,28 @@
+{
+  "schema": "unit3-diagnostic-origin-correspondence-supplement-v1",
+  "status": "source-only reconstruction of a missing frozen design obligation, pending independent review",
+  "original_manifest": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "original_mutation_expectations_unchanged": true,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1806,
+      "sha256": "e7f32fb73bdb1ee72dc0b960cc04d9a40bc7d780ec4e9a521e628b2062a99341"
+    },
+    {
+      "path": "build.py",
+      "bytes": 4998,
+      "sha256": "1c051ccb61309e1b3c341f072b820ab7856e40638aee1e2b8b6c05ea1c24dccc"
+    },
+    {
+      "path": "expectations.json",
+      "bytes": 784,
+      "sha256": "cd7415d7326a1b69be086170b77978a9f7991c5dd0bcae4721013ed73c5e6ce3"
+    },
+    {
+      "path": "source-proof.json",
+      "bytes": 2459,
+      "sha256": "2b4c810e51773f5500fb28b5ef7655c4ccdf8fb98baa322a04dbeb222a891f14"
+    }
+  ]
+}

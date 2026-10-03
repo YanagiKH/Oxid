@@ -1,0 +1,2059 @@
+{
+  "actual_smokes": 12,
+  "compiler_runs": 0,
+  "covered_frozen_ids": 114,
+  "frozen_request_count": 114,
+  "original_specimens_modified": false,
+  "reports": [
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "source-seal-seam-entry",
+            "reason": "marker path does not name the independently selected edit: constructor.local.entry",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "source-seal-seam-entry",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "source-seal-seam-entry",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "bind-entry_id",
+      "profile": "debug",
+      "result": {
+        "kind": "source-seal-seam-entry",
+        "path": "constructor.local.entry",
+        "proof": "local-typed-frozen-entry-agreement",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "replace-span",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "replace-span",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "replace-span",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "replace-span",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.cause",
+      "profile": "debug",
+      "result": {
+        "category": "owned.DiagnosticOrigins.cause",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[0].terminator.kind.target",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "call-target",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[0].terminator.kind.target",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "correspondence-wrong-target-scalar",
+      "profile": "debug",
+      "result": {
+        "kind": "call-target",
+        "path": "functions[0].blocks[0].terminator.kind.target",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "metadata-wrong-file",
+      "profile": "debug",
+      "result": {
+        "kind": "replace-diagnostic-origin",
+        "path": "functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[4].terminator.kind.target",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "call-target",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[4].terminator.kind.target",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "raw-invalid_target",
+      "profile": "debug",
+      "result": {
+        "kind": "call-target",
+        "path": "functions[0].blocks[4].terminator.kind.target",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "original-source-map-file-id",
+            "reason": "marker path does not name the independently selected edit: constructor.actual_file",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "original-source-map-file-id",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "original-source-map-file-id",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "source-nonzero-original-file-positive",
+      "profile": "debug",
+      "result": {
+        "kind": "original-source-map-file-id",
+        "path": "constructor.actual_file",
+        "proof": "active-map-and-exhaustive-span-rebase",
+        "span_count": 179,
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "source-seal-seam-entry",
+            "reason": "marker path does not name the independently selected edit: constructor.local.entry",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "source-seal-seam-entry",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "source-seal-seam-entry",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "bind-entry_id",
+      "profile": "release",
+      "result": {
+        "kind": "source-seal-seam-entry",
+        "path": "constructor.local.entry",
+        "proof": "local-typed-frozen-entry-agreement",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "replace-span",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "replace-span",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "replace-span",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "replace-span",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.cause",
+      "profile": "release",
+      "result": {
+        "category": "owned.DiagnosticOrigins.cause",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[0].terminator.kind.target",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "call-target",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[0].terminator.kind.target",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "correspondence-wrong-target-scalar",
+      "profile": "release",
+      "result": {
+        "kind": "call-target",
+        "path": "functions[0].blocks[0].terminator.kind.target",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "replace-diagnostic-origin",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "metadata-wrong-file",
+      "profile": "release",
+      "result": {
+        "kind": "replace-diagnostic-origin",
+        "path": "functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker path does not name the independently selected edit: functions[0].blocks[4].terminator.kind.target",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "call-target",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "extra-raw-diff-with-consistent-joins",
+          "result": {
+            "kind": "call-target",
+            "reason": "raw after differs from the single permitted edit at functions[0].blocks[4].terminator.kind.target",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "raw-invalid_target",
+      "profile": "release",
+      "result": {
+        "kind": "call-target",
+        "path": "functions[0].blocks[4].terminator.kind.target",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "controls": [
+        {
+          "control": "changed-marker-path",
+          "result": {
+            "kind": "original-source-map-file-id",
+            "reason": "marker path does not name the independently selected edit: constructor.actual_file",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-before",
+          "result": {
+            "kind": "original-source-map-file-id",
+            "reason": "marker before value disagrees with actual edit",
+            "status": "invalid"
+          }
+        },
+        {
+          "control": "changed-marker-after",
+          "result": {
+            "kind": "original-source-map-file-id",
+            "reason": "marker after value disagrees with actual edit",
+            "status": "invalid"
+          }
+        }
+      ],
+      "id": "source-nonzero-original-file-positive",
+      "profile": "release",
+      "result": {
+        "kind": "original-source-map-file-id",
+        "path": "constructor.actual_file",
+        "proof": "active-map-and-exhaustive-span-rebase",
+        "span_count": 179,
+        "status": "applied"
+      },
+      "type": "actual-smoke"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Function.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Function.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-locals.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.locals.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].locals[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-places.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.places.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].places[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Block.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Block.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.BoolMerge.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.BoolMerge.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.incoming[0].value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.BoolMerge.incoming[0].value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.incoming[0].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.incoming[1].value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.BoolMerge.incoming[1].value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.incoming[1].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Assign.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Assign.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Initialize.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Initialize.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[1].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Initialize.place.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Initialize.place.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[1].place.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Initialize.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Initialize.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[1].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.place.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.place.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].place.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.Load.place.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.Load.place.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[2].value.place.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.NotBool.operand.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.NotBool.operand.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[7].value.operand.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.NotBool.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.NotBool.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[7].value.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.Copy.operand.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.Copy.operand.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[0].value.operand.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CompareScalar.left.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CompareScalar.left.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[3].value.left.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CompareScalar.right.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CompareScalar.right.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[3].value.right.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CompareScalar.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CompareScalar.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[3].value.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CheckedI32.left.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CheckedI32.left.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[4].value.left.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CheckedI32.right.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CheckedI32.right.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[4].value.right.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CheckedI32.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CheckedI32.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[4].value.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Terminator.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Terminator.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].terminator.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Branch.condition.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Branch.condition.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].terminator.kind.condition.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Call.args.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Call.args.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].terminator.kind.args[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-scalar-Return.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Return.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[8].terminator.kind.value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-Function.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.Function.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-locals.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.locals.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].locals[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-places.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.places.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].places[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-owners.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.owners.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].owners[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-references.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.references.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[1].references[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-calls.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.calls.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].calls[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-loans.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.loans.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].loans[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-Block.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.Block.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.BoolMerge.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.BoolMerge.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.incoming[0].value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.BoolMerge.incoming[0].value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.incoming[0].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.incoming[1].value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.BoolMerge.incoming[1].value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[2].merge.incoming[1].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-Statement.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.Statement.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.primary",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.DiagnosticOrigins.primary",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].diagnostic_origins.primary",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.cause",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.DiagnosticOrigins.cause",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-Construct.fields.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.Construct.fields.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[5].statements[3].kind.fields[0].value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-WriteField.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.WriteField.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[6].statements[1].kind.value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-PrepareScalar.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.PrepareScalar.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[8].kind.value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-Terminator.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.Terminator.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].terminator.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-Branch.condition.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.Branch.condition.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].terminator.kind.condition.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-ReturnScalar.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.ReturnScalar.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[8].terminator.kind.value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-RawRecordDecl.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.RawRecordDecl.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "records[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-wrong-file-owned-RawFieldDecl.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "owned.RawFieldDecl.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "records[0].fields[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Assign.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Assign.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[0].kind.scalar.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Initialize.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Initialize.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[1].kind.scalar.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Initialize.place.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Initialize.place.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[1].kind.scalar.place.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Initialize.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Initialize.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[1].kind.scalar.value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].kind.scalar.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].kind.scalar.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.place.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.place.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].kind.scalar.place.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.value.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Statement.Store.value.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[5].kind.scalar.value.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.Load.place.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.Load.place.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[2].kind.scalar.value.place.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.NotBool.operand.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.NotBool.operand.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[7].kind.scalar.value.operand.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.NotBool.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.NotBool.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[7].kind.scalar.value.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.Copy.operand.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.Copy.operand.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[0].kind.scalar.value.operand.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CompareScalar.left.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CompareScalar.left.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[3].kind.scalar.value.left.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CompareScalar.right.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CompareScalar.right.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[3].kind.scalar.value.right.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CompareScalar.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CompareScalar.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[4].statements[3].kind.scalar.value.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CheckedI32.left.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CheckedI32.left.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[4].kind.scalar.value.left.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CheckedI32.right.span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CheckedI32.right.span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[4].kind.scalar.value.right.span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CheckedI32.operator_span",
+      "rejected": [
+        "wrong-category",
+        "wrong-occurrence"
+      ],
+      "result": {
+        "category": "scalar.Rvalue.CheckedI32.operator_span",
+        "kind": "replace-span",
+        "occurrence": 0,
+        "path": "functions[0].blocks[0].statements[4].kind.scalar.value.operator_span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-function_id",
+      "result": {
+        "kind": "set-function-id",
+        "path": "functions[0].id",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-record_id",
+      "result": {
+        "kind": "set-record-id",
+        "path": "records[0].id",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-field_id",
+      "result": {
+        "kind": "set-field-id",
+        "path": "records[0].fields[0].id",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-wrong_arity",
+      "result": {
+        "kind": "remove-last-call-argument",
+        "path": "functions[0].blocks[4].terminator.kind.args",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-wrong_parameter_kind",
+      "result": {
+        "kind": "call-argument-mode",
+        "path": "functions[0].loans[0].kind",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-wrong_nominal_field",
+      "result": {
+        "kind": "projection-field-record",
+        "path": "functions[1].blocks[0].statements[0].kind.field",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-staging_owner_class",
+      "result": {
+        "kind": "owner-kind",
+        "path": "functions[0].owners[3].kind",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-return_transfer",
+      "result": {
+        "kind": "ReturnOwned-source",
+        "path": "functions[2].blocks[0].terminator.kind.owner",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-loan_parent",
+      "result": {
+        "kind": "nested-call-parent",
+        "path": "functions[0].calls[1].parent",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "correspondence-wrong-target-owned",
+      "result": {
+        "kind": "call-target",
+        "path": "functions[0].calls[0].target",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-function_count",
+      "result": {
+        "kind": "append-duplicate-function",
+        "path": "functions[2]",
+        "proof": "exact-appended-duplicate",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-field_count",
+      "result": {
+        "kind": "append-duplicate-field",
+        "path": "records[0].fields[2]",
+        "proof": "exact-appended-duplicate",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-invalid_file",
+      "result": {
+        "kind": "replace-span-file",
+        "path": "functions[0].locals[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-reversed_range",
+      "result": {
+        "kind": "replace-span-range",
+        "path": "functions[0].locals[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-past_eof",
+      "result": {
+        "kind": "replace-span-range",
+        "path": "functions[0].locals[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "bind-utf8_continuation",
+      "result": {
+        "kind": "replace-span-range",
+        "path": "functions[0].locals[0].span",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-loan_acquisition_missing",
+      "result": {
+        "kind": "remove-outer-PrepareBorrow",
+        "path": "functions[0].blocks[0].statements[7]",
+        "proof": "exact-statement-remove",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-cleanup_continue_live",
+      "result": {
+        "kind": "remove-required-StorageEnd",
+        "path": "functions[0].blocks[6].statements[0]",
+        "proof": "exact-statement-remove",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-cleanup_duplicate_end",
+      "result": {
+        "kind": "duplicate-StorageEnd",
+        "path": "functions[0].blocks[2].statements[6]",
+        "proof": "exact-statement-duplicate",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "correspondence-missing-cleanup-return",
+      "result": {
+        "kind": "remove-StorageEnd",
+        "path": "functions[0].blocks[2].statements[6]",
+        "proof": "exact-statement-remove",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "correspondence-missing-cleanup-break",
+      "result": {
+        "kind": "remove-StorageEnd",
+        "path": "functions[0].blocks[8].statements[0]",
+        "proof": "exact-statement-remove",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "correspondence-missing-cleanup-join",
+      "result": {
+        "kind": "remove-StorageEnd",
+        "path": "functions[0].blocks[6].statements[9]",
+        "proof": "exact-statement-remove",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "correspondence-reverse-cleanup",
+      "result": {
+        "kind": "swap-two-independent-StorageEnd",
+        "path": "functions[0].blocks[6].statements[0]",
+        "proof": "exact-statement-swap",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "metadata-same-file-primary",
+      "result": {
+        "kind": "replace-diagnostic-origin",
+        "path": "functions[0].blocks[0].statements[14].diagnostic_origins.primary",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "metadata-same-file-cause",
+      "result": {
+        "kind": "replace-diagnostic-origin",
+        "path": "functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-raw"
+    },
+    {
+      "id": "raw-wrong_scalar_result",
+      "result": {
+        "kind": "call-result-slot-type",
+        "reason": "no scalar call result slot",
+        "status": "invalid"
+      },
+      "type": "frozen-request-applicability-gap"
+    },
+    {
+      "id": "raw-wrong_scalar_result",
+      "result": {
+        "kind": "call-result-slot-type",
+        "path": "functions[0].locals[1].ty",
+        "proof": "exact-whole-raw-edit",
+        "status": "applied"
+      },
+      "type": "reviewed-supplement-in-memory-observed-raw"
+    },
+    {
+      "id": "bind-missing_span_visit",
+      "result": {
+        "category": "owned.Construct.fields.value.span",
+        "kind": "audit-visitor-suppress-one-visit",
+        "path": "functions[0].blocks[5].statements[3].kind.fields[0].value.span",
+        "proof": "independent-inventory-and-exact-visit-sequence",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-journal"
+    },
+    {
+      "id": "bind-duplicate_span_visit",
+      "result": {
+        "category": "owned.Construct.fields.value.span",
+        "kind": "audit-visitor-repeat-one-visit",
+        "path": "functions[0].blocks[5].statements[3].kind.fields[0].value.span",
+        "proof": "independent-inventory-and-exact-visit-sequence",
+        "status": "applied"
+      },
+      "type": "in-memory-observed-journal"
+    },
+    {
+      "id": "bind-count_total",
+      "rejected": [
+        "changed-numeric-counter",
+        "changed-count-prefix"
+      ],
+      "result": {
+        "kind": "audit-count-seam",
+        "path": "count.spans.before_finish",
+        "proof": "actual-counter-read-independent-journal-and-bind-denial",
+        "span_count": 367,
+        "status": "applied"
+      },
+      "type": "in-memory-counter-journal"
+    },
+    {
+      "id": "bind-checked_count_overflow",
+      "rejected": [
+        "changed-numeric-counter",
+        "changed-count-prefix"
+      ],
+      "result": {
+        "kind": "audit-count-seam-overflow",
+        "path": "count.spans.before_actual_increment",
+        "proof": "actual-counter-read-independent-journal-and-bind-denial",
+        "span_count": 367,
+        "status": "applied"
+      },
+      "type": "in-memory-counter-journal"
+    },
+    {
+      "id": "source-association-same_bytes_new_map",
+      "result": {
+        "kind": "original-source-constructor-substitution",
+        "path": "constructor.map",
+        "proof": "observed-map-allocation-and-source-content",
+        "status": "applied",
+        "substitution": "same_bytes_new_map"
+      },
+      "type": "in-memory-source-constructor"
+    },
+    {
+      "id": "source-association-same_path_new_map",
+      "result": {
+        "kind": "original-source-constructor-substitution",
+        "path": "constructor.map",
+        "proof": "observed-map-allocation-and-source-content",
+        "status": "applied",
+        "substitution": "same_path_new_map"
+      },
+      "type": "in-memory-source-constructor"
+    },
+    {
+      "id": "source-association-same_offsets_other_map",
+      "result": {
+        "kind": "original-source-constructor-substitution",
+        "path": "constructor.map",
+        "proof": "observed-map-allocation-and-source-content",
+        "status": "applied",
+        "substitution": "same_offsets_other_map"
+      },
+      "type": "in-memory-source-constructor"
+    },
+    {
+      "id": "source-association-stale_parser_generation",
+      "result": {
+        "kind": "original-source-constructor-substitution",
+        "requirement": "require actual constructor AST provenance identity and actual source identity; SourceProvenance Debug omits generation identity, so the marker cannot prove stale_parser_generation",
+        "status": "evidence-missing"
+      },
+      "type": "in-memory-source-constructor"
+    },
+    {
+      "id": "driver-snapshot_after_load",
+      "result": {
+        "kind": "driver-boundary",
+        "requirement": "driver-boundary mutation requires separately attributed driver operation/restore receipts; raw/applied markers do not prove driver actions",
+        "status": "evidence-missing"
+      },
+      "type": "missing-attributed-driver-evidence"
+    },
+    {
+      "id": "driver-source_free_native",
+      "result": {
+        "kind": "driver-boundary",
+        "requirement": "driver-boundary mutation requires separately attributed driver operation/restore receipts; raw/applied markers do not prove driver actions",
+        "status": "evidence-missing"
+      },
+      "type": "missing-attributed-driver-evidence"
+    },
+    {
+      "id": "driver-recursion_occupied_output",
+      "result": {
+        "kind": "driver-boundary",
+        "requirement": "driver-boundary mutation requires separately attributed driver operation/restore receipts; raw/applied markers do not prove driver actions",
+        "status": "evidence-missing"
+      },
+      "type": "missing-attributed-driver-evidence"
+    },
+    {
+      "id": "driver-recursion_symlink_output",
+      "result": {
+        "kind": "driver-boundary",
+        "requirement": "driver-boundary mutation requires separately attributed driver operation/restore receipts; raw/applied markers do not prove driver actions",
+        "status": "evidence-missing"
+      },
+      "type": "missing-attributed-driver-evidence"
+    }
+  ],
+  "schema": "unit3-mutation-application-observer-only-tests-v1"
+}

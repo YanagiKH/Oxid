@@ -25,13 +25,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust quality components
-        uses: dtolnay/rust-toolchain@stable
+      # Qualified private gates reproduce the reviewed Rust 1.99.0 toolchain.
+      # The separate four-host ordinary matrix deliberately follows stable.
+      - name: Install qualified Rust quality components
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
 
       - name: Cache Rust builds
         uses: Swatinem/rust-cache@v2
+
+      - name: Fetch locked dependencies before offline private qualification
+        run: cargo fetch --locked
+
+      # Check exact src/native membership before legacy checks can create caches.
+      - name: Preserve Unit2 semantic and resource gates with explicit current inputs
+        run: |
+          python3 -B tests/fixtures/typed_project_unit3_compatibility/run.py \
+            --repo . \
+            --source-manifest tests/fixtures/typed_project_unit3_compatibility/source-inputs-unit3-platform-v2.json \
+            --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
+            --output "$RUNNER_TEMP/typed-project-unit2-results"
 
       - name: Test feature status metadata validation
         run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
@@ -60,9 +74,6 @@ jobs:
       - name: Test typed-project runner identity controls
         run: python3 -B -m unittest discover -s tests/fixtures/typed_project_unit2_independent -p 'test_protocol.py' -v
 
-      - name: Verify private typed-project semantics and resource controls in both profiles
-        run: python3 -B tests/fixtures/typed_project_unit2_independent/run.py --repo . --output "$RUNNER_TEMP/typed-project-unit2-results"
-
       - name: Check private typed-project source and index seals
         run: python3 -B tests/fixtures/typed_project_unit2_seal/run.py --repo . --output "$RUNNER_TEMP/typed-project-unit2-seal-results" --rustc rustc
 
@@ -70,15 +81,15 @@ jobs:
         if: always()
         shell: bash
         run: |
-          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
+          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/run/result.json" "$RUNNER_TEMP/typed-project-unit2-results/run/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/run/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
             if test -f "$receipt"; then
               cat "$receipt"
             fi
           done
-          if test -f "$RUNNER_TEMP/typed-project-unit2-results/rustc-version.stdout"; then
-            cat "$RUNNER_TEMP/typed-project-unit2-results/rustc-version.stdout"
+          if test -f "$RUNNER_TEMP/typed-project-unit2-results/run/rustc-version.stdout"; then
+            cat "$RUNNER_TEMP/typed-project-unit2-results/run/rustc-version.stdout"
           fi
-          for observations in "$RUNNER_TEMP/typed-project-unit2-results/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/"*-normalized.jsonl; do
+          for observations in "$RUNNER_TEMP/typed-project-unit2-results/run/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/run/"*-normalized.jsonl; do
             if test -f "$observations"; then
               gzip -6 -k "$observations"
             fi
@@ -96,6 +107,10 @@ jobs:
             ${{ runner.temp }}/typed-project-unit2-results/*.jsonl.gz
             ${{ runner.temp }}/typed-project-unit2-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-results/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/run/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/run/*.jsonl.gz
+            ${{ runner.temp }}/typed-project-unit2-results/run/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/run/*.stderr
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.json
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-seal-results/*.stderr
@@ -220,6 +235,7 @@ jobs:
   native-scalar-preview:
     name: Experimental LLVM scalar native (Linux x86_64)
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     container: debian:trixie-slim
     env:
       OXID_LLVM_BIN: /usr/lib/llvm-19/bin
@@ -233,7 +249,266 @@ jobs:
             libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
             libclang-common-19-dev=1:19.1.7-3+b1
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Native private qualification shares the reviewed Rust/LLVM pair.
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked dependencies before offline private qualification
+        run: cargo fetch --locked
+      - name: Qualify all private Unit3 source, native and mutation cases
+        id: unit3_qualification
+        timeout-minutes: 120
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+          CARGO_INCREMENTAL: "0"
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          set -euo pipefail
+          unit3_repo="$PWD"
+          unit3_out="$RUNNER_TEMP/typed-project-unit3"
+          unit3_pkg="$unit3_repo/tests/fixtures/typed_project_unit3_independent"
+          unit3_python="$(command -v python3)"
+          unit3_rustc="$(rustup which rustc)"
+          unit3_cargo="$(rustup which cargo)"
+          unit3_rustdoc="$(rustup which rustdoc)"
+          unit3_cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          unit3_rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+          unit3_cc="$(command -v cc)"
+          unit3_cxx="$(command -v c++)"
+          unit3_ar="$(command -v ar)"
+          unit3_llvm_bin="$OXID_LLVM_BIN"
+          unit3_llvm_lib_dir="$unit3_out/llvm-runtime/libraries"
+          "$unit3_python" -B "$unit3_pkg/portable/verify_package.py" --package "$unit3_pkg" \
+            --manifest "$unit3_pkg/package-manifest.json" --receipt "$unit3_out/package-verification.json"
+
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/stage_llvm_runtime.py" \
+            --output "$unit3_out/llvm-runtime"
+
+          "$unit3_python" -B "$unit3_pkg/portable/transport.py" materialize \
+            --archive "$unit3_pkg/source-transport/sources.tar.gz" \
+            --manifest "$unit3_pkg/source-transport/source-transport.json" \
+            --requests "$unit3_pkg/source-transport/requests.jsonl" --output "$unit3_out/inputs"
+
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" prepare \
+            --component-root "$unit3_pkg/components/oracles" \
+            --component-manifest "$unit3_pkg/portable/comparison-v1/component-manifest.json" \
+            --materialization "$unit3_out/inputs/materialization.json" \
+            --parser "$unit3_pkg/components/observer/parse_debug.py" --output "$unit3_out/comparison-view"
+
+          "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_repo" \
+            --selected-manifest "$unit3_pkg/manifests/selected-current.json" \
+            --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --platform-patch "$unit3_pkg/manifests/platform-scope.patch" \
+            --original-test "$unit3_pkg/manifests/project_execution_tests.core-v1.rs" \
+            --output "$unit3_out/bridge"
+
+          "$unit3_python" -B "$unit3_pkg/portable/assemble.py" \
+            --repo "$unit3_out/bridge/derived-core-v1" --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --observer-root "$unit3_pkg/components/observer" \
+            --observer-freeze "$unit3_pkg/components/observer/adapter-freeze-v1.json" \
+            --output "$unit3_out/observer"
+
+          for unit3_profile in debug release; do
+            "$unit3_python" -B "$unit3_pkg/portable/build.py" \
+              --prepared-manifest "$unit3_out/observer/prepared-source.json" \
+              --output "$unit3_out/source-build-$unit3_profile" --target-dir "$unit3_out/source-target" \
+              --profile "$unit3_profile" --jobs 2 --rustc "$unit3_rustc" --cargo "$unit3_cargo" \
+              --rustdoc "$unit3_rustdoc" --cargo-home "$unit3_cargo_home" --cc "$unit3_cc" --cxx "$unit3_cxx" --ar "$unit3_ar"
+          done
+
+          "$unit3_python" -B "$unit3_pkg/portable/make_plan.py" --kind source \
+            --materialization "$unit3_out/inputs/materialization.json" \
+            --prepared "$unit3_out/observer/prepared-source.json" --wrapper "$unit3_pkg/portable/observe.py" \
+            --debug-build "$unit3_out/source-build-debug/build.json" \
+            --release-build "$unit3_out/source-build-release/build.json" \
+            --receipt-root "$unit3_out/source-receipts" --output "$unit3_out/source-plan.json"
+          unit3_source_plan_sha=$(sha256sum "$unit3_out/source-plan.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/collect.py" --plan "$unit3_out/source-plan.json" \
+            --plan-sha256 "$unit3_source_plan_sha" --python "$unit3_python" --output "$unit3_out/source-collection"
+
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/auxiliary_transport.py" \
+            --auxiliary-root "$unit3_pkg/components/native-driver/auxiliary" \
+            --original-manifest "$unit3_pkg/components/native-driver/auxiliary-manifest-v1.json" \
+            --output "$unit3_out/native-auxiliary"
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_inputs.py" \
+            --bridge-receipt "$unit3_out/bridge/bridge-receipt.json" \
+            --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --overlay-manifest "$unit3_pkg/components/native-driver/overlay-manifest-v2.json" \
+            --overlay-patch "$unit3_pkg/components/native-driver/overlay-v2.patch" \
+            --auxiliary-root "$unit3_out/native-auxiliary/inputs" --output "$unit3_out/native-inputs"
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_portable_grouped.py" prepare \
+            --repo "$unit3_out/native-inputs/inputs" --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --native-root "$unit3_pkg/components/native-driver" \
+            --native-manifest "$unit3_pkg/components/native-driver/artifact-manifest.json" \
+            --oracle-manifest "$unit3_pkg/components/oracles/pre-execution-manifest.json" \
+            --native-supplement "$unit3_pkg/components/oracles/supplements/native-diagnostics-v1/supplement-manifest.json" \
+            --native-fuel-requests "$unit3_pkg/components/oracles/supplements/native-diagnostics-v1/fuel-requests.jsonl" \
+            --materialization "$unit3_out/inputs/materialization.json" --output "$unit3_out/native"
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_portable_grouped.py" build \
+            --prepared-manifest "$unit3_out/native/native-prepared.json" --profile both \
+            --rustc "$unit3_rustc" --llvm-bin "$unit3_llvm_bin" --llvm-lib-dir "$unit3_llvm_lib_dir" \
+            --cargo-home "$unit3_cargo_home" --rustup-home "$unit3_rustup_home" \
+            --receipt "$unit3_out/native-build-wrapper.json"
+          "$unit3_python" -B "$unit3_pkg/portable/make_plan.py" --kind native \
+            --materialization "$unit3_out/inputs/materialization.json" --prepared "$unit3_out/native/native-prepared.json" \
+            --wrapper "$unit3_pkg/portable/native-v1/native_portable_grouped.py" \
+            --debug-build "$unit3_out/native/native-component/build-debug/verified-build.json" \
+            --release-build "$unit3_out/native/native-component/build-release/verified-build.json" \
+            --build-wrapper "$unit3_out/native-build-wrapper.json" \
+            --receipt-root "$unit3_out/native-wrappers" --output "$unit3_out/native-plan.json"
+          unit3_native_plan_sha=$(sha256sum "$unit3_out/native-plan.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/collect.py" --plan "$unit3_out/native-plan.json" \
+            --plan-sha256 "$unit3_native_plan_sha" --python "$unit3_python" --output "$unit3_out/native-collection" \
+            --rustc "$unit3_rustc" --llvm-bin "$unit3_llvm_bin" --llvm-lib-dir "$unit3_llvm_lib_dir" \
+            --cargo-home "$unit3_cargo_home" --rustup-home "$unit3_rustup_home"
+          for unit3_variant in v2 v3; do
+            "$unit3_python" -B "$unit3_pkg/portable/mutations.py" prepare --variant "$unit3_variant" \
+              --observer-prepared "$unit3_out/observer/prepared-source.json" \
+              --component-root "$unit3_pkg/components/mutations/$unit3_variant" \
+              --oracle-manifest "$unit3_pkg/components/oracles/pre-execution-manifest.json" \
+              --mutation-requests "$unit3_pkg/components/oracles/mutation-requests.json" \
+              --effective-requests "$unit3_pkg/components/oracles/supplements/mutation-applicability-v1/requests.json" \
+              --applicability-manifest "$unit3_pkg/components/oracles/supplements/mutation-applicability-v1/supplement-manifest.json" \
+              --output "$unit3_out/mutations-$unit3_variant"
+            for unit3_profile in debug release; do
+              "$unit3_python" -B "$unit3_pkg/portable/build.py" \
+                --prepared-manifest "$unit3_out/mutations-$unit3_variant/prepared-mutation.json" \
+                --output "$unit3_out/mutation-build-$unit3_variant-$unit3_profile" \
+                --target-dir "$unit3_out/mutations-$unit3_variant/target" \
+                --profile "$unit3_profile" --jobs 2 --rustc "$unit3_rustc" --cargo "$unit3_cargo" \
+                --rustdoc "$unit3_rustdoc" --cargo-home "$unit3_cargo_home" --cc "$unit3_cc" --cxx "$unit3_cxx" --ar "$unit3_ar"
+            done
+          done
+          "$unit3_python" -B "$unit3_pkg/portable/mutation_gate.py" make \
+            --materialization "$unit3_out/inputs/materialization.json" --wrapper "$unit3_pkg/portable/mutations.py" \
+            --v2-prepared "$unit3_out/mutations-v2/prepared-mutation.json" \
+            --v3-prepared "$unit3_out/mutations-v3/prepared-mutation.json" \
+            --v2-debug-build "$unit3_out/mutation-build-v2-debug/build.json" \
+            --v2-release-build "$unit3_out/mutation-build-v2-release/build.json" \
+            --v3-debug-build "$unit3_out/mutation-build-v3-debug/build.json" \
+            --v3-release-build "$unit3_out/mutation-build-v3-release/build.json" \
+            --receipt-root "$unit3_out/mutation-receipts" --output "$unit3_out/mutation-plan.json"
+          unit3_mutation_plan_sha=$(sha256sum "$unit3_out/mutation-plan.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/mutation_gate.py" collect --plan "$unit3_out/mutation-plan.json" \
+            --plan-sha256 "$unit3_mutation_plan_sha" --python "$unit3_python" --output "$unit3_out/mutation-collection"
+
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
+            --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
+            --plan "$unit3_out/source-plan.json" --plan-sha256 "$unit3_source_plan_sha" \
+            --output "$unit3_out/source-comparison"
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
+            --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
+            --plan "$unit3_out/native-plan.json" --plan-sha256 "$unit3_native_plan_sha" \
+            --output "$unit3_out/native-comparison"
+          unit3_native_evidence_sha=$(sha256sum "$unit3_out/native-comparison/comparison.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
+            --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
+            --plan "$unit3_out/mutation-plan.json" --plan-sha256 "$unit3_mutation_plan_sha" \
+            --native-evidence "$unit3_out/native-comparison/comparison.json" \
+            --native-evidence-sha256 "$unit3_native_evidence_sha" --output "$unit3_out/mutation-comparison"
+
+      - name: Surface bounded native build failure details
+        if: failure() && steps.unit3_qualification.outcome == 'failure'
+        timeout-minutes: 1
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/collect_unit3_ci_diagnostics.py failure-logs
+
+      - name: Index and preserve Unit3 results on every terminal state
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: |
+          python3 -B - <<'PYCODE'
+          import hashlib, json, os, pathlib, tarfile
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "typed-project-unit3"
+          root.mkdir(parents=True, exist_ok=True)
+          package = pathlib.Path("tests/fixtures/typed_project_unit3_independent")
+          selected = []
+          for path in sorted(root.rglob("*")):
+              if not (path.is_file() or path.is_symlink()):
+                  continue
+              relative = path.relative_to(root)
+              build_cache = "target" in relative.parts or "source-target" in relative.parts
+              if build_cache:
+                  if path.is_symlink() or not path.name.startswith("oxid-"):
+                      continue
+                  with path.open("rb") as source:
+                      if source.read(4) != b"\x7fELF":
+                          continue
+              selected.append(path)
+          entries = []
+          for path in selected:
+              name = path.relative_to(root).as_posix()
+              if path.is_symlink():
+                  entries.append({"path": name, "type": "symlink", "target": os.readlink(path)})
+              else:
+                  digest = hashlib.sha256()
+                  with path.open("rb") as source:
+                      while chunk := source.read(1024 * 1024):
+                          digest.update(chunk)
+                  entries.append({"path": name, "bytes": path.stat().st_size, "sha256": digest.hexdigest()})
+          inputs = {}
+          for name in ("package-manifest.json", "manifests/selected-current.json", "manifests/core-v1.json"):
+              path = package / name
+              if path.is_file():
+                  inputs[name] = {"bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+          index = root / "ci-evidence-index.json"
+          index.write_text(json.dumps({
+              "schema": 1,
+              "qualification_step_outcome": os.environ.get("UNIT3_STEP_OUTCOME", "unknown"),
+              "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",
+              "direct_successor_semantic_execution": False,
+              "package_inputs": inputs,
+              "expected_full_plan_rows": {"source": 304, "native": 300, "mutation": 220},
+              "driver_attributions": "eight rows joined from the full native comparison; zero extra executions",
+              "retained_bytes": sum(row.get("bytes", 0) for row in entries),
+              "excluded": "regenerable Rust target caches; exact oxid test executables are retained",
+              "files": entries,
+          }, indent=2) + "\n")
+          archive = root.parent / "typed-project-unit3-evidence.tar.gz"
+          with tarfile.open(archive, "w:gz", compresslevel=6, dereference=False) as output:
+              for path in selected + [index]:
+                  output.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
+          archive_digest = hashlib.sha256()
+          with archive.open("rb") as source:
+              while chunk := source.read(1024 * 1024):
+                  archive_digest.update(chunk)
+          (root.parent / "typed-project-unit3-evidence.sha256").write_text(
+              archive_digest.hexdigest() + "  " + archive.name + "\n")
+          print(json.dumps({"files": len(entries), "retained_bytes": sum(row.get("bytes", 0) for row in entries), "archive_bytes": archive.stat().st_size}))
+          PYCODE
+
+      - name: Prepare bounded Unit3 diagnostic receipts
+        if: always()
+        timeout-minutes: 2
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/collect_unit3_ci_diagnostics.py compact
+
+      - name: Retain compact Unit3 diagnostic receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-project-unit3-compact
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-project-unit3-compact.tar.gz
+            ${{ runner.temp }}/typed-project-unit3-compact.tar.gz.sha256
+
+      - name: Retain lossless Unit3 qualification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-project-unit3-evidence
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-project-unit3-evidence.tar.gz
+            ${{ runner.temp }}/typed-project-unit3-evidence.sha256
+
       - name: Build the compiler and run admission/tool-boundary regressions
         run: |
           cargo test --locked --test typed_native

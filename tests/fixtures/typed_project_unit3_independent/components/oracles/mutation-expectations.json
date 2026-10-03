@@ -1,0 +1,1733 @@
+{
+  "schema": "unit3-finite-mutations-v1",
+  "count": 114,
+  "mutations": [
+    {
+      "id": "bind-wrong-file-scalar-Function.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Function.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-locals.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.locals.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-places.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.places.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Block.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Block.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.BoolMerge.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.operator_span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.BoolMerge.operator_span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.incoming[0].value.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.BoolMerge.incoming[0].value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-BoolMerge.incoming[1].value.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.BoolMerge.incoming[1].value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Assign.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Assign.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Initialize.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Initialize.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Initialize.place.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Initialize.place.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Initialize.value.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Initialize.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.operator_span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.operator_span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.place.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.place.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Statement.Store.value.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.Load.place.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.Load.place.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.NotBool.operand.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.NotBool.operand.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.NotBool.operator_span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.NotBool.operator_span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.Copy.operand.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.Copy.operand.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CompareScalar.left.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CompareScalar.left.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CompareScalar.right.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CompareScalar.right.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CompareScalar.operator_span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CompareScalar.operator_span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CheckedI32.left.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CheckedI32.left.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CheckedI32.right.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CheckedI32.right.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Rvalue.CheckedI32.operator_span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CheckedI32.operator_span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Terminator.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Terminator.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Branch.condition.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Branch.condition.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Call.args.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Call.args.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-scalar-Return.value.span",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Return.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-Function.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.Function.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-locals.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.locals.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-places.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.places.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-owners.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.owners.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-references.span",
+      "positive_control": "owned-root_child-absolute-root-shared_nested",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.references.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-calls.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.calls.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-loans.span",
+      "positive_control": "owned-root_child-absolute-root-shared_nested",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.loans.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-Block.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.Block.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.BoolMerge.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.operator_span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.BoolMerge.operator_span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.incoming[0].value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.BoolMerge.incoming[0].value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-BoolMerge.incoming[1].value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.BoolMerge.incoming[1].value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-Statement.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.Statement.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.primary",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.DiagnosticOrigins.primary",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.cause",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.DiagnosticOrigins.cause",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-Construct.fields.value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.Construct.fields.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-WriteField.value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.WriteField.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-PrepareScalar.value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.PrepareScalar.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-Terminator.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.Terminator.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-Branch.condition.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.Branch.condition.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-ReturnScalar.value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.ReturnScalar.value.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-RawRecordDecl.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.RawRecordDecl.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-RawFieldDecl.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "owned.RawFieldDecl.span",
+        "occurrence": 0,
+        "replacement": "another loaded file, valid UTF-8 range with same offsets where possible; otherwise its checked first identifier"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "raw_verifier": "no rejection required solely for a valid foreign file"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Assign.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Assign.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Initialize.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Initialize.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Initialize.place.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Initialize.place.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Initialize.value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Initialize.value.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.operator_span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.operator_span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.place.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.place.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Statement.Store.value.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Statement.Store.value.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.Load.place.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.Load.place.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.NotBool.operand.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.NotBool.operand.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.NotBool.operator_span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.NotBool.operator_span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.Copy.operand.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.Copy.operand.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CompareScalar.left.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CompareScalar.left.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CompareScalar.right.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CompareScalar.right.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CompareScalar.operator_span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CompareScalar.operator_span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CheckedI32.left.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CheckedI32.left.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CheckedI32.right.span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CheckedI32.right.span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-owned-nested-Rvalue.CheckedI32.operator_span",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span",
+        "category": "scalar.Rvalue.CheckedI32.operator_span",
+        "occurrence": 0,
+        "replacement": "valid range in different loaded file"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind"
+      }
+    },
+    {
+      "id": "bind-invalid_file",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span-file",
+        "value": "number_of_files"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-reversed_range",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span-range",
+        "start": 2,
+        "end": 1
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-past_eof",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "replace-span-range",
+        "end": "file_length+1"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-utf8_continuation",
+      "positive_control": "origin-unicode-lf-owned_overflow",
+      "mutation": {
+        "kind": "replace-span-range",
+        "start": "first multibyte scalar start + 1"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-function_id",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "set-function-id",
+        "index": 0,
+        "value": "function_count"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-function_count",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "append-duplicate-function",
+        "index": 0
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-record_id",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "set-record-id",
+        "index": 0,
+        "value": 1
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-field_id",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "set-field-id",
+        "record": 0,
+        "field": 0,
+        "value": [
+          0,
+          1
+        ]
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-field_count",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "append-duplicate-field",
+        "record": 0,
+        "field": 0
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-entry_id",
+      "positive_control": "control-owned-entry-id1",
+      "mutation": {
+        "kind": "source-seal-seam-entry",
+        "value": 0
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-missing_span_visit",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "audit-visitor-suppress-one-visit",
+        "category": "owned.Construct.fields.value.span"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-duplicate_span_visit",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "audit-visitor-repeat-one-visit",
+        "category": "owned.Construct.fields.value.span"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-count_total",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "audit-count-seam",
+        "delta": 1
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "bind-checked_count_overflow",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "audit-count-seam-overflow",
+        "value": "usize::MAX+1"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "origin": "proven-safe origin or null; never the mutated unchecked origin"
+      }
+    },
+    {
+      "id": "source-association-same_bytes_new_map",
+      "positive_control": "pilot-original-batch",
+      "mutation": {
+        "kind": "original-source-constructor-substitution",
+        "substitution": "same_bytes_new_map"
+      },
+      "expected": {
+        "authority": "source-association-rejection",
+        "code": "E0500",
+        "stage": "resolve-project",
+        "primary": null,
+        "secondary": [],
+        "render_from_unchecked_map": false
+      }
+    },
+    {
+      "id": "source-association-same_path_new_map",
+      "positive_control": "pilot-original-batch",
+      "mutation": {
+        "kind": "original-source-constructor-substitution",
+        "substitution": "same_path_new_map"
+      },
+      "expected": {
+        "authority": "source-association-rejection",
+        "code": "E0500",
+        "stage": "resolve-project",
+        "primary": null,
+        "secondary": [],
+        "render_from_unchecked_map": false
+      }
+    },
+    {
+      "id": "source-association-same_offsets_other_map",
+      "positive_control": "pilot-original-batch",
+      "mutation": {
+        "kind": "original-source-constructor-substitution",
+        "substitution": "same_offsets_other_map"
+      },
+      "expected": {
+        "authority": "source-association-rejection",
+        "code": "E0500",
+        "stage": "resolve-project",
+        "primary": null,
+        "secondary": [],
+        "render_from_unchecked_map": false
+      }
+    },
+    {
+      "id": "source-association-stale_parser_generation",
+      "positive_control": "pilot-original-batch",
+      "mutation": {
+        "kind": "original-source-constructor-substitution",
+        "substitution": "stale_parser_generation"
+      },
+      "expected": {
+        "authority": "source-association-rejection",
+        "code": "E0500",
+        "stage": "resolve-project",
+        "primary": null,
+        "secondary": [],
+        "render_from_unchecked_map": false
+      }
+    },
+    {
+      "id": "source-nonzero-original-file-positive",
+      "positive_control": "control-original-scalar-pilot",
+      "mutation": {
+        "kind": "original-source-map-file-id",
+        "value": 1
+      },
+      "expected": {
+        "authority": "source-association-acceptance",
+        "result": 10,
+        "entry": 1,
+        "all_original_origins_file": 1
+      }
+    },
+    {
+      "id": "raw-invalid_target",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "call-target",
+        "value": "function_count"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-wrong_arity",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "remove-last-call-argument"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-wrong_scalar_result",
+      "positive_control": "control-span-variants-scalar",
+      "mutation": {
+        "kind": "call-result-slot-type",
+        "value": "opposite scalar type"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-wrong_parameter_kind",
+      "positive_control": "owned-root_child-absolute-root-shared_nested",
+      "mutation": {
+        "kind": "call-argument-mode",
+        "argument": 0,
+        "value": "Exclusive"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-wrong_nominal_field",
+      "positive_control": "positive-nominal_reference",
+      "mutation": {
+        "kind": "projection-field-record",
+        "record": 1
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-staging_owner_class",
+      "positive_control": "owned-root_child-absolute-root-owned_staging",
+      "mutation": {
+        "kind": "owner-kind",
+        "select": "first StagedArgument",
+        "value": "Temporary"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-return_transfer",
+      "positive_control": "owned-root_child-absolute-root-owned_staging",
+      "mutation": {
+        "kind": "ReturnOwned-source",
+        "select": "callee helper",
+        "value": "already moved parameter owner of same record"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-loan_parent",
+      "positive_control": "owned-root_child-absolute-root-shared_nested",
+      "mutation": {
+        "kind": "nested-call-parent",
+        "value": "self"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-loan_acquisition_missing",
+      "positive_control": "owned-root_child-absolute-root-shared_nested",
+      "mutation": {
+        "kind": "remove-outer-PrepareBorrow",
+        "retain": "CallDecl Borrow argument and LoanDecl"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-cleanup_continue_live",
+      "positive_control": "owned-root_child-absolute-root-loop_cleanup",
+      "mutation": {
+        "kind": "remove-required-StorageEnd",
+        "edge": "continue"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "raw-cleanup_duplicate_end",
+      "positive_control": "control-cleanup_return_join",
+      "mutation": {
+        "kind": "duplicate-StorageEnd",
+        "edge": "return"
+      },
+      "expected": {
+        "authority": "raw-verifier-rejection",
+        "verified_witness": false,
+        "classification": "internal E0500; never invented user ownership permission"
+      }
+    },
+    {
+      "id": "correspondence-missing-cleanup-return",
+      "positive_control": "control-cleanup_return_join",
+      "mutation": {
+        "kind": "remove-StorageEnd",
+        "edge": "return",
+        "select": "lexical owner never accessed or StorageLive again on that exit path"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "raw_verifier": "accept",
+        "requirement": "source lexical cleanup is mandatory even when raw memory safety permits retaining storage until return"
+      }
+    },
+    {
+      "id": "correspondence-missing-cleanup-break",
+      "positive_control": "owned-root_child-absolute-root-loop_cleanup",
+      "mutation": {
+        "kind": "remove-StorageEnd",
+        "edge": "break",
+        "select": "lexical owner never accessed or StorageLive again on that exit path"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "raw_verifier": "accept",
+        "requirement": "source lexical cleanup is mandatory even when raw memory safety permits retaining storage until return"
+      }
+    },
+    {
+      "id": "correspondence-missing-cleanup-join",
+      "positive_control": "control-span-variants-owned",
+      "mutation": {
+        "kind": "remove-StorageEnd",
+        "edge": "if join",
+        "select": "lexical owner never accessed or StorageLive again on that exit path"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "raw_verifier": "accept",
+        "requirement": "source lexical cleanup is mandatory even when raw memory safety permits retaining storage until return"
+      }
+    },
+    {
+      "id": "correspondence-wrong-target-scalar",
+      "positive_control": "scalar-root_child-absolute-entry0-i32",
+      "mutation": {
+        "kind": "call-target",
+        "select": "call to helper in left",
+        "replacement": "same-signature helper original in right"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "raw_verifier": "accept",
+        "source_association_audit": "accept",
+        "expected_target": "left original",
+        "result_after_mutation": 93
+      }
+    },
+    {
+      "id": "correspondence-wrong-target-owned",
+      "positive_control": "owned-root_child-absolute-root-shared_nested",
+      "mutation": {
+        "kind": "call-target",
+        "select": "call to helper in left",
+        "replacement": "same-signature helper original in right"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "raw_verifier": "accept",
+        "source_association_audit": "accept",
+        "expected_target": "left original",
+        "result_after_mutation": 91
+      }
+    },
+    {
+      "id": "correspondence-reverse-cleanup",
+      "positive_control": "owned-root_child-absolute-root-loop_cleanup",
+      "mutation": {
+        "kind": "swap-two-independent-StorageEnd",
+        "edge": "continue",
+        "preserve": "both owner lifetimes ended before edge"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "raw_verifier": "accept",
+        "requirement": "reverse lexical cleanup order including moved owners"
+      }
+    },
+    {
+      "id": "metadata-same-file-primary",
+      "positive_control": "negative-exclusive_then_read",
+      "mutation": {
+        "kind": "replace-diagnostic-origin",
+        "field": "primary",
+        "replacement": "other valid same-file span"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "generic_raw_denial_kind": "unchanged",
+        "source_denial_code": "E0311",
+        "authority_not_changed": true
+      }
+    },
+    {
+      "id": "metadata-same-file-cause",
+      "positive_control": "negative-exclusive_then_read",
+      "mutation": {
+        "kind": "replace-diagnostic-origin",
+        "field": "cause",
+        "replacement": "other valid same-file span"
+      },
+      "expected": {
+        "authority": "semantic-correspondence-rejection",
+        "generic_raw_denial_kind": "unchanged",
+        "source_denial_code": "E0311",
+        "authority_not_changed": true
+      }
+    },
+    {
+      "id": "metadata-wrong-file",
+      "positive_control": "negative-exclusive_then_read",
+      "mutation": {
+        "kind": "replace-diagnostic-origin",
+        "field": "cause",
+        "replacement": "valid child-file span"
+      },
+      "expected": {
+        "authority": "association-audit-rejection",
+        "code": "E0500",
+        "stage": "oir-project-bind",
+        "generic_raw_denial_kind": "unchanged"
+      }
+    },
+    {
+      "id": "driver-snapshot_after_load",
+      "positive_control": "pilot-mechanical-batch",
+      "mutation": {
+        "kind": "driver-boundary",
+        "action": "rename fixture root after real load, before reference/native IR construction"
+      },
+      "expected": {
+        "authority": "driver-consumer-boundary",
+        "expected": "no source reopen; same result"
+      }
+    },
+    {
+      "id": "driver-source_free_native",
+      "positive_control": "pilot-opaque-batch",
+      "mutation": {
+        "kind": "driver-boundary",
+        "action": "copy only ELF to fresh cwd; rename source root; execute with recorded minimal environment; restore source root"
+      },
+      "expected": {
+        "authority": "driver-consumer-boundary",
+        "expected": "no source reopen; same result"
+      }
+    },
+    {
+      "id": "driver-recursion_occupied_output",
+      "positive_control": "negative-native_recursion-scalar-false",
+      "mutation": {
+        "kind": "driver-boundary",
+        "action": "provide existing output file and spy LLVM tools"
+      },
+      "expected": {
+        "authority": "driver-consumer-boundary",
+        "expected": "native E0700 before output collision; no clobber; zero LLVM invocations"
+      }
+    },
+    {
+      "id": "driver-recursion_symlink_output",
+      "positive_control": "negative-native_recursion-owned-false",
+      "mutation": {
+        "kind": "driver-boundary",
+        "action": "provide existing output symlink and spy LLVM tools"
+      },
+      "expected": {
+        "authority": "driver-consumer-boundary",
+        "expected": "native E0700 before output collision; no clobber; zero LLVM invocations"
+      }
+    }
+  ]
+}

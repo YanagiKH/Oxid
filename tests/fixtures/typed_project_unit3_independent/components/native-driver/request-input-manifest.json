@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "candidate_executions": 0,
+  "oracle_manifest_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "native_supplement_sha256": "9cae46e804a2776eb44732ced7201f99e37312346ef81958d025ee255f644c0a",
+  "request_files": {
+    "native-requests.json": "c9828b3bb5f16d5f03c13475f769cec9726534a25e800777ec842f7feb909984",
+    "driver-requests.proposed.json": "ab2a51daec389f659ee1aaa2ccf8d91b2184d94d712d646e6b6a1137006d20ac",
+    "fuel-requests.frozen.json": "712d69349d7c641feca7a6c24d48c8f4f7ebd05578094594a19831c4c449d13d",
+    "no-clobber-requests.json": "bf2955e64077d12513438ed2cad386287f7ab1f6c5ba6ab13c4e80ad98cc4f68"
+  },
+  "driver_ids": [
+    "pilot-scalar",
+    "pilot-counter",
+    "negative-relay_reuse",
+    "negative-arity",
+    "negative-private_read",
+    "negative-imported_main-scalar",
+    "negative-imported_main-owned",
+    "negative-native_recursion-scalar-false",
+    "negative-native_recursion-owned-false",
+    "origin-unicode-crlf-scalar_overflow",
+    "origin-unicode-crlf-owned_overflow",
+    "origin-unicode-crlf-owned_loan"
+  ],
+  "no_clobber_controls": {
+    "schema": "unit3-no-clobber-source-controls-v1",
+    "requests": [
+      {
+        "id": "pilot-scalar",
+        "output_kind": "regular",
+        "format": "text",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-scalar",
+        "output_kind": "regular",
+        "format": "json",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-scalar",
+        "output_kind": "symlink",
+        "format": "text",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-scalar",
+        "output_kind": "symlink",
+        "format": "json",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-counter",
+        "output_kind": "regular",
+        "format": "text",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-counter",
+        "output_kind": "regular",
+        "format": "json",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-counter",
+        "output_kind": "symlink",
+        "format": "text",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "pilot-counter",
+        "output_kind": "symlink",
+        "format": "json",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ]
+      },
+      {
+        "id": "negative-native_recursion-scalar-false",
+        "output_kind": "regular",
+        "format": "json",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ],
+        "mutation_id": "driver-recursion_occupied_output"
+      },
+      {
+        "id": "negative-native_recursion-owned-false",
+        "output_kind": "symlink",
+        "format": "json",
+        "operation": "compile",
+        "profiles": [
+          "debug",
+          "release"
+        ],
+        "mutation_id": "driver-recursion_symlink_output"
+      }
+    ]
+  }
+}

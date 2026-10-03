@@ -16,10 +16,25 @@ pub(in crate::frontend::oir) fn check_source(
     let resolved = resolve::resolve_in_map(source, ast, sources)?;
     let typed = typeck::check(resolved)?;
     let entry = typed.entry();
-    let raw = lower::lower(&typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    Ok((check_typed(&typed)?, entry))
+}
+
+/// The map comes from the checked typed/index owner, never an independent caller.
+pub(in crate::frontend::oir) fn check_typed(
+    typed: &typeck::TypedOwnedProgram<'_>,
+) -> Result<SourceProgram, Vec<Diagnostic>> {
+    let index = typed.index();
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    };
+    if typed.entry() != index.root_original_main() {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let raw = lower::lower(typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    super::association::check(&raw, index, sources).map_err(|error| vec![*error])?;
     let witness = verified::verify_owned(raw, sources)
         .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
-    Ok((SourceProgram { witness }, entry))
+    Ok(SourceProgram { witness })
 }
 
 impl SourceProgram {

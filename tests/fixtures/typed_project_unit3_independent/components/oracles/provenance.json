@@ -1,0 +1,101 @@
+{
+  "schema": "oxid-unit3-independent-oracles-v1",
+  "source_publication_supplied": "152dfbe6107253add076fe2ddc4f6167159ea610",
+  "source_tree_supplied": "017495b7f8abcc5f475994774dc522e8d6f54f84",
+  "checkout_note": "Corrected publication bytes are in a working tree whose local HEAD is historical 47f9e168. Input byte hashes below, not HEAD equality, bind this model.",
+  "inputs": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-design/proposed-design.md",
+      "bytes": 45629,
+      "sha256": "f8351b4e63d68cf11995192bad93fb2b527020e9eeab11572ca0dc15452302a8"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-design/pilots.md",
+      "bytes": 12352,
+      "sha256": "cd80c50e9b969dd4e8595c8b9a63ca98602e259c6f74c230545e43d5458fadc4"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-design/body-predictions.model-only.json",
+      "bytes": 631678,
+      "sha256": "d5d859850692563c07c3627f9f2d1dcf82817024e63cd2f5f50acb392ee9bcc5"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-independent-review/review-manifest.json",
+      "bytes": 2594,
+      "sha256": "6846274f8784a7e7b7c9d5e0703a56d05dcadb230f23422d14ac50770ff8c17f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-independent-review/span-inventory.md",
+      "bytes": 6569,
+      "sha256": "3e00734101b8051bc7949c16bb011d57b7d80fb525910299957e1da1df8f7401"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-independent-review/review.md",
+      "bytes": 16923,
+      "sha256": "887135b5a01665d35d62be99b20e0e9d086f236542166f3fddaa5900756c4c6f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/rfcs/0014-owned-structs-call-borrows.md",
+      "bytes": 33204,
+      "sha256": "0685326d0a5da434449fe2aa8fb4f9a9d4ff542d0e2f1b4b410846901b4fc89a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/rfcs/0015-bounded-typed-projects.md",
+      "bytes": 63434,
+      "sha256": "197ebecd603de2b3083d9ffa61ee18f22096fa101ce60615feeaa77661de3299"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/scripts/owned_source_model.py",
+      "bytes": 127893,
+      "sha256": "5c2a74e41aaadaf5706fb0ea35931328317e906a05b9d26776837aedddc8dfc7"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/execute.rs",
+      "bytes": 18118,
+      "sha256": "912080397df882b5478e57f415b30cdcc6205d3d000dfbdeccd4e8d22661b1c6"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/lower.rs",
+      "bytes": 39947,
+      "sha256": "ecd4b86bb32c674d7a362574274f9ca7b6efc56f37046d6f406a72f1139139bd"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/owned/source/typeck.rs",
+      "bytes": 33818,
+      "sha256": "b669edf078a60748899f51a4a7cc4bc9416cbc55ba5fd4f54593be9708521fcd"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/owned/source/diagnostic.rs",
+      "bytes": 7022,
+      "sha256": "336200eb4501c2a4b79ea7aa18f1209da6ab1870f41e60b4ea14bd41c26ce7ad"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/owned/flow.rs",
+      "bytes": 35489,
+      "sha256": "c3501e6b57f145d7d4fe54a5880105da7c8fa8bb642b1a5fc66277709a4aa1ed"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/native.rs",
+      "bytes": 49487,
+      "sha256": "ca823b72bf102b6a3f019b74ab9fc0f0953bb26ed98fc10ddd771a65504c2640"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/src/frontend/oir/owned/native.rs",
+      "bytes": 43267,
+      "sha256": "fb5440fbaa507338da7063b053df01d2807dc142a498499b1750a951ae84c36a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/oxid-typed-index-ci-fix/fixtures/owned_source/batch.ox",
+      "bytes": 1238,
+      "sha256": "dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit2-ci-fix/final-candidate/manifest.json",
+      "bytes": 122884,
+      "sha256": "bcbbebf6f22d5055069cdd61dee663e15470f2d4215d739725ca935fb2f8b24f"
+    }
+  ],
+  "no_candidate_observations_read": true,
+  "no_compiler_invoked": true,
+  "no_llvm_invoked": true
+}

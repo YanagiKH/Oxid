@@ -1,0 +1,43 @@
+{
+  "schema": "unit3-portable-mutation-gate-component-v1",
+  "status": "independently cleared fixed220 planning/dispatch; separate eight native driver attributions required",
+  "compiler_invocations": 0,
+  "semantic_comparison_performed": false,
+  "plan_schema": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/publication-payload-v1/portable/comparison-v1/PLAN_SCHEMA.md",
+    "bytes": 3904,
+    "sha256": "58f44165cc0df5d1e7224df3e644cff06270d37413b4a54d36b90390ab3c59ae"
+  },
+  "files": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutation_gate.py",
+      "bytes": 11871,
+      "sha256": "788a2989d226a3e64bf6b57444696c675073e7876a28975834d216d9209edddb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutations.py",
+      "bytes": 20123,
+      "sha256": "24ddd3bb3b85c1e04a3daf82ac2e1001d71e6e28fa8c8b24f077ba545ee2cac7"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutation-gate-controls-v1/results.json",
+      "bytes": 3668,
+      "sha256": "40f2c9d9c4301c583c6d2006650e498e295ca28769c8cfbf0d366ba13a81b9cb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutation-gate-controls-v1/full-plan.json",
+      "bytes": 123071,
+      "sha256": "2366b8a26196412c40eb4b098ba95dee9b52c6c2874891c936af3fcde25aea07"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutation-gate-controls-v1/retained-transport-joins.json",
+      "bytes": 1319,
+      "sha256": "3ef8cef07d39cb638ae3f6e5941d611208ca6fb69e8b8a2960f2e2a89ca9a040"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/mutation-gate-controls-v1/retained-transport-attempt1.json",
+      "bytes": 365,
+      "sha256": "0e27fc3778034e2cceee92b213bb494709e4e462208d12cc1790d54363670946"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "manifest_path": "typed-project-unit2-ci-fix/final-candidate/manifest.json",
+  "manifest_sha256": "bcbbebf6f22d5055069cdd61dee663e15470f2d4215d739725ca935fb2f8b24f",
+  "expected_tree": "017495b7f8abcc5f475994774dc522e8d6f54f84",
+  "files_checked": 461,
+  "mismatches": [],
+  "source_bytes_only": true
+}

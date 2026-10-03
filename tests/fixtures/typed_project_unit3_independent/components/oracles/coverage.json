@@ -1,0 +1,58 @@
+{
+  "evidence_kind": "MODEL_ONLY_PRE_EXECUTION_FREEZE",
+  "cases": 152,
+  "families": {
+    "scalar24": 24,
+    "owned48": 48,
+    "pilot": 5,
+    "original-control": 1,
+    "owned-entry-control": 1,
+    "negative-control": 18,
+    "source-negative": 26,
+    "entry-negative": 2,
+    "route-control": 2,
+    "cleanup-control": 1,
+    "span-control": 2,
+    "native-negative": 4,
+    "origin16": 16,
+    "collision2": 2
+  },
+  "native_covering_subset": [
+    "scalar-root_child-absolute-entry0-i32",
+    "scalar-sibling-import-entry1-bool",
+    "scalar-child_ancestor-absolute-entry1-bool",
+    "owned-root_child-absolute-root-shared_nested",
+    "owned-root_child-import-root-loop_cleanup",
+    "owned-sibling-import-child-exclusive_forward",
+    "owned-child_ancestor-absolute-child-owned_staging",
+    "pilot-mechanical-batch",
+    "pilot-opaque-batch",
+    "pilot-scalar",
+    "control-owned-entry-id1",
+    "pilot-counter",
+    "origin-ascii-lf-scalar_overflow",
+    "origin-ascii-lf-owned_overflow",
+    "origin-unicode-lf-scalar_overflow",
+    "origin-unicode-lf-owned_overflow",
+    "origin-ascii-crlf-scalar_overflow",
+    "origin-ascii-crlf-owned_overflow",
+    "origin-unicode-crlf-scalar_overflow",
+    "origin-unicode-crlf-owned_overflow",
+    "diagnostic-collision-scalar",
+    "diagnostic-collision-owned"
+  ],
+  "actual_compiler_invocations": 0,
+  "actual_native_executions": 0,
+  "model_limits": {
+    "states_per_function": 100000,
+    "dynamic_events": 100000,
+    "on_exhaustion": "MODEL_INCOMPLETE; fail package generation"
+  },
+  "required_followup": [
+    "actual private check/reference in debug and release",
+    "passive raw-call/record/field/source-span and essential event correspondence",
+    "source-free native of the selected seven family cases and five project pilots/control",
+    "exact association visitor and mutation probes",
+    "whole-program resource/privacy/driver gates"
+  ]
+}

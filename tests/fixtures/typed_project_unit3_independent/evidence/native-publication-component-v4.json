@@ -1,0 +1,102 @@
+{
+  "schema": "unit3-native-publication-component-v4",
+  "status": "six-row native portability passed; grouped dispatch and auxiliary bridge separately reviewed source-only",
+  "native_full_replay_performed": false,
+  "prior_component": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/minimal-component-v3.json",
+    "bytes": 5223,
+    "sha256": "695e67a3074131d4da30af4cc5c1c17fe893ee7c6d123cedeed777db2427030b"
+  },
+  "files": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_portable.py",
+      "bytes": 22667,
+      "sha256": "fcc7f17dd26de7ee20078db8fd6215bc9a62594eb9a5d731bb1cb8676a907501"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_portable_grouped.py",
+      "bytes": 21313,
+      "sha256": "49e857b57b0cf589d4fdf667b4f0b689340e3357122135fa0a4e8786c28245dd"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_groups.py",
+      "bytes": 2320,
+      "sha256": "cd4a952a3cf72b1abd3f6c146e25fe103ed43eeccc070abf467b56126b7b93bf"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/native_inputs.py",
+      "bytes": 4452,
+      "sha256": "57c6bd65664e7c2ac41f99a837f93f4067846b6d2b4b694a26eb50d79c5992a2"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/explicit-group-delta.patch",
+      "bytes": 3738,
+      "sha256": "47b88d9607ae1abe7ab4f41bce136ffc90be4049981c061b105397091a1d5dce"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/auxiliary-manifest-v1.json",
+      "bytes": 16751,
+      "sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/group-dispatch-controls-v1/results.json",
+      "bytes": 147925,
+      "sha256": "ed5c9c256bb021de1e7efdc6a14e4a499e5f2b64ef8ac1a7d3794002cc0afcb3"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/group-dispatch-controls-v1/duplicate-control.json",
+      "bytes": 112,
+      "sha256": "c1ec7824e3af71a46bec90cabdfa02d052112c3bbdf223eb0f2f92e4dc672314"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/group-dispatch-controls-v1/helper-import-order/result.json",
+      "bytes": 998,
+      "sha256": "7c9bd57e35136199a90b15e01d397fe541cc0c177b19277f066b653ad5d35eae"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/bridge-auxiliary-controls-v1/results.json",
+      "bytes": 609,
+      "sha256": "892f293a2b2036f9a61cc1c1463ac83f2194d4f3d4cf99eb2c3dda7f931beae4"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/bridged-inputs-check-v1/native-inputs.json",
+      "bytes": 54652,
+      "sha256": "67396cf7d190c03684a6ca5f76691f88d1337f70e2162cbd56c5f81a01c7d2c4"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/publication-helper-optimized-v1/results.json",
+      "bytes": 1881,
+      "sha256": "e879126344cf2d17a2d1a1e29ef63dd0d7cc1313a0f520dba9fa628e70c05c7a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/real-replay-v1/approved-roster-invocations.json",
+      "bytes": 11683,
+      "sha256": "f9bb1d527a33fcea05380c725592e087622ff7c61f7daaad52c0a12a86fa4b15"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/native-publication-adapters-review.json",
+      "bytes": 2311,
+      "sha256": "b6cab9402726ac74e884a79391902543da043f55cb7fa22adbcd5d21a45c1e88"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/native-portable-verdict.md",
+      "bytes": 3814,
+      "sha256": "f5c8bdbafe5cbaff3cd77069b7f062ad75fe9101ada3fb37bf8b7006ba5d5f24"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/supplements/native-portable-paths-v1/actual-six-comparison-v1.json",
+      "bytes": 4686,
+      "sha256": "92482998c9ec7f996208a8739e5c4dc661dbb11d45983d1cf1c9c864b6dcd154"
+    }
+  ],
+  "auxiliary_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/packaging-v1/native-v1/auxiliary-manifest-v1.json",
+    "bytes": 16751,
+    "sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf"
+  },
+  "upstream_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-native-driver-review/artifact-manifest.json",
+    "bytes": 812468,
+    "sha256": "f73c125e3b3099a93d9f3be5e20a51abadc5d28feab58dfc8558024f670130ec"
+  }
+}

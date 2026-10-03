@@ -1,0 +1,42 @@
+{
+  "schema": "unit3-native-diagnostic-supplement-manifest-v1",
+  "parent_manifest_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
+  "evidence_kind": "SOURCE_ONLY_PRE_EXECUTION",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2621,
+      "sha256": "01514ea7fae49ed5535e4bfd076416dacb037c5a913ed4c0a6891ff4584e8786"
+    },
+    {
+      "path": "build.py",
+      "bytes": 9721,
+      "sha256": "54162498f5e388e2feb0f2286499e7a81e72416a2c8af320fc60b6e26d8d379c"
+    },
+    {
+      "path": "expectations.json",
+      "bytes": 138947,
+      "sha256": "28f5161109d38b8abeb1e5465c5e2bd3006fa313e2580e07f06eba5a9a04c998"
+    },
+    {
+      "path": "freeze.py",
+      "bytes": 803,
+      "sha256": "b3cf7464d0e40622218c26c43ac27d01c4df240d5ef4bc4269971f726308279d"
+    },
+    {
+      "path": "fuel-request-roster.json",
+      "bytes": 462,
+      "sha256": "4522d119c2f67bd902a6bbe33befe7db4d28af8c03cc67c4566919ea64d2b425"
+    },
+    {
+      "path": "fuel-requests.jsonl",
+      "bytes": 2456,
+      "sha256": "dc80bda11a7e23731a0f82a5b0adcf249538a4bad8ff00fa82da6ad61aa5894b"
+    },
+    {
+      "path": "source-provenance.json",
+      "bytes": 2226,
+      "sha256": "43355ec8d0fb8bf79d84f510810ca21805f55983c585eb530aefab10bf971e4a"
+    }
+  ]
+}

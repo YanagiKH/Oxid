@@ -1,0 +1,572 @@
+{
+  "scope": "three hand-prescribed source controls; no full corpus or actual native execution",
+  "profile": "debug",
+  "core_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-evidence/source-inputs-core-v1.json",
+    "bytes": 19899,
+    "sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910"
+  },
+  "control_binary": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/observer-debug",
+    "bytes": 8168448,
+    "sha256": "ff3ae138c2a6b952d976704cf4a0773117306b1e20b627bf551cb908a277b15b"
+  },
+  "control_entrypoint": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/observer.rs",
+    "bytes": 120,
+    "sha256": "cd6baea93af0a9442b7f524f4fc5d11b8db04754f7a3576f4af7d8e94f7b848f"
+  },
+  "control_instrumentation": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/adapter-instrumentation.json",
+    "bytes": 495,
+    "sha256": "115124776863c5f18bd86e878db3944218780756f335d6d353cea7045d832170"
+  },
+  "verified_frontend_inputs": [
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/ast.rs",
+      "bytes": 20717,
+      "sha256": "3632fc114303be571166307ddab04f78b508226789b7c1495b4a692c538d3d2f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/branch_tests.rs",
+      "bytes": 9523,
+      "sha256": "962d4310ae3674c3ab97ad14fb7e3f8eae618c4c871c71001af36b60ed398fe3"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/declaration_index.rs",
+      "bytes": 34523,
+      "sha256": "6bcd816d860d39e913dadc5b19f8d6607fb824da196a5fcd8b150a033ae944d5"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/declaration_index/resource.rs",
+      "bytes": 13343,
+      "sha256": "5f9201347edfba22a57f0020c61ebcf8080fda0249fab0322b0dfb35c9139e9f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/declaration_index/sealed.rs",
+      "bytes": 37065,
+      "sha256": "cc5cbd245f2a66122ebf8363b108423d53101d496096c6fcbf7eb41ae294c663"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/declaration_index/source_owner.rs",
+      "bytes": 8971,
+      "sha256": "f30e5fbbf1aae89a2bd38c61e8977e8ba3c238d665b58dc37a69412595016086"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/declaration_index/tests.rs",
+      "bytes": 18857,
+      "sha256": "acc0851badfb0dbc5e956d9d0ce1c32907973e88d58a5ec0b336639574bc9d84"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/diagnostic.rs",
+      "bytes": 10360,
+      "sha256": "e62a8f66fda93a30135a9ab9026802082823adb1cf66e82e9e07547f735ca85e"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/driver.rs",
+      "bytes": 6987,
+      "sha256": "71e218dc1896eef8b29d6df7cd55cc39d5cb114cdba74b0f48e96fb06c7624df"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/hir.rs",
+      "bytes": 23073,
+      "sha256": "7deac5ed3f11b6632c3c5f622cf1940bd3ebdbe48054bd424f51126e4a11e966"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/lexer.rs",
+      "bytes": 8853,
+      "sha256": "6e75954085943e3b3018a51d91dcae1c2bf7bda1ebaff86efd10bfccde12de51"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/mod.rs",
+      "bytes": 2805,
+      "sha256": "10f4710dbd19a335fade95ab3513bcea7f23ee8d1efa0ef2f6ab81f15b30dfeb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/native.rs",
+      "bytes": 7505,
+      "sha256": "2303197eeff30da4a4c552f1131de64cd871f1fe0ff6ea3afe60010db68645b4"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/arithmetic_tests.rs",
+      "bytes": 7219,
+      "sha256": "df5a0e4ff7781f1baf92f12312ddc74e60a5dc4594d055d122aa87c5bf7dbc42"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/cfg_tests.rs",
+      "bytes": 23209,
+      "sha256": "6361add0fcdc3cc3bd6ad2001fb1bea4640b913f96ad9a64396a0e0ecb7eaacc"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/comparison_tests.rs",
+      "bytes": 9018,
+      "sha256": "f63847625778d4297a91a6f1f370d48e698a7808b9621febb1370c0455db3d67"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/cyclic_tests.rs",
+      "bytes": 41897,
+      "sha256": "64a4e547d99bccfa0cb036d18c4c0e081f9e1585ce5cdbb918f81d845aac7ac1"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/execute.rs",
+      "bytes": 18118,
+      "sha256": "912080397df882b5478e57f415b30cdcc6205d3d000dfbdeccd4e8d22661b1c6"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/execute_tests.rs",
+      "bytes": 38336,
+      "sha256": "1d8d706bdad5d29edbbe55f244897725a28352f6f52a0c543842f6a1876353f4"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/i32_tests.rs",
+      "bytes": 6612,
+      "sha256": "41da8b4a739bb6edf4d43be097db5c1e2653083e2f92f7f938c44c8b08348278"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/logical_tests.rs",
+      "bytes": 19222,
+      "sha256": "e78e96cd7e3df44beef8ca0736b67d3d3df1992ac56e111d4af99d947929dcc2"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/loop_control_tests.rs",
+      "bytes": 9862,
+      "sha256": "35e1f943942d50b287327081d40c5f55352a72345a63a1afb5495ced4d67cecc"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/lower.rs",
+      "bytes": 39947,
+      "sha256": "ecd4b86bb32c674d7a362574274f9ca7b6efc56f37046d6f406a72f1139139bd"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/mod.rs",
+      "bytes": 9998,
+      "sha256": "d3ac55cdff2dfb2fe909b2f19e4e5ed1971e1b129ebe1e3e5242580f9e9fd4f5"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/mutable_tests.rs",
+      "bytes": 18721,
+      "sha256": "e6982441dd14b499199c4eaeec101488a4c491fdad2061633fd36ac53dbe630e"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/native.rs",
+      "bytes": 49487,
+      "sha256": "ca823b72bf102b6a3f019b74ab9fc0f0953bb26ed98fc10ddd771a65504c2640"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/allocator_review_controls.rs",
+      "bytes": 5373,
+      "sha256": "844d3219d639c52fc4058370a859d88fff53caacfcdaaebd0e543395cb031243"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/budget.rs",
+      "bytes": 11812,
+      "sha256": "c789b322113d83593a1e9ac40b3970e55e243b62b66e47b872471a36d1819717"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/cfg.rs",
+      "bytes": 4550,
+      "sha256": "ec6dc0c5224ce88c256c2e04b2c7debc289cf87f4277ed6be451229bf6358529"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/consumer_fixtures.rs",
+      "bytes": 44569,
+      "sha256": "4bf44386d42d84b1ed05cc4e7b5e5ad4cee25ea8cc1424515bafc166c90d910c"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/consumer_pilot.rs",
+      "bytes": 34731,
+      "sha256": "0d28cba9f8968e278d720173f9502f24beb8cfb8101f854be47a66ce81149567"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/consumer_tests.rs",
+      "bytes": 2296,
+      "sha256": "c3e31686fd1a419eaf5f3d33c30c4f967d8183e697d17bd97f528c672af3d11a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/denial_tests.rs",
+      "bytes": 26276,
+      "sha256": "f350074325d518215ccc11a199d1e4d0da50fdcfbe5a21979871b43214e52023"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/execute.rs",
+      "bytes": 50868,
+      "sha256": "bd23c1a0df31bedf3e9f7f7ba5411360a6541f6dcf023f7f066d831cca9d3231"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/execute_tests.rs",
+      "bytes": 34869,
+      "sha256": "ffdfbfc35582eb963f129e1c13dea41b91448cc39ab9e94362d6ef1636e2c1fb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/flow.rs",
+      "bytes": 35489,
+      "sha256": "c3501e6b57f145d7d4fe54a5880105da7c8fa8bb642b1a5fc66277709a4aa1ed"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/mod.rs",
+      "bytes": 8832,
+      "sha256": "bb082ac4eb461808b2cdeb235836c2198cd565367390fd9e432502fa31ccf3bb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/native.rs",
+      "bytes": 43267,
+      "sha256": "fb5440fbaa507338da7063b053df01d2807dc142a498499b1750a951ae84c36a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/native_heldout_review.rs",
+      "bytes": 24670,
+      "sha256": "fadf91d78b018daac0a9c984eccc65ee238ba936b7b8aae727fed1ab65947fda"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/native_tests.rs",
+      "bytes": 84109,
+      "sha256": "e0aba59961a67175a21dbff507b160016aa612a54600691bb3dffc1dc29cb833"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/oracle_tests.rs",
+      "bytes": 82193,
+      "sha256": "6bbb1cbe606c227f35e5812d140e77870901f2e156f99e91a721da606e01d8a8"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/origin_tests.rs",
+      "bytes": 21170,
+      "sha256": "fc4071aacc957b54d8031a5012ef2957d9e74c8f40ba99a2710fb9c057a43b62"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/plan.rs",
+      "bytes": 16156,
+      "sha256": "9c87a013b2241df1df85c42ed0672bf1935e04de4371ab4b509ca4dbd6c30d20"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/reviewer_allocator.rs",
+      "bytes": 1705,
+      "sha256": "856b9b99829e82d7872d0690db92d92df8db85696162e4127a956e5c924128bf"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/reviewer_heldout.rs",
+      "bytes": 56246,
+      "sha256": "f78130dcc425c44262781b212bd963d9ce3ef31bfaf1a09284a4bcdad32b1705"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/reviewer_origins.rs",
+      "bytes": 22227,
+      "sha256": "2525ea1d79fb5dcea4265040845316d86454565f25ad6dca3c0566491aee1ee2"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/reviewer_reference_tests.rs",
+      "bytes": 70002,
+      "sha256": "d8723269611c8dbda31faec97246f7440d9f9347a8b182a15fc6a8158a1de69e"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/shape.rs",
+      "bytes": 24270,
+      "sha256": "40387c7019ee71a026501880d0d49db2643565f8e8979a5b423e1115940dc5bd"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/association.rs",
+      "bytes": 5338,
+      "sha256": "c31c3cd73cc31b48844ac693a724851fbc1cd451331550222df8768ab211fa33"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/budget.rs",
+      "bytes": 4990,
+      "sha256": "d8146260cfb894c9053748d66fe2cc63bee83c292c7ef9c82bdc59b5f0bfeff8"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/budget_tests.rs",
+      "bytes": 10960,
+      "sha256": "718ebf9e7672ac1b9d1536c8d593ff974661164769da802ec6d0b3f6ef098595"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/candidate_adapter.rs",
+      "bytes": 39345,
+      "sha256": "a65f7b297968a015d3ac8818fef8eb0636c1ce2219998613d86d9a047109c85f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/candidate_mutations.rs",
+      "bytes": 20997,
+      "sha256": "49f3322be0f507ded233146bcf7e2764d18bbf068ff410583fcdf38c0369086e"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/candidate_native.rs",
+      "bytes": 30327,
+      "sha256": "d00cf34e5cc235c5403eaf0cd81f7e6a2b86045c69758633c7cc3b9241f7eefb"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/diagnostic.rs",
+      "bytes": 7022,
+      "sha256": "336200eb4501c2a4b79ea7aa18f1209da6ab1870f41e60b4ea14bd41c26ce7ad"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/diagnostic_tests.rs",
+      "bytes": 19667,
+      "sha256": "589bd31889a77a27c8ec0f7916e75a470cf50d9e04d0477b65e9fe71f572cf76"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/hir.rs",
+      "bytes": 4520,
+      "sha256": "3067e2def154fdf0c4dcd53603069f9e7ef0aead1bce8c58240b0c2b822b9cb7"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/lower.rs",
+      "bytes": 60569,
+      "sha256": "efd50cbe64a9c742fc92139f54bc69be5a35239ffa6185c60d4bfc2ae8ce2446"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/lower_tests.rs",
+      "bytes": 10371,
+      "sha256": "031b2d1e77edc63d4ab3db72eb77a6c1d3d1b2278a52092058fa79f7258e3649"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/mod.rs",
+      "bytes": 603,
+      "sha256": "164cc7e7420e704c9d85221fc37b499718950ef757e4fffa5e5a0bbf05711689"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/native_resource_tests.rs",
+      "bytes": 7010,
+      "sha256": "80c5ea3164536ed106d16a7bc79414c074b759eb6c1e08a1ab8ca0d60de2dd5f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/program.rs",
+      "bytes": 2320,
+      "sha256": "aeb1969a292d2489a5cbdc04dce87a156ce2d161336239b9fa67097460a9c697"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/resolve.rs",
+      "bytes": 33655,
+      "sha256": "ec8dc896f629f99c21b3a41ecdc2241df4ad90885810e839ac8e85b00baab97c"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/resource_fixtures.rs",
+      "bytes": 5988,
+      "sha256": "d443166f1caaf594ac56a334a50bced3b6f89563de8de1decfff859a86308335"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/reviewer_heldout.rs",
+      "bytes": 26468,
+      "sha256": "759eafbfd8d79789f83f77ca20ef306c880484aad31f14dc7b005150e34a4062"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/reviewer_resource_native.rs",
+      "bytes": 1862,
+      "sha256": "1a5bfa835de5b22b89d8facc66adc941970dfd968e4d59f88123b6faf8cdb6ed"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/reviewer_resource_runtime.rs",
+      "bytes": 1890,
+      "sha256": "9d247b483e42dd86c452c86221119628fd35c34b0e3a3d267c1e247829562e8f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/reviewer_source.rs",
+      "bytes": 25939,
+      "sha256": "e7af616d7d062ef570b088267d0f38806d17aaa63430a0f3c55faee1d9dd90ee"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/runtime_resource_tests.rs",
+      "bytes": 9570,
+      "sha256": "794e81b0c16645ec25f25ac70e140c300f11bbfa41aeb8f5dc606667f37d734f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/tests.rs",
+      "bytes": 15994,
+      "sha256": "178847526f3bec8c1ae6222242ba1b3eb34ac1b2df8c38f582ac80a6c9010d31"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/source/typeck.rs",
+      "bytes": 33965,
+      "sha256": "53d591d6ee03d14ed9923c14dc1c5a32aa16d0a45687db715eee238bdddb3aa4"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/storage.rs",
+      "bytes": 1630,
+      "sha256": "57fe594c36068d687960c3b2b8a47ba10d3fc7ff1a7e5be9138b02c3f4ab7f88"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/tests.rs",
+      "bytes": 38057,
+      "sha256": "18c7d35225f9b02d00347c36a2ae678208b827c092c07e791f0922d4e50a32f0"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned/verified.rs",
+      "bytes": 2280,
+      "sha256": "06222fc920789f7e3765e10315ba3cd7835b1dfd65caa538dce610e4c37a77f3"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/owned_types.rs",
+      "bytes": 45303,
+      "sha256": "87a3805fe33ee4fe72ddfb2ba5161060b46b93226a8965d80efb675035140c2e"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/project.rs",
+      "bytes": 3637,
+      "sha256": "367c4f991fb4d1fd9ba5a1c2d4d2cb321117f434eeec7a46e739589db34f5229"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/project_execution_tests.rs",
+      "bytes": 6567,
+      "sha256": "1185aa4c2e86644c3b14acae290adb043ec27d2a222018b1e67997317dc5851d"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/source.rs",
+      "bytes": 9634,
+      "sha256": "72dbf25214c25a795793864d782cdd3555fd2ff916ae6b1dfe51896721f2e77a"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/source/association.rs",
+      "bytes": 8048,
+      "sha256": "b1f898639b7799a6de20f0ce04c1d897323c59f6413972fd70a6de30bc73924d"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/source/sealed.rs",
+      "bytes": 7427,
+      "sha256": "b18fe96214f67aae59b5b291090db491851d0d3ab2428b39082f4010cd0c3c27"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/source_oracle.rs",
+      "bytes": 15037,
+      "sha256": "3ec0b5336db5fbfd1fa347b75957afe0ab4f335f649c5fef9de32409547084bc"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/tests.rs",
+      "bytes": 38333,
+      "sha256": "6456e1cd19794092624780fcac05a3d5575668a6313e6602d419e18aabef08d9"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/oir/verify.rs",
+      "bytes": 41378,
+      "sha256": "16a798823d33151efc924f5728148138a412e147ff5612e39eba841129dc0643"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/options.rs",
+      "bytes": 15461,
+      "sha256": "6eb1c651c604e25887cf6926604598e27a390613ef9f43347c0b5fa9ab6bab06"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/owned_diagnostic.rs",
+      "bytes": 33156,
+      "sha256": "6fb80f686eedee800bd506782d0bd72d1b96d3813a6ffdf9a285da8757e3d619"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/owned_syntax_tests.rs",
+      "bytes": 11520,
+      "sha256": "091f90fecb2dd50e1aac3541d15a376103e12282066852e3d48943520c183108"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/parser.rs",
+      "bytes": 44049,
+      "sha256": "62111e22e12194c6668c0a925c2aed2c57dcc50697ef8a529e2f2bb12848fdc5"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/parser/project_tests.rs",
+      "bytes": 20347,
+      "sha256": "a557f35b3c771643d7d57ceb39ca40f065651fac8aa9c3ae9f4b3f5a3e6fba37"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/project.rs",
+      "bytes": 33845,
+      "sha256": "e1e87fbd941dcbb61a33bb05f6b1c18bffc861f1287af3fc1dc3bae8eec4be75"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/project/budget.rs",
+      "bytes": 3353,
+      "sha256": "feb16c9a230cae26e0fe69caaae1d815a988ceb577a5994d6dd85b83dcdb2b7f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/project/filesystem.rs",
+      "bytes": 5237,
+      "sha256": "6e27861bc9440d015f015c23bf31cb76d238392b7712aede89371ca3e85ddcb7"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/project/tests.rs",
+      "bytes": 27489,
+      "sha256": "c40006d02bbf320a130331dcbf28b85c37a3fe31ae2b4d53e78a14ba52efd2a5"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/project/unit2_tests.rs",
+      "bytes": 7335,
+      "sha256": "8402dc8c6176e5d134ca26a5f13e5b2164295a3b4ffdc290ba440e6bb7dcec26"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/source.rs",
+      "bytes": 12395,
+      "sha256": "4928bf26220a08ce36dcbb0f939b912619169cf4e9a082ae26cf8d6554b6134f"
+    },
+    {
+      "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/source/src/frontend/typeck.rs",
+      "bytes": 31294,
+      "sha256": "cb8d8156cf1eb85d24f955b8e0ee6809723137723c85724e5d2f892d20999c48"
+    }
+  ],
+  "results": [
+    {
+      "case": "scalar",
+      "argv": [
+        "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/observer-debug",
+        "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/scalar/main.ox",
+        "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/scalar.checked.debug"
+      ],
+      "control_exit_code": 0,
+      "instrumented_receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/scalar-debug-final/receipt.json",
+        "bytes": 19483,
+        "sha256": "55d50aaa50dd6a8af581f1ab507cf3b763d9ed72c337060a236e5a4f6e5f271c"
+      },
+      "checked_debug_equal": true,
+      "llvm_equal": true,
+      "reference_result_equal": true,
+      "control_checked": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/scalar.checked.debug",
+        "bytes": 58379,
+        "sha256": "501325f75afddf8e4dd32723e1df29f8ff2d6ce33e3bd66cb0dcb12a03397b80"
+      },
+      "control_llvm": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/scalar.checked.debug.ll",
+        "bytes": 3193,
+        "sha256": "e4ca05cc2783b0654e5df6548ea1b7ce021d79c34877f131729ebbe37d26bdbd"
+      }
+    },
+    {
+      "case": "owned",
+      "argv": [
+        "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/observer-debug",
+        "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/owned/main.ox",
+        "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/owned.checked.debug"
+      ],
+      "control_exit_code": 0,
+      "instrumented_receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/owned-debug-final/receipt.json",
+        "bytes": 19434,
+        "sha256": "7c7b0c868f8bfc1f2783ec7bf518d81fa42a32863b280a45a112479893565655"
+      },
+      "checked_debug_equal": true,
+      "llvm_equal": true,
+      "reference_result_equal": true,
+      "control_checked": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/owned.checked.debug",
+        "bytes": 151215,
+        "sha256": "16d3a12a4c741ac7e0307ba8681ca309fd9e906d6405ed7bbeffbf383ea2d3e0"
+      },
+      "control_llvm": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/owned.checked.debug.ll",
+        "bytes": 42871,
+        "sha256": "e15e8574f551316be0dbd64dc25146889fc38f0d65542b37dfbb59787af6165e"
+      }
+    },
+    {
+      "case": "owned-loan-denial",
+      "argv": [
+        "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/observer-debug",
+        "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/owned-loan-denial/main.ox",
+        "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/passivity-debug/owned-loan-denial.checked.debug"
+      ],
+      "control_exit_code": 0,
+      "instrumented_receipt": {
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/smoke-v1/owned-loan-denial-debug-final/receipt.json",
+        "bytes": 10819,
+        "sha256": "d8b6d600a6b88c8f3364da1f2be7e371433a8fb208f938ecb7341578ab6b66e9"
+      },
+      "diagnostics_equal": true
+    }
+  ]
+}

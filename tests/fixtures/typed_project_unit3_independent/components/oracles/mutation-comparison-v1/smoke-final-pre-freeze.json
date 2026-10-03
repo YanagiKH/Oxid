@@ -1,0 +1,1424 @@
+{
+  "schema": "unit3-independent-mutation-comparison-v1",
+  "count": 12,
+  "matched": 12,
+  "mismatches": 0,
+  "assertion_mode": {
+    "optimize": 0,
+    "__debug__": true
+  },
+  "results": [
+    {
+      "id": "bind-entry_id",
+      "profile": "debug",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/debug/bind-entry_id/receipt.json",
+      "receipt_sha256": "f1e5eb381ea249f41344341ff5963923fcad41dd040cf42986c9d6915206ccd1",
+      "status": "MATCH",
+      "result": {
+        "authority": "association-audit-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "source-seal-seam-entry",
+          "path": "constructor.local.entry",
+          "proof": "local-typed-frozen-entry-agreement"
+        },
+        "baseline": {
+          "association": {
+            "D": 8,
+            "Sspan": 169,
+            "Vbind": 177,
+            "two_pass_units": 354
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 3,
+            "bindings": 5,
+            "owned_sites": 8,
+            "field_projections": 2,
+            "constructors": 1,
+            "transfers": 2,
+            "stores": 2
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-109",
+              "charges": 27,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 5,
+              "runtime_epoch_transitions": 15,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-110",
+              "charges": 28,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 5,
+              "runtime_epoch_transitions": 16,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-116",
+              "charges": 31,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 17,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-117",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-125",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-126",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-56",
+              "charges": 5,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 1,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-57",
+              "charges": 6,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-63",
+              "charges": 9,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 1,
+              "runtime_epoch_transitions": 2,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-64",
+              "charges": 10,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 4,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-68",
+              "charges": 12,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 7,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-69",
+              "charges": 13,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-70",
+              "charges": 14,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-71",
+              "charges": 15,
+              "committed_writes": 0,
+              "loan_events": 1,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-88",
+              "charges": 19,
+              "committed_writes": 0,
+              "loan_events": 1,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-89",
+              "charges": 20,
+              "committed_writes": 1,
+              "loan_events": 1,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-91",
+              "charges": 21,
+              "committed_writes": 1,
+              "loan_events": 1,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-92",
+              "charges": 22,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "code": "E0500",
+          "stage": "oir-project-bind",
+          "span": null,
+          "related": []
+        }
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.cause",
+      "profile": "debug",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/debug/bind-wrong-file-owned-DiagnosticOrigins.cause/receipt.json",
+      "receipt_sha256": "c715d6f33f43e7f1db3ad02b768f1503443c90fdc8a5a9facf639c9c24fa7e7c",
+      "status": "MATCH",
+      "result": {
+        "authority": "association-audit-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "replace-span",
+          "path": "functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+          "proof": "exact-whole-raw-edit",
+          "category": "owned.DiagnosticOrigins.cause",
+          "occurrence": 0
+        },
+        "baseline": {
+          "association": {
+            "D": 5,
+            "Sspan": 367,
+            "Vbind": 372,
+            "two_pass_units": 744
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 1,
+            "bindings": 7,
+            "owned_sites": 8,
+            "field_projections": 1,
+            "constructors": 5,
+            "transfers": 0,
+            "stores": 10
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-113",
+              "charges": 25,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 1,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-114",
+              "charges": 26,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-115",
+              "charges": 27,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-116",
+              "charges": 28,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-128",
+              "charges": 34,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 5,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-129",
+              "charges": 35,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-158",
+              "charges": 50,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 4,
+              "runtime_epoch_transitions": 15,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-159",
+              "charges": 51,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 4,
+              "runtime_epoch_transitions": 15,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-181",
+              "charges": 63,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 22,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-182",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-199",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-200",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "code": "E0500",
+          "stage": "oir-project-bind",
+          "span": null,
+          "related": []
+        }
+      }
+    },
+    {
+      "id": "correspondence-wrong-target-scalar",
+      "profile": "debug",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/debug/correspondence-wrong-target-scalar/receipt.json",
+      "receipt_sha256": "c21d655ece5a80d30cf5fcfa86527b10638e2a4c4b1296f23611ccaaa7167200",
+      "status": "MATCH",
+      "result": {
+        "authority": "semantic-correspondence-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "call-target",
+          "path": "functions[0].blocks[0].terminator.kind.target",
+          "proof": "exact-whole-raw-edit"
+        },
+        "baseline": {
+          "association": {
+            "D": 3,
+            "Sspan": 121,
+            "Vbind": 124,
+            "two_pass_units": 248
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 1,
+            "bindings": 4,
+            "owned_sites": 0,
+            "field_projections": 0,
+            "constructors": 0,
+            "transfers": 0,
+            "stores": 4
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-114",
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-115",
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "actual_transport": [
+          {
+            "name": "reference-default",
+            "charges": 8,
+            "writes": 0,
+            "loans": 0
+          },
+          {
+            "name": "reference-fuel-114",
+            "charges": 8,
+            "writes": 0,
+            "loans": 0
+          },
+          {
+            "name": "reference-fuel-115",
+            "charges": 8,
+            "writes": 0,
+            "loans": 0
+          }
+        ],
+        "outcome": {
+          "check": "numeric call target source correspondence",
+          "rejection": "AssertionError({'check': 'numeric call target', 'expected': 1, 'actual': 2})"
+        }
+      }
+    },
+    {
+      "id": "metadata-wrong-file",
+      "profile": "debug",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/debug/metadata-wrong-file/receipt.json",
+      "receipt_sha256": "22ce38b3f0c06763f592804d2c69e322fa6c779d9fb22504d5b0ba459e53a8af",
+      "status": "MATCH",
+      "result": {
+        "authority": "association-audit-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "replace-diagnostic-origin",
+          "path": "functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+          "proof": "exact-whole-raw-edit"
+        },
+        "baseline": {
+          "association": {
+            "D": 8,
+            "Sspan": 168,
+            "Vbind": 176,
+            "two_pass_units": 352
+          },
+          "source_check": "EXPECTED_REJECTION"
+        },
+        "outcome": {
+          "code": "E0500",
+          "stage": "oir-project-bind",
+          "span": null,
+          "related": []
+        },
+        "generic_probe": {
+          "kind": {
+            "tag": "Ownership",
+            "items": [
+              {
+                "tag": "LoanConflict"
+              }
+            ]
+          },
+          "clone_identical": true
+        }
+      }
+    },
+    {
+      "id": "raw-invalid_target",
+      "profile": "debug",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/debug/raw-invalid_target/receipt.json",
+      "receipt_sha256": "3ac0725ba3dca3ef817813402903df6c4ea7d23a34aa8f2e7dc2f51fd799aca4",
+      "status": "MATCH",
+      "result": {
+        "authority": "raw-verifier-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "call-target",
+          "path": "functions[0].blocks[4].terminator.kind.target",
+          "proof": "exact-whole-raw-edit"
+        },
+        "baseline": {
+          "association": {
+            "D": 2,
+            "Sspan": 112,
+            "Vbind": 114,
+            "two_pass_units": 228
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 1,
+            "bindings": 4,
+            "owned_sites": 0,
+            "field_projections": 0,
+            "constructors": 0,
+            "transfers": 0,
+            "stores": 6
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 32,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-57",
+              "charges": 32,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-58",
+              "charges": 32,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "diagnostic": {
+            "code": "E0500",
+            "stage": "oir-verify",
+            "span": [
+              0,
+              141,
+              164
+            ],
+            "related": []
+          },
+          "raw_failure": {
+            "tag": "OirFailure",
+            "kind": {
+              "tag": "InvalidTarget"
+            },
+            "stage": "oir-verify",
+            "span": [
+              0,
+              141,
+              164
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "source-nonzero-original-file-positive",
+      "profile": "debug",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/debug/source-nonzero-original-file-positive/receipt.json",
+      "receipt_sha256": "80a25f432752942695e103686a14bafd9d816c5ba0295772a8c76d1dc169e9c9",
+      "status": "MATCH",
+      "result": {
+        "authority": "source-association-acceptance",
+        "application": {
+          "status": "applied",
+          "kind": "original-source-map-file-id",
+          "path": "constructor.actual_file",
+          "proof": "active-map-and-exhaustive-span-rebase",
+          "span_count": 179
+        },
+        "baseline": {
+          "association": {
+            "D": 6,
+            "Sspan": 179,
+            "Vbind": 185,
+            "two_pass_units": 370
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 3,
+            "bindings": 8,
+            "owned_sites": 0,
+            "field_projections": 0,
+            "constructors": 0,
+            "transfers": 0,
+            "stores": 4
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 108,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 7,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-164",
+              "charges": 108,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 7,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-165",
+              "charges": 108,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 7,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "status": "ACCEPT",
+          "entry": 1,
+          "origin_file": 1,
+          "reference_runs": 3
+        }
+      }
+    },
+    {
+      "id": "bind-entry_id",
+      "profile": "release",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/release/bind-entry_id/receipt.json",
+      "receipt_sha256": "4842ebed6bf06c926a5f9c60922358ac8c85afef9b527d9c3bbbb2b78ae2b5fd",
+      "status": "MATCH",
+      "result": {
+        "authority": "association-audit-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "source-seal-seam-entry",
+          "path": "constructor.local.entry",
+          "proof": "local-typed-frozen-entry-agreement"
+        },
+        "baseline": {
+          "association": {
+            "D": 8,
+            "Sspan": 169,
+            "Vbind": 177,
+            "two_pass_units": 354
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 3,
+            "bindings": 5,
+            "owned_sites": 8,
+            "field_projections": 2,
+            "constructors": 1,
+            "transfers": 2,
+            "stores": 2
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-109",
+              "charges": 27,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 5,
+              "runtime_epoch_transitions": 15,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-110",
+              "charges": 28,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 5,
+              "runtime_epoch_transitions": 16,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-116",
+              "charges": 31,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 17,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-117",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-125",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-126",
+              "charges": 32,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 4,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-56",
+              "charges": 5,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 1,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-57",
+              "charges": 6,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-63",
+              "charges": 9,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 1,
+              "runtime_epoch_transitions": 2,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-64",
+              "charges": 10,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 4,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-68",
+              "charges": 12,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 7,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-69",
+              "charges": 13,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-70",
+              "charges": 14,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-71",
+              "charges": 15,
+              "committed_writes": 0,
+              "loan_events": 1,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-88",
+              "charges": 19,
+              "committed_writes": 0,
+              "loan_events": 1,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-89",
+              "charges": 20,
+              "committed_writes": 1,
+              "loan_events": 1,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-91",
+              "charges": 21,
+              "committed_writes": 1,
+              "loan_events": 1,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-92",
+              "charges": 22,
+              "committed_writes": 1,
+              "loan_events": 2,
+              "actual_activation_count": 3,
+              "runtime_epoch_slots": 3,
+              "runtime_epoch_transitions": 8,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "code": "E0500",
+          "stage": "oir-project-bind",
+          "span": null,
+          "related": []
+        }
+      }
+    },
+    {
+      "id": "bind-wrong-file-owned-DiagnosticOrigins.cause",
+      "profile": "release",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/release/bind-wrong-file-owned-DiagnosticOrigins.cause/receipt.json",
+      "receipt_sha256": "0bfa3aa39587ca226764948533b6a1a650a9b91410bf8a5bab2fa9bf042be824",
+      "status": "MATCH",
+      "result": {
+        "authority": "association-audit-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "replace-span",
+          "path": "functions[0].blocks[0].statements[0].diagnostic_origins.cause",
+          "proof": "exact-whole-raw-edit",
+          "category": "owned.DiagnosticOrigins.cause",
+          "occurrence": 0
+        },
+        "baseline": {
+          "association": {
+            "D": 5,
+            "Sspan": 367,
+            "Vbind": 372,
+            "two_pass_units": 744
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 1,
+            "bindings": 7,
+            "owned_sites": 8,
+            "field_projections": 1,
+            "constructors": 5,
+            "transfers": 0,
+            "stores": 10
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-113",
+              "charges": 25,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 1,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-114",
+              "charges": 26,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-115",
+              "charges": 27,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-116",
+              "charges": 28,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-128",
+              "charges": 34,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 5,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-129",
+              "charges": 35,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-158",
+              "charges": 50,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 4,
+              "runtime_epoch_transitions": 15,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-159",
+              "charges": 51,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 4,
+              "runtime_epoch_transitions": 15,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-181",
+              "charges": 63,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 22,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-182",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-199",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-200",
+              "charges": 64,
+              "committed_writes": 4,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 23,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "code": "E0500",
+          "stage": "oir-project-bind",
+          "span": null,
+          "related": []
+        }
+      }
+    },
+    {
+      "id": "correspondence-wrong-target-scalar",
+      "profile": "release",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/release/correspondence-wrong-target-scalar/receipt.json",
+      "receipt_sha256": "2cc40338aaab9ca2cd0458729894bf10f76d52dc62705b0955ffbd8ff052eac4",
+      "status": "MATCH",
+      "result": {
+        "authority": "semantic-correspondence-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "call-target",
+          "path": "functions[0].blocks[0].terminator.kind.target",
+          "proof": "exact-whole-raw-edit"
+        },
+        "baseline": {
+          "association": {
+            "D": 3,
+            "Sspan": 121,
+            "Vbind": 124,
+            "two_pass_units": 248
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 1,
+            "bindings": 4,
+            "owned_sites": 0,
+            "field_projections": 0,
+            "constructors": 0,
+            "transfers": 0,
+            "stores": 4
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-114",
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-115",
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "actual_transport": [
+          {
+            "name": "reference-default",
+            "charges": 8,
+            "writes": 0,
+            "loans": 0
+          },
+          {
+            "name": "reference-fuel-114",
+            "charges": 8,
+            "writes": 0,
+            "loans": 0
+          },
+          {
+            "name": "reference-fuel-115",
+            "charges": 8,
+            "writes": 0,
+            "loans": 0
+          }
+        ],
+        "outcome": {
+          "check": "numeric call target source correspondence",
+          "rejection": "AssertionError({'check': 'numeric call target', 'expected': 1, 'actual': 2})"
+        }
+      }
+    },
+    {
+      "id": "metadata-wrong-file",
+      "profile": "release",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/release/metadata-wrong-file/receipt.json",
+      "receipt_sha256": "3a0ac419f783ebbb804827a732e0880801f2d0e2ec6b6b94e092e2092a5a3855",
+      "status": "MATCH",
+      "result": {
+        "authority": "association-audit-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "replace-diagnostic-origin",
+          "path": "functions[0].blocks[0].statements[14].diagnostic_origins.cause",
+          "proof": "exact-whole-raw-edit"
+        },
+        "baseline": {
+          "association": {
+            "D": 8,
+            "Sspan": 168,
+            "Vbind": 176,
+            "two_pass_units": 352
+          },
+          "source_check": "EXPECTED_REJECTION"
+        },
+        "outcome": {
+          "code": "E0500",
+          "stage": "oir-project-bind",
+          "span": null,
+          "related": []
+        },
+        "generic_probe": {
+          "kind": {
+            "tag": "Ownership",
+            "items": [
+              {
+                "tag": "LoanConflict"
+              }
+            ]
+          },
+          "clone_identical": true
+        }
+      }
+    },
+    {
+      "id": "raw-invalid_target",
+      "profile": "release",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/release/raw-invalid_target/receipt.json",
+      "receipt_sha256": "702deea91b727f74ee398190b85702668d8ed3c921a12c982c3065ca9edd6de3",
+      "status": "MATCH",
+      "result": {
+        "authority": "raw-verifier-rejection",
+        "application": {
+          "status": "applied",
+          "kind": "call-target",
+          "path": "functions[0].blocks[4].terminator.kind.target",
+          "proof": "exact-whole-raw-edit"
+        },
+        "baseline": {
+          "association": {
+            "D": 2,
+            "Sspan": 112,
+            "Vbind": 114,
+            "two_pass_units": 228
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 1,
+            "bindings": 4,
+            "owned_sites": 0,
+            "field_projections": 0,
+            "constructors": 0,
+            "transfers": 0,
+            "stores": 6
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 32,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-57",
+              "charges": 32,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-58",
+              "charges": 32,
+              "committed_writes": 3,
+              "loan_events": 0,
+              "actual_activation_count": 2,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "diagnostic": {
+            "code": "E0500",
+            "stage": "oir-verify",
+            "span": [
+              0,
+              141,
+              164
+            ],
+            "related": []
+          },
+          "raw_failure": {
+            "tag": "OirFailure",
+            "kind": {
+              "tag": "InvalidTarget"
+            },
+            "stage": "oir-verify",
+            "span": [
+              0,
+              141,
+              164
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "source-nonzero-original-file-positive",
+      "profile": "release",
+      "receipt": "typed-project-unit3-mutations/smoke-v1/release/source-nonzero-original-file-positive/receipt.json",
+      "receipt_sha256": "c2c290e29d6eb719a28ef54c0e59b8d4aab4c37712e5f4588f5cae6a6ebba2c7",
+      "status": "MATCH",
+      "result": {
+        "authority": "source-association-acceptance",
+        "application": {
+          "status": "applied",
+          "kind": "original-source-map-file-id",
+          "path": "constructor.actual_file",
+          "proof": "active-map-and-exhaustive-span-rebase",
+          "span_count": 179
+        },
+        "baseline": {
+          "association": {
+            "D": 6,
+            "Sspan": 179,
+            "Vbind": 185,
+            "two_pass_units": 370
+          },
+          "source_check": "ACCEPT",
+          "correspondence": {
+            "status": "MATCH",
+            "static_calls": 3,
+            "bindings": 8,
+            "owned_sites": 0,
+            "field_projections": 0,
+            "constructors": 0,
+            "transfers": 0,
+            "stores": 4
+          },
+          "runs": [
+            {
+              "name": "reference-default",
+              "charges": 108,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 7,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-164",
+              "charges": 108,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 7,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "name": "reference-fuel-165",
+              "charges": 108,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "actual_activation_count": 7,
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ]
+        },
+        "outcome": {
+          "status": "ACCEPT",
+          "entry": 1,
+          "origin_file": 1,
+          "reference_runs": 3
+        }
+      }
+    }
+  ]
+}

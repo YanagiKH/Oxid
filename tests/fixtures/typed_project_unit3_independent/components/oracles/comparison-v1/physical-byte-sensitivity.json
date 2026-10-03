@@ -1,0 +1,54 @@
+{
+  "schema": "unit3-independent-physical-byte-sensitivity-v1",
+  "positive_cases": 5,
+  "rejected": 9,
+  "mutants": [
+    {
+      "id": "short-i32",
+      "status": "REJECTED",
+      "reason": "AssertionError('exact physical field byte width')"
+    },
+    {
+      "id": "long-i32",
+      "status": "REJECTED",
+      "reason": "AssertionError('exact physical field byte width')"
+    },
+    {
+      "id": "bool-two",
+      "status": "REJECTED",
+      "reason": "AssertionError('canonical bool byte')"
+    },
+    {
+      "id": "wide-bool",
+      "status": "REJECTED",
+      "reason": "AssertionError('exact physical field byte width')"
+    },
+    {
+      "id": "wrong-scalar-type",
+      "status": "REJECTED",
+      "reason": "AssertionError(('recorded scalar type equals physical field type', 'Bool', 'I32'))"
+    },
+    {
+      "id": "unit-one",
+      "status": "REJECTED",
+      "reason": "AssertionError(('canonical unit byte', 0, 1))"
+    },
+    {
+      "id": "empty-unit",
+      "status": "REJECTED",
+      "reason": "AssertionError('exact physical field byte width')"
+    },
+    {
+      "id": "out-of-range-byte",
+      "status": "REJECTED",
+      "reason": "AssertionError('exact physical field byte width')"
+    },
+    {
+      "id": "bool-as-byte",
+      "status": "REJECTED",
+      "reason": "AssertionError('exact physical field byte width')"
+    }
+  ],
+  "candidate_inputs": 0,
+  "compiler_invocations": 0
+}

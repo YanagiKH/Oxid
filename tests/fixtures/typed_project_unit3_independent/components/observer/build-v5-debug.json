@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "profile": "debug",
+  "status": "built",
+  "exit_code": 0,
+  "argv": [
+    "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+    "test",
+    "--offline",
+    "--no-run",
+    "--bin",
+    "oxid",
+    "--jobs",
+    "2",
+    "--message-format=json"
+  ],
+  "cwd": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/source-v5",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "toolchain_binary": {
+    "path": "/workspace/scratch/8266abf56995/toolchains/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "bytes": 647376,
+    "sha256": "f3834d26669b03f6855fa54bd2381443123e860167bc0c7a8dd137e5cf6e5e4f"
+  },
+  "overlay_manifest": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/overlay-manifest-v5.json",
+    "bytes": 37152,
+    "sha256": "f0d330def24e2e9832d665f364f0227efa41cbd8fd2f9500af0cf0bde32287e7"
+  },
+  "environment": {
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0"
+  },
+  "stdout": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/build-v5-debug.stdout.jsonl",
+    "bytes": 14740,
+    "sha256": "d22ad0bde64f1d481da853dae9f1c2bd979a026c84f8fef14a0c52a046da7f9e"
+  },
+  "stderr": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/build-v5-debug.stderr",
+    "bytes": 245,
+    "sha256": "41909ecb8f38af2268b743bdf28cdd39f82f34e4afe620418e75b4ff5b381616"
+  },
+  "binary": {
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-observer/target/debug/deps/oxid-cd6bf3076cc14dc9",
+    "bytes": 17030704,
+    "sha256": "ee60a04c3f0443f8d48d278702086d4de0dd2534c66f8f2775dbc8417cd3e4a1"
+  }
+}

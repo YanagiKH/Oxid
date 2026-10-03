@@ -1,0 +1,36 @@
+{
+  "cases": 18,
+  "sources": 4,
+  "budgets": {
+    "pilot-scalar": [
+      164,
+      165
+    ],
+    "pilot-mechanical-batch": [
+      201,
+      281,
+      204,
+      1255,
+      1296,
+      1297
+    ],
+    "pilot-opaque-batch": [
+      280,
+      377,
+      244,
+      1528,
+      1576,
+      1577
+    ],
+    "owned-root_child-import-root-loop_cleanup": [
+      149,
+      337,
+      353,
+      354
+    ]
+  },
+  "profiles": [
+    "debug",
+    "release"
+  ]
+}

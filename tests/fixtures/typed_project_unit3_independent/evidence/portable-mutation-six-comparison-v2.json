@@ -1,0 +1,1108 @@
+{
+  "assertion_mode": {
+    "PYTHONOPTIMIZE": "0",
+    "__debug__": true,
+    "optimize": 0
+  },
+  "claim": "Exact internal mutation application/authority semantics; full scope also requires eight separately rechecked native driver attributions",
+  "compiler_invocations": 0,
+  "component_sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2",
+  "count": 6,
+  "kind": "mutation",
+  "matched": 6,
+  "plan": {
+    "bytes": 7908,
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke-plan.json",
+    "sha256": "8f231c0b64d121edf6b876c7c282873feed25b3ebe55acfabe37c671ce9aa174"
+  },
+  "post_comparison_identity_check": "UNCHANGED",
+  "prepared": {
+    "bytes": 1550,
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-implementation-review/downstream-v1/portable-comparison-independent-v1/prepared/prepared-comparison.json",
+    "sha256": "f2d123a84281f2274b04b06236301bc99d9ddfa77c4a398cf1493c962a7122f8"
+  },
+  "results": [
+    {
+      "comparison": {
+        "actual_transport": [
+          {
+            "charges": 8,
+            "loans": 0,
+            "name": "reference-default",
+            "writes": 0
+          },
+          {
+            "charges": 8,
+            "loans": 0,
+            "name": "reference-fuel-114",
+            "writes": 0
+          },
+          {
+            "charges": 8,
+            "loans": 0,
+            "name": "reference-fuel-115",
+            "writes": 0
+          }
+        ],
+        "application": {
+          "kind": "call-target",
+          "path": "functions[0].blocks[0].terminator.kind.target",
+          "proof": "exact-whole-raw-edit",
+          "status": "applied"
+        },
+        "authority": "semantic-correspondence-rejection",
+        "baseline": {
+          "association": {
+            "D": 3,
+            "Sspan": 121,
+            "Vbind": 124,
+            "two_pass_units": 248
+          },
+          "correspondence": {
+            "bindings": 4,
+            "constructors": 0,
+            "field_projections": 0,
+            "owned_sites": 0,
+            "static_calls": 1,
+            "status": "MATCH",
+            "stores": 4,
+            "transfers": 0
+          },
+          "runs": [
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-default",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-114",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-115",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ],
+          "source_check": "ACCEPT"
+        },
+        "outcome": {
+          "check": "numeric call target source correspondence",
+          "rejection": "AssertionError({'check': 'numeric call target', 'expected': 1, 'actual': 2})"
+        }
+      },
+      "id": "correspondence-wrong-target-scalar",
+      "overlay_translation": {
+        "derived": {
+          "bytes": 21724,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/mutation-manifest-v2.json",
+          "sha256": "7ce80efab3f321ecbeb8ea5fc4203afe5c208a3615cb043e5bc175bb59c9e01a"
+        },
+        "original": {
+          "bytes": 37984,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/frozen-inputs/mutation-manifest-v2.json",
+          "sha256": "d6bc5a6bc88a51be9d109faaebe9eb5471e3977ea56cfb04cc8397eff219c874"
+        }
+      },
+      "planned_row": {
+        "build": "mutation-v2-debug",
+        "id": "correspondence-wrong-target-scalar",
+        "profile": "debug",
+        "receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/correspondence-wrong-target-scalar/observed/receipt.json",
+        "wrapper_receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/correspondence-wrong-target-scalar/portable-mutation.json"
+      },
+      "profile": "debug",
+      "receipt": {
+        "bytes": 97530,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/correspondence-wrong-target-scalar/observed/receipt.json",
+        "sha256": "996a18af25ede287dd7657bc01da181c47f11efb9a02d3c691cb458c14d3ab2e"
+      },
+      "status": "MATCH",
+      "wrapper": {
+        "bytes": 4995,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/correspondence-wrong-target-scalar/portable-mutation.json",
+        "sha256": "7db92276a811133e1d7e5914fbec43b801b870d6dba35d469ff888617eb1b323"
+      }
+    },
+    {
+      "comparison": {
+        "application": {
+          "kind": "call-result-slot-type",
+          "path": "functions[0].locals[1].ty",
+          "proof": "exact-whole-raw-edit",
+          "status": "applied"
+        },
+        "authority": "raw-verifier-rejection",
+        "baseline": {
+          "association": {
+            "D": 3,
+            "Sspan": 121,
+            "Vbind": 124,
+            "two_pass_units": 248
+          },
+          "correspondence": {
+            "bindings": 4,
+            "constructors": 0,
+            "field_projections": 0,
+            "owned_sites": 0,
+            "static_calls": 1,
+            "status": "MATCH",
+            "stores": 4,
+            "transfers": 0
+          },
+          "runs": [
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-default",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-114",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-115",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ],
+          "source_check": "ACCEPT"
+        },
+        "outcome": {
+          "diagnostic": {
+            "code": "E0500",
+            "related": [],
+            "span": [
+              0,
+              51,
+              73
+            ],
+            "stage": "oir-verify"
+          },
+          "raw_failure": {
+            "kind": {
+              "tag": "TypeMismatch"
+            },
+            "span": [
+              0,
+              51,
+              73
+            ],
+            "stage": "oir-verify",
+            "tag": "OirFailure"
+          }
+        }
+      },
+      "id": "raw-wrong_scalar_result",
+      "overlay_translation": {
+        "derived": {
+          "bytes": 21724,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/mutation-manifest-v2.json",
+          "sha256": "7ce80efab3f321ecbeb8ea5fc4203afe5c208a3615cb043e5bc175bb59c9e01a"
+        },
+        "original": {
+          "bytes": 37984,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/frozen-inputs/mutation-manifest-v2.json",
+          "sha256": "d6bc5a6bc88a51be9d109faaebe9eb5471e3977ea56cfb04cc8397eff219c874"
+        }
+      },
+      "planned_row": {
+        "build": "mutation-v2-debug",
+        "id": "raw-wrong_scalar_result",
+        "profile": "debug",
+        "receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/raw-wrong_scalar_result/observed/receipt.json",
+        "wrapper_receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/raw-wrong_scalar_result/portable-mutation.json"
+      },
+      "profile": "debug",
+      "receipt": {
+        "bytes": 98949,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/raw-wrong_scalar_result/observed/receipt.json",
+        "sha256": "3f76ec957421943def091e7332307d0798712af0072b6ff2b786ec9b5a2c5a03"
+      },
+      "status": "MATCH",
+      "wrapper": {
+        "bytes": 5451,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/raw-wrong_scalar_result/portable-mutation.json",
+        "sha256": "b74fa96944eae25e324162627e941b9c7f3c54786bd81b92110b9f1b384bccc8"
+      }
+    },
+    {
+      "comparison": {
+        "application": {
+          "kind": "original-source-constructor-substitution",
+          "path": "constructor.parser_generation",
+          "proof": "actual-source-identities-belongs-to-and-early-bind-denial",
+          "status": "applied"
+        },
+        "authority": "source-association-rejection",
+        "baseline": {
+          "association": {
+            "D": 12,
+            "Sspan": 548,
+            "Vbind": 560,
+            "two_pass_units": 1120
+          },
+          "correspondence": {
+            "bindings": 12,
+            "constructors": 1,
+            "field_projections": 9,
+            "owned_sites": 11,
+            "static_calls": 6,
+            "status": "MATCH",
+            "stores": 9,
+            "transfers": 3
+          },
+          "runs": [
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-default",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 24,
+              "charges": 466,
+              "committed_writes": 36,
+              "loan_events": 46,
+              "name": "reference-fuel-1092",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 24,
+              "charges": 467,
+              "committed_writes": 36,
+              "loan_events": 47,
+              "name": "reference-fuel-1093",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 25,
+              "charges": 474,
+              "committed_writes": 36,
+              "loan_events": 48,
+              "name": "reference-fuel-1113",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 25,
+              "charges": 475,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1114",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 26,
+              "charges": 485,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1178",
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 26,
+              "charges": 486,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1179",
+              "runtime_epoch_slots": 7,
+              "runtime_epoch_transitions": 20,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 26,
+              "charges": 494,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1228",
+              "runtime_epoch_slots": 10,
+              "runtime_epoch_transitions": 31,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 495,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1229",
+              "runtime_epoch_slots": 10,
+              "runtime_epoch_transitions": 32,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 505,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1255",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 34,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1256",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1296",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1297",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 10,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "name": "reference-fuel-163",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 5,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 11,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "name": "reference-fuel-164",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 30,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "name": "reference-fuel-183",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 31,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-184",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 31,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-197",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 32,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-198",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 35,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-201",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 36,
+              "committed_writes": 3,
+              "loan_events": 1,
+              "name": "reference-fuel-202",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 37,
+              "committed_writes": 3,
+              "loan_events": 1,
+              "name": "reference-fuel-204",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 38,
+              "committed_writes": 3,
+              "loan_events": 2,
+              "name": "reference-fuel-205",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            }
+          ],
+          "source_check": "ACCEPT"
+        },
+        "outcome": {
+          "code": "E0500",
+          "related": [],
+          "span": null,
+          "stage": "resolve-project"
+        }
+      },
+      "id": "source-association-stale_parser_generation",
+      "overlay_translation": {
+        "derived": {
+          "bytes": 21936,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v3/mutation-manifest-v3.json",
+          "sha256": "2879276b0731f60b0f08404589109d7e4198fc893b47c1620da52149968d35e6"
+        },
+        "original": {
+          "bytes": 38239,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v3/frozen-inputs/mutation-manifest-v3.json",
+          "sha256": "6c77a0105d587dccb939f7251c09f99378b63ddeca90ed7dbbdb72e32fabcf83"
+        }
+      },
+      "planned_row": {
+        "build": "mutation-v3-debug",
+        "id": "source-association-stale_parser_generation",
+        "profile": "debug",
+        "receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/source-association-stale_parser_generation/observed/receipt.json",
+        "wrapper_receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/source-association-stale_parser_generation/portable-mutation.json"
+      },
+      "profile": "debug",
+      "receipt": {
+        "bytes": 12038,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/source-association-stale_parser_generation/observed/receipt.json",
+        "sha256": "3ae531a9a9a59164ae4d319635214d3aa8c24fe5a38135149529e0ecdcb4c72e"
+      },
+      "status": "MATCH",
+      "wrapper": {
+        "bytes": 5027,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/debug/source-association-stale_parser_generation/portable-mutation.json",
+        "sha256": "14300402d4b3f3248d076ec7f5b55fbb7e174a69a1a0008c1a30d49cdbc7cf20"
+      }
+    },
+    {
+      "comparison": {
+        "actual_transport": [
+          {
+            "charges": 8,
+            "loans": 0,
+            "name": "reference-default",
+            "writes": 0
+          },
+          {
+            "charges": 8,
+            "loans": 0,
+            "name": "reference-fuel-114",
+            "writes": 0
+          },
+          {
+            "charges": 8,
+            "loans": 0,
+            "name": "reference-fuel-115",
+            "writes": 0
+          }
+        ],
+        "application": {
+          "kind": "call-target",
+          "path": "functions[0].blocks[0].terminator.kind.target",
+          "proof": "exact-whole-raw-edit",
+          "status": "applied"
+        },
+        "authority": "semantic-correspondence-rejection",
+        "baseline": {
+          "association": {
+            "D": 3,
+            "Sspan": 121,
+            "Vbind": 124,
+            "two_pass_units": 248
+          },
+          "correspondence": {
+            "bindings": 4,
+            "constructors": 0,
+            "field_projections": 0,
+            "owned_sites": 0,
+            "static_calls": 1,
+            "status": "MATCH",
+            "stores": 4,
+            "transfers": 0
+          },
+          "runs": [
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-default",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-114",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-115",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ],
+          "source_check": "ACCEPT"
+        },
+        "outcome": {
+          "check": "numeric call target source correspondence",
+          "rejection": "AssertionError({'check': 'numeric call target', 'expected': 1, 'actual': 2})"
+        }
+      },
+      "id": "correspondence-wrong-target-scalar",
+      "overlay_translation": {
+        "derived": {
+          "bytes": 21724,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/mutation-manifest-v2.json",
+          "sha256": "7ce80efab3f321ecbeb8ea5fc4203afe5c208a3615cb043e5bc175bb59c9e01a"
+        },
+        "original": {
+          "bytes": 37984,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/frozen-inputs/mutation-manifest-v2.json",
+          "sha256": "d6bc5a6bc88a51be9d109faaebe9eb5471e3977ea56cfb04cc8397eff219c874"
+        }
+      },
+      "planned_row": {
+        "build": "mutation-v2-release",
+        "id": "correspondence-wrong-target-scalar",
+        "profile": "release",
+        "receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/correspondence-wrong-target-scalar/observed/receipt.json",
+        "wrapper_receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/correspondence-wrong-target-scalar/portable-mutation.json"
+      },
+      "profile": "release",
+      "receipt": {
+        "bytes": 97573,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/correspondence-wrong-target-scalar/observed/receipt.json",
+        "sha256": "61cf0190d1ba84949ca3d8d225daea04a03e0df295f41e856c07c68529e7065a"
+      },
+      "status": "MATCH",
+      "wrapper": {
+        "bytes": 5009,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/correspondence-wrong-target-scalar/portable-mutation.json",
+        "sha256": "2794f1662b217b154007642be0d84f1ffe6ff216ca72c9a15656c6a869629ef3"
+      }
+    },
+    {
+      "comparison": {
+        "application": {
+          "kind": "call-result-slot-type",
+          "path": "functions[0].locals[1].ty",
+          "proof": "exact-whole-raw-edit",
+          "status": "applied"
+        },
+        "authority": "raw-verifier-rejection",
+        "baseline": {
+          "association": {
+            "D": 3,
+            "Sspan": 121,
+            "Vbind": 124,
+            "two_pass_units": 248
+          },
+          "correspondence": {
+            "bindings": 4,
+            "constructors": 0,
+            "field_projections": 0,
+            "owned_sites": 0,
+            "static_calls": 1,
+            "status": "MATCH",
+            "stores": 4,
+            "transfers": 0
+          },
+          "runs": [
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-default",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-114",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 89,
+              "committed_writes": 9,
+              "loan_events": 0,
+              "name": "reference-fuel-115",
+              "runtime_epoch_slots": 0,
+              "runtime_epoch_transitions": 0,
+              "status": "MATCH"
+            }
+          ],
+          "source_check": "ACCEPT"
+        },
+        "outcome": {
+          "diagnostic": {
+            "code": "E0500",
+            "related": [],
+            "span": [
+              0,
+              51,
+              73
+            ],
+            "stage": "oir-verify"
+          },
+          "raw_failure": {
+            "kind": {
+              "tag": "TypeMismatch"
+            },
+            "span": [
+              0,
+              51,
+              73
+            ],
+            "stage": "oir-verify",
+            "tag": "OirFailure"
+          }
+        }
+      },
+      "id": "raw-wrong_scalar_result",
+      "overlay_translation": {
+        "derived": {
+          "bytes": 21724,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/mutation-manifest-v2.json",
+          "sha256": "7ce80efab3f321ecbeb8ea5fc4203afe5c208a3615cb043e5bc175bb59c9e01a"
+        },
+        "original": {
+          "bytes": 37984,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v2/frozen-inputs/mutation-manifest-v2.json",
+          "sha256": "d6bc5a6bc88a51be9d109faaebe9eb5471e3977ea56cfb04cc8397eff219c874"
+        }
+      },
+      "planned_row": {
+        "build": "mutation-v2-release",
+        "id": "raw-wrong_scalar_result",
+        "profile": "release",
+        "receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/raw-wrong_scalar_result/observed/receipt.json",
+        "wrapper_receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/raw-wrong_scalar_result/portable-mutation.json"
+      },
+      "profile": "release",
+      "receipt": {
+        "bytes": 98992,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/raw-wrong_scalar_result/observed/receipt.json",
+        "sha256": "d518628f0a9721aba40ee95115e6c2d0422d5c6781fc63409d5a753a63dc2392"
+      },
+      "status": "MATCH",
+      "wrapper": {
+        "bytes": 5465,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/raw-wrong_scalar_result/portable-mutation.json",
+        "sha256": "89d36d8bca638f63ad4397888518c2fd64293826b0ead2638af82b25f2e0d459"
+      }
+    },
+    {
+      "comparison": {
+        "application": {
+          "kind": "original-source-constructor-substitution",
+          "path": "constructor.parser_generation",
+          "proof": "actual-source-identities-belongs-to-and-early-bind-denial",
+          "status": "applied"
+        },
+        "authority": "source-association-rejection",
+        "baseline": {
+          "association": {
+            "D": 12,
+            "Sspan": 548,
+            "Vbind": 560,
+            "two_pass_units": 1120
+          },
+          "correspondence": {
+            "bindings": 12,
+            "constructors": 1,
+            "field_projections": 9,
+            "owned_sites": 11,
+            "static_calls": 6,
+            "status": "MATCH",
+            "stores": 9,
+            "transfers": 3
+          },
+          "runs": [
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-default",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 24,
+              "charges": 466,
+              "committed_writes": 36,
+              "loan_events": 46,
+              "name": "reference-fuel-1092",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 24,
+              "charges": 467,
+              "committed_writes": 36,
+              "loan_events": 47,
+              "name": "reference-fuel-1093",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 25,
+              "charges": 474,
+              "committed_writes": 36,
+              "loan_events": 48,
+              "name": "reference-fuel-1113",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 25,
+              "charges": 475,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1114",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 26,
+              "charges": 485,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1178",
+              "runtime_epoch_slots": 6,
+              "runtime_epoch_transitions": 18,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 26,
+              "charges": 486,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1179",
+              "runtime_epoch_slots": 7,
+              "runtime_epoch_transitions": 20,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 26,
+              "charges": 494,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1228",
+              "runtime_epoch_slots": 10,
+              "runtime_epoch_transitions": 31,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 495,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1229",
+              "runtime_epoch_slots": 10,
+              "runtime_epoch_transitions": 32,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 505,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1255",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 34,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1256",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1296",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 27,
+              "charges": 506,
+              "committed_writes": 37,
+              "loan_events": 48,
+              "name": "reference-fuel-1297",
+              "runtime_epoch_slots": 11,
+              "runtime_epoch_transitions": 35,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 10,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "name": "reference-fuel-163",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 5,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 11,
+              "committed_writes": 0,
+              "loan_events": 0,
+              "name": "reference-fuel-164",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 30,
+              "committed_writes": 2,
+              "loan_events": 0,
+              "name": "reference-fuel-183",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 31,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-184",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 1,
+              "charges": 31,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-197",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 32,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-198",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 35,
+              "committed_writes": 2,
+              "loan_events": 1,
+              "name": "reference-fuel-201",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 36,
+              "committed_writes": 3,
+              "loan_events": 1,
+              "name": "reference-fuel-202",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 37,
+              "committed_writes": 3,
+              "loan_events": 1,
+              "name": "reference-fuel-204",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            },
+            {
+              "actual_activation_count": 2,
+              "charges": 38,
+              "committed_writes": 3,
+              "loan_events": 2,
+              "name": "reference-fuel-205",
+              "runtime_epoch_slots": 2,
+              "runtime_epoch_transitions": 6,
+              "status": "MATCH"
+            }
+          ],
+          "source_check": "ACCEPT"
+        },
+        "outcome": {
+          "code": "E0500",
+          "related": [],
+          "span": null,
+          "stage": "resolve-project"
+        }
+      },
+      "id": "source-association-stale_parser_generation",
+      "overlay_translation": {
+        "derived": {
+          "bytes": 21936,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v3/mutation-manifest-v3.json",
+          "sha256": "2879276b0731f60b0f08404589109d7e4198fc893b47c1620da52149968d35e6"
+        },
+        "original": {
+          "bytes": 38239,
+          "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/v3/frozen-inputs/mutation-manifest-v3.json",
+          "sha256": "6c77a0105d587dccb939f7251c09f99378b63ddeca90ed7dbbdb72e32fabcf83"
+        }
+      },
+      "planned_row": {
+        "build": "mutation-v3-release",
+        "id": "source-association-stale_parser_generation",
+        "profile": "release",
+        "receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/source-association-stale_parser_generation/observed/receipt.json",
+        "wrapper_receipt": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/source-association-stale_parser_generation/portable-mutation.json"
+      },
+      "profile": "release",
+      "receipt": {
+        "bytes": 12077,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/source-association-stale_parser_generation/observed/receipt.json",
+        "sha256": "c4bb3aadd59b60fb68fc926637006236b85f7ed08aefb705cdada4b36686daa3"
+      },
+      "status": "MATCH",
+      "wrapper": {
+        "bytes": 5041,
+        "path": "/workspace/scratch/8266abf56995/typed-project-unit3-mutations/portable-validation-v2/smoke/release/source-association-stale_parser_generation/portable-mutation.json",
+        "sha256": "7bb64b24e88b6fc256e94824c6c66eeae2a3f5ac585081cdf7920a50de69ce06"
+      }
+    }
+  ],
+  "schema": "unit3-independent-portable-comparison-v1",
+  "scope": "bounded",
+  "separate_driver_boundaries": "NOT_REQUESTED_IN_BOUNDED_SCOPE",
+  "status": "MATCH",
+  "supplemental": {},
+  "wrapper": {
+    "bytes": 17338,
+    "path": "/workspace/scratch/8266abf56995/typed-project-unit3-oracles/portable-v1/portable_compare.py",
+    "sha256": "7ee84a91adb97a94677b61ccb3936c548e6f2f6d986b4146366cb4cfe64c372d"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "compiler_invocations": 0,
+  "delta": "common.identity streams hashes in1MiB chunks; verify rejects stat-size mismatch before content reads; oversized/read_bytes-disabled control",
+  "files": [
+    {
+      "bytes": 5487,
+      "path": "ARCHITECTURE.md",
+      "sha256": "20577e92a96612d3d4c82f9474472e4ec3feb8bcbf4b98fb9bff1b44ea4877e8"
+    },
+    {
+      "bytes": 3521,
+      "path": "common.py",
+      "sha256": "7b8b6d476c66eb7c2e833dff9dfe7eb42308bf8a67fd38a9a501f3b490eb7297"
+    },
+    {
+      "bytes": 7351,
+      "path": "transport.py",
+      "sha256": "7e3e8b87ba54cc3c5a6693424fdcd539f48b11c78973ad66e962548016ab3f01"
+    },
+    {
+      "bytes": 5487,
+      "path": "assemble.py",
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965"
+    },
+    {
+      "bytes": 7380,
+      "path": "build.py",
+      "sha256": "4beb1790fc4effd92b44ae1a2b1d04aac3e7a76b97d5d28f66bb88db1a46de37"
+    },
+    {
+      "bytes": 5189,
+      "path": "observe.py",
+      "sha256": "14dfc7142d5ce044afe60caaa85b538c3ae8fdcf21878256f2e1d8a44f7d5fb2"
+    },
+    {
+      "bytes": 3042,
+      "path": "bind_components.py",
+      "sha256": "1190b727994267a84e66acc2276f8302c011e0f0111f8aea2c9cea2bdc7303e9"
+    },
+    {
+      "bytes": 4034,
+      "path": "test_transport.py",
+      "sha256": "2c4ed75fdff763a3fe6e68c14b8fe78ef9eac0ae2856bd4f82b70bc08ab9fabd"
+    },
+    {
+      "bytes": 1476,
+      "path": "test_optimized.py",
+      "sha256": "aeb2317b22ee7030ee56e7294748d7467373e6b7014cabfc7261394591d7bacf"
+    },
+    {
+      "bytes": 7334,
+      "path": "test_workers.py",
+      "sha256": "32baa9401fa3a8996a89d2872a34b242ff85a131a2515f04d1e6b612634011f5"
+    },
+    {
+      "bytes": 4988,
+      "path": "test_build.py",
+      "sha256": "73949699e24c1598397756fd1aee64b10e767f2fe3eca571704e246188b9f28c"
+    },
+    {
+      "bytes": 83356,
+      "path": "transport-built-v1/source-transport.json",
+      "sha256": "2c863f351d6277d8b6c601d63d72ba53f4af94c20f1e698c1a35593e958e13cd"
+    },
+    {
+      "bytes": 13128,
+      "path": "transport-built-v1/sources.tar.gz",
+      "sha256": "1e6107e272f4cec23a7183eea8be23350b81b6702fe73c1c6e8d7687fe744293"
+    },
+    {
+      "bytes": 97143,
+      "path": "transport-built-v1/requests.jsonl",
+      "sha256": "f405bf46d8945027cd1d79d3c125692b4c00b8fe57b97c0d55c68b83b9795113"
+    },
+    {
+      "bytes": 654,
+      "path": "transport-determinism.json",
+      "sha256": "3644900c49a1e6a1109b551577e74259abb1fba967379801c5322d4cf4ff4d01"
+    },
+    {
+      "bytes": 3514,
+      "path": "transport-controls-v1/results.json",
+      "sha256": "5f8fb083fbe732f532582660368430458fcd29219764f4f1c4dca889b5101902"
+    },
+    {
+      "bytes": 7456,
+      "path": "build-controls-v1/results.json",
+      "sha256": "842787531b04ff27290b64b25da8cbed2e2758c1adfec6737f8b40dfb6be410a"
+    },
+    {
+      "bytes": 9281,
+      "path": "optimized-controls-v3/results.json",
+      "sha256": "efb20128f4172048b118ed62c14b1f400ccecc28b5fc70c8bb7024ad2c7c8e3e"
+    },
+    {
+      "bytes": 7161,
+      "path": "worker-controls-v3/results.json",
+      "sha256": "40e2f4680c3692bc9980d5c34f48f130aef841e6fe63762989665fb60d61a703"
+    },
+    {
+      "bytes": 28456,
+      "path": "assembly-check-v1/prepared-source.json",
+      "sha256": "c1bb6efc6e32d090ea25edffe5676ea0aa4f4be3ff63738186920d64d9e99f04"
+    },
+    {
+      "bytes": 472,
+      "path": "attempt-history.json",
+      "sha256": "6060b4900817909da0727934ffbd04b8ca4dcd0d4ce703dd3f37a31cceae8113"
+    },
+    {
+      "bytes": 891,
+      "path": "size-controls-v1/results.json",
+      "sha256": "a4cd9cae1a7c9b5f1d5eb2e963641d7c372e1a7a07e924b372e6f39129004f61"
+    }
+  ],
+  "frozen_observer_unchanged": true,
+  "prior_manifest_sha256": "124d80607d782fbe38bb7f9d6fb0ddd3436f618d6c29cc87b8d46ff26020fe11",
+  "schema": "oxid-unit3-portable-review-candidate-v2",
+  "semantic_worker_invocations": 0,
+  "source_members": 445,
+  "source_request_cases": 152,
+  "status": "architecture/protocol cleared, bounded hash delta awaiting final static review; no real portable replay"
+}

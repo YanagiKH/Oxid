@@ -1,0 +1,30 @@
+{
+  "schema": "unit3-exact-diagnostic-origin-obligation-v1",
+  "case": "negative-exclusive_then_read",
+  "route": "owned",
+  "obligations": [
+    {
+      "function": 0,
+      "operation": "ReadField",
+      "operation_span": [
+        0,
+        177,
+        184
+      ],
+      "primary": [
+        0,
+        177,
+        184
+      ],
+      "cause": [
+        0,
+        143,
+        186
+      ],
+      "source_expression_key": "n0025",
+      "enclosing_statement_key": "n0028"
+    }
+  ],
+  "rule": "ReadField primary is its source expression; cause is the enclosing source statement passed unchanged through nested expression lowering",
+  "scope": "Exact stored metadata correspondence for this finite mutation control; independent of whether a selected diagnostic renders cause"
+}
