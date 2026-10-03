@@ -239,7 +239,8 @@ class WindowsToolchainControls(unittest.TestCase):
                     'VCINSTALLDIR': str(self.root), 'VSINSTALLDIR': str(self.root),
                     'VCToolsInstallDir': str(self.root / 'MSVC'), 'VSCMD_ARG_TGT_ARCH': 'x64', 'VSCMD_ARG_HOST_ARCH': 'x64'}
         self.result = {'status': 0, 'timed_out': False, 'stream_limit_exceeded': False,
-                       'stdout': 'Microsoft (R) Incremental Linker Version 14.synthetic', 'stderr': ''}
+                       'argv': [str(self.tools / 'link.exe'), '/?'], 'cwd': str(self.root),
+                       'stdout': 'Microsoft (R) Incremental Linker Version 14.51.36260.0\r\nCopyright (C) Microsoft Corporation.  All rights reserved.\r\n\r\n usage: LINK [options] [files] [@commandfile]\r\n\r\n   options:\r\n\r\n      /MACHINE:{X64|X86}\r\n      /OUT:filename\r\n', 'stderr': ''}
         self.calls = []
         def process(argv, cwd, env, timeout):
             self.calls.append((argv, cwd, env, timeout))
@@ -295,6 +296,37 @@ class WindowsToolchainControls(unittest.TestCase):
             with self.subTest(change=change), patch.dict(self.result, change):
                 with self.assertRaises(q.Reject): gate.verify_windows_toolchain(self.driver)
         self.assertEqual(q.read(self.root / 'driver.json')['windows_toolchain']['status'], 'fail')
+
+
+    def test_observed_help_exit_is_preserved_and_accepted_only_for_help(self):
+        self.result['status'] = 1100
+        gate.verify_windows_toolchain(self.driver)
+        saved = q.read(self.root / 'driver.json')['windows_toolchain']
+        self.assertEqual(saved['status'], 'pass')
+        self.assertEqual(saved['linker_help']['status'], 1100)
+        self.assertEqual(saved['linker_help'], self.result)
+
+    def test_exit_1100_nonhelp_wrong_provenance_and_error_are_rejected(self):
+        self.result['status'] = 1100
+        for change in (
+            {'argv': [str(self.tools / 'link.exe'), '/OUT:program.exe', 'input.obj']},
+            {'argv': [str(self.root / 'other-link.exe'), '/?']}, {'cwd': str(self.root / 'other')},
+            {'stdout': "link: extra operand; Try 'link --help'"},
+            {'stdout': self.result['stdout'] + 'LINK : fatal error LNK1100: bad input\r\n'},
+            {'stdout': self.result['stdout'].replace(' usage: LINK', ' missing: LINK')},
+            {'stderr': 'LINK : fatal error LNK1100: bad input'}, {'status': 1101},
+            {'timed_out': True}, {'stream_limit_exceeded': True}):
+            with self.subTest(change=change), patch.dict(self.result, change):
+                with self.assertRaises(q.Reject): gate.verify_windows_toolchain(self.driver)
+        self.assertEqual(q.read(self.root / 'driver.json')['windows_toolchain']['status'], 'fail')
+
+    def test_exit_1100_never_qualifies_an_actual_build_stage(self):
+        self.result['status'] = 1100
+        provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+        driver = gate.Driver(REPO, self.root, provenance, self.driver.runtime)
+        with patch.object(q, 'admit', return_value=provenance):
+            with self.assertRaises(q.Reject): driver.stage('04-build-ordinary', ['synthetic-build-control'], 10)
+        self.assertEqual(q.read(self.root / 'commands/04-build-ordinary/receipt.json')['status'], 1100)
 
 
 class CompactUploadControls(unittest.TestCase):

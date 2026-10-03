@@ -6,6 +6,7 @@ import argparse
 from collections import Counter
 import os
 from pathlib import Path
+import re
 import shutil
 import time
 import common as q
@@ -56,6 +57,23 @@ def clean_environment():
     return env
 
 
+def verify_msvc_linker_help(process, selected_linker, cwd):
+    """The observed MSVC /? exit 1100 is valid only for this bounded help probe."""
+    q.need(process['argv'] == [selected_linker, '/?'] and process['cwd'] == str(cwd), 'Microsoft help receipt command differs from the exact selected-linker probe')
+    q.need(process['status'] in (0, 1100) and not process['timed_out'] and not process['stream_limit_exceeded'], 'selected Microsoft linker help invocation failed')
+    q.need(process['stderr'] == '', 'Microsoft linker help emitted an error stream')
+    lines = process['stdout'].splitlines()
+    q.need(len(lines) > 7 and re.fullmatch(r'Microsoft \(R\) Incremental Linker Version [0-9]+(?:\.[0-9]+){3}', lines[0]) is not None,
+           'selected linker did not identify as Microsoft Incremental Linker')
+    q.need(lines[1:7] == ['Copyright (C) Microsoft Corporation.  All rights reserved.', '',
+                         ' usage: LINK [options] [files] [@commandfile]', '', '   options:', ''], 'Microsoft linker help header/usage is missing')
+    body = lines[7:]
+    q.need(all(not line or re.match(r'^ {6}(?:/| {6})', line) is not None for line in body) and
+           any(line.startswith('      /OUT:') for line in body) and any(line.startswith('      /MACHINE:') for line in body) and
+           re.search(r'(?i)\bfatal error\b|\berror(?:\s+LNK[0-9]+|\s*:)', process['stdout']) is None,
+           'Microsoft linker help options are missing or contain diagnostics')
+
+
 def verify_windows_toolchain(driver):
     """Bind the preinstalled developer tools selected by the actual cleaned environment."""
     env = driver.env
@@ -77,8 +95,7 @@ def verify_windows_toolchain(driver):
             q.need(selected == (tools_dir / name).resolve(), 'cleaned PATH selected a tool outside the configured x64 MSVC toolset: ' + name)
         process = driver.runtime.process([record['tools']['link.exe']['path'], '/?'], driver.output, env, timeout=30)
         record['linker_help'] = process
-        q.need(process['status'] == 0 and not process['timed_out'] and not process['stream_limit_exceeded'], 'selected Microsoft linker help invocation failed')
-        q.need('Microsoft (R) Incremental Linker Version' in process['stdout'] + process['stderr'], 'selected linker did not identify as Microsoft Incremental Linker')
+        verify_msvc_linker_help(process, record['tools']['link.exe']['path'], driver.output)
         for bound in record['tools'].values():
             q.verify(bound['path'], bound)
         record['status'] = 'pass'
