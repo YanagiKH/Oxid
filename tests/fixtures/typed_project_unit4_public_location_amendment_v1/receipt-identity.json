@@ -1,0 +1,9 @@
+{
+  "base_public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85",
+  "effective_contract_descriptor_sha256": "68c310e4b0d1f63b3cab25839dade5f4cdfa55cecf752409314dba7311ef2eb7",
+  "effective_contract_identity": "oxid-unit4-public-v3-location-amendment-v1",
+  "effective_public_document_canonical_sha256": "bb31b5b4ddd5467170ade55e7cc81f92378570f860ff17bfa86d821feab651ec",
+  "ordered_amendment_sha256": [
+    "e4c3b886ec2d0cf6448a1fc1d4f15bac5ee081d05e80876b13055587a421974d"
+  ]
+}

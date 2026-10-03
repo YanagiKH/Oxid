@@ -1,0 +1,42 @@
+{
+  "candidate_result_files_read": 0,
+  "changed_json_leaf_count": 4,
+  "compiler_invocations": 0,
+  "coordinate_findings": 1,
+  "deterministic_artifacts_verified": 3,
+  "negative_controls": [
+    {
+      "message": "unapproved base freeze",
+      "name": "stale-freeze",
+      "result": "rejected"
+    },
+    {
+      "message": "unapproved base public document",
+      "name": "stale-public-document",
+      "result": "rejected"
+    },
+    {
+      "message": "unexpected source bytes",
+      "name": "changed-root-source",
+      "result": "rejected"
+    },
+    {
+      "message": "unexpected source bytes",
+      "name": "changed-other-root-source",
+      "result": "rejected"
+    },
+    {
+      "message": "unexpected source bytes",
+      "name": "changed-signature-source",
+      "result": "rejected"
+    },
+    {
+      "message": "unapproved base public document",
+      "name": "already-amended-base",
+      "result": "rejected"
+    }
+  ],
+  "schema_version": 1,
+  "source_roots_audited": 3,
+  "status": "PASS_SOURCE_ONLY_CHECKS"
+}

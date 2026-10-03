@@ -1,0 +1,9 @@
+"""Immutable source/overlay/selected-runtime identities admitted for this adapter."""
+CURRENT_SOURCE_SHA = '2ce302c0d3182b2b7c57d9cc99d65b9d3b40fd60761331fdec9db5ec8cf3bd5e'
+CURRENT_FILES_SHA = '45f2a65a471bb1ae3e768c3106a4689a4d2e1a9f69718225cb4798f04e4a1daf'
+LIFECYCLE_PATCH_SHA = '2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56'
+OBSERVER_FILES_SHA = '2d710b614224dba95fd48cf649a5831c34d448963d7eb19669404a1d395bed5f'
+LLVM_CONTENT_SHA = '31f2db375a0008638deb261dd8789c5d16a797a2ecd9e7074a7d0752922a5597'
+
+import sys
+sys.dont_write_bytecode = True

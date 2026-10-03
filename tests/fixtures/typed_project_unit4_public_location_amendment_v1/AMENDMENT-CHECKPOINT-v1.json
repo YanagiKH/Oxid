@@ -1,0 +1,45 @@
+{
+  "base_public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85",
+  "candidate_result_files_read": 0,
+  "compiler_invocations": 0,
+  "files": [
+    {
+      "bytes": 3795,
+      "path": "README.md",
+      "sha256": "3b740b0b45df10587bc70278e589dbe40e8a31046cfbe3a39f7fbc39f2011d69"
+    },
+    {
+      "bytes": 2100,
+      "path": "artifacts/amendment.json",
+      "sha256": "e4c3b886ec2d0cf6448a1fc1d4f15bac5ee081d05e80876b13055587a421974d"
+    },
+    {
+      "bytes": 2099,
+      "path": "artifacts/effective-contract.json",
+      "sha256": "68c310e4b0d1f63b3cab25839dade5f4cdfa55cecf752409314dba7311ef2eb7"
+    },
+    {
+      "bytes": 10947,
+      "path": "artifacts/source-coordinate-proof.json",
+      "sha256": "b06f938c2984bebff2c08c8f7d0509edc7c9fc882d8dc6cb7f9fbebce2526c86"
+    },
+    {
+      "bytes": 10951,
+      "path": "build_amendment.py",
+      "sha256": "16f3108e472a709b2f7f37999434683b2ddb8d2288b78bc6dd90d07649308587"
+    },
+    {
+      "bytes": 515,
+      "path": "receipt-identity.json",
+      "sha256": "512c38aa55693975afcbad7ecbad123a19b20df778fb3eacf22c0237808d00a9"
+    },
+    {
+      "bytes": 1037,
+      "path": "validation.json",
+      "sha256": "8ca7534dc992c36ecf8ef00a7f0c0ab2cbfcf251fe32d9fb0bb95ac6d3ee17f5"
+    }
+  ],
+  "identity": "oxid-unit4-public-v3-location-amendment-v1",
+  "schema_version": 1,
+  "status": "SOURCE_ONLY_AMENDMENT_AWAITING_INDEPENDENT_REVIEW"
+}
