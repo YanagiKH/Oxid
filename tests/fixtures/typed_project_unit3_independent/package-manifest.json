@@ -7,16 +7,16 @@
     "original_manifest_sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf",
     "restored_original_files": 81
   },
-  "bytes_excluding_manifest": 12327246,
+  "bytes_excluding_manifest": 12336296,
   "comparison_runtime_sha256": "2c3cbff718819d8511679b501b8253d89c54ace6f0f39a986606e3a04a859c12",
   "derived_original_core_sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910",
   "direct_successor_semantic_execution": false,
-  "file_count_excluding_manifest": 293,
+  "file_count_excluding_manifest": 294,
   "files": [
     {
-      "bytes": 10171,
+      "bytes": 11299,
       "path": "CI_COMMANDS.md",
-      "sha256": "4c0db3c210c4db4199abb5b9ea26386e09f90f11bbc31cbee1883d48b7969916"
+      "sha256": "f93af780653c2ac80135f4c5788fd09946816be8b335bdb174592e29fc980eb4"
     },
     {
       "bytes": 3253,
@@ -72,6 +72,11 @@
       "bytes": 6096,
       "path": "components/native-driver/audit_protocol.py",
       "sha256": "048e4c5dc194ca7840a9331e98ef060c820d0288a3bbd393e9228b8d668620d1"
+    },
+    {
+      "bytes": 16751,
+      "path": "components/native-driver/auxiliary-manifest-v1.json",
+      "sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf"
     },
     {
       "bytes": 17805,
@@ -477,11 +482,6 @@
       "bytes": 19899,
       "path": "components/native-driver/auxiliary/tests/fixtures/typed_project_unit3_compatibility/source-inputs-unit3.json",
       "sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910"
-    },
-    {
-      "bytes": 16751,
-      "path": "components/native-driver/auxiliary-manifest-v1.json",
-      "sha256": "5ada020fb9d4a34b6fd37307396fec1558b608800895c12508f66aa681addaaf"
     },
     {
       "bytes": 808,
@@ -1449,6 +1449,11 @@
       "sha256": "49e857b57b0cf589d4fdf667b4f0b689340e3357122135fa0a4e8786c28245dd"
     },
     {
+      "bytes": 7922,
+      "path": "portable/native-v1/stage_llvm_runtime.py",
+      "sha256": "055dd46f2c24f3a0496486ec89570ef533d7a016a5bc85d834447e8a59204def"
+    },
+    {
       "bytes": 5189,
       "path": "portable/observe.py",
       "sha256": "14dfc7142d5ce044afe60caaa85b538c3ae8fdcf21878256f2e1d8a44f7d5fb2"
@@ -1485,10 +1490,18 @@
     "separately_attributed_driver_results": 8,
     "source": 304
   },
+  "llvm_runtime_stage": {
+    "architecture": "amd64",
+    "content_sha256": "31f2db375a0008638deb261dd8789c5d16a797a2ecd9e7074a7d0752922a5597",
+    "helper": "portable/native-v1/stage_llvm_runtime.py",
+    "package_version": "1:19.1.7-3+b1",
+    "scope": "Pinned LLVM override libraries; ordinary host dependencies remain required",
+    "unique_target_bytes": 200716880
+  },
   "observer_freeze_sha256": "a96db8900f0eb37dc21bb61f46b35635d5fa3809dd3195f1f3181783544008d0",
   "oracle_component_sha256": "920114e750c228e1524c8dc77ba3dfec44f4a902860c00ec02413f6e39e22ca2",
   "original_expectation_sha256": "b89c8c5b00b13de9573513ba0f96d28fc1046f68c55d32d4ac1aad03d15c24ba",
-  "predecessor_package_manifest_sha256": "607e40ae9f61855eaa09341f08e272c79f7564255fa1f2b78ad65bb615ad1ebf",
+  "predecessor_package_manifest_sha256": "9610eeb61f9a6a783141318681511f9459e0a37559da507c8eac7bc1a1a6dd95",
   "schema": "unit3-independent-publication-package-v1",
   "selected_current_core_sha256": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963",
   "semantic_receipt_label": "derived core-v1 with production-byte identity bridge to selected successor",

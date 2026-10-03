@@ -11,12 +11,17 @@ Set these absolute paths in the workflow: `REPO`, `OUT` (fresh external output),
 `$REPO/tests/fixtures/typed_project_unit3_independent`.
 Run every Python command with `PYTHONOPTIMIZE=0` and `-B`. Use at most two build
 jobs and incremental compilation disabled. Fetch the repository's locked Cargo
-dependencies before the offline builds. No source corpus is materialized inside
+dependencies before the offline builds. `LLVM_LIB_DIR` must be set to
+`$OUT/llvm-runtime/libraries`, the fresh stage below; it must not name the broad
+host `/usr/lib/x86_64-linux-gnu` directory. No source corpus is materialized inside
 the repository. Keep source-input qualification before cache-producing steps.
 
 ```sh
 "$PYTHON" -B "$PKG/portable/verify_package.py" --package "$PKG" \
   --manifest "$PKG/package-manifest.json" --receipt "$OUT/package-verification.json"
+
+"$PYTHON" -B "$PKG/portable/native-v1/stage_llvm_runtime.py" \
+  --output "$OUT/llvm-runtime"
 
 "$PYTHON" -B "$PKG/portable/transport.py" materialize \
   --archive "$PKG/source-transport/sources.tar.gz" \
@@ -90,6 +95,19 @@ NATIVE_PLAN_SHA=$(sha256sum "$OUT/native-plan.json" | cut -d' ' -f1)
   --rustc "$RUSTC" --llvm-bin "$LLVM_BIN" --llvm-lib-dir "$LLVM_LIB_DIR" \
   --cargo-home "$CARGO_HOME" --rustup-home "$RUSTUP_HOME"
 ```
+
+The LLVM stage verifies installed Debian amd64 `libllvm19` and `libclang-cpp19`
+version `1:19.1.7-3+b1`, exact dpkg ownership of the selected paths, the pinned
+file sizes/SHA-256 values and SONAMEs, and the relative `libLLVM-19.so` alias.
+It copies only `libLLVM.so.19.1` and `libclang-cpp.so.19.1` plus that alias:
+200,716,880 unique bytes. The receipt is outside the library directory; it binds
+source paths, package metadata and a path-independent content identity. Missing,
+changed, nonregular or escaping selected paths and reused/aliased outputs fail.
+The native wrappers retain their complete existing library inventories and
+limits, tool byte/version probes and pre-invocation rechecks. Ordinary host
+loader/libc, C++ and other system dependencies still apply; this is not a full
+dynamic dependency closure. Compiler code and historical input identities do
+not change.
 
 The source plan requires exactly 304 tuples. The native plan requires exactly
 300 primary invocations:64 default,36 native-fuel,36 reference-fuel,144 private

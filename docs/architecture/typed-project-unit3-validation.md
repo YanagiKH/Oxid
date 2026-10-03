@@ -365,3 +365,57 @@ complete lossless archive. Receipt hashes in the compact archive do not replay
 binary bytes, and absent comparison reports provide no qualification evidence.
 The documentation correction does not claim to fix an undiagnosed native build
 failure; exact-head hosted qualification remains required.
+
+### Qualified LLVM override library directory
+
+The later compact evidence from head
+`2c327c607c7c498861580546fb434777ca27a8a8` identifies a post-build qualification
+failure: both native Rust adapters built successfully, with empty stderr, before
+the wrapper rejected a library-directory symlink whose resolved target was not a
+regular file.
+Head `9481918` had the earlier README failure and an opaque wrapper failure;
+`2c327c6` corrected the README and exposed this environment mismatch. Each hosted
+run of `9481918` ended with six passing jobs and two failures (full repository
+verification and native). Each hosted run of `2c327c6` ended with seven passing
+jobs and the native job failing. Although 304
+source rows were collected, none of the three independent comparisons ran, and
+downstream native steps were skipped. These runs are not semantic qualification
+passes. The exact hosted offending entry was not recorded. A local Debian-like
+`perl/5.40 -> 5.40.1` directory alias reproduces the same rejection in both
+unchanged inventory implementations.
+
+The correction stages only the installed Debian amd64 `libllvm19` and
+`libclang-cpp19` runtime entries from version `1:19.1.7-3+b1` into a fresh LLVM
+override directory. It validates exact package version/status/architecture and
+dpkg path ownership, regular-file SHA-256/size and SONAMEs, and the exact relative
+`libLLVM-19.so -> libLLVM.so.19.1` alias. The two regular files total 200,716,880
+bytes, with content identity
+`31f2db375a0008638deb261dd8789c5d16a797a2ecd9e7074a7d0752922a5597`.
+That identity excludes source/output paths and timestamps. Missing, changed,
+nonregular, aliased or escaping selected files, wrong packages or SONAMEs, and
+reused/aliased destinations fail closed; partial copies receive no success
+receipt. Every native build and collection uses the same staged path.
+
+Both original wrappers, their inventory caps, immutable historical controller,
+81 auxiliary files, 198/199 compiler input inventories, source corpus and
+expectations remain unchanged. Existing tool byte/version checks and the
+per-invocation full staged inventory comparison remain mandatory. The supplied
+directory binds the LLVM override libraries; ordinary host loader/libc, C++ and
+other system dependencies remain required, as in the original extracted-package
+environment. This is not a full dynamic dependency closure or a compiler fix.
+
+Local verification covers the Debian directory-alias regression, required-file
+and package rejection controls, deterministic identity, post-stage byte/alias
+changes, partial-copy failure and compact receipt retention. Real pinned library
+bytes pass both inventories. The real LLVM 19.1.7 clang/opt/LLD version probes,
+LLVM verification, clang/LLD link and generated ELF execution pass using that
+stage. This local package-metadata check uses real dpkg-query against an isolated
+database reconstructed from the retained Debian archives, with explicit source
+path relocation to their existing extraction; it does not establish installed
+package status on the hosted runner. No compiler corpus replay was added.
+
+The existing compact archive additionally retains the small staging receipt and
+qualified-build-tools receipt under unchanged byte caps, with no library binary
+payload. The complete lossless archive mechanism is unchanged. Exact-head hosted CI and
+all three comparisons must still complete before a successful qualification is
+claimed.

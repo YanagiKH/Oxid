@@ -20,12 +20,14 @@ LOG_PATHS = tuple(
     for profile in ('debug', 'release') for stream in ('stdout', 'stderr')
 )
 RECEIPT_PATHS = (
-    'package-verification.json', 'inputs/materialization.json',
+    'package-verification.json', 'llvm-runtime/llvm-runtime-stage.json',
+    'inputs/materialization.json',
     'bridge/bridge-receipt.json', 'native-auxiliary/auxiliary-transport.json',
     'native-inputs/native-inputs.json', 'observer/prepared-source.json',
     'source-build-debug/build.json', 'source-build-release/build.json',
     'source-plan.json', 'source-collection/collection.json',
     'native/native-prepared.json', 'native-build-wrapper.json',
+    'native/native-component/qualified-build-tools.json',
     'native/native-component/build-debug/verified-build.json',
     'native/native-component/build-release/verified-build.json',
     'native-plan.json', 'native-collection/collection.json',

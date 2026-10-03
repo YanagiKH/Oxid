@@ -276,9 +276,12 @@ jobs:
           unit3_cxx="$(command -v c++)"
           unit3_ar="$(command -v ar)"
           unit3_llvm_bin="$OXID_LLVM_BIN"
-          unit3_llvm_lib_dir="/usr/lib/x86_64-linux-gnu"
+          unit3_llvm_lib_dir="$unit3_out/llvm-runtime/libraries"
           "$unit3_python" -B "$unit3_pkg/portable/verify_package.py" --package "$unit3_pkg" \
             --manifest "$unit3_pkg/package-manifest.json" --receipt "$unit3_out/package-verification.json"
+
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/stage_llvm_runtime.py" \
+            --output "$unit3_out/llvm-runtime"
 
           "$unit3_python" -B "$unit3_pkg/portable/transport.py" materialize \
             --archive "$unit3_pkg/source-transport/sources.tar.gz" \
