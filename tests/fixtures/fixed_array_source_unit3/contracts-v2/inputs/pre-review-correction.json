@@ -1,0 +1,144 @@
+{
+  "status": "SUPERSEDED_UNOBSERVED_DRAFT",
+  "reason": "Current project grammar requires crate:: absolute paths; independently corrected before freeze and before any compiler observation.",
+  "case": {
+    "expected": {
+      "entry": {
+        "file": 0,
+        "name": "main"
+      },
+      "later_resolution": {
+        "calls": [
+          {
+            "declaration": {
+              "column": 8,
+              "end": 11,
+              "end_column": 12,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 7,
+              "text": "make"
+            },
+            "use": {
+              "column": 38,
+              "end": 59,
+              "end_column": 49,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 48,
+              "text": "child::make"
+            }
+          },
+          {
+            "declaration": {
+              "column": 8,
+              "end": 53,
+              "end_column": 12,
+              "end_line": 2,
+              "file": 1,
+              "line": 2,
+              "start": 49,
+              "text": "take"
+            },
+            "use": {
+              "column": 60,
+              "end": 81,
+              "end_column": 71,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 70,
+              "text": "child::take"
+            }
+          }
+        ]
+      },
+      "later_type_expectation": "accept; all three structural identities equal regardless of file",
+      "nominal_array_rows": 0,
+      "parse": "accept",
+      "route": "owned-whole-project-once",
+      "selectors": {
+        "ast": [
+          true,
+          true
+        ],
+        "source_owner": true
+      },
+      "type_queries": [
+        {
+          "origin": {
+            "column": 27,
+            "end": 45,
+            "end_column": 35,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 37,
+            "text": "[i32; 1]"
+          },
+          "value": {
+            "element": "i32",
+            "length": 1,
+            "tag": "fixed_array"
+          }
+        },
+        {
+          "origin": {
+            "column": 18,
+            "end": 25,
+            "end_column": 26,
+            "end_line": 1,
+            "file": 1,
+            "line": 1,
+            "start": 17,
+            "text": "[i32; 1]"
+          },
+          "value": {
+            "element": "i32",
+            "length": 1,
+            "tag": "fixed_array"
+          }
+        },
+        {
+          "origin": {
+            "column": 16,
+            "end": 65,
+            "end_column": 24,
+            "end_line": 2,
+            "file": 1,
+            "line": 2,
+            "start": 57,
+            "text": "[i32; 1]"
+          },
+          "value": {
+            "element": "i32",
+            "length": 1,
+            "tag": "fixed_array"
+          }
+        }
+      ]
+    },
+    "family": "structural-identity",
+    "files": [
+      {
+        "bytes": 88,
+        "file": 0,
+        "path": "main.ox",
+        "sha256": "5cde9b846f266c37094fe8682953ea477727549cd26f576b334bd85e19957401"
+      },
+      {
+        "bytes": 91,
+        "file": 1,
+        "path": "child.ox",
+        "sha256": "bc21da466cfca2751d725141d671206cb2782c7fd5deefea71410c9cdaa49f0c"
+      }
+    ],
+    "first_observation_slice": "3A",
+    "id": "cross-file-array-identity",
+    "status": "FROZEN_EXPECTATION_NOT_EXECUTED"
+  },
+  "root_source": "mod child;\nfn main() -> i32 { let a: [i32; 1] = child::make(); return child::take(a); }\n",
+  "generated_cases_sha256": "678c3e5c49b9391d14da25b4c14465c96d4d943307f62c47005d3f54c5f676ab"
+}

@@ -1,0 +1,11 @@
+# Corrections made before freeze and before observations
+
+The original34 diagnostic sources, code/stage/primary expectations and two effect-source identities are unchanged. Independent extraction reproduced their hashes and UTF-8 coordinates. There is no original source-contract correction.
+
+The first unobserved new `cross-file-array-identity` draft used `child::make` and `child::take`. Existing ProjectCandidate grammar requires absolute paths beginning with `crate::`. Independent review found this source-construction defect, so the final source and call-use anchors use `crate::child::make` / `crate::child::take`. inputs/pre-review-correction.json retains the old source, case record and generated-cases identity. This correction was based solely on existing grammar, before any candidate output.
+
+Before materialization, the record query anchor in `structural-identities-pairwise-distinct` was narrowed from `r: R` to the type-use token `R`. The declaration identity remains the original record name. The preserved34 separator anchor was also disambiguated using the source snippet `[1 2]` rather than a bare `2`, which could match the return type `i32`; its old expected byte span was never changed.
+
+These are fixture/generator corrections, not changed language semantics or compiler-output-derived expectations. New wording/secondary choices are an explicitly separate appendix. A subsequent discovered source-contract error must be documented and independently reviewed under a new freeze identity; do not silently regenerate expectations to match a candidate.
+
+Final pre-observation self-review found one valid-text-but-wrong-role anchor in `scalar-unit-length-1`: occurrence1 of `()` was the annotation because `main()` was occurrence0. The final element origin is extracted directly from offset1 of the literal `[(),]`, avoiding occurrence counting. Source bytes, array identity and expected behavior did not change. inputs/unit-anchor-correction.json preserves the old case and archive identity; inputs/pre-freeze-manifest-before-unit-anchor.json preserves the superseded freeze manifest. No compiler observations occurred against that superseded contract. Independent review must use the replacement freeze identity.

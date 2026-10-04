@@ -1,0 +1,30 @@
+{
+  "cases.json": {
+    "bytes": 6417,
+    "sha256": "fe2a7dc95ecfdec2c8e67b35e5b7d916571fea19339c334d5ba3dc81c40e7cc5"
+  },
+  "fixtures/after-max-comma-eof.ox": {
+    "bytes": 2076,
+    "sha256": "fb48f230bf28589068b66e4bb331220d7e4a7ba4ab07b9ced3dd4a42340ae397"
+  },
+  "fixtures/after-max-comma-nonstarter-plus.ox": {
+    "bytes": 2077,
+    "sha256": "e51f85cf54717ffa8e5f196ebe4a252901c224c87b6ed4a4c5b79c44e077265e"
+  },
+  "fixtures/after-max-comma-nonstarter-semi.ox": {
+    "bytes": 2077,
+    "sha256": "2f17c3ef9aa853dd7f376f934d6c716435cb5e6e0ae2a43b9eb72b5b5d32c62d"
+  },
+  "fixtures/after-max-comma-starter-array.ox": {
+    "bytes": 2077,
+    "sha256": "36745c4d15a439688b9eaa19c55ad14aa840d5f28ce8d688d668e1656ac76b0c"
+  },
+  "fixtures/after-max-comma-starter-borrow.ox": {
+    "bytes": 2077,
+    "sha256": "16682a94a3b92b957272922189b9529892e25bd6681a6d2b71adb9978948ec22"
+  },
+  "fixtures/after-max-comma-starter-not.ox": {
+    "bytes": 2077,
+    "sha256": "781ba7a878cbe41ff4ba23f92b8af7d171c91fbaf1136d1831887624340e74e3"
+  }
+}

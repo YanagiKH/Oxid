@@ -1,0 +1,175 @@
+{
+  "purpose": "Read-only planning anchor, not a qualification receipt",
+  "observed_checkout": "/workspace/scratch/8266abf56995/oxid-unit2e-source-bindings",
+  "observed_head": "d027b8cb0c28001d392fc238baea1857dcda7e09",
+  "observed_status_porcelain": "",
+  "parent_reported_published_head": "dda237e735fbb20e43684cbf223401c62034f48a",
+  "published_object_available_in_this_checkout": false,
+  "files": [
+    {
+      "path": "rfcs/0016-fixed-scalar-arrays.md",
+      "bytes": 27275,
+      "sha256": "e6f85d7a87b214a465987faca65a8a5a5dc91fe3c59ed3150c9a1d6de1048638"
+    },
+    {
+      "path": "src/frontend/ast.rs",
+      "bytes": 20717,
+      "sha256": "3632fc114303be571166307ddab04f78b508226789b7c1495b4a692c538d3d2f"
+    },
+    {
+      "path": "src/frontend/lexer.rs",
+      "bytes": 8853,
+      "sha256": "6e75954085943e3b3018a51d91dcae1c2bf7bda1ebaff86efd10bfccde12de51"
+    },
+    {
+      "path": "src/frontend/parser.rs",
+      "bytes": 45184,
+      "sha256": "41c68af1f499bc6768ec5fd96b3940687bd4cdbec3c8d73f23c101e0341fd2d8"
+    },
+    {
+      "path": "src/frontend/options.rs",
+      "bytes": 15461,
+      "sha256": "6eb1c651c604e25887cf6926604598e27a390613ef9f43347c0b5fa9ab6bab06"
+    },
+    {
+      "path": "src/frontend/driver.rs",
+      "bytes": 7381,
+      "sha256": "50b5a53acb8af6208cad8a923f937898b1376312541f3bfac3729aeb58f62573"
+    },
+    {
+      "path": "src/frontend/project.rs",
+      "bytes": 34117,
+      "sha256": "f48d7a457a1e388f0ce30f52bf663426ae7015b2b7a7301cba6afd3497c73679"
+    },
+    {
+      "path": "src/frontend/project/budget.rs",
+      "bytes": 3353,
+      "sha256": "feb16c9a230cae26e0fe69caaae1d815a988ceb577a5994d6dd85b83dcdb2b7f"
+    },
+    {
+      "path": "src/frontend/declaration_index.rs",
+      "bytes": 34574,
+      "sha256": "a779b9de2d9adf37222bbff1f0fa33c86d2870a5b6f6db80254fdec4cce0f5b5"
+    },
+    {
+      "path": "src/frontend/declaration_index/source_owner.rs",
+      "bytes": 8971,
+      "sha256": "f30e5fbbf1aae89a2bd38c61e8977e8ba3c238d665b58dc37a69412595016086"
+    },
+    {
+      "path": "src/frontend/declaration_index/sealed.rs",
+      "bytes": 37065,
+      "sha256": "cc5cbd245f2a66122ebf8363b108423d53101d496096c6fcbf7eb41ae294c663"
+    },
+    {
+      "path": "src/frontend/declaration_index/resource.rs",
+      "bytes": 13343,
+      "sha256": "5f9201347edfba22a57f0020c61ebcf8080fda0249fab0322b0dfb35c9139e9f"
+    },
+    {
+      "path": "src/frontend/oir/source/sealed.rs",
+      "bytes": 7427,
+      "sha256": "b18fe96214f67aae59b5b291090db491851d0d3ab2428b39082f4010cd0c3c27"
+    },
+    {
+      "path": "src/frontend/oir/source/association.rs",
+      "bytes": 8048,
+      "sha256": "b1f898639b7799a6de20f0ce04c1d897323c59f6413972fd70a6de30bc73924d"
+    },
+    {
+      "path": "src/frontend/oir/owned_types.rs",
+      "bytes": 49930,
+      "sha256": "3d1d0be701979ed557ee2890763ea04a9448487c671b5851dfdfd6eada950c3c"
+    },
+    {
+      "path": "src/frontend/oir/owned/mod.rs",
+      "bytes": 9685,
+      "sha256": "ca0d4650d96087835c2ed6f11bb2eff511bd450fa00035bccb6be0afb3bb1947"
+    },
+    {
+      "path": "src/frontend/oir/owned/verified.rs",
+      "bytes": 8053,
+      "sha256": "0183555cb9ac7032118a2a76c4694467ffbc924a174a37ccccda7be35a3605a4"
+    },
+    {
+      "path": "src/frontend/oir/owned/budget.rs",
+      "bytes": 12515,
+      "sha256": "ec9f13f9228c96cdfeabb102c7fff2ab1de0ca1b02dcad48a77399acef59c762"
+    },
+    {
+      "path": "src/frontend/oir/owned/plan.rs",
+      "bytes": 17589,
+      "sha256": "f14116dd7f19c0e6f6eba568f7025cbb5a201bd096323b1cf5b81c7adc1dfe85"
+    },
+    {
+      "path": "src/frontend/oir/owned/execute.rs",
+      "bytes": 67374,
+      "sha256": "72219cd91eb26710aa72455c1f33e185d5c976d5639e87e7e0f31ba0374a3af5"
+    },
+    {
+      "path": "src/frontend/oir/owned/native.rs",
+      "bytes": 76786,
+      "sha256": "a5fec5f442f3538012067795c95a932bda9d7359ea2ecde2bf1f415e4e4eed9b"
+    },
+    {
+      "path": "src/frontend/oir/owned/shape.rs",
+      "bytes": 28575,
+      "sha256": "556fa0d9b35587250ebc2d282895c43bc19afde708c5536aff0f094a0c5a64b6"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/hir.rs",
+      "bytes": 4533,
+      "sha256": "80af7ccc0ddb253c9558072c0f26044475e11bd1fb302749d3827f07b3ef574c"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/resolve.rs",
+      "bytes": 33833,
+      "sha256": "5528236ed250f6913a5a8dc059ba04c2b405f921336bfb7278978f09b654ea4b"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/typeck.rs",
+      "bytes": 34292,
+      "sha256": "a904be5c4169f1d0e14f21eed17dfeafb8e4dc911377336f708a406b92cc3d32"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/lower.rs",
+      "bytes": 61098,
+      "sha256": "90352854c103f5b084072b4ce46d06c9fb0b78e81246c2951f68db7b81a0dbca"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/budget.rs",
+      "bytes": 5604,
+      "sha256": "e0898745a97481d375b848601846bcf2a8fdabbdf0a8d1056ed395405fb3cd94"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/association.rs",
+      "bytes": 10962,
+      "sha256": "2e08a8d4e2aa95449ef14088f4eec1c7212487c19d4854d29a7469334b681e28"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/program.rs",
+      "bytes": 2320,
+      "sha256": "aeb1969a292d2489a5cbdc04dce87a156ce2d161336239b9fa67097460a9c697"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/candidate_adapter.rs",
+      "bytes": 39938,
+      "sha256": "5ab7d897381baa0c868db6b0db2f10bc047a5392b6bdb04ffcffc13b2f953a82"
+    },
+    {
+      "path": "docs/architecture/typed-project-unit2-resource-proof.md",
+      "bytes": 9073,
+      "sha256": "54e50faf0ddcc45c61ee3a6ebc9bd1ab9de36c561cbd4c7e6f22f8ac4b15828c"
+    },
+    {
+      "path": "docs/architecture/typed-project-unit3-validation.md",
+      "bytes": 25696,
+      "sha256": "3a34733d0b05d6ed8a6a76367d7ee0b30971036182bf98fa0d2e889ef7342056"
+    },
+    {
+      "path": "docs/architecture/fixed-array-unit2b-validation.md",
+      "bytes": 11943,
+      "sha256": "ef954d9218b581fbd1f39262edf4afbb46f4f753513633d2a1c09634a9117677"
+    }
+  ]
+}
