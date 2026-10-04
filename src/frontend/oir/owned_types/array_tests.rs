@@ -253,8 +253,8 @@ fn array_seam_reports_representation_without_widening_existing_carriers() {
         assert_eq!(size_of::<RecordId>(), 8);
         assert_eq!(size_of::<ValueTy>(), 16);
         assert_eq!(size_of::<ParameterTy>(), 24);
-        assert_eq!(size_of::<RecordDecl>(), 64);
-        assert_eq!(size_of::<FieldDecl>(), 56);
+        assert_eq!(size_of::<RecordDecl>(), 72);
+        assert_eq!(size_of::<FieldDecl>(), 64);
         assert_eq!(
             size_of::<ast::Function>() + size_of::<ast::BodyBlock>() + size_of::<ast::ItemId>(),
             288

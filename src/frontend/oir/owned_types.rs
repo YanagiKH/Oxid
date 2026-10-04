@@ -218,6 +218,7 @@ pub(in crate::frontend) enum DeclarationError {
     InvalidFieldId(FieldId),
     InvalidSpan(Span),
     NonScalarField(FieldId),
+    ContainmentCycle(RecordId),
     RecordMismatch,
     TypeMismatch,
     LayoutOverflow,
@@ -225,7 +226,7 @@ pub(in crate::frontend) enum DeclarationError {
 }
 
 /// Private Linux x86_64 storage layout, not a source or FFI ABI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Layout {
     size: usize,
     align: usize,
@@ -248,7 +249,7 @@ impl Layout {
 #[derive(Debug)]
 pub(super) struct FieldDecl {
     id: FieldId,
-    ty: hir::Ty,
+    ty: ValueTy,
     span: Span,
     offset: usize,
 }
@@ -256,8 +257,16 @@ impl FieldDecl {
     pub(super) fn id(&self) -> FieldId {
         self.id
     }
-    pub(super) fn ty(&self) -> hir::Ty {
+    pub(super) fn value_ty(&self) -> ValueTy {
         self.ty
+    }
+    // Transitional scalar consumer accessor: executable verification still
+    // rejects composed declarations until all consumers are upgraded.
+    pub(super) fn ty(&self) -> hir::Ty {
+        match self.ty {
+            ValueTy::Scalar(ty) => ty,
+            ValueTy::Owned(_) => unreachable!("composed executable admission is closed"),
+        }
     }
     pub(super) fn span(&self) -> Span {
         self.span
@@ -274,6 +283,7 @@ pub(super) struct RecordDecl {
     field_start: usize,
     field_end: usize,
     layout: Layout,
+    width: usize,
 }
 impl RecordDecl {
     pub(super) fn id(&self) -> RecordId {
@@ -298,16 +308,10 @@ pub(in crate::frontend) struct DeclarationUsage {
     pub(super) layout_bytes: usize,
 }
 
-/// Unit-1 engineering ceilings only. Runtime storage, expanded operations and
-/// ownership analysis will need their own admission gates before source enablement.
-///
-/// On Linux x86_64, checked records/fields occupy 64/56 bytes, so the current
-/// count ceilings imply at most 64*4096 + 56*65536 = 3,932,160 payload bytes.
-/// A nonempty record's padded layout is at most four bytes per scalar field;
-/// empty records cost one byte. The maximum is therefore
-/// 4*65536 + 4096 - ceil(65536/1024) = 266,176 layout bytes, attained by 64 full
-/// i32 records plus 4032 empty records. Both byte ceilings are deliberately
-/// redundant today and independently enforced/tested with lowered limits.
+/// Engineering ceilings remain unchanged for composed declarations. Compact
+/// containment DAGs can describe exponential storage, so checked bottom-up
+/// layout/width admission precedes output allocation or any leaf expansion.
+/// Graph scratch is O(records), with a separately bounded depth-64 work stack.
 #[derive(Clone, Copy)]
 struct Limits {
     records: usize,
@@ -367,7 +371,6 @@ impl Declarations {
                 return Err(DeclarationError::InvalidRecordId(record.id));
             }
             check_span(sources, record.span)?;
-            let mut cursor = LayoutCursor::default();
             for (index, field) in record.fields.iter().enumerate() {
                 if field.id
                     != (FieldId {
@@ -378,20 +381,26 @@ impl Declarations {
                     return Err(DeclarationError::InvalidFieldId(field.id));
                 }
                 check_span(sources, field.span)?;
-                cursor.push(Layout::scalar(scalar_field(field)?))?;
+                if let ValueTy::Owned(AggregateTy::Record(id)) = value_field(field)? {
+                    if id.0 >= raw.len() {
+                        return Err(DeclarationError::InvalidRecordId(id));
+                    }
+                }
             }
-            let layout = cursor.finish()?;
+        }
+        let summaries = containment_summaries(raw, limits)?;
+        for summary in &summaries {
             usage.layout_bytes = limited_add(
                 usage.layout_bytes,
-                layout.size,
+                summary.layout.size,
                 limits.layout_bytes,
                 "declaration layout bytes",
             )?;
         }
 
         // All malformed declarations and all size/overflow gates above reject
-        // before these two fallible allocations. Flat fields avoid R separate
-        // allocations, with O(R + F) persistent storage and O(1) scratch.
+        // before these output allocations. Flat fields avoid R separate
+        // allocations, with O(R + F) persistent storage and O(R) graph scratch.
         let mut records = Vec::new();
         records
             .try_reserve_exact(usage.records)
@@ -404,8 +413,8 @@ impl Declarations {
             let field_start = fields.len();
             let mut cursor = LayoutCursor::default();
             for field in &record.fields {
-                let ty = scalar_field(field)?;
-                let offset = cursor.push(Layout::scalar(ty))?;
+                let ty = value_field(field)?;
+                let offset = cursor.push(value_summary(ty, &summaries)?.layout)?;
                 fields.push(FieldDecl {
                     id: field.id,
                     ty,
@@ -419,6 +428,7 @@ impl Declarations {
                 field_start,
                 field_end: fields.len(),
                 layout: cursor.finish()?,
+                width: summaries[record.id.0].width,
             });
         }
         Ok(Self {
@@ -474,7 +484,7 @@ impl Declarations {
     }
     pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
         match ty {
-            AggregateTy::Record(id) => self.fields(id).map(|fields| fields.len().max(1)),
+            AggregateTy::Record(id) => self.record(id).map(|record| record.width),
             AggregateTy::FixedArray(array) => Ok(array.length().max(1)),
         }
     }
@@ -559,11 +569,122 @@ fn check_span(sources: &SourceMap, span: Span) -> Result<(), DeclarationError> {
     }
 }
 
-fn scalar_field(field: &RawFieldDecl) -> Result<hir::Ty, DeclarationError> {
+fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
     match field.ty {
-        ParameterTy::Value(ValueTy::Scalar(ty)) => Ok(ty),
+        ParameterTy::Value(ty) => Ok(ty),
         _ => Err(DeclarationError::NonScalarField(field.id)),
     }
+}
+
+/// Maximum number of records along any by-value containment path.
+pub(super) const MAX_CONTAINMENT_DEPTH: usize = 64;
+
+#[derive(Clone, Copy, Default)]
+struct ContainmentSummary {
+    layout: Layout,
+    width: usize,
+    depth: usize,
+}
+
+fn value_summary(
+    ty: ValueTy,
+    summaries: &[ContainmentSummary],
+) -> Result<ContainmentSummary, DeclarationError> {
+    Ok(match ty {
+        ValueTy::Scalar(ty) => ContainmentSummary {
+            layout: Layout::scalar(ty),
+            width: 1,
+            depth: 0,
+        },
+        ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
+            layout: array.layout()?,
+            width: array.length().max(1),
+            depth: 0,
+        },
+        ValueTy::Owned(AggregateTy::Record(id)) => *summaries
+            .get(id.0)
+            .ok_or(DeclarationError::InvalidRecordId(id))?,
+    })
+}
+
+fn containment_summaries(
+    raw: &[RawRecordDecl],
+    limits: Limits,
+) -> Result<Vec<ContainmentSummary>, DeclarationError> {
+    // Count preflight has already bounded raw.len(). Allocation is fallible and
+    // no traversal or transitive flattening can allocate additional graph nodes.
+    let mut summaries = Vec::new();
+    summaries
+        .try_reserve_exact(raw.len())
+        .map_err(|_| DeclarationError::Allocation)?;
+    summaries.resize(raw.len(), ContainmentSummary::default());
+    let mut state = Vec::new();
+    state
+        .try_reserve_exact(raw.len())
+        .map_err(|_| DeclarationError::Allocation)?;
+    state.resize(raw.len(), 0u8);
+    let mut stack = Vec::new();
+    stack
+        .try_reserve_exact(raw.len().min(MAX_CONTAINMENT_DEPTH))
+        .map_err(|_| DeclarationError::Allocation)?;
+    for root in 0..raw.len() {
+        if state[root] == 2 {
+            continue;
+        }
+        state[root] = 1;
+        stack.push((root, 0usize));
+        while let Some(&(id, next)) = stack.last() {
+            if next < raw[id].fields.len() {
+                stack.last_mut().unwrap().1 += 1;
+                if let ValueTy::Owned(AggregateTy::Record(child)) =
+                    value_field(&raw[id].fields[next])?
+                {
+                    match state[child.0] {
+                        1 => return Err(DeclarationError::ContainmentCycle(child)),
+                        0 => {
+                            if stack.len() == MAX_CONTAINMENT_DEPTH {
+                                return Err(DeclarationError::ResourceLimit(
+                                    "record containment depth",
+                                ));
+                            }
+                            state[child.0] = 1;
+                            stack.push((child.0, 0));
+                        }
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            let mut cursor = LayoutCursor::default();
+            let (mut width, mut depth) = (0usize, 1usize);
+            for field in &raw[id].fields {
+                let child = value_summary(value_field(field)?, &summaries)?;
+                cursor.push(child.layout)?;
+                width = limited_add(
+                    width,
+                    child.width,
+                    limits.layout_bytes,
+                    "record expanded width",
+                )?;
+                depth = depth.max(child.depth + 1);
+                if depth > MAX_CONTAINMENT_DEPTH {
+                    return Err(DeclarationError::ResourceLimit("record containment depth"));
+                }
+            }
+            let layout = cursor.finish()?;
+            if layout.size > limits.layout_bytes {
+                return Err(DeclarationError::ResourceLimit("declaration layout bytes"));
+            }
+            summaries[id] = ContainmentSummary {
+                layout,
+                width: width.max(1),
+                depth,
+            };
+            state[id] = 2;
+            stack.pop();
+        }
+    }
+    Ok(summaries)
 }
 
 fn limited_add(
@@ -722,14 +843,14 @@ mod tests {
     use super::*;
     use crate::frontend::{lexer, parser, source::SourceFileId};
 
-    fn source() -> (SourceMap, Span) {
+    pub(super) fn source() -> (SourceMap, Span) {
         let mut sources = SourceMap::new();
         let file = sources.add("owned-types.ox".into(), "record 雪 fields".into());
         let span = sources.get(file).span(0, 6);
         (sources, span)
     }
 
-    fn record(id: usize, types: &[hir::Ty], span: Span) -> RawRecordDecl {
+    pub(super) fn record(id: usize, types: &[hir::Ty], span: Span) -> RawRecordDecl {
         RawRecordDecl {
             id: RecordId(id),
             span,
@@ -908,11 +1029,9 @@ mod tests {
     }
 
     #[test]
-    fn nested_owned_and_borrowed_fields_are_rejected() {
+    fn borrowed_fields_are_rejected() {
         let (sources, span) = source();
         for ty in [
-            ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0)))),
-            ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))),
             ParameterTy::Reference {
                 referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                 kind: BorrowKind::Shared,
@@ -1520,3 +1639,6 @@ mod tests {
 
 #[cfg(test)]
 mod array_tests;
+
+#[cfg(test)]
+mod composition_tests;
