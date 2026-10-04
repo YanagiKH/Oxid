@@ -363,3 +363,31 @@ fn native_tool_and_module_fifo_traps_remain_untouched() {
     assert!(!project.0.join("cache").exists());
     assert_eq!(fs::read_dir(&project.0).unwrap().count(), 3);
 }
+
+#[test]
+fn arrays_format_without_typechecking_loading_or_native_tools() {
+    let input = b"mod missing;fn f(a:&mut [i32;2])->[bool;0]{a[0]=1;let empty=[];sink(&mut *a,[true,1]);return a.len();}";
+    let expected = b"mod missing; fn f(a: &mut [i32; 2]) -> [bool; 0] { a[0] = 1; let empty = []; sink(&mut *a, [true, 1]); return a.len(); }\n";
+    let project = Project::new(input);
+    fs::create_dir(project.0.join("missing.ox")).unwrap();
+    fs::write(project.0.join("oxid.toml"), "invalid manifest").unwrap();
+    let output = project.format(false);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, expected);
+    assert!(output.stderr.is_empty());
+    assert_eq!(fs::read(project.0.join("input.ox")).unwrap(), input);
+    assert_eq!(fs::read_dir(&project.0).unwrap().count(), 3);
+    fs::write(project.0.join("input.ox"), expected).unwrap();
+    let checked = project.format(true);
+    assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+    assert!(checked.stdout.is_empty());
+    assert!(checked.stderr.is_empty());
+    fs::write(
+        project.0.join("input.ox"),
+        "fn broken()->(){let a=[1 2];}fn intact()->(){return;}",
+    )
+    .unwrap();
+    assert_error(&project.format(false), "error[E0100] (parse)");
+    assert_error(&project.format(true), "error[E0100] (parse)");
+    assert_eq!(fs::read_dir(&project.0).unwrap().count(), 3);
+}

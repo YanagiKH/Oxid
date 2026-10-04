@@ -1249,12 +1249,10 @@ fn array_native_resource_malformed_and_entry_priorities_are_closed_by_verificati
     .unwrap();
     assert_eq!(error.kind, OwnedFailureKind::Malformed(Malformed::Id));
     assert_eq!(error.primary.get(), Some(origin));
-    // Production still cannot return a witness carrying these same arrays.
-    let rejected = verified::verify_owned(array_core(origin, 3, true), &sources).unwrap_err();
-    assert_eq!(
-        rejected.kind,
-        OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
-    );
+    // Production validates the same array program before its consumer checks.
+    let witness = verified::verify_owned(array_core(origin, 3, true), &sources).unwrap();
+    let entry_error = native::native_module(&witness, None, &sources).unwrap_err();
+    assert_eq!(entry_error.code, "E0700");
     for (entry, code, marker) in [
         (None, "E0700", "declared"),
         (Some(hir::DefId(999)), "E0500", "identity"),

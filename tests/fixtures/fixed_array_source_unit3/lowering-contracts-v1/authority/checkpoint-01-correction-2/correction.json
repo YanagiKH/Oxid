@@ -1,0 +1,80 @@
+{
+  "schema": "source-derived-contract-correction-v1",
+  "preserves_original_freeze": "a40c00bc49a4415dad96300826a1c2d4f699e2c3777e461f2c472536938a579f",
+  "compatible_prior_supplement": "checkpoint-01-correction-1/correction.json, SHA9b16217f35d2399926d932a234b112334e0ead1fa2773f650c9f59777247c0b9",
+  "basis": "Independent reviewer static reading of bb2b5d7c39d5940cbbf959444646c2dacb8edcb4:src/frontend/oir/owned/execute.rs transfer_payload at602ff and MoveInitialize at1048ff; no candidate observation.",
+  "finding": "Original transfer prose identified the physical pretransition destination generationg1 but did not distinguish the actual Transfer event initialized destination generationg2.",
+  "semantic_scope": "Physical copy and owner-state transitions remain unchanged. No extra charge, source/HIR/raw/count/frame/fuel/failure change. Event identity becomes explicit.",
+  "application": "Verify original model SHA and expected original value, then replace identified effect arrays while preserving original files. Apply with correction1, whose pointers are disjoint.",
+  "replacements": [
+    {
+      "path": "checkpoint-01/models/rhs-snapshot-success.json",
+      "original_sha256": "03cac786ed4a82d57b1b47fb3f56d5ff9e7874d9a64f99491e418f0d4d964b69",
+      "json_pointer": "/runtime/steps/5/effects",
+      "expected_original_value": [
+        "transfer [5] owner0/g2 -> owner1/g1",
+        "main.owner0 Moved/g3; owner1 Available/g2"
+      ],
+      "replacement_value": [
+        "physical payload transfer [5] from root owner0 Available/g2 into owner1 Uninitialized/g1",
+        "record Transfer from(frame0,activation1,owner0,g2) to(frame0,activation1,owner1,g2), using initialized destination epoch",
+        "root owner0 becomes Moved/g3; owner1 becomes Available/g2 with payload[5]"
+      ]
+    },
+    {
+      "path": "checkpoint-01/models/rhs-snapshot-final-bounds-failure.json",
+      "original_sha256": "c8653817b912cb09717a84294fd15e62d4bfcbf0750427f385924cb0617ac88e",
+      "json_pointer": "/runtime/steps/5/effects",
+      "expected_original_value": [
+        "transfer [5] owner0/g2 -> owner1/g1",
+        "main.owner0 Moved/g3; owner1 Available/g2"
+      ],
+      "replacement_value": [
+        "physical payload transfer [5] from root owner0 Available/g2 into owner1 Uninitialized/g1",
+        "record Transfer from(frame0,activation1,owner0,g2) to(frame0,activation1,owner1,g2), using initialized destination epoch",
+        "root owner0 becomes Moved/g3; owner1 becomes Available/g2 with payload[5]"
+      ]
+    },
+    {
+      "path": "checkpoint-01/models/rhs-bounds-before-index.json",
+      "original_sha256": "845a5984a5224e2d00f1d13f35918592eca742c1fcbaf066de326fe82e6a0102",
+      "json_pointer": "/runtime/steps/5/effects",
+      "expected_original_value": [
+        "transfer [5] owner0/g2 -> owner1/g1",
+        "main.owner0 Moved/g3; owner1 Available/g2"
+      ],
+      "replacement_value": [
+        "physical payload transfer [5] from root owner0 Available/g2 into owner1 Uninitialized/g1",
+        "record Transfer from(frame0,activation1,owner0,g2) to(frame0,activation1,owner1,g2), using initialized destination epoch",
+        "root owner0 becomes Moved/g3; owner1 becomes Available/g2 with payload[5]"
+      ]
+    },
+    {
+      "path": "checkpoint-01/models/index-read-bounds-after-effect.json",
+      "original_sha256": "82c5fa540178d2b688f6eaa80d8479e9b832990a11a91167f5a44ade9d995bdc",
+      "json_pointer": "/runtime/steps/5/effects",
+      "expected_original_value": [
+        "transfer [5] owner0/g2 -> owner1/g1",
+        "main.owner0 Moved/g3; owner1 Available/g2"
+      ],
+      "replacement_value": [
+        "physical payload transfer [5] from root owner0 Available/g2 into owner1 Uninitialized/g1",
+        "record Transfer from(frame0,activation1,owner0,g2) to(frame0,activation1,owner1,g2), using initialized destination epoch",
+        "root owner0 becomes Moved/g3; owner1 becomes Available/g2 with payload[5]"
+      ]
+    },
+    {
+      "path": "checkpoint-01/models/grouped-complete-access-and-index.json",
+      "original_sha256": "f2b54252009ea195cbb26b5127541b4227e08c305d11d781f81a7c12a611dd1e",
+      "json_pointer": "/runtime/steps/6/effects",
+      "expected_original_value": [
+        "owner0 Moved/g3; owner1 payload[5,7] Available/g2"
+      ],
+      "replacement_value": [
+        "physical payload transfer [5,7] from root owner0 Available/g2 into owner1 Uninitialized/g1",
+        "record Transfer from(frame0,activation1,owner0,g2) to(frame0,activation1,owner1,g2), using initialized destination epoch",
+        "root owner0 becomes Moved/g3; owner1 becomes Available/g2 with payload[5,7]"
+      ]
+    }
+  ]
+}

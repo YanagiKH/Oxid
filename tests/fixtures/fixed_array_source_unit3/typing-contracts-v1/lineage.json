@@ -1,0 +1,329 @@
+{
+  "claim": "All semantic/control JSON and normative observation/resource/comparison requirements are exact copies; all65 original source bindings verify identically. The94-member historical closure is not the active package membership contract.",
+  "historical_admission_report_sha256": "0d70789953ebb1ac6ad05a453bd5428fe9c17b8f6ce17153edcd5e56ac3cde48",
+  "historical_manifest_sha256": "7cec518fdc38c02f8cfc6c3cf467239423621bf242e44c3e838be490a3060039",
+  "historical_members_not_shipped": {
+    "README.md": {
+      "reason": "historical derivation/provenance/verification artifact; excluded from scoped runnable closure",
+      "sha256": "67037f4fc2d915db704278bff0a344008a47cb375f1276977f354d6b4f314f29"
+    },
+    "base-inputs/src/frontend/declaration_index/resource.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "5f9201347edfba22a57f0020c61ebcf8080fda0249fab0322b0dfb35c9139e9f"
+    },
+    "base-inputs/src/frontend/declaration_index/source_owner.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "e894146825b7c79d25cfbcbe92f371decad8ebcaee37dc45abbc8d3611730030"
+    },
+    "base-inputs/src/frontend/diagnostic.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
+    },
+    "base-inputs/src/frontend/oir/owned/source/budget.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "e0898745a97481d375b848601846bcf2a8fdabbdf0a8d1056ed395405fb3cd94"
+    },
+    "base-inputs/src/frontend/oir/owned/source/diagnostic.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "f40f5b3c8339fb978a130f7ef650ef05f49b812d10d99077bbe94d105525fb93"
+    },
+    "base-inputs/src/frontend/oir/owned/source/hir.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "80af7ccc0ddb253c9558072c0f26044475e11bd1fb302749d3827f07b3ef574c"
+    },
+    "base-inputs/src/frontend/oir/owned/source/lower.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "90352854c103f5b084072b4ce46d06c9fb0b78e81246c2951f68db7b81a0dbca"
+    },
+    "base-inputs/src/frontend/oir/owned/source/program.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "aeb1969a292d2489a5cbdc04dce87a156ce2d161336239b9fa67097460a9c697"
+    },
+    "base-inputs/src/frontend/oir/owned/source/resolve.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "049aaab2dbd43ef7e3837641babcbd6bcc14781c922aa9d9b509c3f7c868f0d9"
+    },
+    "base-inputs/src/frontend/oir/owned/source/typeck.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "a904be5c4169f1d0e14f21eed17dfeafb8e4dc911377336f708a406b92cc3d32"
+    },
+    "base-inputs/src/frontend/oir/owned/verified.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "0183555cb9ac7032118a2a76c4694467ffbc924a174a37ccccda7be35a3605a4"
+    },
+    "base-inputs/src/frontend/oir/owned_types.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "3d1d0be701979ed557ee2890763ea04a9448487c671b5851dfdfd6eada950c3c"
+    },
+    "base-inputs/src/frontend/owned_diagnostic.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "6fb80f686eedee800bd506782d0bd72d1b96d3813a6ffdf9a285da8757e3d619"
+    },
+    "base-inputs/src/frontend/project/budget.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "feb16c9a230cae26e0fe69caaae1d815a988ceb577a5994d6dd85b83dcdb2b7f"
+    },
+    "base-inputs/src/frontend/source.rs": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "4928bf26220a08ce36dcbb0f939b912619169cf4e9a082ae26cf8d6554b6134f"
+    },
+    "build.py": {
+      "reason": "historical derivation/provenance/verification artifact; excluded from scoped runnable closure",
+      "sha256": "1d5e49371750741985a20843b3f532c11f14100b7ea35067226a2dad340a1862"
+    },
+    "fixtures/child-route-annotation/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "ae0e79de7bdab54179521a79db0be26cc3fb780f8d0d8eea7ba55ec8b7469d14"
+    },
+    "fixtures/child-route-annotation/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-exclusive-parameter/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "56037f87666afec1b2b93a32ee30a9c0ce9a962ebeec43afe06ebe4a5ca29f87"
+    },
+    "fixtures/child-route-exclusive-parameter/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-length-only/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "4bc18e34a72579884b646a3e9accaa3c3b7b0915fb688879570a816ed251ad05"
+    },
+    "fixtures/child-route-length-only/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-parameter/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "7b6ee34f858ec0028e3cdb7b9791d761e164f7fe16686cd1d90a06c72e3b703e"
+    },
+    "fixtures/child-route-parameter/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-read-only/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "e0f7199bce7e914c94c2e7da73257f55577491a8377044ad9ce51d4d3399e672"
+    },
+    "fixtures/child-route-read-only/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-shared-parameter/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "6ebceb6a5140f853670c38f4a30afbec62881222d0faf4a417596d3696f85dfb"
+    },
+    "fixtures/child-route-shared-parameter/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-write-only/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "d89b38bd0a643dcbff769165f8905820fd51cc9fa491540cbdacfcf5e6cd76bf"
+    },
+    "fixtures/child-route-write-only/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/cross-file-array-identity/child.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "bc21da466cfca2751d725141d671206cb2782c7fd5deefea71410c9cdaa49f0c"
+    },
+    "fixtures/cross-file-array-identity/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "4f4e3f4c8f71367088d5b03a1a51ccec52e20b789c3a6a98374495fbf33b2b2d"
+    },
+    "fixtures/empty-call-context-excluded/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "3ba0c58117e88a6f8d8120b16f67aa488db903883dd4de2d451768d85c24e864"
+    },
+    "fixtures/empty-no-context/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "32abf2281ee2e873b6833f7cbbcd759dbd49144771080937f36a827a3e0d2c73"
+    },
+    "fixtures/empty-nonzero-annotation/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "51891e6f066c88b32d396bd6e6e95392fecafdd030242d24c4b3072615f09ba6"
+    },
+    "fixtures/empty-reassignment-context-excluded/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "e6a4dc72429365d2e2d824527f147ebab94225e8fb5702f42b6df6f74059b901"
+    },
+    "fixtures/empty-return-context-excluded/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "83c56501682fae222e3820d099f74259e90f3d2b9990831131bd82d9ac1f56fc"
+    },
+    "fixtures/empty-scalar-context/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "89aa766d25bae2f31e85a4e2dd8980fdabf5087992c9de4be6c70c6daf5d321c"
+    },
+    "fixtures/grouped-complete-access-and-index/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36"
+    },
+    "fixtures/literal-first-heterogeneous-element/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "df523d928d4a7477da5256625fbe451ce238b7ab591420e0ef8323c7b057e893"
+    },
+    "fixtures/literal-length-max-trailing-comma/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "d7399e8bebf8c3b2ef244099c272d67fa2c128d891dd2a796771659a15bbae77"
+    },
+    "fixtures/literal-nested-nonempty-is-nonscalar/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "78d77948d26a4f3da2dcf4d9f3cb8832f675df72f02e51e5c0db01697847f167"
+    },
+    "fixtures/nested-empty-does-not-inherit-context/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "a6a002293dd3c4604743cbf65ae0c2b45600207eace37b3de9537fe6cc6d9110"
+    },
+    "fixtures/read-array-bad-index/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "886823f12d8608f6b41dc1b7afd7b57bd7785756c613dc34000d2bbfcdd397fc"
+    },
+    "fixtures/read-base-kind-before-index-kind/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "d4e236ab70385f6f9a35fb79b0a30a73da0bac4481a39866e7b4fca95b444763"
+    },
+    "fixtures/read-index-internal-type-first/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "a87bf6397c591d05f826a5caa13ac2ef00eed7272fa6ac5b89c0750ae50e14f1"
+    },
+    "fixtures/read-index-literal-range-before-base-type/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "5096b68a9719251d73044315059a6c4b684d72563de11ea0826755d0d14b606b"
+    },
+    "fixtures/read-index-resolution-before-base-type/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "3d0b69e3d153aa899d8246eb772e204c62b8ccd4ba3d43b42e97ce5ee80435da"
+    },
+    "fixtures/read-unknown-base-first/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "347e55639c69fa58344c565651efbce0c02756f9e10e8b6aa9cc5ebf4c1037d3"
+    },
+    "fixtures/record-len-field-stays-field/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "79480469c2db33239cca9d08d3d2c344b51a11995faf688768d71ec1276bbc69"
+    },
+    "fixtures/scalar-bool-length-0/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "74ff8f03050b26a17cc8e65b5f2cac0362f08c3e7463495a577c3230bcf6dba7"
+    },
+    "fixtures/scalar-bool-length-1/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "12d84b0e19246e1c5a8352c09d18feac105b71080f8e76469ef0622a9bfc7902"
+    },
+    "fixtures/scalar-i32-length-0/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "f3c451023455108b03cfdfe280c21d261b9f9d8925c81c42523c028a5799b09e"
+    },
+    "fixtures/scalar-i32-length-1/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "c8fe5273fa8927ab53e36e958328995cf60898eb443d40f9120a49405b9512ff"
+    },
+    "fixtures/scalar-unit-length-0/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "6d9524db67db301fa9ed33ea58c87e59ed739379f97668c2f21f29a1dddff06d"
+    },
+    "fixtures/scalar-unit-length-1/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "5a93cd48bdc89ef5b83a75c27adbe026a3a28e09bbcb622cabd8960c61d70b11"
+    },
+    "fixtures/structural-identities-pairwise-distinct/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "a6e226c08152c3957ca65d7817dfe770d9599491681ed45fd31c11e166b7817d"
+    },
+    "fixtures/utf8-read-primary/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "36f08bdef9d688a7be7652c859feec77f178eb00b4633630b2d3b951abc764e8"
+    },
+    "fixtures/whole-program-resolution-before-earlier-function-type/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "c250b4834e3eaf99d9b6279866a884fcd3c74b05e85039d3843d4eda973b250b"
+    },
+    "fixtures/write-base-kind-before-index-kind/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "6fed7af8b18a4a8f0c30361f87dce387d7972bcf3cffcf7fb47b16635264e28c"
+    },
+    "fixtures/write-both-subtree-errors-rhs-wins/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "509cb3c35a9bccbc86ee6120b9fa198d464a7338971aec90d1015bc4e3c71d67"
+    },
+    "fixtures/write-element-before-mutability/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "8f64ca26780e1efc1c6f3342484c95f65d5db38000319114f7b697325d5f6a5e"
+    },
+    "fixtures/write-index-internal-type-before-base/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "d540d8cfaa277c1c332c9934b508b30d0da9baffeb25df890f0c37d0b73d355c"
+    },
+    "fixtures/write-index-kind-before-rhs-element/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "57750be685c0c6643a6c4057a14df01a86cca4ba74db1c4affdadcd5e9fd8bc4"
+    },
+    "fixtures/write-one-conflict-element/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "c5f9d7422e93168b8f37d967bc4ee3c85699c82002059bc0d7d1d9779e6608aa"
+    },
+    "fixtures/write-one-conflict-index/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "18a666eaa5eec25909c9de0c839ffebcd862bc8094aeefc3814585bc1a52dd7f"
+    },
+    "fixtures/write-owner-mutability-last/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "7062109c43d146c79791a627277b996c9b8c89d5c1609a894ebb3aecd4fbf876"
+    },
+    "fixtures/write-resolve-base-before-both-operands/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "8807388125d28711c73e6552914843218d6d3c443a61250e9316149f6509cc31"
+    },
+    "fixtures/write-resolve-rhs-before-index/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "082576c5d3fb1835bf6c8e9fb23ace1cdd77671e3d0f804501d0eb94a94e5e0b"
+    },
+    "fixtures/write-rhs-internal-type-first/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "7f7c337f34ef1bf8d18452b1b960aabffaad98273a1d8e30af7d94c97a437e27"
+    },
+    "fixtures/write-whole-resolution-before-rhs-typing/main.ox": {
+      "reason": "exact external selected-base Git blob reference",
+      "sha256": "711d3dc384f243f12112f934514a16fcff7f88e83c6aa8a0f98612808e0be158"
+    },
+    "provenance.json": {
+      "reason": "historical derivation/provenance/verification artifact; excluded from scoped runnable closure",
+      "sha256": "031db3c64157747f6267bfb9325f299adb446f37b6dbfec2b8445b33cb4d059b"
+    },
+    "static-verification.json": {
+      "reason": "historical derivation/provenance/verification artifact; excluded from scoped runnable closure",
+      "sha256": "b8bec42d79f77773f4f4cfe98b18061d3b3a2bb8b53a50dd41e0079b2a8e0901"
+    },
+    "verify.py": {
+      "reason": "historical derivation/provenance/verification artifact; excluded from scoped runnable closure",
+      "sha256": "e94cccafb498cac0385bc169c4a341b60d1e5b3316ddf43706dbe3c6e0159443"
+    }
+  },
+  "schema": "oxid-array-typing-public-lineage-v1",
+  "unchanged_payload_members": {
+    "COMPARISON.md": "COMPARISON.md",
+    "OBSERVER.md": "OBSERVER.md",
+    "RESOURCE.md": "RESOURCE.md",
+    "child-diagnostics.json": "child-diagnostics.json",
+    "fence-controls.json": "fence-controls.json",
+    "fixtures/guard-array-free/main.ox": "fixtures/guard-array-free/main.ox",
+    "fixtures/guard-empty/main.ox": "fixtures/guard-empty/main.ox",
+    "fixtures/guard-project-root-eof/child.ox": "fixtures/guard-project-root-eof/child.ox",
+    "fixtures/guard-project-root-eof/main.ox": "fixtures/guard-project-root-eof/main.ox",
+    "fixtures/guard-record-only/main.ox": "fixtures/guard-record-only/main.ox",
+    "fixtures/reference-access-modes/main.ox": "fixtures/reference-access-modes/main.ox",
+    "fixtures/reserve-across-modules/child.ox": "fixtures/reserve-across-modules/child.ox",
+    "fixtures/reserve-across-modules/main.ox": "fixtures/reserve-across-modules/main.ox",
+    "fixtures/same-signature-callee/child.ox": "fixtures/same-signature-callee/child.ox",
+    "fixtures/same-signature-callee/main.ox": "fixtures/same-signature-callee/main.ox",
+    "positive-facts.json": "positive-facts.json",
+    "resource-controls.json": "resource-controls.json",
+    "reused-authority.json": "reused-authority.json",
+    "source-manifest.json": "source-manifest.json"
+  }
+}

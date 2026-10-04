@@ -1201,6 +1201,140 @@ fn quote_manifest_string(value: &str) -> String {
     output
 }
 
+fn manifest_delimiter(text: &str, delimiter: char) -> Option<usize> {
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, character) in text.char_indices() {
+        if let Some(active) = quote {
+            if escaped { escaped = false; }
+            else if active == '"' && character == '\\' { escaped = true; }
+            else if character == active { quote = None; }
+        } else if matches!(character, '"' | '\'') { quote = Some(character); }
+        else if character == '#' { return None; }
+        else if character == delimiter { return Some(index); }
+    }
+    None
+}
+
+fn parse_manifest_key(raw: &str) -> Result<String, String> {
+    if raw.ends_with(',') { return Err("unexpected comma after manifest key".to_string()); }
+    if raw.starts_with('"') { return parse_manifest_value(raw); }
+    if let Some(literal) = raw.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')) {
+        if !literal.contains('\'') && !literal.chars().any(char::is_control) { return Ok(literal.to_string()); }
+    }
+    if raw.starts_with('\'') { return Err("invalid literal manifest key".to_string()); }
+    Ok(raw.to_string())
+}
+
+fn is_test_fixture_section(line: &str) -> Result<bool, String> {
+    let array = line.starts_with("[[");
+    let opening = if array { 2 } else { 1 };
+    let closing = manifest_delimiter(&line[opening..], ']').ok_or("missing closing bracket")? + opening;
+    let raw = line[opening..closing].trim();
+    let suffix = &line[closing + 1..];
+    let suffix = if array { suffix.strip_prefix(']').ok_or("missing array-table closing bracket")? } else { suffix };
+    if raw.is_empty() || (!suffix.trim().is_empty() && !suffix.trim().starts_with('#')) {
+        return Err("empty section or unexpected text after section".to_string());
+    }
+    let mut names = Vec::new();
+    let mut remaining = raw;
+    loop {
+        let dot = manifest_delimiter(remaining, '.');
+        let component = remaining[..dot.unwrap_or(remaining.len())].trim();
+        if component.is_empty() || (!component.starts_with(['"', '\'']) && !component.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))) {
+            return Err("invalid bare section name".to_string());
+        }
+        names.push(parse_manifest_key(component)?);
+        let Some(dot) = dot else { break; };
+        remaining = &remaining[dot + 1..];
+    }
+    if names[0] != "test-fixtures" { return Ok(false); }
+    if array || names.len() != 1 { return Err("test-fixtures must be one ordinary table".to_string()); }
+    Ok(true)
+}
+
+// Track only lexical continuation in unrelated values. Their semantics remain
+// the owning consumer's concern, and apparent headers inside data are inert.
+#[derive(Default)]
+struct ManifestValueContinuation {
+    quote: Option<(u8, bool)>,
+    depth: usize,
+}
+
+impl ManifestValueContinuation {
+    fn active(&self) -> bool { self.quote.is_some() || self.depth != 0 }
+
+    fn scan(&mut self, line: &str) {
+        let bytes = line.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if let Some((quote, triple)) = self.quote {
+                if quote == b'"' && byte == b'\\' { index += 2; continue; }
+                if byte == quote {
+                    let count = bytes[index..].iter().take_while(|&&value| value == quote).count();
+                    if !triple || count >= 3 {
+                        self.quote = None;
+                        index += if triple { if count <= 5 { count } else { 3 } } else { 1 };
+                        continue;
+                    }
+                }
+            } else {
+                match byte {
+                    b'#' => break,
+                    b'"' | b'\'' => {
+                        let triple = bytes.get(index..index + 3) == Some(&[byte, byte, byte]);
+                        self.quote = Some((byte, triple));
+                        index += if triple { 3 } else { 1 };
+                        continue;
+                    }
+                    b'[' | b'{' => self.depth += 1,
+                    b']' | b'}' => self.depth = self.depth.saturating_sub(1),
+                    _ => {}
+                }
+            }
+            index += 1;
+        }
+    }
+}
+
+fn load_test_fixtures(path: &Path) -> Result<HashSet<String>, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("cannot read manifest: {} ({})", path.display(), e))?;
+    let mut fixtures = HashSet::new();
+    let mut fixture_section = false;
+    let mut continuation = ManifestValueContinuation::default();
+    for raw_line in text.lines() {
+        if continuation.active() { continuation.scan(raw_line); continue; }
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.starts_with('[') {
+            fixture_section = is_test_fixture_section(line).map_err(|error| format!("invalid manifest section in {}: {}", path.display(), error))?;
+            continue;
+        }
+        let equals = manifest_delimiter(line, '=');
+        if !fixture_section {
+            if let Some(equals) = equals { continuation.scan(&line[equals + 1..]); }
+            continue;
+        }
+        let equals = equals.ok_or("test fixture entry requires `\"relative/file.ox\" = true`")?;
+        let key_raw = line[..equals].trim();
+        let value_raw = &line[equals + 1..];
+        let key = parse_manifest_key(key_raw).map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?;
+        if !key_raw.starts_with('"') || value_raw.split('#').next().unwrap_or("").trim() != "true" {
+            return Err("test fixture entry requires `\"relative/file.ox\" = true`".to_string());
+        }
+        if !(key.starts_with("tests/") || key.starts_with("examples/"))
+            || !key.ends_with(".ox") || key.contains(['\\', ':', '*', '?', '[', ']'])
+            || key.chars().any(char::is_control)
+            || key.split('/').any(|part| matches!(part, "" | "." | "..")) {
+            return Err(format!("test fixture must be an exact relative .ox file under tests/ or examples/: {}", key));
+        }
+        if !fixtures.insert(key.clone()) { return Err(format!("duplicate test fixture: {}", key)); }
+    }
+    if continuation.active() { return Err("unterminated manifest value while reading test fixtures".to_string()); }
+    Ok(fixtures)
+}
+
 fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("cannot read manifest: {} ({})", path.display(), e))?;
     let mut manifest = ProjectManifest::default();
@@ -1418,11 +1552,28 @@ fn format_project(root: &Path) -> Result<(), String> {
 }
 
 fn run_test_suite(root: &Path) -> Result<(), String> {
+    let manifest_path = root.join("oxid.toml");
+    let mut fixtures = HashSet::new();
+    if manifest_path.is_file() {
+        for relative in load_test_fixtures(&manifest_path)? {
+            let mut path = root.to_path_buf();
+            for part in relative.split('/') {
+                path.push(part);
+                let metadata = fs::symlink_metadata(&path).map_err(|e| format!("cannot read test fixture: {} ({})", path.display(), e))?;
+                if metadata.file_type().is_symlink() {
+                    return Err(format!("test fixture cannot contain a symlink: {}", path.display()));
+                }
+            }
+            if !path.is_file() { return Err(format!("test fixture must be a file: {}", path.display())); }
+            fixtures.insert(path);
+        }
+    }
     let mut files = Vec::new();
     let tests_dir = root.join("tests");
     if tests_dir.exists() { files.extend(collect_oxid_files(&tests_dir).into_iter().filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ox"))); }
     let examples_dir = root.join("examples");
     if examples_dir.exists() { files.extend(collect_oxid_files(&examples_dir).into_iter().filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ox"))); }
+    files.retain(|path| !fixtures.contains(path));
     if files.is_empty() { return Err("no test or runnable example Oxid files found".to_string()); }
     files.sort();
     for file in files {

@@ -1,0 +1,423 @@
+{
+  "status": "CANDIDATE_COPY_SENSITIVITY_PASS",
+  "profile": "release-run",
+  "baselines": 54,
+  "compiler_executions": 0,
+  "production_mutants": 0,
+  "mutations": [
+    {
+      "name": "swap-rhs-index-roots",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.statement-root-order: expected [5, 7]; got [7, 5]",
+      "status": "REJECTED",
+      "mutated_sha256": "61d444fae8946ca7e73c36598d6497580fc27177c3e414ba150a1e95c9477a15"
+    },
+    {
+      "name": "insert-target-hir-read",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.resolved-inventory-order: resolved row outside completed index/active resolution interval",
+      "status": "REJECTED",
+      "mutated_sha256": "f87a2dfc8ddf697ddd4c0c19c9b5438f0e4dde588efa7c4586f8a7a97c8e4012"
+    },
+    {
+      "name": "remove-group-slot",
+      "case": "scalar-i32-length-0",
+      "first_failure": "scalar-i32-length-0.all-expression-slots.complete-id-order: expected [0, 1, 2, 3]; got [0, 2, 3]",
+      "status": "REJECTED",
+      "mutated_sha256": "bcf4c91f9671d1128ed053df1a043a2db06df836913a440a7327fef07d5e1b02"
+    },
+    {
+      "name": "empty-context-leak-empty-call-context-excluded",
+      "case": "empty-call-context-excluded",
+      "first_failure": "empty-call-context-excluded.phase.type: expected ['attempted', 'failed']; got ['attempted', 'completed']",
+      "status": "REJECTED",
+      "mutated_sha256": "740660e1b5407168a19624dee17789ef1638d904032be7ad641245a5abeb0212"
+    },
+    {
+      "name": "empty-context-leak-empty-return-context-excluded",
+      "case": "empty-return-context-excluded",
+      "first_failure": "empty-return-context-excluded.phase.type: expected ['attempted', 'failed']; got ['attempted', 'completed']",
+      "status": "REJECTED",
+      "mutated_sha256": "bbb339d10d10d495b8ff35fca435afab668e865801026569fe597838a14cdc70"
+    },
+    {
+      "name": "empty-context-leak-nested-empty-does-not-inherit-context",
+      "case": "nested-empty-does-not-inherit-context",
+      "first_failure": "nested-empty-does-not-inherit-context.phase.type: expected ['attempted', 'failed']; got ['attempted', 'completed']",
+      "status": "REJECTED",
+      "mutated_sha256": "75ed9134e35d0a05f5b52ab42c8dfddca2b97a2e431087947382441beb484f72"
+    },
+    {
+      "name": "conflate-empty-type-scalar-bool-length-0",
+      "case": "scalar-bool-length-0",
+      "first_failure": "scalar-bool-length-0.empty-explicit-annotation: expected {'tag': 'fixed_array', 'element': 'unit', 'length': 0}; got {'tag': 'fixed_array', 'element': 'bool', 'length': 0}",
+      "status": "REJECTED",
+      "mutated_sha256": "56b5f44e55cfee2deed61f70aa8731da5c0aaee12efccd5c6bdd05970e79edbe"
+    },
+    {
+      "name": "conflate-empty-type-scalar-i32-length-0",
+      "case": "scalar-i32-length-0",
+      "first_failure": "scalar-i32-length-0.empty-explicit-annotation: expected {'tag': 'fixed_array', 'element': 'unit', 'length': 0}; got {'tag': 'fixed_array', 'element': 'i32', 'length': 0}",
+      "status": "REJECTED",
+      "mutated_sha256": "41c04b72be17cab6d20483b1b92c53d85a55a064f29d26665508472e9eccef12"
+    },
+    {
+      "name": "conflate-empty-type-scalar-unit-length-0",
+      "case": "scalar-unit-length-0",
+      "first_failure": "scalar-unit-length-0.empty-explicit-annotation: expected {'tag': 'fixed_array', 'element': 'i32', 'length': 0}; got {'tag': 'fixed_array', 'element': 'unit', 'length': 0}",
+      "status": "REJECTED",
+      "mutated_sha256": "c0870fd80e6dbfeb8dc38d3765e6b672c1c686f1aae94ef6935b172fda8af7e0"
+    },
+    {
+      "name": "record-array-identity",
+      "case": "structural-identities-pairwise-distinct",
+      "first_failure": "structural-identities-pairwise-distinct.parameter-slot-type: expected {'tag': 'value', 'value': {'tag': 'fixed_array', 'element': 'i32', 'length': 0}}; got {'tag': 'value', 'value': {'tag': 'record', 'record_id': 0, 'declaration': [0, 7, 8]}}",
+      "status": "REJECTED",
+      "mutated_sha256": "00e76b330efb3d52ddf6dc75691f543ad0cd17559b7157141d9c615d0c3e714f"
+    },
+    {
+      "name": "reference-mode-erasure",
+      "case": "reference-access-modes",
+      "first_failure": "reference-access-modes.parameter-slot-type: expected {'tag': 'reference', 'kind': 'shared', 'aggregate': {'tag': 'fixed_array', 'element': 'i32', 'length': 1}}; got {'tag': 'reference', 'kind': 'exclusive', 'aggregate': {'tag': 'fixed_array', 'element': 'i32', 'length': 1}}",
+      "status": "REJECTED",
+      "mutated_sha256": "0c2fd49d49f13d436a4cebd5d16a727b8e4d0a53e50390424b75056f49ea7c66"
+    },
+    {
+      "name": "same-signature-decoy",
+      "case": "same-signature-callee",
+      "first_failure": "same-signature-callee.chosen-not-decoy: expected 1; got 2",
+      "status": "REJECTED",
+      "mutated_sha256": "dfe416c9e861cbd1f1afe949e4ad1232866825a4989a9d2f59b0ed7531135e60"
+    },
+    {
+      "name": "child-file-identity",
+      "case": "same-signature-callee",
+      "first_failure": "same-signature-callee.source.file: expected 1; got 0",
+      "status": "REJECTED",
+      "mutated_sha256": "29dfc388384b95b6d7e053296733512e37960d3e6377354acfce356a1bb5e579"
+    },
+    {
+      "name": "callee-declaration-origin",
+      "case": "same-signature-callee",
+      "first_failure": "same-signature-callee.source-declaration-roster-fn: expected [[0, 14, 18], [1, 7, 13], [1, 51, 56]]; got [[0, 14, 18], [1, 51, 56], [1, 51, 56]]",
+      "status": "REJECTED",
+      "mutated_sha256": "c6b0f2ad9fb8daede75992f8fac6e6eba3368f9e0f3e82e99f6684af7a7a7c26"
+    },
+    {
+      "name": "duplicate-module-local-id",
+      "case": "same-signature-callee",
+      "first_failure": "same-signature-callee.complete-module-local-declaration-ids: expected [0, 1]; got [0, 0]",
+      "status": "REJECTED",
+      "mutated_sha256": "e39cd6009888749a9415304cd265973314271d406e5770929023ded17e61850e"
+    },
+    {
+      "name": "child-expression-outside-function",
+      "case": "reserve-across-modules",
+      "first_failure": "reserve-across-modules.expression-origin: outside function body",
+      "status": "REJECTED",
+      "mutated_sha256": "f0e072830a17c801e3ad1d31e338bf4941ebac3650c7a6149eebb9c122fc6394"
+    },
+    {
+      "name": "binding-origin",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.expected-binding-origin: expected [0, 27, 28]; got [0, 59, 60]",
+      "status": "REJECTED",
+      "mutated_sha256": "3b7a50d480cc87d07a1a15fb8c84b2d84d2ad131b4483c0d57cfd24691d3d05e"
+    },
+    {
+      "name": "remove-secondary",
+      "case": "child-route-read-only",
+      "first_failure": "child-route-read-only.rendering-bound-formula: expected 24320; got 27008",
+      "status": "REJECTED",
+      "mutated_sha256": "3d97e15172a724e02aecc390518c6979a073e12c433e25d4c460b5c2d66f4825"
+    },
+    {
+      "name": "diagnostic-byte-corruption",
+      "case": "child-route-read-only",
+      "first_failure": "child-route-read-only.diagnostic.human-bytes: expected 'error[E0305] (type): array access requires an array binding\\n  --> child.ox:1:35\\n  ::: child.ox:1:11: binding declared here\\n'; got 'error[E0305] (type): array access requires an array binding\\n  --> child.ox:1:35\\n  ::: child.ox:1:11: binding declared here\\n '",
+      "status": "REJECTED",
+      "mutated_sha256": "ecde16c9a4df043fdaaaab81fe604bad5c1301820ce5138c61db06b98d9cfd8b"
+    },
+    {
+      "name": "duplicate-row",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.resolved-inventory-order: resolved row outside completed index/active resolution interval",
+      "status": "REJECTED",
+      "mutated_sha256": "3d44f4f4c274f021e66740506e57fed2b1843c3f8b1db51b3b5904b223e9ed83"
+    },
+    {
+      "name": "drop-row",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.expressions.complete-id-order: expected [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]; got [1, 2, 3, 4, 5, 6, 7, 8, 9]",
+      "status": "REJECTED",
+      "mutated_sha256": "32a2d8f63d5c34f8d04d51d87e05d13a283c20505c26c172154d6c391819abd2"
+    },
+    {
+      "name": "duplicate-id",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.expressions.complete-id-order: expected [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]; got [0, 0, 2, 3, 4, 5, 6, 7, 8, 9]",
+      "status": "REJECTED",
+      "mutated_sha256": "12924a15892c8363bf1818013cca418e1e489ccc3a721194887e3392b1a63f79"
+    },
+    {
+      "name": "omit-footer",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.complete.count: expected 1; got 0",
+      "status": "REJECTED",
+      "mutated_sha256": "8f3803d16265339bd0c89310e1167fdc342d4e7b887286635eb4ea355819387c"
+    },
+    {
+      "name": "omit-phase-marker",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.phase.resolve: expected ['attempted', 'completed']; got ['attempted']",
+      "status": "REJECTED",
+      "mutated_sha256": "ff348487cc7f57ab0662cda8313322ddcd7698ac9bc8322423a89f114b149c73"
+    },
+    {
+      "name": "partial-error-success",
+      "case": "child-route-read-only",
+      "first_failure": "child-route-read-only.byte-count: expected 4992; got 5031",
+      "status": "REJECTED",
+      "mutated_sha256": "8d2f2bc3ed31079a980a28c592aa801176f9103ed6d48ece555a32a961818b5b"
+    },
+    {
+      "name": "truncate-literal-children",
+      "case": "literal-length-max-trailing-comma",
+      "first_failure": "literal-length-max-trailing-comma.retained-expression-reachability: expected {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533, 534, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550, 551, 552, 553, 554, 555, 556, 557, 558, 559, 560, 561, 562, 563, 564, 565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 578, 579, 580, 581, 582, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 593, 594, 595, 596, 597, 598, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 622, 623, 624, 625, 626, 627, 628, 629, 630, 631, 632, 633, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666, 667, 668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735, 736, 737, 738, 739, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831, 832, 833, 834, 835, 836, 837, 838, 839, 840, 841, 842, 843, 844, 845, 846, 847, 848, 849, 850, 851, 852, 853, 854, 855, 856, 857, 858, 859, 860, 861, 862, 863, 864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 881, 882, 883, 884, 885, 886, 887, 888, 889, 890, 891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 902, 903, 904, 905, 906, 907, 908, 909, 910, 911, 912, 913, 914, 915, 916, 917, 918, 919, 920, 921, 922, 923, 924, 925, 926, 927, 928, 929, 930, 931, 932, 933, 934, 935, 936, 937, 938, 939, 940, 941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989, 990, 991, 992, 993, 994, 995, 996, 997, 998, 999, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023, 1024, 1025}; got {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533, 534, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550, 551, 552, 553, 554, 555, 556, 557, 558, 559, 560, 561, 562, 563, 564, 565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 578, 579, 580, 581, 582, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 593, 594, 595, 596, 597, 598, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 622, 623, 624, 625, 626, 627, 628, 629, 630, 631, 632, 633, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666, 667, 668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735, 736, 737, 738, 739, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831, 832, 833, 834, 835, 836, 837, 838, 839, 840, 841, 842, 843, 844, 845, 846, 847, 848, 849, 850, 851, 852, 853, 854, 855, 856, 857, 858, 859, 860, 861, 862, 863, 864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 881, 882, 883, 884, 885, 886, 887, 888, 889, 890, 891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 902, 903, 904, 905, 906, 907, 908, 909, 910, 911, 912, 913, 914, 915, 916, 917, 918, 919, 920, 921, 922, 923, 924, 925, 926, 927, 928, 929, 930, 931, 932, 933, 934, 935, 936, 937, 938, 939, 940, 941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989, 990, 991, 992, 993, 994, 995, 996, 997, 998, 999, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1024, 1025}",
+      "status": "REJECTED",
+      "mutated_sha256": "0e45bac697b219c260b00382934f3f4ec93c30176108b756dac9741c7626f62c"
+    },
+    {
+      "name": "corrupt-request-N",
+      "case": "literal-length-max-trailing-comma",
+      "first_failure": "literal-length-max-trailing-comma.nonresetting-cumulative-entries: expected 1023; got 1024",
+      "status": "REJECTED",
+      "mutated_sha256": "d1ae096705d139f18b3eb6fd3b03ba318bad79befd9d4717a5dcedfca1fa886b"
+    },
+    {
+      "name": "reset-cumulative-at-child",
+      "case": "reserve-across-modules",
+      "first_failure": "reserve-across-modules.nonresetting-cumulative-entries: expected 3; got 2",
+      "status": "REJECTED",
+      "mutated_sha256": "539b34de225e083fb25ce9c9b4a51a47184d2a734c573ba4fd0edea31f929776"
+    },
+    {
+      "name": "reset-work-at-child",
+      "case": "reserve-across-modules",
+      "first_failure": "reserve-across-modules.source-ledger-nonresetting-project-work: expected 350; got 200",
+      "status": "REJECTED",
+      "mutated_sha256": "3b35f539613cca677e1849bfa9b721bdaadbd86dcce436163bad643b6b883d7c"
+    },
+    {
+      "name": "missing-source-hash-bytes",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.source.utf8: expected b'fn main() -> i32 { let mut a: [i32; 2] = [5, 7]; a[(0)] = (a[1]); return (a.len()); }\\n'; got b'fn main() -> i32 { let mut a: [i32; 2] = [5, 7]; a[(0)] = (a[1]); return (a.len()); }\\n '",
+      "status": "REJECTED",
+      "mutated_sha256": "f533b0bb75d03ffc8a4c2ffe2043a137e80d9944aa9f3ff348dbae8d2ec5564c"
+    },
+    {
+      "name": "stale-core-binding",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.header.core_manifest_sha256: expected 'f44586df897fb27b0b47684f32108f1c6d24eede7b852730308a48939992c101'; got 'stale'",
+      "status": "REJECTED",
+      "mutated_sha256": "f5e56035940b04dc18d1409bf6f57fe47d1ffd2e435ab51895f0d7a62a0bba1d"
+    },
+    {
+      "name": "unknown-extra-field",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.expression.keys: expected {'function', 'value', 'origin', 'kind', 'row', 'id'}; got {'function', 'kind', 'value', 'extra', 'origin', 'row', 'id'}",
+      "status": "REJECTED",
+      "mutated_sha256": "4975ec982c64f334ec8bcc56000945f5ae8b787d567e0638ab2bb464fa4a59c3"
+    },
+    {
+      "name": "truncated-file",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index: missing final newline or truncated artifact",
+      "status": "REJECTED",
+      "mutated_sha256": "445abc86c3c47732a98aeedcb8d80981e74f72682232e8a7e53d30956de5bb77"
+    },
+    {
+      "name": "false-complete",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.completion: expected True; got False",
+      "status": "REJECTED",
+      "mutated_sha256": "fa64fef2dbb241a63d2b95173c287f1a2cfd1104de051cea6a89d5c15b7f9088"
+    },
+    {
+      "name": "wrong-nested-row-accounting",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.byte-count: expected 5996; got 6057",
+      "status": "REJECTED",
+      "mutated_sha256": "f0ca63af27525f47116fe3f65111ecdb655d98231f632292a1052cecf86b7d0c"
+    },
+    {
+      "name": "resolved-inventory-after-typing",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.resolved-inventory-order: resolved row outside completed index/active resolution interval",
+      "status": "REJECTED",
+      "mutated_sha256": "68033b992c19772fed130955921e207e8f7d77f49e26121649fc7365830fa6cd"
+    },
+    {
+      "name": "negative-trace-row-count",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.summary.trace_rows: unsigned integer required",
+      "status": "REJECTED",
+      "mutated_sha256": "f35a9d1bc8cfa489c063b76daec6ecf99c28d87edab873b3eef08329e5b441bf"
+    },
+    {
+      "name": "trace-attempt-count-mismatch",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.complete-allocator-trace: expected 23; got 2",
+      "status": "REJECTED",
+      "mutated_sha256": "b53370535d5c69611dfea5e5b678c4b5bc70debf61aea31d96b68d5b4262295e"
+    },
+    {
+      "name": "descriptor-overlap-one-byte",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.byte-count: expected 5996; got 6057",
+      "status": "REJECTED",
+      "mutated_sha256": "f43d22146012eacee2ce1ec88682f46a961a71aaecde2e81d59485e5442cee99"
+    },
+    {
+      "name": "trace-retained-underaccounting",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.byte-count: expected 5996; got 6057",
+      "status": "REJECTED",
+      "mutated_sha256": "d2e2fa4d42bdcd58307f34dac0bcb253453b679022f7485003582eca28702891"
+    },
+    {
+      "name": "boolean-function-body-id",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.function.body: unsigned integer required",
+      "status": "REJECTED",
+      "mutated_sha256": "11452378cb728ae20ddb078e38d48b67c25144a2f406b4c7cdbdbe9d9c4b249c"
+    },
+    {
+      "name": "boolean-binding-scope-id",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.binding.scope: unsigned integer required",
+      "status": "REJECTED",
+      "mutated_sha256": "f01ad3ef92a5314b3ca4146b6ed1cdb27aefa4e9578211c39a0b64138688f321"
+    },
+    {
+      "name": "boolean-function-binding-count",
+      "case": "grouped-complete-access-and-index",
+      "first_failure": "grouped-complete-access-and-index.function.bindings: unsigned integer required",
+      "status": "REJECTED",
+      "mutated_sha256": "53db95d98fe9c979bb9733c99f40723a9093070ac65765d429cadc55aee68260"
+    },
+    {
+      "name": "incomplete-index-before-language-resolution-error",
+      "case": "read-unknown-base-first",
+      "first_failure": "read-unknown-base-first.index-completed-before-language-resolution-error: expected ['attempted', 'completed']; got ['attempted', 'not-completed']",
+      "status": "REJECTED",
+      "mutated_sha256": "147c16a7368ce600adb76a7eb7b82da660680375a1da846b166b9d06a81b8df7"
+    },
+    {
+      "name": "drop-generic-hir-request-read-array-bad-index",
+      "case": "read-array-bad-index",
+      "first_failure": "read-array-bad-index.complete-literal-request-preorder: expected [1]; got []",
+      "status": "REJECTED",
+      "mutated_sha256": "b41b0777f00e5f72c304c697592e32a8deaddcd82d0db4a0db37dc59c1ee7e71"
+    },
+    {
+      "name": "drop-generic-hir-request-child-route-annotation",
+      "case": "child-route-annotation",
+      "first_failure": "child-route-annotation.complete-literal-request-preorder: expected [0]; got []",
+      "status": "REJECTED",
+      "mutated_sha256": "49acb98d9d643a13e731890a08e97c74db0c61e1eaea8acd94d4e9b35375f863"
+    }
+  ],
+  "control_mutations": [
+    {
+      "name": "guard-sentinel-nonzero",
+      "status": "REJECTED",
+      "first_failure": "guard.no-output-work: expected {'declaration_admission': 0, 'function_iteration': 0, 'count_entry': 0, 'inventory_entry': 0, 'block_allocation': 0, 'raw_reservation': 0, 'emit_step': 0}; got {'declaration_admission': 0, 'function_iteration': 0, 'count_entry': 0, 'inventory_entry': 0, 'block_allocation': 0, 'raw_reservation': 1, 'emit_step': 0}"
+    },
+    {
+      "name": "guard-no-reserve-injection",
+      "status": "REJECTED",
+      "first_failure": "guard.reserve-injection: expected True; got False"
+    },
+    {
+      "name": "guard-missing-empty-program-control",
+      "status": "REJECTED",
+      "first_failure": "controls.exact-guard-roster: expected {('guard-array-free', 'count_function(None)', 0), ('child-route-annotation', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 0), ('child-route-annotation', 'count_function(None)', 1), ('child-route-parameter', 'Walk::new emission constructor', 1), ('guard-record-only', 'budget::preflight', None), ('guard-empty', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 0), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 1), ('guard-array-free', 'lower_with_limits', None), ('child-route-annotation', 'budget::preflight', None), ('reference-access-modes', 'count_function(Some(block_counts))', 0), ('structural-identities-pairwise-distinct', 'budget::preflight', None), ('structural-identities-pairwise-distinct', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'lower_with_limits', None), ('child-route-annotation', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 1), ('guard-record-only', 'check_typed', None), ('reference-access-modes', 'count_function(None)', 2), ('child-route-shared-parameter', 'Walk::new emission constructor', 0), ('child-route-shared-parameter', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'check_typed', None), ('child-route-annotation', 'count_function(None)', 0), ('child-route-annotation', 'count_function(Some(block_counts))', 1), ('guard-array-free', 'count_function(Some(block_counts))', 0), ('guard-project-root-eof', 'budget::preflight', None), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 1), ('guard-record-only', 'lower_with_limits', None), ('child-route-shared-parameter', 'budget::preflight', None), ('child-route-parameter', 'budget::preflight', None), ('child-route-parameter', 'Walk::new emission constructor', 0), ('child-route-parameter', 'count_function(None)', 1), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 0), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 1), ('reference-access-modes', 'budget::preflight', None), ('guard-project-root-eof', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 0), ('structural-identities-pairwise-distinct', 'count_function(None)', 0), ('child-route-annotation', 'lower_with_limits', None), ('reference-access-modes', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'lower_with_limits', None), ('reference-access-modes', 'count_function(Some(block_counts))', 2), ('child-route-shared-parameter', 'check_typed', None), ('child-route-parameter', 'check_typed', None), ('child-route-shared-parameter', 'count_function(None)', 0), ('child-route-shared-parameter', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 1), ('guard-empty', 'budget::preflight', None), ('reference-access-modes', 'check_typed', None), ('guard-project-root-eof', 'lower_with_limits', None), ('child-route-annotation', 'Walk::new emission constructor', 1), ('child-route-annotation', 'count_function(Some(block_counts))', 0), ('child-route-parameter', 'count_function(None)', 0), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 0), ('child-route-parameter', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'budget::preflight', None), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 1), ('guard-empty', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 2), ('guard-array-free', 'budget::preflight', None), ('guard-array-free', 'Walk::new emission constructor', 0), ('guard-array-free', 'check_typed', None), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 1), ('reference-access-modes', 'count_function(None)', 0), ('reference-access-modes', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'check_typed', None), ('child-route-shared-parameter', 'Walk::new emission constructor', 1), ('reference-access-modes', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 0)}; got {('guard-array-free', 'count_function(None)', 0), ('child-route-annotation', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 0), ('child-route-annotation', 'count_function(None)', 1), ('child-route-parameter', 'Walk::new emission constructor', 1), ('guard-record-only', 'budget::preflight', None), ('guard-empty', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 0), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 1), ('guard-array-free', 'lower_with_limits', None), ('child-route-annotation', 'budget::preflight', None), ('reference-access-modes', 'count_function(Some(block_counts))', 0), ('structural-identities-pairwise-distinct', 'budget::preflight', None), ('child-route-annotation', 'check_typed', None), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'lower_with_limits', None), ('structural-identities-pairwise-distinct', 'count_function(None)', 1), ('reference-access-modes', 'Walk::new emission constructor', 1), ('guard-record-only', 'check_typed', None), ('reference-access-modes', 'count_function(None)', 2), ('child-route-shared-parameter', 'Walk::new emission constructor', 0), ('child-route-shared-parameter', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'check_typed', None), ('child-route-annotation', 'count_function(None)', 0), ('child-route-annotation', 'count_function(Some(block_counts))', 1), ('guard-project-root-eof', 'budget::preflight', None), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 1), ('guard-array-free', 'count_function(Some(block_counts))', 0), ('guard-record-only', 'lower_with_limits', None), ('child-route-shared-parameter', 'budget::preflight', None), ('child-route-parameter', 'budget::preflight', None), ('child-route-parameter', 'count_function(None)', 1), ('child-route-parameter', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 0), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 1), ('reference-access-modes', 'budget::preflight', None), ('guard-project-root-eof', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 0), ('structural-identities-pairwise-distinct', 'count_function(None)', 0), ('child-route-annotation', 'lower_with_limits', None), ('reference-access-modes', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'lower_with_limits', None), ('reference-access-modes', 'count_function(Some(block_counts))', 2), ('child-route-shared-parameter', 'check_typed', None), ('child-route-parameter', 'check_typed', None), ('child-route-shared-parameter', 'count_function(None)', 0), ('child-route-shared-parameter', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 1), ('guard-empty', 'budget::preflight', None), ('reference-access-modes', 'check_typed', None), ('guard-project-root-eof', 'lower_with_limits', None), ('child-route-annotation', 'Walk::new emission constructor', 1), ('child-route-annotation', 'count_function(Some(block_counts))', 0), ('child-route-parameter', 'count_function(None)', 0), ('child-route-exclusive-parameter', 'budget::preflight', None), ('child-route-parameter', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 0), ('reference-access-modes', 'Walk::new emission constructor', 2), ('guard-array-free', 'budget::preflight', None), ('guard-array-free', 'Walk::new emission constructor', 0), ('guard-array-free', 'check_typed', None), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 1), ('reference-access-modes', 'count_function(None)', 0), ('reference-access-modes', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'check_typed', None), ('child-route-shared-parameter', 'Walk::new emission constructor', 1), ('reference-access-modes', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 0)}"
+    },
+    {
+      "name": "guard-wrong-entry",
+      "status": "REJECTED",
+      "first_failure": "controls.exact-guard-roster: expected {('guard-array-free', 'count_function(None)', 0), ('child-route-annotation', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 0), ('child-route-annotation', 'count_function(None)', 1), ('child-route-parameter', 'Walk::new emission constructor', 1), ('guard-record-only', 'budget::preflight', None), ('guard-empty', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 0), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 1), ('guard-array-free', 'lower_with_limits', None), ('child-route-annotation', 'budget::preflight', None), ('reference-access-modes', 'count_function(Some(block_counts))', 0), ('structural-identities-pairwise-distinct', 'budget::preflight', None), ('structural-identities-pairwise-distinct', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'lower_with_limits', None), ('child-route-annotation', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 1), ('guard-record-only', 'check_typed', None), ('reference-access-modes', 'count_function(None)', 2), ('child-route-shared-parameter', 'Walk::new emission constructor', 0), ('child-route-shared-parameter', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'check_typed', None), ('child-route-annotation', 'count_function(None)', 0), ('child-route-annotation', 'count_function(Some(block_counts))', 1), ('guard-array-free', 'count_function(Some(block_counts))', 0), ('guard-project-root-eof', 'budget::preflight', None), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 1), ('guard-record-only', 'lower_with_limits', None), ('child-route-shared-parameter', 'budget::preflight', None), ('child-route-parameter', 'budget::preflight', None), ('child-route-parameter', 'Walk::new emission constructor', 0), ('child-route-parameter', 'count_function(None)', 1), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 0), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 1), ('reference-access-modes', 'budget::preflight', None), ('guard-project-root-eof', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 0), ('structural-identities-pairwise-distinct', 'count_function(None)', 0), ('child-route-annotation', 'lower_with_limits', None), ('reference-access-modes', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'lower_with_limits', None), ('reference-access-modes', 'count_function(Some(block_counts))', 2), ('child-route-shared-parameter', 'check_typed', None), ('child-route-parameter', 'check_typed', None), ('child-route-shared-parameter', 'count_function(None)', 0), ('child-route-shared-parameter', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 1), ('guard-empty', 'budget::preflight', None), ('reference-access-modes', 'check_typed', None), ('guard-project-root-eof', 'lower_with_limits', None), ('child-route-annotation', 'Walk::new emission constructor', 1), ('child-route-annotation', 'count_function(Some(block_counts))', 0), ('child-route-parameter', 'count_function(None)', 0), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 0), ('child-route-parameter', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'budget::preflight', None), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 1), ('guard-empty', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 2), ('guard-array-free', 'budget::preflight', None), ('guard-array-free', 'Walk::new emission constructor', 0), ('guard-array-free', 'check_typed', None), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 1), ('reference-access-modes', 'count_function(None)', 0), ('reference-access-modes', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'check_typed', None), ('child-route-shared-parameter', 'Walk::new emission constructor', 1), ('reference-access-modes', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 0)}; got {('guard-array-free', 'count_function(None)', 0), ('child-route-annotation', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 0), ('child-route-annotation', 'count_function(None)', 1), ('child-route-parameter', 'Walk::new emission constructor', 1), ('guard-record-only', 'budget::preflight', None), ('guard-empty', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 0), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 1), ('guard-array-free', 'lower_with_limits', None), ('child-route-annotation', 'budget::preflight', None), ('reference-access-modes', 'count_function(Some(block_counts))', 0), ('structural-identities-pairwise-distinct', 'budget::preflight', None), ('child-route-annotation', 'check_typed', None), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'lower_with_limits', None), ('structural-identities-pairwise-distinct', 'count_function(None)', 1), ('reference-access-modes', 'Walk::new emission constructor', 1), ('guard-record-only', 'check_typed', None), ('reference-access-modes', 'count_function(None)', 2), ('child-route-shared-parameter', 'Walk::new emission constructor', 0), ('child-route-shared-parameter', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'check_typed', None), ('child-route-annotation', 'count_function(None)', 0), ('child-route-annotation', 'count_function(Some(block_counts))', 1), ('guard-project-root-eof', 'budget::preflight', None), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 1), ('guard-array-free', 'count_function(Some(block_counts))', 0), ('guard-record-only', 'lower_with_limits', None), ('child-route-shared-parameter', 'budget::preflight', None), ('child-route-parameter', 'budget::preflight', None), ('child-route-parameter', 'count_function(None)', 1), ('child-route-parameter', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(Some(block_counts))', 0), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 1), ('reference-access-modes', 'budget::preflight', None), ('reference-access-modes', 'Walk::new emission constructor', 0), ('reference-access-modes', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'count_function(None)', 0), ('child-route-annotation', 'lower_with_limits', None), ('structural-identities-pairwise-distinct', 'lower_with_limits', None), ('reference-access-modes', 'count_function(Some(block_counts))', 2), ('child-route-shared-parameter', 'check_typed', None), ('child-route-parameter', 'check_typed', None), ('guard-project-root-eof', 'missing', None), ('child-route-shared-parameter', 'count_function(None)', 0), ('child-route-shared-parameter', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 1), ('guard-empty', 'budget::preflight', None), ('reference-access-modes', 'check_typed', None), ('guard-project-root-eof', 'lower_with_limits', None), ('child-route-annotation', 'Walk::new emission constructor', 1), ('child-route-annotation', 'count_function(Some(block_counts))', 0), ('child-route-parameter', 'count_function(None)', 0), ('child-route-exclusive-parameter', 'budget::preflight', None), ('child-route-parameter', 'lower_with_limits', None), ('child-route-parameter', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'Walk::new emission constructor', 0), ('child-route-exclusive-parameter', 'count_function(None)', 1), ('structural-identities-pairwise-distinct', 'count_function(Some(block_counts))', 0), ('guard-empty', 'check_typed', None), ('reference-access-modes', 'Walk::new emission constructor', 2), ('guard-array-free', 'budget::preflight', None), ('guard-array-free', 'Walk::new emission constructor', 0), ('guard-array-free', 'check_typed', None), ('structural-identities-pairwise-distinct', 'Walk::new emission constructor', 1), ('reference-access-modes', 'count_function(None)', 0), ('reference-access-modes', 'count_function(Some(block_counts))', 1), ('child-route-exclusive-parameter', 'check_typed', None), ('child-route-shared-parameter', 'Walk::new emission constructor', 1), ('reference-access-modes', 'lower_with_limits', None), ('child-route-shared-parameter', 'count_function(Some(block_counts))', 0)}"
+    },
+    {
+      "name": "guard-duplicate-control",
+      "status": "REJECTED",
+      "first_failure": "controls.duplicate-guard: expected 72; got 73"
+    },
+    {
+      "name": "guard-calibration-inert",
+      "status": "REJECTED",
+      "first_failure": "calibration: inert sentinel"
+    },
+    {
+      "name": "reservation-wrong-N",
+      "status": "REJECTED",
+      "first_failure": "reservation.exact-N: expected 1; got 1000"
+    },
+    {
+      "name": "reservation-pretend-success",
+      "status": "REJECTED",
+      "first_failure": "reservation.exact-failure-prefix: expected False; got True"
+    },
+    {
+      "name": "reservation-missing-previous-request",
+      "status": "REJECTED",
+      "first_failure": "reservation.complete-attempt-prefix: expected 16; got 15"
+    },
+    {
+      "name": "reservation-synthetic-instead-real",
+      "status": "REJECTED",
+      "first_failure": "reservation.real-fallible: expected True; got False"
+    },
+    {
+      "name": "overflow-reserved-before-denial",
+      "status": "REJECTED",
+      "first_failure": "overflow.no-reserve-attempt: expected 0; got 1"
+    },
+    {
+      "name": "overflow-unlabelled",
+      "status": "REJECTED",
+      "first_failure": "overflow.synthetic-label: expected True; got False"
+    },
+    {
+      "name": "work-reset-at-child-direct-seam",
+      "status": "REJECTED",
+      "first_failure": "work.frozen-total-and-prefix: expected (321, 16, True); got (150, 16, True)"
+    },
+    {
+      "name": "work-wrong-added-prefix",
+      "status": "REJECTED",
+      "first_failure": "work.frozen-total-and-prefix: expected (10368, 2052, False); got (10368, 2053, False)"
+    },
+    {
+      "name": "work-stale-ledger",
+      "status": "REJECTED",
+      "first_failure": "work.ledger-binding: expected 'b49d52901fe25cb190701cf228dd8cb6c1fd7f3375a0543a27e06fcaa156a67b'; got 'stale'"
+    },
+    {
+      "name": "work-conflate-selector-seam",
+      "status": "REJECTED",
+      "first_failure": "work.frozen-total-and-prefix: expected (321, 16, True); got (350, 16, True)"
+    },
+    {
+      "name": "boolean-control-function-id",
+      "status": "REJECTED",
+      "first_failure": "control.function_id: unsigned integer required"
+    },
+    {
+      "name": "boolean-control-literal-ordinal",
+      "status": "REJECTED",
+      "first_failure": "control.literal_ordinal: unsigned integer required"
+    }
+  ]
+}

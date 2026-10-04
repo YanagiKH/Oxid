@@ -42,6 +42,7 @@ pub const MAX_NESTING: usize = 64;
 /// Active statement blocks, including the outer function body; independent of expressions.
 pub const MAX_BLOCK_NESTING: usize = 64;
 pub const MAX_PARAMS: usize = 256;
+pub(super) const MAX_ARRAY_ELEMENTS: usize = 1024;
 pub(super) const MAX_PATH_SEGMENTS: usize = 34;
 pub const MAX_DIAGNOSTICS: usize = 100;
 
@@ -63,10 +64,35 @@ impl SourceMode {
         true
     }
 }
+/// Independent of module routing; explicit typed routes opt into array syntax.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ArraySyntaxPolicy {
+    Closed,
+    Enabled,
+    #[cfg(test)]
+    Candidate,
+}
+impl ArraySyntaxPolicy {
+    fn enabled(self) -> bool {
+        match self {
+            Self::Closed => false,
+            Self::Enabled => true,
+            #[cfg(test)]
+            Self::Candidate => true,
+        }
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LiteralContext {
     Allowed,
     ConditionRoot,
+}
+enum PrimaryStart {
+    Boolean,
+    Number,
+    Name,
+    Group,
+    Array,
 }
 #[cfg(test)]
 pub fn parse(source: &SourceFile, tokens: Vec<Token>) -> Result<Program, Vec<Diagnostic>> {
@@ -98,10 +124,29 @@ pub(super) fn parse_counted(
     node_limit: usize,
     allocator: &mut Allocator,
 ) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_arrays(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Closed,
+    )
+}
+
+pub(super) fn parse_counted_with_arrays(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    arrays: ArraySyntaxPolicy,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
     let mut parser = Parser {
         source,
         allocator,
         mode,
+        arrays,
         project_recovery: false,
         tokens,
         cursor: 0,
@@ -225,6 +270,7 @@ struct Parser<'a> {
     source: &'a SourceFile,
     allocator: &'a mut Allocator,
     mode: SourceMode,
+    arrays: ArraySyntaxPolicy,
     // Sticky only after ordinary parsing enters project grammar. Recovery
     // scans never set it; successful source flavor comes from the AST instead.
     project_recovery: bool,
@@ -443,9 +489,9 @@ impl Parser<'_> {
             Diagnostic::new(code, stage, message.to_string(), primary)
         }
     }
-    fn error(&self, message: &str) -> Box<Diagnostic> {
+    fn unsupported_token(&self) -> bool {
         let token = self.peek();
-        let unsupported = matches!(
+        matches!(
             token.kind,
             Kind::Unsupported
                 | Kind::Mod
@@ -458,8 +504,11 @@ impl Parser<'_> {
                 | Kind::Struct
                 | Kind::Ampersand
                 | Kind::Dot
-        ) || (token.kind == Kind::Ident
-            && self.source.text_at(token.span) == "as");
+        ) || (token.kind == Kind::Ident && self.source.text_at(token.span) == "as")
+    }
+    fn error(&self, message: &str) -> Box<Diagnostic> {
+        let token = self.peek();
+        let unsupported = self.unsupported_token();
         // Report an unsupported cast in an already-invalid grammar position,
         // without reserving `as` as a declaration or expression identifier.
         // Shared parser diagnostics retain the original scalar formatting. The
@@ -618,7 +667,13 @@ impl Parser<'_> {
     }
     fn ty_with_paths(&mut self, paths: bool) -> Result<TypeSyntax, Box<Diagnostic>> {
         let token = self.peek();
-        let (kind, end) = if self.take(Kind::LParen).is_some() {
+        let (kind, end) = if self.arrays_enabled() && self.array_punctuation("[") {
+            if !paths {
+                return Err(self.array_unsupported(token.span));
+            }
+            let (array, end) = self.array_type()?;
+            (TypeSyntaxKind::Array(array), end)
+        } else if self.take(Kind::LParen).is_some() {
             (
                 TypeSyntaxKind::Unit,
                 self.expect(Kind::RParen, "only the unit type `()` is supported here")?
@@ -638,6 +693,13 @@ impl Parser<'_> {
         if self.mode.owned() && self.peek().kind == Kind::Ampersand {
             let start = self.bump().span.start;
             let mutable = self.take(Kind::Mut).is_some();
+            if self.arrays_enabled() && self.array_punctuation("[") {
+                let (array, end) = self.array_type()?;
+                return Ok(TypeSyntax {
+                    span: self.source.span(start, end),
+                    kind: TypeSyntaxKind::ArrayReference { mutable, array },
+                });
+            }
             let (referent, span) =
                 self.item_path("reference parameter requires a record name", true)?;
             return Ok(TypeSyntax {
@@ -850,7 +912,23 @@ impl Parser<'_> {
                 value: self.expression(0, LiteralContext::Allowed)?,
             }
         } else {
-            StmtKind::Expr(self.expression(0, LiteralContext::Allowed)?)
+            let target = self.expression(0, LiteralContext::Allowed)?;
+            if self.arrays_enabled()
+                && self.peek().kind == Kind::Equal
+                && self.array_assignment_expression(target)
+            {
+                if !matches!(self.expressions[target.0].kind, ExprKind::IndexRead { .. }) {
+                    return Err(self.array_unsupported(self.expressions[target.0].span));
+                }
+                let operator_span = self.bump().span;
+                StmtKind::IndexAssign {
+                    target,
+                    operator_span,
+                    value: self.expression(0, LiteralContext::Allowed)?,
+                }
+            } else {
+                StmtKind::Expr(target)
+            }
         };
         if matches!(kind, StmtKind::Break | StmtKind::Continue) && self.peek().kind != Kind::Semi {
             return Err(self.diagnostic(
@@ -883,6 +961,24 @@ impl Parser<'_> {
         context: LiteralContext,
     ) -> Result<ExprId, Box<Diagnostic>> {
         self.logical(depth, LogicalOp::Or, context)
+    }
+    /// Canonical primary dispatch, also used before admitting a literal element.
+    fn primary_start(&self) -> Option<PrimaryStart> {
+        Some(match self.peek().kind {
+            Kind::True | Kind::False => PrimaryStart::Boolean,
+            Kind::Number | Kind::Minus => PrimaryStart::Number,
+            Kind::Ident => PrimaryStart::Name,
+            Kind::LParen => PrimaryStart::Group,
+            Kind::Unsupported if self.arrays_enabled() && self.array_punctuation("[") => {
+                PrimaryStart::Array
+            }
+            _ => return None,
+        })
+    }
+    fn expression_starter(&self) -> bool {
+        self.primary_start().is_some()
+            || self.peek().kind == Kind::Not // unary() prefix
+            || (self.mode.owned() && self.peek().kind == Kind::Ampersand) // argument() prefix
     }
     fn logical(
         &mut self,
@@ -1045,6 +1141,12 @@ impl Parser<'_> {
                 .map(|f| self.heights[f.value.0])
                 .max()
                 .unwrap_or(0),
+            ExprKind::ArrayLiteral { elements } => elements
+                .iter()
+                .map(|element| self.heights[element.0])
+                .max()
+                .unwrap_or(0),
+            ExprKind::IndexRead { index, .. } => self.heights[index.0],
             ExprKind::Arithmetic { left, right, .. }
             | ExprKind::Comparison { left, right, .. }
             | ExprKind::Logical { left, right, .. } => {
@@ -1081,12 +1183,12 @@ impl Parser<'_> {
         self.node()?;
         let token = self.peek();
         let mut end = token.span.end;
-        let kind = match token.kind {
-            Kind::True | Kind::False => {
+        let kind = match self.primary_start() {
+            Some(PrimaryStart::Boolean) => {
                 self.bump();
                 ExprKind::Bool(token.kind == Kind::True)
             }
-            Kind::Number | Kind::Minus => {
+            Some(PrimaryStart::Number) => {
                 let negative = token.kind == Kind::Minus;
                 if negative {
                     self.bump();
@@ -1116,7 +1218,7 @@ impl Parser<'_> {
                 }
                 ExprKind::Number { digits, negative }
             }
-            Kind::Ident => {
+            Some(PrimaryStart::Name) => {
                 let (path, path_span) = self.item_path("expected item name", true)?;
                 end = path_span.end;
                 if self.take(Kind::LParen).is_some() {
@@ -1139,6 +1241,20 @@ impl Parser<'_> {
                     }
                     end = self.expect(Kind::RParen, "call requires `)`")?.span.end;
                     ExprKind::Call { callee: path, args }
+                } else if self.arrays_enabled()
+                    && matches!(path, ItemPath::Unqualified(_))
+                    && self.array_punctuation("[")
+                {
+                    self.bump();
+                    if self.array_punctuation("]") {
+                        return Err(self.array_missing("array index requires an expression"));
+                    }
+                    let index = self.expression(depth + 1, LiteralContext::Allowed)?;
+                    end = self.array_close("array index requires `]`")?;
+                    ExprKind::IndexRead {
+                        base: token.span,
+                        index,
+                    }
                 } else if self.mode.owned()
                     && matches!(path, ItemPath::Unqualified(_))
                     && self.take(Kind::Dot).is_some()
@@ -1157,10 +1273,19 @@ impl Parser<'_> {
                             Some(self.peek().span),
                         ));
                     }
-                    end = field.end;
-                    ExprKind::FieldRead {
-                        base: token.span,
-                        field,
+                    if self.arrays_enabled() && self.peek().kind == Kind::LParen {
+                        if self.source.text_at(field) != "len" {
+                            return Err(self.array_unsupported(self.peek().span));
+                        }
+                        self.bump();
+                        end = self.array_length_close()?;
+                        ExprKind::ArrayLength { base: token.span }
+                    } else {
+                        end = field.end;
+                        ExprKind::FieldRead {
+                            base: token.span,
+                            field,
+                        }
                     }
                 } else if self.mode.owned()
                     && context == LiteralContext::Allowed
@@ -1201,7 +1326,7 @@ impl Parser<'_> {
                     ExprKind::Name(token.span)
                 }
             }
-            Kind::LParen => {
+            Some(PrimaryStart::Group) => {
                 self.bump();
                 if let Some(close) = self.take(Kind::RParen) {
                     end = close.span.end;
@@ -1212,11 +1337,26 @@ impl Parser<'_> {
                     ExprKind::Group(inner)
                 }
             }
-            _ => return Err(self.error("expected a bool, i32 or unit expression")),
+            Some(PrimaryStart::Array) => {
+                let (elements, close) = self.array_literal(depth)?;
+                end = close;
+                ExprKind::ArrayLiteral { elements }
+            }
+            None => return Err(self.error("expected a bool, i32 or unit expression")),
         };
+        if self.arrays_enabled() && (self.array_punctuation("[") || self.peek().kind == Kind::Dot) {
+            return Err(self.array_unsupported(self.peek().span));
+        }
         self.push_expr(kind, self.source.span(token.span.start, end))
     }
 }
+
+#[path = "parser/arrays.rs"]
+mod arrays;
+
+#[cfg(test)]
+#[path = "parser/array_syntax_tests.rs"]
+mod array_syntax_tests;
 
 #[cfg(test)]
 pub(super) fn parse_with_lowered_node_limit(

@@ -109,8 +109,20 @@ for it. Stored-reference lifetimes, partial moves, field-disjoint loans,
 heap/resource cleanup, unsafe/FFI safety, broader native targets and stable ABI
 remain outside this increment. No inventory count certifies a milestone or v1.0.
 
+Fixed scalar arrays are an additional experimental production-path capability
+through explicit typed-preview check/run/compile. `[bool; N]`, `[i32; N]` and
+`[(); N]` use structural identity and whole-owner moves/call borrows for N=0..1024.
+Named-base signed indexing is checked; indexed writes snapshot RHS before index,
+and length requires a readable owner. Empty literals require annotated
+zero-length locals. Existing linked-project and native host/resource restrictions
+remain. Nested arrays, slices, element references, heap collections and stable
+ABI are excluded. The [public-route ledger](fixed-array-public-validation.md)
+records new CLI/source-free ELF cases without reclassifying historical staged
+results or asserting a complete milestone. Default/legacy behavior is unchanged.
+
 The experimental [typed formatter](../../spec/typed-preview.md#single-file-formatting)
-is a separate syntax-only operation. It preserves token/comment spelling and
+is a separate syntax-only operation, including fixed-array syntax. It preserves
+token/comment spelling and
 interior line breaks while normalizing spaces and indentation. Explicit `fmt`
 writes complete source to stdout; `--check` distinguishes drift from errors.
 No module loading, typechecking, execution or file writes occur. Ordinary

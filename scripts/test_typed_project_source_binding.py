@@ -66,7 +66,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 133)
+        self.assertEqual(len(captured["inputs"]), 185)
+        self.assertEqual(len(captured["formatter_inputs"]), 133)
         self.assertEqual(len(captured["predecessor_inputs"]), 129)
         self.assertEqual(len(captured["archived"]), 117)
         self.assertNotEqual(captured["inputs"]["src/frontend/driver.rs"], captured["archived"]["src/frontend/driver.rs"])
@@ -106,13 +107,13 @@ class SourceBindingTests(unittest.TestCase):
         captured = self.captured
         predecessor = binding.read_json(self.package / "predecessor-source.json")
         restored, touched = binding.inverse_formatter_patch(
-            captured["inputs"], captured["package_bytes"]["formatter-transition.patch"])
+            captured["formatter_inputs"], captured["package_bytes"]["formatter-transition.patch"])
         self.assertEqual(touched, list(binding.FORMATTER_PATHS))
         self.assertEqual(len(touched), 8)
         self.assertEqual(len(set(touched)), 8)
         binding.check_bytes(restored, predecessor["files"])
         self.assertEqual(restored, captured["predecessor_inputs"])
-        self.assertEqual(set(captured["inputs"]) - set(restored), set(binding.FORMATTER_ADDITIONS))
+        self.assertEqual(set(captured["formatter_inputs"]) - set(restored), set(binding.FORMATTER_ADDITIONS))
         self.assertEqual(len(binding.FORMATTER_ADDITIONS), 4)
         self.assertEqual(binding.digest(captured["package_bytes"]["predecessor-source.json"]),
                          "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8")
@@ -124,10 +125,349 @@ class SourceBindingTests(unittest.TestCase):
         for extra in captured["authority"]["inverse_only_inputs"]:
             self.assertEqual(binding.entry(extra["path"], archived.pop(extra["path"])), extra)
         binding.check_bytes(archived, captured["selected"]["files"])
-        self.assertEqual(captured["current"]["reviewed_source_head"],
+        self.assertEqual(captured["formatter_source"]["reviewed_source_head"],
                          "8a08a2908b2ceb73c80112e6ddd82e2dbda91976")
-        self.assertEqual(captured["current"]["source_only_tree"],
+        self.assertEqual(captured["formatter_source"]["source_only_tree"],
                          "afa181dab5aa3341ceae4f7b882a81a635e08fa0")
+
+    def test_combined_successor_restores_exact_formatter_predecessor_and_archive(self):
+        captured = self.captured
+        restored, touched = binding.inverse_combined_patch(
+            captured["inputs"], captured["package_bytes"]["combined-transition.patch"])
+        self.assertEqual(touched, list(binding.COMBINED_PATHS))
+        self.assertEqual(len(touched), 80)
+        self.assertEqual(len(set(touched)), 80)
+        self.assertEqual(len(binding.COMBINED_ADDITIONS), 52)
+        self.assertEqual(len(binding.COMBINED_SOURCE_ADDITIONS), 10)
+        self.assertEqual(len(binding.COMBINED_FIXTURE_ADDITIONS), 42)
+        self.assertEqual(len(restored), 133)
+        binding.check_bytes(restored, captured["formatter_source"]["files"])
+        self.assertEqual(restored, captured["formatter_inputs"])
+        self.assertEqual(set(captured["inputs"]) - set(restored), set(binding.COMBINED_ADDITIONS))
+        for path in binding.COMBINED_PATHS:
+            if path not in binding.COMBINED_ADDITIONS:
+                self.assertNotEqual(captured["inputs"][path], restored[path])
+        self.assertEqual(captured["current"]["reviewed_source_head"],
+                         "a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909")
+        self.assertEqual(captured["current"]["source_only_tree"],
+                         "b30b0628c45e4a308bbb0ae5b35122794cd7ac12")
+        self.assertEqual(captured["current"]["combined_base_head"],
+                         "595f681c2a906d686ddea90c65d060cff97e0a75")
+        self.assertEqual(binding.digest(captured["package_bytes"]["formatter-source.json"]),
+                         "69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06")
+        self.assertEqual(binding.digest(captured["package_bytes"]["formatter-authority.json"]),
+                         "f060dd4e264a7261517f496176d9d3def438a1e151616e313972db0545f9b4d2")
+        self.assertEqual(binding.digest(captured["package_bytes"]["formatter-transition.patch"]),
+                         "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4")
+        self.assertEqual(binding.digest(captured["package_bytes"]["combined-transition.patch"]),
+                         "8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683")
+        self.assertEqual(len(captured["package_bytes"]["combined-transition.patch"]), 376315)
+        compiler = [name for name in captured["inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler), 133)
+        self.assertEqual(len(compiler) + 3, 136)
+        retained = {name: data for name, data in captured["inputs"].items()
+                    if name not in compiler and name not in binding.COMBINED_FIXTURE_ADDITIONS}
+        self.assertEqual(list(sorted(retained)), list(binding.RETAINED_NON_SOURCE_PATHS))
+        self.assertEqual(len(retained), 10)
+        self.assertEqual(retained, {name: restored[name] for name in retained})
+
+    def test_each_combined_source_is_required_and_byte_bound(self):
+        for path in binding.COMBINED_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed combined source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_each_combined_addition_omission_rejects_before_materialization(self):
+        for index, path in enumerate(binding.COMBINED_ADDITIONS):
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                # The helper deliberately requires a fresh output for each probe.
+                output = self.root / "rejected"
+                if output.exists():
+                    output.rename(self.root / ("previous-rejection-" + str(index)))
+                self.rejects_before_materialization("missing regular input")
+                source.write_bytes(original)
+
+    def test_changed_combined_source_rejects_before_materialization(self):
+        source = self.repo / "src/frontend/parser/arrays.rs"
+        source.write_bytes(source.read_bytes() + b"// changed\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_coherently_rehashed_combined_source_rejects_before_reconstruction(self):
+        path = "src/frontend/oir/owned/source/array_pipeline.rs"
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent change\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_combined_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved current source manifest")
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_combined_source_cannot_relax_membership(self):
+        path = binding.COMBINED_ADDITIONS[0]
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        authority["added_source_paths"].remove(path)
+        authority["current_source_members"] -= 1
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_formatter_manifest_is_rejected(self):
+        path = self.package / "formatter-source.json"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["formatter_source_sha256"] = binding.digest(path.read_bytes())
+        authority["formatter_source_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved formatter source manifest")
+
+    def test_missing_combined_patch_rejects_before_materialization(self):
+        (self.package / "combined-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_rehashed_combined_patch_rejects_before_reconstruction(self):
+        path = self.package / "combined-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.rehash_package()
+        with patch.object(binding, "inverse_combined_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("wrong combined transition patch")
+        self.rejects_before_materialization("wrong combined transition patch")
+
+    def test_coherently_rehashed_combined_patch_rejects_before_materialization(self):
+        path = self.package / "combined-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(path.read_bytes())
+        authority["transition_patch_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale combined authority")
+
+    def test_combined_checkpoint_scope_and_recipe_metadata_are_pinned(self):
+        original = (self.package / "combined-authority.json").read_bytes()
+        for field, replacement in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                                   ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                                   ("transition_touched_paths", list(reversed(binding.COMBINED_PATHS))),
+                                   ("transition_touched_paths", list(binding.COMBINED_PATHS[:-1])),
+                                   ("added_source_paths", list(binding.COMBINED_SOURCE_ADDITIONS[:-1])),
+                                   ("retained_non_source_paths", list(binding.RETAINED_NON_SOURCE_PATHS[:-1])),
+                                   ("compiler_bodies", 135), ("current_source_members", 184)):
+            with self.subTest(field=field, replacement=replacement):
+                authority = binding.json.loads(original)
+                authority[field] = replacement
+                binding.write_json(self.package / "combined-authority.json", authority)
+                self.rehash_package()
+                with patch.object(binding, "inverse_combined_patch", side_effect=AssertionError("reconstruction started")):
+                    self.rejects("stale combined authority")
+        (self.package / "combined-authority.json").write_bytes(original)
+        self.rehash_package()
+
+    def test_combined_inverse_requires_exact_patch_and_each_current_context(self):
+        original = self.captured["package_bytes"]["combined-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_combined_patch(self.captured["inputs"], original + b"\n")
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 80)
+        for path, section in zip(binding.COMBINED_PATHS, sections):
+            with self.subTest(path=path):
+                inputs = dict(self.captured["inputs"])
+                if not inputs[path]:
+                    inputs[path] = b"unexpected empty-file bytes"
+                    with self.assertRaisesRegex(binding.BindingError, "invalid empty transition addition"):
+                        binding.inverse_combined_patch(inputs, original)
+                    continue
+                first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[path].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[path] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_combined_patch(inputs, original)
+
+    def test_combined_inverse_rejects_reordered_missing_and_duplicate_paths(self):
+        original = self.captured["package_bytes"]["combined-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.COMBINED_PATHS)
+
+    def test_current_resource_derives_through_unchanged_predecessor_authority(self):
+        original = self.captured["historical_bytes"][binding.RESOURCE]
+        predecessor = original.replace(binding.OLD_SEAM, binding.PREDECESSOR_SEAM)
+        current = predecessor.replace(binding.PREDECESSOR_SEAM, binding.NEW_SEAM)
+        self.assertEqual(binding.entry(binding.RESOURCE, predecessor),
+                         self.captured["authority"]["derived_resource"])
+        self.assertEqual(predecessor, self.captured["predecessor_resource"])
+        self.assertEqual(binding.entry(binding.RESOURCE, current),
+                         self.captured["combined_authority"]["derived_resource"])
+        self.assertEqual(current, self.captured["resource"])
+        self.assertEqual(current.replace(binding.NEW_SEAM, binding.OLD_SEAM), original)
+        self.assertEqual(current.count(b"arrays:ArraySyntaxPolicy::Closed"), 1)
+        self.assertEqual(binding.digest(current),
+                         "7c3b0d1cc06124be9a432525acdad2bf622f1061c6f474fc8fa049ce267e360f")
+        self.assertEqual(len(current), 2007)
+
+    def test_coherently_changed_combined_resource_authority_is_rejected(self):
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["derived_resource"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale combined authority")
+
+    def test_changed_predecessor_resource_authority_is_still_rejected(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["derived_resource"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("derived predecessor resource drift")
+
+    def test_resource_seam_changes_are_rejected(self):
+        for name, replacement in (("PREDECESSOR_SEAM", binding.PREDECESSOR_SEAM + b" "),
+                                   ("NEW_SEAM", binding.NEW_SEAM.replace(b"Closed", b"Candidate"))):
+            with self.subTest(name=name), patch.object(binding, name, replacement):
+                self.rejects("derived predecessor resource drift|derived combined resource drift")
+
+    def test_compile_time_fixture_closure_is_exact_and_identity_bound(self):
+        source = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        paths = binding.compile_fixture_paths(source)
+        references = binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, source)
+        self.assertEqual(source.count(b"include_str!"), 47)
+        self.assertEqual(len(references), 47)
+        self.assertEqual(len(set(references)), 42)
+        self.assertEqual(paths, list(binding.COMBINED_FIXTURE_ADDITIONS))
+        self.assertEqual(binding.digest(source),
+                         "10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc")
+        self.assertEqual(len(source), 44176)
+        self.assertEqual(self.captured["combined_authority"]["compile_time_fixture_derivation"]["source"],
+                         binding.entry(binding.COMPILE_FIXTURE_SOURCE, source))
+        self.assertEqual(self.captured["combined_authority"]["added_fixture_paths"], paths)
+        self.assertEqual(self.captured["combined_authority"]["added_input_paths"], list(binding.COMBINED_ADDITIONS))
+        self.assertTrue(all(name in self.captured["inputs"] for name in paths))
+        self.assertTrue(all(name not in self.captured["formatter_inputs"] for name in paths))
+        self.assertTrue(all(name not in self.captured["predecessor_inputs"] for name in paths))
+        self.assertTrue(all(name not in self.captured["archived"] for name in paths))
+
+    def test_changed_compile_time_fixture_rejects_before_materialization(self):
+        source = self.repo / binding.COMBINED_FIXTURE_ADDITIONS[0]
+        source.write_bytes(source.read_bytes() + b"// changed compile-time fixture\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_coherently_omitted_compile_time_fixture_rejects_before_materialization(self):
+        path = binding.COMBINED_FIXTURE_ADDITIONS[0]
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        manifest["compile_time_fixture_members"] -= 1
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        authority["added_fixture_paths"].remove(path)
+        authority["added_input_paths"].remove(path)
+        authority["compile_time_fixture_derivation"]["unique_fixture_inputs"] -= 1
+        authority["current_source_members"] -= 1
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_compile_time_fixture_rejects_before_materialization(self):
+        path = binding.COMBINED_FIXTURE_ADDITIONS[0]
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent fixture change\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_compile_time_fixture_includer_changes_are_rejected(self):
+        original = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        for changed in (original + b"\n", original.replace(b"include_str!", b"include_bytes!", 1),
+                        original.replace(b"guard-empty/main.ox", b"unlisted/main.ox", 1)):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(
+                    binding.BindingError, "wrong compile-time fixture includer"):
+                binding.compile_fixture_paths(changed)
+
+    def test_compile_time_fixture_literal_derivation_rejects_reference_drift(self):
+        original = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        reference = binding.re.search(binding.COMPILE_FIXTURE_PATTERN, original).group()
+        for changed in (original.replace(reference, b"", 1), original + reference,
+                        original.replace(b"guard-empty/main.ox", b"unlisted/main.ox", 1),
+                        original.replace(b'CARGO_MANIFEST_DIR', b'CARGO_OTHER_DIR', 1)):
+            with self.subTest(sha=binding.digest(changed)), patch.object(
+                    binding, "COMPILE_FIXTURE_SOURCE_SHA", binding.digest(changed)), patch.object(
+                    binding, "COMPILE_FIXTURE_SOURCE_BYTES", len(changed)):
+                with self.assertRaisesRegex(binding.BindingError, "wrong literal compile-time fixture references"):
+                    binding.compile_fixture_paths(changed)
+
+    def test_compile_time_fixture_derivation_rejects_generic_roster_changes(self):
+        original = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        for changed in (binding.COMBINED_FIXTURE_ADDITIONS[:-1],
+                        tuple(reversed(binding.COMBINED_FIXTURE_ADDITIONS)),
+                        binding.COMBINED_FIXTURE_ADDITIONS + ("tests/arbitrary-asset.txt",)):
+            with self.subTest(count=len(changed)), patch.object(binding, "COMBINED_FIXTURE_ADDITIONS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong compile-time fixture path roster"):
+                    binding.compile_fixture_paths(original)
+
+    def test_coherently_changed_compile_time_fixture_authority_is_rejected(self):
+        original = (self.package / "combined-authority.json").read_bytes()
+        for field, value in (("include_str_references", 46), ("unique_fixture_inputs", 41),
+                             ("literal_pattern", ".*"), ("ordered_references_sha256", "0" * 64)):
+            with self.subTest(field=field):
+                authority = binding.json.loads(original)
+                authority["compile_time_fixture_derivation"][field] = value
+                binding.write_json(self.package / "combined-authority.json", authority)
+                self.rehash_package()
+                self.rejects("stale combined authority")
+        (self.package / "combined-authority.json").write_bytes(original)
+        self.rehash_package()
+
+    def test_empty_compile_time_fixture_addition_reverses_only_exact_empty_blob(self):
+        path = "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox"
+        original = self.captured["package_bytes"]["combined-transition.patch"]
+        section = next(b"diff --git " + item for item in original.split(b"diff --git ")[1:]
+                       if item.startswith(("a/" + path + " ").encode()))
+        self.assertEqual(self.captured["inputs"][path], b"")
+        self.assertEqual(section.splitlines()[-1], b"index 0000000..e69de29")
+        self.assertNotIn(b"@@", section)
+        self.assertEqual(binding.apply_inverse_patch({path: b""}, section, binding.digest(section),
+                                                    len(section), (path,)), ({}, [path]))
+        for changed_section, data in ((section, b"\n"),
+                                       (section.replace(b"e69de29", b"1111111"), b""),
+                                       (section.replace(b"new file mode 100644\n", b""), b"")):
+            with self.subTest(sha=binding.digest(changed_section), data=data):
+                with self.assertRaisesRegex(binding.BindingError, "invalid empty transition addition"):
+                    binding.apply_inverse_patch({path: data}, changed_section, binding.digest(changed_section),
+                                                len(changed_section), (path,))
 
     def test_each_formatter_source_is_required_and_byte_bound(self):
         for path in binding.FORMATTER_PATHS:
@@ -184,10 +524,10 @@ class SourceBindingTests(unittest.TestCase):
     def test_formatter_inverse_rejects_changed_patch_and_each_changed_current_context(self):
         original = self.captured["package_bytes"]["formatter-transition.patch"]
         with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
-            binding.inverse_formatter_patch(self.captured["inputs"], original + b"\n")
+            binding.inverse_formatter_patch(self.captured["formatter_inputs"], original + b"\n")
         for path in binding.FORMATTER_PATHS:
             with self.subTest(path=path):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["formatter_inputs"])
                 # Mutate a byte consumed by a hunk, even for a late-file change.
                 marker = b"mod format;" if path.endswith("/mod.rs") else (
                     b"pub(super) fn into_single_text" if path.endswith("/source.rs") else (
@@ -354,7 +694,7 @@ class SourceBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
             binding.inverse_patch(self.captured["inputs"], patch + b"\n")
 
-    def test_resource_seam_only_adds_false_initializer(self):
+    def test_resource_seam_only_adds_false_and_closed_initializers(self):
         output = self.root / "unit2"
         output.mkdir()
         seam = binding.prepare_unit2(output, self.captured)
@@ -508,8 +848,12 @@ class SourceBindingTests(unittest.TestCase):
         self.assertFalse((output / "result.json").exists())
         self.assertEqual(prepared["plan_sha256"], binding.digest((output / "plan.json").read_bytes()))
         plan = binding.read_json(output / "plan.json")
-        self.assertEqual((plan["current_source_members"], plan["predecessor_source_members"], plan["archive_members"]),
-                         (133, 129, 117))
+        self.assertEqual((plan["current_source_members"], plan["formatter_source_members"],
+                          plan["predecessor_source_members"], plan["archive_members"]),
+                         (185, 133, 129, 117))
+        self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
+        self.assertEqual(prepared["combined_authority_sha256"], binding.COMBINED_AUTHORITY_SHA)
+        self.assertEqual(prepared["formatter_source_sha256"], binding.FORMATTER_SOURCE_SHA)
         self.assertEqual(prepared["current_source_sha256"], binding.CURRENT_SOURCE_SHA)
         self.assertEqual(prepared["formatter_authority_sha256"], binding.FORMATTER_AUTHORITY_SHA)
         self.assertEqual(prepared["predecessor_source_sha256"], binding.PREDECESSOR_SOURCE_SHA)

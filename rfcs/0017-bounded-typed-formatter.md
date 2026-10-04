@@ -10,7 +10,7 @@
 ## 1. Decision and motivation
 
 Add an explicitly selected `typed-preview fmt` route that formats the
-already-published scalar, nominal-struct and module/import source grammar.
+published scalar, nominal-struct, fixed-scalar-array and module/import source grammar.
 This first slice normalizes horizontal whitespace and indentation while
 preserving existing line breaks. It does not choose line widths, reflow code,
 insert structural newlines, or write files.
@@ -84,7 +84,8 @@ retain their existing behavior. Check/run/compile contracts are unchanged.
 3. Read at most 1,048,577 bytes, rejecting more than 1,048,576; validate UTF-8
    without normalization and construct an immutable source owner.
 4. Lex and parse the complete file using the published project-capable syntax
-   mode. Do not invoke project loading, module discovery, name resolution,
+   mode with fixed-array syntax explicitly enabled and the existing bounded
+   allocator/node limits. Do not invoke project loading, module discovery, name resolution,
    typechecking, ownership analysis, OIR, reference execution, native tools,
    manifests, caches, package code, or source execution.
 5. Any lexer or parser error rejects the whole file. Recovery diagnostics may
@@ -96,7 +97,12 @@ Syntactically valid unresolved modules, imports, calls and nominal types format
 successfully. So do syntactically valid type errors or oversized decimal
 values that a later semantic phase would reject. “Formatted” does not mean
 “typechecked.” Existing syntax restrictions, including adjacent bytes in each
-`::` delimiter, remain binding.
+`::` delimiter, remain binding. Array syntax includes fixed scalar types,
+array references, literals, named-base indexing/stores and `len()`. The parser's
+0..1024 array length/element bound remains binding. Syntax-valid mixed/nested
+literals and empty literals outside a valid typing context still format: their
+semantic rejection belongs to typechecking. Unsupported array type forms,
+record-field arrays, repetition and non-name index bases remain rejected.
 
 Empty and whitespace-only files are valid and format to zero bytes. A
 comment-only file is valid and preserves each comment, followed by one final
@@ -153,7 +159,7 @@ The final LF is the only new line break permitted.
 
 ### 5.2 Indentation
 
-Use four ASCII spaces per currently open `{` or `(` delimiter.
+Use four ASCII spaces per currently open `{`, `(` or `[` delimiter.
 Matched closing delimiters pop their corresponding opener. Count delimiters
 only from parsed nontrivia tokens, never comment/string text.
 
@@ -174,8 +180,12 @@ Choose spacing from parsed token roles, not a string substitution:
 
 - No space inside parentheses: after `(` or before `)`; no space between a
   declaration/call name and its `(`.
+- No space immediately after `[` or before `]`, including empty `[]`.
+  An indexing `[` is tight to its parsed name base (`a[0]`); literal/type
+  openers otherwise follow ordinary surrounding-token rules (`return [1]`,
+  `x: [i32; 2]`, `&[i32; 2]`, `&mut [i32; 2]`).
 - No space before `,` or `;`; one space after either if another atom follows
-  on the same line, except before a closing parenthesis.
+  on the same line, except before a closing parenthesis or bracket.
 - No spaces around field-access `.` or qualified-path `::`. Never split
   the adjacent two colon bytes. A type/field colon instead has no space
   before it and one after.

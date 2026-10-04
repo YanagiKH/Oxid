@@ -97,7 +97,7 @@ fn malformed(raw: &RawOwnedProgram, sources: &SourceMap, expected: Malformed, sp
 }
 
 #[test]
-fn unit2b_types_and_lengths_validate_but_production_always_rejects() {
+fn array_types_and_lengths_require_full_production_validation() {
     let (sources, s) = context();
     let mut cases = 0;
     for ty in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
@@ -113,10 +113,8 @@ fn unit2b_types_and_lengths_validate_but_production_always_rejects() {
                     length.max(1)
                 }
             );
-            assert_eq!(
-                error(raw, &sources).kind,
-                OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
-            );
+            let witness = verify_owned(raw, &sources).unwrap();
+            assert_eq!(witness.usage(), usage);
             cases += 1;
         }
     }
@@ -150,10 +148,7 @@ fn unit2b_types_and_lengths_validate_but_production_always_rejects() {
             terminator: end(OwnedTerminatorKind::Goto(BlockId(1)), s),
         });
         let e = error(raw, &sources);
-        assert_eq!(
-            e.kind,
-            OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
-        );
+        assert_eq!(e.kind, OwnedFailureKind::Malformed(Malformed::Id));
         assert_eq!(e.primary.get(), Some(at(s, 70)));
         cases += 1;
     }
@@ -789,7 +784,7 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         OwnedFailureKind::Resource("expanded ownership events")
     );
     // Result-only array carriers do not invent owner/flow state, but still use
-    // all-function signatures/shape/CFG and the mandatory production gate.
+    // all-function signatures/shape/CFG in the production verifier.
     let f = &mut raw.functions[0];
     f.blocks[0].statements.pop();
     f.result = ValueTy::Owned(array_slot(hir::Ty::I32, 0).aggregate());
@@ -797,7 +792,7 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
     malformed(&raw, &sources, Malformed::Type, Some(term_span));
     assert_eq!(
         error(raw, &sources).kind,
-        OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
+        OwnedFailureKind::Malformed(Malformed::Type)
     );
 }
 

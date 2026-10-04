@@ -6,10 +6,12 @@ These hand-authored design fixtures are consumed by the ordinary
 `scripts/verify_typed_formatter.py` CLI check. Run it with an explicit built
 executable, for example `python3 scripts/verify_typed_formatter.py target/debug/oxid`.
 The same check runs in repository verification and the portable CI host matrix.
-All exact expected outputs remain unchanged from the design checkpoint; fixture
-presence alone is not evidence that a particular executable passed.
+The original 28 positive and 13 malformed fixtures remain unchanged from the
+design checkpoint. Six array goldens and nine array rejection cases extend the
+combined grammar contract; fixture presence alone is not evidence that a
+particular executable passed.
 
-- `cases.json`: 28 exact UTF-8 positive input/output pairs and 13 malformed
+- `cases.json`: 34 exact UTF-8 positive input/output pairs and 22 malformed
   inputs with source-inspected error classes. JSON escapes make CRLF, tabs,
   Unicode whitespace and preserved trailing comment spaces unambiguous.
 - `obligations.json`: public CLI, resource-boundary and invariant checks to
@@ -36,4 +38,3 @@ require a new validation system or any unrelated language work.
 
 Design baseline: `17ed3de243785006ab888d87af4428d06117b21d`. The JSON status
 fields preserve their design provenance, not a current test-result claim.
-

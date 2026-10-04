@@ -1,6 +1,125 @@
 use super::{hir::*, resolve, typeck};
 use crate::frontend::{diagnostic::Diagnostic, lexer, parser, source::SourceMap};
 
+#[test]
+fn unit3a_unchanged_hir_enclosing_layouts() {
+    use std::mem::size_of;
+    macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
+    sizes!(
+        Expr,
+        ExprKind,
+        Stmt,
+        StmtKind,
+        Binding,
+        Signature,
+        Function,
+        Option<Expr>,
+        Option<Stmt>,
+        Option<Binding>,
+        Vec<Expr>,
+        Vec<Stmt>,
+        Vec<Binding>
+    );
+}
+
+#[test]
+fn public_array_ast_enters_owned_resolution_with_normal_errors() {
+    for (text, expected) in [
+        ("fn f(a:[i32;1])->(){}", None),
+        ("fn f(a:&mut [i32;1])->(){}", None),
+        ("fn f()->[();0]{}", None),
+        ("fn f()->(){let a:[bool;0]=true;}", None),
+        ("fn f()->(){[1];}", None),
+        ("fn f()->(){a[0];}", Some("E0200")),
+        ("fn f()->(){a.len();}", Some("E0200")),
+        ("fn f()->(){a[0]=1;}", Some("E0200")),
+    ] {
+        let mut map = SourceMap::new();
+        let file = map.add("public.ox".into(), text.into());
+        let file = map.get(file);
+        let (ast, _) = parser::parse_counted_with_arrays(
+            file,
+            lexer::lex(file).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            parser::ArraySyntaxPolicy::Enabled,
+        )
+        .unwrap();
+        match expected {
+            None => assert!(resolve::resolve(file, &ast).is_ok(), "{text}"),
+            Some(code) => {
+                let errors = resolve::resolve(file, &ast).unwrap_err();
+                assert_eq!(
+                    (errors[0].code, errors[0].stage),
+                    (code, "resolve"),
+                    "{text}"
+                );
+                assert!(file.try_text(errors[0].primary.unwrap()).is_some());
+            }
+        }
+    }
+}
+
+#[test]
+fn unit3a_long_nonstarter_uses_bounded_actual_parser_allocations() {
+    // Prepare only immutable source bytes outside measurement. Lexing and the
+    // complete parser error path run inside the existing real allocator observer,
+    // so no pre-measurement token allocation is freed to hide a temporary String.
+    let token = format!("\"{}\"", "雪".repeat(21_000));
+    for candidate in [true, false] {
+        let mut map = SourceMap::new();
+        let text = if candidate {
+            format!("fn f()->(){{[1,{token}];}}")
+        } else {
+            format!("fn f()->(){{{token};}}")
+        };
+        let file = map.add("allocation.ox".into(), text);
+        let file = map.get(file);
+        let (errors, (calls, live, peak)) = super::reviewer_source::integration_measured(|| {
+            let tokens = lexer::lex(file).unwrap();
+            let result = if candidate {
+                parser::parse_counted_with_arrays(
+                    file,
+                    tokens,
+                    parser::SourceMode::OwnedCandidate,
+                    parser::MAX_NODES,
+                    &mut crate::frontend::project::budget::Allocator::default(),
+                    parser::ArraySyntaxPolicy::Candidate,
+                )
+                .map(|(program, _)| program)
+            } else {
+                parser::parse_with_mode(file, tokens, parser::SourceMode::OwnedCandidate)
+            };
+            result.unwrap_err()
+        });
+        assert_eq!((errors[0].code, errors[0].stage), ("E0101", "parse"));
+        assert_eq!(file.text_at(errors[0].primary.unwrap()), token);
+        assert!(calls > 0 && live > 0 && peak >= live);
+        if candidate {
+            assert!(
+                errors[0].message.len() <= crate::frontend::owned_diagnostic::MAX_MESSAGE_BYTES
+            );
+            assert!(
+                peak < 16 * 1024,
+                "candidate diagnostic copied source-sized text: {peak}"
+            );
+        } else {
+            assert_eq!(
+                errors[0].message,
+                format!("unsupported typed-preview construct `{token}`")
+            );
+            assert!(
+                peak >= token.len() as isize,
+                "public control must detect a source-sized diagnostic"
+            );
+        }
+        println!(
+            "nonstarter candidate={candidate} allocation_calls={calls} retained={live} peak={peak}"
+        );
+    }
+}
+
 fn errors(text: &str) -> Vec<Diagnostic> {
     let mut sources = SourceMap::new();
     let id = sources.add("owned.ox".into(), text.into());

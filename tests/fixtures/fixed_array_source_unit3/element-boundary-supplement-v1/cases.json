@@ -1,0 +1,191 @@
+{
+  "accepted_closing_bracket_reference": "contracts-v2: literal-length-max-trailing-comma",
+  "authority": "Parent adopted first-actual-excess interpretation before observations, 2026-10-04",
+  "base_manifest_sha256": "45e01b88abfd91a1a30eb80cfa65c033a1b2986f365d05caa44836c8051231bf",
+  "candidate_compiler_runs": 0,
+  "cases": [
+    {
+      "admitted_previous_elements": 1024,
+      "excess_element_parsed": false,
+      "excess_element_reserved": false,
+      "expected": {
+        "code": "E0100",
+        "message": "expected a bool, i32 or unit expression",
+        "notes": [],
+        "primary": {
+          "column": 2077,
+          "end": 2076,
+          "end_column": 2077,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "path": "main.ox",
+          "start": 2076,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "parse"
+      },
+      "first_observation_slice": "3A",
+      "id": "after-max-comma-eof",
+      "reason": "missing expression",
+      "source_bytes": 2076,
+      "source_path": "fixtures/after-max-comma-eof.ox",
+      "source_sha256": "fb48f230bf28589068b66e4bb331220d7e4a7ba4ab07b9ced3dd4a42340ae397",
+      "status": "PROSPECTIVE_NOT_EXECUTED"
+    },
+    {
+      "admitted_previous_elements": 1024,
+      "excess_element_parsed": false,
+      "excess_element_reserved": false,
+      "expected": {
+        "code": "E0100",
+        "message": "expected a bool, i32 or unit expression",
+        "notes": [],
+        "primary": {
+          "column": 2077,
+          "end": 2077,
+          "end_column": 2078,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "path": "main.ox",
+          "start": 2076,
+          "text": ";"
+        },
+        "secondary": [],
+        "stage": "parse"
+      },
+      "first_observation_slice": "3A",
+      "id": "after-max-comma-nonstarter-semi",
+      "reason": "nonstarter, existing missing-expression class",
+      "source_bytes": 2077,
+      "source_path": "fixtures/after-max-comma-nonstarter-semi.ox",
+      "source_sha256": "2f17c3ef9aa853dd7f376f934d6c716435cb5e6e0ae2a43b9eb72b5b5d32c62d",
+      "status": "PROSPECTIVE_NOT_EXECUTED"
+    },
+    {
+      "admitted_previous_elements": 1024,
+      "excess_element_parsed": false,
+      "excess_element_reserved": false,
+      "expected": {
+        "code": "E0101",
+        "message": "unsupported typed-preview construct `+`",
+        "notes": [],
+        "primary": {
+          "column": 2077,
+          "end": 2077,
+          "end_column": 2078,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "path": "main.ox",
+          "start": 2076,
+          "text": "+"
+        },
+        "secondary": [],
+        "stage": "parse"
+      },
+      "first_observation_slice": "3A",
+      "id": "after-max-comma-nonstarter-plus",
+      "reason": "nonstarter, existing excluded-expression class",
+      "source_bytes": 2077,
+      "source_path": "fixtures/after-max-comma-nonstarter-plus.ox",
+      "source_sha256": "e51f85cf54717ffa8e5f196ebe4a252901c224c87b6ed4a4c5b79c44e077265e",
+      "status": "PROSPECTIVE_NOT_EXECUTED"
+    },
+    {
+      "admitted_previous_elements": 1024,
+      "excess_element_parsed": false,
+      "excess_element_reserved": false,
+      "expected": {
+        "code": "E0400",
+        "message": "array element limit exceeded (1024)",
+        "notes": [],
+        "primary": {
+          "column": 2077,
+          "end": 2077,
+          "end_column": 2078,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "path": "main.ox",
+          "start": 2076,
+          "text": "!"
+        },
+        "secondary": [],
+        "stage": "parse"
+      },
+      "first_observation_slice": "3A",
+      "id": "after-max-comma-starter-not",
+      "reason": "possible unary expression starter",
+      "source_bytes": 2077,
+      "source_path": "fixtures/after-max-comma-starter-not.ox",
+      "source_sha256": "781ba7a878cbe41ff4ba23f92b8af7d171c91fbaf1136d1831887624340e74e3",
+      "status": "PROSPECTIVE_NOT_EXECUTED"
+    },
+    {
+      "admitted_previous_elements": 1024,
+      "excess_element_parsed": false,
+      "excess_element_reserved": false,
+      "expected": {
+        "code": "E0400",
+        "message": "array element limit exceeded (1024)",
+        "notes": [],
+        "primary": {
+          "column": 2077,
+          "end": 2077,
+          "end_column": 2078,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "path": "main.ox",
+          "start": 2076,
+          "text": "&"
+        },
+        "secondary": [],
+        "stage": "parse"
+      },
+      "first_observation_slice": "3A",
+      "id": "after-max-comma-starter-borrow",
+      "reason": "possible borrowed-expression prefix even though bare borrow would later be excluded",
+      "source_bytes": 2077,
+      "source_path": "fixtures/after-max-comma-starter-borrow.ox",
+      "source_sha256": "16682a94a3b92b957272922189b9529892e25bd6681a6d2b71adb9978948ec22",
+      "status": "PROSPECTIVE_NOT_EXECUTED"
+    },
+    {
+      "admitted_previous_elements": 1024,
+      "excess_element_parsed": false,
+      "excess_element_reserved": false,
+      "expected": {
+        "code": "E0400",
+        "message": "array element limit exceeded (1024)",
+        "notes": [],
+        "primary": {
+          "column": 2077,
+          "end": 2077,
+          "end_column": 2078,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "path": "main.ox",
+          "start": 2076,
+          "text": "["
+        },
+        "secondary": [],
+        "stage": "parse"
+      },
+      "first_observation_slice": "3A",
+      "id": "after-max-comma-starter-array",
+      "reason": "possible array-literal starter",
+      "source_bytes": 2077,
+      "source_path": "fixtures/after-max-comma-starter-array.ox",
+      "source_sha256": "36745c4d15a439688b9eaa19c55ad14aa840d5f28ce8d688d668e1656ac76b0c",
+      "status": "PROSPECTIVE_NOT_EXECUTED"
+    }
+  ],
+  "rule": "After an admitted element and comma, ] closes the array. Otherwise classify whether a possible expression begins. A real first-excess starter fails E0400 before parsing or reservation; EOF/nonstarter keeps the ordinary missing/excluded expression error.",
+  "schema": "oxid-array-first-excess-boundary-v1",
+  "scope": "Supplement only; all89 corrected contracts-v2 cases and source bytes stay unchanged"
+}

@@ -1,0 +1,74 @@
+{
+  "schema": "oxid-lowering-contract-package-lineage-v1",
+  "baseline_commit": "bb2b5d7c39d5940cbbf959444646c2dacb8edcb4",
+  "baseline_tree": "a5398061eecc0e35726b648bf7edcd56434e1337",
+  "historical_authority": {
+    "manifest": "authority/checkpoint-01/freeze-manifest.json",
+    "sha256": "a40c00bc49a4415dad96300826a1c2d4f699e2c3777e461f2c472536938a579f",
+    "kind": "immutable historical authority identity, not current-package membership",
+    "historical_members_present": [
+      "fixtures/",
+      "models/",
+      "summary.json",
+      "inputs.json"
+    ],
+    "historical_members_intentionally_not_packaged": [
+      "README.md",
+      "generate.py"
+    ],
+    "all_model_source_and_correction_bytes_unchanged": true
+  },
+  "effective_authority": {
+    "corrections": [
+      {
+        "path": "authority/checkpoint-01-correction-1/correction.json",
+        "sha256": "9b16217f35d2399926d932a234b112334e0ead1fa2773f650c9f59777247c0b9"
+      },
+      {
+        "path": "authority/checkpoint-01-correction-2/correction.json",
+        "sha256": "deed466acb14f0a660ab74c4ac4af3af63d16e9484b578c15df5c9750b7eb591"
+      }
+    ],
+    "storage_identity": {
+      "path": "authority/checkpoint-01-correction-2/STORAGE-IDENTITIES.md",
+      "sha256": "bb1c6d0b0d33e0e09d63fd575ced6ff42f0ef5c686cc3da641f4060de4a31c36"
+    },
+    "independent_review_freeze_sha256": "58fde3c2284c599198add535871edf21392eb4e88021a0d8d85f15ea247e5d7f",
+    "original_alone_admitted": false
+  },
+  "portable_adapter": {
+    "original_generator_sha256": "64b2a1501d5976cfc0534e119d138da5b94ee2ba32f81adba8cd67d3b2dee243",
+    "path": "model_generator.py",
+    "changes": [
+      "ROOT and REPO supplied by replay.py instead of fixed machine paths",
+      "direct execution redirects to safe replay.py entry",
+      "Write every reconstructed model/source/summary body as explicit UTF-8 bytes with LF",
+      "Replace redundant generator baseline assert with explicit rejection"
+    ],
+    "semantic_changes": []
+  },
+  "source_data_registration": [
+    "authority/checkpoint-01/fixtures/grouped-complete-access-and-index/main.ox",
+    "authority/checkpoint-01/fixtures/index-read-bounds-after-effect/main.ox",
+    "authority/checkpoint-01/fixtures/rhs-bounds-before-index/main.ox",
+    "authority/checkpoint-01/fixtures/rhs-snapshot-final-bounds-failure/main.ox",
+    "authority/checkpoint-01/fixtures/rhs-snapshot-success/main.ox"
+  ],
+  "claims": {
+    "source_spec_model": true,
+    "compiler_execution": false,
+    "candidate_observation": false,
+    "native_machine_execution": false,
+    "public_array_activation": false
+  },
+  "packaging_revision": {
+    "version": 2,
+    "preserves_predecessor_manifest_sha256": "44f2e8a02d6a09596b750c9a806b9c780f6de3998b13b2e6a4e82bcbd3c1e7c3",
+    "changes": [
+      "Reject resolved output under frozen package, input repository root or Git/common storage before mkdir, including symlink parents",
+      "Write every reconstructed model/source/summary body as explicit UTF-8 bytes with LF",
+      "Replace redundant generator baseline assert with explicit rejection"
+    ],
+    "semantic_expectation_changes": []
+  }
+}

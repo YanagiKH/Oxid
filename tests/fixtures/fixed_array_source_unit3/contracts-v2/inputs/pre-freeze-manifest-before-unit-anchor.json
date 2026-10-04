@@ -1,0 +1,481 @@
+{
+  "files": {
+    "ADAPTER.md": {
+      "bytes": 9284,
+      "sha256": "8970453a62c74522985b41f79e328ae188583b51735bb176e2094776a8e53a71"
+    },
+    "CORRECTIONS.md": {
+      "bytes": 1574,
+      "sha256": "efb39ce93af12ff6827116aa37ecef6a33d2718a231a6f3da43fae8b24541b4b"
+    },
+    "README.md": {
+      "bytes": 2801,
+      "sha256": "fe9220e20774d630265bcf012e0f29d27a11cace0ee965f510a636b2d713c6c8"
+    },
+    "RESOURCE-OBLIGATIONS.md": {
+      "bytes": 5181,
+      "sha256": "a15c33c4d6590b970561c46f7bf4e7324360c31865329281a1ae26846d2eaf31"
+    },
+    "authority.py": {
+      "bytes": 25858,
+      "sha256": "e61264619ab46c27087fe06cbf2efd2560a7240852d50bd4c60279b08c8156e1"
+    },
+    "base-binding.json": {
+      "bytes": 21560,
+      "sha256": "6bd626c30e8cc3346672c2ccdea1ca9465ead03ac2b88d955738bce655639027"
+    },
+    "cases.json": {
+      "bytes": 539403,
+      "sha256": "f6ba32f290c5863e072804539272d1c8a0470b7bf3ace0f4a14c4ab99217d3be"
+    },
+    "diagnostic-wording-v1.json": {
+      "bytes": 211867,
+      "sha256": "a8a95a04d40b91b484510997007fa507e10c58c533ca36fa07b57f5ff4e4660e"
+    },
+    "fixtures/bracket-comments-do-not-route/main.ox": {
+      "bytes": 65,
+      "sha256": "54dfe385fcdb9f730767cad4a881e3c11f85bcc3bb9e18eb79da71fce88d4fec"
+    },
+    "fixtures/bracket-string-is-not-array-syntax/main.ox": {
+      "bytes": 43,
+      "sha256": "7058bba8681e8867ad259e687056d12e48308caf080410be948ee7ff6a6d5e42"
+    },
+    "fixtures/call-arguments-max/main.ox": {
+      "bytes": 562,
+      "sha256": "9a7537c1b07bf3d2f1ead19868d9f40d76fd829975c3d894efd7edffd0ad33cf"
+    },
+    "fixtures/call-arguments-one-over/main.ox": {
+      "bytes": 564,
+      "sha256": "76753ac522d6eb40068a49b1fa5510e83757a70eea31ebacbb337dddf0108278"
+    },
+    "fixtures/child-route-annotation/child.ox": {
+      "bytes": 55,
+      "sha256": "ae0e79de7bdab54179521a79db0be26cc3fb780f8d0d8eea7ba55ec8b7469d14"
+    },
+    "fixtures/child-route-annotation/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-exclusive-parameter/child.ox": {
+      "bytes": 49,
+      "sha256": "56037f87666afec1b2b93a32ee30a9c0ce9a962ebeec43afe06ebe4a5ca29f87"
+    },
+    "fixtures/child-route-exclusive-parameter/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-length-only/child.ox": {
+      "bytes": 45,
+      "sha256": "4bc18e34a72579884b646a3e9accaa3c3b7b0915fb688879570a816ed251ad05"
+    },
+    "fixtures/child-route-length-only/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-literal/child.ox": {
+      "bytes": 38,
+      "sha256": "a54750475f2738577c9ddd2889756434598c19c0aed40de5e3c525c85d5d8e26"
+    },
+    "fixtures/child-route-literal/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-parameter/child.ox": {
+      "bytes": 44,
+      "sha256": "7b6ee34f858ec0028e3cdb7b9791d761e164f7fe16686cd1d90a06c72e3b703e"
+    },
+    "fixtures/child-route-parameter/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-read-only/child.ox": {
+      "bytes": 42,
+      "sha256": "e0f7199bce7e914c94c2e7da73257f55577491a8377044ad9ce51d4d3399e672"
+    },
+    "fixtures/child-route-read-only/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-result/child.ox": {
+      "bytes": 40,
+      "sha256": "f878d003c89ee7166a19a2037f3ef91ba0d05b6616e250754fb635c966ac064f"
+    },
+    "fixtures/child-route-result/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-shared-parameter/child.ox": {
+      "bytes": 45,
+      "sha256": "6ebceb6a5140f853670c38f4a30afbec62881222d0faf4a417596d3696f85dfb"
+    },
+    "fixtures/child-route-shared-parameter/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/child-route-write-only/child.ox": {
+      "bytes": 49,
+      "sha256": "d89b38bd0a643dcbff769165f8905820fd51cc9fa491540cbdacfcf5e6cd76bf"
+    },
+    "fixtures/child-route-write-only/main.ox": {
+      "bytes": 42,
+      "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+    },
+    "fixtures/cross-file-array-identity/child.ox": {
+      "bytes": 91,
+      "sha256": "bc21da466cfca2751d725141d671206cb2782c7fd5deefea71410c9cdaa49f0c"
+    },
+    "fixtures/cross-file-array-identity/main.ox": {
+      "bytes": 102,
+      "sha256": "4f4e3f4c8f71367088d5b03a1a51ccec52e20b789c3a6a98374495fbf33b2b2d"
+    },
+    "fixtures/empty-call-context-excluded/main.ox": {
+      "bytes": 80,
+      "sha256": "3ba0c58117e88a6f8d8120b16f67aa488db903883dd4de2d451768d85c24e864"
+    },
+    "fixtures/empty-no-context/main.ox": {
+      "bytes": 45,
+      "sha256": "32abf2281ee2e873b6833f7cbbcd759dbd49144771080937f36a827a3e0d2c73"
+    },
+    "fixtures/empty-nonzero-annotation/main.ox": {
+      "bytes": 55,
+      "sha256": "51891e6f066c88b32d396bd6e6e95392fecafdd030242d24c4b3072615f09ba6"
+    },
+    "fixtures/empty-reassignment-context-excluded/main.ox": {
+      "bytes": 65,
+      "sha256": "e6a4dc72429365d2e2d824527f147ebab94225e8fb5702f42b6df6f74059b901"
+    },
+    "fixtures/empty-return-context-excluded/main.ox": {
+      "bytes": 69,
+      "sha256": "83c56501682fae222e3820d099f74259e90f3d2b9990831131bd82d9ac1f56fc"
+    },
+    "fixtures/empty-scalar-context/main.ox": {
+      "bytes": 50,
+      "sha256": "89aa766d25bae2f31e85a4e2dd8980fdabf5087992c9de4be6c70c6daf5d321c"
+    },
+    "fixtures/excluded-arbitrary-method/main.ox": {
+      "bytes": 52,
+      "sha256": "57d02afab3f35f09ba0b67ec0613736cc885cd85cd83dc12ef8d518b63b16d5e"
+    },
+    "fixtures/excluded-array-record-field/main.ox": {
+      "bytes": 56,
+      "sha256": "dcde13f863493d6c5b6f5074ff13430c7bf4242e2c73b345484f109b7c00120d"
+    },
+    "fixtures/excluded-called-base/main.ox": {
+      "bytes": 77,
+      "sha256": "3b732ccec1657f9c45a2fc7afb7d5f84125bccf9ca0cc07e2aedefde017fdb9c"
+    },
+    "fixtures/excluded-grouped-base/main.ox": {
+      "bytes": 49,
+      "sha256": "7966e2583ce0cb9fad15c5768b86be54a4b97b941939c1db0c5f870ffd7ece78"
+    },
+    "fixtures/excluded-grouped-element-type/main.ox": {
+      "bytes": 56,
+      "sha256": "0ded78e4e91099487adad179b3b0e11e521062db79a3504dd331b43d56367dea"
+    },
+    "fixtures/excluded-grouped-length-base/main.ox": {
+      "bytes": 52,
+      "sha256": "a49e0e1bfb0d5c52701925fa8c59a87b2ee0a25b2145efdca519d9e0e701a98a"
+    },
+    "fixtures/excluded-grouped-store-target/main.ox": {
+      "bytes": 60,
+      "sha256": "068fd8044ac2afea6988402e78a4687e44cca9620c960605f52eb4962c68f73b"
+    },
+    "fixtures/excluded-indexed-length-base/main.ox": {
+      "bytes": 53,
+      "sha256": "f28eeb41ea769336e0bed7d48c2872b8799966bdfe1ab80c5cac49b3a54977a6"
+    },
+    "fixtures/excluded-length-argument/main.ox": {
+      "bytes": 51,
+      "sha256": "609f07b126d6201ec7172083410ffcb93629b595af5e75d895ebb1fa0d0cc787"
+    },
+    "fixtures/excluded-length-expression/main.ox": {
+      "bytes": 58,
+      "sha256": "7ea2cd439343db40e3c176bc122c189abe9bb177d781753674afb2dc35106304"
+    },
+    "fixtures/excluded-length-store-target/main.ox": {
+      "bytes": 61,
+      "sha256": "7bdbc58319ae569c29d9f50370379b785673f3a5d7ea84080f07de54b09d8ec4"
+    },
+    "fixtures/excluded-literal-base/main.ox": {
+      "bytes": 36,
+      "sha256": "8c254c6e9b02fdaaf73563877ac4018160561b15fb0c5a13f9d63752179dbba3"
+    },
+    "fixtures/excluded-named-array-length/main.ox": {
+      "bytes": 65,
+      "sha256": "2971b181a22f6eb508f9ada54cbb2d20e6fac86c5d8b04739e2f9562e4682719"
+    },
+    "fixtures/excluded-negative-length/main.ox": {
+      "bytes": 55,
+      "sha256": "b93357ec75a0d45f4b0c3480a8550b277497b5cdbf8efdcde16d0577caf973ad"
+    },
+    "fixtures/excluded-nested-array-type/main.ox": {
+      "bytes": 61,
+      "sha256": "f0c311f8a84f91f92596fba3e252854e6e2e25e10160c0b32380b65d2acba7a5"
+    },
+    "fixtures/excluded-nonascii-length/main.ox": {
+      "bytes": 56,
+      "sha256": "464c2306c2b95cf16c18a321e8023728b95f3856d319a92a972551cd5ea72fd1"
+    },
+    "fixtures/excluded-record-element/main.ox": {
+      "bytes": 81,
+      "sha256": "aceb4ed6a11da0e30549f7b597cb19172b7f03f13998ed15be1703b8a7c99a21"
+    },
+    "fixtures/excluded-reference-element/main.ox": {
+      "bytes": 55,
+      "sha256": "959178c3d88733ef4ad3caa54ac996ec42bf7c7a4c28b5d40363f112c6170140"
+    },
+    "fixtures/excluded-repeat-syntax/main.ox": {
+      "bytes": 46,
+      "sha256": "4ef62aa091fae4bec37336074e2a62fcdb12522fdb607839b991bd1b2801541b"
+    },
+    "fixtures/excluded-repeated-index/main.ox": {
+      "bytes": 50,
+      "sha256": "f284ff73222b8624f9971a3dcf3a8c2b29018f344cf304c07fcd6898efedb40b"
+    },
+    "fixtures/excluded-separated-length/main.ox": {
+      "bytes": 56,
+      "sha256": "0eac85e03afd30dabf86d545488e0478d3a875c0faa4c4abf5a0eb7ed1023875"
+    },
+    "fixtures/excluded-suffixed-length/main.ox": {
+      "bytes": 56,
+      "sha256": "88cbc870d827604c0ad1ffeb2987b4dddebed42a161befe3e89edab1023da815"
+    },
+    "fixtures/grouped-complete-access-and-index/main.ox": {
+      "bytes": 86,
+      "sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36"
+    },
+    "fixtures/literal-first-heterogeneous-element/main.ox": {
+      "bytes": 54,
+      "sha256": "df523d928d4a7477da5256625fbe451ce238b7ab591420e0ef8323c7b057e893"
+    },
+    "fixtures/literal-length-max-trailing-comma/main.ox": {
+      "bytes": 2097,
+      "sha256": "d7399e8bebf8c3b2ef244099c272d67fa2c128d891dd2a796771659a15bbae77"
+    },
+    "fixtures/literal-length-one-over/main.ox": {
+      "bytes": 2099,
+      "sha256": "ed0d95889c0c9383a1e3b4f49db98ea1970affc1a75187c00e4888e74947246b"
+    },
+    "fixtures/literal-nested-nonempty-is-nonscalar/main.ox": {
+      "bytes": 46,
+      "sha256": "78d77948d26a4f3da2dcf4d9f3cb8832f675df72f02e51e5c0db01697847f167"
+    },
+    "fixtures/missing-array-element-separator/main.ox": {
+      "bytes": 46,
+      "sha256": "1f1e2e744f3fb36f61fe021342594c9b2fbe14df56b76ec69c7ff7fc2dfa0dd9"
+    },
+    "fixtures/missing-array-index/main.ox": {
+      "bytes": 46,
+      "sha256": "421c75782b9c89c557397fcb9f78076966e53fe596175542a2305676a3568964"
+    },
+    "fixtures/missing-array-type-separator/main.ox": {
+      "bytes": 55,
+      "sha256": "6836caccf700d4398c2494026899ffa5fc8b90337db091bf480a72cec86a76e2"
+    },
+    "fixtures/missing-length-call-close/main.ox": {
+      "bytes": 49,
+      "sha256": "6446f271ad14d091805132034963e1c125510e80007378ec63bbcfc1db27d284"
+    },
+    "fixtures/missing-length-close-at-eof/main.ox": {
+      "bytes": 45,
+      "sha256": "c95f634108214fb237c22a8c585aaa727fd47e4ff33335fe2a3e74b9da23b093"
+    },
+    "fixtures/nested-empty-does-not-inherit-context/main.ox": {
+      "bytes": 55,
+      "sha256": "a6a002293dd3c4604743cbf65ae0c2b45600207eace37b3de9537fe6cc6d9110"
+    },
+    "fixtures/overlength-token/main.ox": {
+      "bytes": 60,
+      "sha256": "e10867be018f522c6b64aef72566b18f51848c8a636b3dc2f12fe5172b9823bd"
+    },
+    "fixtures/parameters-max/main.ox": {
+      "bytes": 2781,
+      "sha256": "4ffedc61effc771f6dfad93f76cdf7aade3349122764e14082a2e40574fac4f8"
+    },
+    "fixtures/parameters-one-over/main.ox": {
+      "bytes": 2792,
+      "sha256": "8404ab82ac53b84327eca63ba31082ddd54bc59b1d246c536ebae7cab35fdb06"
+    },
+    "fixtures/read-array-bad-index/main.ox": {
+      "bytes": 50,
+      "sha256": "886823f12d8608f6b41dc1b7afd7b57bd7785756c613dc34000d2bbfcdd397fc"
+    },
+    "fixtures/read-base-kind-before-index-kind/main.ox": {
+      "bytes": 48,
+      "sha256": "d4e236ab70385f6f9a35fb79b0a30a73da0bac4481a39866e7b4fca95b444763"
+    },
+    "fixtures/read-index-internal-type-first/main.ox": {
+      "bytes": 52,
+      "sha256": "a87bf6397c591d05f826a5caa13ac2ef00eed7272fa6ac5b89c0750ae50e14f1"
+    },
+    "fixtures/read-index-literal-range-before-base-type/main.ox": {
+      "bytes": 54,
+      "sha256": "5096b68a9719251d73044315059a6c4b684d72563de11ea0826755d0d14b606b"
+    },
+    "fixtures/read-index-resolution-before-base-type/main.ox": {
+      "bytes": 53,
+      "sha256": "3d0b69e3d153aa899d8246eb772e204c62b8ccd4ba3d43b42e97ce5ee80435da"
+    },
+    "fixtures/read-unknown-base-first/main.ox": {
+      "bytes": 48,
+      "sha256": "347e55639c69fa58344c565651efbce0c02756f9e10e8b6aa9cc5ebf4c1037d3"
+    },
+    "fixtures/record-len-field-stays-field/main.ox": {
+      "bytes": 79,
+      "sha256": "79480469c2db33239cca9d08d3d2c344b51a11995faf688768d71ec1276bbc69"
+    },
+    "fixtures/rhs-snapshot-final-bounds-failure/main.ox": {
+      "bytes": 135,
+      "sha256": "129019a7bf2994820e5c403033b99dcfddbd74933361070d6a631fcf57860f93"
+    },
+    "fixtures/rhs-snapshot-success/main.ox": {
+      "bytes": 135,
+      "sha256": "7455c6819f09a3baf2d0162c2085d148e97d27558ded38dbb94f1c1dacf16c34"
+    },
+    "fixtures/scalar-bool-length-0/main.ox": {
+      "bytes": 64,
+      "sha256": "74ff8f03050b26a17cc8e65b5f2cac0362f08c3e7463495a577c3230bcf6dba7"
+    },
+    "fixtures/scalar-bool-length-1/main.ox": {
+      "bytes": 65,
+      "sha256": "12d84b0e19246e1c5a8352c09d18feac105b71080f8e76469ef0622a9bfc7902"
+    },
+    "fixtures/scalar-i32-length-0/main.ox": {
+      "bytes": 63,
+      "sha256": "f3c451023455108b03cfdfe280c21d261b9f9d8925c81c42523c028a5799b09e"
+    },
+    "fixtures/scalar-i32-length-1/main.ox": {
+      "bytes": 61,
+      "sha256": "c8fe5273fa8927ab53e36e958328995cf60898eb443d40f9120a49405b9512ff"
+    },
+    "fixtures/scalar-unit-length-0/main.ox": {
+      "bytes": 62,
+      "sha256": "6d9524db67db301fa9ed33ea58c87e59ed739379f97668c2f21f29a1dddff06d"
+    },
+    "fixtures/scalar-unit-length-1/main.ox": {
+      "bytes": 61,
+      "sha256": "5a93cd48bdc89ef5b83a75c27adbe026a3a28e09bbcb622cabd8960c61d70b11"
+    },
+    "fixtures/structural-identities-pairwise-distinct/main.ox": {
+      "bytes": 139,
+      "sha256": "a6e226c08152c3957ca65d7817dfe770d9599491681ed45fd31c11e166b7817d"
+    },
+    "fixtures/type-max-leading-zeros/main.ox": {
+      "bytes": 82,
+      "sha256": "24d8732d7280c305c020b69217045632a8eedf58e3b9d5ee9954481ca014f878"
+    },
+    "fixtures/type-zero-max-token/main.ox": {
+      "bytes": 65611,
+      "sha256": "a2082b6f81cf7eeefda3a813276a9729b3f155acad2ea8fc63abfc78fa3ea48a"
+    },
+    "fixtures/type-zero-token-one-over/main.ox": {
+      "bytes": 65581,
+      "sha256": "e06d6fc40e9f6c9862fb0331b02ca4d02c159dd60c0f437cae3e2a36fe0eefa9"
+    },
+    "fixtures/utf8-read-primary/main.ox": {
+      "bytes": 61,
+      "sha256": "36f08bdef9d688a7be7652c859feec77f178eb00b4633630b2d3b951abc764e8"
+    },
+    "fixtures/whole-program-resolution-before-earlier-function-type/main.ox": {
+      "bytes": 90,
+      "sha256": "c250b4834e3eaf99d9b6279866a884fcd3c74b05e85039d3843d4eda973b250b"
+    },
+    "fixtures/write-base-kind-before-index-kind/main.ox": {
+      "bytes": 59,
+      "sha256": "6fed7af8b18a4a8f0c30361f87dce387d7972bcf3cffcf7fb47b16635264e28c"
+    },
+    "fixtures/write-both-subtree-errors-rhs-wins/main.ox": {
+      "bytes": 67,
+      "sha256": "509cb3c35a9bccbc86ee6120b9fa198d464a7338971aec90d1015bc4e3c71d67"
+    },
+    "fixtures/write-element-before-mutability/main.ox": {
+      "bytes": 58,
+      "sha256": "8f64ca26780e1efc1c6f3342484c95f65d5db38000319114f7b697325d5f6a5e"
+    },
+    "fixtures/write-index-internal-type-before-base/main.ox": {
+      "bytes": 63,
+      "sha256": "d540d8cfaa277c1c332c9934b508b30d0da9baffeb25df890f0c37d0b73d355c"
+    },
+    "fixtures/write-index-kind-before-rhs-element/main.ox": {
+      "bytes": 61,
+      "sha256": "57750be685c0c6643a6c4057a14df01a86cca4ba74db1c4affdadcd5e9fd8bc4"
+    },
+    "fixtures/write-one-conflict-element/main.ox": {
+      "bytes": 62,
+      "sha256": "c5f9d7422e93168b8f37d967bc4ee3c85699c82002059bc0d7d1d9779e6608aa"
+    },
+    "fixtures/write-one-conflict-index/main.ox": {
+      "bytes": 61,
+      "sha256": "18a666eaa5eec25909c9de0c839ffebcd862bc8094aeefc3814585bc1a52dd7f"
+    },
+    "fixtures/write-owner-mutability-last/main.ox": {
+      "bytes": 54,
+      "sha256": "7062109c43d146c79791a627277b996c9b8c89d5c1609a894ebb3aecd4fbf876"
+    },
+    "fixtures/write-resolve-base-before-both-operands/main.ox": {
+      "bytes": 62,
+      "sha256": "8807388125d28711c73e6552914843218d6d3c443a61250e9316149f6509cc31"
+    },
+    "fixtures/write-resolve-rhs-before-index/main.ox": {
+      "bytes": 73,
+      "sha256": "082576c5d3fb1835bf6c8e9fb23ace1cdd77671e3d0f804501d0eb94a94e5e0b"
+    },
+    "fixtures/write-rhs-internal-type-first/main.ox": {
+      "bytes": 63,
+      "sha256": "7f7c337f34ef1bf8d18452b1b960aabffaad98273a1d8e30af7d94c97a437e27"
+    },
+    "fixtures/write-whole-resolution-before-rhs-typing/main.ox": {
+      "bytes": 73,
+      "sha256": "711d3dc384f243f12112f934514a16fcff7f88e83c6aa8a0f98612808e0be158"
+    },
+    "generated-manifest.json": {
+      "bytes": 15413,
+      "sha256": "90e9f8cfa1ce35851d8ddd241bb656ea976b957019e71bd4f9a721f3aafb4376"
+    },
+    "input-audit/wording-appendix-draft.json": {
+      "bytes": 37647,
+      "sha256": "02d47e70f80d3859bfa98289f67c07f9fed72572e9349e6691f0a218e16b8215"
+    },
+    "inputs/diagnostic-contract-v1.json": {
+      "bytes": 763,
+      "sha256": "5ec2d4e0a0d71a1b7a8aec879b5a5a1146a46ce805274947368816999d0ee1b5"
+    },
+    "inputs/planning-source-inputs.json": {
+      "bytes": 6045,
+      "sha256": "f3d7efe49c6010bc3d53d3a14c410bb42a5d20dfdba520abb87edef1d4f0966c"
+    },
+    "inputs/pre-review-correction.json": {
+      "bytes": 3698,
+      "sha256": "153f68759e9d8d320abcff36bb39001145a0c357470ceac7c2b7f2cc3cb1d1a2"
+    },
+    "inputs/proposed-fixtures/unused_helper_65_parameters.ox": {
+      "bytes": 796,
+      "sha256": "fe0a997382563efccf617d718526d0ee4f74da701ed7cea93490d6d3c93622ce"
+    },
+    "inputs/proposed-fixtures/wide_literal_1024.ox": {
+      "bytes": 3465,
+      "sha256": "851d0aca479bd7c5ec5b5d85244b13357f7f5e41ea7bb8cd3e296de1f9ce646b"
+    },
+    "inputs/source-controls-v1.json": {
+      "bytes": 18793,
+      "sha256": "95e97255a4e5bd97dcdf1f49f35fc4b43f78134c1d8f41b7819c9078d47f6807"
+    },
+    "selected-rfc-status-only.diff": {
+      "bytes": 3293,
+      "sha256": "87b55a13931a210d87c518119a0076fa58c4f37383413c64c7fe39d36d0dcda9"
+    },
+    "verification.json": {
+      "bytes": 695,
+      "sha256": "230369c95b4bbceb5c088131fe2bf4fe337fa7df0c56727c16266cab600077ce"
+    },
+    "wording.py": {
+      "bytes": 7001,
+      "sha256": "43fe86c37b6df9e4d0cc7da0d95d50b6615e55a44b7b9b3e1912b474a763e1bf"
+    }
+  },
+  "review_scope": "Source contract and wording appendix only; independent review report is external to this manifest to avoid circular identity",
+  "schema": "oxid-array-source-freeze-v1",
+  "selected_head": "d582d1dca2a26eb3230632a921f9e8166c39d5c0",
+  "selected_tree": "a826c1782dac19b8c34bdafb0202240e5d414719",
+  "status": "PRE_OBSERVATION_SOURCE_AUTHORITY"
+}

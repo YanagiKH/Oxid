@@ -152,6 +152,17 @@ fn type_syntax(
     requester: ModuleId,
     ty: ast::TypeSyntax,
 ) -> Result<Ty, Box<Diagnostic>> {
+    if matches!(
+        ty.kind,
+        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
+    ) {
+        return Err(Diagnostic::new(
+            "E0500",
+            "resolve",
+            "array source execution is unavailable in this dormant syntax checkpoint",
+            Some(ty.span),
+        ));
+    }
     match query.value_type(requester, ty, TypeContext::Scalar)? {
         ValueTy::Scalar(ty) => Ok(ty),
         ValueTy::Owned(_) => Err(Diagnostic::new(
@@ -527,6 +538,14 @@ impl<'a> Resolver<'_, 'a> {
                         Some(*target_span),
                     ))
                 }
+                ast::StmtKind::IndexAssign { target, .. } => {
+                    return Err(Diagnostic::new(
+                        "E0500",
+                        "resolve",
+                        "array source execution is unavailable in this dormant syntax checkpoint",
+                        Some(self.ast.expressions[target.0].span),
+                    ));
+                }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
@@ -594,6 +613,16 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::ArrayLiteral { .. }
+            | ast::ExprKind::IndexRead { .. }
+            | ast::ExprKind::ArrayLength { .. } => {
+                return Err(Diagnostic::new(
+                    "E0500",
+                    "resolve",
+                    "array source execution is unavailable in this dormant syntax checkpoint",
+                    Some(expr.span),
+                ));
+            }
             ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
                 return Err(Diagnostic::new(
                     "E0500",

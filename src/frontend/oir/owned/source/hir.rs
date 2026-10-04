@@ -2,7 +2,7 @@
 pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 pub(super) use crate::frontend::hir::{DefId, Ty};
 pub(super) use crate::frontend::oir::owned_types::{
-    AggregateTy, BorrowKind, FieldId, ParameterTy, RecordId, ValueTy,
+    AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
 };
 use crate::frontend::source::Span;
 
@@ -89,6 +89,18 @@ pub(super) enum ExprKind {
         record: RecordId,
         fields: Vec<FieldInit>,
     },
+    ArrayLiteral {
+        elements: Vec<ExprId>,
+    },
+    IndexRead {
+        base: BindingId,
+        base_span: Span,
+        index: ExprId,
+    },
+    ArrayLength {
+        base: BindingId,
+        base_span: Span,
+    },
     FieldRead {
         base: BindingId,
         base_span: Span,
@@ -127,6 +139,14 @@ pub(super) enum StmtKind {
         target_span: Span,
         operator_span: Span,
         value: ExprId,
+    },
+    IndexAssign {
+        base: BindingId,
+        base_span: Span,
+        target_span: Span,
+        operator_span: Span,
+        value: ExprId,
+        index: ExprId,
     },
     Expr(ExprId),
     Return(Option<ExprId>),

@@ -1,0 +1,496 @@
+{
+  "schema": "oxid-unit3a-independent-comparison-v1",
+  "cases": [
+    {
+      "id": "missing-array-element-separator",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "bdfd928c20bdf3982f9ac5c66c8510e0afdd197f5541c3cce5524e3738c746b8"
+    },
+    {
+      "id": "missing-array-index",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "128fd87641c7fe559b271d469465e7156d849215a3335e042a37efc3a6dd0f9b"
+    },
+    {
+      "id": "missing-array-type-separator",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "c0be8161081b63f0fcbab40e5504c7ba7ecc8b9c826a0498f4e96588ed851af6"
+    },
+    {
+      "id": "excluded-named-array-length",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "d40ab184fa99af68415c06f9ebe933ac4cb50cfa91bacc0be3233260a91c1e08"
+    },
+    {
+      "id": "excluded-length-expression",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "0da4b87b2d98c25a3148624bd3e1170568f4153193303bab0219b1ac8d79ae1b"
+    },
+    {
+      "id": "overlength-token",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "4e3f13ed910d07e9d62ebc5f8f9fc05165eb04c3ede59c5bb6b2c0a8f8487f25"
+    },
+    {
+      "id": "excluded-nonascii-length",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "66864949696f9f962d2cb4a52ca7e694f7e25900a2d664243998a060211d8132"
+    },
+    {
+      "id": "excluded-nested-array-type",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "a6995e48e5dbc17ab7fb26df7df5d58e49668afaba5a2b72587495e199829ad9"
+    },
+    {
+      "id": "excluded-reference-element",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "2706ddfdb8e2c27654a37dc201901aa55c0b6996a21077b57350f97a86be2a5b"
+    },
+    {
+      "id": "excluded-record-element",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "706edda8aaea3c634dd44c275c628531a7277150e93645943e780f3687a8b787"
+    },
+    {
+      "id": "excluded-array-record-field",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "667feeb142f2686ac366faa9f3823e43e16bea8dda669b35ba63d77731e5d404"
+    },
+    {
+      "id": "excluded-repeat-syntax",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "6fb26ca39e0a7d37818e6db6f50f940d83ee873217a5cf790edf0693b0efeca1"
+    },
+    {
+      "id": "excluded-grouped-base",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "76e1eccc3125e23665f4198636c24c6bfe416a52bf0c06deeb5fdcb523cc5a52"
+    },
+    {
+      "id": "excluded-repeated-index",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "527d97587c81ff6b894ce8d9cebb92ae668f557020f7a5dca4fccb19267993f4"
+    },
+    {
+      "id": "excluded-grouped-store-target",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "4f445b7ed48d8c7b7e50cfa32afae27185c7bef06707048c6878d144e671a9db"
+    },
+    {
+      "id": "excluded-arbitrary-method",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "4f7fcec993a73b05eed1f6c92d5d60c5408d5b3407712910f251d8086bfccc60"
+    },
+    {
+      "id": "excluded-length-argument",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "5ed4f6feba2f1c56fa37efa980adc68c499bec2a0593da6b8976433121f12564"
+    },
+    {
+      "id": "missing-length-call-close",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "ac96110c077cf8dfae69de50758492590b59050523acf64d839cc61c76b08fcd"
+    },
+    {
+      "id": "excluded-called-base",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "55620b0be47ce0a6bc15511d85237fe53cfb58b067063019714d757e398e7c36"
+    },
+    {
+      "id": "excluded-literal-base",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "2a5d35c9b009c0f183b49e2f7c3a7267073f3799cbc824ba4a5587296df610b5"
+    },
+    {
+      "id": "excluded-grouped-length-base",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "91b4b720e4154c503a64515e881aff65b5b7a7ca5aba19d45fa59275d0b5dba1"
+    },
+    {
+      "id": "excluded-indexed-length-base",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "397489ade109dafe057f713ea2a2b9e9bb3d8cc6de006af53899a6d90bb29ac9"
+    },
+    {
+      "id": "excluded-length-store-target",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "a02ff1e0c09739ce3b83d87d8b4b2a074947b4801ed676faf8fc96610d89a70d"
+    },
+    {
+      "id": "excluded-grouped-element-type",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "e4f78bf6a6c4bc9f06b29cf5d2d10cbeed1368f720b40cfbe87c720d53ae30b1"
+    },
+    {
+      "id": "excluded-negative-length",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "9b95418f60f08b47e4dc79fb33f0072d9c0be382e2dbbbb5a668255be06e91db"
+    },
+    {
+      "id": "excluded-suffixed-length",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "bb3016c02437540fb1b33ac77010c68c2c62fc5a1e6475b9bc82acf18dd66f98"
+    },
+    {
+      "id": "excluded-separated-length",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "fe89ff1552522d5396644cba1ba227d524767af01be5adbc6a1e83667fed48f9"
+    },
+    {
+      "id": "missing-length-close-at-eof",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "e7dfe354fb4250d7978625617861c885820eef9828f7d352228e4e8d02898e43"
+    },
+    {
+      "id": "scalar-bool-length-0",
+      "phase": "source-types",
+      "expressions": 4,
+      "queries": 1,
+      "rows": 60,
+      "status": "PASS",
+      "observation_sha256": "deeb179fa77ed42664a3b02b9f43ae14800844aea6341a4854b82b127f5b1422"
+    },
+    {
+      "id": "scalar-bool-length-1",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 1,
+      "rows": 58,
+      "status": "PASS",
+      "observation_sha256": "13708411ed07908028cf702804310ab4db874fcd3f5c9e931ebefb03b2936c82"
+    },
+    {
+      "id": "scalar-i32-length-0",
+      "phase": "source-types",
+      "expressions": 4,
+      "queries": 1,
+      "rows": 60,
+      "status": "PASS",
+      "observation_sha256": "10f745ad5c47c19e6a20229a8a07f4e54b861560d2244ffc4804377cdc84e074"
+    },
+    {
+      "id": "scalar-i32-length-1",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 1,
+      "rows": 58,
+      "status": "PASS",
+      "observation_sha256": "6b63b1bbb927585ecdd20430ad54473b80b94db1b9794f829ee305613fe56bdc"
+    },
+    {
+      "id": "scalar-unit-length-0",
+      "phase": "source-types",
+      "expressions": 4,
+      "queries": 1,
+      "rows": 61,
+      "status": "PASS",
+      "observation_sha256": "41b36502e67080658303e9def50c5db3f2183683ad19bf5b9cfbf3972ad2b99e"
+    },
+    {
+      "id": "scalar-unit-length-1",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 1,
+      "rows": 60,
+      "status": "PASS",
+      "observation_sha256": "88f3f104242d051a11b6021630de1f4dcb16802f4762fa09653c94d7df791aff"
+    },
+    {
+      "id": "literal-length-max-trailing-comma",
+      "phase": "source-types",
+      "expressions": 1026,
+      "queries": 0,
+      "rows": 4139,
+      "status": "PASS",
+      "observation_sha256": "6d6eaf24db5f88596bae800af681d71261f2296924fa187f82554c3ab614bb14"
+    },
+    {
+      "id": "literal-length-one-over",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "e7ec16cedc9bb916b46cafc8ad34ec75cea550fee9d84dbc06e37307de6bcbff"
+    },
+    {
+      "id": "type-max-leading-zeros",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 1,
+      "rows": 63,
+      "status": "PASS",
+      "observation_sha256": "e036fdbec6ba80ce3ff0cb2b43a37080d1b81f27ebdcfa163d329c26de52ed14"
+    },
+    {
+      "id": "type-zero-max-token",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 1,
+      "rows": 63,
+      "status": "PASS",
+      "observation_sha256": "0db3c497c76e96645c1ef76a2e47c6ae70259e652c56b4ae86b7e1c1f4e4ac62"
+    },
+    {
+      "id": "type-zero-token-one-over",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "2f0ef8f31f855ae87b4b60016d8e535e6a2e1eed7e6c229323df78bb10e27f7f"
+    },
+    {
+      "id": "parameters-max",
+      "phase": "source-types",
+      "expressions": 4,
+      "queries": 0,
+      "rows": 2110,
+      "status": "PASS",
+      "observation_sha256": "0eb2ca33dcf08ac051a564ec956ca9ece0375a12909c4e43953e340ffdf4c282"
+    },
+    {
+      "id": "call-arguments-max",
+      "phase": "source-types",
+      "expressions": 259,
+      "queries": 0,
+      "rows": 811,
+      "status": "PASS",
+      "observation_sha256": "18ed0222b16093ab77f43de60f36d9fe4aa4ce680ba73dc9b7a8a17b51e4a751"
+    },
+    {
+      "id": "parameters-one-over",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "e53d4c0d32e3cc74e35d2fcabf93325bfe56184771531e9d1b532d413a0d86c7"
+    },
+    {
+      "id": "call-arguments-one-over",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "5d4733ca835e45d9d0ce3648ae80e85a4232348028b5d39d956dd5b78fc108c0"
+    },
+    {
+      "id": "grouped-complete-access-and-index",
+      "phase": "source-types",
+      "expressions": 11,
+      "queries": 1,
+      "rows": 91,
+      "status": "PASS",
+      "observation_sha256": "5655a692c649a61a06d65c8ee47ef5e890b72d0d4163f358a796e652ec24d84f"
+    },
+    {
+      "id": "record-len-field-stays-field",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 0,
+      "rows": 63,
+      "status": "PASS",
+      "observation_sha256": "de588c72e2f7dbc68b6e4ef7e7d8cb30558964549af136dd86a50b635ceb7b31"
+    },
+    {
+      "id": "child-route-annotation",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 0,
+      "rows": 80,
+      "status": "PASS",
+      "observation_sha256": "3c463f2537117904f0aaa18fa78789db4f80e2c1c1baae4055e2c97baffb0058"
+    },
+    {
+      "id": "child-route-result",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 0,
+      "rows": 69,
+      "status": "PASS",
+      "observation_sha256": "caab25dc4487fbd36490522936a7c95c45c3495ffb42c5be69820bee211caead"
+    },
+    {
+      "id": "child-route-parameter",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 1,
+      "rows": 71,
+      "status": "PASS",
+      "observation_sha256": "14999faed7e74836011f5ec01642a6814fbbc1f4dc0df4aef52ae093496e49e6"
+    },
+    {
+      "id": "child-route-shared-parameter",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 1,
+      "rows": 70,
+      "status": "PASS",
+      "observation_sha256": "2d33a3522b2880b9f55a3ac2e071f23c666438d32632b0065ec40ea1a7d9e5a1"
+    },
+    {
+      "id": "child-route-exclusive-parameter",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 1,
+      "rows": 72,
+      "status": "PASS",
+      "observation_sha256": "f58635800073ffc2581dea7f3cc38dd58f70ba287f49ebd1394b466cdbb1c0a1"
+    },
+    {
+      "id": "child-route-literal",
+      "phase": "source-types",
+      "expressions": 4,
+      "queries": 0,
+      "rows": 66,
+      "status": "PASS",
+      "observation_sha256": "c3bc622d2c342244b8e0a22f39f5d06ba5138670ee083a181d2301cc07fa72f5"
+    },
+    {
+      "id": "child-route-read-only",
+      "phase": "source-types",
+      "expressions": 3,
+      "queries": 0,
+      "rows": 68,
+      "status": "PASS",
+      "observation_sha256": "2801996a2038aef136cb57374894eb31b3e74344782726bf203c608d08a76a70"
+    },
+    {
+      "id": "child-route-write-only",
+      "phase": "source-types",
+      "expressions": 5,
+      "queries": 0,
+      "rows": 78,
+      "status": "PASS",
+      "observation_sha256": "e4051aaaadcbc2bab9b92b1522aee8544e7ca1a102f297b45d4e04e82e0a0cda"
+    },
+    {
+      "id": "child-route-length-only",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 0,
+      "rows": 68,
+      "status": "PASS",
+      "observation_sha256": "2211e5159837f0f58f930abc2136b3dde7934528d45a46e8b2c39ed33777cbd3"
+    },
+    {
+      "id": "bracket-comments-do-not-route",
+      "phase": "source-types",
+      "expressions": 1,
+      "queries": 0,
+      "rows": 32,
+      "status": "PASS",
+      "observation_sha256": "23e8cc38cd23a36d2904495c780877b34afe5a4320d66af2cc7065103a8cabcc"
+    },
+    {
+      "id": "bracket-string-is-not-array-syntax",
+      "diagnostics": 1,
+      "phase": "lex-parse",
+      "status": "PASS",
+      "observation_sha256": "964ac8f42c0d1009af9523585d8b5d81b7ce8664ed94ca120f58f78f67e7e052"
+    },
+    {
+      "id": "cross-file-array-identity",
+      "phase": "source-types",
+      "expressions": 7,
+      "queries": 3,
+      "rows": 154,
+      "status": "PASS",
+      "observation_sha256": "e1c14ed26d8cd4f0b1fdd2e81ab6fee60e8f01235b61c67d55c0a6804e2bf9fe"
+    },
+    {
+      "id": "structural-identities-pairwise-distinct",
+      "phase": "source-types",
+      "expressions": 2,
+      "queries": 5,
+      "rows": 141,
+      "status": "PASS",
+      "observation_sha256": "5c04cca61695fcaaee99e044bc85eed41ca04648ba4dd0816028991add6a93ee"
+    }
+  ],
+  "deferred": [
+    "read-index-internal-type-first",
+    "read-base-kind-before-index-kind",
+    "read-array-bad-index",
+    "read-unknown-base-first",
+    "read-index-resolution-before-base-type",
+    "read-index-literal-range-before-base-type",
+    "write-rhs-internal-type-first",
+    "write-index-internal-type-before-base",
+    "write-base-kind-before-index-kind",
+    "write-index-kind-before-rhs-element",
+    "write-element-before-mutability",
+    "write-owner-mutability-last",
+    "empty-no-context",
+    "empty-nonzero-annotation",
+    "nested-empty-does-not-inherit-context",
+    "utf8-read-primary",
+    "rhs-snapshot-success",
+    "rhs-snapshot-final-bounds-failure",
+    "write-resolve-base-before-both-operands",
+    "write-resolve-rhs-before-index",
+    "write-whole-resolution-before-rhs-typing",
+    "write-both-subtree-errors-rhs-wins",
+    "whole-program-resolution-before-earlier-function-type",
+    "write-one-conflict-element",
+    "write-one-conflict-index",
+    "empty-scalar-context",
+    "empty-call-context-excluded",
+    "empty-return-context-excluded",
+    "empty-reassignment-context-excluded",
+    "literal-first-heterogeneous-element",
+    "literal-nested-nonempty-is-nonscalar"
+  ],
+  "pass": 58,
+  "fail": 0
+}

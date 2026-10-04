@@ -1,0 +1,346 @@
+{
+  "equal": 68,
+  "total": 68,
+  "cases": [
+    {
+      "scope": "core",
+      "case": "scalar-unit-length-1.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-grouped-base.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "literal-length-one-over.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-separated-length.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "missing-array-type-separator.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-repeat-syntax.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "bracket-string-is-not-array-syntax.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "missing-length-call-close.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-named-array-length.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "overlength-token.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "bracket-comments-do-not-route.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "parameters-one-over.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "missing-length-close-at-eof.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "call-arguments-max.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-grouped-element-type.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "missing-array-element-separator.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-length-store-target.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-arbitrary-method.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "structural-identities-pairwise-distinct.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "record-len-field-stays-field.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-array-record-field.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-result.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-grouped-length-base.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-grouped-store-target.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-nested-array-type.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "scalar-i32-length-0.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-length-only.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-repeated-index.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-negative-length.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-annotation.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "parameters-max.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-length-argument.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-record-element.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-literal.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-length-expression.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "missing-array-index.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "type-zero-max-token.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "scalar-bool-length-1.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "cross-file-array-identity.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-exclusive-parameter.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-indexed-length-base.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "scalar-unit-length-0.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-write-only.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-parameter.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "grouped-complete-access-and-index.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "type-max-leading-zeros.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-reference-element.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "call-arguments-one-over.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-shared-parameter.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "literal-length-max-trailing-comma.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "type-zero-token-one-over.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-suffixed-length.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-nonascii-length.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "scalar-i32-length-1.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-literal-base.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "scalar-bool-length-0.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "child-route-read-only.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "core",
+      "case": "excluded-called-base.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "supplement",
+      "case": "after-max-comma-eof.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "supplement",
+      "case": "after-max-comma-starter-array.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "supplement",
+      "case": "after-max-comma-nonstarter-plus.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "supplement",
+      "case": "after-max-comma-nonstarter-semi.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "supplement",
+      "case": "after-max-comma-starter-not.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "supplement",
+      "case": "after-max-comma-starter-borrow.jsonl",
+      "equal": true
+    },
+    {
+      "scope": "observer-limits",
+      "case": "one-row.error",
+      "equal": true
+    },
+    {
+      "scope": "observer-limits",
+      "case": "zero-rows.error",
+      "equal": true
+    },
+    {
+      "scope": "observer-limits",
+      "case": "one-byte.error",
+      "equal": true
+    },
+    {
+      "scope": "observer-limits",
+      "case": "zero-bytes.error",
+      "equal": true
+    }
+  ]
+}

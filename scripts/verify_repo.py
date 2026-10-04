@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from verify_feature_status import verify_feature_status
+from verify_fixture_data import fixture_data_sources
 from verify_typed_formatter import verify as verify_typed_formatter
 
 
@@ -28,6 +29,11 @@ TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
+    "fixtures/typed-array-samples/main.ox": (
+        "fixtures/typed-array-samples/main.ox",
+        "fixtures/typed-array-samples/stats.ox",
+        "fixtures/typed-array-samples/samples.ox",
+    ),
     "fixtures/typed-project-batch/main.ox": (
         "fixtures/typed-project-batch/main.ox",
         "fixtures/typed-project-batch/jobs.ox",
@@ -97,7 +103,18 @@ def verify_local_markdown_links() -> None:
                 raise RuntimeError(f"broken local Markdown link in {relative_document}: {target}")
 
 
+def runnable_sources(root: Path = ROOT) -> list[Path]:
+    runnable = []
+    for group in RUNNABLE_GROUPS:
+        runnable.extend(sorted((root / group).glob("*.ox")))
+    runnable.extend(root / relative for relative in RUNNABLE_PACKAGE_FILES)
+    return runnable
+
+
 def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path, bool]], list[Path], int]:
+    # Admission is mandatory even for direct callers. Only exact frozen paths
+    # are data; an unlisted .ox in the same directories remains a legacy check.
+    fixture_data = fixture_data_sources(root)
     available = set(sources)
     typed_entries = [root / relative for relative in TYPED_SOURCE_FILES]
     typed_members = set(typed_entries)
@@ -111,8 +128,26 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
         typed_members.update(paths)
     if not typed_members <= available:
         raise RuntimeError("typed source fixture missing from discovery")
-    legacy = [(source, False) for source in sources if source not in typed_members]
+    if not fixture_data <= available:
+        raise RuntimeError("source-only fixture data missing from discovery")
+    if fixture_data & (typed_members | set(runnable_sources(root))):
+        raise RuntimeError("source-only fixture data overlaps a typed or runnable inventory")
+    legacy = [(source, False) for source in sources if source not in typed_members | fixture_data]
     return legacy + [(source, True) for source in typed_entries], typed_entries, len(typed_members)
+
+
+def verify_test_fixture_registration(root: Path = ROOT) -> None:
+    """The CLI's opt-in exclusions must equal the already frozen data inventory."""
+    fixture_data = fixture_data_sources(root)
+    try:
+        manifest = tomllib.loads((root / "oxid.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"unreadable test fixture registration: {error}") from error
+    configured = manifest.get("test-fixtures", {})
+    expected = {path.relative_to(root).as_posix() for path in fixture_data}
+    if (not isinstance(configured, dict) or set(configured) != expected
+            or any(value is not True for value in configured.values())):
+        raise RuntimeError("test fixture registration must exactly match frozen source-only data")
 
 
 def main() -> int:
@@ -125,20 +160,25 @@ def main() -> int:
     verify_readmes()
     verify_assets()
     verify_local_markdown_links()
-    verify_typed_formatter(executable)
 
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
-    checks, typed_entries, typed_member_count = source_plan(sources)
+    checks, typed_entries, typed_member_count = source_plan(sources, ROOT)
+    verify_test_fixture_registration(ROOT)
+    language_source_count = len(checks) + typed_member_count - len(typed_entries)
+    print(
+        f"fixture-data validation passed: {len(sources) - language_source_count} source-only files "
+        "(frozen manifest/body identities only; no compiler checks, executions or feature claim)"
+    )
+    # Admit all source-only fixture identities before invoking the executable,
+    # including the independently registered formatter golden check.
+    verify_typed_formatter(executable)
     for source, typed in checks:
         command = [str(executable), "check", str(source)]
         if typed:
             command.append("--edition=typed-preview")
         run(command)
 
-    runnable = []
-    for group in RUNNABLE_GROUPS:
-        runnable.extend(sorted((ROOT / group).glob("*.ox")))
-    runnable.extend(ROOT / relative for relative in RUNNABLE_PACKAGE_FILES)
+    runnable = runnable_sources(ROOT)
 
     with tempfile.TemporaryDirectory(prefix="oxid-verify-") as temp_dir:
         temp = Path(temp_dir)
@@ -151,9 +191,9 @@ def main() -> int:
     run([str(executable), "build"])
     run([str(executable), "doctor"])
     print(
-        f"repository verification passed: {len(sources)} sources, "
+        f"repository verification passed: {language_source_count} language sources, {len(checks)} checks, "
         f"{len(runnable) + len(typed_entries)} runnable programs "
-        f"({len(sources) - typed_member_count} legacy sources, "
+        f"({language_source_count - typed_member_count} legacy sources, "
         f"{len(runnable)} legacy runnable programs, {typed_member_count} typed source members / "
         f"{len(typed_entries)} typed entry runs)"
     )

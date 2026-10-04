@@ -1,0 +1,40 @@
+{
+  "status": "BOUNDED_EXTERNAL_MUTATION_TARGET_CORRECTION",
+  "predecessor_manifest_sha256": "99b78b688c26d63972b875938937a96a48d603018815907eaa6a52c7ba795dfd",
+  "change": "Only retarget wrong-valid-file control from an unrequested scalar return query to the explicitly requested root-file fixed-array query; no authority, production, observer or comparator acceptance change",
+  "preserved_failure": "run-v3/sensitivity-corrected-v4.json:17/18",
+  "files": {
+    "README.md": {
+      "bytes": 6634,
+      "sha256": "d9f9acb588873c44e832d70ecf4bb968d0e040e7bfce1438e4f6d025b7736786"
+    },
+    "admission_controls.py": {
+      "bytes": 1121,
+      "sha256": "a804e2180c51008a712c91470876097b561a548b47e6ef4eac970e7e2e2073ed"
+    },
+    "compare.py": {
+      "bytes": 18016,
+      "sha256": "bde2e4a79979f3d9e40a7edd172309fb3237e881b42324e4f85dea04e686a8ad"
+    },
+    "compare_limits.py": {
+      "bytes": 639,
+      "sha256": "98084deb55cc793258f4bf24f2ae2fe4c72947eee2eaadef3850417eeccc5333"
+    },
+    "compare_supplement.py": {
+      "bytes": 2593,
+      "sha256": "a4a06e0349aef304ec37c4e5e2194b7fe8f240b9a93f05ff9a30cc8912540e3c"
+    },
+    "observer.rs": {
+      "bytes": 23060,
+      "sha256": "519947182badf7bf534da63dcb6bc9a236d8adcc24a49497a67d1298211a6f82"
+    },
+    "prepare.py": {
+      "bytes": 1673,
+      "sha256": "81bf3d5435d255aff84a130efbce2202c128a773916073f8dd8352a35a1a0dbc"
+    },
+    "sensitivity.py": {
+      "bytes": 3645,
+      "sha256": "be25dddd1dca8a86c9847ee68285703239709519841699c92cec4a4d88d602a9"
+    }
+  }
+}

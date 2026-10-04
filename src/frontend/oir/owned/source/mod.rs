@@ -27,3 +27,15 @@ pub(super) mod reviewer_source;
 
 #[cfg(test)]
 pub(in crate::frontend::oir::owned) mod resource_fixtures;
+
+#[cfg(test)]
+mod array_types_tests;
+
+#[cfg(test)]
+mod array_type_controls;
+
+#[cfg(test)]
+mod array_pipeline;
+
+#[cfg(test)]
+mod array_consumer_tests;

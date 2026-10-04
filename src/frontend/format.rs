@@ -87,12 +87,13 @@ fn format_with_limits(
 
 fn parse(source: &SourceFile, allocator: &mut Allocator) -> Result<Program, Vec<Diagnostic>> {
     let tokens = lexer::lex_with_limit(source, lexer::MAX_TOKENS).map_err(|error| vec![*error])?;
-    parser::parse_counted(
+    parser::parse_counted_with_arrays(
         source,
         tokens,
         SourceMode::ProjectCandidate,
         parser::MAX_NODES,
         allocator,
+        parser::ArraySyntaxPolicy::Enabled,
     )
     .map(|(program, _)| program)
 }
@@ -139,6 +140,9 @@ fn roles(
             ExprKind::Number { negative: true, .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
+            ExprKind::IndexRead { base, .. } => {
+                roles[base.start] |= TIGHT_AFTER;
+            }
             ExprKind::Call { args, .. } => {
                 for argument in args {
                     if let Argument::Borrow {
@@ -177,6 +181,28 @@ fn newlines(text: &str) -> usize {
     text.bytes().filter(|&byte| byte == b'\n').count()
 }
 
+enum Delimiter {
+    Open(u8),
+    Close(u8),
+}
+
+// Brackets retain their existing lexer kind. Recognize only the exact admitted
+// spelling, never unrelated Unsupported tokens or punctuation inside comments.
+fn delimiter(source: &SourceFile, token: &Token) -> Option<Delimiter> {
+    match token.kind {
+        Kind::LParen => Some(Delimiter::Open(b'(')),
+        Kind::RParen => Some(Delimiter::Close(b'(')),
+        Kind::LBrace => Some(Delimiter::Open(b'{')),
+        Kind::RBrace => Some(Delimiter::Close(b'{')),
+        Kind::Unsupported => match source.text_at(token.span) {
+            "[" => Some(Delimiter::Open(b'[')),
+            "]" => Some(Delimiter::Close(b'[')),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Count and emit using the same fixed-depth walk. The counting pass checks the
 /// complete output size before allocating or constructing any output bytes.
 fn layout(
@@ -186,7 +212,7 @@ fn layout(
     delimiter_limit: usize,
     mut emit: impl FnMut(&str) -> Result<(), Vec<Diagnostic>>,
 ) -> Result<(), Vec<Diagnostic>> {
-    let mut stack = [Kind::Eof; MAX_DELIMITERS];
+    let mut stack = [0; MAX_DELIMITERS];
     let mut depth = 0usize;
     let mut previous: Option<&Token> = None;
     let spaces = [b' '; MAX_DELIMITERS * 4];
@@ -208,31 +234,28 @@ fn layout(
                 .ok_or_else(|| invariant("formatter delimiter underflow"))?;
             emit(&spaces[..indent * 4])?;
         } else if let Some(previous) = previous {
-            if horizontal_space(previous, token, roles) {
+            if horizontal_space(source, previous, token, roles) {
                 emit(" ")?;
             }
         }
         emit(source.text_at(token.span))?;
-        match token.kind {
-            Kind::LParen | Kind::LBrace => {
+        match delimiter(source, token) {
+            Some(Delimiter::Open(kind)) => {
                 if depth >= delimiter_limit.min(MAX_DELIMITERS) {
                     return Err(resource("formatter delimiter limit exceeded"));
                 }
-                stack[depth] = token.kind;
+                stack[depth] = kind;
                 depth += 1;
             }
-            Kind::RParen | Kind::RBrace => {
+            Some(Delimiter::Close(kind)) => {
                 depth = depth
                     .checked_sub(1)
                     .ok_or_else(|| invariant("formatter delimiter underflow"))?;
-                if !matches!(
-                    (stack[depth], token.kind),
-                    (Kind::LParen, Kind::RParen) | (Kind::LBrace, Kind::RBrace)
-                ) {
+                if stack[depth] != kind {
                     return Err(invariant("formatter delimiter mismatch"));
                 }
             }
-            _ => {}
+            None => {}
         }
         previous = Some(token);
     }
@@ -250,23 +273,27 @@ fn layout(
 fn leading_closers(source: &SourceFile, tokens: &[Token]) -> usize {
     let mut count = 0;
     for token in tokens {
-        match token.kind {
-            Kind::RParen | Kind::RBrace => count += 1,
-            Kind::Trivia
-                if !protected(source, token) && newlines(source.text_at(token.span)) == 0 => {}
-            _ => break,
+        if matches!(delimiter(source, token), Some(Delimiter::Close(_))) {
+            count += 1;
+        } else if token.kind != Kind::Trivia
+            || protected(source, token)
+            || newlines(source.text_at(token.span)) != 0
+        {
+            break;
         }
     }
     count
 }
 
-fn horizontal_space(left: &Token, right: &Token, roles: &[u8]) -> bool {
+fn horizontal_space(source: &SourceFile, left: &Token, right: &Token, roles: &[u8]) -> bool {
     use Kind::*;
     if left.kind == Trivia || right.kind == Trivia {
         return true;
     }
     if matches!(right.kind, Comma | Semi | RParen)
         || left.kind == LParen
+        || matches!(delimiter(source, left), Some(Delimiter::Open(b'[')))
+        || matches!(delimiter(source, right), Some(Delimiter::Close(b'[')))
         || (right.kind == LParen && left.kind == Ident)
         || left.kind == Dot
         || right.kind == Dot
@@ -333,6 +360,14 @@ mod tests {
     fn compact_format_is_syntax_only_and_idempotent() {
         let input = "mod absent;fn f(x:& mut Pair)->i32{sink(& mut * x);return (0007)- - 0002*03;}";
         let expected = "mod absent; fn f(x: &mut Pair) -> i32 { sink(&mut *x); return (0007) - -0002 * 03; }\n";
+        assert_eq!(formatted(input).unwrap(), expected);
+        assert_eq!(formatted(expected).unwrap(), expected);
+    }
+
+    #[test]
+    fn fixed_arrays_format_without_semantic_checks() {
+        let input = "mod absent;fn f(a:& [i32;02],b:& mut [bool;1])->[();0]{let mut x:[i32;2]=[01,- 2,];x [ 0 ]=x [1];sink(&x,&mut *b);return []; }";
+        let expected = "mod absent; fn f(a: &[i32; 02], b: &mut [bool; 1]) -> [(); 0] { let mut x: [i32; 2] = [01, -2,]; x[0] = x[1]; sink(&x, &mut *b); return []; }\n";
         assert_eq!(formatted(input).unwrap(), expected);
         assert_eq!(formatted(expected).unwrap(), expected);
     }

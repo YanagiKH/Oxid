@@ -1,0 +1,27 @@
+{
+  "by_first_observation_slice": {
+    "3A": 58,
+    "3B": 29,
+    "3C": 2
+  },
+  "candidate_compiler_runs": 0,
+  "commands": [
+    "PYTHONDONTWRITEBYTECODE=1 python3 authority.py verify",
+    "PYTHONDONTWRITEBYTECODE=1 python3 wording.py verify"
+  ],
+  "executed_semantic_passes": 0,
+  "expected_cases": 89,
+  "layout_measurements": 0,
+  "lowering_runs": 0,
+  "native_runs": 0,
+  "ownership_runs": 0,
+  "preserved_diagnostic_cases": 34,
+  "preserved_effect_counterexamples": 2,
+  "production_edits": 0,
+  "public_compiler_runs": 0,
+  "reference_runs": 0,
+  "remote_writes": 0,
+  "resource_measurements": 0,
+  "status": "SOURCE_PACKAGE_CONSISTENCY_PASS_ONLY",
+  "worded_diagnostic_cases": 62
+}

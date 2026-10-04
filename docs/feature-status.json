@@ -831,6 +831,42 @@
       "limitations": "Explicit typed selector only; unchanged legacy commands, artifact and lock versions. No package imports, reexports, grouped/glob imports, module aliasing, initialization effects, separate compilation or new native target. Aggregate source/index/ownership/runtime/native bounds apply across all files. Stable-filesystem path checks are not a snapshot or sandbox. Original single-file schedules are preserved, with recognized project syntax carrying explicit diagnostic migrations. Historical private-core receipts do not establish current public execution. No M1/M2 or v1.0 completion claim."
     },
     {
+      "id": "typed-preview-fixed-scalar-arrays",
+      "summary": "Experimental move-only fixed bool/i32/unit arrays with checked signed indexing, length and whole-array call borrows through public typed-preview source routes",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Direct public CLI evidence on Linux x86_64. Declared-child loading admits Linux; native remains Linux x86_64 LLVM 19.1.7 O0. Other hosts and exact-head hosted checks are not certified by this entry.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0016-fixed-scalar-arrays.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser/arrays.rs",
+        "src/frontend/project.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/source/lower.rs",
+        "src/frontend/oir/owned/verified.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/typed_fixed_arrays.rs",
+        "src/frontend/oir/owned/array_tests.rs",
+        "src/frontend/oir/owned/source/array_consumer_tests.rs",
+        "fixtures/typed-array-samples/main.ox"
+      ],
+      "evidence": [
+        "docs/architecture/fixed-array-public-validation.md"
+      ],
+      "limitations": "Length 0..1024; scalar bool/i32/unit elements only. Empty literal context is an explicitly annotated zero-length local initializer. Named bases only, complete-owner moves and exact-mode call-only borrows. No nested arrays, record fields/elements, slices, repetition, element moves/borrows, implicit array copies/equality/printing or stored references. All existing source, metadata, ownership, fuel and narrower native limits apply. Public check can accept array-returning main; run/native require zero-argument scalar root main. Private observation and ArrayConsumer admissions remain separate. No stability, general safety, performance, M2 or v1.0 certification."
+    },
+    {
       "id": "typed-line-preserving-formatter",
       "summary": "Explicit bounded syntax-only single-file formatter and read-only drift check",
       "status": "experimental",

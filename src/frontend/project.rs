@@ -3,6 +3,9 @@
 //! Public typed dispatch and historical adapters share one source-discovery owner.
 #![allow(dead_code)] // Historical qualification adapters retain their private API.
 
+#[cfg(test)]
+#[path = "project/array_syntax_tests.rs"]
+mod array_syntax_tests;
 pub(super) mod budget;
 mod filesystem;
 #[cfg(test)]
@@ -156,11 +159,12 @@ impl ProjectSources {
     }
     /// Parse and load the bounded typed grammar once for public typed dispatch.
     pub fn load_typed(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
-        Self::load(
+        Self::load_with_arrays(
             entry,
             limits,
             parser::SourceMode::ProjectCandidate,
             &mut Allocator::default(),
+            parser::ArraySyntaxPolicy::Enabled,
         )
     }
     /// Historical qualification adapter for the same typed loader.
@@ -173,11 +177,41 @@ impl ProjectSources {
         mode: parser::SourceMode,
         allocator: &mut Allocator,
     ) -> Result<Self, LoadFailure> {
+        Self::load_with_arrays(
+            entry,
+            limits,
+            mode,
+            allocator,
+            parser::ArraySyntaxPolicy::Closed,
+        )
+    }
+    #[cfg(test)]
+    pub(super) fn load_array_candidate(
+        entry: &str,
+        limits: ProjectLimits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_arrays(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            allocator,
+            parser::ArraySyntaxPolicy::Candidate,
+        )
+    }
+    fn load_with_arrays(
+        entry: &str,
+        limits: ProjectLimits,
+        mode: parser::SourceMode,
+        allocator: &mut Allocator,
+        arrays: parser::ArraySyntaxPolicy,
+    ) -> Result<Self, LoadFailure> {
         let mut builder = SourceSetBuilder {
             entry,
             limits,
             allocator,
             mode,
+            arrays,
             project: Self {
                 sources: SourceMap::new(),
                 programs: Vec::new(),
@@ -375,6 +409,9 @@ impl ProjectSources {
                     ast::ExprKind::StructLiteral { fields, .. } => {
                         fields.len().checked_mul(size_of::<ast::FieldInit>())?
                     }
+                    ast::ExprKind::ArrayLiteral { elements } => {
+                        elements.len().checked_mul(size_of::<ast::ExprId>())?
+                    }
                     _ => 0,
                 })?;
             }
@@ -452,6 +489,7 @@ struct SourceSetBuilder<'a> {
     limits: ProjectLimits,
     allocator: &'a mut Allocator,
     mode: parser::SourceMode,
+    arrays: parser::ArraySyntaxPolicy,
     project: ProjectSources,
 }
 #[derive(Clone, Copy)]
@@ -698,8 +736,18 @@ impl SourceSetBuilder<'_> {
             .min(parser::MAX_NODES)
             .checked_sub(self.project.usage.syntax_nodes)
             .ok_or_else(|| one(overflow(origin)))?;
-        let (program, nodes) =
-            parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?;
+        let (program, nodes) = if self.arrays == parser::ArraySyntaxPolicy::Closed {
+            parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?
+        } else {
+            parser::parse_counted_with_arrays(
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                self.arrays,
+            )?
+        };
         self.project.usage.syntax_nodes =
             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
         if program.uses_project_syntax() {

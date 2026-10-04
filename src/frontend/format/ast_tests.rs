@@ -180,6 +180,16 @@ impl<'a> Fingerprint<'a> {
         }
     }
 
+    fn array_type(&mut self, array: FixedArraySyntax) {
+        let FixedArraySyntax { element, length } = array;
+        self.tag(match element {
+            ScalarTypeSyntax::Bool => "bool-element",
+            ScalarTypeSyntax::I32 => "i32-element",
+            ScalarTypeSyntax::Unit => "unit-element",
+        });
+        self.count(usize::from(length));
+    }
+
     fn ty(&mut self, ty: TypeSyntax) {
         let TypeSyntax { span, kind } = ty;
         self.span(span);
@@ -189,6 +199,15 @@ impl<'a> Fingerprint<'a> {
                 self.path(path);
             }
             TypeSyntaxKind::Unit => self.tag("unit-type"),
+            TypeSyntaxKind::Array(array) => {
+                self.tag("array-type");
+                self.array_type(array);
+            }
+            TypeSyntaxKind::ArrayReference { mutable, array } => {
+                self.tag("array-reference-type");
+                self.flag(mutable);
+                self.array_type(array);
+            }
             TypeSyntaxKind::Reference { mutable, referent } => {
                 self.tag("reference-type");
                 self.flag(mutable);
@@ -314,6 +333,22 @@ impl<'a> Fingerprint<'a> {
                 self.spelling(*base);
                 self.spelling(*field);
             }
+            ExprKind::ArrayLiteral { elements } => {
+                self.tag("array-literal");
+                self.count(elements.len());
+                for element in elements {
+                    self.expression(*element);
+                }
+            }
+            ExprKind::IndexRead { base, index } => {
+                self.tag("index-read");
+                self.spelling(*base);
+                self.expression(*index);
+            }
+            ExprKind::ArrayLength { base } => {
+                self.tag("array-length");
+                self.spelling(*base);
+            }
             ExprKind::Group(inner) => {
                 self.tag("group");
                 self.expression(*inner);
@@ -376,6 +411,16 @@ impl<'a> Fingerprint<'a> {
                 self.spelling(*base);
                 self.spelling(*field);
                 self.span(*target_span);
+                self.span(*operator_span);
+                self.expression(*value);
+            }
+            StmtKind::IndexAssign {
+                target,
+                operator_span,
+                value,
+            } => {
+                self.tag("index-assign");
+                self.expression(*target);
                 self.span(*operator_span);
                 self.expression(*value);
             }
@@ -553,11 +598,15 @@ impl<'a> Fingerprint<'a> {
 }
 
 fn parse(source: &SourceFile) -> Program {
-    parser::parse_with_mode(
+    parser::parse_counted_with_arrays(
         source,
         lexer::lex(source).expect("corpus must lex"),
         SourceMode::ProjectCandidate,
+        parser::MAX_NODES,
+        &mut crate::frontend::project::budget::Allocator::default(),
+        parser::ArraySyntaxPolicy::Enabled,
     )
+    .map(|(program, _)| program)
     .unwrap_or_else(|errors| panic!("corpus must parse: {errors:?}\n{}", source.text()))
 }
 
@@ -607,6 +656,24 @@ let value:crate::child::Pair=crate::child::Pair{left:1,right:false,};
 crate::child::consume(&value,&mut *q,crate::private_child::make());return value;}
 fn local()->(){return;}
 "#),
+    ("array-types-and-borrows", r#"
+mod absent;use crate::absent::item;
+fn types(a:[bool;0],b:[i32;0002],c:[();1],s:&[bool;0],m:&mut [i32;2])->[();0]{
+let z:[();0]=([]);let mut values=[0001,- 2,];values[(0)]=m[1]+values.len();
+sink(&values,&mut *m,&*s);return [];}
+"#),
+    ("array-syntax-only-and-multiline", r#"
+fn loose()->(){let nested=[[1],[]];let mixed=[true,(),missing(),Record{x:1},[2],];
+missing[-1];missing.len();sink([
+a[
+0
+],[
+1,
+2
+]]);let x=[/* [ ] */1,
+// next
+2,];return;}
+"#),
     ("contextual-names", r#"
 use crate::as as crate;struct crate{as:i32}fn as(self:i32)->i32{return self;}
 fn self()->(){let crate=crate{as:as(2)};let as=crate.as;crate::self::as();return;}
@@ -630,6 +697,7 @@ fn formatting_preserves_structural_ast_and_token_relative_origins() {
         let out_id = output.add(format!("formatted-{label}.ox"), formatted);
         let after = output.get(out_id);
         assert_eq!(before, fingerprint(after, &parse(after)), "{label}");
+        assert_eq!(format_source(after).unwrap(), after.text(), "{label}");
     }
 }
 
@@ -742,6 +810,15 @@ fn handwritten_corpus_reaches_every_ast_variant_and_operator() {
         "name-type",
         "unit-type",
         "reference-type",
+        "array-type",
+        "array-reference-type",
+        "bool-element",
+        "i32-element",
+        "unit-element",
+        "array-literal",
+        "index-read",
+        "array-length",
+        "index-assign",
         "value-argument",
         "borrow-argument",
         "owner",
@@ -959,4 +1036,103 @@ fn token_relative_spans_keep_intra_token_and_empty_boundaries() {
             byte: 0
         }
     );
+}
+
+#[test]
+fn normalization_detects_same_tape_array_mutations() {
+    let text = "fn f(a:&mut [i32;2],b:[bool;0])->[();0]{let mut x:[i32;2]=[1,2];x[0]=a[1];x.len();return [];}";
+    let mut map = SourceMap::new();
+    let id = map.add("array-mutations.ox".into(), text.into());
+    let source = map.get(id);
+    let expected = fingerprint(source, &parse(source));
+    let mutations: &[fn(&mut Program)] = &[
+        |p| {
+            let TypeSyntaxKind::ArrayReference { mutable, .. } =
+                &mut p.functions[0].params[0].ty.kind
+            else {
+                panic!()
+            };
+            *mutable = false;
+        },
+        |p| {
+            let TypeSyntaxKind::ArrayReference { array, .. } =
+                &mut p.functions[0].params[0].ty.kind
+            else {
+                panic!()
+            };
+            array.element = ScalarTypeSyntax::Bool;
+        },
+        |p| {
+            let TypeSyntaxKind::Array(array) = &mut p.functions[0].params[1].ty.kind else {
+                panic!()
+            };
+            array.length = 1;
+        },
+        |p| {
+            let TypeSyntaxKind::Array(array) = &mut p.functions[0].result.kind else {
+                panic!()
+            };
+            array.element = ScalarTypeSyntax::I32;
+        },
+        |p| {
+            let expression = p
+                .expressions
+                .iter_mut()
+                .find(|e| matches!(e.kind, ExprKind::ArrayLiteral { .. }))
+                .unwrap();
+            let ExprKind::ArrayLiteral { elements } = &mut expression.kind else {
+                panic!()
+            };
+            elements.reverse();
+        },
+        |p| {
+            let name = p.functions[0].params[1].name;
+            let expression = p
+                .expressions
+                .iter_mut()
+                .find(|e| matches!(e.kind, ExprKind::IndexRead { .. }))
+                .unwrap();
+            let ExprKind::IndexRead { base, .. } = &mut expression.kind else {
+                panic!()
+            };
+            *base = name;
+        },
+        |p| {
+            let mut indices = p.expressions.iter_mut().filter_map(|e| match &mut e.kind {
+                ExprKind::IndexRead { index, .. } => Some(index),
+                _ => None,
+            });
+            std::mem::swap(indices.next().unwrap(), indices.next().unwrap());
+        },
+        |p| {
+            let name = p.functions[0].params[1].name;
+            let expression = p
+                .expressions
+                .iter_mut()
+                .find(|e| matches!(e.kind, ExprKind::ArrayLength { .. }))
+                .unwrap();
+            let ExprKind::ArrayLength { base } = &mut expression.kind else {
+                panic!()
+            };
+            *base = name;
+        },
+        |p| {
+            let body = p.functions[0].body.0;
+            let StmtKind::IndexAssign { target, value, .. } =
+                &mut p.functions[0].blocks[body].body[1].kind
+            else {
+                panic!()
+            };
+            std::mem::swap(target, value);
+        },
+    ];
+    for (index, mutation) in mutations.iter().enumerate() {
+        let mut changed = parse(source);
+        mutation(&mut changed);
+        assert_ne!(
+            expected,
+            fingerprint(source, &changed),
+            "array mutation {index}"
+        );
+    }
 }

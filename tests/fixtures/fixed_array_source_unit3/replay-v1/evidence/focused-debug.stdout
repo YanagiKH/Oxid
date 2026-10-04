@@ -1,0 +1,61 @@
+
+running 17 tests
+test frontend::oir::owned::source::tests::unit3a_array_ast_stops_before_owned_hir_execution ... ok
+test frontend::oir::owned::source::tests::unit3a_long_nonstarter_uses_bounded_actual_parser_allocations ... nonstarter candidate=true allocation_calls=12 retained=1568 peak=3272
+nonstarter candidate=false allocation_calls=9 retained=126622 peak=127270
+ok
+test frontend::oir::owned::source::tests::unit3a_unchanged_hir_enclosing_layouts ... layout Expr 88
+layout ExprKind 64
+layout Stmt 144
+layout StmtKind 120
+layout Binding 72
+layout Signature 64
+layout Function 112
+layout Option<Expr> 88
+layout Option<Stmt> 144
+layout Option<Binding> 72
+layout Vec<Expr> 24
+layout Vec<Stmt> 24
+layout Vec<Binding> 24
+ok
+test frontend::parser::array_syntax_tests::unit3a_allocator_request_counter_overflow_precedes_reservation ... ok
+test frontend::parser::array_syntax_tests::unit3a_array_lengths_are_bounded_without_placeholder_nodes ... ok
+test frontend::parser::array_syntax_tests::unit3a_flat_children_preserve_tree_height_limit ... ok
+test frontend::parser::array_syntax_tests::unit3a_literal_limits_reservations_and_tree_height_are_bounded ... ok
+test frontend::parser::array_syntax_tests::unit3a_new_ast_edges_spans_and_descriptors_fail_closed_when_corrupted ... ok
+test frontend::parser::array_syntax_tests::unit3a_nonstarter_diagnostic_is_bounded_without_changing_public_formatting ... ok
+test frontend::parser::array_syntax_tests::unit3a_public_token_tape_and_rejections_stay_closed ... ok
+test frontend::parser::array_syntax_tests::unit3a_real_ast_retains_target_once_and_original_origins ... ok
+test frontend::parser::array_syntax_tests::unit3a_reserve_failure_drops_candidate_without_partial_ast ... ok
+test frontend::parser::array_syntax_tests::unit3a_structural_queries_are_checked_without_execution ... ok
+test frontend::project::array_syntax_tests::unit3a_actual_literal_elements_are_inventoried_with_target_wrappers ... ok
+test frontend::project::array_syntax_tests::unit3a_both_selectors_cover_every_form_and_ignore_comment_text ... ok
+test frontend::project::array_syntax_tests::unit3a_child_only_syntax_keeps_cumulative_source_token_node_admission ... ok
+test frontend::project::array_syntax_tests::unit3a_remeasure_enclosing_rows_and_disjoint_ast_envelope ... layout ast::Program 248
+layout ast::Function 200
+layout ast::Param 88
+layout ast::TypeSyntax 64
+layout ast::TypeSyntaxKind 40
+layout ast::FixedArraySyntax 4
+layout ast::ScalarTypeSyntax 1
+layout Option<ast::TypeSyntax> 64
+layout ast::Expr 88
+layout ast::ExprKind 64
+layout ast::ExprId 8
+layout Vec<ast::ExprId> 24
+layout Option<ast::Expr> 88
+layout ast::Stmt 136
+layout ast::StmtKind 112
+layout ast::Argument 88
+layout ast::BodyBlock 72
+layout ProjectSources 176
+layout SourceSetBuilder<'_> 296
+resource nodes=100 ast_bytes=28800 validation_visits=2804
+resource nodes=1027 ast_bytes=98816 validation_visits=8235
+resource nodes=14 ast_bytes=1792 validation_visits=139
+resource nodes=3 ast_bytes=464 validation_visits=82
+resource nodes=10 ast_bytes=1336 validation_visits=113
+ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 770 filtered out; finished in 0.02s
+

@@ -1,0 +1,85 @@
+{
+  "schema": "oxid-independent-array-lowering-public-checkpoint-v1",
+  "files": {
+    "README.md": {
+      "bytes": 4068,
+      "sha256": "209315e25159d333b9ccbcacd14043da40330c08a94d531b4c5c6e8428613e42"
+    },
+    "authority/checkpoint-01-correction-1/correction.json": {
+      "bytes": 2455,
+      "sha256": "9b16217f35d2399926d932a234b112334e0ead1fa2773f650c9f59777247c0b9"
+    },
+    "authority/checkpoint-01-correction-2/STORAGE-IDENTITIES.md": {
+      "bytes": 1035,
+      "sha256": "bb1c6d0b0d33e0e09d63fd575ced6ff42f0ef5c686cc3da641f4060de4a31c36"
+    },
+    "authority/checkpoint-01-correction-2/correction.json": {
+      "bytes": 4690,
+      "sha256": "deed466acb14f0a660ab74c4ac4af3af63d16e9484b578c15df5c9750b7eb591"
+    },
+    "authority/checkpoint-01/fixtures/grouped-complete-access-and-index/main.ox": {
+      "bytes": 86,
+      "sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36"
+    },
+    "authority/checkpoint-01/fixtures/index-read-bounds-after-effect/main.ox": {
+      "bytes": 138,
+      "sha256": "0d3b0c5467fa5c9ddc52e5f3e7cabc4c8f7a163bb98212a961cf7c2dfb0301af"
+    },
+    "authority/checkpoint-01/fixtures/rhs-bounds-before-index/main.ox": {
+      "bytes": 135,
+      "sha256": "7041d2e831032b8d4da3152f9fad76f7590752c02dacbfaa41091580b1b975b6"
+    },
+    "authority/checkpoint-01/fixtures/rhs-snapshot-final-bounds-failure/main.ox": {
+      "bytes": 135,
+      "sha256": "129019a7bf2994820e5c403033b99dcfddbd74933361070d6a631fcf57860f93"
+    },
+    "authority/checkpoint-01/fixtures/rhs-snapshot-success/main.ox": {
+      "bytes": 135,
+      "sha256": "7455c6819f09a3baf2d0162c2085d148e97d27558ded38dbb94f1c1dacf16c34"
+    },
+    "authority/checkpoint-01/freeze-manifest.json": {
+      "bytes": 2433,
+      "sha256": "a40c00bc49a4415dad96300826a1c2d4f699e2c3777e461f2c472536938a579f"
+    },
+    "authority/checkpoint-01/inputs.json": {
+      "bytes": 1480,
+      "sha256": "cdb1f842f562c617376096485a3cd3e6ceeeb47ec8ffe0847f55ba036085aa46"
+    },
+    "authority/checkpoint-01/models/grouped-complete-access-and-index.json": {
+      "bytes": 46215,
+      "sha256": "f2b54252009ea195cbb26b5127541b4227e08c305d11d781f81a7c12a611dd1e"
+    },
+    "authority/checkpoint-01/models/index-read-bounds-after-effect.json": {
+      "bytes": 58861,
+      "sha256": "82c5fa540178d2b688f6eaa80d8479e9b832990a11a91167f5a44ade9d995bdc"
+    },
+    "authority/checkpoint-01/models/rhs-bounds-before-index.json": {
+      "bytes": 44909,
+      "sha256": "845a5984a5224e2d00f1d13f35918592eca742c1fcbaf066de326fe82e6a0102"
+    },
+    "authority/checkpoint-01/models/rhs-snapshot-final-bounds-failure.json": {
+      "bytes": 58668,
+      "sha256": "c8653817b912cb09717a84294fd15e62d4bfcbf0750427f385924cb0617ac88e"
+    },
+    "authority/checkpoint-01/models/rhs-snapshot-success.json": {
+      "bytes": 65223,
+      "sha256": "03cac786ed4a82d57b1b47fb3f56d5ff9e7874d9a64f99491e418f0d4d964b69"
+    },
+    "authority/checkpoint-01/summary.json": {
+      "bytes": 10716,
+      "sha256": "6988d3510417f63cff193ae52a0fe513954bff9c0d146547071fe780b8c642b2"
+    },
+    "lineage.json": {
+      "bytes": 3147,
+      "sha256": "50867916a46daf4e51c9ee4cff61079887bdcae89203e80723f0c815b05cd64a"
+    },
+    "model_generator.py": {
+      "bytes": 18864,
+      "sha256": "45ac59cd410d667fa538dd443181de1689087113369215868d5a80180d64f62d"
+    },
+    "replay.py": {
+      "bytes": 13100,
+      "sha256": "39059bdc7a8ada5015856cbf7f2b8e6127786c33cde4eb0b8936842edcc0c117"
+    }
+  }
+}

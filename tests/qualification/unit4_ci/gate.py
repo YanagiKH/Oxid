@@ -257,7 +257,7 @@ def prepare_host(args, repo, output, provenance, measured, driver):
     shutil.copytree(repo / retained, source_root / retained)
     driver.stage('03-lifecycle-preparation', [repo / q.PUBLIC / 'build.py', 'prepare-observer', '--source-root', source_root,
                  '--manifest', repo / q.SOURCE / 'current-source.json', '--observer-patch', repo / q.OBSERVER_PATCH,
-                 '--observer-patch-sha256', '2d652a3a39240c32f6dce38e6d61710399e028cdecc13b5d0f159c550994de56', '--out', output / 'observer-source'], 120)
+                 '--observer-patch-sha256', 'e5a5673475a6b858672c37a2798380e65b8bc7e56e1cdbd7752be9e60593f18d', '--out', output / 'observer-source'], 120)
     return roots, contracts, plan
 
 

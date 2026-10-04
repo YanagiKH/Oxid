@@ -1,0 +1,12 @@
+{
+  "status": "ADOPTED_PROSPECTIVE_CONTRACT_NO_EXECUTION",
+  "date": "2026-10-04",
+  "base_plan_sha256": "a67c595dfc8799ee38ffd6f204910df10c551e4170a01cbc2ac2884849cc00df",
+  "review_sha256": "11ce5b852c44347105580f64809d829d0971dbc3f48b03cdf3c0fd40f1210883",
+  "source_controls_sha256": "95e97255a4e5bd97dcdf1f49f35fc4b43f78134c1d8f41b7819c9078d47f6807",
+  "plan_v2_sha256": "a108f41bbb2ef46987a6b3e328e52ceb7a87e43313cedd8e0cc07f993ce4495a",
+  "diagnostic_cases": 34,
+  "semantic_counterexamples": 2,
+  "production_or_gate_changes": false,
+  "scope": "Read precedence, excluded-token/full-target anchors and narrow empty-local diagnostic context accepted for future independently frozen oracles. All implementation/resource/consumer/host obligations remain."
+}

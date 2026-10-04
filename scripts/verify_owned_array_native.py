@@ -1274,7 +1274,7 @@ import importlib.util
 INDEPENDENT_TOOLS = ("llvm-as", "opt", "clang", "ld.lld")
 INDEPENDENT_PHASES = ("prepare", "build", "ordinary", "native", "physical", "verify")
 INDEPENDENT_SEALS = tuple("phase-" + phase + "-artifacts.json" for phase in INDEPENDENT_PHASES[1:])
-INDEPENDENT_RUNNER_SHA = "7fc66c993ae6c0915daf352e8a461f4112fb6130b10619c223600b7f64457d4b"
+INDEPENDENT_RUNNER_SHA = "41cecd16ff19ffbce56c97b5315bf95f5af6c7e6f7cea13cf15d053dc35c4f04"
 INDEPENDENT_INPUT_SHA = "3a904929eb7572bad6430f7ab0ea81c3f68625856621041fa2673e4629e1e290"
 INDEPENDENT_FIXTURE = "tests/fixtures/fixed_array_unit2d_independent"
 
@@ -1527,6 +1527,7 @@ def independent_body(root, *, head, tree, profile, tools, schema, checkout):
             and binding["input_checkout"] == str(checkout)
             and binding["checkout_clean"] is True and binding["runner_sha256"] == INDEPENDENT_RUNNER_SHA,
             "independent source/head/profile/run identity differs")
+    schema.assert_current_module_binding(binding)
     content = {key: value for key, value in binding.items() if key not in ("content_id", "marker", "prepared")}
     content_id = sha256(json.dumps(content, sort_keys=True, separators=(",", ":")).encode())
     require(binding["content_id"] == content_id and binding["marker"] == "independent_unit2d_replay_marker_" + content_id,
@@ -2081,6 +2082,7 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
             launch = "independent/" + profile + "-invocation/"
             state = document(prefix + "state.json")
             source_binding = document(prefix + "evidence/source-binding.json")
+            schema.assert_current_module_binding(source_binding)
             binary = document(prefix + "evidence/binary.json")
             verified = document(prefix + "evidence/verified.json")
             result = document(launch + "result.json")

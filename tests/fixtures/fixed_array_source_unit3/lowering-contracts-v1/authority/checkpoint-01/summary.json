@@ -1,0 +1,412 @@
+{
+  "schema": "oxid-independent-lowering-checkpoint-01",
+  "commit": "bb2b5d7c39d5940cbbf959444646c2dacb8edcb4",
+  "tree": "a5398061eecc0e35726b648bf7edcd56434e1337",
+  "no_oxid_run": true,
+  "cases": [
+    {
+      "name": "grouped-complete-access-and-index",
+      "source": {
+        "path": "main.ox",
+        "file": 0,
+        "bytes": 86,
+        "sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36",
+        "reused_path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox"
+      },
+      "terminal_fuel": 51,
+      "functions": [
+        {
+          "name": "main",
+          "counts": {
+            "locals": 9,
+            "places": 0,
+            "owners": 2,
+            "references": 0,
+            "parameters": 0,
+            "calls": 0,
+            "loans": 0,
+            "blocks": 1,
+            "edges": 0,
+            "statements": 16,
+            "merges": 0,
+            "descriptor_arguments": 0,
+            "preparations": 0,
+            "constructed_fields": 0,
+            "constructed_elements": 2,
+            "diagnostic_origins": 17,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 9,
+            "A": 0,
+            "W": 4,
+            "O": 2,
+            "R": 0,
+            "L": 0,
+            "C": 0,
+            "X": 21,
+            "root_activation_cost": 22,
+            "return_scalar_cost": 5,
+            "owner_widths": [
+              2,
+              2
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "rhs-snapshot-success",
+      "source": {
+        "path": "main.ox",
+        "file": 0,
+        "bytes": 135,
+        "sha256": "7455c6819f09a3baf2d0162c2085d148e97d27558ded38dbb94f1c1dacf16c34",
+        "reused_path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/rhs-snapshot-success/main.ox"
+      },
+      "terminal_fuel": 74,
+      "functions": [
+        {
+          "name": "touch",
+          "counts": {
+            "locals": 3,
+            "places": 0,
+            "owners": 0,
+            "references": 1,
+            "parameters": 1,
+            "calls": 0,
+            "loans": 0,
+            "blocks": 1,
+            "edges": 0,
+            "statements": 4,
+            "merges": 0,
+            "descriptor_arguments": 0,
+            "preparations": 0,
+            "constructed_fields": 0,
+            "constructed_elements": 0,
+            "diagnostic_origins": 5,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 3,
+            "A": 0,
+            "W": 0,
+            "O": 0,
+            "R": 1,
+            "L": 0,
+            "C": 0,
+            "X": 11,
+            "root_activation_cost": 12,
+            "return_scalar_cost": 2,
+            "owner_widths": []
+          }
+        },
+        {
+          "name": "main",
+          "counts": {
+            "locals": 6,
+            "places": 0,
+            "owners": 2,
+            "references": 0,
+            "parameters": 0,
+            "calls": 1,
+            "loans": 1,
+            "blocks": 2,
+            "edges": 1,
+            "statements": 14,
+            "merges": 0,
+            "descriptor_arguments": 1,
+            "preparations": 1,
+            "constructed_fields": 0,
+            "constructed_elements": 1,
+            "diagnostic_origins": 16,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 6,
+            "A": 1,
+            "W": 2,
+            "O": 2,
+            "R": 0,
+            "L": 1,
+            "C": 1,
+            "X": 31,
+            "root_activation_cost": 32,
+            "return_scalar_cost": 5,
+            "owner_widths": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "rhs-snapshot-final-bounds-failure",
+      "source": {
+        "path": "main.ox",
+        "file": 0,
+        "bytes": 135,
+        "sha256": "129019a7bf2994820e5c403033b99dcfddbd74933361070d6a631fcf57860f93",
+        "reused_path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/rhs-snapshot-final-bounds-failure/main.ox"
+      },
+      "terminal_fuel": 65,
+      "functions": [
+        {
+          "name": "touch",
+          "counts": {
+            "locals": 3,
+            "places": 0,
+            "owners": 0,
+            "references": 1,
+            "parameters": 1,
+            "calls": 0,
+            "loans": 0,
+            "blocks": 1,
+            "edges": 0,
+            "statements": 4,
+            "merges": 0,
+            "descriptor_arguments": 0,
+            "preparations": 0,
+            "constructed_fields": 0,
+            "constructed_elements": 0,
+            "diagnostic_origins": 5,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 3,
+            "A": 0,
+            "W": 0,
+            "O": 0,
+            "R": 1,
+            "L": 0,
+            "C": 0,
+            "X": 11,
+            "root_activation_cost": 12,
+            "return_scalar_cost": 2,
+            "owner_widths": []
+          }
+        },
+        {
+          "name": "main",
+          "counts": {
+            "locals": 6,
+            "places": 0,
+            "owners": 2,
+            "references": 0,
+            "parameters": 0,
+            "calls": 1,
+            "loans": 1,
+            "blocks": 2,
+            "edges": 1,
+            "statements": 14,
+            "merges": 0,
+            "descriptor_arguments": 1,
+            "preparations": 1,
+            "constructed_fields": 0,
+            "constructed_elements": 1,
+            "diagnostic_origins": 16,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 6,
+            "A": 1,
+            "W": 2,
+            "O": 2,
+            "R": 0,
+            "L": 1,
+            "C": 1,
+            "X": 31,
+            "root_activation_cost": 32,
+            "return_scalar_cost": 5,
+            "owner_widths": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "rhs-bounds-before-index",
+      "source": {
+        "path": "main.ox",
+        "file": 0,
+        "bytes": 135,
+        "sha256": "7041d2e831032b8d4da3152f9fad76f7590752c02dacbfaa41091580b1b975b6",
+        "reused_path": null
+      },
+      "terminal_fuel": 43,
+      "functions": [
+        {
+          "name": "touch",
+          "counts": {
+            "locals": 3,
+            "places": 0,
+            "owners": 0,
+            "references": 1,
+            "parameters": 1,
+            "calls": 0,
+            "loans": 0,
+            "blocks": 1,
+            "edges": 0,
+            "statements": 4,
+            "merges": 0,
+            "descriptor_arguments": 0,
+            "preparations": 0,
+            "constructed_fields": 0,
+            "constructed_elements": 0,
+            "diagnostic_origins": 5,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 3,
+            "A": 0,
+            "W": 0,
+            "O": 0,
+            "R": 1,
+            "L": 0,
+            "C": 0,
+            "X": 11,
+            "root_activation_cost": 12,
+            "return_scalar_cost": 2,
+            "owner_widths": []
+          }
+        },
+        {
+          "name": "main",
+          "counts": {
+            "locals": 6,
+            "places": 0,
+            "owners": 2,
+            "references": 0,
+            "parameters": 0,
+            "calls": 1,
+            "loans": 1,
+            "blocks": 2,
+            "edges": 1,
+            "statements": 14,
+            "merges": 0,
+            "descriptor_arguments": 1,
+            "preparations": 1,
+            "constructed_fields": 0,
+            "constructed_elements": 1,
+            "diagnostic_origins": 16,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 6,
+            "A": 1,
+            "W": 2,
+            "O": 2,
+            "R": 0,
+            "L": 1,
+            "C": 1,
+            "X": 31,
+            "root_activation_cost": 32,
+            "return_scalar_cost": 5,
+            "owner_widths": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "index-read-bounds-after-effect",
+      "source": {
+        "path": "main.ox",
+        "file": 0,
+        "bytes": 138,
+        "sha256": "0d3b0c5467fa5c9ddc52e5f3e7cabc4c8f7a163bb98212a961cf7c2dfb0301af",
+        "reused_path": null
+      },
+      "terminal_fuel": 64,
+      "functions": [
+        {
+          "name": "touch",
+          "counts": {
+            "locals": 4,
+            "places": 0,
+            "owners": 0,
+            "references": 1,
+            "parameters": 1,
+            "calls": 0,
+            "loans": 0,
+            "blocks": 1,
+            "edges": 0,
+            "statements": 5,
+            "merges": 0,
+            "descriptor_arguments": 0,
+            "preparations": 0,
+            "constructed_fields": 0,
+            "constructed_elements": 0,
+            "diagnostic_origins": 6,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 4,
+            "A": 0,
+            "W": 0,
+            "O": 0,
+            "R": 1,
+            "L": 0,
+            "C": 0,
+            "X": 12,
+            "root_activation_cost": 13,
+            "return_scalar_cost": 2,
+            "owner_widths": []
+          }
+        },
+        {
+          "name": "main",
+          "counts": {
+            "locals": 6,
+            "places": 0,
+            "owners": 2,
+            "references": 0,
+            "parameters": 0,
+            "calls": 1,
+            "loans": 1,
+            "blocks": 2,
+            "edges": 1,
+            "statements": 14,
+            "merges": 0,
+            "descriptor_arguments": 1,
+            "preparations": 1,
+            "constructed_fields": 0,
+            "constructed_elements": 1,
+            "diagnostic_origins": 16,
+            "max_constructor_fields": 0,
+            "ownership_active": true
+          },
+          "frame": {
+            "V": 6,
+            "A": 1,
+            "W": 2,
+            "O": 2,
+            "R": 0,
+            "L": 1,
+            "C": 1,
+            "X": 31,
+            "root_activation_cost": 32,
+            "return_scalar_cost": 5,
+            "owner_widths": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

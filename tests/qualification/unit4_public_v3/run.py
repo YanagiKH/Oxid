@@ -19,7 +19,7 @@ from predecessors import Predecessors, original_generator_check
 
 ADAPTER_ROOT = Path(__file__).resolve().parent
 
-PACKAGE_FILES = {'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
+PACKAGE_FILES = {'observer-combined-v1.patch', 'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
 
 def adapter_identity():
     paths = sorted(ADAPTER_ROOT.iterdir(), key=lambda path: path.name)

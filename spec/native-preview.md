@@ -63,7 +63,14 @@ Arithmetic follows the ordered, checked-overflow semantics in
 follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports scalar-field or empty nominal structs,
 whole-value transfers/replacement, scalar field access, owned helper returns and
 explicit call-only shared/exclusive loans and reborrows through its sealed
-witness. There are no source I/O operations, address values, heap containers,
+witness. Fixed scalar arrays also support complete construction/transfers,
+checked signed indexing and `len()` under [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).
+Their private positive storage includes initialized zero-length sentinels; no
+array ABI, element references or heap allocation is exposed. Indexed writes keep
+RHS-before-index snapshots, and guarded access charges fuel before bounds.
+Invalid executed indexes emit the exact reference E0606/oir-owned-run diagnostic,
+including source origin, with empty stdout and exit 1. No element pointer is
+formed before the signed bounds check succeeds. There are no source I/O operations, address values, heap containers,
 indirect calls, module initialization or implicit legacy adapters in this subset.
 Bounded declaration-only modules, direct imports and visibility are resolved before
 emission, as specified by [RFC 0015](../rfcs/0015-bounded-typed-projects.md).
@@ -141,7 +148,8 @@ requires:
 
 For each function let S be scalar locals plus mutable places, A all call argument
 descriptors, O all owners, R incoming references, L loans, C calls, and
-P the sum of `max(1, record_field_count)` over every owner. B is the aligned
+P the sum of owner widths: `max(1, record_field_count)` for each record and
+`max(1, N)` for each fixed array, including empty and unit arrays. B is the aligned
 owner arena including parameter, local, temporary, staged-argument and result
 storage, with inter-owner padding. On the qualified x86_64 representation:
 
@@ -154,7 +162,10 @@ Byte sums/path sums use Dnative and add one 8-byte wrapper fuel cell when any
 function has cyclic cost. The cell is added once to each whole-module/path
 bound, not once per function. Scalar field layout is declaration order, bool
 and unit 1-byte size/alignment, i32 4-byte size/alignment, with checked natural
-padding. An empty struct has one private identity byte. Since B ≤ 4P, Dnative
+padding. An empty struct has one private identity byte. Arrays use element
+stride 1 for bool/unit and 4 for i32, with positive size
+`align_up(max(1, N * stride), alignment)`. Zero-array sentinel bytes and unit
+storage are initialized and never exposed as invalid elements. Since B ≤ 4P, Dnative
 ≤ 8X on this representation; the existing cell ceiling bounds total explicit
 native storage by 65,544 bytes including the guarded fuel cell. The separate
 1 MiB byte checks remain as defenses against representation changes. These
@@ -173,8 +184,8 @@ rather than the scalar-only call/root/return formulas below.
 
 The ownership emitter uses entry-prologue owner byte arenas, i64 scalar/snapshot
 cells and pointer cells for incoming references and active loans. Incoming owned
-arguments are copied field-by-field into independent callee storage; owned
-results use caller-owned output storage and are transferred before callee
+arguments are transferred field-by-field for records and element-by-element for
+arrays into independent callee storage; owned results use caller-owned output storage and are transferred before callee
 return. Staging backing storage remains allocated until return even after its
 logical ownership is consumed. Shared reference pointers may alias. The emitter
 adds no `noalias`, `inbounds`, `nonnull`, `sret`, `byval` or lifetime assumptions.
@@ -338,3 +349,9 @@ preactivation candidate results.
 Linux x86_64, pinned LLVM 19.1.7 and O0 remain the only native qualification
 target; O2, LTO, other targets, heap/drop safety and a completed roadmap milestone
 are outside this increment.
+
+The [fixed-array public-route evidence](../docs/architecture/fixed-array-public-validation.md)
+records real source-file CLI compilation and source-free native execution.
+Array source length 0..1024 does not override stricter native frame, local, IR,
+call-graph or fuel admission. The three-module samples pilot is also covered;
+its complete sequence is checked separately from its result checksum.

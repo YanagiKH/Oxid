@@ -1,0 +1,1542 @@
+{
+  "cases": [
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [],
+      "id": "guard-empty",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "scalar",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 0,
+          "end_column": 1,
+          "end_line": 1,
+          "file": 0,
+          "line": 1,
+          "start": 0,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:1:1\n",
+        "human_sha256": "481bc2870710a5fabe26f80799ee1e772c2a97689899f2aa71452d6b20a8c42d",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":0,\"end\":0,\"line\":1,\"column\":1,\"end_line\":1,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "83b020800d6e4db5ea1ae3d3b41f8dfc8edcb050b319be274c02903570e7a482",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 0,
+            "end_column": 1,
+            "end_line": 1,
+            "file_id": 0,
+            "line": 1,
+            "path": "main.ox",
+            "start": 0
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [],
+      "id": "guard-record-only",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 20,
+          "end_column": 1,
+          "end_line": 2,
+          "file": 0,
+          "line": 2,
+          "start": 20,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:1\n",
+        "human_sha256": "8d47e105a92d29bd8f521868cb9de78e401df52a40e13638221b519dc8266adf",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":20,\"end\":20,\"line\":2,\"column\":1,\"end_line\":2,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "49ec8c15648f2945e04d41d6a4ada95542175bbc50811c09c992a2ace5677297",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 20,
+            "end_column": 1,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "main.ox",
+            "start": 20
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 7,
+              "end_column": 8,
+              "end_line": 1,
+              "file": 0,
+              "line": 1,
+              "start": 3,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:1:4\n",
+            "human_sha256": "7763448fd8415c74b32c0ce9b69acdf5493341b7ff4a79ca3253e28b6f0d529a",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":3,\"end\":7,\"line\":1,\"column\":4,\"end_line\":1,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "d23d52a345d36dd45d31be80e576dcd7bbb977bb95b3d5b9a6285e3f3b2eee24",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 7,
+                "end_column": 8,
+                "end_line": 1,
+                "file_id": 0,
+                "line": 1,
+                "path": "main.ox",
+                "start": 3
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 7,
+            "end_column": 8,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 3,
+            "text": "main"
+          }
+        }
+      ],
+      "id": "guard-array-free",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "scalar",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 31,
+          "end_column": 1,
+          "end_line": 2,
+          "file": 0,
+          "line": 2,
+          "start": 31,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:1\n",
+        "human_sha256": "8d47e105a92d29bd8f521868cb9de78e401df52a40e13638221b519dc8266adf",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":31,\"end\":31,\"line\":2,\"column\":1,\"end_line\":2,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "54444971b4802b09f6c91430b194c70e41dd4b92830e5dc3eaf60fadc0e6780d",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 31,
+            "end_column": 1,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "main.ox",
+            "start": 31
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [],
+      "id": "guard-project-root-eof",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 11,
+          "end_column": 1,
+          "end_line": 2,
+          "file": 0,
+          "line": 2,
+          "start": 11,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:1\n",
+        "human_sha256": "8d47e105a92d29bd8f521868cb9de78e401df52a40e13638221b519dc8266adf",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":11,\"end\":11,\"line\":2,\"column\":1,\"end_line\":2,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "f43bc31ff87f7df4c8375935224eef65a1f62d10da96e183321f98a4dd39e54d",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 11,
+            "end_column": 1,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "main.ox",
+            "start": 11
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 28,
+              "end_column": 9,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 23,
+              "text": "probe"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "probe",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:4\n",
+            "human_sha256": "afccf333392e60894df275d1fd2314dddfd8afbe78fa5bea2f488a7867672447",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":23,\"end\":28,\"line\":2,\"column\":4,\"end_line\":2,\"end_column\":9},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "4a9c6bcfe92937d1db4e150434ca974d2855a27b51a02a786dad3cb4ce2a343f",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 28,
+                "end_column": 9,
+                "end_line": 2,
+                "file_id": 0,
+                "line": 2,
+                "path": "main.ox",
+                "start": 23
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 28,
+            "end_column": 9,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 23,
+            "text": "probe"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 115,
+              "end_column": 8,
+              "end_line": 3,
+              "file": 0,
+              "line": 3,
+              "start": 111,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 1,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:3:4\n",
+            "human_sha256": "1ddb991bcf32b4b3d99d5c18622ac6a09370917f76cc0b3726de3511ed8823b6",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":111,\"end\":115,\"line\":3,\"column\":4,\"end_line\":3,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "5076ed5697971ca695cbbc6c9aed7c5e362dd4a58d43b08bdb05aeeb44e3b984",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 115,
+                "end_column": 8,
+                "end_line": 3,
+                "file_id": 0,
+                "line": 3,
+                "path": "main.ox",
+                "start": 111
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 115,
+            "end_column": 8,
+            "end_line": 3,
+            "file": 0,
+            "line": 3,
+            "start": 111,
+            "text": "main"
+          }
+        }
+      ],
+      "id": "structural-identities-pairwise-distinct",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 139,
+          "end_column": 1,
+          "end_line": 4,
+          "file": 0,
+          "line": 4,
+          "start": 139,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:4:1\n",
+        "human_sha256": "83bac853a6606c6061a6c687e94d35e6dcaef813ce05598a4de146cd59fc363a",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":139,\"end\":139,\"line\":4,\"column\":1,\"end_line\":4,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "bc4ddf834cc9352aa3ccfe38b87626e1c8e8bca44a5d5cbe5f1b49e4683291d9",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 139,
+            "end_column": 1,
+            "end_line": 4,
+            "file_id": 0,
+            "line": 4,
+            "path": "main.ox",
+            "start": 139
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 18,
+              "end_column": 8,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 14,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:4\n",
+            "human_sha256": "afccf333392e60894df275d1fd2314dddfd8afbe78fa5bea2f488a7867672447",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":14,\"end\":18,\"line\":2,\"column\":4,\"end_line\":2,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "d33e8d32d578533b7edbfb229e5a2f492f533260d2c2c6149f9406c526bc284b",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 18,
+                "end_column": 8,
+                "end_line": 2,
+                "file_id": 0,
+                "line": 2,
+                "path": "main.ox",
+                "start": 14
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 18,
+            "end_column": 8,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 14,
+            "text": "main"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 9,
+              "end_column": 10,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 3,
+              "text": "unused"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 1,
+          "name": "unused",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> child.ox:1:4\n",
+            "human_sha256": "4f6a561e1bd2b275c605c898a38dae5e8f326db7492be1587aec5472a1e1d4d2",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":3,\"end\":9,\"line\":1,\"column\":4,\"end_line\":1,\"end_column\":10},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "5d6cb3fb7115fe0dfe8759408def69ef048cd69f73ec509a194b5a2bdfbd56ce",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 9,
+                "end_column": 10,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 3
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 9,
+            "end_column": 10,
+            "end_line": 1,
+            "file": 1,
+            "line": 1,
+            "start": 3,
+            "text": "unused"
+          }
+        }
+      ],
+      "id": "child-route-parameter",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 42,
+          "end_column": 1,
+          "end_line": 3,
+          "file": 0,
+          "line": 3,
+          "start": 42,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:3:1\n",
+        "human_sha256": "d56ad42f0fe73e1af6ecfbbe8bcfdfafec670cb6d2f4972eb6b7cde9165302e6",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":42,\"end\":42,\"line\":3,\"column\":1,\"end_line\":3,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "2568133d67c51f1f19225d511e1d8c51ae73efd5c42eb5358465ea29a1d8d193",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 42,
+            "end_column": 1,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "main.ox",
+            "start": 42
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 18,
+              "end_column": 8,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 14,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:4\n",
+            "human_sha256": "afccf333392e60894df275d1fd2314dddfd8afbe78fa5bea2f488a7867672447",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":14,\"end\":18,\"line\":2,\"column\":4,\"end_line\":2,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "d33e8d32d578533b7edbfb229e5a2f492f533260d2c2c6149f9406c526bc284b",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 18,
+                "end_column": 8,
+                "end_line": 2,
+                "file_id": 0,
+                "line": 2,
+                "path": "main.ox",
+                "start": 14
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 18,
+            "end_column": 8,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 14,
+            "text": "main"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 9,
+              "end_column": 10,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 3,
+              "text": "unused"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 1,
+          "name": "unused",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> child.ox:1:4\n",
+            "human_sha256": "4f6a561e1bd2b275c605c898a38dae5e8f326db7492be1587aec5472a1e1d4d2",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":3,\"end\":9,\"line\":1,\"column\":4,\"end_line\":1,\"end_column\":10},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "5d6cb3fb7115fe0dfe8759408def69ef048cd69f73ec509a194b5a2bdfbd56ce",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 9,
+                "end_column": 10,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 3
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 9,
+            "end_column": 10,
+            "end_line": 1,
+            "file": 1,
+            "line": 1,
+            "start": 3,
+            "text": "unused"
+          }
+        }
+      ],
+      "id": "child-route-shared-parameter",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 42,
+          "end_column": 1,
+          "end_line": 3,
+          "file": 0,
+          "line": 3,
+          "start": 42,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:3:1\n",
+        "human_sha256": "d56ad42f0fe73e1af6ecfbbe8bcfdfafec670cb6d2f4972eb6b7cde9165302e6",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":42,\"end\":42,\"line\":3,\"column\":1,\"end_line\":3,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "2568133d67c51f1f19225d511e1d8c51ae73efd5c42eb5358465ea29a1d8d193",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 42,
+            "end_column": 1,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "main.ox",
+            "start": 42
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 18,
+              "end_column": 8,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 14,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:4\n",
+            "human_sha256": "afccf333392e60894df275d1fd2314dddfd8afbe78fa5bea2f488a7867672447",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":14,\"end\":18,\"line\":2,\"column\":4,\"end_line\":2,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "d33e8d32d578533b7edbfb229e5a2f492f533260d2c2c6149f9406c526bc284b",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 18,
+                "end_column": 8,
+                "end_line": 2,
+                "file_id": 0,
+                "line": 2,
+                "path": "main.ox",
+                "start": 14
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 18,
+            "end_column": 8,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 14,
+            "text": "main"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 9,
+              "end_column": 10,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 3,
+              "text": "unused"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 1,
+          "name": "unused",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> child.ox:1:4\n",
+            "human_sha256": "4f6a561e1bd2b275c605c898a38dae5e8f326db7492be1587aec5472a1e1d4d2",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":3,\"end\":9,\"line\":1,\"column\":4,\"end_line\":1,\"end_column\":10},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "5d6cb3fb7115fe0dfe8759408def69ef048cd69f73ec509a194b5a2bdfbd56ce",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 9,
+                "end_column": 10,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 3
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 9,
+            "end_column": 10,
+            "end_line": 1,
+            "file": 1,
+            "line": 1,
+            "start": 3,
+            "text": "unused"
+          }
+        }
+      ],
+      "id": "child-route-exclusive-parameter",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 42,
+          "end_column": 1,
+          "end_line": 3,
+          "file": 0,
+          "line": 3,
+          "start": 42,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:3:1\n",
+        "human_sha256": "d56ad42f0fe73e1af6ecfbbe8bcfdfafec670cb6d2f4972eb6b7cde9165302e6",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":42,\"end\":42,\"line\":3,\"column\":1,\"end_line\":3,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "2568133d67c51f1f19225d511e1d8c51ae73efd5c42eb5358465ea29a1d8d193",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 42,
+            "end_column": 1,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "main.ox",
+            "start": 42
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 18,
+              "end_column": 8,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 14,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:4\n",
+            "human_sha256": "afccf333392e60894df275d1fd2314dddfd8afbe78fa5bea2f488a7867672447",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":14,\"end\":18,\"line\":2,\"column\":4,\"end_line\":2,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "d33e8d32d578533b7edbfb229e5a2f492f533260d2c2c6149f9406c526bc284b",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 18,
+                "end_column": 8,
+                "end_line": 2,
+                "file_id": 0,
+                "line": 2,
+                "path": "main.ox",
+                "start": 14
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 18,
+            "end_column": 8,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 14,
+            "text": "main"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 9,
+              "end_column": 10,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 3,
+              "text": "unused"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 1,
+          "name": "unused",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> child.ox:1:4\n",
+            "human_sha256": "4f6a561e1bd2b275c605c898a38dae5e8f326db7492be1587aec5472a1e1d4d2",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":3,\"end\":9,\"line\":1,\"column\":4,\"end_line\":1,\"end_column\":10},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "5d6cb3fb7115fe0dfe8759408def69ef048cd69f73ec509a194b5a2bdfbd56ce",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 9,
+                "end_column": 10,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 3
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 9,
+            "end_column": 10,
+            "end_line": 1,
+            "file": 1,
+            "line": 1,
+            "start": 3,
+            "text": "unused"
+          }
+        }
+      ],
+      "id": "child-route-annotation",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 42,
+          "end_column": 1,
+          "end_line": 3,
+          "file": 0,
+          "line": 3,
+          "start": 42,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:3:1\n",
+        "human_sha256": "d56ad42f0fe73e1af6ecfbbe8bcfdfafec670cb6d2f4972eb6b7cde9165302e6",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":42,\"end\":42,\"line\":3,\"column\":1,\"end_line\":3,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "2568133d67c51f1f19225d511e1d8c51ae73efd5c42eb5358465ea29a1d8d193",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 42,
+            "end_column": 1,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "main.ox",
+            "start": 42
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    },
+    {
+      "explicit_test_path": "validated source -> private owned ObserveArrayTypes seam",
+      "function_entries": [
+        "count_function(None)",
+        "count_function(Some(block_counts))",
+        "Walk::new emission constructor"
+      ],
+      "functions": [
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 9,
+              "end_column": 10,
+              "end_line": 1,
+              "file": 0,
+              "line": 1,
+              "start": 3,
+              "text": "shared"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 0,
+          "name": "shared",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:1:4\n",
+            "human_sha256": "7763448fd8415c74b32c0ce9b69acdf5493341b7ff4a79ca3253e28b6f0d529a",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":3,\"end\":9,\"line\":1,\"column\":4,\"end_line\":1,\"end_column\":10},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "5ec588aaf7580a44bf2b48859b5357af64c0e0f3ebd538118211bb2548734abb",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 9,
+                "end_column": 10,
+                "end_line": 1,
+                "file_id": 0,
+                "line": 1,
+                "path": "main.ox",
+                "start": 3
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 9,
+            "end_column": 10,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 3,
+            "text": "shared"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 80,
+              "end_column": 13,
+              "end_line": 2,
+              "file": 0,
+              "line": 2,
+              "start": 71,
+              "text": "exclusive"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 1,
+          "name": "exclusive",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:2:4\n",
+            "human_sha256": "afccf333392e60894df275d1fd2314dddfd8afbe78fa5bea2f488a7867672447",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":71,\"end\":80,\"line\":2,\"column\":4,\"end_line\":2,\"end_column\":13},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "d652f1062000d54fd4ed9d7d890499391f860b57a28fc992f88c280d2745825f",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 80,
+                "end_column": 13,
+                "end_line": 2,
+                "file_id": 0,
+                "line": 2,
+                "path": "main.ox",
+                "start": 71
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 80,
+            "end_column": 13,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 71,
+            "text": "exclusive"
+          }
+        },
+        {
+          "diagnostic": {
+            "code": "E0500",
+            "message": "internal compiler error: owned invariant violation",
+            "notes": [],
+            "primary": {
+              "column": 4,
+              "end": 150,
+              "end_column": 8,
+              "end_line": 3,
+              "file": 0,
+              "line": 3,
+              "start": 146,
+              "text": "main"
+            },
+            "secondary": [],
+            "stage": "oir-owned-lower"
+          },
+          "function": 2,
+          "name": "main",
+          "rendered": {
+            "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:3:4\n",
+            "human_sha256": "1ddb991bcf32b4b3d99d5c18622ac6a09370917f76cc0b3726de3511ed8823b6",
+            "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":146,\"end\":150,\"line\":3,\"column\":4,\"end_line\":3,\"end_column\":8},\"secondary\":[],\"notes\":[]}\n",
+            "json_line_sha256": "3a6c35856f8e6235387311b1e1840e9d31da52fb598ba255b260e9a737aa457e",
+            "json_object": {
+              "code": "E0500",
+              "edition": "typed-preview",
+              "kind": "diagnostic",
+              "message": "internal compiler error: owned invariant violation",
+              "notes": [],
+              "primary": {
+                "column": 4,
+                "end": 150,
+                "end_column": 8,
+                "end_line": 3,
+                "file_id": 0,
+                "line": 3,
+                "path": "main.ox",
+                "start": 146
+              },
+              "schema_version": 1,
+              "secondary": [],
+              "severity": "error",
+              "stage": "oir-owned-lower"
+            }
+          },
+          "signature_origin": {
+            "column": 4,
+            "end": 150,
+            "end_column": 8,
+            "end_line": 3,
+            "file": 0,
+            "line": 3,
+            "start": 146,
+            "text": "main"
+          }
+        }
+      ],
+      "id": "reference-access-modes",
+      "private_resolve": "success",
+      "private_typecheck": "success",
+      "production_route": "owned",
+      "program_diagnostic": {
+        "code": "E0500",
+        "message": "internal compiler error: owned invariant violation",
+        "notes": [],
+        "primary": {
+          "column": 1,
+          "end": 174,
+          "end_column": 1,
+          "end_line": 4,
+          "file": 0,
+          "line": 4,
+          "start": 174,
+          "text": ""
+        },
+        "secondary": [],
+        "stage": "oir-owned-lower"
+      },
+      "program_entries": [
+        "check_typed",
+        "budget::preflight",
+        "lower_with_limits"
+      ],
+      "program_rendered": {
+        "human": "error[E0500] (oir-owned-lower): internal compiler error: owned invariant violation\n  --> main.ox:4:1\n",
+        "human_sha256": "83bac853a6606c6061a6c687e94d35e6dcaef813ce05598a4de146cd59fc363a",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0500\",\"stage\":\"oir-owned-lower\",\"message\":\"internal compiler error: owned invariant violation\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":174,\"end\":174,\"line\":4,\"column\":1,\"end_line\":4,\"end_column\":1},\"secondary\":[],\"notes\":[]}\n",
+        "json_line_sha256": "1a8a2f5f69dfa9d0f4dcdda0371d745299176d7386777007781deb8529efebd3",
+        "json_object": {
+          "code": "E0500",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "internal compiler error: owned invariant violation",
+          "notes": [],
+          "primary": {
+            "column": 1,
+            "end": 174,
+            "end_column": 1,
+            "end_line": 4,
+            "file_id": 0,
+            "line": 4,
+            "path": "main.ox",
+            "start": 174
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "oir-owned-lower"
+        }
+      },
+      "sentinel_expected": {
+        "block_allocation": 0,
+        "count_entry": 0,
+        "declaration_admission": 0,
+        "emit_step": 0,
+        "function_iteration": 0,
+        "inventory_entry": 0,
+        "raw_reservation": 0
+      }
+    }
+  ],
+  "raw_failure": {
+    "context": null,
+    "declaration": null,
+    "kind": "Malformed(CanonicalSite)",
+    "related": null
+  },
+  "schema": "oxid-array-typing-fences-v1",
+  "scope": "Internal misuse controls, separate from 29 language diagnostics.",
+  "sentinel_scope": "Reset immediately after successful private typing. Program guards require all zeros. Direct function-entry controls permit entering their named wrapper but require no count walk, inventory, block allocation, raw reservation, or emit step."
+}

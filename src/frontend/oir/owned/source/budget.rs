@@ -41,11 +41,40 @@ fn at(mut error: OwnedFailure, span: Span) -> OwnedFailure {
 }
 pub(super) fn reserve<T>(count: usize) -> Result<Vec<T>, OwnedFailure> {
     #[cfg(test)]
+    guard_event(GuardEvent::RawReservation);
+    #[cfg(test)]
     allocation_test_point()?;
     let mut values = Vec::new();
     values
         .try_reserve_exact(count)
         .map_err(|_| OwnedFailure::resource("source allocation"))?;
+    Ok(values)
+}
+/// The only new literal payload request. Complete source preflight and the
+/// emission count have admitted full S/Q/payload before output allocation.
+/// The call site also checks its current partial counts before this request;
+/// ConstructArray itself increments S when the completed instruction is emitted.
+/// Even a zero-length literal performs one logical fallible reservation.
+pub(super) fn reserve_array_operands(count: usize) -> Result<Vec<Operand>, OwnedFailure> {
+    #[cfg(test)]
+    guard_event(GuardEvent::RawReservation);
+    #[cfg(test)]
+    allocation_test_point()?;
+    let requested = count;
+    #[cfg(test)]
+    let requested = ARRAY_OPERAND_FAILURE.with(|point| match point.get() {
+        Some(0) => usize::MAX,
+        Some(n) => {
+            point.set(Some(n - 1));
+            requested
+        }
+        None => requested,
+    });
+    let mut values = Vec::new();
+    let result = values.try_reserve_exact(requested);
+    #[cfg(test)]
+    super::array_pipeline::literal_reserved(count, requested == usize::MAX, result.is_ok());
+    result.map_err(|_| OwnedFailure::resource("source allocation"))?;
     Ok(values)
 }
 pub(super) fn filled<T: Clone>(count: usize, value: T) -> Result<Vec<T>, OwnedFailure> {
@@ -106,6 +135,14 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
+    if !typed.admission().allows_lowering() {
+        return Err(OwnedFailure::malformed(
+            Malformed::CanonicalSite,
+            typed.index().sources().eof(),
+        ));
+    }
+    #[cfg(test)]
+    guard_event(GuardEvent::DeclarationAdmission);
     let declarations = admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
     admit_scalar_layouts(
         typed
@@ -123,9 +160,11 @@ pub(super) fn preflight(
     cap(bytes, ceiling, "source raw payload")?;
     let mut scratch = 0;
     let mut counts = raw_budget::ProgramCounts::default();
+    #[cfg(test)]
+    guard_event(GuardEvent::FunctionIteration);
     for view in typed.functions() {
         let span = view.signature().span;
-        let count = lower::count_function(&view, None).map_err(|error| at(error, span))?;
+        let count = lower::count_preflight_function(&view).map_err(|error| at(error, span))?;
         raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)
             .map_err(|error| at(error, span))?;
         bytes = cap(
@@ -145,6 +184,37 @@ pub(super) fn preflight(
 
 #[cfg(test)]
 thread_local! { static ALLOCATION_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
+#[cfg(test)]
+thread_local! { static ARRAY_OPERAND_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
+/// Zero-based literal emission request; forcing usize::MAX exercises the real
+/// fallible capacity-error path rather than the older synthetic failpoint.
+#[cfg(test)]
+pub(super) fn fail_array_operand_after<T>(count: usize, operation: impl FnOnce() -> T) -> T {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            ARRAY_OPERAND_FAILURE.with(|point| point.set(self.0));
+        }
+    }
+    let previous = ARRAY_OPERAND_FAILURE.with(|point| point.replace(Some(count)));
+    let _reset = Reset(previous);
+    operation()
+}
+
+#[test]
+fn unit3b2_operand_failure_restores_outer_state_and_unwind() {
+    fail_array_operand_after(1, || {
+        assert!(reserve_array_operands(0).is_ok());
+        assert!(fail_array_operand_after(0, || reserve_array_operands(0)).is_err());
+        assert!(reserve_array_operands(1).is_err());
+        let panic = std::panic::catch_unwind(|| {
+            fail_array_operand_after(9, || panic!("restore the enclosing failure control"));
+        });
+        assert!(panic.is_err());
+        assert!(reserve_array_operands(0).is_err());
+    });
+    assert!(reserve_array_operands(0).is_ok());
+}
 #[cfg(test)]
 fn allocation_test_point() -> Result<(), OwnedFailure> {
     ALLOCATION_FAILURE.with(|point| match point.get() {
@@ -167,4 +237,36 @@ pub(super) fn fail_allocation_after<T>(count: usize, operation: impl FnOnce() ->
     ALLOCATION_FAILURE.with(|point| point.set(Some(count)));
     let _reset = Reset;
     operation()
+}
+
+/// Fixed-size passive sentinels for the private types-only entry fences. No
+/// source payload or unbounded observation log is retained.
+#[cfg(test)]
+#[derive(Clone, Copy)]
+pub(super) enum GuardEvent {
+    DeclarationAdmission,
+    FunctionIteration,
+    CountEntry,
+    InventoryEntry,
+    BlockAllocation,
+    RawReservation,
+    EmitStep,
+}
+#[cfg(test)]
+thread_local! { static GUARD_COUNTS: std::cell::Cell<[usize; 7]> = const { std::cell::Cell::new([0; 7]) }; }
+#[cfg(test)]
+pub(super) fn guard_event(event: GuardEvent) {
+    GUARD_COUNTS.with(|counts| {
+        let mut next = counts.get();
+        next[event as usize] = next[event as usize].saturating_add(1);
+        counts.set(next);
+    });
+}
+#[cfg(test)]
+pub(super) fn reset_guard_counts() {
+    GUARD_COUNTS.with(|counts| counts.set([0; 7]));
+}
+#[cfg(test)]
+pub(super) fn guard_counts() -> [usize; 7] {
+    GUARD_COUNTS.with(|counts| counts.get())
 }

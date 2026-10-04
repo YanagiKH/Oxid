@@ -1,0 +1,50 @@
+{
+  "schema": "oxid-unit3a-historical-ledger-v1",
+  "scope": "Historical checkpoint4 dormant frontend on Linux x86_64; not current-head or hosted CI qualification",
+  "base_commit": "d582d1dca2a26eb3230632a921f9e8166c39d5c0",
+  "base_tree": "a826c1782dac19b8c34bdafb0202240e5d414719",
+  "source_archive_sha256": "aace15bc61711ce9f7731c435f5618eb9b6a1118da4f226e9172b4b053891624",
+  "archive_reconstruction_claim": "Complete file closure matches; newly created tar/gzip bytes are not claimed byte-identical",
+  "source_manifest_sha256": "ddd3f8d02053301ff9e56ac550de8874bbed2dcaac632776f1c4efcf6eebc80e",
+  "assembled_manifest_sha256": "f091756f3f6c9a38a8896bec6040673a74480d4c1f45bd2e51b09011d6857198",
+  "observer_v3_manifest_sha256": "9c016315ea910d00cc5fda77ef8aabc09eea3002709af59298679c612c3c6d39",
+  "sensitivity_v5_manifest_sha256": "7b12eb1fe95aa7ad83bad35973074c245d186dfb7bac28527b3f3372c8c1db8e",
+  "historical_request_binding_sha256": "4b45f0e0cf2c880ba1d4eb787a39c7ceb4af6a35a7995ae32f31b11e4cf45ffd",
+  "binaries": {
+    "producer_debug": "ce9c0d2e7f5c7d9e099fb85ac56cab9889aba4f5ed7c398227d0a686a6b0cac6",
+    "observer_debug": "5a6b591d262e22df842078a86a207d6f76c246ab63a044b9511e0884f9295f8b",
+    "observer_release": "4b550d1408df166b90ad2b2a4f00485691fa5db9b41814f761d4d28caf7405b1"
+  },
+  "results": {
+    "frontend_each_profile": 58,
+    "boundary_each_profile": 6,
+    "focused_each_profile": 17,
+    "incomplete_observer_limits_each_profile": 4,
+    "external_mutations_rejected_v5": 18,
+    "identical_profile_artifacts": 68,
+    "ordinary_debug": {
+      "passed": 900,
+      "failed": 0,
+      "ignored": 27,
+      "suites": 17
+    },
+    "ordinary_full_release": "not run",
+    "deferred_resolver_type": 29,
+    "deferred_effects": 2
+  },
+  "gates": {
+    "public_array_grammar": "closed",
+    "production_raw_arrays": "closed"
+  },
+  "new_publication_execution": {
+    "compiler_runs": 0,
+    "semantic_comparisons": 0
+  },
+  "unpublished_bodies": [
+    "Historical compiler binary bodies",
+    "Historical raw observation bodies",
+    "Path-dependent original request TSVs and full traceback",
+    "Original private planning/readme documents"
+  ],
+  "replay_components": "Package manifest names the selected unchanged executable files; original lineage manifests additionally bind omitted historical files"
+}

@@ -1,29 +1,31 @@
 # RFC 0016: fixed scalar arrays and checked indexing
 
-Status: proposed language capability; Unit 1 groundwork and gated Unit 2A–2E
-private identity carriers, raw verification, reference/native consumers and
-local combined qualification.
-Array syntax and production raw array admission remain disabled. Private
-consumer qualification uses verifier-confined test entry points. The current public contract remains
-[RFC 0014](0014-owned-structs-call-borrows.md) and
-[RFC 0015](0015-bounded-typed-projects.md). Implementation ownership and independent
-review are recorded by the associated pull request. Acceptance of groundwork
-does not accept or qualify later source/native activation.
+Status: experimental public `typed-preview` capability. Explicit `check`, `run`
+and native `compile --backend llvm` now accept the bounded source forms below
+through the checked source/owned pipeline. Default and explicit legacy routes
+are unchanged. The [public-route validation](../docs/architecture/fixed-array-public-validation.md)
+records new direct CLI and native evidence separately from historical staged
+qualification. This is not a stability or completed-milestone claim.
+
+The Unit 1–3 design and historical gated amendments below describe their original
+checkpoints; their statements that production admission was closed do not
+describe the current public route. Private observation and ArrayConsumer
+admissions remain immutable and cannot be promoted into SourceProgram.
 
 Baseline: commit `0ef3be1df3643febdff1f859a4eb1ce567ab8164`, source tree
 `24bfdb84b042899f655e5dab472d2ad8be24c762`. This is one bounded collection
 capability toward M2, not M2 completion, Rust compatibility, a heap collection,
-production CLI, CPU/GPU tensor support, or native AI training.
+a stable production-language guarantee, CPU/GPU tensor support, or native AI training.
 
 ## 1. Outcome and preserved boundaries
 
-A typed program will construct a complete fixed scalar array, move it through
+A typed program can construct a complete fixed scalar array, move it through
 helper parameters/results, borrow the complete array during a call, and process
 it with checked signed indexing and a narrow length intrinsic. It works in an
 original single file or a bounded linked project. Arrays of the same element
 type and length agree across modules; records retain their nominal identity,
 field privacy, layout and costs. Executable root `main` remains zero-argument
-and returns bool/i32/unit. `check` may eventually accept an array-returning main;
+and returns bool/i32/unit. `check` accepts an array-returning main;
 `run` must reject it with E0600 and native compile with E0700 before tool/output
 work. There is no array printing or native ABI exposed to users.
 
@@ -43,7 +45,7 @@ temporary/grouped indexing bases, general dereference, FFI, and new targets.
 By-value parameters keep their current immutable-binding rule; moving into a
 mutable local or passing an exclusive borrow enables mutation.
 
-## 2. Proposed grammar and inference
+## 2. Grammar and inference
 
 ```text
 scalar_type     := "bool" | "i32" | "(" ")"
@@ -204,7 +206,7 @@ Source fuel must be derived from actual lowering, not copied from a raw test.
 
 ## 5. Integrated three-module pilot
 
-These are proposed fixtures, not currently accepted source.
+These fixtures are available in [the samples example](../fixtures/typed-array-samples/README.md).
 
 `main.ox`:
 

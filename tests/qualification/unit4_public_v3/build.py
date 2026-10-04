@@ -15,11 +15,21 @@ import sys
 from pathlib import Path, PurePosixPath
 from contracts import need, sha, load, save, binding, verify
 from runtime import source_manifest, process
-from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA
+from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA
 
 def observer_path_order(paths, root):
     # Preserve the approved POSIX component order on every actual host.
     return sorted(paths, key=lambda path: PurePosixPath(path.relative_to(root).as_posix()).parts)
+
+def verify_lifecycle_successor(raw):
+    """The current parser policy argument changes context, never observer hooks."""
+    before = b'@@ -98,6 +98,7 @@\n     node_limit: usize,\n     allocator: &mut Allocator,\n ) -> Result<(Program, usize), Vec<Diagnostic>> {\n'
+    after = b'@@ -98,7 +98,8 @@\n     node_limit: usize,\n     allocator: &mut Allocator,\n     arrays: ArraySyntaxPolicy,\n ) -> Result<(Program, usize), Vec<Diagnostic>> {\n'
+    need(sha(raw) == LIFECYCLE_PATCH_SHA and raw.count(after) == 1, 'exact current lifecycle successor')
+    original = raw.replace(after, before, 1)
+    need(sha(original) == HISTORICAL_LIFECYCLE_PATCH_SHA, 'lifecycle successor must restore exact historical patch')
+    return original
+
 
 def prepare(args):
     source = Path(args.source_root).resolve()
@@ -37,6 +47,7 @@ def prepare(args):
         target.write_bytes(verify(source / row['path'], row))
     patch = Path(args.observer_patch).resolve()
     need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
+    verify_lifecycle_successor(patch.read_bytes())
     git = ['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', 'apply']
     p = subprocess.run([*git, '--check', str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     need(p.returncode == 0, 'observer patch precondition: ' + p.stderr.decode())

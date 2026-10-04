@@ -1562,7 +1562,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
 }
 
 #[test]
-fn independent_unit2c_full_identity_validation_and_closed_production() {
+fn independent_array_identity_validation_and_production_execution() {
     let mut inputs = 0;
     let mut identities: Vec<_> = [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit]
         .into_iter()
@@ -1593,10 +1593,10 @@ fn independent_unit2c_full_identity_validation_and_closed_production() {
                     assert_eq!(error.primary.get(), Some(at));
                 }
                 let (sources, raw, _) = chain_fixture(ty, n);
-                let error = verified::verify_owned(raw, &sources).unwrap_err();
+                let witness = verified::verify_owned(raw, &sources).unwrap();
                 assert_eq!(
-                    error.kind,
-                    OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
+                    execute::run(&witness, Some(hir::DefId(0))).unwrap(),
+                    Scalar::I32(n as i32)
                 );
                 inputs += 1;
             }

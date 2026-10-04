@@ -27,7 +27,8 @@ class ReplayTests(unittest.TestCase):
     def fixture(self):
         fixture = self.root / "fixture inputs"
         (fixture / "sources").mkdir(parents=True)
-        combined = b"// frozen combined reviewer\n"
+        combined = (Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+                    / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
         (fixture / "sources/reviewer-array-native-v3.rs").write_bytes(combined)
         for name in replay.CONTROL_FILES:
             (fixture / "sources" / name).write_text("// exact frozen " + name + "\n")
@@ -63,6 +64,49 @@ class ReplayTests(unittest.TestCase):
         runner = replay.Replay(args)
         runner.run()
         return runner
+
+    def test_public_successor_changes_only_obsolete_gate_expectations(self):
+        frozen = (Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+                  / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
+        current = replay.public_array_reviewer(frozen)
+        old_name = replay.PUBLIC_ARRAY_ACTIVATION["historical_test"].encode()
+        new_name = replay.PUBLIC_ARRAY_ACTIVATION["current_test"].encode()
+        old_prefix, old_body = frozen.split(b"fn " + old_name, 1)
+        new_prefix, new_body = current.split(b"fn " + new_name, 1)
+        old_body, old_suffix = old_body.split(b"\n#[test]", 1)
+        new_body, new_suffix = new_body.split(b"\n#[test]", 1)
+        self.assertEqual(old_prefix, new_prefix)
+        self.assertEqual(old_suffix, new_suffix)
+        native_end = b"            let (sources, raw, _) = chain_fixture(ty, n);"
+        self.assertEqual(old_body.split(native_end)[0].replace(b"production_denials", b"production_successes"),
+                         new_body.split(native_end)[0])
+        self.assertIn(b"(valid, denied, production_successes), (9, 81, 9)", new_body)
+        self.assertIn(b"execute::run(&witness, Some(hir::DefId(0)))", new_body)
+        self.assertIn(b"Ok(Scalar::I32(n as i32))", new_body)
+        self.assertNotIn(b"UnsupportedArray", current)
+        self.assertIn(replay.CHILD + new_name.decode(), replay.ORDINARY)
+        self.assertNotIn(replay.CHILD + old_name.decode(), replay.ORDINARY)
+        self.assertEqual(len(replay.ORDINARY), 7)
+        self.assertEqual(len(replay.NATIVE), 8)
+
+    def test_public_successor_rejects_drift_and_double_application(self):
+        frozen = (Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+                  / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
+        for changed in (frozen + b"\n", frozen.replace(b"denied += 1", b"denied += 0"),
+                        replay.public_array_reviewer(frozen)):
+            with self.subTest(digest=replay.sha(changed)):
+                with self.assertRaisesRegex(RuntimeError, "exact frozen v3"):
+                    replay.public_array_reviewer(changed)
+
+    def test_public_successor_binding_rejects_historical_and_changed_identities(self):
+        binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
+                   "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["current_module_sha256"]}
+        replay.assert_current_module_binding(binding)
+        for changed in ({}, {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_sha256"]},
+                        {**binding, "public_array_activation": {**binding["public_array_activation"],
+                          "native_wrong_identity_rejections": 80}}):
+            with self.assertRaisesRegex(RuntimeError, "current public-array module binding"):
+                replay.assert_current_module_binding(changed)
 
     def test_clean_archive_preserves_git_bytes_and_exact_append_prefix(self):
         runner = self.prepared()

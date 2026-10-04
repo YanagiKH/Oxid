@@ -1,0 +1,102 @@
+{
+  "base": "2e84c9de9d9b02b62283fff1902cf1a840254ac4",
+  "base_tree": "86b90e5cb5eaf03a81f9faaa3b4f494248d2c60c",
+  "claim": "Replays normal54 source/type observations. Historical separate controls/sensitivity are evidence, not re-executed by this wrapper.",
+  "comparator_sha256": "1c96f181be1dc92889b3738374954376ff93c7bcbff9181fa6d1b0dc2298157a",
+  "core_manifest_sha256": "f44586df897fb27b0b47684f32108f1c6d24eede7b852730308a48939992c101",
+  "files": {
+    "README.md": {
+      "bytes": 4322,
+      "sha256": "03a9a64525c490e80cd23f0104a0579660b3cba719e803530f864c8a8134cccb"
+    },
+    "components/ACCOUNTING.md": {
+      "bytes": 6261,
+      "sha256": "64347da7ed1793544e4e8b06d52356d90fa91e8d5c10dcdcb617de0c68f19afb"
+    },
+    "components/WIRE-MAPPING.md": {
+      "bytes": 6654,
+      "sha256": "58a046ac0172aac1c64999bfcc392444effbaa7495e61278dedc46d17f58c2da"
+    },
+    "components/candidate.patch": {
+      "bytes": 140252,
+      "sha256": "312b3907519579f11541600207e959d635fb6094cbb14b4e2f95fef08032582d"
+    },
+    "components/compare.py": {
+      "bytes": 67456,
+      "sha256": "1c96f181be1dc92889b3738374954376ff93c7bcbff9181fa6d1b0dc2298157a"
+    },
+    "components/full-source-closure.json": {
+      "bytes": 267595,
+      "sha256": "05a280a589493db7c22f32eb6c98af0054eb28bf6e480cea751ac4cfb9d3c993"
+    },
+    "components/observer.rs": {
+      "bytes": 36020,
+      "sha256": "48b406fc0250a55933fb5f8720a2f83d0f8518e9baa758faf8d13a982ba5dd29"
+    },
+    "components/project-work-ledger-source-v1.json": {
+      "bytes": 3184,
+      "sha256": "b49d52901fe25cb190701cf228dd8cb6c1fd7f3375a0543a27e06fcaa156a67b"
+    },
+    "evidence/candidate-sensitivity-debug.json": {
+      "bytes": 47968,
+      "sha256": "c188c050b486d06e5fa8373c71215cc091c47d224ab48c1d41d47276aa779852"
+    },
+    "evidence/candidate-sensitivity-release.json": {
+      "bytes": 47970,
+      "sha256": "2105d724f0c92227d9bddd53edb8b9228a05680e53d469edc27f903ae17ce83b"
+    },
+    "evidence/controls-debug.json": {
+      "bytes": 475,
+      "sha256": "7e4cd5edfba386cfe613756b113ab19e219997c580c14681a2264d227fd86b95"
+    },
+    "evidence/controls-release.json": {
+      "bytes": 475,
+      "sha256": "7e4cd5edfba386cfe613756b113ab19e219997c580c14681a2264d227fd86b95"
+    },
+    "evidence/history/normal-v3-debug.json": {
+      "bytes": 13864,
+      "sha256": "dbd9fdbf25b19bfd10a5b606789d5dd088a254aae2fe5c02cdc8a47a083108a8"
+    },
+    "evidence/history/normal-v3-release.json": {
+      "bytes": 13864,
+      "sha256": "dbd9fdbf25b19bfd10a5b606789d5dd088a254aae2fe5c02cdc8a47a083108a8"
+    },
+    "evidence/normal-v4-debug.json": {
+      "bytes": 13864,
+      "sha256": "dbd9fdbf25b19bfd10a5b606789d5dd088a254aae2fe5c02cdc8a47a083108a8"
+    },
+    "evidence/normal-v4-release.json": {
+      "bytes": 13864,
+      "sha256": "dbd9fdbf25b19bfd10a5b606789d5dd088a254aae2fe5c02cdc8a47a083108a8"
+    },
+    "evidence/protocol-plan.json": {
+      "bytes": 1256,
+      "sha256": "d0a8258944f7ad03e523ba626ea3b011f7653f0de396bb3ee10de5c318b5a9d3"
+    },
+    "evidence/protocol-results.json": {
+      "bytes": 11265,
+      "sha256": "3adc8f90c7b6959494846a94f377d2a690a14d722f71dc802520882bc49a46a3"
+    },
+    "replay.py": {
+      "bytes": 15044,
+      "sha256": "8042453291886a6e44e7754bf36ef1a9435b926ca8511161f838b0d73be23d43"
+    }
+  },
+  "historical_authority_sha256": "7cec518fdc38c02f8cfc6c3cf467239423621bf242e44c3e838be490a3060039",
+  "historical_observer_adapter_sha256": "e73acb933f15c938f7256f8902de86ff1d0d5ac55644f3222b3420fa404d2f72",
+  "historical_package_membership_claimed": false,
+  "packaging_revision": 2,
+  "predecessor_sha256": "35a6051f5d102737997a49fb97030bc77552ed5826f53339b6842e3e237f5414",
+  "public_input_sha256": "2cba1dbd200d75fbeb33b504b08279d89d2baa1784f88718413305446d458c35",
+  "qualified_binaries": {
+    "debug": {
+      "bytes": 68932904,
+      "sha256": "61856cf6f02919e7b42826e1d84e52a02ae4ba16b9fb8cd550a20e3cb3eeb24a"
+    },
+    "release": {
+      "bytes": 9839352,
+      "sha256": "682d129230c3a8b8605cb1b7f81198449ce4973be9b014cfcfd03042634b6645"
+    }
+  },
+  "schema": "oxid-array-source-typing-public-replay-v1"
+}

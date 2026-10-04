@@ -1,0 +1,40 @@
+{
+  "status": "BOUNDED_EXTERNAL_MUTATION_RUNNER_CORRECTION",
+  "predecessor_manifest_sha256": "9c016315ea910d00cc5fda77ef8aabc09eea3002709af59298679c612c3c6d39",
+  "change": "Only rename row helper positional parameter kind to row_type so AST kind keyword filters can be supplied; no production, observer, authority, comparator or acceptance change",
+  "source_observations_reused": "run-v3; no new compiler source observations",
+  "files": {
+    "README.md": {
+      "bytes": 6634,
+      "sha256": "d9f9acb588873c44e832d70ecf4bb968d0e040e7bfce1438e4f6d025b7736786"
+    },
+    "admission_controls.py": {
+      "bytes": 1121,
+      "sha256": "a804e2180c51008a712c91470876097b561a548b47e6ef4eac970e7e2e2073ed"
+    },
+    "compare.py": {
+      "bytes": 18016,
+      "sha256": "bde2e4a79979f3d9e40a7edd172309fb3237e881b42324e4f85dea04e686a8ad"
+    },
+    "compare_limits.py": {
+      "bytes": 639,
+      "sha256": "98084deb55cc793258f4bf24f2ae2fe4c72947eee2eaadef3850417eeccc5333"
+    },
+    "compare_supplement.py": {
+      "bytes": 2593,
+      "sha256": "a4a06e0349aef304ec37c4e5e2194b7fe8f240b9a93f05ff9a30cc8912540e3c"
+    },
+    "observer.rs": {
+      "bytes": 23060,
+      "sha256": "519947182badf7bf534da63dcb6bc9a236d8adcc24a49497a67d1298211a6f82"
+    },
+    "prepare.py": {
+      "bytes": 1673,
+      "sha256": "81bf3d5435d255aff84a130efbce2202c128a773916073f8dd8352a35a1a0dbc"
+    },
+    "sensitivity.py": {
+      "bytes": 3551,
+      "sha256": "ab63069de5baf7f2297b5836dd6a76fbe3e79ab0bb539842bea029e2c3a0bc4c"
+    }
+  }
+}

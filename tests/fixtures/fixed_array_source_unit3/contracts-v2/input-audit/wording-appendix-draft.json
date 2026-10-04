@@ -1,0 +1,1067 @@
+{
+  "status": "PROVISIONAL_NOT_ORIGINAL_AUTHORITY",
+  "source_controls_sha256": "95e97255a4e5bd97dcdf1f49f35fc4b43f78134c1d8f41b7819c9078d47f6807",
+  "scope": "Proposed message/secondary/notes only; original 34 code/stage/primary contracts are unchanged; requires independent review before candidate observations. Type/resolve diagnostics are not Unit3A observations.",
+  "array_type_format": "[bool; N], [i32; N], [(); N], one space after semicolon, decimal canonical N",
+  "cases": [
+    {
+      "id": "read-index-internal-type-first",
+      "source_sha256": "a87bf6397c591d05f826a5caa13ac2ef00eed7272fa6ac5b89c0750ae50e14f1",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 43,
+          "text": "true"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected i32, found bool",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:387-405"
+      ],
+      "wording_status": "reuse existing mismatch template"
+    },
+    {
+      "id": "read-base-kind-before-index-kind",
+      "source_sha256": "d4e236ab70385f6f9a35fb79b0a30a73da0bac4481a39866e7b4fca95b444763",
+      "original_authority_unchanged": {
+        "code": "E0305",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 37,
+          "end": 44,
+          "text": "s[true]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array access requires an array binding",
+        "secondary": [
+          {
+            "file": 0,
+            "start": 23,
+            "end": 24,
+            "text": "s",
+            "message": "binding declared here"
+          }
+        ],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:248-270 record-access analogue"
+      ],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "read-array-bad-index",
+      "source_sha256": "886823f12d8608f6b41dc1b7afd7b57bd7785756c613dc34000d2bbfcdd397fc",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 41,
+          "end": 45,
+          "text": "true"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected i32, found bool",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:387-405"
+      ],
+      "wording_status": "reuse existing mismatch template"
+    },
+    {
+      "id": "read-unknown-base-first",
+      "source_sha256": "347e55639c69fa58344c565651efbce0c02756f9e10e8b6aa9cc5ebf4c1037d3",
+      "original_authority_unchanged": {
+        "code": "E0200",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 26,
+          "end": 33,
+          "text": "missing"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unknown local `missing`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/resolve.rs:471-485"
+      ],
+      "wording_status": "reuse existing constructor text"
+    },
+    {
+      "id": "read-index-resolution-before-base-type",
+      "source_sha256": "3d0b69e3d153aa899d8246eb772e204c62b8ccd4ba3d43b42e97ce5ee80435da",
+      "original_authority_unchanged": {
+        "code": "E0200",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 46,
+          "text": "unknown"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unknown direct function `unknown`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/declaration_index.rs:748-792"
+      ],
+      "wording_status": "reuse existing constructor text"
+    },
+    {
+      "id": "read-index-literal-range-before-base-type",
+      "source_sha256": "5096b68a9719251d73044315059a6c4b684d72563de11ea0826755d0d14b606b",
+      "original_authority_unchanged": {
+        "code": "E0203",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 49,
+          "text": "2147483648"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "decimal literal is outside the i32 range [-2147483648, 2147483647]",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/resolve.rs:132-155"
+      ],
+      "wording_status": "reuse existing constructor text"
+    },
+    {
+      "id": "write-rhs-internal-type-first",
+      "source_sha256": "7f7c337f34ef1bf8d18452b1b960aabffaad98273a1d8e30af7d94c97a437e27",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 41,
+          "end": 45,
+          "text": "true"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected i32, found bool",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:387-405"
+      ],
+      "wording_status": "reuse existing mismatch template"
+    },
+    {
+      "id": "write-index-internal-type-before-base",
+      "source_sha256": "d540d8cfaa277c1c332c9934b508b30d0da9baffeb25df890f0c37d0b73d355c",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 36,
+          "text": "true"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected i32, found bool",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:387-405"
+      ],
+      "wording_status": "reuse existing mismatch template"
+    },
+    {
+      "id": "write-base-kind-before-index-kind",
+      "source_sha256": "6fed7af8b18a4a8f0c30361f87dce387d7972bcf3cffcf7fb47b16635264e28c",
+      "original_authority_unchanged": {
+        "code": "E0305",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 30,
+          "end": 37,
+          "text": "s[true]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array access requires an array binding",
+        "secondary": [
+          {
+            "file": 0,
+            "start": 23,
+            "end": 24,
+            "text": "s",
+            "message": "binding declared here"
+          }
+        ],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:248-270 record-access analogue"
+      ],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "write-index-kind-before-rhs-element",
+      "source_sha256": "57750be685c0c6643a6c4057a14df01a86cca4ba74db1c4affdadcd5e9fd8bc4",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 34,
+          "end": 38,
+          "text": "true"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected i32, found bool",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:387-405"
+      ],
+      "wording_status": "reuse existing mismatch template"
+    },
+    {
+      "id": "write-element-before-mutability",
+      "source_sha256": "8f64ca26780e1efc1c6f3342484c95f65d5db38000319114f7b697325d5f6a5e",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 44,
+          "text": "false"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected i32, found bool",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:387-405"
+      ],
+      "wording_status": "reuse existing mismatch template"
+    },
+    {
+      "id": "write-owner-mutability-last",
+      "source_sha256": "7062109c43d146c79791a627277b996c9b8c89d5c1609a894ebb3aecd4fbf876",
+      "original_authority_unchanged": {
+        "code": "E0304",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 36,
+          "text": "a[0]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "operation requires a mutable owned binding",
+        "secondary": [
+          {
+            "file": 0,
+            "start": 23,
+            "end": 24,
+            "text": "a",
+            "message": "immutable binding declared here"
+          }
+        ],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:218-222"
+      ],
+      "wording_status": "reuse existing constructor and secondary text"
+    },
+    {
+      "id": "missing-array-element-separator",
+      "source_sha256": "1f1e2e744f3fb36f61fe021342594c9b2fbe14df56b76ec69c7ff7fc2dfa0dd9",
+      "original_authority_unchanged": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 30,
+          "end": 31,
+          "text": "2"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array literal requires `,` or `]`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "missing-array-index",
+      "source_sha256": "421c75782b9c89c557397fcb9f78076966e53fe596175542a2305676a3568964",
+      "original_authority_unchanged": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 41,
+          "end": 42,
+          "text": "]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array index requires an expression",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "missing-array-type-separator",
+      "source_sha256": "6836caccf700d4398c2494026899ffa5fc8b90337db091bf480a72cec86a76e2",
+      "original_authority_unchanged": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 31,
+          "end": 32,
+          "text": "2"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array type requires `;` after its element type",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "excluded-named-array-length",
+      "source_sha256": "2971b181a22f6eb508f9ada54cbb2d20e6fac86c5d8b04739e2f9562e4682719",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 43,
+          "end": 44,
+          "text": "N"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `N`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-length-expression",
+      "source_sha256": "7ea2cd439343db40e3c176bc122c189abe9bb177d781753674afb2dc35106304",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 33,
+          "end": 34,
+          "text": "+"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `+`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "overlength-token",
+      "source_sha256": "e10867be018f522c6b64aef72566b18f51848c8a636b3dc2f12fe5172b9823bd",
+      "original_authority_unchanged": {
+        "code": "E0400",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 39,
+          "text": "0001025"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array length limit exceeded (1024)",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "excluded-nonascii-length",
+      "source_sha256": "464c2306c2b95cf16c18a321e8023728b95f3856d319a92a972551cd5ea72fd1",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 35,
+          "text": "１"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `１`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-nested-array-type",
+      "source_sha256": "f0c311f8a84f91f92596fba3e252854e6e2e25e10160c0b32380b65d2acba7a5",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 27,
+          "end": 28,
+          "text": "["
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `[`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-reference-element",
+      "source_sha256": "959178c3d88733ef4ad3caa54ac996ec42bf7c7a4c28b5d40363f112c6170140",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 27,
+          "end": 28,
+          "text": "&"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `&`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-record-element",
+      "source_sha256": "aceb4ed6a11da0e30549f7b597cb19172b7f03f13998ed15be1703b8a7c99a21",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 47,
+          "end": 48,
+          "text": "R"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `R`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-array-record-field",
+      "source_sha256": "dcde13f863493d6c5b6f5074ff13430c7bf4242e2c73b345484f109b7c00120d",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 14,
+          "end": 15,
+          "text": "["
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `[`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-repeat-syntax",
+      "source_sha256": "4ef62aa091fae4bec37336074e2a62fcdb12522fdb607839b991bd1b2801541b",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 29,
+          "end": 30,
+          "text": ";"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `;`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-grouped-base",
+      "source_sha256": "7966e2583ce0cb9fad15c5768b86be54a4b97b941939c1db0c5f870ffd7ece78",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 42,
+          "end": 43,
+          "text": "["
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `[`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-repeated-index",
+      "source_sha256": "f284ff73222b8624f9971a3dcf3a8c2b29018f344cf304c07fcd6898efedb40b",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 43,
+          "end": 44,
+          "text": "["
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `[`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-grouped-store-target",
+      "source_sha256": "068fd8044ac2afea6988402e78a4687e44cca9620c960605f52eb4962c68f73b",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 36,
+          "end": 42,
+          "text": "(a[0])"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `(a[0])`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-arbitrary-method",
+      "source_sha256": "57d02afab3f35f09ba0b67ec0613736cc885cd85cd83dc12ef8d518b63b16d5e",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 46,
+          "end": 47,
+          "text": "("
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `(`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "excluded-length-argument",
+      "source_sha256": "609f07b126d6201ec7172083410ffcb93629b595af5e75d895ebb1fa0d0cc787",
+      "original_authority_unchanged": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 45,
+          "end": 46,
+          "text": "1"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "unsupported typed-preview construct `1`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:446-479 generic unsupported template"
+      ],
+      "wording_status": "existing template, new explicit candidate classification and/or primary"
+    },
+    {
+      "id": "missing-length-call-close",
+      "source_sha256": "6446f271ad14d091805132034963e1c125510e80007378ec63bbcfc1db27d284",
+      "original_authority_unchanged": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 45,
+          "end": 46,
+          "text": ";"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "call requires `)`",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/parser.rs:1140"
+      ],
+      "wording_status": "reuse existing missing call close text, candidate E0100 override"
+    },
+    {
+      "id": "empty-no-context",
+      "source_sha256": "32abf2281ee2e873b6833f7cbbcd759dbd49144771080937f36a827a3e0d2c73",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 28,
+          "end": 30,
+          "text": "[]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "empty array literal requires an explicit array annotation on its local initializer",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "rfcs/0016-fixed-scalar-arrays.md:73-80 semantic rule; wording newly proposed"
+      ],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "empty-nonzero-annotation",
+      "source_sha256": "51891e6f066c88b32d396bd6e6e95392fecafdd030242d24c4b3072615f09ba6",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 37,
+          "end": 41,
+          "text": "([])"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "type mismatch: expected [i32; 1], found [i32; 0]",
+        "secondary": [
+          {
+            "file": 0,
+            "start": 23,
+            "end": 24,
+            "text": "a",
+            "message": "binding declared here"
+          }
+        ],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:197-216",
+        "src/frontend/oir/owned/source/typeck.rs:706-719"
+      ],
+      "wording_status": "reuse existing mismatch template and Let secondary, new structural type formatting"
+    },
+    {
+      "id": "nested-empty-does-not-inherit-context",
+      "source_sha256": "a6a002293dd3c4604743cbf65ae0c2b45600207eace37b3de9537fe6cc6d9110",
+      "original_authority_unchanged": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 38,
+          "end": 40,
+          "text": "[]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "empty array literal requires an explicit array annotation on its local initializer",
+        "secondary": [],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "rfcs/0016-fixed-scalar-arrays.md:73-80 semantic rule; wording newly proposed"
+      ],
+      "wording_status": "new precise wording"
+    },
+    {
+      "id": "utf8-read-primary",
+      "source_sha256": "36f08bdef9d688a7be7652c859feec77f178eb00b4633630b2d3b951abc764e8",
+      "original_authority_unchanged": {
+        "code": "E0305",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 50,
+          "end": 57,
+          "text": "s[true]"
+        }
+      },
+      "proposed_additional_expectation": {
+        "message": "array access requires an array binding",
+        "secondary": [
+          {
+            "file": 0,
+            "start": 36,
+            "end": 37,
+            "text": "s",
+            "message": "binding declared here"
+          }
+        ],
+        "notes": []
+      },
+      "status": "PROVISIONAL_REQUIRES_INDEPENDENT_REVIEW_BEFORE_OBSERVATIONS",
+      "basis": [
+        "src/frontend/oir/owned/source/typeck.rs:248-270 record-access analogue"
+      ],
+      "wording_status": "new precise wording"
+    }
+  ],
+  "supplemental_controls": [
+    {
+      "id": "checkpoint-array-value-type",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn probe(a: [i32; 1]) -> i32 { return 0; }\nfn main() -> i32 { return 0; }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 12,
+          "end": 20,
+          "text": "[i32; 1]"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "checkpoint-array-shared-reference",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn probe(a: &[i32; 1]) -> i32 { return 0; }\nfn main() -> i32 { return 0; }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 12,
+          "end": 21,
+          "text": "&[i32; 1]"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "checkpoint-array-exclusive-reference",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn probe(a: &mut [i32; 1]) -> i32 { return 0; }\nfn main() -> i32 { return 0; }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 12,
+          "end": 25,
+          "text": "&mut [i32; 1]"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "checkpoint-array-literal",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn main() -> i32 { let a = [1]; return 0; }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 27,
+          "end": 30,
+          "text": "[1]"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "checkpoint-array-read",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn main() -> i32 { let s = 0; return s[0]; }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 37,
+          "end": 41,
+          "text": "s[0]"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "checkpoint-array-length",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn main() -> i32 { let s = 0; return s.len(); }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 37,
+          "end": 44,
+          "text": "s.len()"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "checkpoint-array-store",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn main() -> i32 { let s = 0; s[0] = 1; return 0; }\n",
+      "control_kind": "dormant-execution-checkpoint",
+      "expected": {
+        "code": "E0500",
+        "stage": "resolve",
+        "message": "array source execution is unavailable in this dormant syntax checkpoint",
+        "primary": {
+          "file": 0,
+          "start": 30,
+          "end": 34,
+          "text": "s[0]"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Internal candidate-to-execution misuse rejection only. The source-only observer must still parse/select/query this source. Never a public or permanent language semantic expectation. Does not specify mixed-feature traversal precedence."
+    },
+    {
+      "id": "array-element-reservation-failure",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn main() -> i32 { let a = [1]; return 0; }\n",
+      "control_kind": "fallible-allocation-seam",
+      "expected": {
+        "code": "E0400",
+        "stage": "parse",
+        "message": "array syntax allocation failed",
+        "primary": {
+          "file": 0,
+          "start": 28,
+          "end": 29,
+          "text": "1"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Inject the first array element vector reservation through the existing Allocator fallible reserve seam. Existing fail_at calls try_reserve(usize::MAX), which maps to ReserveFailure::Allocation. Bind by reservation kind and ordinal, not candidate-discovered attempt number. Proposed origin is the first token of the attempted element."
+    },
+    {
+      "id": "array-element-count-overflow",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source": "fn main() -> i32 { let a = [1]; return 0; }\n",
+      "control_kind": "checked-arithmetic-lowered-seam",
+      "expected": {
+        "code": "E0400",
+        "stage": "parse",
+        "message": "array syntax count overflow",
+        "primary": {
+          "file": 0,
+          "start": 28,
+          "end": 29,
+          "text": "1"
+        },
+        "secondary": [],
+        "notes": []
+      },
+      "scope": "Supply a separately bounded private checked-count arithmetic seam yielding ReserveFailure::Overflow before reservation. Natural source cannot reach usize overflow under the 1024-element cap. Do not claim allocator fail_at proves this path; it maps to Allocation. Proposed origin is the first token of the attempted element."
+    },
+    {
+      "id": "array-literal-first-excess-element-message",
+      "status": "PROPOSED_SEPARATE_UNIT3A_CONTROL_REQUIRES_FREEZE_REVIEW",
+      "source_case": "literal-length-one-over",
+      "control_kind": "source-element-cap",
+      "expected_additional_fields": {
+        "message": "array element limit exceeded (1024)",
+        "secondary": [],
+        "notes": []
+      },
+      "existing_expected": "E0400 / parse / first token of actual 1025th element",
+      "precedence": "Lexer limits and earlier parse errors retain priority. After the first 1024 elements and separator, check actual excess before parsing or reserving element 1025. A trailing comma followed by closing bracket is not an excess element."
+    }
+  ],
+  "supplemental_control_constraints": [
+    "The E0500 checkpoint must not block QuerySession::value_type or structural type-only Unit3A observations. It only prevents new syntax from reaching unresolved execution-producing source paths.",
+    "Only validated parser/source-owned file-aware spans can anchor E0500. Existing E0500 invalid-source/identity diagnostics and resolve-project stage remain unchanged.",
+    "Production Closed syntax continues to reject at parse; no public command can activate this checkpoint.",
+    "All lex/parse errors and resource limits precede the temporary execution guard. Existing declaration-index conflict/resource diagnostics should not be casually reordered by a blanket pre-index array scan.",
+    "No source program, typed body, lowered raw data, verifier witness, plan or callback escapes while constructing this rejection.",
+    "Before applying checkpoint controls to sources with multiple array features, explicitly freeze traversal/order and exact selected primary. Isolated controls above avoid prescribing a new global semantic schedule.",
+    "Reservation-origin convention in these proposed controls needs explicit adoption: anchor the first token of the attempted array element, with existing source/file provenance."
+  ]
+}

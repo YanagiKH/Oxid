@@ -292,6 +292,78 @@
       "input": "fn main() -> () {\n    return;\n}\n",
       "expected": "fn main() -> () {\n    return;\n}\n",
       "check_input_exit": 0
+    },
+    {
+      "id": "array_types_and_reborrows",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "mod absent;fn f(a:& [i32;02],b:& mut [bool;1],u:[();0])->[();0]{sink(&*a,&mut *b);return [];}",
+      "expected": "mod absent; fn f(a: &[i32; 02], b: &mut [bool; 1], u: [(); 0]) -> [(); 0] { sink(&*a, &mut *b); return []; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "array_literals_index_store_and_length",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "fn edit(a:&mut [i32;2])->(){let mut b:[i32;2]=[0001,- 2,];b [ (0) ]=a [1]+b . len ( );sink(&b,&mut *a);return;}",
+      "expected": "fn edit(a: &mut [i32; 2]) -> () { let mut b: [i32; 2] = [0001, -2,]; b[(0)] = a[1] + b.len(); sink(&b, &mut *a); return; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "array_multiline_closers",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "fn f()->(){\nsink([\n[1],\na[\n0\n],\n]);\nreturn;\n}",
+      "expected": "fn f() -> () {\n    sink([\n            [1],\n            a[\n                0\n            ],\n    ]);\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "array_comments_empty_and_crlf",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "fn f()->(){\nlet a:[ i32; 0 ]=[/*[ ]*/];\nlet b=[1,// next\r\n2,];\na /*base*/ [ /*index*/ 0 /*end*/ ];\nreturn;\n}",
+      "expected": "fn f() -> () {\n    let a: [i32; 0] = [ /*[ ]*/ ];\n    let b = [1, // next\r\n        2,];\n    a /*base*/ [ /*index*/ 0 /*end*/ ];\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "array_syntax_only_semantic_errors",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "fn loose()->[bool;0]{let mixed=[true,(),missing(),Record{x:1},[2],];let empty=[];missing[- 1];missing.len();return [1];}",
+      "expected": "fn loose() -> [bool; 0] { let mixed = [true, (), missing(), Record { x: 1 }, [2],]; let empty = []; missing[-1]; missing.len(); return [1]; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "array_multiline_type_and_empty_group",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "fn f(a:&mut [\ni32;\n0002\n])->(){\nlet z:[();0]=([\n]);\nreturn;\n}",
+      "expected": "fn f(a: &mut [\n        i32;\n        0002\n]) -> () {\n    let z: [(); 0] = ([\n    ]);\n    return;\n}\n",
+      "check_input_exit": 1
     }
   ],
   "negative": [
@@ -372,6 +444,60 @@
       "input": "fn broken()->(){return} fn intact()->(){return;}",
       "expected_code": "E0100",
       "expected_stage": "parse"
+    },
+    {
+      "id": "array_missing_separator",
+      "input": "fn f()->(){let a=[1 2];return;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_missing_close",
+      "input": "fn f()->(){let a=[1,};return;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_repetition_excluded",
+      "input": "fn f()->(){let a=[1;2];return;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_type_nested_excluded",
+      "input": "fn f(a:[[i32;1];1])->(){return;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_type_signed_length_excluded",
+      "input": "fn f(a:[i32;-1])->(){return;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_type_length_limit",
+      "input": "fn f(a:[i32;1025])->(){return;}",
+      "expected_code": "E0400",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_record_field_excluded",
+      "input": "struct R{a:[i32;1]}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_grouped_index_base_excluded",
+      "input": "fn f()->(){(a)[0];return;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "array_length_argument_excluded",
+      "input": "fn f()->(){a.len(1);return;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
     }
   ],
   "negative_defaults": {
@@ -381,5 +507,6 @@
     "source_bytes_unchanged": true,
     "stderr": "At least one escaped diagnostic matching expected_code/expected_stage; additional recovery diagnostics are allowed within the bound."
   },
-  "negative_code_provenance": "Published parser.rs error() lines 446–480, import() lines 397–431, primary() lines 1089–1117 and lexer.rs lexical-error branches; code assertions refer to the first relevant diagnostic."
+  "negative_code_provenance": "Published parser.rs error() lines 446–480, import() lines 397–431, primary() lines 1089–1117 and lexer.rs lexical-error branches; code assertions refer to the first relevant diagnostic.",
+  "array_extension_provenance": "Additional array cases are hand-authored from RFC 0016 / parser/arrays.rs and RFC 0017 bracket rules; the original 28 positive and 13 negative design fixtures remain unchanged."
 }

@@ -1,0 +1,586 @@
+{
+  "purpose": "Prospective source-only review contracts; not candidate observations, executed tests, qualification receipts, or current public support",
+  "status": "Recommendations for parent adoption before future oracle freeze",
+  "span_policy": "Single-file fixture uses file id 0 and half-open original UTF-8 byte offsets",
+  "diagnostic_cases": [
+    {
+      "id": "read-index-internal-type-first",
+      "source": "fn main() -> i32 { let s = 0; return s[true + 1]; }\n",
+      "sha256": "a87bf6397c591d05f826a5caa13ac2ef00eed7272fa6ac5b89c0750ae50e14f1",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 43,
+          "text": "true"
+        }
+      },
+      "reason": "Type complete index before testing base kind"
+    },
+    {
+      "id": "read-base-kind-before-index-kind",
+      "source": "fn main() -> i32 { let s = 0; return s[true]; }\n",
+      "sha256": "d4e236ab70385f6f9a35fb79b0a30a73da0bac4481a39866e7b4fca95b444763",
+      "expected": {
+        "code": "E0305",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 37,
+          "end": 44,
+          "text": "s[true]"
+        }
+      },
+      "reason": "After a well-typed index expression, non-array base wins over non-i32 index"
+    },
+    {
+      "id": "read-array-bad-index",
+      "source": "fn main() -> i32 { let a = [1]; return a[true]; }\n",
+      "sha256": "886823f12d8608f6b41dc1b7afd7b57bd7785756c613dc34000d2bbfcdd397fc",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 41,
+          "end": 45,
+          "text": "true"
+        }
+      },
+      "reason": "Array base passes; require exactly i32"
+    },
+    {
+      "id": "read-unknown-base-first",
+      "source": "fn main() -> i32 { return missing[unknown()]; }\n",
+      "sha256": "347e55639c69fa58344c565651efbce0c02756f9e10e8b6aa9cc5ebf4c1037d3",
+      "expected": {
+        "code": "E0200",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 26,
+          "end": 33,
+          "text": "missing"
+        }
+      },
+      "reason": "Resolve base before resolving the index"
+    },
+    {
+      "id": "read-index-resolution-before-base-type",
+      "source": "fn main() -> i32 { let s = 0; return s[unknown()]; }\n",
+      "sha256": "3d0b69e3d153aa899d8246eb772e204c62b8ccd4ba3d43b42e97ce5ee80435da",
+      "expected": {
+        "code": "E0200",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 46,
+          "text": "unknown"
+        }
+      },
+      "reason": "Resolution completes before type checking"
+    },
+    {
+      "id": "read-index-literal-range-before-base-type",
+      "source": "fn main() -> i32 { let s = 0; return s[2147483648]; }\n",
+      "sha256": "5096b68a9719251d73044315059a6c4b684d72563de11ea0826755d0d14b606b",
+      "expected": {
+        "code": "E0203",
+        "stage": "resolve",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 49,
+          "text": "2147483648"
+        }
+      },
+      "reason": "Existing decimal-i32 resolution precedes type checking"
+    },
+    {
+      "id": "write-rhs-internal-type-first",
+      "source": "fn main() -> i32 { let s = 0; s[false] = true + 1; return 0; }\n",
+      "sha256": "7f7c337f34ef1bf8d18452b1b960aabffaad98273a1d8e30af7d94c97a437e27",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 41,
+          "end": 45,
+          "text": "true"
+        }
+      },
+      "reason": "RHS internal error wins over all target/index/owner checks"
+    },
+    {
+      "id": "write-index-internal-type-before-base",
+      "source": "fn main() -> i32 { let s = 0; s[true + 1] = false; return 0; }\n",
+      "sha256": "d540d8cfaa277c1c332c9934b508b30d0da9baffeb25df890f0c37d0b73d355c",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 36,
+          "text": "true"
+        }
+      },
+      "reason": "RHS types successfully; index internal error wins over base and RHS-element checks"
+    },
+    {
+      "id": "write-base-kind-before-index-kind",
+      "source": "fn main() -> i32 { let s = 0; s[true] = false; return 0; }\n",
+      "sha256": "6fed7af8b18a4a8f0c30361f87dce387d7972bcf3cffcf7fb47b16635264e28c",
+      "expected": {
+        "code": "E0305",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 30,
+          "end": 37,
+          "text": "s[true]"
+        }
+      },
+      "reason": "Well-typed operand subtrees; base kind comes next"
+    },
+    {
+      "id": "write-index-kind-before-rhs-element",
+      "source": "fn main() -> i32 { let a = [1]; a[true] = false; return 0; }\n",
+      "sha256": "57750be685c0c6643a6c4057a14df01a86cca4ba74db1c4affdadcd5e9fd8bc4",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 34,
+          "end": 38,
+          "text": "true"
+        }
+      },
+      "reason": "Index-kind mismatch wins over RHS element and immutable binding"
+    },
+    {
+      "id": "write-element-before-mutability",
+      "source": "fn main() -> i32 { let a = [1]; a[0] = false; return 0; }\n",
+      "sha256": "8f64ca26780e1efc1c6f3342484c95f65d5db38000319114f7b697325d5f6a5e",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 39,
+          "end": 44,
+          "text": "false"
+        }
+      },
+      "reason": "RHS element mismatch wins over immutable binding"
+    },
+    {
+      "id": "write-owner-mutability-last",
+      "source": "fn main() -> i32 { let a = [1]; a[0] = 2; return 0; }\n",
+      "sha256": "7062109c43d146c79791a627277b996c9b8c89d5c1609a894ebb3aecd4fbf876",
+      "expected": {
+        "code": "E0304",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 36,
+          "text": "a[0]"
+        }
+      },
+      "reason": "Valid operands and array identity; by-value owner mutability last"
+    },
+    {
+      "id": "missing-array-element-separator",
+      "source": "fn main() -> i32 { let a = [1 2]; return 0; }\n",
+      "sha256": "1f1e2e744f3fb36f61fe021342594c9b2fbe14df56b76ec69c7ff7fc2dfa0dd9",
+      "expected": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 30,
+          "end": 31,
+          "text": "2"
+        }
+      },
+      "reason": "Missing comma/closing bracket; generic Parser::error would incorrectly select E0101 for Number"
+    },
+    {
+      "id": "missing-array-index",
+      "source": "fn main() -> i32 { let a = [1]; return a[]; }\n",
+      "sha256": "421c75782b9c89c557397fcb9f78076966e53fe596175542a2305676a3568964",
+      "expected": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 41,
+          "end": 42,
+          "text": "]"
+        }
+      },
+      "reason": "Missing required expression; bracket remains an Unsupported token on the dormant tape"
+    },
+    {
+      "id": "missing-array-type-separator",
+      "source": "fn main() -> i32 { let a: [i32 2] = [1,2]; return 0; }\n",
+      "sha256": "6836caccf700d4398c2494026899ffa5fc8b90337db091bf480a72cec86a76e2",
+      "expected": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 31,
+          "end": 32,
+          "text": "2"
+        }
+      },
+      "reason": "Missing semicolon after accepted scalar element type"
+    },
+    {
+      "id": "excluded-named-array-length",
+      "source": "fn main() -> i32 { let N = 1; let a: [i32; N] = [1]; return 0; }\n",
+      "sha256": "2971b181a22f6eb508f9ada54cbb2d20e6fac86c5d8b04739e2f9562e4682719",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 43,
+          "end": 44,
+          "text": "N"
+        }
+      },
+      "reason": "Named lengths are excluded, not missing decimal syntax"
+    },
+    {
+      "id": "excluded-length-expression",
+      "source": "fn main() -> i32 { let a: [i32; 1+1] = [1,2]; return 0; }\n",
+      "sha256": "7ea2cd439343db40e3c176bc122c189abe9bb177d781753674afb2dc35106304",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 33,
+          "end": 34,
+          "text": "+"
+        }
+      },
+      "reason": "First operator token proves excluded length expression"
+    },
+    {
+      "id": "overlength-token",
+      "source": "fn main() -> i32 { let a: [i32; 0001025] = [1]; return 0; }\n",
+      "sha256": "e10867be018f522c6b64aef72566b18f51848c8a636b3dc2f12fe5172b9823bd",
+      "expected": {
+        "code": "E0400",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 39,
+          "text": "0001025"
+        }
+      },
+      "reason": "Whole ASCII length token, including leading zeros"
+    },
+    {
+      "id": "excluded-nonascii-length",
+      "source": "fn main() -> i32 { let a: [i32; １] = [1]; return 0; }\n",
+      "sha256": "464c2306c2b95cf16c18a321e8023728b95f3856d319a92a972551cd5ea72fd1",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 32,
+          "end": 35,
+          "text": "１"
+        }
+      },
+      "reason": "Entire non-ASCII numeric spelling token"
+    },
+    {
+      "id": "excluded-nested-array-type",
+      "source": "fn main() -> i32 { let a: [[i32; 1]; 1] = [[1]]; return 0; }\n",
+      "sha256": "f0c311f8a84f91f92596fba3e252854e6e2e25e10160c0b32380b65d2acba7a5",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 27,
+          "end": 28,
+          "text": "["
+        }
+      },
+      "reason": "First inner opening bracket; no recursive unsupported-type parser required"
+    },
+    {
+      "id": "excluded-reference-element",
+      "source": "fn main() -> i32 { let a: [&i32; 1] = [1]; return 0; }\n",
+      "sha256": "959178c3d88733ef4ad3caa54ac996ec42bf7c7a4c28b5d40363f112c6170140",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 27,
+          "end": 28,
+          "text": "&"
+        }
+      },
+      "reason": "First excluded element-type token"
+    },
+    {
+      "id": "excluded-record-element",
+      "source": "struct R { x: i32 }\nfn main() -> i32 { let a: [R; 1] = [R { x: 1 }]; return 0; }\n",
+      "sha256": "aceb4ed6a11da0e30549f7b597cb19172b7f03f13998ed15be1703b8a7c99a21",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 47,
+          "end": 48,
+          "text": "R"
+        }
+      },
+      "reason": "Whole named element token; no type-name resolution"
+    },
+    {
+      "id": "excluded-array-record-field",
+      "source": "struct R { a: [i32; 1] }\nfn main() -> i32 { return 0; }\n",
+      "sha256": "dcde13f863493d6c5b6f5074ff13430c7bf4242e2c73b345484f109b7c00120d",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 14,
+          "end": 15,
+          "text": "["
+        }
+      },
+      "reason": "First bracket in prohibited record-field type position"
+    },
+    {
+      "id": "excluded-repeat-syntax",
+      "source": "fn main() -> i32 { let a = [1;2]; return 0; }\n",
+      "sha256": "4ef62aa091fae4bec37336074e2a62fcdb12522fdb607839b991bd1b2801541b",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 29,
+          "end": 30,
+          "text": ";"
+        }
+      },
+      "reason": "Repeat separator, after the first expression"
+    },
+    {
+      "id": "excluded-grouped-base",
+      "source": "fn main() -> i32 { let a = [1]; return (a)[0]; }\n",
+      "sha256": "7966e2583ce0cb9fad15c5768b86be54a4b97b941939c1db0c5f870ffd7ece78",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 42,
+          "end": 43,
+          "text": "["
+        }
+      },
+      "reason": "First unsupported postfix bracket after a complete grouped base"
+    },
+    {
+      "id": "excluded-repeated-index",
+      "source": "fn main() -> i32 { let a = [1]; return a[0][0]; }\n",
+      "sha256": "f284ff73222b8624f9971a3dcf3a8c2b29018f344cf304c07fcd6898efedb40b",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 43,
+          "end": 44,
+          "text": "["
+        }
+      },
+      "reason": "First unsupported postfix bracket after the complete access"
+    },
+    {
+      "id": "excluded-grouped-store-target",
+      "source": "fn main() -> i32 { let mut a = [1]; (a[0]) = 2; return 0; }\n",
+      "sha256": "068fd8044ac2afea6988402e78a4687e44cca9620c960605f52eb4962c68f73b",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 36,
+          "end": 42,
+          "text": "(a[0])"
+        }
+      },
+      "reason": "Whole already-parsed target expression; never coerce Group to direct target"
+    },
+    {
+      "id": "excluded-arbitrary-method",
+      "source": "fn main() -> i32 { let a = [1]; return a.other(); }\n",
+      "sha256": "57d02afab3f35f09ba0b67ec0613736cc885cd85cd83dc12ef8d518b63b16d5e",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 46,
+          "end": 47,
+          "text": "("
+        }
+      },
+      "reason": "Opening call parenthesis distinguishes a forbidden method from an ordinary field"
+    },
+    {
+      "id": "excluded-length-argument",
+      "source": "fn main() -> i32 { let a = [1]; return a.len(1); }\n",
+      "sha256": "609f07b126d6201ec7172083410ffcb93629b595af5e75d895ebb1fa0d0cc787",
+      "expected": {
+        "code": "E0101",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 45,
+          "end": 46,
+          "text": "1"
+        }
+      },
+      "reason": "First argument token proves nonzero-argument intrinsic spelling"
+    },
+    {
+      "id": "missing-length-call-close",
+      "source": "fn main() -> i32 { let a = [1]; return a.len(; }\n",
+      "sha256": "6446f271ad14d091805132034963e1c125510e80007378ec63bbcfc1db27d284",
+      "expected": {
+        "code": "E0100",
+        "stage": "parse",
+        "primary": {
+          "file": 0,
+          "start": 45,
+          "end": 46,
+          "text": ";"
+        }
+      },
+      "reason": "No argument expression begins here; missing closing parenthesis remains malformed syntax"
+    },
+    {
+      "id": "empty-no-context",
+      "source": "fn main() -> i32 { let a = ([]); return 0; }\n",
+      "sha256": "32abf2281ee2e873b6833f7cbbcd759dbd49144771080937f36a827a3e0d2c73",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 28,
+          "end": 30,
+          "text": "[]"
+        }
+      },
+      "reason": "Peel transparent groups; absent array annotation reports literal"
+    },
+    {
+      "id": "empty-nonzero-annotation",
+      "source": "fn main() -> i32 { let a: [i32; 1] = ([]); return 0; }\n",
+      "sha256": "51891e6f066c88b32d396bd6e6e95392fecafdd030242d24c4b3072615f09ba6",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 37,
+          "end": 41,
+          "text": "([])"
+        }
+      },
+      "reason": "Infer zero literal using annotation element, then existing Let mismatch uses whole initializer"
+    },
+    {
+      "id": "nested-empty-does-not-inherit-context",
+      "source": "fn main() -> i32 { let a: [i32; 1] = [[]]; return 0; }\n",
+      "sha256": "a6a002293dd3c4604743cbf65ae0c2b45600207eace37b3de9537fe6cc6d9110",
+      "expected": {
+        "code": "E0300",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 38,
+          "end": 40,
+          "text": "[]"
+        }
+      },
+      "reason": "Expected type does not propagate into nested literal elements"
+    },
+    {
+      "id": "utf8-read-primary",
+      "source": "// 前置き\nfn main() -> i32 { let s = 0; return s[true]; }\n",
+      "sha256": "36f08bdef9d688a7be7652c859feec77f178eb00b4633630b2d3b951abc764e8",
+      "expected": {
+        "code": "E0305",
+        "stage": "type",
+        "primary": {
+          "file": 0,
+          "start": 50,
+          "end": 57,
+          "text": "s[true]"
+        }
+      },
+      "reason": "Coordinates are original UTF-8 byte offsets, not Unicode scalar counts"
+    }
+  ],
+  "semantic_cases": [
+    {
+      "id": "rhs-snapshot-success",
+      "source": "fn touch(a: &mut [i32; 1]) -> i32 { a[0] = 99; return 0; }\nfn main() -> i32 { let mut a = [5]; a[touch(&mut a)] = a[0]; return a[0]; }\n",
+      "sha256": "7455c6819f09a3baf2d0162c2085d148e97d27558ded38dbb94f1c1dacf16c34",
+      "expected_semantic_sequence": [
+        "construct a=[5]",
+        "RHS reads snapshot 5",
+        "acquire exclusive call loan",
+        "touch writes a[0]=99",
+        "release call loan",
+        "pay final access fuel",
+        "write snapshot 5",
+        "return 5"
+      ],
+      "fuel_note": "No total is asserted before independently deriving full lowerer/frame/call/cleanup schedule; insufficient final-access fuel must instead report E0601"
+    },
+    {
+      "id": "rhs-snapshot-final-bounds-failure",
+      "source": "fn touch(a: &mut [i32; 1]) -> i32 { a[0] = 99; return 1; }\nfn main() -> i32 { let mut a = [5]; a[touch(&mut a)] = a[0]; return a[0]; }\n",
+      "sha256": "129019a7bf2994820e5c403033b99dcfddbd74933361070d6a631fcf57860f93",
+      "expected_semantic_sequence": [
+        "construct a=[5]",
+        "RHS reads snapshot 5",
+        "acquire exclusive call loan",
+        "touch writes a[0]=99",
+        "release call loan",
+        "pay final access fuel",
+        "E0606 at a[touch(&mut a)]",
+        "no final store",
+        "observed a remains [99]"
+      ],
+      "fuel_note": "No total is asserted before independently deriving full lowerer/frame/call/cleanup schedule; insufficient final-access fuel must instead report E0601"
+    }
+  ]
+}

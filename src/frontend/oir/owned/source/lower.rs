@@ -121,6 +121,10 @@ enum ExprFrame {
         expression: source::ExprId,
         next: usize,
     },
+    ArrayLiteral {
+        expression: source::ExprId,
+        next: usize,
+    },
     Call(CallFrame),
     Prepare(CallFrame),
 }
@@ -140,13 +144,19 @@ struct Walk<'a, 'b> {
     active: usize,
     next_expression: usize,
     preparing: Option<(CallSiteId, usize)>,
+    #[cfg(test)]
+    pass: super::array_pipeline::LowerPass,
 }
 impl<'a, 'b> Walk<'a, 'b> {
     fn new(
         view: &'a TypedOwnedFunction<'a>,
         block_counts: Option<&'b mut [usize]>,
         expected: Option<Counts>,
+        #[cfg(test)] pass: super::array_pipeline::LowerPass,
     ) -> Result<Self> {
+        if !view.admission().allows_lowering() {
+            return Err(invariant(view.signature().span));
+        }
         let output = if let Some(c) = expected {
             let f = view.hir();
             let signature = view.signature();
@@ -182,6 +192,8 @@ impl<'a, 'b> Walk<'a, 'b> {
             active: 0,
             next_expression: 0,
             preparing: None,
+            #[cfg(test)]
+            pass,
         };
         this.inventory()?;
         let entry = this.block(view.signature().span)?;
@@ -189,6 +201,8 @@ impl<'a, 'b> Walk<'a, 'b> {
         Ok(this)
     }
     fn inventory(&mut self) -> Result<()> {
+        #[cfg(test)]
+        budget::guard_event(budget::GuardEvent::InventoryEntry);
         let f = self.view.hir();
         let signature = self.view.signature();
         self.counts.parameters = signature.params.len();
@@ -315,7 +329,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 statements,
                 budget::add(c.descriptor_arguments, c.preparations)?,
             )?,
-            c.constructed_fields,
+            budget::add(c.constructed_fields, c.constructed_elements)?,
         )?;
         budget::cap(expanded, MAX_ASSIGNMENTS, "expanded ownership events")?;
         budget::cap(
@@ -433,9 +447,18 @@ impl<'a, 'b> Walk<'a, 'b> {
             self.view.hir().expressions[id.0].span,
         )?;
         self.next_expression += 1;
+        #[cfg(test)]
+        super::array_pipeline::completed(
+            self.pass,
+            self.view.hir().id.0,
+            id.0,
+            self.view.hir().expressions[id.0].span,
+        );
         Ok(())
     }
     fn block(&mut self, span: Span) -> Result<BlockId> {
+        #[cfg(test)]
+        budget::guard_event(budget::GuardEvent::BlockAllocation);
         let id = BlockId(self.counts.blocks);
         self.counts.blocks = budget::add(self.counts.blocks, 1)?;
         self.check_counts()?;
@@ -500,6 +523,8 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         let block = self.record_statements(1, span)?;
         if let Some(out) = &mut self.output {
+            #[cfg(test)]
+            budget::guard_event(budget::GuardEvent::EmitStep);
             let count = self.block_counts.as_ref().ok_or_else(|| invariant(span))?[block.0];
             budget::append(
                 &mut out.raw.blocks[block.0].statements,
@@ -598,6 +623,13 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
+                        source::ExprKind::ArrayLiteral { .. } => frames.push(
+                            ExprFrame::ArrayLiteral {
+                                expression: id,
+                                next: 0,
+                            },
+                            cause,
+                        )?,
                         source::ExprKind::Logical { left, .. } => {
                             frames.push(ExprFrame::LogicalLeft(id), cause)?;
                             frames.push(ExprFrame::Visit(*left), cause)?;
@@ -617,7 +649,8 @@ impl<'a, 'b> Walk<'a, 'b> {
                             frames.push(ExprFrame::Emit(id), cause)?;
                             match other {
                                 source::ExprKind::Group(inner)
-                                | source::ExprKind::Not { operand: inner, .. } => {
+                                | source::ExprKind::Not { operand: inner, .. }
+                                | source::ExprKind::IndexRead { index: inner, .. } => {
                                     frames.push(ExprFrame::Visit(*inner), cause)?
                                 }
                                 source::ExprKind::Arithmetic { left, right, .. }
@@ -633,6 +666,79 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Emit(id) => {
                     self.simple_expression(id, cause)?;
                     self.complete(id)?;
+                }
+                ExprFrame::ArrayLiteral {
+                    expression: id,
+                    next,
+                } => {
+                    let expression = &self.view.hir().expressions[id.0];
+                    let source::ExprKind::ArrayLiteral { elements } = &expression.kind else {
+                        return Err(invariant(expression.span));
+                    };
+                    if let Some(child) = elements.get(next) {
+                        frames.push(
+                            ExprFrame::ArrayLiteral {
+                                expression: id,
+                                next: next + 1,
+                            },
+                            cause,
+                        )?;
+                        frames.push(ExprFrame::Visit(*child), cause)?;
+                    } else {
+                        let ValueTy::Owned(AggregateTy::FixedArray(array)) =
+                            self.view.expression_ty(id)
+                        else {
+                            return Err(invariant(expression.span));
+                        };
+                        require(array.length() == elements.len(), expression.span)?;
+                        budget::cap(elements.len(), 1024, "fixed array length")?;
+                        let owner = self.owner(
+                            AggregateTy::FixedArray(array),
+                            OwnerKind::Temporary,
+                            expression.span,
+                        )?;
+                        self.statement(
+                            OwnedInstruction::StorageLive(owner),
+                            expression.span,
+                            expression.span,
+                            cause,
+                        )?;
+                        self.counts.constructed_elements =
+                            budget::add(self.counts.constructed_elements, elements.len())?;
+                        self.check_counts()?;
+                        let mut values = if self.output.is_some() {
+                            #[cfg(test)]
+                            super::array_pipeline::literal_context(
+                                self.view.hir().id.0,
+                                id.0,
+                                self.counts,
+                            );
+                            budget::reserve_array_operands(elements.len())?
+                        } else {
+                            Vec::new()
+                        };
+                        if self.output.is_some() {
+                            for child in elements {
+                                budget::append(
+                                    &mut values,
+                                    self.operand(*child)?,
+                                    elements.len(),
+                                    expression.span,
+                                )?;
+                            }
+                        }
+                        self.statement(
+                            OwnedInstruction::ConstructArray {
+                                destination: owner,
+                                elements: values,
+                            },
+                            expression.span,
+                            expression.span,
+                            cause,
+                        )?;
+                        self.set_owned(id, owner);
+                        self.complete(id)?;
+                    }
                 }
                 ExprFrame::Literal {
                     expression: id,
@@ -868,6 +974,9 @@ impl<'a, 'b> Walk<'a, 'b> {
         let span = expression.span;
         if let ValueTy::Owned(record) = self.view.expression_ty(id) {
             match expression.kind {
+                source::ExprKind::ArrayLiteral { .. }
+                | source::ExprKind::IndexRead { .. }
+                | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
                 source::ExprKind::Binding(binding) => {
                     let BindingLocation::Owner(source) = self.location(binding, span)? else {
                         return Err(invariant(span));
@@ -902,6 +1011,32 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         let destination = self.operand(id)?.local;
         let value = match expression.kind {
+            source::ExprKind::ArrayLiteral { .. } => return Err(invariant(span)),
+            source::ExprKind::IndexRead { base, index, .. } => {
+                self.statement(
+                    OwnedInstruction::ReadIndex {
+                        destination,
+                        base: self.base(base, span)?,
+                        index: self.operand(index)?,
+                    },
+                    span,
+                    span,
+                    cause,
+                )?;
+                return Ok(());
+            }
+            source::ExprKind::ArrayLength { base, .. } => {
+                self.statement(
+                    OwnedInstruction::ArrayLength {
+                        destination,
+                        base: self.base(base, span)?,
+                    },
+                    span,
+                    span,
+                    cause,
+                )?;
+                return Ok(());
+            }
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::Unit => Rvalue::Unit,
@@ -1191,6 +1326,28 @@ impl<'a, 'b> Walk<'a, 'b> {
                 )?;
                 continue;
             }
+            if let source::StmtKind::IndexAssign {
+                base,
+                target_span,
+                value,
+                index,
+                ..
+            } = statement.kind
+            {
+                self.expression(value, s)?;
+                self.expression(index, s)?;
+                self.statement(
+                    OwnedInstruction::WriteIndex {
+                        base: self.base(base, target_span)?,
+                        index: self.operand(index)?,
+                        value: self.operand(value)?,
+                    },
+                    s,
+                    target_span,
+                    s,
+                )?;
+                continue;
+            }
             let root = match statement.kind {
                 source::StmtKind::Let { init, .. }
                 | source::StmtKind::Assign { value: init, .. }
@@ -1204,6 +1361,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 self.expression(root, s)?;
             }
             match statement.kind {
+                source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
                         BindingLocation::ScalarValue(destination) => {
@@ -1456,8 +1614,45 @@ pub(super) fn count_function(
     view: &TypedOwnedFunction<'_>,
     blocks: Option<&mut [usize]>,
 ) -> Result<Counts> {
-    let mut walk = Walk::new(view, blocks, None)?;
-    walk.body()?;
+    #[cfg(test)]
+    let pass = if blocks.is_some() {
+        super::array_pipeline::LowerPass::BlockCount
+    } else {
+        super::array_pipeline::LowerPass::EmissionCount
+    };
+    count_function_for(
+        view,
+        blocks,
+        #[cfg(test)]
+        pass,
+    )
+}
+pub(super) fn count_preflight_function(view: &TypedOwnedFunction<'_>) -> Result<Counts> {
+    count_function_for(
+        view,
+        None,
+        #[cfg(test)]
+        super::array_pipeline::LowerPass::PreflightCount,
+    )
+}
+fn count_function_for(
+    view: &TypedOwnedFunction<'_>,
+    blocks: Option<&mut [usize]>,
+    #[cfg(test)] pass: super::array_pipeline::LowerPass,
+) -> Result<Counts> {
+    let mut walk = Walk::new(
+        view,
+        blocks,
+        None,
+        #[cfg(test)]
+        pass,
+    )?;
+    #[cfg(test)]
+    budget::guard_event(budget::GuardEvent::CountEntry);
+    let result = walk.body();
+    #[cfg(test)]
+    super::array_pipeline::counted(pass, view.hir().id.0, walk.counts, result.is_ok());
+    result?;
     Ok(walk.counts)
 }
 pub(super) fn scratch_bytes(view: &TypedOwnedFunction<'_>, count: Counts) -> Result<usize> {
@@ -1530,8 +1725,28 @@ pub(super) fn lower_with_limits(
             count_function(&view, Some(&mut blocks))? == count,
             view.signature().span,
         )?;
-        let mut walk = Walk::new(&view, Some(&mut blocks), Some(count))?;
-        walk.body()?;
+        #[cfg(test)]
+        for (block, statements) in blocks.iter().copied().enumerate() {
+            super::array_pipeline::counted_block(view.hir().id.0, block, statements);
+        }
+        let mut walk = Walk::new(
+            &view,
+            Some(&mut blocks),
+            Some(count),
+            #[cfg(test)]
+            super::array_pipeline::LowerPass::Emit,
+        )?;
+        let result = walk.body();
+        #[cfg(test)]
+        if result.is_err() {
+            super::array_pipeline::counted(
+                super::array_pipeline::LowerPass::Emit,
+                view.hir().id.0,
+                walk.counts,
+                false,
+            );
+        }
+        result?;
         require(walk.counts == count, view.signature().span)?;
         let output = walk
             .output
@@ -1549,6 +1764,13 @@ pub(super) fn lower_with_limits(
                 && f.blocks.len() == count.blocks,
             view.signature().span,
         )?;
+        #[cfg(test)]
+        super::array_pipeline::counted(
+            super::array_pipeline::LowerPass::Emit,
+            view.hir().id.0,
+            walk.counts,
+            true,
+        );
         bytes = budget::add(bytes, budget::function_bytes(count)?)?;
         budget::append(
             &mut functions,
@@ -1563,4 +1785,64 @@ pub(super) fn lower_with_limits(
         return Err(error);
     }
     Ok(RawOwnedProgram { records, functions })
+}
+
+/// Exercises the same emission constructor before any output work. Kept inside
+/// the source test boundary; it cannot return raw storage or executable authority.
+#[cfg(test)]
+pub(super) fn check_array_type_emission_fence(view: &TypedOwnedFunction<'_>) -> Result<()> {
+    Walk::new(
+        view,
+        None,
+        Some(Counts::default()),
+        super::array_pipeline::LowerPass::Emit,
+    )
+    .map(|_| ())
+}
+
+#[test]
+fn unit3b2_lowering_layout_without_source_observation() {
+    assert_eq!((EXPR_FRAMES, BODY_FRAMES, LOOP_FRAMES), (203, 268, 65));
+    macro_rules! layout {
+        ($name:literal, $ty:ty) => {
+            println!(
+                "LAYOUT {{\"name\":{},\"bytes\":{},\"align\":{}}}",
+                concat!("\"", $name, "\""),
+                size_of::<$ty>(),
+                std::mem::align_of::<$ty>()
+            );
+        };
+    }
+    layout!("ExprFrame", ExprFrame);
+    layout!("Option<ExprFrame>", Option<ExprFrame>);
+    layout!("Stack<ExprFrame,203>", Stack<ExprFrame, EXPR_FRAMES>);
+    layout!("BodyFrame", BodyFrame);
+    layout!("Option<BodyFrame>", Option<BodyFrame>);
+    layout!("Stack<BodyFrame,268>", Stack<BodyFrame, BODY_FRAMES>);
+    layout!("LoopTargets", LoopTargets);
+    layout!("Option<LoopTargets>", Option<LoopTargets>);
+    layout!("Stack<LoopTargets,65>", Stack<LoopTargets, LOOP_FRAMES>);
+    layout!("CallFrame", CallFrame);
+    layout!("Walk", Walk<'_, '_>);
+    layout!("Output", Output);
+    layout!("Option<Output>", Option<Output>);
+    layout!("FunctionCounts", Counts);
+    layout!("BindingLocation", BindingLocation);
+    layout!("Option<BindingLocation>", Option<BindingLocation>);
+    layout!("EvaluatedValue", EvaluatedValue);
+    layout!("Option<EvaluatedValue>", Option<EvaluatedValue>);
+    layout!("Vec<Operand>", Vec<Operand>);
+    layout!("Operand", Operand);
+    layout!("SourceAdmission", super::resolve::SourceAdmission);
+    layout!(
+        "ResolvedOwnedProgram",
+        super::resolve::ResolvedOwnedProgram<'_>
+    );
+    layout!("TypedOwnedProgram", TypedOwnedProgram<'_>);
+    layout!("TypedOwnedFunction", TypedOwnedFunction<'_>);
+    layout!("Allocator", crate::frontend::project::budget::Allocator);
+    layout!(
+        "ReserveEvent",
+        crate::frontend::project::budget::ReserveEvent
+    );
 }

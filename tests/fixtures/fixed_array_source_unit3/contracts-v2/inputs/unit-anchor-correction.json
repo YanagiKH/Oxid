@@ -1,0 +1,118 @@
+{
+  "status": "SUPERSEDED_BEFORE_COMPILER_OBSERVATION",
+  "freeze_manifest_sha256": "d746fb50f409ce865ac948d0884fafcd8cfd5ab98b76957acbcbf678e239165a",
+  "archive_sha256": "9971002d7fead14409311256de5d9b3b82eb4984e6f08029d75b84b5c44b0654",
+  "case": {
+    "expected": {
+      "ast": [
+        {
+          "element_count": 1,
+          "elements": [
+            {
+              "column": 28,
+              "end": 29,
+              "end_column": 30,
+              "end_line": 1,
+              "file": 0,
+              "line": 1,
+              "start": 27,
+              "text": "()"
+            }
+          ],
+          "kind": "ArrayLiteral",
+          "origin": {
+            "column": 37,
+            "end": 41,
+            "end_column": 42,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 36,
+            "text": "[(),]"
+          }
+        },
+        {
+          "base": {
+            "column": 51,
+            "end": 51,
+            "end_column": 52,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 50,
+            "text": "a"
+          },
+          "kind": "ArrayLength",
+          "origin": {
+            "column": 51,
+            "end": 57,
+            "end_column": 58,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 50,
+            "text": "a.len()"
+          }
+        }
+      ],
+      "inventory": {
+        "array_literal_elements": 1,
+        "array_store_target_wrappers": 0
+      },
+      "later_type_expectation": {
+        "binding": {
+          "element": "unit",
+          "length": 1,
+          "tag": "fixed_array"
+        },
+        "empty_context": "whole annotated local only",
+        "initializer": {
+          "element": "unit",
+          "length": 1,
+          "tag": "fixed_array"
+        },
+        "return_expression": "i32"
+      },
+      "parse": "accept",
+      "route": "owned-whole-program",
+      "selectors": {
+        "ast": [
+          true
+        ],
+        "source_owner": true
+      },
+      "type_queries": [
+        {
+          "origin": {
+            "column": 27,
+            "end": 33,
+            "end_column": 34,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 26,
+            "text": "[(); 1]"
+          },
+          "value": {
+            "element": "unit",
+            "length": 1,
+            "tag": "fixed_array"
+          }
+        }
+      ]
+    },
+    "family": "scalar-array-boundary",
+    "files": [
+      {
+        "bytes": 61,
+        "file": 0,
+        "path": "main.ox",
+        "sha256": "5a93cd48bdc89ef5b83a75c27adbe026a3a28e09bbcb622cabd8960c61d70b11"
+      }
+    ],
+    "first_observation_slice": "3A",
+    "id": "scalar-unit-length-1",
+    "status": "FROZEN_EXPECTATION_NOT_EXECUTED"
+  },
+  "reason": "The occurrence-based unit child anchor selected the annotation instead of the array literal element because main() is an earlier occurrence. Select offset1 within the literal itself."
+}

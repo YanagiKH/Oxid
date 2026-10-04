@@ -1,0 +1,773 @@
+{
+  "cases": [
+    {
+      "files": [
+        {
+          "bytes": 52,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "a87bf6397c591d05f826a5caa13ac2ef00eed7272fa6ac5b89c0750ae50e14f1"
+        }
+      ],
+      "id": "read-index-internal-type-first",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 48,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "d4e236ab70385f6f9a35fb79b0a30a73da0bac4481a39866e7b4fca95b444763"
+        }
+      ],
+      "id": "read-base-kind-before-index-kind",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 50,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "886823f12d8608f6b41dc1b7afd7b57bd7785756c613dc34000d2bbfcdd397fc"
+        }
+      ],
+      "id": "read-array-bad-index",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 48,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "347e55639c69fa58344c565651efbce0c02756f9e10e8b6aa9cc5ebf4c1037d3"
+        }
+      ],
+      "id": "read-unknown-base-first",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 53,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "3d0b69e3d153aa899d8246eb772e204c62b8ccd4ba3d43b42e97ce5ee80435da"
+        }
+      ],
+      "id": "read-index-resolution-before-base-type",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 54,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "5096b68a9719251d73044315059a6c4b684d72563de11ea0826755d0d14b606b"
+        }
+      ],
+      "id": "read-index-literal-range-before-base-type",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 63,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "7f7c337f34ef1bf8d18452b1b960aabffaad98273a1d8e30af7d94c97a437e27"
+        }
+      ],
+      "id": "write-rhs-internal-type-first",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 63,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "d540d8cfaa277c1c332c9934b508b30d0da9baffeb25df890f0c37d0b73d355c"
+        }
+      ],
+      "id": "write-index-internal-type-before-base",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 59,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "6fed7af8b18a4a8f0c30361f87dce387d7972bcf3cffcf7fb47b16635264e28c"
+        }
+      ],
+      "id": "write-base-kind-before-index-kind",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 61,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "57750be685c0c6643a6c4057a14df01a86cca4ba74db1c4affdadcd5e9fd8bc4"
+        }
+      ],
+      "id": "write-index-kind-before-rhs-element",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 58,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "8f64ca26780e1efc1c6f3342484c95f65d5db38000319114f7b697325d5f6a5e"
+        }
+      ],
+      "id": "write-element-before-mutability",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 54,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "7062109c43d146c79791a627277b996c9b8c89d5c1609a894ebb3aecd4fbf876"
+        }
+      ],
+      "id": "write-owner-mutability-last",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 45,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "32abf2281ee2e873b6833f7cbbcd759dbd49144771080937f36a827a3e0d2c73"
+        }
+      ],
+      "id": "empty-no-context",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 55,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "51891e6f066c88b32d396bd6e6e95392fecafdd030242d24c4b3072615f09ba6"
+        }
+      ],
+      "id": "empty-nonzero-annotation",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 55,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "a6a002293dd3c4604743cbf65ae0c2b45600207eace37b3de9537fe6cc6d9110"
+        }
+      ],
+      "id": "nested-empty-does-not-inherit-context",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 61,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "36f08bdef9d688a7be7652c859feec77f178eb00b4633630b2d3b951abc764e8"
+        }
+      ],
+      "id": "utf8-read-primary",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 62,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "8807388125d28711c73e6552914843218d6d3c443a61250e9316149f6509cc31"
+        }
+      ],
+      "id": "write-resolve-base-before-both-operands",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 73,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "082576c5d3fb1835bf6c8e9fb23ace1cdd77671e3d0f804501d0eb94a94e5e0b"
+        }
+      ],
+      "id": "write-resolve-rhs-before-index",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 73,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "711d3dc384f243f12112f934514a16fcff7f88e83c6aa8a0f98612808e0be158"
+        }
+      ],
+      "id": "write-whole-resolution-before-rhs-typing",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 67,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "509cb3c35a9bccbc86ee6120b9fa198d464a7338971aec90d1015bc4e3c71d67"
+        }
+      ],
+      "id": "write-both-subtree-errors-rhs-wins",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 90,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "c250b4834e3eaf99d9b6279866a884fcd3c74b05e85039d3843d4eda973b250b"
+        }
+      ],
+      "id": "whole-program-resolution-before-earlier-function-type",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 62,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "c5f9d7422e93168b8f37d967bc4ee3c85699c82002059bc0d7d1d9779e6608aa"
+        }
+      ],
+      "id": "write-one-conflict-element",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 61,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "18a666eaa5eec25909c9de0c839ffebcd862bc8094aeefc3814585bc1a52dd7f"
+        }
+      ],
+      "id": "write-one-conflict-index",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 50,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "89aa766d25bae2f31e85a4e2dd8980fdabf5087992c9de4be6c70c6daf5d321c"
+        }
+      ],
+      "id": "empty-scalar-context",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 80,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "3ba0c58117e88a6f8d8120b16f67aa488db903883dd4de2d451768d85c24e864"
+        }
+      ],
+      "id": "empty-call-context-excluded",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 69,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "83c56501682fae222e3820d099f74259e90f3d2b9990831131bd82d9ac1f56fc"
+        }
+      ],
+      "id": "empty-return-context-excluded",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 65,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "e6a4dc72429365d2e2d824527f147ebab94225e8fb5702f42b6df6f74059b901"
+        }
+      ],
+      "id": "empty-reassignment-context-excluded",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 54,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "df523d928d4a7477da5256625fbe451ce238b7ab591420e0ef8323c7b057e893"
+        }
+      ],
+      "id": "literal-first-heterogeneous-element",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 46,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "78d77948d26a4f3da2dcf4d9f3cb8832f675df72f02e51e5c0db01697847f167"
+        }
+      ],
+      "id": "literal-nested-nonempty-is-nonscalar",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 64,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "74ff8f03050b26a17cc8e65b5f2cac0362f08c3e7463495a577c3230bcf6dba7"
+        }
+      ],
+      "id": "scalar-bool-length-0",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 65,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "12d84b0e19246e1c5a8352c09d18feac105b71080f8e76469ef0622a9bfc7902"
+        }
+      ],
+      "id": "scalar-bool-length-1",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 63,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "f3c451023455108b03cfdfe280c21d261b9f9d8925c81c42523c028a5799b09e"
+        }
+      ],
+      "id": "scalar-i32-length-0",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 61,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "c8fe5273fa8927ab53e36e958328995cf60898eb443d40f9120a49405b9512ff"
+        }
+      ],
+      "id": "scalar-i32-length-1",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 62,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "6d9524db67db301fa9ed33ea58c87e59ed739379f97668c2f21f29a1dddff06d"
+        }
+      ],
+      "id": "scalar-unit-length-0",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 61,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "5a93cd48bdc89ef5b83a75c27adbe026a3a28e09bbcb622cabd8960c61d70b11"
+        }
+      ],
+      "id": "scalar-unit-length-1",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 2097,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "d7399e8bebf8c3b2ef244099c272d67fa2c128d891dd2a796771659a15bbae77"
+        }
+      ],
+      "id": "literal-length-max-trailing-comma",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 86,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36"
+        }
+      ],
+      "id": "grouped-complete-access-and-index",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 102,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "4f4e3f4c8f71367088d5b03a1a51ccec52e20b789c3a6a98374495fbf33b2b2d"
+        },
+        {
+          "bytes": 91,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "bc21da466cfca2751d725141d671206cb2782c7fd5deefea71410c9cdaa49f0c"
+        }
+      ],
+      "id": "cross-file-array-identity",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 139,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "a6e226c08152c3957ca65d7817dfe770d9599491681ed45fd31c11e166b7817d"
+        }
+      ],
+      "id": "structural-identities-pairwise-distinct",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 42,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "e0f7199bce7e914c94c2e7da73257f55577491a8377044ad9ce51d4d3399e672"
+        }
+      ],
+      "id": "child-route-read-only",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 49,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "d89b38bd0a643dcbff769165f8905820fd51cc9fa491540cbdacfcf5e6cd76bf"
+        }
+      ],
+      "id": "child-route-write-only",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 45,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "4bc18e34a72579884b646a3e9accaa3c3b7b0915fb688879570a816ed251ad05"
+        }
+      ],
+      "id": "child-route-length-only",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 55,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "ae0e79de7bdab54179521a79db0be26cc3fb780f8d0d8eea7ba55ec8b7469d14"
+        }
+      ],
+      "id": "child-route-annotation",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 44,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "7b6ee34f858ec0028e3cdb7b9791d761e164f7fe16686cd1d90a06c72e3b703e"
+        }
+      ],
+      "id": "child-route-parameter",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 45,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "6ebceb6a5140f853670c38f4a30afbec62881222d0faf4a417596d3696f85dfb"
+        }
+      ],
+      "id": "child-route-shared-parameter",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 42,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "97540c5bb6341ed90fe41fc8f154065a3dbe9c9cd6696f0fb5785ae3a9dc89f5"
+        },
+        {
+          "bytes": 49,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "56037f87666afec1b2b93a32ee30a9c0ce9a962ebeec43afe06ebe4a5ca29f87"
+        }
+      ],
+      "id": "child-route-exclusive-parameter",
+      "scope": "project",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 79,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "79480469c2db33239cca9d08d3d2c344b51a11995faf688768d71ec1276bbc69"
+        }
+      ],
+      "id": "record-len-field-stays-field",
+      "scope": "single",
+      "source": "unchanged contracts-v2 copy"
+    },
+    {
+      "files": [
+        {
+          "bytes": 0,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "id": "guard-empty",
+      "scope": "single",
+      "source": "new supplement"
+    },
+    {
+      "files": [
+        {
+          "bytes": 20,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "7f5b005fd1e8d62c964b7e1d5be5c3f85d571a5d24ac1a4fd3d97e4100bb44a3"
+        }
+      ],
+      "id": "guard-record-only",
+      "scope": "single",
+      "source": "new supplement"
+    },
+    {
+      "files": [
+        {
+          "bytes": 31,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "c53554f73fe3910c5ed769d2129f95c5228ab98058d3e771401d562b6b29eac9"
+        }
+      ],
+      "id": "guard-array-free",
+      "scope": "single",
+      "source": "new supplement"
+    },
+    {
+      "files": [
+        {
+          "bytes": 11,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "66f6617aadfb135c56be45bffa0c251292f487963557cdcdaa41e0f4345a7dd1"
+        },
+        {
+          "bytes": 20,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "7f5b005fd1e8d62c964b7e1d5be5c3f85d571a5d24ac1a4fd3d97e4100bb44a3"
+        }
+      ],
+      "id": "guard-project-root-eof",
+      "scope": "project",
+      "source": "new supplement"
+    },
+    {
+      "files": [
+        {
+          "bytes": 174,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "c22dcb52cc3078bf9396fc915bb26e43eb5c91930f93a7ec71b89c51e7dc71a8"
+        }
+      ],
+      "id": "reference-access-modes",
+      "scope": "single",
+      "source": "new supplement"
+    },
+    {
+      "files": [
+        {
+          "bytes": 61,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "d016693db55f98014ca6e560f096109fe63d86f63246dd704baf2216cba5f837"
+        },
+        {
+          "bytes": 55,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "f2db8be747b580003dc2319c25542cfd03ad368b7393517f2296bd019e1f5650"
+        }
+      ],
+      "id": "reserve-across-modules",
+      "scope": "project",
+      "source": "new supplement"
+    },
+    {
+      "files": [
+        {
+          "bytes": 80,
+          "file": 0,
+          "path": "main.ox",
+          "sha256": "baf0b8051fa13da62095ccbdf7df61f9ea7f335ff745358a490c0abb2ff032a3"
+        },
+        {
+          "bytes": 87,
+          "file": 1,
+          "path": "child.ox",
+          "sha256": "bc7fa0b7fb89432662be9966327949bd70d81abdc144c6f3e6fbe55b98c0c33c"
+        }
+      ],
+      "id": "same-signature-callee",
+      "scope": "project",
+      "source": "new supplement"
+    }
+  ],
+  "schema": "oxid-array-typing-source-manifest-v1"
+}

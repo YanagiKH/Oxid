@@ -1,0 +1,230 @@
+{
+  "cases": [
+    {
+      "diagnostic": {
+        "code": "E0305",
+        "message": "array access requires an array binding",
+        "notes": [],
+        "primary": {
+          "column": 35,
+          "end": 38,
+          "end_column": 39,
+          "end_line": 1,
+          "file": 1,
+          "line": 1,
+          "start": 34,
+          "text": "s[0]"
+        },
+        "secondary": [
+          {
+            "message": "binding declared here",
+            "span": {
+              "column": 11,
+              "end": 11,
+              "end_column": 12,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 10,
+              "text": "s"
+            }
+          }
+        ],
+        "stage": "type"
+      },
+      "id": "child-route-read-only",
+      "rendered": {
+        "human": "error[E0305] (type): array access requires an array binding\n  --> child.ox:1:35\n  ::: child.ox:1:11: binding declared here\n",
+        "human_sha256": "6d49cb683e557ac7c663f7851d204556b471b2e72e32a213b1d52bebe5a12a34",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0305\",\"stage\":\"type\",\"message\":\"array access requires an array binding\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":34,\"end\":38,\"line\":1,\"column\":35,\"end_line\":1,\"end_column\":39},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":10,\"end\":11,\"line\":1,\"column\":11,\"end_line\":1,\"end_column\":12},\"message\":\"binding declared here\"}],\"notes\":[]}\n",
+        "json_line_sha256": "c6cbeebfc7a2eb09b45cd759478a70aa20e3b1974846d9d1867871af33f47cc4",
+        "json_object": {
+          "code": "E0305",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "array access requires an array binding",
+          "notes": [],
+          "primary": {
+            "column": 35,
+            "end": 38,
+            "end_column": 39,
+            "end_line": 1,
+            "file_id": 1,
+            "line": 1,
+            "path": "child.ox",
+            "start": 34
+          },
+          "schema_version": 1,
+          "secondary": [
+            {
+              "message": "binding declared here",
+              "span": {
+                "column": 11,
+                "end": 11,
+                "end_column": 12,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 10
+              }
+            }
+          ],
+          "severity": "error",
+          "stage": "type"
+        }
+      }
+    },
+    {
+      "diagnostic": {
+        "code": "E0305",
+        "message": "array access requires an array binding",
+        "notes": [],
+        "primary": {
+          "column": 28,
+          "end": 31,
+          "end_column": 32,
+          "end_line": 1,
+          "file": 1,
+          "line": 1,
+          "start": 27,
+          "text": "s[0]"
+        },
+        "secondary": [
+          {
+            "message": "binding declared here",
+            "span": {
+              "column": 11,
+              "end": 11,
+              "end_column": 12,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 10,
+              "text": "s"
+            }
+          }
+        ],
+        "stage": "type"
+      },
+      "id": "child-route-write-only",
+      "rendered": {
+        "human": "error[E0305] (type): array access requires an array binding\n  --> child.ox:1:28\n  ::: child.ox:1:11: binding declared here\n",
+        "human_sha256": "1ee7ade5991ef4f2d8c258a9f507ec8f67c7146e20db6b703b1f4e0e439f7eda",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0305\",\"stage\":\"type\",\"message\":\"array access requires an array binding\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":27,\"end\":31,\"line\":1,\"column\":28,\"end_line\":1,\"end_column\":32},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":10,\"end\":11,\"line\":1,\"column\":11,\"end_line\":1,\"end_column\":12},\"message\":\"binding declared here\"}],\"notes\":[]}\n",
+        "json_line_sha256": "eb9f0449d0bd2749b6a492476c8a09a484df7d709d64c8e91eadf81e4a93bafa",
+        "json_object": {
+          "code": "E0305",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "array access requires an array binding",
+          "notes": [],
+          "primary": {
+            "column": 28,
+            "end": 31,
+            "end_column": 32,
+            "end_line": 1,
+            "file_id": 1,
+            "line": 1,
+            "path": "child.ox",
+            "start": 27
+          },
+          "schema_version": 1,
+          "secondary": [
+            {
+              "message": "binding declared here",
+              "span": {
+                "column": 11,
+                "end": 11,
+                "end_column": 12,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 10
+              }
+            }
+          ],
+          "severity": "error",
+          "stage": "type"
+        }
+      }
+    },
+    {
+      "diagnostic": {
+        "code": "E0305",
+        "message": "array access requires an array binding",
+        "notes": [],
+        "primary": {
+          "column": 35,
+          "end": 41,
+          "end_column": 42,
+          "end_line": 1,
+          "file": 1,
+          "line": 1,
+          "start": 34,
+          "text": "s.len()"
+        },
+        "secondary": [
+          {
+            "message": "binding declared here",
+            "span": {
+              "column": 11,
+              "end": 11,
+              "end_column": 12,
+              "end_line": 1,
+              "file": 1,
+              "line": 1,
+              "start": 10,
+              "text": "s"
+            }
+          }
+        ],
+        "stage": "type"
+      },
+      "id": "child-route-length-only",
+      "rendered": {
+        "human": "error[E0305] (type): array access requires an array binding\n  --> child.ox:1:35\n  ::: child.ox:1:11: binding declared here\n",
+        "human_sha256": "6d49cb683e557ac7c663f7851d204556b471b2e72e32a213b1d52bebe5a12a34",
+        "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0305\",\"stage\":\"type\",\"message\":\"array access requires an array binding\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":34,\"end\":41,\"line\":1,\"column\":35,\"end_line\":1,\"end_column\":42},\"secondary\":[{\"span\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":10,\"end\":11,\"line\":1,\"column\":11,\"end_line\":1,\"end_column\":12},\"message\":\"binding declared here\"}],\"notes\":[]}\n",
+        "json_line_sha256": "ffb2e574002e8b522dc149502d0c5cb166686aa3fc4a8d245732343b496a6c75",
+        "json_object": {
+          "code": "E0305",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "array access requires an array binding",
+          "notes": [],
+          "primary": {
+            "column": 35,
+            "end": 41,
+            "end_column": 42,
+            "end_line": 1,
+            "file_id": 1,
+            "line": 1,
+            "path": "child.ox",
+            "start": 34
+          },
+          "schema_version": 1,
+          "secondary": [
+            {
+              "message": "binding declared here",
+              "span": {
+                "column": 11,
+                "end": 11,
+                "end_column": 12,
+                "end_line": 1,
+                "file_id": 1,
+                "line": 1,
+                "path": "child.ox",
+                "start": 10
+              }
+            }
+          ],
+          "severity": "error",
+          "stage": "type"
+        }
+      }
+    }
+  ],
+  "schema": "oxid-array-typing-child-diagnostics-v1"
+}

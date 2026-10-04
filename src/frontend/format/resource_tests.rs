@@ -171,3 +171,51 @@ fn indentation_cannot_push_candidate_whitespace_past_token_limit() {
     assert!(formatted(&input(65_532)).is_ok());
     error(&input(65_533), "format");
 }
+
+#[test]
+fn array_syntax_and_delimiters_keep_bounded_admission() {
+    assert!(formatted("fn f(a:[i32;1024])->(){return;}").is_ok());
+    error("fn f(a:[i32;1025])->(){return;}", "parse");
+    let literal = |count| {
+        format!(
+            "fn f()->(){{let a=[{}];return;}}",
+            vec!["1"; count].join(",")
+        )
+    };
+    assert!(formatted(&literal(1024)).is_ok());
+    error(&literal(1025), "parse");
+    let input = "fn f()->(){sink([a[0]]);return;}";
+    let sources = source(input);
+    let file = sources.get(SourceFileId(0));
+    for depth in [4, 3] {
+        let result = format_with_limits(
+            file,
+            &mut Allocator::default(),
+            Limits {
+                delimiters: depth,
+                ..Limits::DEFAULT
+            },
+        );
+        assert_eq!(result.is_ok(), depth == 4);
+        if let Err(errors) = result {
+            assert_eq!((errors[0].code, errors[0].stage), ("E0400", "format"));
+        }
+    }
+    let mut baseline = Allocator::default();
+    assert!(format_with_allocator(file, &mut baseline).is_ok());
+    assert!(baseline
+        .trace
+        .iter()
+        .any(|event| event.kind == "array literal elements"));
+    for attempt in 1..=baseline.attempts {
+        let mut allocator = Allocator {
+            fail_at: Some(attempt),
+            ..Allocator::default()
+        };
+        let errors = format_with_allocator(file, &mut allocator).unwrap_err();
+        assert!(
+            errors.iter().any(|error| error.code == "E0400"),
+            "array attempt {attempt}: {errors:?}"
+        );
+    }
+}

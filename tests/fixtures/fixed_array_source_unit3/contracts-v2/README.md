@@ -1,0 +1,15 @@
+# Dormant fixed-array source contracts v2
+
+Source-only prospective authority for the next small Unit3A checkpoint. Selected base: `d582d1dca2a26eb3230632a921f9e8166c39d5c0`; tree `a826c1782dac19b8c34bdafb0202240e5d414719`. Production source is identical to reviewed1b97ad60. No production Rust, controller, workflow, source gate or raw gate was changed. No candidate source parsing, lowering or execution was run.
+
+This successor preserves the source observation protocol v1 while correcting one unit-literal child coordinate before candidate observations. The original contracts-v1 manifest/archive remain unchanged and unqualified. CORRECTIONS.md and the preserved prior manifest record that history; only this successor may be published after its independent review passes.
+
+The33 planning inputs are bound in base-binding.json.32 are byte-identical; only RFC0016 gains the reviewed Unit2C–2E status/qualification text. selected-rfc-status-only.diff records that exact difference. There is no material source-semantic mismatch. Original planning and adopted diagnostic authorities remain unchanged under inputs/.
+
+authority.py is a small deterministic fixture constructor, not a parser/typechecker oracle. Its sources are literal source strings and explicit construction facts. It computes original UTF-8 coordinates and line/Unicode-scalar columns from those bytes. generated-manifest.json binds cases.json and each fixture by exact bytes/SHA-256. `python3 authority.py verify` checks only package consistency, source identities and coordinate slices. `python3 authority.py generate NEW_DIRECTORY` recreates the generated portion and refuses to replace different existing artifacts. It does not accept compiler output or execute subprocesses.
+
+The bounded package includes the original34 exact-span diagnostics and two RHS/index-effect counterexamples with their original IDs/source hashes; targeted new single-conflict and competing-error cases; bool/i32/unit zero and unit length arrays; accepted/excess literal and type/token widths; direct-base/group restrictions; narrow empty-initializer context;256 versus257 calls/parameters; structural equality/inequality; both source selectors across unused child-module features; and one fully enumerated two-root store shape. cases.json labels Unit3A, future3B and future3C scopes. These are expected cases, not passed tests or feature coverage receipts.
+
+ADAPTER.md defines the minimal private, inert Unit3A observation boundary and exact comparison fields. RESOURCE-OBLIGATIONS.md preserves required caps and lists measurements/proofs the future implementation must produce. The separate wording appendix adds exact proposed diagnostic text/secondaries without changing original34 code/stage/primary authority. Independent review must accept this appendix and the complete package before any candidate observation.
+
+Ownership, source-output association, reference/native execution, full fuel/event schedules and the RFC pilot remain later work. In particular, no runtime result or resource pass is fabricated here. Production remains Closed and all predecessor compatibility evidence retains its own identity.

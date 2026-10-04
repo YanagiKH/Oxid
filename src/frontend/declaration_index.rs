@@ -12,7 +12,9 @@ use super::{
     ast,
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
-    oir::owned_types::{AggregateTy, FieldId, RecordId, ValueTy},
+    oir::owned_types::{
+        AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+    },
     owned_diagnostic,
     project::{
         budget::{Allocator, ReserveFailure},
@@ -645,21 +647,26 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.work.debit(1, ty.span, "query value type")?;
         self.requester(requester, ty.span)?;
         match ty.kind {
+            ast::TypeSyntaxKind::Array(array) => self
+                .array_type(requester, array, ty.span)
+                .map(|array| ValueTy::Owned(AggregateTy::FixedArray(array))),
             ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
-            ast::TypeSyntaxKind::Reference { .. } => Err(diagnostic(
-                if matches!(context, TypeContext::Scalar) {
-                    "E0500"
-                } else {
-                    "E0202"
-                },
-                "resolve",
-                if matches!(context, TypeContext::Scalar) {
-                    "owned syntax entered scalar resolution"
-                } else {
-                    "reference types are restricted to parameters"
-                },
-                ty.span,
-            )),
+            ast::TypeSyntaxKind::Reference { .. } | ast::TypeSyntaxKind::ArrayReference { .. } => {
+                Err(diagnostic(
+                    if matches!(context, TypeContext::Scalar) {
+                        "E0500"
+                    } else {
+                        "E0202"
+                    },
+                    "resolve",
+                    if matches!(context, TypeContext::Scalar) {
+                        "owned syntax entered scalar resolution"
+                    } else {
+                        "reference types are restricted to parameters"
+                    },
+                    ty.span,
+                ))
+            }
             ast::TypeSyntaxKind::Name(path) => {
                 self.tables.sources.path_span(ItemPathRef {
                     file: ty.span.file,
@@ -685,6 +692,60 @@ impl<'i, 's> QuerySession<'i, 's> {
                 .map(|record| ValueTy::Owned(AggregateTy::Record(record)))
             }
         }
+    }
+    /// Structural query only: no nominal row, HIR or executable authority.
+    pub fn array_type(
+        &mut self,
+        requester: ModuleId,
+        array: ast::FixedArraySyntax,
+        at: Span,
+    ) -> Result<FixedArrayTy, Box<Diagnostic>> {
+        self.work.debit(1, at, "query array type")?;
+        self.requester(requester, at)?;
+        self.tables.sources.text(at)?;
+        let element = match array.element {
+            ast::ScalarTypeSyntax::Bool => Ty::Bool,
+            ast::ScalarTypeSyntax::I32 => Ty::I32,
+            ast::ScalarTypeSyntax::Unit => Ty::Unit,
+        };
+        FixedArrayTy::check(element, usize::from(array.length)).map_err(|_| bad(at))
+    }
+    /// Type-only parameter view. References never become stored value types.
+    pub fn parameter_type(
+        &mut self,
+        requester: ModuleId,
+        ty: ast::TypeSyntax,
+    ) -> Result<ParameterTy, Box<Diagnostic>> {
+        let (mutable, aggregate) = match ty.kind {
+            ast::TypeSyntaxKind::Reference { mutable, referent } => {
+                let record = self.record_type(
+                    requester,
+                    ItemPathRef {
+                        file: ty.span.file,
+                        path: referent,
+                    },
+                    TypeContext::Reference,
+                )?;
+                (mutable, AggregateTy::Record(record))
+            }
+            ast::TypeSyntaxKind::ArrayReference { mutable, array } => (
+                mutable,
+                AggregateTy::FixedArray(self.array_type(requester, array, ty.span)?),
+            ),
+            _ => {
+                return self
+                    .value_type(requester, ty, TypeContext::Value)
+                    .map(ParameterTy::Value)
+            }
+        };
+        Ok(ParameterTy::Reference {
+            aggregate,
+            kind: if mutable {
+                BorrowKind::Exclusive
+            } else {
+                BorrowKind::Shared
+            },
+        })
     }
     pub fn record_type(
         &mut self,

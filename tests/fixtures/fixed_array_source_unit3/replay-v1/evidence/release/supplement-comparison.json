@@ -1,0 +1,43 @@
+{
+  "schema": "oxid-unit3a-boundary-comparison-v1",
+  "cases": [
+    {
+      "id": "after-max-comma-eof",
+      "status": "PASS",
+      "reservations": 1024,
+      "observation_sha256": "d5cf94efd44f9f09965cb0219b9be7387a0b1a92ec6591920a794c323c0b2412"
+    },
+    {
+      "id": "after-max-comma-nonstarter-semi",
+      "status": "PASS",
+      "reservations": 1024,
+      "observation_sha256": "80c25fbc6bb582205c112c81a757ce959307c4b20da89aa1414d3fb1757343e0"
+    },
+    {
+      "id": "after-max-comma-nonstarter-plus",
+      "status": "PASS",
+      "reservations": 1024,
+      "observation_sha256": "e1f7df3b67ce08b46c8fa85db8641b33d19c02c03cff02b4c8b45bd6d8bf3296"
+    },
+    {
+      "id": "after-max-comma-starter-not",
+      "status": "PASS",
+      "reservations": 1024,
+      "observation_sha256": "90cb1710fb5d87c476bc1367a82dd9dfc13284fb39de858dbbe0d2285272a588"
+    },
+    {
+      "id": "after-max-comma-starter-borrow",
+      "status": "PASS",
+      "reservations": 1024,
+      "observation_sha256": "9aecf4bc399bc9111ca90a2f6d1cd37ba30165be32e39089dab34ffc11b7e005"
+    },
+    {
+      "id": "after-max-comma-starter-array",
+      "status": "PASS",
+      "reservations": 1024,
+      "observation_sha256": "ce5b4d538818f77a583fdeae4dec4aef8e60e3f5c9128f3c707d229149c203fe"
+    }
+  ],
+  "pass": 6,
+  "total": 6
+}

@@ -1,0 +1,951 @@
+{
+  "Q": "absent and unmeasured",
+  "allocation_failure_contract": "For each new literal request, inject via real fallible try_reserve_exact capacity-overflow seam; report actual allocator attempt and resulting failed event. Array-relative ordinal is expectation; previous index requests retain their actual indices. Never call the compiler with expected N or diagnostic data.",
+  "cases": [
+    {
+      "id": "scalar-i32-length-0",
+      "requests": [
+        {
+          "N": 0,
+          "array_request_ordinal": 1,
+          "cumulative_entries": 0,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 40,
+                  "end": 41,
+                  "end_column": 42,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 39,
+                  "text": "[]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:1:40\n",
+                "human_sha256": "b74a0001ea521b7fc1083f7af7c73b5422a0320d3c8fcd2372ec0fdf6dc2d9af",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":39,\"end\":41,\"line\":1,\"column\":40,\"end_line\":1,\"end_column\":42},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "5d9c5bfc56daa38e8ecefb5055de4dd9dc6ebc861927de315b4a1640ccc22e98",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 40,
+                    "end": 41,
+                    "end_column": 42,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 39
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 40,
+                  "end": 41,
+                  "end_column": 42,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 39,
+                  "text": "[]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:1:40\n",
+                "human_sha256": "b8abdb64d247a2b10c6c2271eb4d86ead5728acfde3ee968f0ae3a47773accdf",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":39,\"end\":41,\"line\":1,\"column\":40,\"end_line\":1,\"end_column\":42},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "174b959a421b5160a475e82d88b7b85fe8ebe8cb956e4da8e0a0f1dc7874a242",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 40,
+                    "end": 41,
+                    "end_column": 42,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 39
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 40,
+            "end": 41,
+            "end_column": 42,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 39,
+            "text": "[]"
+          },
+          "request_kind": "array HIR elements"
+        }
+      ],
+      "typed_success": true
+    },
+    {
+      "id": "scalar-i32-length-1",
+      "requests": [
+        {
+          "N": 1,
+          "array_request_ordinal": 1,
+          "cumulative_entries": 1,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 38,
+                  "end": 41,
+                  "end_column": 42,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 37,
+                  "text": "[7,]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:1:38\n",
+                "human_sha256": "eeab5eac0abc7148a6bf9faa589c9f1d85a3cee2cee98184e9abb6156ab00553",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":37,\"end\":41,\"line\":1,\"column\":38,\"end_line\":1,\"end_column\":42},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "08dce37db943a43767339d8e082b2c5643a9be7f681314849ae22d29195f645c",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 38,
+                    "end": 41,
+                    "end_column": 42,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 37
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 38,
+                  "end": 41,
+                  "end_column": 42,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 37,
+                  "text": "[7,]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:1:38\n",
+                "human_sha256": "f53975f99272e814a5296f75ed5ecc5af0cb79e3f64ce13a57ee3be83d46d93c",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":37,\"end\":41,\"line\":1,\"column\":38,\"end_line\":1,\"end_column\":42},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "cfe62992631579bf8e7d0009cc1450deef793579505365e9b033f9cef597a21a",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 38,
+                    "end": 41,
+                    "end_column": 42,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 37
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 38,
+            "end": 41,
+            "end_column": 42,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 37,
+            "text": "[7,]"
+          },
+          "request_kind": "array HIR elements"
+        }
+      ],
+      "typed_success": true
+    },
+    {
+      "id": "grouped-complete-access-and-index",
+      "requests": [
+        {
+          "N": 2,
+          "array_request_ordinal": 1,
+          "cumulative_entries": 2,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 42,
+                  "end": 47,
+                  "end_column": 48,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 41,
+                  "text": "[5, 7]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:1:42\n",
+                "human_sha256": "4dc66cc80012588416f297b00ccaf7d7382fa4deb2c15c460bc1e8e9700bdd8a",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":41,\"end\":47,\"line\":1,\"column\":42,\"end_line\":1,\"end_column\":48},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "2b2d522e03079e4983980447f357d346574e04427b859b9bcbef4c4edd13595f",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 42,
+                    "end": 47,
+                    "end_column": 48,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 41
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 42,
+                  "end": 47,
+                  "end_column": 48,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 41,
+                  "text": "[5, 7]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:1:42\n",
+                "human_sha256": "b00351f7e8ed1239375bfdff12c21a14b951c4fc3df8fe01120d4b26cb06c7b3",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":41,\"end\":47,\"line\":1,\"column\":42,\"end_line\":1,\"end_column\":48},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "53d7e4ac360d2ec666caf212b0a17ff7dd06d181c2251bfa88518737e7605ae0",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 42,
+                    "end": 47,
+                    "end_column": 48,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 41
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 42,
+            "end": 47,
+            "end_column": 48,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 41,
+            "text": "[5, 7]"
+          },
+          "request_kind": "array HIR elements"
+        }
+      ],
+      "typed_success": true
+    },
+    {
+      "id": "literal-length-max-trailing-comma",
+      "requests": [
+        {
+          "N": 1024,
+          "array_request_ordinal": 1,
+          "cumulative_entries": 1024,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 28,
+                  "end": 2077,
+                  "end_column": 2078,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 27,
+                  "text": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:1:28\n",
+                "human_sha256": "08e5e1d8c4fa011bf8c470c06c705f36a698bfda183d0e0c3282f027cecb7063",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":27,\"end\":2077,\"line\":1,\"column\":28,\"end_line\":1,\"end_column\":2078},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "ad129562c13c237174fec997ca628eb442dfd2f179333a86106a6db1f00f5699",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 28,
+                    "end": 2077,
+                    "end_column": 2078,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 27
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 28,
+                  "end": 2077,
+                  "end_column": 2078,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 27,
+                  "text": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:1:28\n",
+                "human_sha256": "240e159e1c5af83bfd0b89af36677ad5545724575bd3f5bb094baec093baca4b",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":27,\"end\":2077,\"line\":1,\"column\":28,\"end_line\":1,\"end_column\":2078},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "b14a1304d1f808f2c91dff01a136f98a65b65e085a87f083d2df8fafeae6b166",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 28,
+                    "end": 2077,
+                    "end_column": 2078,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 27
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 28,
+            "end": 2077,
+            "end_column": 2078,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 27,
+            "text": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]"
+          },
+          "request_kind": "array HIR elements"
+        }
+      ],
+      "typed_success": true
+    },
+    {
+      "id": "reserve-across-modules",
+      "requests": [
+        {
+          "N": 1,
+          "array_request_ordinal": 1,
+          "cumulative_entries": 1,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 28,
+                  "end": 41,
+                  "end_column": 31,
+                  "end_line": 2,
+                  "file": 0,
+                  "line": 2,
+                  "start": 38,
+                  "text": "[1]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:2:28\n",
+                "human_sha256": "cac770d29e2df93bc6198586528f63ff9e2569f47b1809947dd73e1f4a55de44",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":38,\"end\":41,\"line\":2,\"column\":28,\"end_line\":2,\"end_column\":31},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "d7b4aa58dab61dc1f47e58877c423bc64ce133f4d9ea52f835617107a0e18405",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 28,
+                    "end": 41,
+                    "end_column": 31,
+                    "end_line": 2,
+                    "file_id": 0,
+                    "line": 2,
+                    "path": "main.ox",
+                    "start": 38
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 28,
+                  "end": 41,
+                  "end_column": 31,
+                  "end_line": 2,
+                  "file": 0,
+                  "line": 2,
+                  "start": 38,
+                  "text": "[1]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:2:28\n",
+                "human_sha256": "a19295eceb2990a93481f2ee59296e8dbda5104d1bd94d7f447346cca77867f8",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":38,\"end\":41,\"line\":2,\"column\":28,\"end_line\":2,\"end_column\":31},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "37a68275be69b6f615de474caac92b89263fb9051d68a6ece83c0bb4d915767b",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 28,
+                    "end": 41,
+                    "end_column": 31,
+                    "end_line": 2,
+                    "file_id": 0,
+                    "line": 2,
+                    "path": "main.ox",
+                    "start": 38
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 28,
+            "end": 41,
+            "end_column": 31,
+            "end_line": 2,
+            "file": 0,
+            "line": 2,
+            "start": 38,
+            "text": "[1]"
+          },
+          "request_kind": "array HIR elements"
+        },
+        {
+          "N": 2,
+          "array_request_ordinal": 2,
+          "cumulative_entries": 3,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 30,
+                  "end": 35,
+                  "end_column": 36,
+                  "end_line": 1,
+                  "file": 1,
+                  "line": 1,
+                  "start": 29,
+                  "text": "[2, 3]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> child.ox:1:30\n",
+                "human_sha256": "4479e0c3df1f58af5cdf05ea43037e48fa072dd0c336c64205bec6b322099856",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":29,\"end\":35,\"line\":1,\"column\":30,\"end_line\":1,\"end_column\":36},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "dca66131a95db408a37a29db77c4672149226bfb1ef44622625920bb98cf51e3",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 30,
+                    "end": 35,
+                    "end_column": 36,
+                    "end_line": 1,
+                    "file_id": 1,
+                    "line": 1,
+                    "path": "child.ox",
+                    "start": 29
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 30,
+                  "end": 35,
+                  "end_column": 36,
+                  "end_line": 1,
+                  "file": 1,
+                  "line": 1,
+                  "start": 29,
+                  "text": "[2, 3]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> child.ox:1:30\n",
+                "human_sha256": "f4b4264a22146792edc58744a27729ca75c8dde069ed088425e92de53d7d624a",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":1,\"path\":\"child.ox\",\"start\":29,\"end\":35,\"line\":1,\"column\":30,\"end_line\":1,\"end_column\":36},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "28de4298dd7bba76616928e70a349c9eda28b7bc1cab2b8e732c7fe5f9282644",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 30,
+                    "end": 35,
+                    "end_column": 36,
+                    "end_line": 1,
+                    "file_id": 1,
+                    "line": 1,
+                    "path": "child.ox",
+                    "start": 29
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 30,
+            "end": 35,
+            "end_column": 36,
+            "end_line": 1,
+            "file": 1,
+            "line": 1,
+            "start": 29,
+            "text": "[2, 3]"
+          },
+          "request_kind": "array HIR elements"
+        }
+      ],
+      "typed_success": true
+    },
+    {
+      "id": "literal-nested-nonempty-is-nonscalar",
+      "requests": [
+        {
+          "N": 1,
+          "array_request_ordinal": 1,
+          "cumulative_entries": 1,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 28,
+                  "end": 32,
+                  "end_column": 33,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 27,
+                  "text": "[[1]]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:1:28\n",
+                "human_sha256": "08e5e1d8c4fa011bf8c470c06c705f36a698bfda183d0e0c3282f027cecb7063",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":27,\"end\":32,\"line\":1,\"column\":28,\"end_line\":1,\"end_column\":33},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "ccfe297f03069df59eeaf80ebef8cbf1f7149f15b31aa4100f91b7eac040b147",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 28,
+                    "end": 32,
+                    "end_column": 33,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 27
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 28,
+                  "end": 32,
+                  "end_column": 33,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 27,
+                  "text": "[[1]]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:1:28\n",
+                "human_sha256": "240e159e1c5af83bfd0b89af36677ad5545724575bd3f5bb094baec093baca4b",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":27,\"end\":32,\"line\":1,\"column\":28,\"end_line\":1,\"end_column\":33},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "2eb51326673f29a55eef4acc61442acb46db9dd9f3928214ef8a0d21a576a421",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 28,
+                    "end": 32,
+                    "end_column": 33,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 27
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 28,
+            "end": 32,
+            "end_column": 33,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 27,
+            "text": "[[1]]"
+          },
+          "request_kind": "array HIR elements"
+        },
+        {
+          "N": 1,
+          "array_request_ordinal": 2,
+          "cumulative_entries": 2,
+          "element_bytes": "measured size_of::<hir::ExprId>()",
+          "errors": {
+            "allocation": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR allocation failed",
+                "notes": [],
+                "primary": {
+                  "column": 29,
+                  "end": 31,
+                  "end_column": 32,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 28,
+                  "text": "[1]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR allocation failed\n  --> main.ox:1:29\n",
+                "human_sha256": "70760eac7209e4ca42c4c6d855a96ee8aa4613dd51d96ec0dbfb28c71be72375",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR allocation failed\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":28,\"end\":31,\"line\":1,\"column\":29,\"end_line\":1,\"end_column\":32},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "aeff26d8476f5e07ca501f3957b5734d483c60dbdb227b72290947fd4d24a51f",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR allocation failed",
+                  "notes": [],
+                  "primary": {
+                    "column": 29,
+                    "end": 31,
+                    "end_column": 32,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 28
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            },
+            "overflow": {
+              "diagnostic": {
+                "code": "E0400",
+                "message": "array HIR count overflow",
+                "notes": [],
+                "primary": {
+                  "column": 29,
+                  "end": 31,
+                  "end_column": 32,
+                  "end_line": 1,
+                  "file": 0,
+                  "line": 1,
+                  "start": 28,
+                  "text": "[1]"
+                },
+                "secondary": [],
+                "stage": "resolve"
+              },
+              "rendered": {
+                "human": "error[E0400] (resolve): array HIR count overflow\n  --> main.ox:1:29\n",
+                "human_sha256": "aceae3a676c12cd85481c113a92b9a2f47517705d4a1e65590c4830bc74467a8",
+                "json_line": "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0400\",\"stage\":\"resolve\",\"message\":\"array HIR count overflow\",\"primary\":{\"file_id\":0,\"path\":\"main.ox\",\"start\":28,\"end\":31,\"line\":1,\"column\":29,\"end_line\":1,\"end_column\":32},\"secondary\":[],\"notes\":[]}\n",
+                "json_line_sha256": "424abebc92ca60ca0604ee7edb201a25881466f7976277789acf8839d9897777",
+                "json_object": {
+                  "code": "E0400",
+                  "edition": "typed-preview",
+                  "kind": "diagnostic",
+                  "message": "array HIR count overflow",
+                  "notes": [],
+                  "primary": {
+                    "column": 29,
+                    "end": 31,
+                    "end_column": 32,
+                    "end_line": 1,
+                    "file_id": 0,
+                    "line": 1,
+                    "path": "main.ox",
+                    "start": 28
+                  },
+                  "schema_version": 1,
+                  "secondary": [],
+                  "severity": "error",
+                  "stage": "resolve"
+                }
+              }
+            }
+          },
+          "exact": true,
+          "logical_request_even_if_zero": true,
+          "origin": {
+            "column": 29,
+            "end": 31,
+            "end_column": 32,
+            "end_line": 1,
+            "file": 0,
+            "line": 1,
+            "start": 28,
+            "text": "[1]"
+          },
+          "request_kind": "array HIR elements"
+        }
+      ],
+      "typed_success": false
+    }
+  ],
+  "expected_rust_layout_bytes": null,
+  "measurements_are_not_expectations": true,
+  "overflow_contract": "Separate checked-arithmetic unit seams for cumulative entries plus N, N times measured ExprId width, and allocator attempt counter. Overflow must occur before fallible reservation; real valid source cannot naturally reach usize overflow under the existing source cap. Do not present synthetic overflow as a real OOM or a source acceptance result.",
+  "requested_payload": "sum of actual successful literal N multiplied by measured ExprId width; retained E_hir independent; peak attached plus pending requested entries bounded by E_ast",
+  "schema": "oxid-array-typing-resources-v1"
+}

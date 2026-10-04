@@ -2,6 +2,11 @@
 use super::super::{execute, native, verified, *};
 use super::{diagnostic, lower, resolve, typeck};
 use crate::frontend::{ast, source::SourceFile};
+#[cfg(test)]
+use crate::frontend::{
+    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
+    project::budget::Allocator,
+};
 
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct SourceProgram {
@@ -23,6 +28,14 @@ pub(in crate::frontend::oir) fn check_source(
 pub(in crate::frontend::oir) fn check_typed(
     typed: &typeck::TypedOwnedProgram<'_>,
 ) -> Result<SourceProgram, Vec<Diagnostic>> {
+    if !typed.admission().executable() {
+        return Err(vec![*crate::frontend::owned_diagnostic::diagnostic(
+            "E0500",
+            "oir-owned-lower",
+            format_args!("internal compiler error: owned invariant violation"),
+            Some(typed.index().sources().eof()),
+        )]);
+    }
     let index = typed.index();
     let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
@@ -35,6 +48,77 @@ pub(in crate::frontend::oir) fn check_typed(
     let witness = verified::verify_owned(raw, sources)
         .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
     Ok(SourceProgram { witness })
+}
+
+/// Private consumer qualification remains separate from public SourceProgram
+/// admission. No typed owner, raw program or witness is returned by this seam.
+#[cfg(test)]
+pub(super) fn run_array_source<'s>(
+    owner: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Scalar, Vec<Diagnostic>> {
+    let typed = typeck::check(resolve::resolve_array_consumer(
+        owner, limits, work, allocator,
+    )?)?;
+    let (raw, sources, entry) = lower_array_consumer(&typed)?;
+    let observation = verified::probe_array_reference(
+        raw,
+        sources,
+        super::super::budget::Limits::DEFAULT,
+        entry,
+        execute::Limits::default(),
+        execute::ObservationControl::default(),
+    )
+    .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    observation
+        .result
+        .map_err(|error| vec![*error.diagnostic(sources)])
+}
+
+/// LLVM emission shares the same source-owned admission and association checks.
+/// The existing sealed probe returns only bounded module text or a diagnostic.
+#[cfg(test)]
+pub(super) fn emit_array_source<'s>(
+    owner: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<String, Vec<Diagnostic>> {
+    let typed = typeck::check(resolve::resolve_array_consumer(
+        owner, limits, work, allocator,
+    )?)?;
+    let (raw, sources, entry) = lower_array_consumer(&typed)?;
+    let observation = verified::probe_array_native(
+        raw,
+        sources,
+        super::super::budget::Limits::DEFAULT,
+        entry,
+        sources,
+        native::NativeControl::default(),
+    )
+    .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    observation.result.map_err(|error| vec![*error])
+}
+
+/// Entry and rendering sources are derived from the checked index, never
+/// supplied independently by the caller. The owner stays in its entrypoint.
+#[cfg(test)]
+fn lower_array_consumer<'s>(
+    typed: &'s typeck::TypedOwnedProgram<'_>,
+) -> Result<(RawOwnedProgram, &'s SourceMap, Option<hir::DefId>), Vec<Diagnostic>> {
+    let index = typed.index();
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    };
+    let entry = index.root_original_main();
+    if typed.admission() != resolve::SourceAdmission::ArrayConsumer || typed.entry() != entry {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let raw = lower::lower(typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    super::association::check(&raw, index, sources).map_err(|error| vec![*error])?;
+    Ok((raw, sources, entry))
 }
 
 impl SourceProgram {
