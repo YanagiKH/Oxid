@@ -377,3 +377,136 @@ fn source_array_project_uses_original_root_main_and_child_diagnostic_origins() {
     assert_eq!(project.sources().get(span.file).text_at(span), "a[1]");
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires pinned LLVM 19.1.7; explicitly run the source array native gate"]
+fn source_array_consumers_use_real_llvm() {
+    use std::{fs, process::Command, time::SystemTime};
+    let stamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "oxid-source-array-native-{}-{stamp}",
+        std::process::id()
+    ));
+    fs::create_dir(&directory).unwrap();
+    // Expected values and failure sites follow the source semantics. Both real
+    // consumers must agree with them; neither consumer supplies the oracle.
+    let cases = [
+        (
+            "fn relay(a:[i32;3])->[i32;3]{return a;} fn main()->i32{let a=[4,7,9];let mut b=relay(a);b[1]=b[0]+b[2];return b[1]+b.len();}",
+            Ok((Scalar::I32(16), "16\n")),
+        ),
+        (
+            "fn bump(a:&mut [i32;2])->(){a[0]=a[0]+a[1];return;} fn read(a:&[i32;2])->i32{return a[0];} fn main()->i32{let mut a=[5,8];bump(&mut a);return read(&a)+a[1];}",
+            Ok((Scalar::I32(21), "21\n")),
+        ),
+        (
+            "fn main()->bool{let mut a=[false,true];a[0]=a[1];return a[0];}",
+            Ok((Scalar::Bool(true), "true\n")),
+        ),
+        (
+            "fn main()->(){let a=[(),()];return a[1];}",
+            Ok((Scalar::Unit, "()\n")),
+        ),
+        (
+            "fn main()->i32{let a:[i32;0]=[];let b=a;return b.len();}",
+            Ok((Scalar::I32(0), "0\n")),
+        ),
+        (
+            "fn main()->i32{let a=[1,2,3];let mut i=0;let mut total=0;while i<a.len(){total=total+a[i];i=i+1;}return total;}",
+            Ok((Scalar::I32(6), "6\n")),
+        ),
+        (
+            "fn main()->i32{let mut a=[1,2];a=[7,8];return a[0]+a[1];}",
+            Ok((Scalar::I32(15), "15\n")),
+        ),
+        (
+            "fn main()->i32{let a=[7];return a[-1];}",
+            Err(("E0606", "a[-1]")),
+        ),
+        (
+            "fn main()->i32{let a=[7];return a[1];}",
+            Err(("E0606", "a[1]")),
+        ),
+        (
+            "fn main()->i32{let a:[i32;0]=[];return a[0];}",
+            Err(("E0606", "a[0]")),
+        ),
+        (
+            "fn main()->i32{let a=[7];return a[2147483647+1];}",
+            Err(("E0604", "+")),
+        ),
+        (
+            "fn main()->(){let mut a=[7];a[2]=2147483647+1;return;}",
+            Err(("E0604", "+")),
+        ),
+    ];
+    for (number, (text, expected)) in cases.into_iter().enumerate() {
+        let (sources, ast) = parsed(text);
+        let reference = program::run_array_source(
+            owner(&sources, &ast),
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut Allocator::default(),
+        );
+        let module = program::emit_array_source(
+            owner(&sources, &ast),
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap();
+        let binary = directory.join(format!("case-{number}"));
+        // The ordinary compiler verifies IR with opt and pins Clang/LLD 19.1.7.
+        crate::frontend::native::compile(&module, binary.to_str().unwrap()).unwrap();
+        assert_eq!(&fs::read(&binary).unwrap()[..4], b"\x7fELF");
+        let native = Command::new(&binary)
+            .current_dir(&directory)
+            .env_clear()
+            .output()
+            .unwrap();
+        match expected {
+            Ok((value, stdout)) => {
+                assert_eq!(reference.unwrap(), value, "case {number}");
+                assert_eq!(native.status.code(), Some(0), "case {number}");
+                assert_eq!(native.stdout, stdout.as_bytes(), "case {number}");
+                assert!(native.stderr.is_empty(), "case {number}");
+            }
+            Err((code, origin)) => {
+                let errors = reference.unwrap_err();
+                assert_eq!(errors.len(), 1, "case {number}");
+                assert_eq!(errors[0].code, code, "case {number}");
+                let span = errors[0].primary.unwrap();
+                assert_eq!(
+                    sources.get(span.file).text_at(span),
+                    origin,
+                    "case {number}"
+                );
+                let (stage, message) = match code {
+                    "E0606" => ("oir-owned-run", "array index out of bounds"),
+                    "E0604" => ("oir-run", "checked i32 arithmetic overflow"),
+                    _ => unreachable!("case has a fixed runtime failure oracle"),
+                };
+                let expected_stderr = format!(
+                    "error[{code}] ({stage}): {message}\n  --> arrays.ox:1:{}\n",
+                    text.find(origin).unwrap() + 1,
+                );
+                assert_eq!(
+                    errors[0].render_human(&sources),
+                    expected_stderr,
+                    "case {number}"
+                );
+                assert_eq!(native.status.code(), Some(1), "case {number}");
+                assert!(native.stdout.is_empty(), "case {number}");
+                assert_eq!(native.stderr, expected_stderr.as_bytes(), "case {number}");
+            }
+        }
+    }
+    fs::remove_dir_all(directory).unwrap();
+    eprintln!(
+        "source arrays: 12 real LLVM/ELF cases passed (7 scalar results, 5 runtime failures)"
+    );
+}

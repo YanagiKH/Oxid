@@ -476,6 +476,8 @@ jobs:
           cargo test --release --locked --bin oxid frontend::oir::verify::cyclic_tests::execution::raw_cyclic_witnesses_use_real_llvm -- --ignored --exact
           cargo test --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
           cargo test --release --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::owned::source::array_consumer_tests::source_array_consumers_use_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::owned::source::array_consumer_tests::source_array_consumers_use_real_llvm -- --ignored --exact
       - name: Test producer-native admission and evidence rejection controls
         run: python3 -B -m unittest discover -s scripts -p test_owned_array_native.py -v
       - name: Admit and retain the existing owned-native prefix in both profiles
