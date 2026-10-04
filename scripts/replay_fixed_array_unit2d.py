@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay the frozen Unit2D independent gates in a new, bound source snapshot.
+"""Replay the Unit2D independent gates with the explicit public-array successor.
 
 Python 3.10+ standard library only. Default scope is the eight ordinary tests
 (including a unique marker), eight native families, and one physical family.
@@ -33,7 +33,7 @@ ORDINARY = [PREFIX + "independent_unit2d_" + name for name in (
     "checkpoint1_coordinate_oracle", "checkpoint1_partial_allocation_peaks",
     "checkpoint1_early_denial_peak", "export_old_ir")]
 ORDINARY += [CHILD + "independent_unit2d_" + name for name in (
-    "full_identity_and_closed_production_gate", "expansion_identity_and_bounded_prefix",
+    "full_identity_and_public_verification", "expansion_identity_and_bounded_prefix",
     "raw_authority_denials_precede_native_work")]
 NATIVE = [CHILD + "independent_unit2d_" + name + "_llvm" for name in (
     "core_and_width", "phi_and_untaken", "transfer_chains", "core_fuel",
@@ -43,6 +43,64 @@ TOOLS = {"llvm-as": "LLVM version", "opt": "LLVM version",
          "clang": "clang version", "ld.lld": "LLD"}
 PHASES = ("prepare", "build", "ordinary", "native", "physical", "verify")
 
+# The historical v3 corpus and its qualification/manifest remain byte-identical.
+# This current-CI successor changes only its intentionally obsolete closed gate.
+# Exact input/output hashes fail closed if any other frozen assertion changes.
+PUBLIC_ARRAY_ACTIVATION = {
+    "adapter": "public-fixed-array-activation-v1",
+    "frozen_module_path": "sources/reviewer-array-native-v3.rs",
+    "frozen_module_sha256": "b6b8f0a012c4d3b7dc1fa0140769174ee868af04db7e5ae3f34c8d1baa478c21",
+    "current_module_sha256": "611b66ce4628654d16c146462e147a08968a4d4b122ed07b2cb4bea908894f68",
+    "historical_test": "independent_unit2d_full_identity_and_closed_production_gate",
+    "current_test": "independent_unit2d_full_identity_and_public_verification",
+    "native_valid_pairs": 9,
+    "native_wrong_identity_rejections": 81,
+    "public_verification_and_execution_successes": 9,
+}
+
+PUBLIC_ARRAY_REPLACEMENTS = (
+    ('independent_unit2d_full_identity_and_closed_production_gate',
+     'independent_unit2d_full_identity_and_public_verification'),
+    ('let mut production_denials = 0;',
+     'let mut production_successes = 0;'),
+    ("""            let error = verified::verify_owned(raw, &sources).unwrap_err();
+            assert_eq!(
+                error.kind,
+                OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
+            );""",
+     """            let witness = verified::verify_owned(raw, &sources).unwrap();
+            assert_eq!(
+                execute::run(&witness, Some(hir::DefId(0))),
+                Ok(Scalar::I32(n as i32))
+            );"""),
+    ('production_denials += 1;',
+     'production_successes += 1;'),
+    ('(valid, denied, production_denials), (9, 81, 9)',
+     '(valid, denied, production_successes), (9, 81, 9)'),
+    ('9 distinct production gate controls',
+     '9 public verification/execution controls'),
+)
+
+
+def public_array_reviewer(frozen):
+    require(sha(frozen) == PUBLIC_ARRAY_ACTIVATION["frozen_module_sha256"],
+            "public-array adapter requires the exact frozen v3 reviewer")
+    current = frozen
+    for old, new in PUBLIC_ARRAY_REPLACEMENTS:
+        old, new = old.encode(), new.encode()
+        require(current.count(old) == 1, "public-array adapter expectation block differs")
+        current = current.replace(old, new, 1)
+    require(sha(current) == PUBLIC_ARRAY_ACTIVATION["current_module_sha256"],
+            "public-array adapter output identity differs")
+    return current
+
+
+def assert_current_module_binding(binding):
+    require(binding.get("public_array_activation") == PUBLIC_ARRAY_ACTIVATION
+            and binding.get("module_sha256") == PUBLIC_ARRAY_ACTIVATION["current_module_sha256"],
+            "independent current public-array module binding differs")
+
+
 # Provenance is deliberately split: historical inventories detect incomplete
 # replay but are never used to decide correct language, fuel or storage behavior.
 PROVENANCE = {
@@ -51,7 +109,9 @@ PROVENANCE = {
         "sources": ["sources/reviewer-array-native-v3.rs", "sources/checkpoint1-heldout-v1.rs",
                     "sources/checkpoint1-partial-peak-v1.rs", "sources/checkpoint1-early-denial-v1.rs",
                     "expectations/expected-v1.json", "expectations/supplement-v1.json"],
-        "role": "unchanged Rust assertions, scalar/coordinate oracles and hand-counted fuel schedules"},
+        "role": "frozen Rust assertions, scalar/coordinate oracles and hand-counted fuel schedules; "
+                "only the nine obsolete production denials become public verification/execution successes",
+        "public_array_activation": PUBLIC_ARRAY_ACTIVATION},
     "physical_results": {
         "kind": "independent frozen expected-result manifest",
         "source": "expectations/physical-harness.tsv",
@@ -66,7 +126,7 @@ PROVENANCE = {
         "source": "tools/storage/verify-checkpoint2-v2.json",
         "role": "coverage/reconstruction inventory; individual payload/guard checks come from the frozen observer"},
     "test_roster": {
-        "kind": "frozen Rust test declarations plus replay marker",
+        "kind": "frozen Rust test declarations plus explicit public-array successor and replay marker",
         "counts": {"ordinary": 8, "ignored_native": 9, "total": 17},
         "role": "registration inventory, not a semantic oracle"},
     "old_ir": {
@@ -396,7 +456,8 @@ class Replay:
         original_native = native.read_bytes()
         require(b"independent_unit2d" not in original_native, "source already contains ephemeral Unit2D registrations")
         require(not (self.source / MODULE_REL).exists(), "ephemeral module path already exists")
-        (self.source / MODULE_REL).write_bytes(frozen)
+        current = public_array_reviewer(frozen)
+        (self.source / MODULE_REL).write_bytes(current)
         appendix = b"\n\n// Ephemeral independent Unit2D replay controls.\n"
         for name in CONTROL_FILES:
             appendix += (self.inputs / "sources" / name).read_bytes() + b"\n"
@@ -411,7 +472,8 @@ class Replay:
                        input_manifest_sha256=file_sha(self.evidence / "input-manifest.json"),
                        inputs=tree_manifest(self.inputs), original_native_sha256=sha(original_native),
                        original_native_bytes=len(original_native), appendix_sha256=sha(appendix),
-                       module_sha256=sha(frozen), nonce=uuid.uuid4().hex,
+                       module_sha256=sha(current), public_array_activation=PUBLIC_ARRAY_ACTIVATION,
+                       nonce=uuid.uuid4().hex,
                        runner_sha256=file_sha(Path(__file__)),
                        capture_runner_sha256=file_sha(Path(__file__).with_name("replay_unit2d_tool_capture.py")))
         content_id = sha(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode())
@@ -432,6 +494,7 @@ class Replay:
         require(self.git("rev-parse", "HEAD").decode().strip() == head, "checkout HEAD moved while preparing")
 
     def check_source(self):
+        assert_current_module_binding(self.binding)
         require(file_sha(self.evidence / "source-binding.json") == self.state["source_binding_sha256"], "source binding changed")
         require(file_sha(self.evidence / "input-manifest.json") == self.binding["input_manifest_sha256"], "copied input manifest changed")
         require(file_sha(self.evidence / "original-source.json") == self.binding["original_manifest_sha256"], "original source manifest changed")
@@ -706,7 +769,8 @@ class Replay:
              expectation_provenance="expectation-provenance.json",
              fixed_inventory_totals_are_not_semantic_oracles=True,
              elf_artifacts=len(elfs), source_free_executions=len(receipts),
-             scope="frozen independent Unit2D gates only; no production/release/whole-repository acceptance"))
+             scope="pinned Unit2D public-array activation successor derived from frozen fixture; "
+                   "no production/release/whole-repository acceptance"))
 
     def verify_supplement(self):
         contract = load(self.inputs / "expectations/supplement-v1.json")

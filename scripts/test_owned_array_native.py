@@ -1151,6 +1151,8 @@ class CombinedReceiptTests(unittest.TestCase):
         binding = {'schema': 1, 'synthetic_only': True, 'commit': cls.ci['expected_head'], 'checkout_head': cls.ci['expected_head'],
             'tree': cls.producer_admission['binding']['tree'], 'profile': profile, 'run_root': str(root), 'checkout_clean': True,
             'runner_sha256': admission.INDEPENDENT_RUNNER_SHA, 'input_checkout': str((cls.host.base / 'repo')),
+            'public_array_activation': cls.schema.PUBLIC_ARRAY_ACTIVATION,
+            'module_sha256': cls.schema.PUBLIC_ARRAY_ACTIVATION['current_module_sha256'],
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
             'input_manifest_sha256': cls.input_digest, 'original_input_manifest_sha256': cls.input_digest,
