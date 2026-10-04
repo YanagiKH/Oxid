@@ -2,6 +2,8 @@ name: Repository CI
 
 on:
   push:
+    branches: [main]
+    tags: ['**']
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -10,10 +12,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: oxid-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
