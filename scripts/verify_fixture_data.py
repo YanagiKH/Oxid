@@ -18,6 +18,10 @@ SOURCE_DATA_MANIFESTS = (
         "tests/fixtures/fixed_array_source_unit3/element-boundary-supplement-v1/freeze-manifest.json",
         "a8c8454ac11355708cebbd749ade26335ed477e6649da75089184c5b7162fb00",
     ),
+    (
+        "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/freeze-manifest.json",
+        "2cba1dbd200d75fbeb33b504b08279d89d2baa1784f88718413305446d458c35",
+    ),
 )
 
 

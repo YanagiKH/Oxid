@@ -30,13 +30,19 @@ class PublishedRegistrationTests(unittest.TestCase):
     def test_full_published_inputs_and_exact_predecessor_inventory(self):
         root = verify_repo.ROOT
         data_sources = verify_fixture_data.fixture_data_sources(root)
-        self.assertEqual(len(data_sources), 107)
-        self.assertEqual(sum(p.is_file() for p in (root / DATA).rglob("*")), 132)
+        self.assertEqual(len(data_sources), 117)
+        registered = set()
         for (relative, _), body_count, source_count in zip(
-                verify_fixture_data.SOURCE_DATA_MANIFESTS, (120, 10), (101, 6), strict=True):
+                verify_fixture_data.SOURCE_DATA_MANIFESTS, (120, 10, 23), (101, 6, 10), strict=True):
             manifest = json.loads((root / relative).read_bytes())
             self.assertEqual(len(manifest["files"]), body_count)
             self.assertEqual(sum(name.endswith(".ox") for name in manifest["files"]), source_count)
+            registered.add(root / relative)
+            registered.update((root / relative).parent / name for name in manifest["files"])
+        # Replay documentation shares this directory but is not source data.
+        # Pin the registered closure; unlisted .ox files still reach source_plan.
+        self.assertEqual(len(registered), 156)
+        self.assertTrue(all(path.is_file() for path in registered))
         sources = discover(root)
         checks, typed_entries, typed_members = verify_repo.source_plan(sources, root)
         language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources]
@@ -58,7 +64,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(len(run.call_args_list), 195)  # 123 checks, 69 runs, test/build/doctor.
         self.assertFalse(any("fixed_array_source_unit3" in arg
                              for call in run.call_args_list for arg in call.args[0]))
-        self.assertIn("fixture-data validation passed: 107 source-only files", output.getvalue())
+        self.assertIn("fixture-data validation passed: 117 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         self.assertIn("125 language sources, 123 checks, 69 runnable programs", output.getvalue())
 
@@ -84,7 +90,7 @@ class PublishedRegistrationTests(unittest.TestCase):
             git("add", "--", ".gitattributes", DATA.as_posix(), "ordinary.txt")
             git("checkout-index", "--all", "--force", "--prefix", checkout.as_posix() + "/")
             self.assertEqual((checkout / "ordinary.txt").read_bytes(), b"ordinary\r\ntext\r\n")
-            self.assertEqual(len(verify_fixture_data.fixture_data_sources(checkout)), 107)
+            self.assertEqual(len(verify_fixture_data.fixture_data_sources(checkout)), 117)
             scope_files = [p for p in (root / DATA).rglob("*") if p.is_file()]
             for source in scope_files:
                 self.assertEqual((checkout / source.relative_to(root)).read_bytes(), source.read_bytes())
@@ -160,6 +166,28 @@ class FixtureAdmissionTests(unittest.TestCase):
         supplement = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[1][0]
         (supplement.parent / "cases.json").write_bytes(b"{}\n")
         self.assert_no_compiler("body identity mismatch")
+
+    def test_changed_typing_source_fails_before_compiler(self):
+        typing = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[2][0]
+        source = typing.parent / "fixtures/guard-array-free/main.ox"
+        body = source.read_bytes()
+        source.write_bytes(bytes([body[0] ^ 1]) + body[1:])
+        self.assert_no_compiler("body identity mismatch")
+
+    def test_changed_typing_expectations_fail_before_compiler(self):
+        typing = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[2][0]
+        (typing.parent / "positive-facts.json").write_bytes(b"{}\n")
+        self.assert_no_compiler("body identity mismatch")
+
+    def test_missing_typing_manifest_fails_before_compiler(self):
+        (self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[2][0]).unlink()
+        self.assert_no_compiler("missing or non-file")
+
+    def test_unlisted_typing_source_remains_a_language_check(self):
+        extra = self.write(DATA / "typing-contracts-v1/fixtures/unlisted.ox", b"invalid candidate\n")
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertEqual((len(checks), len(entries), count), (3, 2, 4))
+        self.assertIn((extra, False), checks)
 
     def test_missing_discovered_source_is_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "data missing from discovery"):
