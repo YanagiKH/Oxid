@@ -812,7 +812,7 @@ def execute_run(args):
                     require(file_record(copied) == binary_record, "copied test executable drift")
                     for row in stdlib:
                         require(file_record(row["path"]) == {k: row[k] for k in ("bytes", "mode", "sha256")}, "selected standard library drift")
-                run_child([str(copied), PREFIX, "--list", "--ignored", "--format", "terse", "--color", "never"],
+                run_child([str(copied), PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"],
                           root / "list", cwd=repo, environment=child_env, selection=selection,
                           check=profile_boundary, timeout=60)
                 roster = admit_list((root / "list/stdout").read_bytes())
@@ -976,7 +976,7 @@ def verify_producer(root, ci, upstream_outcome):
         require(Path(environment["CARGO_TARGET_DIR"]) / profile in Path(built_paths[0]).parents,
                 "Cargo artifact outside selected profile target")
         copied = str(directory / "bin/oxid-test")
-        require(commands["list"]["argv"] == [copied, PREFIX, "--list", "--ignored", "--format", "terse", "--color", "never"], "roster invocation differs")
+        require(commands["list"]["argv"] == [copied, PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"], "roster invocation differs")
         require(commands["run"]["argv"] == [copied, PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"], "broad-prefix invocation differs")
         roster = read_json(directory / "roster.json")
         require(roster == {"profile": profile, "binding": binding, "names": admit_list((directory / "list/stdout").read_bytes()), "test_binary": binary}, "stale roster receipt")
@@ -2036,7 +2036,7 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
         if profile == "release":
             expected_build.append("--release")
         require(commands["build"]["argv"] == expected_build
-                and commands["list"]["argv"] == [copied_path, PREFIX, "--list", "--ignored", "--format", "terse", "--color", "never"]
+                and commands["list"]["argv"] == [copied_path, PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"]
                 and commands["run"]["argv"] == [copied_path, PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"],
                 "producer compact original profile invocations differ")
         for row in commands.values():

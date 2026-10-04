@@ -54,6 +54,17 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaises(admission.AdmissionError):
             admission.admit_list(b"")
 
+    def test_pinned_rust_actual_pretty_and_terse_listing_bytes(self):
+        # Original Rust 1.99.0 list-only captures from the fresh 13cfd8a8
+        # rehearsal: terse omits the footer required by the existing contract.
+        terse = ("\n".join(name + ": test" for name in admission.ROSTER) + "\n").encode()
+        pretty = terse + b"\n16 tests, 0 benchmarks\n"
+        self.assertEqual(admission.sha256(terse), "52d8c44957c258d0e7b7dfaad90d4b6ec338e8bae07d50ef132864793e304856")
+        self.assertEqual(admission.sha256(pretty), "29cc4b930f62b84bcf99af1c8aaec583db5832f4b51aff6d3de5bf6300d3b2f0")
+        self.assertEqual(admission.admit_list(pretty), list(admission.ROSTER))
+        with self.assertRaisesRegex(admission.AdmissionError, "missing listing footer"):
+            admission.admit_list(terse)
+
     def test_full_stdout_exact_multiline_attribution_and_byte_spans(self):
         data = stdout_fixture()
         rows = admission.admit_stdout(data)
@@ -524,7 +535,7 @@ class PackageTests(unittest.TestCase):
             build_stdout = json.dumps({"reason": "compiler-artifact", "target": {"name": "oxid"}, "profile": {"test": True}, "executable": str(built_path)}).encode() + b"\n"
             self.command(profile + "/build", build_argv, child_env, build_stdout)
             listing = ("\n".join(name + ": test" for name in admission.ROSTER) + "\n\n16 tests, 0 benchmarks\n").encode()
-            self.command(profile + "/list", [str(binary), admission.PREFIX, "--list", "--ignored", "--format", "terse", "--color", "never"], child_env, listing)
+            self.command(profile + "/list", [str(binary), admission.PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"], child_env, listing)
             stderr = ("\n".join(admission.family_summary(row) for row in admission.FAMILIES) + "\n").encode()
             self.command(profile + "/run", [str(binary), admission.PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"], child_env, stdout_fixture(), stderr)
             admission.write_json(root / "roster.json", {"profile": profile, "binding": binding, "names": list(admission.ROSTER), "test_binary": binary_record})
