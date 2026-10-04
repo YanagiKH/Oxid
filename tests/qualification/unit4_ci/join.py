@@ -55,9 +55,9 @@ def build_configs(capsule, output, provenance, host):
                cfg['compiler_source_only_tree'] == provenance['source_only_tree'], 'public build checkout binding')
         q.need(set(cfg['binaries']) == set(cfg['build_receipts']) == set(q.PROFILES), 'missing public build profile')
         manifest = capsule.json(cfg['source_manifest'])
-        expected_sha = q.CURRENT_SHA if role == 'ordinary' else '6af113618de99a92882aa325e59d8e58076116e3e008a288b903ad217172fea0'
+        expected_sha = q.CURRENT_SHA if role == 'ordinary' else '1cea140199a9b84d8233e5410579a509663e06aa06a4a7543eeea42cffbec4a6'
         actual_sha = cfg['source_manifest']['sha256'] if role == 'ordinary' else q.sha(q.canonical(manifest['files']))
-        q.need(actual_sha == expected_sha and len(manifest['files']) == (129 if role == 'ordinary' else 130), 'public source authority')
+        q.need(actual_sha == expected_sha and len(manifest['files']) == (133 if role == 'ordinary' else 134), 'public source authority')
         for profile in q.PROFILES:
             build = capsule.json(cfg['build_receipts'][profile])
             q.need(build['status'] == 0 and build['profile'] == profile and build['source_before'] == build['source_after'] ==

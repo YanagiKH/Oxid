@@ -11,7 +11,7 @@ unchanged.
 
 `gate.py host --repo REPO --output FRESH --expected-head SHA --event-sha SHA
 --host HOST [--historical-repo REPO --toolchain ROOT --cargo-cache CACHE]` is the
-mandatory actual-host route. All admitted component files, membership, source129,
+mandatory actual-host route. All admitted component files, membership, source133,
 Git head/full tree, contract transport and amendments are checked before importing
 component code, writing materialized inputs, or executing a compiler. Inputs are
 rechecked before every stage and before completion. HOST is an expectation checked
@@ -85,7 +85,7 @@ leaving the historical frozen v3 package and all semantic expectations intact.
 Its 47 reviewed compiler changes are disjoint from parser instrumentation.
 Historical283/current292 base maps, historical286/current295 derived maps and
 historical113/current122 compiler rosters remain separate identity domains.
-Sessions explicitly deny historical source equivalence and bind the current129
+Sessions explicitly deny historical source equivalence and bind the current133
 manifest, reviewed source checkpoint and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
