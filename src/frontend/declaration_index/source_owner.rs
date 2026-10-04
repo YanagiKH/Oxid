@@ -181,7 +181,8 @@ impl<'s> SourceOwner<'s> {
                                 annotation: Some(ty),
                                 ..
                             } => owned |= self.owned_type(ty, work)?,
-                            ast::StmtKind::FieldAssign { .. } => owned = true,
+                            ast::StmtKind::FieldAssign { .. }
+                            | ast::StmtKind::IndexAssign { .. } => owned = true,
                             _ => (),
                         }
                     }
@@ -190,9 +191,11 @@ impl<'s> SourceOwner<'s> {
             for expression in &program.expressions {
                 work.preflight(expression.span)?;
                 match &expression.kind {
-                    ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
-                        owned = true
-                    }
+                    ast::ExprKind::StructLiteral { .. }
+                    | ast::ExprKind::FieldRead { .. }
+                    | ast::ExprKind::ArrayLiteral { .. }
+                    | ast::ExprKind::IndexRead { .. }
+                    | ast::ExprKind::ArrayLength { .. } => owned = true,
                     ast::ExprKind::Call { args, .. } => {
                         for argument in args {
                             work.preflight(expression.span)?;
@@ -210,6 +213,8 @@ impl<'s> SourceOwner<'s> {
         match ty.kind {
             ast::TypeSyntaxKind::Unit => Ok(false),
             ast::TypeSyntaxKind::Reference { .. }
+            | ast::TypeSyntaxKind::Array(_)
+            | ast::TypeSyntaxKind::ArrayReference { .. }
             | ast::TypeSyntaxKind::Name(ast::ItemPath::Absolute(_)) => Ok(true),
             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
                 let text = self.text(name)?;

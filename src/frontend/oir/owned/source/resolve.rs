@@ -100,33 +100,29 @@ fn value_type(
     requester: ModuleId,
     ty: ast::TypeSyntax,
 ) -> Result<ValueTy, Box<Diagnostic>> {
+    source_type_enabled(ty)?;
     query.value_type(requester, ty, TypeContext::Value)
+}
+fn source_type_enabled(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
+    if matches!(
+        ty.kind,
+        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
+    ) {
+        return Err(error(
+            "E0500",
+            format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
+            ty.span,
+        ));
+    }
+    Ok(())
 }
 fn parameter_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
     ty: ast::TypeSyntax,
 ) -> Result<ParameterTy, Box<Diagnostic>> {
-    if let ast::TypeSyntaxKind::Reference { mutable, referent } = ty.kind {
-        let record = query.record_type(
-            requester,
-            ItemPathRef {
-                file: ty.span.file,
-                path: referent,
-            },
-            TypeContext::Reference,
-        )?;
-        Ok(ParameterTy::Reference {
-            aggregate: AggregateTy::Record(record),
-            kind: if mutable {
-                BorrowKind::Exclusive
-            } else {
-                BorrowKind::Shared
-            },
-        })
-    } else {
-        value_type(query, requester, ty).map(ParameterTy::Value)
-    }
+    source_type_enabled(ty)?;
+    query.parameter_type(requester, ty)
 }
 fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
     let mut value = 0i32;
@@ -636,6 +632,12 @@ impl<'a> Resolver<'_, 'a> {
                         value: self.expression(*value)?,
                     }
                 }
+                ast::StmtKind::IndexAssign { target, .. } => {
+                    return Err(error(
+                        "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
+                        self.ast.expressions[target.0].span,
+                    ));
+                }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
@@ -705,6 +707,17 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::ArrayLiteral { .. }
+            | ast::ExprKind::IndexRead { .. }
+            | ast::ExprKind::ArrayLength { .. } => {
+                return Err(error(
+                    "E0500",
+                    format_args!(
+                        "array source execution is unavailable in this dormant syntax checkpoint"
+                    ),
+                    expr.span,
+                ));
+            }
             ast::ExprKind::FieldRead { base, field } => ExprKind::FieldRead {
                 base: self.lookup(*base)?,
                 base_span: *base,

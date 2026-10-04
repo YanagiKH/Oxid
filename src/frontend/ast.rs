@@ -81,6 +81,16 @@ pub enum ExprKind {
         base: Span,
         field: Span,
     },
+    ArrayLiteral {
+        elements: Vec<ExprId>,
+    },
+    IndexRead {
+        base: Span,
+        index: ExprId,
+    },
+    ArrayLength {
+        base: Span,
+    },
     Group(ExprId),
     Arithmetic {
         op: ArithmeticOp,
@@ -95,10 +105,29 @@ pub struct Expr {
     pub span: Span,
 }
 #[derive(Clone, Copy, Debug)]
+pub enum ScalarTypeSyntax {
+    Bool,
+    I32,
+    Unit,
+}
+#[derive(Clone, Copy, Debug)]
+pub struct FixedArraySyntax {
+    pub element: ScalarTypeSyntax,
+    pub length: u16,
+}
+#[derive(Clone, Copy, Debug)]
 pub enum TypeSyntaxKind {
     Name(ItemPath),
     Unit,
-    Reference { mutable: bool, referent: ItemPath },
+    Reference {
+        mutable: bool,
+        referent: ItemPath,
+    },
+    Array(FixedArraySyntax),
+    ArrayReference {
+        mutable: bool,
+        array: FixedArraySyntax,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct TypeSyntax {
@@ -178,6 +207,12 @@ pub enum StmtKind {
         base: Span,
         field: Span,
         target_span: Span,
+        operator_span: Span,
+        value: ExprId,
+    },
+    /// The target is one retained direct IndexRead syntax node, not a load.
+    IndexAssign {
+        target: ExprId,
         operator_span: Span,
         value: ExprId,
     },
@@ -313,6 +348,9 @@ impl Program {
             valid(ty.span)
                 && match ty.kind {
                     TypeSyntaxKind::Unit => true,
+                    TypeSyntaxKind::Array(array) | TypeSyntaxKind::ArrayReference { array, .. } => {
+                        usize::from(array.length) <= super::parser::MAX_ARRAY_ELEMENTS
+                    }
                     TypeSyntaxKind::Name(path)
                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
                 }
@@ -433,6 +471,10 @@ impl Program {
                 if !valid(field.name)
                     || !valid(field.span)
                     || !type_valid(field.ty, &mut valid)
+                    || matches!(
+                        field.ty.kind,
+                        TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. }
+                    )
                     || field.public.is_some_and(|span| !valid(span))
                 {
                     return false;
@@ -505,6 +547,19 @@ impl Program {
                             valid(base)
                                 && valid(field)
                                 && valid(target_span)
+                                && valid(operator_span)
+                                && expr_valid(value)
+                        }
+                        StmtKind::IndexAssign {
+                            target,
+                            operator_span,
+                            value,
+                        } => {
+                            expr_valid(target)
+                                && matches!(
+                                    self.expressions[target.0].kind,
+                                    ExprKind::IndexRead { .. }
+                                )
                                 && valid(operator_span)
                                 && expr_valid(value)
                         }
@@ -594,6 +649,12 @@ impl Program {
                         })
                 }
                 ExprKind::FieldRead { base, field } => valid(*base) && valid(*field),
+                ExprKind::ArrayLiteral { elements } => {
+                    elements.len() <= super::parser::MAX_ARRAY_ELEMENTS
+                        && elements.iter().all(|element| earlier(*element))
+                }
+                ExprKind::IndexRead { base, index } => valid(*base) && earlier(*index),
+                ExprKind::ArrayLength { base } => valid(*base),
                 ExprKind::Group(inner) => earlier(*inner),
             };
             if !ok {
@@ -607,6 +668,7 @@ impl Program {
         let owned_type = |ty: &TypeSyntax| match ty.kind {
             TypeSyntaxKind::Unit => false,
             TypeSyntaxKind::Reference { .. } => true,
+            TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. } => true,
             TypeSyntaxKind::Name(ItemPath::Unqualified(name)) => {
                 !matches!(source.text_at(name), "bool" | "i32")
             }
@@ -622,13 +684,17 @@ impl Program {
                                 annotation: Some(ty),
                                 ..
                             } => owned_type(ty),
-                            StmtKind::FieldAssign { .. } => true,
+                            StmtKind::FieldAssign { .. } | StmtKind::IndexAssign { .. } => true,
                             _ => false,
                         })
                     })
             })
             || self.expressions.iter().any(|e| match &e.kind {
-                ExprKind::StructLiteral { .. } | ExprKind::FieldRead { .. } => true,
+                ExprKind::StructLiteral { .. }
+                | ExprKind::FieldRead { .. }
+                | ExprKind::ArrayLiteral { .. }
+                | ExprKind::IndexRead { .. }
+                | ExprKind::ArrayLength { .. } => true,
                 ExprKind::Call { args, .. } => {
                     args.iter().any(|a| matches!(a, Argument::Borrow { .. }))
                 }
