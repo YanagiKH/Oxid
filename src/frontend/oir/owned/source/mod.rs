@@ -36,3 +36,6 @@ mod array_type_controls;
 
 #[cfg(test)]
 mod array_pipeline;
+
+#[cfg(test)]
+mod array_consumer_tests;

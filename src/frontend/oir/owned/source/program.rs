@@ -45,6 +45,42 @@ pub(in crate::frontend::oir) fn check_typed(
     Ok(SourceProgram { witness })
 }
 
+/// Source-produced arrays can reach the real Reference consumer only through
+/// this private test seam. No typed owner, raw program or witness is returned.
+#[cfg(test)]
+pub(super) fn run_array_source<'s>(
+    owner: crate::frontend::declaration_index::SourceOwner<'s>,
+    limits: crate::frontend::declaration_index::IndexLimits,
+    work: &'s crate::frontend::declaration_index::WorkMeter,
+    allocator: &mut crate::frontend::project::budget::Allocator,
+) -> Result<Scalar, Vec<Diagnostic>> {
+    let typed = typeck::check(resolve::resolve_array_consumer(
+        owner, limits, work, allocator,
+    )?)?;
+    let index = typed.index();
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    };
+    let entry = index.root_original_main();
+    if typed.admission() != resolve::SourceAdmission::ArrayConsumer || typed.entry() != entry {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let raw = lower::lower(&typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    super::association::check(&raw, index, sources).map_err(|error| vec![*error])?;
+    let observation = verified::probe_array_reference(
+        raw,
+        sources,
+        super::super::budget::Limits::DEFAULT,
+        entry,
+        execute::Limits::default(),
+        execute::ObservationControl::default(),
+    )
+    .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    observation
+        .result
+        .map_err(|error| vec![*error.diagnostic(sources)])
+}
+
 impl SourceProgram {
     pub(in crate::frontend::oir) fn function_count(&self) -> usize {
         self.witness.functions().len()

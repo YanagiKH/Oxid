@@ -26,6 +26,8 @@ pub(super) enum SourceAdmission {
     ObserveArrayTypes,
     #[cfg(test)]
     ObserveArrayPipeline,
+    #[cfg(test)]
+    ArrayConsumer,
 }
 impl SourceAdmission {
     pub(super) fn executable(self) -> bool {
@@ -35,7 +37,7 @@ impl SourceAdmission {
         match self {
             Self::Executable => true,
             #[cfg(test)]
-            Self::ObserveArrayPipeline => true,
+            Self::ObserveArrayPipeline | Self::ArrayConsumer => true,
             #[cfg(test)]
             Self::ObserveArrayTypes => false,
         }
@@ -1156,6 +1158,35 @@ pub(super) fn resolve_array_pipeline<'s>(
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::ObserveArrayPipeline,
+        sources: sources.view(),
+        index: IndexOwner::Owned(index),
+        work: MeterOwner::Borrowed(work),
+        records,
+        signatures,
+        functions,
+        entry,
+    })
+}
+
+/// A fresh source owner is required for consumer qualification. Existing
+/// observation admissions remain immutable and cannot be promoted.
+#[cfg(test)]
+pub(super) fn resolve_array_consumer<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let (index, (records, signatures, functions)) = resolve_source_parts(
+        sources,
+        work,
+        allocator,
+        SourceAdmission::ArrayConsumer,
+        limits,
+    )?;
+    let entry = index.root_original_main();
+    Ok(ResolvedOwnedProgram {
+        admission: SourceAdmission::ArrayConsumer,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
         work: MeterOwner::Borrowed(work),
