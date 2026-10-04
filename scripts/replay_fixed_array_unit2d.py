@@ -95,9 +95,68 @@ def public_array_reviewer(frozen):
     return current
 
 
+# Borrowed declarations now store BorrowedSlot, while owners retain AggregateSlot.
+# owned_types.rs defines BorrowedTy::Exact and BorrowedSlot::check so these six
+# archived use sites retain their original full aggregate identity, including
+# fixed-array element and length. No slice view or expectation is introduced.
+BORROWED_SLOT_COMPATIBILITY = {
+    "adapter": "exact-borrowed-slot-compatibility-v1",
+    "input_module_sha256": "611b66ce4628654d16c146462e147a08968a4d4b122ed07b2cb4bea908894f68",
+    "current_module_sha256": "234a2bf5cd68e01b0f4252ffe68a3700cdf9e9f8087f51c29e68daba6269adac",
+    "replacement_count": 6,
+    "borrowed_identity": "BorrowedTy::Exact",
+}
+
+BORROWED_SLOT_REPLACEMENTS = (
+    ("""            kind: BorrowKind::Exclusive,
+            aggregate: slot,""",
+     """            kind: BorrowKind::Exclusive,
+            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),"""),
+    ("""        g.references = vec![ReferenceDecl {
+            aggregate: slot,""",
+     """        g.references = vec![ReferenceDecl {
+            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),"""),
+    ("    f.loans[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();",
+     "    f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();"),
+    ("    g.references[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();",
+     "    g.references[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();"),
+    ("""        kind,
+        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),""",
+     """        kind,
+        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),"""),
+    ("""    g.references.push(ReferenceDecl {
+        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),""",
+     """    g.references.push(ReferenceDecl {
+        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),"""),
+)
+
+
+def borrowed_slot_reviewer(previous, *, reverse=False):
+    """Adapt only the exact public-array successor; reverse restores its bytes."""
+    input_key, output_key = "input_module_sha256", "current_module_sha256"
+    replacements = BORROWED_SLOT_REPLACEMENTS
+    if reverse:
+        input_key, output_key = output_key, input_key
+        replacements = tuple((new, old) for old, new in reversed(replacements))
+    require(sha(previous) == BORROWED_SLOT_COMPATIBILITY[input_key],
+            "borrowed-slot adapter input identity differs")
+    require(len(replacements) == BORROWED_SLOT_COMPATIBILITY["replacement_count"],
+            "borrowed-slot adapter replacement inventory differs")
+    current = previous
+    for old, new in replacements:
+        old, new = old.encode(), new.encode()
+        require(current.count(old) == 1 and current.count(new) == 0,
+                "borrowed-slot adapter use site differs")
+        current = current.replace(old, new, 1)
+    require(sha(current) == BORROWED_SLOT_COMPATIBILITY[output_key],
+            "borrowed-slot adapter output identity differs")
+    return current
+
+
 def assert_current_module_binding(binding):
     require(binding.get("public_array_activation") == PUBLIC_ARRAY_ACTIVATION
-            and binding.get("module_sha256") == PUBLIC_ARRAY_ACTIVATION["current_module_sha256"],
+            and binding.get("borrowed_slot_compatibility") == BORROWED_SLOT_COMPATIBILITY
+            and binding.get("module_sha256") == BORROWED_SLOT_COMPATIBILITY["current_module_sha256"],
             "independent current public-array module binding differs")
 
 
@@ -112,6 +171,12 @@ PROVENANCE = {
         "role": "frozen Rust assertions, scalar/coordinate oracles and hand-counted fuel schedules; "
                 "only the nine obsolete production denials become public verification/execution successes",
         "public_array_activation": PUBLIC_ARRAY_ACTIVATION},
+    "borrowed_slot_compatibility": {
+        "kind": "exact reversible source-compatibility successor",
+        "source": "src/frontend/oir/owned_types.rs:BorrowedTy::Exact and BorrowedSlot::check",
+        "role": "six borrowed declaration/assignment use sites retain exact aggregate identity; "
+                "ownership slots, assertions, expectations and resource facts are unchanged",
+        "borrowed_slot_compatibility": BORROWED_SLOT_COMPATIBILITY},
     "physical_results": {
         "kind": "independent frozen expected-result manifest",
         "source": "expectations/physical-harness.tsv",
@@ -456,7 +521,7 @@ class Replay:
         original_native = native.read_bytes()
         require(b"independent_unit2d" not in original_native, "source already contains ephemeral Unit2D registrations")
         require(not (self.source / MODULE_REL).exists(), "ephemeral module path already exists")
-        current = public_array_reviewer(frozen)
+        current = borrowed_slot_reviewer(public_array_reviewer(frozen))
         (self.source / MODULE_REL).write_bytes(current)
         appendix = b"\n\n// Ephemeral independent Unit2D replay controls.\n"
         for name in CONTROL_FILES:
@@ -473,6 +538,7 @@ class Replay:
                        inputs=tree_manifest(self.inputs), original_native_sha256=sha(original_native),
                        original_native_bytes=len(original_native), appendix_sha256=sha(appendix),
                        module_sha256=sha(current), public_array_activation=PUBLIC_ARRAY_ACTIVATION,
+                       borrowed_slot_compatibility=BORROWED_SLOT_COMPATIBILITY,
                        nonce=uuid.uuid4().hex,
                        runner_sha256=file_sha(Path(__file__)),
                        capture_runner_sha256=file_sha(Path(__file__).with_name("replay_unit2d_tool_capture.py")))

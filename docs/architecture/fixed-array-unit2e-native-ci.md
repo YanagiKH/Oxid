@@ -1,7 +1,7 @@
 # Fixed-array Unit2E native CI admission and retention
 
 `scripts/verify_owned_array_native.py` admits the existing producer-owned native
-prefix, supervises the frozen independent Unit2D replay, and packages their
+roster, supervises the frozen independent Unit2D replay, and packages their
 separate original evidence. These are private qualification boundaries. They do
 not enable either public array gate or establish whole-repository acceptance.
 The final published head still requires all applicable CI checks.
@@ -93,9 +93,15 @@ never acquire a pass.
 ## What the two kinds of evidence mean
 
 The producer builds and copies one test executable per profile from original
-Cargo JSON, lists it once, and runs the broad prefix once. Its exact roster has
-16 tests, including six array families. Every stdout completion is attributed by
-name and original byte/line span. Only the named source-resource test admits its
+Cargo JSON. It first lists the broad owned-native prefix and admits exactly the
+original 16 names plus the three borrowed-slice native names. Unknown, missing or
+duplicate discovery names fail. It then lists and runs the original 16 names with
+Rust libtest's multiple full-name filters and `--exact`, once per operation. The
+selected roster, completion predicates and six array families remain unchanged.
+The three slice names execute in the workflow's separate debug/release
+`native_slices -- --ignored` gates. Discovery, selected-list and selected-run
+commands and original streams are bound in hosted and downloaded admission.
+Every stdout completion is attributed by name and original byte/line span. Only the named source-resource test admits its
 exact three-line stdout payload. All six full family summaries must occur once
 in separate original stderr.
 
@@ -110,10 +116,15 @@ members fail. Inherited artifacts are retained under their own role; unchanged
 inherited tests may overwrite their own names, so this is not a complete archive
 of every historical inherited scratch object.
 
-Independent results stay separate. Admission joins schema-1 state, the exact
-prepare/build/ordinary/native/physical/verify completion sequence, five fixed
-phase seals, source binding, marked binary, frozen inputs/tools and original
-individual test results. The final seal is an exact file/directory/symlink list.
+Independent results stay separate. The current replay composes the unchanged
+public-array adapter with an exact, reversible borrowed-reference adapter for six
+archived `LoanDecl`/`ReferenceDecl` fields or assignments. Every adapted value is
+`BorrowedTy::Exact` with the original aggregate identity. The frozen module,
+public-array intermediate hash, assertions, owner slots and expected results are
+preserved; successor metadata binds the new module hash separately. Admission
+joins schema-1 state, the exact prepare/build/ordinary/native/physical/verify
+completion sequence, five fixed phase seals, source binding, marked binary,
+frozen inputs/tools and original individual test results. The final seal is an exact file/directory/symlink list.
 Only the eight frozen logger symlinks are allowed, with exact raw targets; they
 are never followed by the exporter. Traversal holds and verifies ancestor
 identities, allows unrelated sibling activity, and rejects root replacement or
@@ -168,7 +179,7 @@ The separate compact archive carries actual bodies, not just their hashes:
 - Producer invocation/results, source/tool identities and original authority,
   package/current-source manifests; preflight and tool-version command streams
 - Every producer profile result, roster, artifact manifest, Cargo build streams
-  and original named-test list/run receipts and streams
+  and original discovery/list/run receipts and streams
 - Independent state, all phase manifests, source/input/provenance/tool/binary/test
   inventories, verifier/comparison/structure/execution/artifact bodies and inputs
 - Every independent ordinary/native/physical command receipt and stream, every

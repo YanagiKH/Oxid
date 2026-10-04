@@ -1,7 +1,10 @@
 """Synthetic controls only: these fixtures never qualify a Rust/LLVM run."""
+import contextlib
 import json
 import os
 from pathlib import Path
+import re
+import shlex
 import struct
 import signal
 import subprocess
@@ -12,6 +15,36 @@ import tempfile
 import unittest
 
 import verify_owned_array_native as admission
+
+
+SLICE_NAMES = (
+    "frontend::oir::owned::native::tests::slices::native_slices_acyclic_phi_and_rhs_failure_use_source_free_llvm",
+    "frontend::oir::owned::native::tests::slices::native_slices_checkpoint_and_mutation_use_source_free_llvm",
+    "frontend::oir::owned::native::tests::slices::native_slices_signed_bounds_and_fuel_use_source_free_llvm",
+)
+
+
+def listing_fixture(names, count=None):
+    count = len(names) if count is None else count
+    return ("\n".join(name + ": test" for name in names)
+            + f"\n\n{count} tests, 0 benchmarks\n").encode()
+
+
+def discovery_fixture():
+    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES)))
+
+
+def selection_mutations(argv):
+    filters_end = argv.index("--exact")
+    return {
+        "broad-prefix": [argv[0], admission.PREFIX, *argv[filters_end + 1:]],
+        "missing-exact": [argument for argument in argv if argument != "--exact"],
+        "missing-name": [argv[0], *argv[2:]],
+        "duplicate-name": [argv[0], argv[1], *argv[1:]],
+        "filter-drift": [argv[0], argv[1] + "_drift", *argv[2:]],
+        "slice-substitution": [argv[0], SLICE_NAMES[0], *argv[2:]],
+        "missing-ignored": [argument for argument in argv if argument != "--ignored"],
+    }
 
 
 def stdout_fixture():
@@ -64,6 +97,58 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(admission.admit_list(pretty), list(admission.ROSTER))
         with self.assertRaisesRegex(admission.AdmissionError, "missing listing footer"):
             admission.admit_list(terse)
+
+    def test_broad_discovery_separates_nineteen_names_from_sixteen_selected(self):
+        self.assertEqual(tuple(admission.SLICE_ROSTER), SLICE_NAMES)
+        self.assertEqual(len(admission.ROSTER), 16)
+        self.assertTrue(set(admission.ROSTER).isdisjoint(SLICE_NAMES))
+        names = sorted((*admission.ROSTER, *SLICE_NAMES))
+        self.assertEqual(len(names), 19)
+        # SHA-256 of the original PR #33 hosted debug/list/stdout: the same
+        # sixteen historical names plus these three ignored slice names.
+        self.assertEqual(admission.sha256(discovery_fixture()),
+                         "cb886c3662c245bedfe4eb4ee8789f1a3acaf252d7406a31545357bce01f1ada")
+        self.assertEqual(admission.admit_discovery(discovery_fixture()), names)
+        self.assertEqual(admission.admit_list(listing_fixture(admission.ROSTER)), list(admission.ROSTER))
+        with self.assertRaises(admission.AdmissionError):
+            admission.admit_list(discovery_fixture())
+        with self.assertRaises(admission.AdmissionError):
+            admission.admit_discovery(listing_fixture(admission.ROSTER))
+
+    def test_broad_discovery_rejects_unknown_missing_duplicate_and_footer_drift(self):
+        names = sorted((*admission.ROSTER, *SLICE_NAMES))
+        changed_names = ([], names[:-1], names[1:], names + [names[0]],
+                         names + [admission.PREFIX + "slices::native_slices_unreviewed"],
+                         [name for name in names if name != SLICE_NAMES[0]],
+                         ["unexpected", *names[1:]])
+        for values in changed_names:
+            with self.subTest(values=values), self.assertRaises(admission.AdmissionError):
+                admission.admit_discovery(listing_fixture(values, 19))
+        for changed in (b"", listing_fixture(names, 16), listing_fixture(names, 20),
+                        discovery_fixture().replace(b"19 tests, 0 benchmarks\n", b""),
+                        discovery_fixture() + b"19 tests, 0 benchmarks\n",
+                        discovery_fixture() + b"unexpected: test\n"):
+            with self.subTest(data=changed), self.assertRaises(admission.AdmissionError):
+                admission.admit_discovery(changed)
+
+    def test_explicit_slice_workflow_gates_cover_all_three_ignored_names_in_both_profiles(self):
+        repo = Path(__file__).resolve().parents[1]
+        workflow = (repo / ".github/workflows/ci.yml").read_text()
+        block = workflow.split("      - name: Verify borrowed scalar slices native parity in both profiles\n", 1)[1].split("      - name:", 1)[0]
+        commands = [shlex.split(line.strip()) for line in block.splitlines()
+                    if line.strip().startswith("cargo ") and "--bin oxid" in line]
+        self.assertEqual(commands, [
+            ["cargo", "test", "--locked", "--bin", "oxid", "native_slices", "--", "--ignored"],
+            ["cargo", "test", "--release", "--locked", "--bin", "oxid", "native_slices", "--", "--ignored"],
+        ])
+        source = (repo / "src/frontend/oir/owned/slice_native_tests.rs").read_text()
+        ignored = re.findall(r'#\[test\]\s*#\[ignore[^\n]*\]\s*fn (native_slices_\w+)\(', source)
+        expected = {name.rsplit("::", 1)[1] for name in SLICE_NAMES}
+        self.assertEqual(set(ignored), expected)
+        self.assertEqual(len(ignored), 3)
+        for command in commands:
+            selected = command[command.index("oxid") + 1]
+            self.assertEqual({name for name in SLICE_NAMES if selected in name}, set(SLICE_NAMES))
 
     def test_container_upload_paths_cover_all_members_after_early_failure(self):
         # Observed on runner 2.337.0, runs 37169581641 and 37169578747.
@@ -570,10 +655,11 @@ class PackageTests(unittest.TestCase):
                 build_argv.append("--release")
             build_stdout = json.dumps({"reason": "compiler-artifact", "target": {"name": "oxid"}, "profile": {"test": True}, "executable": str(built_path)}).encode() + b"\n"
             self.command(profile + "/build", build_argv, child_env, build_stdout)
-            listing = ("\n".join(name + ": test" for name in admission.ROSTER) + "\n\n16 tests, 0 benchmarks\n").encode()
-            self.command(profile + "/list", [str(binary), admission.PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"], child_env, listing)
+            self.command(profile + "/discovery", [str(binary), admission.PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"], child_env, discovery_fixture())
+            listing = listing_fixture(admission.ROSTER)
+            self.command(profile + "/list", [str(binary), *admission.ROSTER, "--exact", "--list", "--ignored", "--format", "pretty", "--color", "never"], child_env, listing)
             stderr = ("\n".join(admission.family_summary(row) for row in admission.FAMILIES) + "\n").encode()
-            self.command(profile + "/run", [str(binary), admission.PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"], child_env, stdout_fixture(), stderr)
+            self.command(profile + "/run", [str(binary), *admission.ROSTER, "--exact", "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"], child_env, stdout_fixture(), stderr)
             admission.write_json(root / "roster.json", {"profile": profile, "binding": binding, "names": list(admission.ROSTER), "test_binary": binary_record})
             for name in admission.expected_array_members():
                 path = root / "artifacts" / name
@@ -586,7 +672,7 @@ class PackageTests(unittest.TestCase):
                       "families": admission.admit_stderr(stderr), "array_artifact_files": 1307,
                       "elf_executions_asserted": 7058, "reference_comparisons_derived": 6793,
                       "artifact_manifest_sha256": admission.file_record(root / "artifact-manifest.json")["sha256"],
-                      "command_receipts": {name: admission.file_record(root / name / "command.json") for name in ("build", "list", "run")}}
+                      "command_receipts": {name: admission.file_record(root / name / "command.json") for name in ("build", "discovery", "list", "run")}}
             admission.write_json(root / "result.json", result)
             terminal["profiles"][profile] = {"status": "PASS", "result": admission.file_record(root / "result.json")}
         admission.write_json(self.root / "result.json", terminal)
@@ -602,6 +688,91 @@ class PackageTests(unittest.TestCase):
             "status": "PASS", "exit_code": 0, "failure_code": 0,
             "cleanup": {"stopped": True, "surviving_group_detected": False},
             "stdout": admission.file_record(root / "stdout"), "stderr": admission.file_record(root / "stderr")})
+
+    @contextlib.contextmanager
+    def changed_producer_command(self, profile, name, *, argv=None, stdout=None):
+        """Rebind synthetic receipt hashes so semantic admission is exercised."""
+        root = self.root / profile
+        command_path = root / name / "command.json"
+        paths = (command_path, root / name / "stdout", root / "result.json",
+                 self.root / "result.json", self.root / "evidence-manifest.json")
+        originals = {path: path.read_bytes() for path in paths}
+        try:
+            command = admission.read_json(command_path)
+            if argv is not None:
+                command["argv"] = argv
+            if stdout is not None:
+                (root / name / "stdout").write_bytes(stdout)
+                command["stdout"] = admission.file_record(root / name / "stdout")
+            command_path.write_bytes(admission.json_bytes(command))
+            result = admission.read_json(root / "result.json")
+            result["command_receipts"][name] = admission.file_record(command_path)
+            (root / "result.json").write_bytes(admission.json_bytes(result))
+            terminal = admission.read_json(self.root / "result.json")
+            terminal["profiles"][profile]["result"] = admission.file_record(root / "result.json")
+            (self.root / "result.json").write_bytes(admission.json_bytes(terminal))
+            inventory = admission.regular_inventory(self.root)
+            inventory.pop("evidence-manifest.json")
+            (self.root / "evidence-manifest.json").write_bytes(admission.json_bytes(inventory))
+            yield
+        finally:
+            for path, data in originals.items():
+                path.write_bytes(data)
+
+    def test_selected_list_and_run_agree_on_exact_sixteen_argv_in_both_profiles(self):
+        self.fixture()
+        self.assertEqual(set(admission.verify_producer(self.root, self.ci, "success")["profiles"]),
+                         {"debug", "release"})
+        for profile in admission.PROFILES:
+            root = self.root / profile
+            binary = str(root / "bin/oxid-test")
+            listed = admission.read_json(root / "list/command.json")["argv"]
+            executed = admission.read_json(root / "run/command.json")["argv"]
+            expected_selection = [binary, *admission.ROSTER, "--exact"]
+            self.assertEqual(listed[:18], expected_selection)
+            self.assertEqual(executed[:18], expected_selection)
+            self.assertEqual(listed[18:], ["--list", "--ignored", "--format", "pretty", "--color", "never"])
+            self.assertEqual(executed[18:], ["--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"])
+            discovery = admission.read_json(root / "discovery/command.json")
+            self.assertEqual(discovery["argv"], [binary, admission.PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"])
+            result = admission.read_json(root / "result.json")
+            self.assertEqual(set(result["command_receipts"]), {"build", "discovery", "list", "run"})
+            self.assertEqual(len(result["outcomes"]), 16)
+            self.assertEqual([result[name] for name in ("array_artifact_files", "elf_executions_asserted", "reference_comparisons_derived")],
+                             [1307, 7058, 6793])
+
+    def test_resealed_selected_argv_mutations_fail_with_successful_sixteen_stdout(self):
+        self.fixture()
+        for profile in admission.PROFILES:
+            for name in ("list", "run"):
+                argv = admission.read_json(self.root / profile / name / "command.json")["argv"]
+                for label, changed in selection_mutations(argv).items():
+                    with self.subTest(profile=profile, command=name, mutation=label), \
+                         self.changed_producer_command(profile, name, argv=changed):
+                        with self.assertRaisesRegex(admission.AdmissionError, "invocation differs"):
+                            admission.verify_producer(self.root, self.ci, "success")
+
+    def test_resealed_broad_discovery_names_and_invocation_are_required(self):
+        self.fixture()
+        names = sorted((*admission.ROSTER, *SLICE_NAMES))
+        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 19),
+                     "duplicate": listing_fixture([*names, names[0]], 19),
+                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 19),
+                     "historical-only": listing_fixture(admission.ROSTER)}
+        for profile in admission.PROFILES:
+            for label, data in mutations.items():
+                with self.subTest(profile=profile, mutation=label), \
+                     self.changed_producer_command(profile, "discovery", stdout=data):
+                    with self.assertRaisesRegex(admission.AdmissionError, "missing|extra|duplicate|discovery"):
+                        admission.verify_producer(self.root, self.ci, "success")
+            argv = admission.read_json(self.root / profile / "discovery/command.json")["argv"]
+            for label, changed in (("narrow-filter", [argv[0], admission.ROSTER[0], *argv[2:]]),
+                                   ("exact-filter", [*argv, "--exact"]),
+                                   ("missing-ignored", [argument for argument in argv if argument != "--ignored"])):
+                with self.subTest(profile=profile, mutation=label), \
+                     self.changed_producer_command(profile, "discovery", argv=changed):
+                    with self.assertRaisesRegex(admission.AdmissionError, "invocation differs"):
+                        admission.verify_producer(self.root, self.ci, "success")
 
     def test_full_synthetic_receipt_admission_and_archive_bytes(self):
         self.fixture()
@@ -625,7 +796,9 @@ class PackageTests(unittest.TestCase):
             for name in ("producer/result.json", "producer/source/identity.json", "producer/toolchains.json",
                          "producer/debug/run/stdout", "producer/release/run/stderr", "producer/debug/artifact-manifest.json",
                          "producer/release/result.json", "producer/evidence-manifest.json",
-                         "producer/debug/build/stdout", "producer/release/build/stderr"):
+                         "producer/debug/build/stdout", "producer/release/build/stderr",
+                         *(f"producer/{profile}/discovery/{leaf}" for profile in admission.PROFILES
+                           for leaf in ("command.json", "stdout", "stderr"))):
                 self.assertIn(name, compact.getnames())
                 self.assertEqual(compact.extractfile(name).read(), (self.root / name.removeprefix("producer/")).read_bytes())
 
@@ -1152,7 +1325,8 @@ class CombinedReceiptTests(unittest.TestCase):
             'tree': cls.producer_admission['binding']['tree'], 'profile': profile, 'run_root': str(root), 'checkout_clean': True,
             'runner_sha256': admission.INDEPENDENT_RUNNER_SHA, 'input_checkout': str((cls.host.base / 'repo')),
             'public_array_activation': cls.schema.PUBLIC_ARRAY_ACTIVATION,
-            'module_sha256': cls.schema.PUBLIC_ARRAY_ACTIVATION['current_module_sha256'],
+            'borrowed_slot_compatibility': cls.schema.BORROWED_SLOT_COMPATIBILITY,
+            'module_sha256': cls.schema.BORROWED_SLOT_COMPATIBILITY['current_module_sha256'],
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
             'input_manifest_sha256': cls.input_digest, 'original_input_manifest_sha256': cls.input_digest,
@@ -1546,6 +1720,74 @@ class CombinedReceiptTests(unittest.TestCase):
         output = self.fresh_output(label)
         self.rewrite_download(output, lambda name, data: bodies[name])
         return output
+
+    def producer_command_download(self, label, profile, name, *, argv=None, stdout=None):
+        def mutate(bodies, full, changes):
+            prefix = "producer/" + profile
+            command_name = prefix + "/" + name + "/command.json"
+            command = json.loads(bodies[command_name])
+            def record(path):
+                data = changes.get(path, bodies[path])
+                return {**full["members"][path], "bytes": len(data), "sha256": admission.sha256(data)}
+            if argv is not None:
+                command["argv"] = argv
+            if stdout is not None:
+                path = prefix + "/" + name + "/stdout"
+                changes[path] = stdout
+                command["stdout"] = record(path)
+            changes[command_name] = admission.json_bytes(command)
+            result_name = prefix + "/result.json"
+            result = json.loads(bodies[result_name])
+            result["command_receipts"][name] = record(command_name)
+            changes[result_name] = admission.json_bytes(result)
+            terminal = json.loads(bodies["producer/result.json"])
+            terminal["profiles"][profile]["result"] = record(result_name)
+            changes["producer/result.json"] = admission.json_bytes(terminal)
+            manifest = json.loads(bodies["producer/evidence-manifest.json"])
+            for path in changes:
+                manifest[path.removeprefix("producer/")] = record(path)
+            changes["producer/evidence-manifest.json"] = admission.json_bytes(manifest)
+        return self.coherent_download(label, mutate)
+
+    def test_offline_resealed_selected_argv_rejects_broad_missing_duplicate_and_filter_drift(self):
+        for profile in admission.PROFILES:
+            for name in ("list", "run"):
+                argv = admission.read_json(self.producer / profile / name / "command.json")["argv"]
+                for label, changed in selection_mutations(argv).items():
+                    with self.subTest(profile=profile, command=name, mutation=label):
+                        output = self.producer_command_download("selected-" + label, profile, name, argv=changed)
+                        try:
+                            with self.assertRaisesRegex(admission.AdmissionError, "original profile invocations differ"):
+                                self.audit(output)
+                        finally:
+                            shutil.rmtree(output)
+
+    def test_offline_resealed_discovery_admits_only_current_nineteen_and_broad_argv(self):
+        names = sorted((*admission.ROSTER, *SLICE_NAMES))
+        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 19),
+                     "duplicate": listing_fixture([*names, names[0]], 19),
+                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 19),
+                     "historical-only": listing_fixture(admission.ROSTER)}
+        for profile in admission.PROFILES:
+            for label, data in mutations.items():
+                with self.subTest(profile=profile, mutation=label):
+                    output = self.producer_command_download("discovery-" + label, profile, "discovery", stdout=data)
+                    try:
+                        with self.assertRaisesRegex(admission.AdmissionError, "missing|extra|duplicate|discovery"):
+                            self.audit(output)
+                    finally:
+                        shutil.rmtree(output)
+            argv = admission.read_json(self.producer / profile / "discovery/command.json")["argv"]
+            for label, changed in (("narrow-filter", [argv[0], admission.ROSTER[0], *argv[2:]]),
+                                   ("exact-filter", [*argv, "--exact"]),
+                                   ("missing-ignored", [argument for argument in argv if argument != "--ignored"])):
+                with self.subTest(profile=profile, mutation=label):
+                    output = self.producer_command_download("discovery-" + label, profile, "discovery", argv=changed)
+                    try:
+                        with self.assertRaisesRegex(admission.AdmissionError, "original profile invocations differ"):
+                            self.audit(output)
+                    finally:
+                        shutil.rmtree(output)
 
     def test_offline_exact_closure_and_original_launcher_and_known_links(self):
         def extra(bodies, full, changes):
