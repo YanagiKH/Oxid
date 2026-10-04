@@ -1,0 +1,2325 @@
+{
+  "schema": "oxid-independent-array-lowering-v1",
+  "case": "grouped-complete-access-and-index",
+  "source": {
+    "path": "main.ox",
+    "file": 0,
+    "bytes": 86,
+    "sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36",
+    "reused_path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox"
+  },
+  "entry": 0,
+  "functions": [
+    {
+      "id": 0,
+      "name": "main",
+      "result": "i32",
+      "span": {
+        "file": 0,
+        "start": 3,
+        "end": 7
+      },
+      "parameters": [],
+      "bindings": [
+        {
+          "id": 0,
+          "span": {
+            "file": 0,
+            "start": 27,
+            "end": 28
+          },
+          "mutable": true,
+          "scope": 0,
+          "parameter_position": null,
+          "raw": {
+            "Owner": 1
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              2
+            ]
+          }
+        }
+      ],
+      "hir": [
+        {
+          "id": 0,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 42,
+            "end": 43
+          },
+          "type": "i32",
+          "value": 5,
+          "local": 0
+        },
+        {
+          "id": 1,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 45,
+            "end": 46
+          },
+          "type": "i32",
+          "value": 7,
+          "local": 1
+        },
+        {
+          "id": 2,
+          "kind": "ArrayLiteral",
+          "span": {
+            "file": 0,
+            "start": 41,
+            "end": 47
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              2
+            ]
+          },
+          "elements": [
+            0,
+            1
+          ],
+          "owner": 0
+        },
+        {
+          "id": 3,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 61,
+            "end": 62
+          },
+          "type": "i32",
+          "value": 1,
+          "local": 2
+        },
+        {
+          "id": 4,
+          "kind": "IndexRead",
+          "span": {
+            "file": 0,
+            "start": 59,
+            "end": 63
+          },
+          "type": "i32",
+          "base": 0,
+          "base_span": {
+            "file": 0,
+            "start": 59,
+            "end": 60
+          },
+          "index": 3,
+          "local": 3
+        },
+        {
+          "id": 5,
+          "kind": "Group",
+          "span": {
+            "file": 0,
+            "start": 58,
+            "end": 64
+          },
+          "type": "i32",
+          "inner": 4,
+          "local": 4
+        },
+        {
+          "id": 6,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 52,
+            "end": 53
+          },
+          "type": "i32",
+          "value": 0,
+          "local": 5
+        },
+        {
+          "id": 7,
+          "kind": "Group",
+          "span": {
+            "file": 0,
+            "start": 51,
+            "end": 54
+          },
+          "type": "i32",
+          "inner": 6,
+          "local": 6
+        },
+        {
+          "id": 8,
+          "kind": "ArrayLength",
+          "span": {
+            "file": 0,
+            "start": 74,
+            "end": 81
+          },
+          "type": "i32",
+          "base": 0,
+          "base_span": {
+            "file": 0,
+            "start": 74,
+            "end": 75
+          },
+          "local": 7
+        },
+        {
+          "id": 9,
+          "kind": "Group",
+          "span": {
+            "file": 0,
+            "start": 73,
+            "end": 82
+          },
+          "type": "i32",
+          "inner": 8,
+          "local": 8
+        }
+      ],
+      "roots": [
+        {
+          "statement": "Let",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "binding": 0,
+          "init": 2
+        },
+        {
+          "statement": "IndexAssign",
+          "span": {
+            "file": 0,
+            "start": 49,
+            "end": 65
+          },
+          "base": 0,
+          "base_span": {
+            "file": 0,
+            "start": 49,
+            "end": 50
+          },
+          "target_span": {
+            "file": 0,
+            "start": 49,
+            "end": 55
+          },
+          "operator_span": {
+            "file": 0,
+            "start": 56,
+            "end": 57
+          },
+          "value": 5,
+          "index": 7
+        },
+        {
+          "statement": "Return",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "value": 9
+        }
+      ],
+      "locals": [
+        {
+          "id": 0,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 42,
+            "end": 43
+          }
+        },
+        {
+          "id": 1,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 45,
+            "end": 46
+          }
+        },
+        {
+          "id": 2,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 61,
+            "end": 62
+          }
+        },
+        {
+          "id": 3,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 59,
+            "end": 63
+          }
+        },
+        {
+          "id": 4,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 58,
+            "end": 64
+          }
+        },
+        {
+          "id": 5,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 52,
+            "end": 53
+          }
+        },
+        {
+          "id": 6,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 51,
+            "end": 54
+          }
+        },
+        {
+          "id": 7,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 74,
+            "end": 81
+          }
+        },
+        {
+          "id": 8,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 73,
+            "end": 82
+          }
+        }
+      ],
+      "places": [],
+      "owners": [
+        {
+          "id": 0,
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 41,
+            "end": 47
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              2
+            ]
+          }
+        },
+        {
+          "id": 1,
+          "kind": {
+            "Local": {
+              "mutable": true
+            }
+          },
+          "span": {
+            "file": 0,
+            "start": 27,
+            "end": 28
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              2
+            ]
+          }
+        }
+      ],
+      "references": [],
+      "calls": [],
+      "loans": [],
+      "blocks": [
+        {
+          "id": 0,
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "merge": null,
+          "statements": [
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 42,
+                "end": 43
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 42,
+                  "end": 43
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "destination": 0,
+              "value": {
+                "I32": 5
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 45,
+                "end": 46
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 45,
+                  "end": 46
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "destination": 1,
+              "value": {
+                "I32": 7
+              }
+            },
+            {
+              "kind": "StorageLive",
+              "span": {
+                "file": 0,
+                "start": 41,
+                "end": 47
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 41,
+                  "end": 47
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "owner": 0
+            },
+            {
+              "kind": "ConstructArray",
+              "span": {
+                "file": 0,
+                "start": 41,
+                "end": 47
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 41,
+                  "end": 47
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "destination": 0,
+              "elements": [
+                {
+                  "local": 0,
+                  "span": {
+                    "file": 0,
+                    "start": 42,
+                    "end": 43
+                  }
+                },
+                {
+                  "local": 1,
+                  "span": {
+                    "file": 0,
+                    "start": 45,
+                    "end": 46
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "StorageLive",
+              "span": {
+                "file": 0,
+                "start": 19,
+                "end": 48
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 27,
+                  "end": 28
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "owner": 1
+            },
+            {
+              "kind": "MoveInitialize",
+              "span": {
+                "file": 0,
+                "start": 19,
+                "end": 48
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 27,
+                  "end": 28
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "destination": 1,
+              "source": 0
+            },
+            {
+              "kind": "StorageEnd",
+              "span": {
+                "file": 0,
+                "start": 19,
+                "end": 48
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 41,
+                  "end": 47
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 19,
+                  "end": 48
+                }
+              },
+              "owner": 0
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 61,
+                "end": 62
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 61,
+                  "end": 62
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 65
+                }
+              },
+              "destination": 2,
+              "value": {
+                "I32": 1
+              }
+            },
+            {
+              "kind": "ReadIndex",
+              "span": {
+                "file": 0,
+                "start": 59,
+                "end": 63
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 59,
+                  "end": 63
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 65
+                }
+              },
+              "destination": 3,
+              "base": {
+                "Owner": 1
+              },
+              "index": {
+                "local": 2,
+                "span": {
+                  "file": 0,
+                  "start": 61,
+                  "end": 62
+                }
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 58,
+                "end": 64
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 58,
+                  "end": 64
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 65
+                }
+              },
+              "destination": 4,
+              "value": {
+                "Copy": {
+                  "local": 3,
+                  "span": {
+                    "file": 0,
+                    "start": 59,
+                    "end": 63
+                  }
+                }
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 52,
+                "end": 53
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 52,
+                  "end": 53
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 65
+                }
+              },
+              "destination": 5,
+              "value": {
+                "I32": 0
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 51,
+                "end": 54
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 51,
+                  "end": 54
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 65
+                }
+              },
+              "destination": 6,
+              "value": {
+                "Copy": {
+                  "local": 5,
+                  "span": {
+                    "file": 0,
+                    "start": 52,
+                    "end": 53
+                  }
+                }
+              }
+            },
+            {
+              "kind": "WriteIndex",
+              "span": {
+                "file": 0,
+                "start": 49,
+                "end": 65
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 55
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 49,
+                  "end": 65
+                }
+              },
+              "base": {
+                "Owner": 1
+              },
+              "index": {
+                "local": 6,
+                "span": {
+                  "file": 0,
+                  "start": 51,
+                  "end": 54
+                }
+              },
+              "value": {
+                "local": 4,
+                "span": {
+                  "file": 0,
+                  "start": 58,
+                  "end": 64
+                }
+              }
+            },
+            {
+              "kind": "ArrayLength",
+              "span": {
+                "file": 0,
+                "start": 74,
+                "end": 81
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 74,
+                  "end": 81
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 66,
+                  "end": 83
+                }
+              },
+              "destination": 7,
+              "base": {
+                "Owner": 1
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 73,
+                "end": 82
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 73,
+                  "end": 82
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 66,
+                  "end": 83
+                }
+              },
+              "destination": 8,
+              "value": {
+                "Copy": {
+                  "local": 7,
+                  "span": {
+                    "file": 0,
+                    "start": 74,
+                    "end": 81
+                  }
+                }
+              }
+            },
+            {
+              "kind": "StorageEnd",
+              "span": {
+                "file": 0,
+                "start": 66,
+                "end": 83
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 66,
+                  "end": 83
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 66,
+                  "end": 83
+                }
+              },
+              "owner": 1
+            }
+          ],
+          "terminator": {
+            "kind": "ReturnScalar",
+            "span": {
+              "file": 0,
+              "start": 66,
+              "end": 83
+            },
+            "origins": {
+              "primary": {
+                "file": 0,
+                "start": 66,
+                "end": 83
+              },
+              "cause": {
+                "file": 0,
+                "start": 66,
+                "end": 83
+              }
+            },
+            "value": {
+              "local": 8,
+              "span": {
+                "file": 0,
+                "start": 73,
+                "end": 82
+              }
+            }
+          }
+        }
+      ],
+      "counts_all_four_passes": {
+        "locals": 9,
+        "places": 0,
+        "owners": 2,
+        "references": 0,
+        "parameters": 0,
+        "calls": 0,
+        "loans": 0,
+        "blocks": 1,
+        "edges": 0,
+        "statements": 16,
+        "merges": 0,
+        "descriptor_arguments": 0,
+        "preparations": 0,
+        "constructed_fields": 0,
+        "constructed_elements": 2,
+        "diagnostic_origins": 17,
+        "max_constructor_fields": 0,
+        "ownership_active": true
+      },
+      "completion_order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "frame_model": {
+        "V": 9,
+        "A": 0,
+        "W": 4,
+        "O": 2,
+        "R": 0,
+        "L": 0,
+        "C": 0,
+        "X": 21,
+        "root_activation_cost": 22,
+        "return_scalar_cost": 5,
+        "owner_widths": [
+          2,
+          2
+        ]
+      },
+      "resource_model": {
+        "local_expanded_S_plus_A_plus_F_plus_Q": 18,
+        "ownership_n": 32,
+        "ownership_work": 1348,
+        "literal_operand_reservations_emit": [
+          2
+        ],
+        "literal_operand_reservations_each_count_pass": [],
+        "literal_cursor_child_visits_each_pass": 2,
+        "literal_cursor_final_visits_each_pass": 1,
+        "operand_copies_emit": 2,
+        "measured_rust_widths": "pending, not measured by this model"
+      }
+    }
+  ],
+  "static_ownership": "Accept under agreed templates; verifier not run",
+  "absent_identities": [
+    "no target HIR wrapper",
+    "no target ReadIndex",
+    "no target scalar slot"
+  ],
+  "runtime": {
+    "claim": "source-derived reference contract, not observed execution or native machine evidence",
+    "steps": [
+      {
+        "identity": "root-activation",
+        "cost": 22,
+        "span": {
+          "file": 0,
+          "start": 3,
+          "end": 7
+        },
+        "effects": [
+          "enter main frame0 activation1; all slots allocated, owners Dead/g0"
+        ],
+        "fuel_before": 0,
+        "fuel_after": 22
+      },
+      {
+        "identity": [
+          0,
+          0,
+          0
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 42,
+          "end": 43
+        },
+        "effects": [
+          "local0=5"
+        ],
+        "paid_failure": null,
+        "fuel_before": 22,
+        "fuel_after": 23
+      },
+      {
+        "identity": [
+          0,
+          0,
+          1
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 45,
+          "end": 46
+        },
+        "effects": [
+          "local1=7"
+        ],
+        "paid_failure": null,
+        "fuel_before": 23,
+        "fuel_after": 24
+      },
+      {
+        "identity": [
+          0,
+          0,
+          2
+        ],
+        "kind": "StorageLive",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 41,
+          "end": 47
+        },
+        "effects": [
+          "owner0 Uninitialized/g1"
+        ],
+        "paid_failure": null,
+        "fuel_before": 24,
+        "fuel_after": 25
+      },
+      {
+        "identity": [
+          0,
+          0,
+          3
+        ],
+        "kind": "ConstructArray",
+        "cost": 3,
+        "span": {
+          "file": 0,
+          "start": 41,
+          "end": 47
+        },
+        "effects": [
+          "owner0 payload[5,7] Available/g2"
+        ],
+        "paid_failure": null,
+        "fuel_before": 25,
+        "fuel_after": 28
+      },
+      {
+        "identity": [
+          0,
+          0,
+          4
+        ],
+        "kind": "StorageLive",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 19,
+          "end": 48
+        },
+        "effects": [
+          "owner1 Uninitialized/g1"
+        ],
+        "paid_failure": null,
+        "fuel_before": 28,
+        "fuel_after": 29
+      },
+      {
+        "identity": [
+          0,
+          0,
+          5
+        ],
+        "kind": "MoveInitialize",
+        "cost": 3,
+        "span": {
+          "file": 0,
+          "start": 19,
+          "end": 48
+        },
+        "effects": [
+          "owner0 Moved/g3; owner1 payload[5,7] Available/g2"
+        ],
+        "paid_failure": null,
+        "fuel_before": 29,
+        "fuel_after": 32
+      },
+      {
+        "identity": [
+          0,
+          0,
+          6
+        ],
+        "kind": "StorageEnd",
+        "cost": 3,
+        "span": {
+          "file": 0,
+          "start": 19,
+          "end": 48
+        },
+        "effects": [
+          "owner0 Dead/g4"
+        ],
+        "paid_failure": null,
+        "fuel_before": 32,
+        "fuel_after": 35
+      },
+      {
+        "identity": [
+          0,
+          0,
+          7
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 61,
+          "end": 62
+        },
+        "effects": [
+          "local2=1"
+        ],
+        "paid_failure": null,
+        "fuel_before": 35,
+        "fuel_after": 36
+      },
+      {
+        "identity": [
+          0,
+          0,
+          8
+        ],
+        "kind": "ReadIndex",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 59,
+          "end": 63
+        },
+        "effects": [
+          "local3=7 from owner1[1]"
+        ],
+        "paid_failure": null,
+        "fuel_before": 36,
+        "fuel_after": 37
+      },
+      {
+        "identity": [
+          0,
+          0,
+          9
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 58,
+          "end": 64
+        },
+        "effects": [
+          "local4=copy local3=7"
+        ],
+        "paid_failure": null,
+        "fuel_before": 37,
+        "fuel_after": 38
+      },
+      {
+        "identity": [
+          0,
+          0,
+          10
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 52,
+          "end": 53
+        },
+        "effects": [
+          "local5=0"
+        ],
+        "paid_failure": null,
+        "fuel_before": 38,
+        "fuel_after": 39
+      },
+      {
+        "identity": [
+          0,
+          0,
+          11
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 51,
+          "end": 54
+        },
+        "effects": [
+          "local6=copy local5=0"
+        ],
+        "paid_failure": null,
+        "fuel_before": 39,
+        "fuel_after": 40
+      },
+      {
+        "identity": [
+          0,
+          0,
+          12
+        ],
+        "kind": "WriteIndex",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 49,
+          "end": 55
+        },
+        "effects": [
+          "owner1[0]=saved local4=7; payload[7,7]"
+        ],
+        "paid_failure": null,
+        "fuel_before": 40,
+        "fuel_after": 41
+      },
+      {
+        "identity": [
+          0,
+          0,
+          13
+        ],
+        "kind": "ArrayLength",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 74,
+          "end": 81
+        },
+        "effects": [
+          "local7=2 after verified whole-base read"
+        ],
+        "paid_failure": null,
+        "fuel_before": 41,
+        "fuel_after": 42
+      },
+      {
+        "identity": [
+          0,
+          0,
+          14
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 73,
+          "end": 82
+        },
+        "effects": [
+          "local8=copy local7=2"
+        ],
+        "paid_failure": null,
+        "fuel_before": 42,
+        "fuel_after": 43
+      },
+      {
+        "identity": [
+          0,
+          0,
+          15
+        ],
+        "kind": "StorageEnd",
+        "cost": 3,
+        "span": {
+          "file": 0,
+          "start": 66,
+          "end": 83
+        },
+        "effects": [
+          "owner1 Dead/g3"
+        ],
+        "paid_failure": null,
+        "fuel_before": 43,
+        "fuel_after": 46
+      },
+      {
+        "identity": [
+          0,
+          0,
+          "end"
+        ],
+        "kind": "ReturnScalar",
+        "cost": 5,
+        "span": {
+          "file": 0,
+          "start": 66,
+          "end": 83
+        },
+        "effects": [
+          "return2; drop frame"
+        ],
+        "paid_failure": null,
+        "fuel_before": 46,
+        "fuel_after": 51
+      }
+    ],
+    "terminal_budget": 51,
+    "every_budget_0_through_terminal": [
+      {
+        "fuel": 0,
+        "paid_steps": [],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 1,
+        "paid_steps": [],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 2,
+        "paid_steps": [],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 3,
+        "paid_steps": [],
+        "remaining": 3,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 4,
+        "paid_steps": [],
+        "remaining": 4,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 5,
+        "paid_steps": [],
+        "remaining": 5,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 6,
+        "paid_steps": [],
+        "remaining": 6,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 7,
+        "paid_steps": [],
+        "remaining": 7,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 8,
+        "paid_steps": [],
+        "remaining": 8,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 9,
+        "paid_steps": [],
+        "remaining": 9,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 10,
+        "paid_steps": [],
+        "remaining": 10,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 11,
+        "paid_steps": [],
+        "remaining": 11,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 12,
+        "paid_steps": [],
+        "remaining": 12,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 13,
+        "paid_steps": [],
+        "remaining": 13,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 14,
+        "paid_steps": [],
+        "remaining": 14,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 15,
+        "paid_steps": [],
+        "remaining": 15,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 16,
+        "paid_steps": [],
+        "remaining": 16,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 17,
+        "paid_steps": [],
+        "remaining": 17,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 18,
+        "paid_steps": [],
+        "remaining": 18,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 19,
+        "paid_steps": [],
+        "remaining": 19,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 20,
+        "paid_steps": [],
+        "remaining": 20,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 21,
+        "paid_steps": [],
+        "remaining": 21,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 7
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 22,
+        "paid_steps": [
+          0
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 42,
+            "end": 43
+          },
+          "at_step": 1
+        }
+      },
+      {
+        "fuel": 23,
+        "paid_steps": [
+          0,
+          1
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 45,
+            "end": 46
+          },
+          "at_step": 2
+        }
+      },
+      {
+        "fuel": 24,
+        "paid_steps": [
+          0,
+          1,
+          2
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 41,
+            "end": 47
+          },
+          "at_step": 3
+        }
+      },
+      {
+        "fuel": 25,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 41,
+            "end": 47
+          },
+          "at_step": 4
+        }
+      },
+      {
+        "fuel": 26,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 41,
+            "end": 47
+          },
+          "at_step": 4
+        }
+      },
+      {
+        "fuel": 27,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 41,
+            "end": 47
+          },
+          "at_step": 4
+        }
+      },
+      {
+        "fuel": 28,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 5
+        }
+      },
+      {
+        "fuel": 29,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 6
+        }
+      },
+      {
+        "fuel": 30,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 6
+        }
+      },
+      {
+        "fuel": 31,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 6
+        }
+      },
+      {
+        "fuel": 32,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 7
+        }
+      },
+      {
+        "fuel": 33,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 7
+        }
+      },
+      {
+        "fuel": 34,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 19,
+            "end": 48
+          },
+          "at_step": 7
+        }
+      },
+      {
+        "fuel": 35,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 61,
+            "end": 62
+          },
+          "at_step": 8
+        }
+      },
+      {
+        "fuel": 36,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 59,
+            "end": 63
+          },
+          "at_step": 9
+        }
+      },
+      {
+        "fuel": 37,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 58,
+            "end": 64
+          },
+          "at_step": 10
+        }
+      },
+      {
+        "fuel": 38,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 52,
+            "end": 53
+          },
+          "at_step": 11
+        }
+      },
+      {
+        "fuel": 39,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 51,
+            "end": 54
+          },
+          "at_step": 12
+        }
+      },
+      {
+        "fuel": 40,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 49,
+            "end": 55
+          },
+          "at_step": 13
+        }
+      },
+      {
+        "fuel": 41,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 74,
+            "end": 81
+          },
+          "at_step": 14
+        }
+      },
+      {
+        "fuel": 42,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 73,
+            "end": 82
+          },
+          "at_step": 15
+        }
+      },
+      {
+        "fuel": 43,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 16
+        }
+      },
+      {
+        "fuel": 44,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 16
+        }
+      },
+      {
+        "fuel": 45,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 16
+        }
+      },
+      {
+        "fuel": 46,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 17
+        }
+      },
+      {
+        "fuel": 47,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 17
+        }
+      },
+      {
+        "fuel": 48,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 17
+        }
+      },
+      {
+        "fuel": 49,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "remaining": 3,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 17
+        }
+      },
+      {
+        "fuel": 50,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "remaining": 4,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 66,
+            "end": 83
+          },
+          "at_step": 17
+        }
+      },
+      {
+        "fuel": 51,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "remaining": 0,
+        "terminal": {
+          "result": 2
+        }
+      }
+    ],
+    "failure_rule": "a failing charge has no Charge event, effects or fuel subtraction; a paid bounds failure has a Charge event but no WriteIndex/ReadIndex event",
+    "no_unwind_claim": "Failure snapshots may retain live frames/loans; normal-return release applies only after a paid successful return"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema": "source-derived-contract-correction-v1",
+  "preserves_original_freeze": "a40c00bc49a4415dad96300826a1c2d4f699e2c3777e461f2c472536938a579f",
+  "basis": "Independent reviewer static reading of bb2b5d7c39d5940cbbf959444646c2dacb8edcb4:src/frontend/oir/owned/execute.rs return_value. No candidate observation.",
+  "finding": "Compound prose effect put frame drop before caller branch; exact execute source branches caller while callee frame remains live, records Return, observes frame, then pops.",
+  "semantic_scope": "Zero extra fuel charges, no source/HIR/raw operation/count/slot/loan/result/failure/fuel-prefix changes. This patch refines the order within a paid successful return.",
+  "application": "Verify original manifest and model SHA, test expected original JSON value, then apply replacement before comparison; this supplement and original manifest are a combined authority. Never rewrite original model files.",
+  "replacements": [
+    {
+      "path": "checkpoint-01/models/rhs-snapshot-success.json",
+      "original_sha256": "03cac786ed4a82d57b1b47fb3f56d5ff9e7874d9a64f99491e418f0d4d964b69",
+      "json_pointer": "/runtime/steps/16/effects",
+      "expected_original_value": [
+        "define main.local3 = 0",
+        "release main.loan0; owner1 exclusive_children = 0",
+        "main.call0 Closed; drop touch frame; branch main.block1"
+      ],
+      "replacement_value": [
+        "define main.local3 = 0",
+        "release main.loan0; owner1 exclusive_children = 0",
+        "main.call0 Closed",
+        "branch main.block1",
+        "record Return(touch), then observe returning touch frame",
+        "drop touch frame, decrement live frame usage"
+      ]
+    },
+    {
+      "path": "checkpoint-01/models/rhs-snapshot-final-bounds-failure.json",
+      "original_sha256": "c8653817b912cb09717a84294fd15e62d4bfcbf0750427f385924cb0617ac88e",
+      "json_pointer": "/runtime/steps/16/effects",
+      "expected_original_value": [
+        "define main.local3 = 1",
+        "release main.loan0; owner1 exclusive_children = 0",
+        "main.call0 Closed; drop touch frame; branch main.block1"
+      ],
+      "replacement_value": [
+        "define main.local3 = 1",
+        "release main.loan0; owner1 exclusive_children = 0",
+        "main.call0 Closed",
+        "branch main.block1",
+        "record Return(touch), then observe returning touch frame",
+        "drop touch frame, decrement live frame usage"
+      ]
+    }
+  ]
+}

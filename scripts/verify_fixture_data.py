@@ -22,6 +22,10 @@ SOURCE_DATA_MANIFESTS = (
         "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/freeze-manifest.json",
         "2cba1dbd200d75fbeb33b504b08279d89d2baa1784f88718413305446d458c35",
     ),
+    (
+        "tests/fixtures/fixed_array_source_unit3/lowering-contracts-v1/freeze-manifest.json",
+        "b29641a4ce04f32d02a9d8932af029d002cb7870ce6d27666ec4a9d414c4113a",
+    ),
 )
 
 

@@ -4,3 +4,4 @@ tests/fixtures/fixed_array_source_unit3/element-boundary-supplement-v1/** -text
 tests/fixtures/fixed_array_source_unit3/replay-v1/** -text
 tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/** -text
 tests/fixtures/fixed_array_source_unit3/typing-replay-v1/** -text
+tests/fixtures/fixed_array_source_unit3/lowering-contracts-v1/** -text

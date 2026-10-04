@@ -1,0 +1,41 @@
+{
+  "commit": "bb2b5d7c39d5940cbbf959444646c2dacb8edcb4",
+  "source": [
+    {
+      "path": "src/frontend/oir/owned/source/lower.rs",
+      "git_blob": "1e9237fae1da2e033c429a9acd4361dceef7c705",
+      "sha256": "95405e6ea6928c4e6b8cc4c999e73d1cafe7ad09df5936e58f3b4689589deae9",
+      "bytes": 62705
+    },
+    {
+      "path": "src/frontend/oir/owned/source/resolve.rs",
+      "git_blob": "88ea99305bcec44664bdf674bbae3fc427064487",
+      "sha256": "21bcdea4bc66bd5cb3c9eb26c61460a0aa410333c27949f54da7c58882bc49b4",
+      "bytes": 42516
+    },
+    {
+      "path": "src/frontend/oir/owned/source/hir.rs",
+      "git_blob": "14a1014e85bef3bd92c08a4aee9f2f6b541a3526",
+      "sha256": "baa7b46b0181b8cf4f4d7343417656b1afa72fbc3503caaaed5c2cb0c440df88",
+      "bytes": 4952
+    },
+    {
+      "path": "src/frontend/oir/owned/source/typeck.rs",
+      "git_blob": "8b789bce78163e4788bbd0fc11c1782fd39c8dc5",
+      "sha256": "f888e24c5f6a60192e05b036c65566e70b9acea8c81e71e02bb3bcc6bba47b27",
+      "bytes": 43337
+    },
+    {
+      "path": "src/frontend/oir/owned/plan.rs",
+      "git_blob": "d178ebd6c066a8c5549036ee70d289672b4a9376",
+      "sha256": "f14116dd7f19c0e6f6eba568f7025cbb5a201bd096323b1cf5b81c7adc1dfe85",
+      "bytes": 17589
+    },
+    {
+      "path": "src/frontend/oir/owned/execute.rs",
+      "git_blob": "35b1d0062e70b04916c52c641c0472544f1acf7f",
+      "sha256": "72219cd91eb26710aa72455c1f33e185d5c976d5639e87e7e0f31ba0374a3af5",
+      "bytes": 67374
+    }
+  ]
+}

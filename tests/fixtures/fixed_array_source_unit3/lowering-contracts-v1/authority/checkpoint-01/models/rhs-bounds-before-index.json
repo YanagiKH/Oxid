@@ -1,0 +1,2118 @@
+{
+  "schema": "oxid-independent-array-lowering-v1",
+  "case": "rhs-bounds-before-index",
+  "source": {
+    "path": "main.ox",
+    "file": 0,
+    "bytes": 135,
+    "sha256": "7041d2e831032b8d4da3152f9fad76f7590752c02dacbfaa41091580b1b975b6",
+    "reused_path": null
+  },
+  "entry": 1,
+  "functions": [
+    {
+      "id": 0,
+      "name": "touch",
+      "result": "i32",
+      "span": {
+        "file": 0,
+        "start": 3,
+        "end": 8
+      },
+      "parameters": [
+        {
+          "Reference": 0
+        }
+      ],
+      "bindings": [
+        {
+          "id": 0,
+          "span": {
+            "file": 0,
+            "start": 9,
+            "end": 10
+          },
+          "mutable": false,
+          "scope": 0,
+          "parameter_position": 0,
+          "raw": {
+            "Reference": 0
+          },
+          "type": {
+            "Reference": {
+              "kind": "Exclusive",
+              "aggregate": {
+                "FixedArray": [
+                  "i32",
+                  1
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "hir": [
+        {
+          "id": 0,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 43,
+            "end": 45
+          },
+          "type": "i32",
+          "value": 99,
+          "local": 0
+        },
+        {
+          "id": 1,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 38,
+            "end": 39
+          },
+          "type": "i32",
+          "value": 0,
+          "local": 1
+        },
+        {
+          "id": 2,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 54,
+            "end": 55
+          },
+          "type": "i32",
+          "value": 0,
+          "local": 2
+        }
+      ],
+      "roots": [
+        {
+          "statement": "IndexAssign",
+          "span": {
+            "file": 0,
+            "start": 36,
+            "end": 46
+          },
+          "value": 0,
+          "index": 1,
+          "base": 0,
+          "base_span": {
+            "file": 0,
+            "start": 36,
+            "end": 37
+          },
+          "target_span": {
+            "file": 0,
+            "start": 36,
+            "end": 40
+          },
+          "operator_span": {
+            "file": 0,
+            "start": 41,
+            "end": 42
+          }
+        },
+        {
+          "statement": "Return",
+          "span": {
+            "file": 0,
+            "start": 47,
+            "end": 56
+          },
+          "value": 2
+        }
+      ],
+      "locals": [
+        {
+          "id": 0,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 43,
+            "end": 45
+          }
+        },
+        {
+          "id": 1,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 38,
+            "end": 39
+          }
+        },
+        {
+          "id": 2,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 54,
+            "end": 55
+          }
+        }
+      ],
+      "places": [],
+      "owners": [],
+      "references": [
+        {
+          "id": 0,
+          "position": 0,
+          "kind": "Exclusive",
+          "span": {
+            "file": 0,
+            "start": 9,
+            "end": 10
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              1
+            ]
+          }
+        }
+      ],
+      "calls": [],
+      "loans": [],
+      "blocks": [
+        {
+          "id": 0,
+          "span": {
+            "file": 0,
+            "start": 3,
+            "end": 8
+          },
+          "merge": null,
+          "statements": [
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 43,
+                "end": 45
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 43,
+                  "end": 45
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 36,
+                  "end": 46
+                }
+              },
+              "destination": 0,
+              "value": {
+                "I32": 99
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 38,
+                "end": 39
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 38,
+                  "end": 39
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 36,
+                  "end": 46
+                }
+              },
+              "destination": 1,
+              "value": {
+                "I32": 0
+              }
+            },
+            {
+              "kind": "WriteIndex",
+              "span": {
+                "file": 0,
+                "start": 36,
+                "end": 46
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 36,
+                  "end": 40
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 36,
+                  "end": 46
+                }
+              },
+              "base": {
+                "Parameter": 0
+              },
+              "index": {
+                "local": 1,
+                "span": {
+                  "file": 0,
+                  "start": 38,
+                  "end": 39
+                }
+              },
+              "value": {
+                "local": 0,
+                "span": {
+                  "file": 0,
+                  "start": 43,
+                  "end": 45
+                }
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 54,
+                "end": 55
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 54,
+                  "end": 55
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 47,
+                  "end": 56
+                }
+              },
+              "destination": 2,
+              "value": {
+                "I32": 0
+              }
+            }
+          ],
+          "terminator": {
+            "kind": "ReturnScalar",
+            "span": {
+              "file": 0,
+              "start": 47,
+              "end": 56
+            },
+            "origins": {
+              "primary": {
+                "file": 0,
+                "start": 47,
+                "end": 56
+              },
+              "cause": {
+                "file": 0,
+                "start": 47,
+                "end": 56
+              }
+            },
+            "value": {
+              "local": 2,
+              "span": {
+                "file": 0,
+                "start": 54,
+                "end": 55
+              }
+            }
+          }
+        }
+      ],
+      "counts_all_four_passes": {
+        "locals": 3,
+        "places": 0,
+        "owners": 0,
+        "references": 1,
+        "parameters": 1,
+        "calls": 0,
+        "loans": 0,
+        "blocks": 1,
+        "edges": 0,
+        "statements": 4,
+        "merges": 0,
+        "descriptor_arguments": 0,
+        "preparations": 0,
+        "constructed_fields": 0,
+        "constructed_elements": 0,
+        "diagnostic_origins": 5,
+        "max_constructor_fields": 0,
+        "ownership_active": true
+      },
+      "completion_order": [
+        0,
+        1,
+        2
+      ],
+      "frame_model": {
+        "V": 3,
+        "A": 0,
+        "W": 0,
+        "O": 0,
+        "R": 1,
+        "L": 0,
+        "C": 0,
+        "X": 11,
+        "root_activation_cost": 12,
+        "return_scalar_cost": 2,
+        "owner_widths": []
+      },
+      "resource_model": {
+        "local_expanded_S_plus_A_plus_F_plus_Q": 4,
+        "ownership_n": 12,
+        "ownership_work": 404,
+        "literal_operand_reservations_emit": [],
+        "literal_operand_reservations_each_count_pass": [],
+        "literal_cursor_child_visits_each_pass": 0,
+        "literal_cursor_final_visits_each_pass": 0,
+        "operand_copies_emit": 0,
+        "measured_rust_widths": "pending, not measured by this model"
+      }
+    },
+    {
+      "id": 1,
+      "name": "main",
+      "result": "i32",
+      "span": {
+        "file": 0,
+        "start": 62,
+        "end": 66
+      },
+      "parameters": [],
+      "bindings": [
+        {
+          "id": 0,
+          "span": {
+            "file": 0,
+            "start": 86,
+            "end": 87
+          },
+          "mutable": true,
+          "scope": 0,
+          "parameter_position": null,
+          "raw": {
+            "Owner": 1
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              1
+            ]
+          }
+        }
+      ],
+      "hir": [
+        {
+          "id": 0,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 91,
+            "end": 92
+          },
+          "type": "i32",
+          "value": 5,
+          "local": 0
+        },
+        {
+          "id": 1,
+          "kind": "ArrayLiteral",
+          "span": {
+            "file": 0,
+            "start": 90,
+            "end": 93
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              1
+            ]
+          },
+          "elements": [
+            0
+          ],
+          "owner": 0
+        },
+        {
+          "id": 2,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 116,
+            "end": 117
+          },
+          "type": "i32",
+          "value": 1,
+          "local": 1
+        },
+        {
+          "id": 3,
+          "kind": "IndexRead",
+          "span": {
+            "file": 0,
+            "start": 114,
+            "end": 118
+          },
+          "type": "i32",
+          "base": 0,
+          "base_span": {
+            "file": 0,
+            "start": 114,
+            "end": 115
+          },
+          "index": 2,
+          "local": 2
+        },
+        {
+          "id": 4,
+          "kind": "Call",
+          "span": {
+            "file": 0,
+            "start": 97,
+            "end": 110
+          },
+          "type": "i32",
+          "target": 0,
+          "args": [
+            {
+              "Borrow": {
+                "kind": "Exclusive",
+                "place": {
+                  "Owner": 0
+                },
+                "span": {
+                  "file": 0,
+                  "start": 103,
+                  "end": 109
+                },
+                "name_span": {
+                  "file": 0,
+                  "start": 108,
+                  "end": 109
+                },
+                "star_span": null
+              }
+            }
+          ],
+          "local": 3
+        },
+        {
+          "id": 5,
+          "kind": "I32",
+          "span": {
+            "file": 0,
+            "start": 129,
+            "end": 130
+          },
+          "type": "i32",
+          "value": 0,
+          "local": 4
+        },
+        {
+          "id": 6,
+          "kind": "IndexRead",
+          "span": {
+            "file": 0,
+            "start": 127,
+            "end": 131
+          },
+          "type": "i32",
+          "base": 0,
+          "base_span": {
+            "file": 0,
+            "start": 127,
+            "end": 128
+          },
+          "index": 5,
+          "local": 5
+        }
+      ],
+      "roots": [
+        {
+          "statement": "Let",
+          "span": {
+            "file": 0,
+            "start": 78,
+            "end": 94
+          },
+          "binding": 0,
+          "init": 1
+        },
+        {
+          "statement": "IndexAssign",
+          "span": {
+            "file": 0,
+            "start": 95,
+            "end": 119
+          },
+          "base": 0,
+          "value": 3,
+          "index": 4,
+          "target_span": {
+            "file": 0,
+            "start": 95,
+            "end": 111
+          },
+          "base_span": {
+            "file": 0,
+            "start": 95,
+            "end": 96
+          },
+          "operator_span": {
+            "file": 0,
+            "start": 112,
+            "end": 113
+          }
+        },
+        {
+          "statement": "Return",
+          "span": {
+            "file": 0,
+            "start": 120,
+            "end": 132
+          },
+          "value": 6
+        }
+      ],
+      "locals": [
+        {
+          "id": 0,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 91,
+            "end": 92
+          }
+        },
+        {
+          "id": 1,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 116,
+            "end": 117
+          }
+        },
+        {
+          "id": 2,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 114,
+            "end": 118
+          }
+        },
+        {
+          "id": 3,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 97,
+            "end": 110
+          }
+        },
+        {
+          "id": 4,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 129,
+            "end": 130
+          }
+        },
+        {
+          "id": 5,
+          "ty": "i32",
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 127,
+            "end": 131
+          }
+        }
+      ],
+      "places": [],
+      "owners": [
+        {
+          "id": 0,
+          "kind": "Temporary",
+          "span": {
+            "file": 0,
+            "start": 90,
+            "end": 93
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              1
+            ]
+          }
+        },
+        {
+          "id": 1,
+          "kind": {
+            "Local": {
+              "mutable": true
+            }
+          },
+          "span": {
+            "file": 0,
+            "start": 86,
+            "end": 87
+          },
+          "type": {
+            "FixedArray": [
+              "i32",
+              1
+            ]
+          }
+        }
+      ],
+      "references": [],
+      "calls": [
+        {
+          "id": 0,
+          "target": 0,
+          "target_identity": {
+            "file": 0,
+            "name": "touch",
+            "declaration": {
+              "file": 0,
+              "start": 3,
+              "end": 8
+            }
+          },
+          "arguments": [
+            {
+              "Borrow": 0
+            }
+          ],
+          "result": {
+            "Scalar": 3
+          },
+          "parent": null,
+          "span": {
+            "file": 0,
+            "start": 97,
+            "end": 110
+          }
+        }
+      ],
+      "loans": [
+        {
+          "id": 0,
+          "call": 0,
+          "argument": 0,
+          "authority": {
+            "Owner": 1
+          },
+          "kind": "Exclusive",
+          "type": {
+            "FixedArray": [
+              "i32",
+              1
+            ]
+          },
+          "span": {
+            "file": 0,
+            "start": 103,
+            "end": 109
+          }
+        }
+      ],
+      "blocks": [
+        {
+          "id": 0,
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "merge": null,
+          "statements": [
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 91,
+                "end": 92
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 91,
+                  "end": 92
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 78,
+                  "end": 94
+                }
+              },
+              "destination": 0,
+              "value": {
+                "I32": 5
+              }
+            },
+            {
+              "kind": "StorageLive",
+              "span": {
+                "file": 0,
+                "start": 90,
+                "end": 93
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 90,
+                  "end": 93
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 78,
+                  "end": 94
+                }
+              },
+              "owner": 0
+            },
+            {
+              "kind": "ConstructArray",
+              "span": {
+                "file": 0,
+                "start": 90,
+                "end": 93
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 90,
+                  "end": 93
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 78,
+                  "end": 94
+                }
+              },
+              "destination": 0,
+              "elements": [
+                {
+                  "local": 0,
+                  "span": {
+                    "file": 0,
+                    "start": 91,
+                    "end": 92
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "StorageLive",
+              "span": {
+                "file": 0,
+                "start": 78,
+                "end": 94
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 86,
+                  "end": 87
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 78,
+                  "end": 94
+                }
+              },
+              "owner": 1
+            },
+            {
+              "kind": "MoveInitialize",
+              "span": {
+                "file": 0,
+                "start": 78,
+                "end": 94
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 86,
+                  "end": 87
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 78,
+                  "end": 94
+                }
+              },
+              "destination": 1,
+              "source": 0
+            },
+            {
+              "kind": "StorageEnd",
+              "span": {
+                "file": 0,
+                "start": 78,
+                "end": 94
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 90,
+                  "end": 93
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 78,
+                  "end": 94
+                }
+              },
+              "owner": 0
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 116,
+                "end": 117
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 116,
+                  "end": 117
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 95,
+                  "end": 119
+                }
+              },
+              "destination": 1,
+              "value": {
+                "I32": 1
+              }
+            },
+            {
+              "kind": "ReadIndex",
+              "span": {
+                "file": 0,
+                "start": 114,
+                "end": 118
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 114,
+                  "end": 118
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 95,
+                  "end": 119
+                }
+              },
+              "destination": 2,
+              "base": {
+                "Owner": 1
+              },
+              "index": {
+                "local": 1,
+                "span": {
+                  "file": 0,
+                  "start": 116,
+                  "end": 117
+                }
+              }
+            },
+            {
+              "kind": "OpenCall",
+              "span": {
+                "file": 0,
+                "start": 97,
+                "end": 110
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 97,
+                  "end": 110
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 95,
+                  "end": 119
+                }
+              },
+              "call": 0
+            },
+            {
+              "kind": "PrepareBorrow",
+              "span": {
+                "file": 0,
+                "start": 103,
+                "end": 109
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 103,
+                  "end": 109
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 103,
+                  "end": 109
+                }
+              },
+              "call": 0,
+              "argument": 0,
+              "loan": 0
+            }
+          ],
+          "terminator": {
+            "kind": "Invoke",
+            "span": {
+              "file": 0,
+              "start": 97,
+              "end": 110
+            },
+            "origins": {
+              "primary": {
+                "file": 0,
+                "start": 97,
+                "end": 110
+              },
+              "cause": {
+                "file": 0,
+                "start": 95,
+                "end": 119
+              }
+            },
+            "call": 0,
+            "continuation": 1
+          }
+        },
+        {
+          "id": 1,
+          "span": {
+            "file": 0,
+            "start": 97,
+            "end": 110
+          },
+          "merge": null,
+          "statements": [
+            {
+              "kind": "WriteIndex",
+              "span": {
+                "file": 0,
+                "start": 95,
+                "end": 119
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 95,
+                  "end": 111
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 95,
+                  "end": 119
+                }
+              },
+              "base": {
+                "Owner": 1
+              },
+              "index": {
+                "local": 3,
+                "span": {
+                  "file": 0,
+                  "start": 97,
+                  "end": 110
+                }
+              },
+              "value": {
+                "local": 2,
+                "span": {
+                  "file": 0,
+                  "start": 114,
+                  "end": 118
+                }
+              }
+            },
+            {
+              "kind": "ScalarAssign",
+              "span": {
+                "file": 0,
+                "start": 129,
+                "end": 130
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 129,
+                  "end": 130
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 120,
+                  "end": 132
+                }
+              },
+              "destination": 4,
+              "value": {
+                "I32": 0
+              }
+            },
+            {
+              "kind": "ReadIndex",
+              "span": {
+                "file": 0,
+                "start": 127,
+                "end": 131
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 127,
+                  "end": 131
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 120,
+                  "end": 132
+                }
+              },
+              "destination": 5,
+              "base": {
+                "Owner": 1
+              },
+              "index": {
+                "local": 4,
+                "span": {
+                  "file": 0,
+                  "start": 129,
+                  "end": 130
+                }
+              }
+            },
+            {
+              "kind": "StorageEnd",
+              "span": {
+                "file": 0,
+                "start": 120,
+                "end": 132
+              },
+              "origins": {
+                "primary": {
+                  "file": 0,
+                  "start": 120,
+                  "end": 132
+                },
+                "cause": {
+                  "file": 0,
+                  "start": 120,
+                  "end": 132
+                }
+              },
+              "owner": 1
+            }
+          ],
+          "terminator": {
+            "kind": "ReturnScalar",
+            "span": {
+              "file": 0,
+              "start": 120,
+              "end": 132
+            },
+            "origins": {
+              "primary": {
+                "file": 0,
+                "start": 120,
+                "end": 132
+              },
+              "cause": {
+                "file": 0,
+                "start": 120,
+                "end": 132
+              }
+            },
+            "value": {
+              "local": 5,
+              "span": {
+                "file": 0,
+                "start": 127,
+                "end": 131
+              }
+            }
+          }
+        }
+      ],
+      "counts_all_four_passes": {
+        "locals": 6,
+        "places": 0,
+        "owners": 2,
+        "references": 0,
+        "parameters": 0,
+        "calls": 1,
+        "loans": 1,
+        "blocks": 2,
+        "edges": 1,
+        "statements": 14,
+        "merges": 0,
+        "descriptor_arguments": 1,
+        "preparations": 1,
+        "constructed_fields": 0,
+        "constructed_elements": 1,
+        "diagnostic_origins": 16,
+        "max_constructor_fields": 0,
+        "ownership_active": true
+      },
+      "completion_order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "frame_model": {
+        "V": 6,
+        "A": 1,
+        "W": 2,
+        "O": 2,
+        "R": 0,
+        "L": 1,
+        "C": 1,
+        "X": 31,
+        "root_activation_cost": 32,
+        "return_scalar_cost": 5,
+        "owner_widths": [
+          1,
+          1
+        ]
+      },
+      "resource_model": {
+        "local_expanded_S_plus_A_plus_F_plus_Q": 17,
+        "ownership_n": 33,
+        "ownership_work": 1450,
+        "literal_operand_reservations_emit": [
+          1
+        ],
+        "literal_operand_reservations_each_count_pass": [],
+        "literal_cursor_child_visits_each_pass": 1,
+        "literal_cursor_final_visits_each_pass": 1,
+        "operand_copies_emit": 1,
+        "measured_rust_widths": "pending, not measured by this model"
+      }
+    }
+  ],
+  "static_ownership": "Accept under agreed new lowering templates; authoritative verifier has not run",
+  "frame_identities": {
+    "main": [
+      0,
+      1
+    ],
+    "touch": [
+      1,
+      2
+    ]
+  },
+  "absent_identities": [
+    "no staged owned argument",
+    "no owned parameter",
+    "no owned result",
+    "no target HIR wrapper or target-read local"
+  ],
+  "runtime": {
+    "claim": "source-derived reference contract, not observed execution or native machine evidence",
+    "steps": [
+      {
+        "identity": "root-activation",
+        "cost": 32,
+        "span": {
+          "file": 0,
+          "start": 62,
+          "end": 66
+        },
+        "effects": [
+          "enter main frame0 activation1; all slots allocated, owners Dead/g0"
+        ],
+        "fuel_before": 0,
+        "fuel_after": 32
+      },
+      {
+        "identity": [
+          1,
+          0,
+          0
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 91,
+          "end": 92
+        },
+        "effects": [
+          "define main.local0 = 5"
+        ],
+        "paid_failure": null,
+        "fuel_before": 32,
+        "fuel_after": 33
+      },
+      {
+        "identity": [
+          1,
+          0,
+          1
+        ],
+        "kind": "StorageLive",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 90,
+          "end": 93
+        },
+        "effects": [
+          "main.owner0 Dead/g0 -> Uninitialized/g1"
+        ],
+        "paid_failure": null,
+        "fuel_before": 33,
+        "fuel_after": 34
+      },
+      {
+        "identity": [
+          1,
+          0,
+          2
+        ],
+        "kind": "ConstructArray",
+        "cost": 2,
+        "span": {
+          "file": 0,
+          "start": 90,
+          "end": 93
+        },
+        "effects": [
+          "main.owner0 payload [5], Available/g2"
+        ],
+        "paid_failure": null,
+        "fuel_before": 34,
+        "fuel_after": 36
+      },
+      {
+        "identity": [
+          1,
+          0,
+          3
+        ],
+        "kind": "StorageLive",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 78,
+          "end": 94
+        },
+        "effects": [
+          "main.owner1 Dead/g0 -> Uninitialized/g1"
+        ],
+        "paid_failure": null,
+        "fuel_before": 36,
+        "fuel_after": 37
+      },
+      {
+        "identity": [
+          1,
+          0,
+          4
+        ],
+        "kind": "MoveInitialize",
+        "cost": 2,
+        "span": {
+          "file": 0,
+          "start": 78,
+          "end": 94
+        },
+        "effects": [
+          "transfer [5] owner0/g2 -> owner1/g1",
+          "main.owner0 Moved/g3; owner1 Available/g2"
+        ],
+        "paid_failure": null,
+        "fuel_before": 37,
+        "fuel_after": 39
+      },
+      {
+        "identity": [
+          1,
+          0,
+          5
+        ],
+        "kind": "StorageEnd",
+        "cost": 2,
+        "span": {
+          "file": 0,
+          "start": 78,
+          "end": 94
+        },
+        "effects": [
+          "main.owner0 Dead/g4"
+        ],
+        "paid_failure": null,
+        "fuel_before": 39,
+        "fuel_after": 41
+      },
+      {
+        "identity": [
+          1,
+          0,
+          6
+        ],
+        "kind": "ScalarAssign",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 116,
+          "end": 117
+        },
+        "effects": [
+          "define main.local1 = 1"
+        ],
+        "paid_failure": null,
+        "fuel_before": 41,
+        "fuel_after": 42
+      },
+      {
+        "identity": [
+          1,
+          0,
+          7
+        ],
+        "kind": "ReadIndex",
+        "cost": 1,
+        "span": {
+          "file": 0,
+          "start": 114,
+          "end": 118
+        },
+        "effects": [],
+        "paid_failure": "E0606",
+        "fuel_before": 42,
+        "fuel_after": 43
+      }
+    ],
+    "terminal_budget": 43,
+    "every_budget_0_through_terminal": [
+      {
+        "fuel": 0,
+        "paid_steps": [],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 1,
+        "paid_steps": [],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 2,
+        "paid_steps": [],
+        "remaining": 2,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 3,
+        "paid_steps": [],
+        "remaining": 3,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 4,
+        "paid_steps": [],
+        "remaining": 4,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 5,
+        "paid_steps": [],
+        "remaining": 5,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 6,
+        "paid_steps": [],
+        "remaining": 6,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 7,
+        "paid_steps": [],
+        "remaining": 7,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 8,
+        "paid_steps": [],
+        "remaining": 8,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 9,
+        "paid_steps": [],
+        "remaining": 9,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 10,
+        "paid_steps": [],
+        "remaining": 10,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 11,
+        "paid_steps": [],
+        "remaining": 11,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 12,
+        "paid_steps": [],
+        "remaining": 12,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 13,
+        "paid_steps": [],
+        "remaining": 13,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 14,
+        "paid_steps": [],
+        "remaining": 14,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 15,
+        "paid_steps": [],
+        "remaining": 15,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 16,
+        "paid_steps": [],
+        "remaining": 16,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 17,
+        "paid_steps": [],
+        "remaining": 17,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 18,
+        "paid_steps": [],
+        "remaining": 18,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 19,
+        "paid_steps": [],
+        "remaining": 19,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 20,
+        "paid_steps": [],
+        "remaining": 20,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 21,
+        "paid_steps": [],
+        "remaining": 21,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 22,
+        "paid_steps": [],
+        "remaining": 22,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 23,
+        "paid_steps": [],
+        "remaining": 23,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 24,
+        "paid_steps": [],
+        "remaining": 24,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 25,
+        "paid_steps": [],
+        "remaining": 25,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 26,
+        "paid_steps": [],
+        "remaining": 26,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 27,
+        "paid_steps": [],
+        "remaining": 27,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 28,
+        "paid_steps": [],
+        "remaining": 28,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 29,
+        "paid_steps": [],
+        "remaining": 29,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 30,
+        "paid_steps": [],
+        "remaining": 30,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 31,
+        "paid_steps": [],
+        "remaining": 31,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 62,
+            "end": 66
+          },
+          "at_step": 0
+        }
+      },
+      {
+        "fuel": 32,
+        "paid_steps": [
+          0
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 91,
+            "end": 92
+          },
+          "at_step": 1
+        }
+      },
+      {
+        "fuel": 33,
+        "paid_steps": [
+          0,
+          1
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 90,
+            "end": 93
+          },
+          "at_step": 2
+        }
+      },
+      {
+        "fuel": 34,
+        "paid_steps": [
+          0,
+          1,
+          2
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 90,
+            "end": 93
+          },
+          "at_step": 3
+        }
+      },
+      {
+        "fuel": 35,
+        "paid_steps": [
+          0,
+          1,
+          2
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 90,
+            "end": 93
+          },
+          "at_step": 3
+        }
+      },
+      {
+        "fuel": 36,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 78,
+            "end": 94
+          },
+          "at_step": 4
+        }
+      },
+      {
+        "fuel": 37,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 78,
+            "end": 94
+          },
+          "at_step": 5
+        }
+      },
+      {
+        "fuel": 38,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 78,
+            "end": 94
+          },
+          "at_step": 5
+        }
+      },
+      {
+        "fuel": 39,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 78,
+            "end": 94
+          },
+          "at_step": 6
+        }
+      },
+      {
+        "fuel": 40,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "remaining": 1,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 78,
+            "end": 94
+          },
+          "at_step": 6
+        }
+      },
+      {
+        "fuel": 41,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 116,
+            "end": 117
+          },
+          "at_step": 7
+        }
+      },
+      {
+        "fuel": 42,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0601",
+          "span": {
+            "file": 0,
+            "start": 114,
+            "end": 118
+          },
+          "at_step": 8
+        }
+      },
+      {
+        "fuel": 43,
+        "paid_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "remaining": 0,
+        "terminal": {
+          "code": "E0606",
+          "span": {
+            "file": 0,
+            "start": 114,
+            "end": 118
+          },
+          "at_step": 8
+        }
+      }
+    ],
+    "failure_rule": "a failing charge has no Charge event, effects or fuel subtraction; a paid bounds failure has a Charge event but no WriteIndex/ReadIndex event",
+    "no_unwind_claim": "Failure snapshots may retain live frames/loans; normal-return release applies only after a paid successful return"
+  }
+}
