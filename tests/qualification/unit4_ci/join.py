@@ -218,9 +218,9 @@ def parser_records(capsule, repo, contract_root, plan, seal):
     root = session['root']
     adapter = q.module('_unit4_portable_admission', Path(repo) / q.PARSER / 'portable.py')
     authority = adapter.authority()
-    source = q.read(Path(repo) / q.SOURCE / 'current-source.json')
-    compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/')) or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-    q.need(len(compiler) == 122 and session['checkout']['compiler_files'] == compiler and
+    source = authority['current_source']
+    compiler = adapter.compiler_map(authority)
+    q.need(len(session['checkout']['compiler_files']) == len(compiler) and session['checkout']['compiler_files'] == compiler and
            session['checkout']['current_source_manifest_sha256'] == session['current_source_manifest']['sha256'] == q.CURRENT_SHA and
            session['checkout']['reviewed_source_head'] == source['reviewed_source_head'] and
            session['checkout']['source_only_tree'] == source['source_only_tree'], 'parser exact current source map/checkpoint')

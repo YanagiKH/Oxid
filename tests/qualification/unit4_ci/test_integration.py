@@ -1108,6 +1108,54 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         with self.assertRaisesRegex(q.Reject, 'parser current checkout identity'):
             join.parser_records(capsule, REPO, None, plan, {'comparison': 'result'})
 
+    def current_source_session(self):
+        source = q.read(REPO / q.SOURCE / 'current-source.json')
+        compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
+                    or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
+        self.assertEqual(len(compiler), 126)
+        return {'root': '/synthetic/current-parser',
+                'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
+                'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
+                             'historical_source_equivalent': False, 'current_source_bound': True,
+                             'compiler_files': compiler,
+                             'current_source_manifest_sha256': q.CURRENT_SHA,
+                             'reviewed_source_head': source['reviewed_source_head'],
+                             'source_only_tree': source['source_only_tree']},
+                'current_source_manifest': {'sha256': q.CURRENT_SHA},
+                'authority_sha256': '1' * 64}
+
+    def check_current_source_boundary(self, session, expected_rejection):
+        # An intentionally stale comparator authority stops after source admission;
+        # this bounded control makes no compiler execution or semantic claim.
+        result = {'status': 'pass', 'issues': [], 'session': 'session',
+                  'portable_authority_sha256': '0' * 64}
+        capsule = SimpleNamespace(json=lambda record: result if record == 'result' else session)
+        plan = {'provenance': {'checkout_head': 'a' * 40, 'checkout_tree': 'b' * 40}}
+        with self.assertRaisesRegex(q.Reject, expected_rejection):
+            join.parser_records(capsule, REPO, None, plan, {'comparison': 'result'})
+
+    def test_exact_current_compiler_map_reaches_comparator_authority_check(self):
+        self.check_current_source_boundary(self.current_source_session(), 'stale parser adapter/authority')
+
+    def test_current_compiler_map_and_checkpoint_mutations_reject(self):
+        for mutation in ('missing', 'extra', 'path', 'bytes', 'hash', 'order',
+                         'manifest', 'reviewed_source_head', 'source_only_tree'):
+            with self.subTest(mutation=mutation):
+                session = self.current_source_session()
+                checkout = session['checkout']
+                compiler = checkout['compiler_files']
+                if mutation == 'missing': compiler.pop()
+                elif mutation == 'extra': compiler.append(copy.deepcopy(compiler[-1]))
+                elif mutation == 'path': compiler[-1]['path'] = 'src/unapproved.rs'
+                elif mutation == 'bytes': compiler[-1]['bytes'] += 1
+                elif mutation == 'hash': compiler[-1]['sha256'] = '0' * 64
+                elif mutation == 'order': compiler.reverse()
+                elif mutation == 'manifest':
+                    checkout['current_source_manifest_sha256'] = '0' * 64
+                    session['current_source_manifest']['sha256'] = '0' * 64
+                else: checkout[mutation] = '0' * 40
+                self.check_current_source_boundary(session, 'parser exact current source map/checkpoint')
+
 
 class FinalFailureControls(unittest.TestCase):
     def test_failed_upstream_has_structured_nonpassing_result(self):
