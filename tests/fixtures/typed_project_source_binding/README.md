@@ -5,26 +5,46 @@ private fixed-array implementation and its tests.
 It does not create new language expectations or qualify current native execution.
 All existing Unit1, Unit2, and Unit3 published packages and manifests stay unchanged.
 
-`current-source.json` binds 133 actual inputs: all 123 tracked `src`/`native`
-blobs plus the ten explicit retained non-source paths. The formatter successor
-adds four source/test files and changes four existing source files. Its source
-checkpoint is `8a08a2908b2ceb73c80112e6ddd82e2dbda91976`, full tree
-`afa181dab5aa3341ceae4f7b882a81a635e08fa0`.
+`current-source.json` binds 185 actual inputs: all 133 tracked `src`/`native`
+blobs, the ten unchanged historical non-source paths, and exactly 42 published
+compile-time fixture inputs. Including `Cargo.toml`,
+`Cargo.lock` and `build.rs`, this is 136 compiler bodies. Its immutable published
+source checkpoint is `a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909`, full tree
+`b30b0628c45e4a308bbb0ae5b35122794cd7ac12`.
 
-`formatter-authority.json` and a pinned 75,550-byte `formatter-transition.patch`
-record only that eight-file change from published main
-`17ed3de243785006ab888d87af4428d06117b21d`. Admission verifies current bytes and
-exact membership, reverses the formatter patch, then checks every reconstructed
-predecessor byte against `predecessor-source.json`. That file preserves the old
-current manifest byte-for-byte. The predecessor has 129 inputs: 119 source/native
-files plus ten retained paths, or 122 compiler bodies including Cargo.toml,
-Cargo.lock and build.rs. Only after this check does the unchanged historical
-transition below reconstruct the 117-member archive. Both transition stages
-have literal hash, length and path-scope pins; neither executes a compiler. The 12 paths absent from
-the unchanged 117-member selected archive are the activation and integration-test
-inputs plus nine array implementation/test members. Every member's bytes, length,
-and hash are checked, with exact membership under `src` and `native`. The new
-package and manifests live outside this inventory; its manifest excludes itself.
+`combined-authority.json` pins a 376,315-byte `combined-transition.patch`
+(SHA-256 `8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683`),
+the ordered 80 changed paths: 38 compiler-source paths and 42 exact compile-time
+fixture additions. Its 52 additions comprise ten source files and those 42 fixtures. The patch is the exact
+`git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS`
+from published `595f681c2a906d686ddea90c65d060cff97e0a75` to that checkpoint.
+The original 133-member current manifest is preserved byte-for-byte as
+`formatter-source.json`. Admission verifies actual current bytes and exact
+membership, reverses the combined patch (including all 42 fixture additions),
+and verifies every formatter-view byte.
+Only then does it reverse the unchanged 75,550-byte, eight-path formatter patch
+and verify the 129-member `predecessor-source.json`; the unchanged historical
+transition finally reconstructs the 117-member selected archive.
+
+The fixture inventory is derived only from the exact published
+`src/frontend/oir/owned/source/array_types_tests.rs` bytes (44,176 bytes,
+SHA-256 `10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc`).
+Its 47 literal `include_str!(concat!(env!("CARGO_MANIFEST_DIR"), ...))` references
+resolve to the separately pinned 42-path roster. Admission checks that source
+identity, exact macro syntax, reference count/order and unique roster before
+reconstruction. This is no generic asset allowance. The ten historical retained
+non-source inputs remain separate and byte-identical. The one empty `guard-empty`
+fixture is reversed only through its exact Git empty-blob addition header and
+verified empty current bytes; nonempty or malformed empty additions reject.
+
+All three stages have literal hash, length and ordered path-scope pins. The
+current manifest, preserved formatter manifest and combined authority also have
+literal hash/length pins before reconstruction. The formatter authority,
+predecessor authority, predecessor manifest and both older patches are unchanged.
+Each stage verifies exact reconstructed membership and every member's length and
+hash. None executes a compiler. The package lives outside the compiler inventory;
+its package manifest excludes itself. These identities do not establish a new
+semantic, native, formatter or array-language qualification.
 
 The unchanged predecessor `authority.json` pins its manifest, published authorities,
 original compatibility runner and bridge dependencies, and one resource probe
@@ -62,12 +82,12 @@ Both routes verify current inputs before any materialization or child process.
 After exact adapter package admission, the trusted helper's literal current-manifest
 pin rejects
 coherently rewritten current/package metadata before archive reconstruction.
-The current and predecessor manifest pins, plus the formatter authority pin,
-precede reconstruction; ordinary modified package
+The current, formatter and predecessor manifest pins, plus the combined and
+formatter authority pins, precede reconstruction; ordinary modified package
 members still fail their package identity first. Transition metadata, the old
 prefix, and the appended delta are separately checked before reconstruction.
-The inverse patch is applied in memory with exact line offsets and byte context.
-It removes the two files added by activation and nine array files,
+Every inverse patch is applied in memory with exact line offsets and byte context.
+The final historical stage removes the two files added by activation and nine array files,
 restores the changed array source files, verifies the inverse integration
 test's independently pinned old identity, and omits that test from the archived
 qualification view. All 117 original selected-current members must then match
@@ -91,8 +111,14 @@ python3 -B tests/fixtures/typed_project_source_binding/run.py run-unit2 \
 ```
 
 The adapter copies the verified historical Unit2 package into fresh output and
-adds exactly `project_recovery:false` to its isolated Parser initializer. Every
-resource assertion stays unchanged. The versioned `unit2-record-aggregate-observer-v1`
+first verifies the original resource probe to `project_recovery:false` derivation
+against the unchanged predecessor authority. It then adds exactly
+`arrays:ArraySyntaxPolicy::Closed` to that isolated Parser initializer. The new
+2,007-byte resource SHA-256 is
+`7c3b0d1cc06124be9a432525acdad2bf622f1061c6f474fc8fa049ce267e360f`, separately
+pinned in the combined authority. Reversing the full current initializer seam
+restores the historical resource byte-for-byte. Every resource assertion stays
+unchanged. The versioned `unit2-record-aggregate-observer-v1`
 adapter also changes exactly four pinned seams in the isolated `semantic/observer.rs`:
 the AggregateTy import, a checked record-ordinal projection helper with four adapter
 controls, the Owned projection, and the Reference aggregate-field projection.
@@ -107,7 +133,7 @@ The original historical semantic package manifest remains historical evidence;
 it is not retargeted as a current observer authority. The archived artifact-manifest is
 preserved as historical provenance, not retargeted as a current pass receipt.
 The byte-identical supported compatibility runner then selects the current
-133-member formatter manifest and invokes the unchanged Unit2 runner, current-only observer adapter, unchanged normalizer,
+185-member combined-source manifest and invokes the unchanged Unit2 runner, current-only observer adapter, unchanged normalizer,
 and comparator. Their original 3,603 semantic cases and 21 resource tests execute
 per profile with two Cargo jobs, incremental compilation disabled, and offline
 locked dependencies. `--prepare-only` only prepares inputs; it produces no pass.

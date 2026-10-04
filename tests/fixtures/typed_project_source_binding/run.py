@@ -34,8 +34,176 @@ EXTRA = {
 }
 RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
-NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
-CURRENT_SOURCE_SHA = '69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06'
+PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
+NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
+CURRENT_SOURCE_SHA = '221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487'
+CURRENT_SOURCE_BYTES = 35021
+FORMATTER_SOURCE_SHA = '69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06'
+FORMATTER_SOURCE_BYTES = 23052
+COMBINED_AUTHORITY_SHA = 'f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670'
+COMBINED_AUTHORITY_BYTES = 19738
+COMBINED_PATCH_SHA = '8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683'
+COMBINED_PATCH_BYTES = 376315
+COMBINED_BASE = '595f681c2a906d686ddea90c65d060cff97e0a75'
+COMBINED_HEAD = 'a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909'
+COMBINED_TREE = 'b30b0628c45e4a308bbb0ae5b35122794cd7ac12'
+COMBINED_PATHS = (
+    'src/frontend/ast.rs',
+    'src/frontend/declaration_index.rs',
+    'src/frontend/declaration_index/source_owner.rs',
+    'src/frontend/format.rs',
+    'src/frontend/format/ast_tests.rs',
+    'src/frontend/format/resource_tests.rs',
+    'src/frontend/hir.rs',
+    'src/frontend/oir/owned/array_native_resource_tests.rs',
+    'src/frontend/oir/owned/array_native_tests.rs',
+    'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/mod.rs',
+    'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned/source/array_consumer_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline.rs',
+    'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+    'src/frontend/oir/owned/source/array_pipeline_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline_transport.rs',
+    'src/frontend/oir/owned/source/array_type_controls.rs',
+    'src/frontend/oir/owned/source/array_types_tests.rs',
+    'src/frontend/oir/owned/source/budget.rs',
+    'src/frontend/oir/owned/source/diagnostic.rs',
+    'src/frontend/oir/owned/source/hir.rs',
+    'src/frontend/oir/owned/source/lower.rs',
+    'src/frontend/oir/owned/source/mod.rs',
+    'src/frontend/oir/owned/source/program.rs',
+    'src/frontend/oir/owned/source/resolve.rs',
+    'src/frontend/oir/owned/source/tests.rs',
+    'src/frontend/oir/owned/source/typeck.rs',
+    'src/frontend/oir/owned/tests.rs',
+    'src/frontend/oir/owned/verified.rs',
+    'src/frontend/parser.rs',
+    'src/frontend/parser/array_syntax_tests.rs',
+    'src/frontend/parser/arrays.rs',
+    'src/frontend/parser/project_tests.rs',
+    'src/frontend/project.rs',
+    'src/frontend/project/array_syntax_tests.rs',
+    'src/frontend/project/budget.rs',
+    'src/main.rs',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
+)
+COMBINED_SOURCE_ADDITIONS = (
+    'src/frontend/oir/owned/source/array_consumer_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline.rs',
+    'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+    'src/frontend/oir/owned/source/array_pipeline_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline_transport.rs',
+    'src/frontend/oir/owned/source/array_type_controls.rs',
+    'src/frontend/oir/owned/source/array_types_tests.rs',
+    'src/frontend/parser/array_syntax_tests.rs',
+    'src/frontend/parser/arrays.rs',
+    'src/frontend/project/array_syntax_tests.rs',
+)
+COMBINED_FIXTURE_ADDITIONS = (
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
+)
+COMBINED_ADDITIONS = COMBINED_SOURCE_ADDITIONS + COMBINED_FIXTURE_ADDITIONS
+COMPILE_FIXTURE_SOURCE = 'src/frontend/oir/owned/source/array_types_tests.rs'
+COMPILE_FIXTURE_SOURCE_SHA = '10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc'
+COMPILE_FIXTURE_SOURCE_BYTES = 44176
+COMPILE_FIXTURE_PATTERN = b'include_str!\\(concat!\\(env!\\("CARGO_MANIFEST_DIR"\\), "/(tests/fixtures/fixed_array_source_unit3/(?:contracts-v2|typing-contracts-v1)/fixtures/[a-z0-9-]+/main\\.ox)"\\)\\)'
+COMPILE_FIXTURE_REFERENCES_SHA = 'c93538ccae1080771921a761412b3d5380a584b663d6dcc719cfc50b98380732'
+
+RETAINED_NON_SOURCE_PATHS = (
+    'Cargo.lock',
+    'Cargo.toml',
+    'build.rs',
+    'compiler/main.ox',
+    'compiler/providers.toml',
+    'fixtures/owned_source/batch.ox',
+    'rfcs/0014-owned-structs-call-borrows.md',
+    'stdlib/frontend/bytecode.ox',
+    'tests/typed_frontend.rs',
+    'tests/typed_project_dispatch.rs',
+)
 PREDECESSOR_SOURCE_SHA = '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8'
 FORMATTER_AUTHORITY_SHA = 'f060dd4e264a7261517f496176d9d3def438a1e151616e313972db0545f9b4d2'
 FORMATTER_PATCH_SHA = '8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4'
@@ -203,6 +371,11 @@ def inverse_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
 
 
+def inverse_combined_patch(inputs, patch):
+    """Remove the pinned combined source delta before formatter reconstruction."""
+    return apply_inverse_patch(inputs, patch, COMBINED_PATCH_SHA, COMBINED_PATCH_BYTES, COMBINED_PATHS)
+
+
 def inverse_formatter_patch(inputs, patch):
     """Remove only the pinned formatter delta before historical reconstruction."""
     return apply_inverse_patch(inputs, patch, FORMATTER_PATCH_SHA, FORMATTER_PATCH_BYTES, FORMATTER_PATHS)
@@ -226,7 +399,13 @@ def apply_inverse_patch(inputs, patch, expected_sha, expected_bytes, expected_pa
             at += 1
         require(re.fullmatch(rb"index [0-9a-f]+\.\.[0-9a-f]+(?: 100644)?\n", lines[at]),
                 "invalid git patch index")
+        index = lines[at]
         at += 1
+        if at == len(lines) or lines[at].startswith(b"diff --git "):
+            require(added and index == b"index 0000000..e69de29\n" and result[name] == b"",
+                    "invalid empty transition addition")
+            del result[name]
+            continue
         require(lines[at] == (b"--- /dev/null\n" if added else b"--- a/" + name.encode() + b"\n"),
                 "invalid transition old path")
         require(lines[at + 1] == b"+++ b/" + name.encode() + b"\n", "invalid transition new path")
@@ -280,6 +459,20 @@ def adapt_unit2_observer(original):
     return result
 
 
+def compile_fixture_paths(source):
+    """Verify the exact published includer and its literal compile-time dependencies."""
+    require(digest(source) == COMPILE_FIXTURE_SOURCE_SHA and len(source) == COMPILE_FIXTURE_SOURCE_BYTES,
+            "wrong compile-time fixture includer")
+    references = [name.decode("ascii") for name in re.findall(COMPILE_FIXTURE_PATTERN, source)]
+    require(source.count(b"include_str!") == len(references) == 47
+            and digest(encoded(references)) == COMPILE_FIXTURE_REFERENCES_SHA,
+            "wrong literal compile-time fixture references")
+    paths = sorted(set(references))
+    require(len(paths) == 42 and paths == list(COMBINED_FIXTURE_ADDITIONS),
+            "wrong compile-time fixture path roster")
+    return paths
+
+
 def preflight(repo, package=PACKAGE):
     require(sys.flags.optimize == 0 and __debug__, "optimized Python is not supported")
     package_manifest = regular(package, "package-manifest.json").read_bytes()
@@ -287,14 +480,51 @@ def preflight(repo, package=PACKAGE):
     require(members(package) == sorted([x["path"] for x in package_entries] + ["package-manifest.json"]),
             "missing or extra adapter member")
     package_bytes = check_entries(package, package_entries)
-    require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA,
+    require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA
+            and len(package_bytes["current-source.json"]) == CURRENT_SOURCE_BYTES,
             "unapproved current source manifest")
+    require(digest(package_bytes["formatter-source.json"]) == FORMATTER_SOURCE_SHA
+            and len(package_bytes["formatter-source.json"]) == FORMATTER_SOURCE_BYTES,
+            "unapproved formatter source manifest")
+    require(digest(package_bytes["combined-authority.json"]) == COMBINED_AUTHORITY_SHA
+            and len(package_bytes["combined-authority.json"]) == COMBINED_AUTHORITY_BYTES,
+            "stale combined authority")
+    combined = json.loads(package_bytes["combined-authority.json"])
+    require(combined["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and combined["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and combined["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
+            and combined["formatter_source_bytes"] == FORMATTER_SOURCE_BYTES
+            and combined["formatter_authority_sha256"] == FORMATTER_AUTHORITY_SHA
+            and combined["transition_patch_sha256"] == COMBINED_PATCH_SHA
+            and combined["transition_patch_bytes"] == COMBINED_PATCH_BYTES
+            and combined["transition_touched_paths"] == list(COMBINED_PATHS)
+            and combined["added_source_paths"] == list(COMBINED_SOURCE_ADDITIONS)
+            and combined["added_fixture_paths"] == list(COMBINED_FIXTURE_ADDITIONS)
+            and combined["added_input_paths"] == list(COMBINED_ADDITIONS)
+            and combined["retained_non_source_paths"] == list(RETAINED_NON_SOURCE_PATHS)
+            and combined["base_head"] == COMBINED_BASE
+            and combined["reviewed_source_head"] == COMBINED_HEAD
+            and combined["source_only_tree"] == COMBINED_TREE
+            and combined["recipe"] == SOURCE_DELTA_RECIPE
+            and (combined["current_source_members"], combined["formatter_source_members"],
+                 combined["compiler_source_members"], combined["compiler_bodies"]) == (185, 133, 133, 136),
+            "stale combined transition authority")
+    require(combined["compile_time_fixture_derivation"] == {
+        "source": {"path": COMPILE_FIXTURE_SOURCE, "bytes": COMPILE_FIXTURE_SOURCE_BYTES,
+                   "sha256": COMPILE_FIXTURE_SOURCE_SHA},
+        "include_str_references": 47, "unique_fixture_inputs": 42,
+        "literal_pattern": COMPILE_FIXTURE_PATTERN.decode("ascii"),
+        "ordered_references_sha256": COMPILE_FIXTURE_REFERENCES_SHA,
+    }, "stale compile-time fixture authority")
+    require(digest(package_bytes["combined-transition.patch"]) == COMBINED_PATCH_SHA
+            and len(package_bytes["combined-transition.patch"]) == COMBINED_PATCH_BYTES,
+            "wrong combined transition patch")
     require(digest(package_bytes["predecessor-source.json"]) == PREDECESSOR_SOURCE_SHA,
             "unapproved predecessor source manifest")
     require(digest(package_bytes["formatter-authority.json"]) == FORMATTER_AUTHORITY_SHA,
             "stale formatter authority")
     formatter = json.loads(package_bytes["formatter-authority.json"])
-    require(formatter["current_source_sha256"] == CURRENT_SOURCE_SHA
+    require(formatter["current_source_sha256"] == FORMATTER_SOURCE_SHA
             and formatter["predecessor_source_sha256"] == PREDECESSOR_SOURCE_SHA
             and formatter["transition_patch_sha256"] == FORMATTER_PATCH_SHA
             and formatter["transition_patch_bytes"] == FORMATTER_PATCH_BYTES
@@ -320,26 +550,51 @@ def preflight(repo, package=PACKAGE):
     require(members(repo / U2) == sorted([x["path"] for x in historical["files"]] + ["package-inputs.json"]),
             "missing or extra historical Unit2 member")
     current = json.loads(package_bytes["current-source.json"])
+    formatter_source = json.loads(package_bytes["formatter-source.json"])
     predecessor = json.loads(package_bytes["predecessor-source.json"])
     selected = json.loads(references[U3 + "/manifests/selected-current.json"])
-    require(len(current["files"]) == 133 and len(predecessor["files"]) == 129
-            and len(selected["files"]) == 117, "wrong source count")
+    require(len(current["files"]) == 185 and len(formatter_source["files"]) == 133
+            and len(predecessor["files"]) == 129 and len(selected["files"]) == 117,
+            "wrong source count")
     require(delta["reviewed_source_head"] == predecessor["reviewed_source_head"]
             and delta["source_only_tree"] == predecessor["source_only_tree"], "stale source checkpoint provenance")
-    require(current["reviewed_source_head"] == formatter["reviewed_source_head"]
-            and current["source_only_tree"] == formatter["source_only_tree"]
-            and current["formatter_base_head"] == formatter["base_head"]
-            and current["predecessor_source_sha256"] == PREDECESSOR_SOURCE_SHA,
+    require(formatter_source["reviewed_source_head"] == formatter["reviewed_source_head"]
+            and formatter_source["source_only_tree"] == formatter["source_only_tree"]
+            and formatter_source["formatter_base_head"] == formatter["base_head"]
+            and formatter_source["predecessor_source_sha256"] == PREDECESSOR_SOURCE_SHA,
             "stale formatter checkpoint provenance")
+    require(current["reviewed_source_head"] == COMBINED_HEAD
+            and current["source_only_tree"] == COMBINED_TREE
+            and current["combined_base_head"] == COMBINED_BASE
+            and current["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
+            and current["compile_time_fixture_source"] == COMPILE_FIXTURE_SOURCE
+            and current["compile_time_fixture_references"] == 47
+            and current["compile_time_fixture_members"] == 42,
+            "stale combined checkpoint provenance")
     require({x["path"] for x in predecessor["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
             "unexpected predecessor source membership")
-    require({x["path"] for x in current["files"]} == {x["path"] for x in predecessor["files"]} | set(FORMATTER_ADDITIONS),
+    require({x["path"] for x in formatter_source["files"]}
+            == {x["path"] for x in predecessor["files"]} | set(FORMATTER_ADDITIONS),
+            "unexpected formatter source membership")
+    require({x["path"] for x in current["files"]}
+            == {x["path"] for x in formatter_source["files"]} | set(COMBINED_ADDITIONS),
             "unexpected current source membership")
+    retained = [x for x in current["files"] if not x["path"].startswith(("src/", "native/"))
+                and x["path"] not in COMBINED_FIXTURE_ADDITIONS]
+    require([x["path"] for x in retained] == list(RETAINED_NON_SOURCE_PATHS)
+            and retained == [x for x in formatter_source["files"]
+                             if not x["path"].startswith(("src/", "native/"))],
+            "changed retained non-source inputs")
     inputs = check_entries(repo, current["files"])
+    fixture_paths = compile_fixture_paths(inputs[COMPILE_FIXTURE_SOURCE])
+    require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
+            == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
-    predecessor_inputs, formatter_touched = inverse_formatter_patch(inputs, package_bytes["formatter-transition.patch"])
+    formatter_inputs, combined_touched = inverse_combined_patch(inputs, package_bytes["combined-transition.patch"])
+    check_bytes(formatter_inputs, formatter_source["files"])
+    predecessor_inputs, formatter_touched = inverse_formatter_patch(formatter_inputs, package_bytes["formatter-transition.patch"])
     check_bytes(predecessor_inputs, predecessor["files"])
     reconstructed, touched = inverse_patch(predecessor_inputs, package_bytes["source-transition.patch"])
     archived_extra = authority["inverse_only_inputs"]
@@ -348,9 +603,22 @@ def preflight(repo, package=PACKAGE):
                 "inverse integration-test identity differs")
     check_bytes(reconstructed, selected["files"])
     resource = historical_bytes[RESOURCE]
-    require(resource.count(OLD_SEAM) == 1 and NEW_SEAM not in resource, "resource seam drift")
-    adapted_resource = resource.replace(OLD_SEAM, NEW_SEAM)
-    require(entry(RESOURCE, adapted_resource) == authority["derived_resource"], "derived resource drift")
+    require(resource.count(OLD_SEAM) == 1 and PREDECESSOR_SEAM not in resource
+            and NEW_SEAM not in resource, "resource seam drift")
+    predecessor_resource = resource.replace(OLD_SEAM, PREDECESSOR_SEAM)
+    require(entry(RESOURCE, predecessor_resource) == authority["derived_resource"],
+            "derived predecessor resource drift")
+    require(predecessor_resource.count(PREDECESSOR_SEAM) == 1 and NEW_SEAM not in predecessor_resource,
+            "combined resource seam drift")
+    adapted_resource = predecessor_resource.replace(PREDECESSOR_SEAM, NEW_SEAM)
+    require(entry(RESOURCE, resource) == combined["original_resource"]
+            and entry(RESOURCE, predecessor_resource) == combined["predecessor_derived_resource"]
+            and entry(RESOURCE, adapted_resource) == combined["derived_resource"]
+            and combined["resource_substitution"] == {
+                "old_sha256": digest(PREDECESSOR_SEAM), "new_sha256": digest(NEW_SEAM), "count": 1},
+            "derived combined resource drift")
+    require(adapted_resource.replace(NEW_SEAM, OLD_SEAM) == resource,
+            "resource reverse identity differs")
     adapted_observer = adapt_unit2_observer(historical_bytes[OBSERVER])
     require(authority["unit2_observer_adapter"] == {
         "version": OBSERVER_ADAPTER_VERSION,
@@ -369,7 +637,9 @@ def preflight(repo, package=PACKAGE):
             "package_bytes": package_bytes, "package_manifest": package_manifest,
             "touched": touched, "authority": authority,
             "predecessor_inputs": predecessor_inputs, "formatter_touched": formatter_touched,
-            "formatter_authority": formatter}
+            "formatter_authority": formatter, "formatter_source": formatter_source,
+            "formatter_inputs": formatter_inputs, "combined_touched": combined_touched,
+            "combined_authority": combined, "predecessor_resource": predecessor_resource}
 
 
 def materialize(root, inputs):
@@ -398,7 +668,10 @@ def prepare_archived(output, captured):
             "inverse_patch_sha256": PATCH_SHA, "inverse_touched": captured["touched"],
             "formatter_inverse_patch_sha256": FORMATTER_PATCH_SHA,
             "formatter_inverse_touched": captured["formatter_touched"],
-            "predecessor_source_sha256": PREDECESSOR_SOURCE_SHA}
+            "predecessor_source_sha256": PREDECESSOR_SOURCE_SHA,
+            "combined_inverse_patch_sha256": COMBINED_PATCH_SHA,
+            "combined_inverse_touched": captured["combined_touched"],
+            "formatter_source_sha256": FORMATTER_SOURCE_SHA}
 
 
 def prepare_unit2(output, captured):
@@ -417,7 +690,8 @@ def prepare_unit2(output, captured):
             "resource_package_changes": [RESOURCE, OBSERVER, "package-inputs.json"],
             "observer_adapter": captured["authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
-            "resource_after": captured["authority"]["derived_resource"],
+            "resource_predecessor": captured["authority"]["derived_resource"],
+            "resource_after": captured["combined_authority"]["derived_resource"],
             "compatibility_runner": str(compat / "run.py"), "files": manifest["files"]}
 
 
@@ -588,9 +862,13 @@ def main():
                       adapter_package_sha256=digest(captured["package_manifest"]),
                       authority_sha256=digest(captured["package_bytes"]["authority.json"]),
                       formatter_authority_sha256=FORMATTER_AUTHORITY_SHA,
-                      predecessor_source_sha256=PREDECESSOR_SOURCE_SHA)
+                      predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
+                      combined_authority_sha256=COMBINED_AUTHORITY_SHA,
+                      formatter_source_sha256=FORMATTER_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 133, "predecessor_source_members": 129, "archive_members": 117,
+                "current_source_members": 185, "formatter_source_members": 133,
+                "compile_time_fixture_members": 42, "compile_time_fixture_references": 47,
+                "predecessor_source_members": 129, "archive_members": 117,
                 "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21,
                 "unit2_current_observer_controls_per_profile": 4}
         write_json(output / "plan.json", plan)

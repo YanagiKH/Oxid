@@ -19,29 +19,80 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [296, 299, 299])
-        self.assertEqual(len(a['current_source']['files']), 133)
-        self.assertEqual(len(p.compiler_map(a)), 126)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [348, 351, 351])
+        self.assertEqual(len(a['current_source']['files']), 185)
+        self.assertEqual(len(p.compiler_map(a)), 136)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 55)
-        self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], [
-            'src/frontend/format.rs',
-            'src/frontend/format/ast_tests.rs',
-            'src/frontend/format/resource_tests.rs',
-            'src/frontend/format_cli.rs',
-            'src/frontend/oir/owned/array_native_resource_tests.rs',
-            'src/frontend/oir/owned/array_native_tests.rs',
-            'src/frontend/oir/owned/array_observe.rs',
-            'src/frontend/oir/owned/array_reference_boundary_tests.rs',
-            'src/frontend/oir/owned/array_reference_tests.rs',
-            'src/frontend/oir/owned/array_tests.rs',
-            'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
-            'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
-            'src/frontend/oir/owned_types/array_tests.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 42)
-        self.assertEqual(a['current']['reviewed_source_head'], '8a08a2908b2ceb73c80112e6ddd82e2dbda91976')
-        self.assertEqual(a['current']['source_only_tree'], 'afa181dab5aa3341ceae4f7b882a81a635e08fa0')
+        self.assertEqual(len(a['current']['source_delta']), 117)
+        self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['src/frontend/format.rs',
+ 'src/frontend/format/ast_tests.rs',
+ 'src/frontend/format/resource_tests.rs',
+ 'src/frontend/format_cli.rs',
+ 'src/frontend/oir/owned/array_native_resource_tests.rs',
+ 'src/frontend/oir/owned/array_native_tests.rs',
+ 'src/frontend/oir/owned/array_observe.rs',
+ 'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+ 'src/frontend/oir/owned/array_reference_tests.rs',
+ 'src/frontend/oir/owned/array_tests.rs',
+ 'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
+ 'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+ 'src/frontend/oir/owned/source/array_consumer_tests.rs',
+ 'src/frontend/oir/owned/source/array_pipeline.rs',
+ 'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+ 'src/frontend/oir/owned/source/array_pipeline_tests.rs',
+ 'src/frontend/oir/owned/source/array_pipeline_transport.rs',
+ 'src/frontend/oir/owned/source/array_type_controls.rs',
+ 'src/frontend/oir/owned/source/array_types_tests.rs',
+ 'src/frontend/oir/owned_types/array_tests.rs',
+ 'src/frontend/parser/array_syntax_tests.rs',
+ 'src/frontend/parser/arrays.rs',
+ 'src/frontend/project/array_syntax_tests.rs',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
+ 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox'])
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 52)
+        self.assertEqual(a['current']['reviewed_source_head'], 'a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909')
+        self.assertEqual(a['current']['source_only_tree'], 'b30b0628c45e4a308bbb0ae5b35122794cd7ac12')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -50,7 +101,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay'})
+        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -63,6 +114,11 @@ class CurrentAuthorityControls(unittest.TestCase):
         for role in ('derived_files', 'control_derived_files'):
             self.assertNotEqual(a['current']['current_' + role], a[role])
             for path in p.CURRENT_PATHS:
+                if path in p.ARRAY_INSTRUMENTATION_PATHS and (role == 'derived_files' or path != 'src/frontend/project/budget.rs'):
+                    raw = p.compose_array_instrumentation(a, path, (p.REPOSITORY / path).read_bytes(), role == 'control_derived_files')
+                    self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
+                                     {'path': path, 'bytes': len(raw), 'sha256': p.sha(raw)})
+                    continue
                 if role == 'derived_files' and path == 'src/frontend/source.rs':
                     self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
                                      {'path': path, 'bytes': 12917, 'sha256': '68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53'})
@@ -74,7 +130,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 296)
+        self.assertEqual(len(candidate['files']), 348)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -158,10 +214,17 @@ class SourceReadCompositionControls(unittest.TestCase):
                 self.assertEqual(new, {'path': old['path'],
                                       'before_sha256': '3574d2e4598fa77b82aeee2ba3457dfdd39652d750771d4c56102aa706c0db3e',
                                       'after_sha256': '68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53'})
+            elif old['path'] in p.ARRAY_INSTRUMENTATION_PATHS:
+                self.assertEqual(new['path'], old['path'])
+                self.assertEqual(new['before_sha256'], next(r['sha256'] for r in self.a['current']['current_base_files'] if r['path'] == old['path']))
+                self.assertEqual(new['after_sha256'], next(r['sha256'] for r in self.a['current']['current_derived_files'] if r['path'] == old['path']))
             else:
                 self.assertEqual(new, old)
-        self.assertEqual(p.current_overlay('/controlled/control-source', self.a, True)['instrumentation'],
-                         self.a['control_instrumentation'])
+        control = p.current_overlay('/controlled/control-source', self.a, True)['instrumentation']
+        self.assertEqual([r['path'] for r in control], ['src/frontend/ast.rs', 'src/frontend/parser.rs'])
+        for row in control:
+            self.assertEqual(row['before_sha256'], next(r['sha256'] for r in self.a['current']['current_base_files'] if r['path'] == row['path']))
+            self.assertEqual(row['after_sha256'], next(r['sha256'] for r in self.a['current']['current_control_derived_files'] if r['path'] == row['path']))
 
     def test_changed_current_source_rejects_before_composition(self):
         for changed in (self.raw + b'// changed\n', self.raw.replace(b'into_single_text', b'into_other_text'),
@@ -190,8 +253,8 @@ class SourceReadCompositionControls(unittest.TestCase):
         original_read = p.read
         historical_path = p.FROZEN / 'authority.json'
         for role, name, message in (
-            ('instrumentation', 'src/frontend/driver.rs', 'transition overlaps instrumentation outside exact source-read composition'),
-            ('control_instrumentation', 'src/frontend/source.rs', 'transition overlaps control instrumentation')):
+            ('instrumentation', 'src/frontend/driver.rs', 'transition overlaps instrumentation outside exact current composition'),
+            ('control_instrumentation', 'src/frontend/source.rs', 'transition overlaps control instrumentation outside exact current composition')):
             historical = copy.deepcopy(original_read(historical_path))
             historical[role].append({'path': name, 'before_sha256': '0' * 64, 'after_sha256': '1' * 64})
             with self.subTest(role=role), patch.object(p, 'read', side_effect=lambda path: historical if Path(path) == historical_path else original_read(path)):
@@ -209,6 +272,72 @@ class SourceReadCompositionControls(unittest.TestCase):
             with patch.object(p, 'load', side_effect=lambda raw: active if p.sha(raw) == p.AUTHORITY_SHA else original_load(raw)):
                 with self.assertRaisesRegex(p.Rejected, 'unapproved current derived map'):
                     p.authority()
+
+
+class ArrayCompositionControls(unittest.TestCase):
+    def setUp(self):
+        self.a = p.authority()
+
+    def test_every_composition_rejects_changed_source(self):
+        for name in p.ARRAY_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes()
+            for control in (False, True):
+                if control and name.endswith('/budget.rs'): continue
+                with self.subTest(path=name, control=control), self.assertRaisesRegex(p.Rejected, 'composition current array identity'):
+                    p.compose_array_instrumentation(self.a, name, raw + b'// changed\n', control)
+
+    def test_unknown_path_and_unapproved_control_overlap_reject(self):
+        with self.assertRaisesRegex(p.Rejected, 'unapproved array instrumentation path'):
+            p.compose_array_instrumentation(self.a, 'src/frontend/source.rs', b'')
+        with self.assertRaisesRegex(p.Rejected, 'unapproved control composition'):
+            p.compose_array_instrumentation(self.a, 'src/frontend/project/budget.rs', b'', True)
+
+    def test_coherent_source_rehash_cannot_change_historical_array_body(self):
+        for name in p.ARRAY_INSTRUMENTATION_PATHS:
+            a = copy.deepcopy(self.a)
+            raw = (p.REPOSITORY / name).read_bytes() + b'// changed historical tail\n'
+            next(row for row in a['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'array transition must recover exact historical source'):
+                p.compose_array_instrumentation(a, name, raw)
+
+    def test_changed_inverse_patch_and_runner_reject_before_transform(self):
+        for field in ('combined_transition_patch', 'source_binding_runner'):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for key in ('combined_transition_patch', 'source_binding_runner'):
+                    relative = self.a['current'][key]['path']
+                    target = root / relative; target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((p.REPOSITORY / relative).read_bytes() + (b'\n' if key == field else b''))
+                raw = (p.REPOSITORY / 'src/frontend/ast.rs').read_bytes()
+                with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
+                    p.compose_array_instrumentation(self.a, 'src/frontend/ast.rs', raw)
+
+    def test_direct_observer_successor_is_one_closed_policy_field(self):
+        raw = p.compose_observer_initializer(self.a)
+        insertion = b'            arrays: ArraySyntaxPolicy::Closed,\n'
+        self.assertEqual(raw.count(insertion), 1)
+        self.assertEqual(raw.replace(insertion, b'', 1), (p.FROZEN / 'frozen/helpers/observer.rs').read_bytes())
+        for key in ('current_derived_files', 'current_control_derived_files'):
+            row = next(r for r in self.a['current'][key] if r['path'] == 'src/frontend/parser/unit4_observer.rs')
+            self.assertEqual(row, {'path': row['path'], 'bytes': len(raw), 'sha256': p.sha(raw)})
+        mutated = copy.deepcopy(self.a)
+        mutated['current']['observer_initializer_adapter']['derived']['sha256'] = '0' * 64
+        with self.assertRaisesRegex(p.Rejected, 'unapproved observer initializer successor'):
+            p.compose_observer_initializer(mutated)
+
+    def test_plain_or_stale_array_derived_maps_are_never_accepted(self):
+        original_load = p.load
+        for role in ('derived_files', 'control_derived_files'):
+            for name in p.ARRAY_INSTRUMENTATION_PATHS:
+                if role == 'control_derived_files' and name.endswith('/budget.rs'): continue
+                for source in ('current_base_files', role):
+                    active = copy.deepcopy(self.a['current'])
+                    rows = active[source] if source == 'current_base_files' else self.a[source]
+                    replacement = next(row for row in rows if row['path'] == name)
+                    next(row for row in active['current_' + role] if row['path'] == name).update(replacement)
+                    with self.subTest(role=role, path=name, source=source), patch.object(p, 'load', side_effect=lambda raw: active if p.sha(raw) == p.AUTHORITY_SHA else original_load(raw)):
+                        with self.assertRaisesRegex(p.Rejected, 'unapproved current derived map'):
+                            p.authority()
 
 
 class CheckoutControls(unittest.TestCase):
@@ -234,7 +363,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 126)
+        self.assertEqual(len(bound['compiler_files']), 136)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())

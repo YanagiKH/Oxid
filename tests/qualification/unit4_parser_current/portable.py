@@ -23,7 +23,9 @@ FROZEN = REPOSITORY / "tests/fixtures/typed_project_unit4_parser_portable/frozen
 sys.dont_write_bytecode = True
 HISTORICAL_AUTHORITY_SHA = "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0"
 CURRENT_PATHS = (
+    'src/frontend/ast.rs',
     'src/frontend/declaration_index.rs',
+    'src/frontend/declaration_index/source_owner.rs',
     'src/frontend/declaration_index/tests.rs',
     'src/frontend/diagnostic.rs',
     'src/frontend/driver.rs',
@@ -31,6 +33,7 @@ CURRENT_PATHS = (
     'src/frontend/format/ast_tests.rs',
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
+    'src/frontend/hir.rs',
     'src/frontend/mod.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
     'src/frontend/oir/owned/array_native_tests.rs',
@@ -59,6 +62,13 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/reviewer_origins.rs',
     'src/frontend/oir/owned/reviewer_reference_tests.rs',
     'src/frontend/oir/owned/shape.rs',
+    'src/frontend/oir/owned/source/array_consumer_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline.rs',
+    'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+    'src/frontend/oir/owned/source/array_pipeline_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline_transport.rs',
+    'src/frontend/oir/owned/source/array_type_controls.rs',
+    'src/frontend/oir/owned/source/array_types_tests.rs',
     'src/frontend/oir/owned/source/association.rs',
     'src/frontend/oir/owned/source/budget.rs',
     'src/frontend/oir/owned/source/candidate_adapter.rs',
@@ -67,6 +77,8 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/source/diagnostic.rs',
     'src/frontend/oir/owned/source/hir.rs',
     'src/frontend/oir/owned/source/lower.rs',
+    'src/frontend/oir/owned/source/mod.rs',
+    'src/frontend/oir/owned/source/program.rs',
     'src/frontend/oir/owned/source/resolve.rs',
     'src/frontend/oir/owned/source/reviewer_heldout.rs',
     'src/frontend/oir/owned/source/reviewer_source.rs',
@@ -77,7 +89,57 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned_types.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
     'src/frontend/options.rs',
+    'src/frontend/parser.rs',
+    'src/frontend/parser/array_syntax_tests.rs',
+    'src/frontend/parser/arrays.rs',
+    'src/frontend/parser/project_tests.rs',
+    'src/frontend/project.rs',
+    'src/frontend/project/array_syntax_tests.rs',
+    'src/frontend/project/budget.rs',
     'src/frontend/source.rs',
+    'src/main.rs',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
 )
 CURRENT_ADDED_PATHS = (
     'src/frontend/format.rs',
@@ -92,9 +154,62 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/array_tests.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned/source/array_consumer_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline.rs',
+    'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+    'src/frontend/oir/owned/source/array_pipeline_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline_transport.rs',
+    'src/frontend/oir/owned/source/array_type_controls.rs',
+    'src/frontend/oir/owned/source/array_types_tests.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
+    'src/frontend/parser/array_syntax_tests.rs',
+    'src/frontend/parser/arrays.rs',
+    'src/frontend/project/array_syntax_tests.rs',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
+    'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
 )
-AUTHORITY_SHA = "8eebade73ff8f0c4ce005189bd19a3a583c86cd52e2605025c268ad668ed5529"
+ARRAY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs", "src/frontend/project/budget.rs")
+AUTHORITY_SHA = "fd049b7473ff96d3420f24f3924c5f30479241d7caf2cba26361982e8e9b0458"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -202,7 +317,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["source_binding_runner"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -214,13 +329,13 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 133, "complete current source count")
+    same(len(current["files"]), 185, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 133, "duplicate current member")
+    same(len(after), 185, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -229,28 +344,38 @@ def authority():
     same([row["path"] for row in changes], list(CURRENT_PATHS), "unexpected current transition scope")
     same(changes, active["source_delta"], "current transition before/after identities")
     same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"])),
-         ["src/frontend/source.rs"], "transition overlaps instrumentation outside exact source-read composition")
-    require(not set(CURRENT_PATHS).intersection(row["path"] for row in result["control_instrumentation"]), "transition overlaps control instrumentation")
+         [*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/source.rs"], "transition overlaps instrumentation outside exact current composition")
+    same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["control_instrumentation"])),
+         ["src/frontend/ast.rs", "src/frontend/parser.rs"], "transition overlaps control instrumentation outside exact current composition")
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 296, "current base count")
+    same(len(base), 348, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
-    composed = compose_source_read(result, (REPOSITORY / "src/frontend/source.rs").read_bytes())
-    composed_row = {"path": "src/frontend/source.rs", "bytes": len(composed), "sha256": sha(composed)}
     candidate = (json.dumps(current_candidate(result), sort_keys=True, indent=2) + "\n").encode()
     same(sha(candidate), active["current_candidate_source_manifest_sha256"], "current candidate manifest identity")
     candidate_row = {"path": "candidate-source-manifest.json", "bytes": len(candidate), "sha256": sha(candidate)}
     for field in ("derived_files", "control_derived_files"):
         derived = {row["path"]: row for row in result[field]}
         derived.update({row["path"]: row["after"] for row in changes})
-        if field == "derived_files":
-            derived[composed_row["path"]] = composed_row
+        control = field == "control_derived_files"
+        for name in ARRAY_INSTRUMENTATION_PATHS:
+            if control and name == "src/frontend/project/budget.rs":
+                continue
+            raw = compose_array_instrumentation(result, name, (REPOSITORY / name).read_bytes(), control)
+            derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
+        if not control:
+            name = "src/frontend/source.rs"
+            raw = compose_source_read(result, (REPOSITORY / name).read_bytes())
+            derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
+        name = "src/frontend/parser/unit4_observer.rs"
+        raw = compose_observer_initializer(result)
+        derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 299, "current derived count")
+        same(len(ordered), 351, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -290,6 +415,74 @@ def compose_source_read(a, raw):
     same({"path": name, "bytes": len(original_instrumented), "sha256": sha(original_instrumented)},
          historical_instrumented, "composition must preserve exact historical instrumentation")
     return raw
+
+
+def compose_array_instrumentation(a, name, raw, control=False):
+    """Apply the frozen hooks only at three explicitly bound array-overlap paths."""
+    require(name in ARRAY_INSTRUMENTATION_PATHS, "unapproved array instrumentation path")
+    require(not control or name != "src/frontend/project/budget.rs", "unapproved control composition")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current array identity")
+    runner = active["source_binding_runner"]
+    transition = active["combined_transition_patch"]
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/combined-transition.patch", "combined transition path")
+    verify_map(REPOSITORY, [runner, transition])
+    module = types.ModuleType("unit4_current_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact combined instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact instrumentation inverse scope")
+    historical = next(row for row in a["original_files"] if row["path"] == name)
+    same(current["before"], historical, "composition historical array source identity")
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
+         "array transition must recover exact historical source")
+    helper_path = FROZEN / "frozen/helpers/prepare.py"
+    verify_map(helper_path.parent, [next(row for row in a["helper_files"] if row["path"] == "prepare.py")])
+    helper = types.ModuleType("unit4_frozen_instrumentation")
+    helper.__file__ = str(helper_path)
+    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
+    def transform(body):
+        text = body.decode()
+        if name == "src/frontend/ast.rs":
+            text = helper.replace(text, 'impl Program {', 'impl Program {\n    #[cfg(test)]\n    pub(super) fn unit4_source_handle(&self) -> (u64,usize,usize) { crate::frontend::parser::unit4_observer::provenance_handle(&self.source) }')
+        elif name == "src/frontend/parser.rs":
+            text = text + '\n#[cfg(test)]\npub(super) mod unit4_observer;\n' if control else helper.parser_overlay(text)
+        else:
+            text = helper.replace(text, '        #[cfg(test)]\n        self.trace.push(ReserveEvent {', '        #[cfg(test)]\n        ' + helper.J + '::reserve(kind, length, element_bytes, success);\n        #[cfg(test)]\n        self.trace.push(ReserveEvent {')
+        return text.encode()
+    historical_composed = transform(original)
+    expected = next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)
+    same({"path": name, "bytes": len(historical_composed), "sha256": sha(historical_composed)}, expected,
+         "array composition must preserve exact historical instrumentation")
+    return transform(raw)
+
+
+def compose_observer_initializer(a):
+    """Keep the direct path-overflow probe on the original closed-array policy."""
+    path = FROZEN / "frozen/helpers/observer.rs"
+    original = path.read_bytes()
+    row = next(row for row in a["helper_files"] if row["path"] == "observer.rs")
+    same({"path": "observer.rs", "bytes": len(original), "sha256": sha(original)}, row, "historical observer identity")
+    before = b"            mode,\n            project_recovery: false,"
+    after = b"            mode,\n            arrays: ArraySyntaxPolicy::Closed,\n            project_recovery: false,"
+    same(original.count(before), 1, "exact direct observer initializer")
+    require(after not in original, "historical observer already adapted")
+    result = original.replace(before, after, 1)
+    same(result.replace(after, before, 1), original, "observer successor must preserve every historical byte")
+    same(a["current"]["observer_initializer_adapter"], {
+        "version": "unit4-direct-parser-closed-array-v1", "original": row,
+        "derived": {"path": "src/frontend/parser/unit4_observer.rs", "bytes": len(result), "sha256": sha(result)},
+        "old_seam_sha256": sha(before), "new_seam_sha256": sha(after), "substitutions": 1,
+    }, "unapproved observer initializer successor")
+    return result
 
 
 def current_candidate(a):
@@ -350,7 +543,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 126, "current compiler body count")
+    same(len(wanted), 136, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []
@@ -459,9 +652,12 @@ def prepare(repo, checkout, output):
             historical[key] = identity(target)
         for change in a["current"]["source_delta"]:
             target = source / change["path"]
-            if not control and change["path"] == "src/frontend/source.rs":
-                verify_map(source, [next(row for row in a["derived_files"] if row["path"] == change["path"])])
-                target.write_bytes(compose_source_read(a, (checkout / change["path"]).read_bytes()))
+            name = change["path"]
+            overlap = name in ARRAY_INSTRUMENTATION_PATHS and (not control or name != "src/frontend/project/budget.rs")
+            if overlap or (not control and name == "src/frontend/source.rs"):
+                verify_map(source, [next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)])
+                raw = (checkout / name).read_bytes()
+                target.write_bytes(compose_array_instrumentation(a, name, raw, control) if overlap else compose_source_read(a, raw))
                 continue
             if change["before"] is None:
                 require(not target.exists(), "new current source already exists")
@@ -470,6 +666,9 @@ def prepare(repo, checkout, output):
             verify_map(checkout, [change["after"]])
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(checkout / change["path"], target)
+        observer = source / "src/frontend/parser/unit4_observer.rs"
+        verify_map(source, [next(row for row in a["derived_files"] if row["path"] == "src/frontend/parser/unit4_observer.rs")])
+        observer.write_bytes(compose_observer_initializer(a))
         write(source / "candidate-source-manifest.json", current_candidate(a))
         write(source / "overlay-manifest.json", current_overlay(source, a, control))
         verify_overlay(out, a, control)
@@ -498,10 +697,10 @@ def prepare(repo, checkout, output):
 def current_overlay(source, a, control):
     active = a["current"]
     instrumentation = [dict(row) for row in a["control_instrumentation" if control else "instrumentation"]]
-    if not control:
-        row = next(row for row in instrumentation if row["path"] == "src/frontend/source.rs")
-        row["before_sha256"] = next(row["sha256"] for row in active["current_base_files"] if row["path"] == "src/frontend/source.rs")
-        row["after_sha256"] = next(row["sha256"] for row in active["current_derived_files"] if row["path"] == "src/frontend/source.rs")
+    for row in instrumentation:
+        if row["path"] in (*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/source.rs"):
+            row["before_sha256"] = next(item["sha256"] for item in active["current_base_files"] if item["path"] == row["path"])
+            row["after_sha256"] = next(item["sha256"] for item in active["current_control_derived_files" if control else "current_derived_files"] if item["path"] == row["path"])
     return {"schema": "oxid-unit4-current-observer-overlay-v1", "historical_base_commit": a["base_commit"], "control": control,
             "source": str(source), "reviewed_source_head": active["reviewed_source_head"], "source_only_tree": active["source_only_tree"],
             "current_source_manifest_sha256": active["current_source_manifest"]["sha256"], "transition_authority_sha256": AUTHORITY_SHA,
@@ -516,7 +715,7 @@ def verify_overlay(root, a, control=False):
     expected = current_overlay(source, a, control)
     verify_map(source, expected["files"], exact=True, extras=("observer-source-manifest.json", "overlay-manifest.json"))
     same(read(source / "overlay-manifest.json"), expected, "current overlay must match reviewed transition exactly")
-    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered296 base map")
+    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered348 base map")
     same(sha((source / "observer-source-manifest.json").read_bytes()), a["helper_manifest_sha256"], "unchanged helper manifest bytes")
     verify_map(Path(root) / "helpers", a["helper_files"], exact=True)
     no_cargo_configs(source)
@@ -538,7 +737,7 @@ def verify_transition_records(session, a, resolve=artifact):
     for transition, control in zip(session["transitions"], (False, True)):
         same(set(transition), {"control", "historical_candidate", "historical_overlay", "current_candidate", "current_overlay", "changes"}, "transition fields")
         same(transition["control"], control, "transition role/order")
-        same(transition["changes"], a["current"]["source_delta"], "transition exact 55 changes")
+        same(transition["changes"], a["current"]["source_delta"], "transition exact 117 changes")
         source = root / ("control-source" if control else "source")
         invocation = root / ("prepare-control" if control else "prepare")
         for key, filename in (("historical_candidate", "historical-candidate-source-manifest.json"), ("historical_overlay", "historical-overlay-manifest.json")):

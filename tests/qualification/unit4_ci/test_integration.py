@@ -154,8 +154,59 @@ class ObserverPreparationControls(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
+    def current_build_capsule(self, observer_mutation=None):
+        # Actual admitted source maps, synthetic protocol envelopes only.
+        current = q.read(REPO / q.SOURCE / 'current-source.json')
+        observer = copy.deepcopy(self.manifest)
+        if observer_mutation is not None: observer_mutation(observer['files'])
+        objects = {}
+        provenance = {'checkout_head': 'a' * 40, 'checkout_tree': 'b' * 40, 'source_only_tree': current['source_only_tree']}
+        for role, kind, manifest in (('ordinary', 'unit4-public-v3-candidate', current),
+                                     ('observer', 'unit4-public-v3-lifecycle-observer', observer)):
+            manifest_id = {'path': role + '-manifest', 'sha256': q.CURRENT_SHA if role == 'ordinary' else q.sha(q.canonical(manifest))}
+            objects[manifest_id['path']] = manifest
+            binaries = {profile: {'path': role + '-' + profile, 'bytes': 1, 'sha256': str(i + 1) * 64}
+                        for i, profile in enumerate(q.PROFILES)}
+            receipts = {}
+            for profile in q.PROFILES:
+                row = {'path': role + '-' + profile + '-receipt'}
+                receipts[profile] = row
+                objects[row['path']] = {'status': 0, 'profile': profile, 'source_before': manifest_id['sha256'],
+                    'source_after': manifest_id['sha256'], 'source_manifest_sha256': manifest_id['sha256'],
+                    'binary': binaries[profile], 'argv': ['cargo', 'build', '--bin', 'oxid', '--locked', '--offline'] + (['--release'] if profile == 'release' else []),
+                    'rustc': 'rustc 1.99.0 local-test\nhost: x86_64-unknown-linux-gnu\n',
+                    'environment': {'CARGO_INCREMENTAL': '0', 'CARGO_BUILD_JOBS': '2'}, 'streams': {}}
+            objects['/synthetic/' + role + '-build/candidate-binding.json'] = {
+                'kind': kind, 'compiler_head': provenance['checkout_head'], 'compiler_head_tree': provenance['checkout_tree'],
+                'compiler_source_only_tree': provenance['source_only_tree'], 'source_manifest': manifest_id,
+                'binaries': binaries, 'build_receipts': receipts}
+        capsule = SimpleNamespace(named=lambda path: {'path': path, 'sha256': '9' * 64},
+                                  json=lambda row: objects[row['path']], raw=lambda row: b'')
+        return capsule, provenance
+
+    def test_final_join_accepts_actual_current_ordinary_and_observer_maps(self):
+        capsule, provenance = self.current_build_capsule()
+        configs = join.build_configs(capsule, '/synthetic', provenance, 'Linux x86_64', REPO)
+        self.assertEqual(set(configs), {'ordinary', 'observer'})
+
+    def test_final_join_rejects_changed_or_incomplete_current_observer_map(self):
+        for mutate in (lambda rows: rows.pop(), lambda rows: rows.reverse(),
+                       lambda rows: rows[-1].update(sha256='0' * 64)):
+            capsule, provenance = self.current_build_capsule(mutate)
+            with self.assertRaisesRegex(q.Reject, 'public source authority'):
+                join.build_configs(capsule, '/synthetic', provenance, 'Linux x86_64', REPO)
+
+    def test_lifecycle_successor_changes_only_the_array_policy_context(self):
+        current = (REPO / q.OBSERVER_PATCH).read_bytes()
+        original = (REPO / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
+        self.assertEqual(self.builder.verify_lifecycle_successor(current), original)
+        for changed in (current + b'\n', current.replace(b'ArraySyntaxPolicy', b'OtherSyntaxPolicy'),
+                        current.replace(b'parse_attempt', b'other_attempt')):
+            with self.subTest(changed=q.sha(changed)), self.assertRaises(Exception):
+                self.builder.verify_lifecycle_successor(changed)
+
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 134)
+        self.assertEqual(len(self.manifest['files']), 186)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -246,7 +297,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 14)
+        self.assertEqual(len(expected), 15)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
@@ -897,7 +948,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 600)
+        self.assertEqual(report['full_archive_only'], 704)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1112,7 +1163,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 126)
+        self.assertEqual(len(compiler), 136)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,

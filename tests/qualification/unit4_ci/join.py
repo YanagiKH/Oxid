@@ -44,8 +44,12 @@ def final_coverage(contracts, host_keys):
     return union
 
 
-def build_configs(capsule, output, provenance, host):
+def build_configs(capsule, output, provenance, host, repo):
     configs = {}
+    _, runtime, _, _, _ = q.public_modules(repo)
+    current_path = Path(repo) / q.SOURCE / 'current-source.json'
+    q.need(q.identity(current_path)['sha256'] == q.CURRENT_SHA, 'join current source authority')
+    current_count = len(q.read(current_path)['files'])
     target = {'Linux x86_64': 'x86_64-unknown-linux-gnu', 'Windows x86_64': 'x86_64-pc-windows-msvc',
               'macOS x86_64': 'x86_64-apple-darwin', 'macOS arm64': 'aarch64-apple-darwin'}[host]
     for role, kind in (('ordinary', 'unit4-public-v3-candidate'), ('observer', 'unit4-public-v3-lifecycle-observer')):
@@ -55,9 +59,9 @@ def build_configs(capsule, output, provenance, host):
                cfg['compiler_source_only_tree'] == provenance['source_only_tree'], 'public build checkout binding')
         q.need(set(cfg['binaries']) == set(cfg['build_receipts']) == set(q.PROFILES), 'missing public build profile')
         manifest = capsule.json(cfg['source_manifest'])
-        expected_sha = q.CURRENT_SHA if role == 'ordinary' else '1cea140199a9b84d8233e5410579a509663e06aa06a4a7543eeea42cffbec4a6'
+        expected_sha = q.CURRENT_SHA if role == 'ordinary' else runtime.OBSERVER_FILES_SHA
         actual_sha = cfg['source_manifest']['sha256'] if role == 'ordinary' else q.sha(q.canonical(manifest['files']))
-        q.need(actual_sha == expected_sha and len(manifest['files']) == (133 if role == 'ordinary' else 134), 'public source authority')
+        q.need(actual_sha == expected_sha and len(manifest['files']) == (current_count if role == 'ordinary' else current_count + 1), 'public source authority')
         for profile in q.PROFILES:
             build = capsule.json(cfg['build_receipts'][profile])
             q.need(build['status'] == 0 and build['profile'] == profile and build['source_before'] == build['source_after'] ==
@@ -79,7 +83,7 @@ def public_join(capsule, contracts, repo, plan):
     q.need(final['status'] == 'pass' and final['plan'] == capsule.manifest['plan'], 'stale public finalizer/plan')
     output = str(Path(capsule.manifest['plan']['path']).parent) if plan['measured_host']['name'] != 'Windows x86_64' else str(PureWindowsPath(capsule.manifest['plan']['path']).parent)
     host = plan['measured_host']['name']
-    configs = build_configs(capsule, output, plan['provenance'], host)
+    configs = build_configs(capsule, output, plan['provenance'], host, repo)
     q.need(set(final['rows']) == set(final['sections']) == set(q.SECTIONS), 'missing final public domain')
     main_result = capsule.json(final['main_result'])
     q.need(main_result['all_contract_sections_collected'] is True and main_result['adapter'] == run.adapter_identity(), 'main public result incomplete')

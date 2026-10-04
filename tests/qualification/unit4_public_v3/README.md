@@ -72,8 +72,11 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact133-file formatter compiler manifest, the reviewed134-file
-lifecycle overlay map and the retained additive patch. A caller cannot select a
+`authority.py` pins the exact185-file combined compiler manifest, the reviewed186-file
+lifecycle overlay map and the current additive patch successor. The successor
+changes only the parser hunk context to include its new array-policy parameter;
+reversing that context edit reproduces the exact historical additive patch.
+All logical event hooks remain unchanged and instrument the real parser body. A caller cannot select a
 different compiler body merely by supplying a coherent rewritten manifest.
 `authority_controls.py` deterministically rejects both current-source and
 observer-body forgeries without invoking a compiler.
@@ -126,7 +129,9 @@ fields. Base v3 identity metadata remains historical base metadata; an old v3
 receipt is rejected for an effective-contract tuple. Original on-disk authorities
 and failed first-run evidence remain byte-identical.
 
-The formatter source checkpoint is `8a08a2908b2ceb73c80112e6ddd82e2dbda91976`.
-Only current source/observer identities and counts advance for that checkpoint;
-the lifecycle patch, frozen cases, expected observations and runtime identity
-stay unchanged. Preparation binds files but does not establish execution results.
+The combined source checkpoint is `a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909`.
+Current source/observer input identities include exact compile-time array fixture
+dependencies. The lifecycle patch successor changes only array-policy context and
+reverses to the unchanged historical patch. Frozen cases, expected observations
+and selected runtime content stay unchanged. Preparation binds files but does not
+establish execution results.
