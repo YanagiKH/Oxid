@@ -2,17 +2,20 @@
 
 Unit3B2 connects the private array forms from [RFC 0016](../../rfcs/0016-fixed-scalar-arrays.md)
 to the existing ownership verifier through the real source pipeline. The first
-five source cases now pass complete source-to-raw comparison and controlled
-first-literal capacity-failure checks in both debug and release. This is a
+five source cases now pass complete source-to-raw comparison through both Root
+and Bytes inputs, plus controlled first-literal capacity-failure checks through
+Root, in both debug and release. This is a
 local Linux x86_64 Validate milestone. The production parser
 and raw-array gates remain closed; the source programs' function bodies were
 not executed.
 
 ## Implemented path
 
-The test-only source entry accepts original bytes or a root path. The qualified
-requests here use `Root`, relative path `main.ox`, `Complete`, `Validate` and
-fixed default limits. They traverse the actual loader, parser, root selector,
+The test-only source entry accepts original bytes or a root path. Root requests
+use relative path `main.ox`; Bytes requests use that exact display path and the
+original source text. Both use `Complete`, `Validate` and fixed default limits;
+the separate Root failure group uses ordinal-zero capacity failure. They traverse
+the applicable real input/parser path, root selector,
 declaration index, resolver, typechecker, four-pass lowerer, source association
 and verifier-confined validation entry. The observer returns bounded inert
 facts and diagnostics. Its input does not accept a caller-built AST, typed
@@ -26,7 +29,7 @@ retain their whole-owner access and original source origins. The unchanged
 ordinary executable guard and immutable types-only rejection remain separate
 from this private lowering path.
 
-## Actual source results
+## Initial Root source results
 
 The [first-five source authorities](../../tests/fixtures/fixed_array_source_unit3/lowering-contracts-v1/README.md)
 were frozen before candidate observations, including the two explicit original
@@ -61,6 +64,9 @@ An independent audit rechecked all 100 original request, process, transport,
 source-binding and comparison artifacts, then repeated all ten comparisons.
 The results were byte-identical to the original comparison receipts. This
 audit made no additional compiler calls and did not rebuild the compiler.
+This initial Complete group and the failure group immediately below use the
+retained observer-v3 binaries. The later fresh-binary Root/Bytes qualification
+is recorded separately; it does not overwrite these historical results.
 
 ### Controlled first-literal capacity failure
 
@@ -219,3 +225,147 @@ need their own qualification. This local record does not establish a hosted or
 portable replay gate, and it does not qualify public array syntax.
 The controlled failure group does not cover zero-length literals, later
 reservation ordinals or general allocator exhaustion.
+
+## Framed Bytes input and fresh Root compatibility
+
+A subsequent two-file change adds a closed, test-only input-kind selector and
+a bounded stdin frame reader. Root remains the default and keeps stdin on
+DEVNULL. Bytes requires its explicit selector and has no fallback to Root. The
+frame is a 24-byte header (magic/version `OXABY001` and two little-endian u64
+lengths), followed by exact display-path bytes, source-text bytes and EOF.
+Transport maxima are 4,194,304 path bytes and 1,048,576 source bytes, with one
+combined allocation of at most 5,242,880 bytes. These fixed transport ceilings
+do not replace a lower effective compiler limit.
+
+The reader preserves valid UTF-8, including NUL and CR/LF, and rejects invalid
+UTF-8, a code point split between fields, malformed or truncated frames and
+trailing input before observation. It converts the owned byte buffer to String
+without copying, then passes borrowed path/text slices to the existing entry.
+Lengths are checked before any logical payload request or payload allocation.
+That statement concerns the frame reader's logical operations: the standard
+stdin adapter can read ahead, and its separately bounded storage remains live
+through output printing. It is not an operating-system read trace.
+
+Review corrected two checkpoint findings before publication: the first rejected
+frame implementation could classify a split UTF-8 path followed by a later
+invalid text byte as a text error, and its Rust-only manifest omitted unchanged
+`src/main.ox`. The corrected classifier retains path-first error precedence
+without a second payload scan, and the source inventory includes all 123 files.
+Neither finding was an accepted malformed frame or an escape from the size
+limit. Both original checkpoints and their evidence remain preserved.
+
+On the fresh binaries, each profile independently passes 16 selected source-free
+tests: six transport tests, eight observer tests and two layout tests. Strict
+Clippy and formatting pass. The complete test-name inventory contains 821
+entries; this is an inventory count, not a claim that all 821 were run. Each
+source invocation selects the one ignored transport test with 820 others
+filtered out.
+
+Fresh instruction, relocation and layout checks bind the actual stdin
+specialization in both binaries: an 8,192-byte adapter buffer and 56-byte shared
+state. The input payload stays alive alongside the compiler's real text/path
+copies through observation, then is dropped before the transcript is printed.
+The global stdin buffer remains live. This transport memory and work are
+separate from the observer's 8,001,104-byte allowance and compiler storage;
+none is described as a total process peak. The Diagnostic width, capacities and
+failure-work proof were also rebound to each fresh binary rather than inferred
+from the older v3 executable.
+
+The external collector hashes an on-disk frame and concurrently sends it using
+one bounded 8 KiB pending chunk while draining capped stdout and stderr. It
+handles partial writes, records only delivered bytes in the running hash,
+closes stdin for EOF, and retains timeout, output-cap and setup/cleanup failures.
+Source/path/frame hashes, full delivered count and hash, EOF and before/after
+identities are mandatory comparison inputs. No expected compiler facts enter
+the child's frame.
+
+The independently source-derived Bytes supplement covers only the same five
+files and the display path `main.ox`. They take equivalent syntax branches in
+OwnedCandidate and ProjectCandidate parsing and retain the same downstream
+semantic identities. Bytes reports source/module rows before load completion,
+uses single-source-adapter module metadata, and has 21 frontend requests for
+the grouped case and 20 for each other case, including eight zero-length
+requests. The comparator requires these differences explicitly; changing a
+Root input label is insufficient.
+
+The new source/binary identities received separate admissions and actual runs:
+
+| Fresh-binary route | Source/profile pairs | Result |
+| --- | ---: | --- |
+| Root Complete | 10 | Exact Validate comparisons pass |
+| Root ordinal-zero capacity failure | 10 | Exact expected diagnostics match; validation credit remains false |
+| Bytes Complete | 10 | Exact Validate comparisons and complete frame-delivery checks pass |
+
+These are 30 calls over the same five sources, following the 20 historical v3
+calls. Profile repetition, route repetition and expected failures do not add
+new distinct source cases. No expectation changed after these observations.
+All ten Root profile pairs and all five Bytes frame/transcript profile pairs
+are byte-identical. A separate read-only check also finds all 20 fresh Root
+transcripts exactly equal to their corresponding v3 transcripts, without
+normalization or additional compiler calls.
+
+Independent artifact-only replay repeats all 20 fresh Root comparisons and
+all ten Bytes comparisons. Fresh Root evidence seals 324 members: 200 case
+artifacts, 120 dispatch artifacts and four roster/result records. Bytes evidence
+seals 184 members: 120 case artifacts (including frames and frame receipts),
+60 dispatch artifacts and four roster/result records. Its ten frames total
+1,568 bytes; transcripts total 25,232 structured units and 112,358 bytes.
+The Bytes observations contain 1,390 static semantic rows and 202 frontend
+request rows. These artifact replays make no compiler calls, and all historical
+Root evidence remains unchanged.
+
+Source-free qualification is recorded by component and is not summed as unique
+global coverage: 39 frame/collector controls, 54 Bytes-predicate controls,
+77 fresh Root-driver controls plus 11 independent artifact controls, and
+52 final Bytes request/artifact controls each pass in normal and optimized
+Python. These controls are separate from the 30 actual compiler calls.
+
+### Fresh identities
+
+The 123-file source manifest is
+`6eed6163fa0c4c78ee37448f0648bd7baaf62433ce92f8d4d0ea244029fe5f8c`.
+Base `e87789bf60d625b2df1dfe417dbe6b5450e8db0f` plus patch
+`ef4b83a22dbffaf3300d021d41fbeb69ccff779f3b5b8f68f67169bc11346047`
+produces tree `d506696bc2f18b8b05e33cbe644b9f7d119dd63b`, published at
+`f7451ca2bf1a58e824bedbaa3278880d18810884`.
+The fresh debug/release executable hashes are
+`e0b11fdd6385cbf4ce47ab78e109322d850ec84b7cd87efad129ec98f4428bcc` and
+`726626993f25229a70ca74724e38107e90272881fcc15fa5c8198fe52b238b79`.
+Component review is
+`43dae10792b4a25139be62fc96ddf0e642c70e657ef5bd480368f79d2ca8df2c`.
+
+Fresh Root contract
+`f151cc62381cfcfc123b5f6b86d6eae8bee5ab6d2e64d049e6168f62e243c92d`
+has admission
+`5db959d4f0b88c731b40e9727bea642e3f1f9e2c4db263ad90919dafca8fdec4`.
+Its aggregate is
+`cdc40c51c90f3a7e6373250c9095b5e0c8fcf264b84d3e54c39f3c3c20247c12`,
+result freeze
+`5c6f6ad911751bfa8c355a99dab73f58659e60dd755fd438e39e44dbef3bcbbb`,
+and independent aggregate review
+`cd88ad9cbfac77e3d11093b5523efc14d47c7cfafa164b0760327ebc1447bace`.
+The separately recorded v3/v4 transcript parity receipt is
+`7d93c577431db895215868b8ecd655245afe9c8e74d401304f4f3ae06b968889`.
+
+Bytes source authority
+`427e1b530bd50748e3f5662719e66fe33d72f7042032cf75e3d9a0e761f7415c`
+has independent review
+`0c7f7add7e9e6e6cc892dc2f11a966812e3c4773aadc4da83a9c1d04b6fad019`.
+Its separate execution contract is
+`cc3ad61b1e90cb9570bc23a2655a8322290dfab2be9a218e8234e2862549a992`,
+with admission
+`7220dd6efa24c047a9a1a18b98ae02142bea872ff30ebb01606d56363b04c0cb`.
+The aggregate is
+`cc25db4678165d9181d788a9c16426615a4792062136fef7582ef696139182b6`,
+and result freeze
+`d80d49fbd45fe0ced3e82e098c2501c50e4cda8fd59d2f1db1f5270220a78dc1`.
+Post-run custody rechecks 304 current bindings and all 123 source members.
+Independent Bytes aggregate review is
+`35706b2827455bed8fac349bbeb9535167af1516244a64d98b356f5a3c7b1005`.
+
+This fresh qualification still covers only these five sources, Root Complete
+and ordinal-zero failure, and Bytes Complete with `main.ox`. It grants no
+Bytes failure-mode or arbitrary-display-path semantic claim, successful source
+Reference/Native execution, public syntax, hosted qualification or portable
+replay claim. UTF-8/NUL transport support alone does not qualify arbitrary
+source programs or display paths.
