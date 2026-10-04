@@ -796,24 +796,39 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 6913,
+      "bytes": 7904,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "3940b4057cb90494cde9d6f2ab73e2510411671a99040cdb330c61f90c99c067"
+      "sha256": "eeab9286ed620ced1071efd7a23193c59575f99fa71b6261e94404a1ddbcdd88"
     },
     {
-      "bytes": 244184,
+      "bytes": 244657,
       "path": "tests/qualification/unit4_parser_current/authority.json",
-      "sha256": "20828f511d01fd9a1aedb44624d20f42141b1667d89ccc79a77b55e0e520f195"
+      "sha256": "8f47bd47a7a1dd3df5e0acfa5e44b6c890da0a89b7303f54ed38e21f7364bc1e"
     },
     {
-      "bytes": 93583,
+      "bytes": 95171,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "81c6a566371ac13dd7aac57c6156e12a2c11e35940f3f552482dc0f21cd0f8b0"
+      "sha256": "f2dcaf05109fa17e41cd2cdb2ab20785044b75861fe4b9507368ff071c09a40d"
     },
     {
-      "bytes": 39237,
+      "bytes": 28188,
+      "path": "tests/qualification/unit4_parser_current/record-composition-diagnostics-v1.json",
+      "sha256": "f0ec986bb6192df43e6e1248d08ba26df6b1eb8efc920222044b981974082c25"
+    },
+    {
+      "bytes": 4128,
+      "path": "tests/qualification/unit4_parser_current/record_composition_amendment.py",
+      "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
+    },
+    {
+      "bytes": 39275,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "371b2c44b2475d25a766082871dd21d8ab16a5e62f82f8f1bc7c18572729bc8d"
+      "sha256": "1c433e2d0b1107de9733453c5da9288fe7b64307e0e9a7086ab1b074339b1ebf"
+    },
+    {
+      "bytes": 6700,
+      "path": "tests/qualification/unit4_parser_current/test_record_composition_amendment.py",
+      "sha256": "0e53c1d41b0af58a13ab89db9667825df14d357ac36d8cf7ef9f30891ac3d8c9"
     },
     {
       "bytes": 8434,

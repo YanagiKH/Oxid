@@ -1,0 +1,60 @@
+{
+  "files": [
+    {
+      "bytes": 5021,
+      "path": "README.md",
+      "sha256": "f1f43cbe689f1d3f4eccea2ae3f4fbf56fd1ab65bd0af43c4712dd583213e748"
+    },
+    {
+      "bytes": 11013,
+      "path": "runtime_view.py",
+      "sha256": "dadc167a65c8fec86c1856e2cd3ab4220595e824c9cf2873fdd19d4d92d31e0a"
+    },
+    {
+      "bytes": 2659,
+      "path": "scalar-store-controls-v2.rs",
+      "sha256": "f2462ee16219924ac77ed64d5846bc8d56f8c08ccf46c463ec9f20f858667e47"
+    },
+    {
+      "bytes": 1604,
+      "path": "schema-anchors.json",
+      "sha256": "46cde3292e471102b0e48aa25bc128f76fca85174e8f4e1227063111b673492a"
+    },
+    {
+      "bytes": 8531,
+      "path": "test_runtime_view.py",
+      "sha256": "b003c2714afd6f894476aa905b8e40a179a6f9f9aef3532379847dcde8f93421"
+    },
+    {
+      "bytes": 2015,
+      "path": "test_transfer_hook.py",
+      "sha256": "743527dc0514c511d1f6a22ed15c2271299dcdaacbfbbfd9544a9d8cca56dc6b"
+    },
+    {
+      "bytes": 5142,
+      "path": "transfer-controls.rs",
+      "sha256": "692517f88fb6d814d2204c95d4e32f402670f69312a940ef867e6aad39b7a62d"
+    },
+    {
+      "bytes": 633,
+      "path": "transfer-hook-identities.json",
+      "sha256": "2c69e419ea634f0a6079d3b8af5a925b6b5dabf107cbda22f56752c552fcb8a4"
+    },
+    {
+      "bytes": 2908,
+      "path": "transfer-hook-v1.patch",
+      "sha256": "64622150846fcd14c670c61aa3cb64b04eef88218f31161bec289d4338373a58"
+    },
+    {
+      "bytes": 458,
+      "path": "transfer-journal-controls.rs",
+      "sha256": "ccd3ee7f3e2f2eac3f6cd1a53ff89a084f8f4c46c88d6f2b5676fc8f4bd2c759"
+    },
+    {
+      "bytes": 4749,
+      "path": "transfer_hook.py",
+      "sha256": "05926ef6a849fbe1746a0d753e3295e4eb80f50805ee3356c7d89b5907f7dbdb"
+    }
+  ],
+  "schema": "oxid-record-current-runtime-view-package-v1"
+}

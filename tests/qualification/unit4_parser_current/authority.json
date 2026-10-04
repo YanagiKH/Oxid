@@ -9,6 +9,16 @@
     "path": "tests/fixtures/typed_project_source_binding/combined-transition.patch",
     "sha256": "8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683"
   },
+  "composition_parser_amendment": {
+    "bytes": 28188,
+    "path": "tests/qualification/unit4_parser_current/record-composition-diagnostics-v1.json",
+    "sha256": "f0ec986bb6192df43e6e1248d08ba26df6b1eb8efc920222044b981974082c25"
+  },
+  "composition_parser_amendment_module": {
+    "bytes": 4128,
+    "path": "tests/qualification/unit4_parser_current/record_composition_amendment.py",
+    "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
+  },
   "composition_transition_patch": {
     "bytes": 238025,
     "path": "tests/fixtures/typed_project_source_binding/composition-transition.patch",

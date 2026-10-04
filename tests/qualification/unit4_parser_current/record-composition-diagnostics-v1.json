@@ -1,0 +1,843 @@
+{
+  "amendment_id": "owned-record-composition-parser-v1",
+  "case_ids": [
+    "retained-migration-qualified-scalar-plain",
+    "retained-migration-qualified-scalar-unicode-lf",
+    "retained-migration-qualified-scalar-unicode-crlf",
+    "retained-migration-relative-scalar-plain",
+    "retained-migration-relative-scalar-unicode-lf",
+    "retained-migration-relative-scalar-unicode-crlf"
+  ],
+  "cases": [
+    {
+      "id": "retained-migration-qualified-scalar-plain",
+      "new_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 31,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 28
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 31,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 28
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "qualified paths are unavailable in scalar record fields",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 19,
+            "end_column": 20,
+            "end_line": 1,
+            "file_id": 0,
+            "line": 1,
+            "path": "activation.ox",
+            "start": 14
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 31,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 28
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 31,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 28
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_expected_canonical_sha256": "3f05a17cbc22242728b501b0820f41df4805a5564d8c385b67134cb24fd4ab56",
+      "rationale": "record() now calls ty_with_paths(true), enabling the absolute nominal field type crate::T. item_path sets sticky project recovery and accepts the crate prefix. The former field-path ban no longer emits a diagnostic. Parsing continues to fn pub: function parsing emits the existing unsupported-pub diagnostic; sticky recovery stops on that pub token, whose next iteration emits the same diagnostic before consuming it. Both preserved pub diagnostics retain their independently located token span. This is parser-only; no nominal resolution or program acceptance claim.",
+      "source": {
+        "base64": "c3RydWN0IFIgeyBuOiBjcmF0ZTo6VCB9CmZuIHB1YigpLT5pMzJ7cmV0dXJuIDA7fQpmbiBnb29kKCktPmkzMntyZXR1cm4gMTt9Cg==",
+        "bytes": 76,
+        "path": "activation.ox",
+        "sha256": "a46c1895b1c215e6544fe7aa599c489c89750aeeea7c0b33f0384a8b789eab17"
+      },
+      "unchanged_expected": {
+        "recognized_final": true,
+        "result": "parse_error"
+      }
+    },
+    {
+      "id": "retained-migration-qualified-scalar-unicode-lf",
+      "new_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 40,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 37
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 40,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 37
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "qualified paths are unavailable in scalar record fields",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 28,
+            "end_column": 20,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 23
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 40,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 37
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 40,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 37
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_expected_canonical_sha256": "3b30ab4099878215525cfc9c7e578e0a9d639b9106fd82963969b36ecdedafce",
+      "rationale": "record() now calls ty_with_paths(true), enabling the absolute nominal field type crate::T. item_path sets sticky project recovery and accepts the crate prefix. The former field-path ban no longer emits a diagnostic. Parsing continues to fn pub: function parsing emits the existing unsupported-pub diagnostic; sticky recovery stops on that pub token, whose next iteration emits the same diagnostic before consuming it. Both preserved pub diagnostics retain their independently located token span. This is parser-only; no nominal resolution or program acceptance claim.",
+      "source": {
+        "base64": "Ly/DqfCfpoAKc3RydWN0IFIgeyBuOiBjcmF0ZTo6VCB9CmZuIHB1YigpLT5pMzJ7cmV0dXJuIDA7fQpmbiBnb29kKCktPmkzMntyZXR1cm4gMTt9Cg==",
+        "bytes": 85,
+        "path": "activation.ox",
+        "sha256": "26b97ac0b21f713c89f7914aa4813b69a3596367cf8919d747b07a439468c09b"
+      },
+      "unchanged_expected": {
+        "recognized_final": true,
+        "result": "parse_error"
+      }
+    },
+    {
+      "id": "retained-migration-qualified-scalar-unicode-crlf",
+      "new_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 44,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 41
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 44,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 41
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "qualified paths are unavailable in scalar record fields",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 31,
+            "end_column": 20,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 26
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 44,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 41
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 44,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 41
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_expected_canonical_sha256": "d5a258fd5892cdb01b0e1f5dd44f5ed4ef636317d7966dae917319d817296a85",
+      "rationale": "record() now calls ty_with_paths(true), enabling the absolute nominal field type crate::T. item_path sets sticky project recovery and accepts the crate prefix. The former field-path ban no longer emits a diagnostic. Parsing continues to fn pub: function parsing emits the existing unsupported-pub diagnostic; sticky recovery stops on that pub token, whose next iteration emits the same diagnostic before consuming it. Both preserved pub diagnostics retain their independently located token span. This is parser-only; no nominal resolution or program acceptance claim.",
+      "source": {
+        "base64": "LyrDqfCfpoAqLw0Kc3RydWN0IFIgeyBuOiBjcmF0ZTo6VCB9DQpmbiBwdWIoKS0+aTMye3JldHVybiAwO30NCmZuIGdvb2QoKS0+aTMye3JldHVybiAxO30NCg==",
+        "bytes": 91,
+        "path": "activation.ox",
+        "sha256": "32d04e8d9094635c0006adf168b509af2aee7266f0687ed794cdbef9e69569de"
+      },
+      "unchanged_expected": {
+        "recognized_final": true,
+        "result": "parse_error"
+      }
+    },
+    {
+      "id": "retained-migration-relative-scalar-plain",
+      "new_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "only absolute item paths beginning with `crate::` are supported",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 18,
+            "end_column": 19,
+            "end_line": 1,
+            "file_id": 0,
+            "line": 1,
+            "path": "activation.ox",
+            "start": 14
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 30,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 27
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 30,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 27
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "qualified paths are unavailable in scalar record fields",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 18,
+            "end_column": 19,
+            "end_line": 1,
+            "file_id": 0,
+            "line": 1,
+            "path": "activation.ox",
+            "start": 14
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 30,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 27
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 30,
+            "end_column": 7,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 27
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_expected_canonical_sha256": "dcfad68bfa76396be6584c1f7ba0b662417d5217588e103cd236cfece9a66e71",
+      "rationale": "record() now calls ty_with_paths(true), so item_path no longer selects the old blanket scalar-field path ban. The still-unsupported self prefix reaches the existing absolute-prefix guard and rejects at the same self token with E0101 and the exact source-authored absolute-path message. Sticky recovery then emits the same two unchanged pub diagnostics. No relative path is admitted.",
+      "source": {
+        "base64": "c3RydWN0IFIgeyBuOiBzZWxmOjpUIH0KZm4gcHViKCktPmkzMntyZXR1cm4gMDt9CmZuIGdvb2QoKS0+aTMye3JldHVybiAxO30K",
+        "bytes": 75,
+        "path": "activation.ox",
+        "sha256": "d433fc9e59f092be5dc94bca258755406d2736e565433a4165e88bd55f39a1b1"
+      },
+      "unchanged_expected": {
+        "recognized_final": true,
+        "result": "parse_error"
+      }
+    },
+    {
+      "id": "retained-migration-relative-scalar-unicode-lf",
+      "new_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "only absolute item paths beginning with `crate::` are supported",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 27,
+            "end_column": 19,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 23
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 39,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 36
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 39,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 36
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "qualified paths are unavailable in scalar record fields",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 27,
+            "end_column": 19,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 23
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 39,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 36
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 39,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 36
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_expected_canonical_sha256": "a4179984a153ff0caebff9010bd93481e2fd2c1fc234d6996640951088542eb5",
+      "rationale": "record() now calls ty_with_paths(true), so item_path no longer selects the old blanket scalar-field path ban. The still-unsupported self prefix reaches the existing absolute-prefix guard and rejects at the same self token with E0101 and the exact source-authored absolute-path message. Sticky recovery then emits the same two unchanged pub diagnostics. No relative path is admitted.",
+      "source": {
+        "base64": "Ly/DqfCfpoAKc3RydWN0IFIgeyBuOiBzZWxmOjpUIH0KZm4gcHViKCktPmkzMntyZXR1cm4gMDt9CmZuIGdvb2QoKS0+aTMye3JldHVybiAxO30K",
+        "bytes": 84,
+        "path": "activation.ox",
+        "sha256": "61f92892eff70bdc1a4a22ac19e07e1ab8860a53eb146afa0c3a014ebdec2553"
+      },
+      "unchanged_expected": {
+        "recognized_final": true,
+        "result": "parse_error"
+      }
+    },
+    {
+      "id": "retained-migration-relative-scalar-unicode-crlf",
+      "new_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "only absolute item paths beginning with `crate::` are supported",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 30,
+            "end_column": 19,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 26
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 43,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 40
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 43,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 40
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_diagnostics_exact": [
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "qualified paths are unavailable in scalar record fields",
+          "notes": [],
+          "primary": {
+            "column": 15,
+            "end": 30,
+            "end_column": 19,
+            "end_line": 2,
+            "file_id": 0,
+            "line": 2,
+            "path": "activation.ox",
+            "start": 26
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 43,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 40
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        },
+        {
+          "code": "E0101",
+          "edition": "typed-preview",
+          "kind": "diagnostic",
+          "message": "unsupported typed-preview construct `pub`",
+          "notes": [],
+          "primary": {
+            "column": 4,
+            "end": 43,
+            "end_column": 7,
+            "end_line": 3,
+            "file_id": 0,
+            "line": 3,
+            "path": "activation.ox",
+            "start": 40
+          },
+          "schema_version": 1,
+          "secondary": [],
+          "severity": "error",
+          "stage": "parse"
+        }
+      ],
+      "old_expected_canonical_sha256": "27e3116095f5419b998859eb671a1e3c03a21100ae53b5a2e71dc7c0631d986d",
+      "rationale": "record() now calls ty_with_paths(true), so item_path no longer selects the old blanket scalar-field path ban. The still-unsupported self prefix reaches the existing absolute-prefix guard and rejects at the same self token with E0101 and the exact source-authored absolute-path message. Sticky recovery then emits the same two unchanged pub diagnostics. No relative path is admitted.",
+      "source": {
+        "base64": "LyrDqfCfpoAqLw0Kc3RydWN0IFIgeyBuOiBzZWxmOjpUIH0NCmZuIHB1YigpLT5pMzJ7cmV0dXJuIDA7fQ0KZm4gZ29vZCgpLT5pMzJ7cmV0dXJuIDE7fQ0K",
+        "bytes": 90,
+        "path": "activation.ox",
+        "sha256": "8ce2732c1153d0a2a8b03f6b16843eae892cfe2313b1e1a6bd7c251a2b1bcd0e"
+      },
+      "unchanged_expected": {
+        "recognized_final": true,
+        "result": "parse_error"
+      }
+    }
+  ],
+  "code_basis": [
+    "RFC0020 qualified nominal stored fields",
+    "src/frontend/parser.rs:740 record uses ty_with_paths(true)",
+    "src/frontend/parser.rs:347-366 sticky recognition, old path ban, absolute prefix guard",
+    "src/frontend/parser.rs:232-246 recovery preserves pub token then consumes on unchanged cursor"
+  ],
+  "contract_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+  "current_document_canonical_sha256": "88b9f3f526856b0ba5c0e911ef081bb0e0c1d594360ccb95387aa2cdcbe53154",
+  "predecessor_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+  "predecessor_effective_receipt": {
+    "base_parser_corpus_decoded_sha256": "b19819e2e4af627dfe3877ef7753fe237aa7830b16d2a83197fae0ed02010cbc",
+    "base_parser_package_freeze_sha256": "7a2ec4fdf43bf94f3348a04251a9c04b77610b0e6bdd7318ce62dc2c5a5c4027",
+    "effective_contract_descriptor_sha256": "9bf8a80cbb30c384a70fd5696e19428d2b0aad535740e7cbe2ce8992ef96f020",
+    "effective_contract_identity": "oxid-unit4-parser-v1-location-amendment-v1",
+    "effective_parser_document_canonical_sha256": "c2d4f8db28f7815b3e17ca13fec9a7da70f0923dd052656edb339bc0cd7740cd",
+    "ordered_amendment_sha256": [
+      "70b7228c3b3c3cec074dc10a84e8e338ed9b443f6b95b1be883b9a43b225e451"
+    ]
+  },
+  "schema": "oxid-owned-record-composition-parser-amendment-v1",
+  "scope": "Only diagnostics_exact of six named ProjectCandidate parser cases; both profiles retain all638obligations and ordinarypassivity checks. Frozen cases, raw observations and all22predicate handlers unchanged.",
+  "source_tree": "f6b7dee8bac4ebcc27ad020db9940344c5e4ae41",
+  "status": "reviewed-current-only"
+}

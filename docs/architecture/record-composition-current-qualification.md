@@ -75,3 +75,44 @@ producer execution, independent Unit2D debug/release, Unit2/parser/public/CLI
 replay, resource checks and exact-head hosted checks must be recorded separately
 before describing the successor as qualified. This document does not imply
 completion of M2/M3, memory-safety proof, Rust compatibility, or v1.0.
+
+## Qualified-path parser diagnostic amendment
+
+The current parser comparison also carries the sealed
+`owned-record-composition-parser-v1` amendment. Exactly six retained migration
+cases change only `diagnostics_exact`: qualified/relative scalar-labelled field
+fixtures, each in plain, Unicode-LF and Unicode-CRLF form. Their actual fields
+are `crate::T` and `self::T`.
+
+`record()` now selects `ty_with_paths(true)`. For `crate::T`, the former blanket
+field-path denial disappears; the two existing later `pub` recovery diagnostics
+remain. For `self::T`, the absolute-prefix guard still rejects the same token,
+with its established absolute-path message replacing the old blanket field-path
+message. Both `pub` diagnostics, parse-error result and sticky recognition stay
+unchanged. Byte spans and line/columns were derived from the frozen UTF-8 source;
+no observed diagnostics were used as an expectation generator.
+
+The full original effective document and each source/old expectation are pinned.
+The successor changes only six exact predicates and proves complete reversal.
+All638 observations,22 comparator predicate handlers and12 ordinary passivity
+pairs remain required. The new comparison retains its unmodified frozen result
+and canonical identity alongside the current result. Earlier failed reports and
+raw observations remain untouched; no generic diagnostic normalization exists.
+
+## Scalar-record runtime observation successor
+
+`tests/qualification/record_composition_current_runtime_view_v1/` contains an
+additive, separately sealed actual-observation view and transfer-write hook.
+The view removes only exact current Record wrappers at owner/reference/loan and
+owned-result metadata sites. It rejects non-record domains, preserves invalid
+but representable IDs in negative tests, and proves structural/canonical round
+trip while retaining original raw bytes. Costs, outcomes, traces, spans and
+instruction semantics are never transformed.
+
+The transfer hook observes the exact successful `transfer_payload` leaf-store
+site. It checks scalar field/leaf offset and type agreement and captures real
+before/after bytes. It excludes empty-record sentinel and Invoke initialization
+rows, emits nothing for failed stores, and cannot duplicate the scalar store
+hook. Both the earlier overlay and the newly derived overlay have exact hashes
+and reversible substitutions. Full current54-case typing and152-case runtime
+execution are separate per-profile obligations, not implied by admission tests.

@@ -97,3 +97,19 @@ passing current parser result requires four fresh observer/control builds,
 unchanged effective comparator. Hosted qualification must run on the exact
 published integration head. Earlier failed and historical passed receipts remain
 unchanged and cannot be promoted into current passes.
+
+### Six-case composition diagnostic successor
+
+`record-composition-diagnostics-v1.json` and `record_composition_amendment.py`
+retain the original complete effective document and amend only six named
+ProjectCandidate `diagnostics_exact` predicates: qualified/relative field-path
+migration fixtures in plain, Unicode-LF and Unicode-CRLF form. Exact source and
+old expectation hashes, the complete before/after document hashes and reversal
+are checked. Absolute `crate::T` now passes the field-type grammar; unsupported
+`self::T` reaches the existing absolute-prefix guard. Later `pub` errors remain.
+
+No parser source, raw observation, comparator handler, corpus mode/count, resource
+predicate or passivity condition changes. The current result embeds the frozen
+comparison plus its canonical SHA, so the original failure and the current
+six-case successor are explicit side-by-side. The separately retained earlier
+comparison is never overwritten. All638 observations and22 handlers remain.

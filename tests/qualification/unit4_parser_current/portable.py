@@ -243,7 +243,7 @@ ARRAY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs", 
 DIVISION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/lexer.rs", "src/frontend/parser.rs")
 SLICES_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 COMPOSITION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
-AUTHORITY_SHA = "20828f511d01fd9a1aedb44624d20f42141b1667d89ccc79a77b55e0e520f195"
+AUTHORITY_SHA = "8f47bd47a7a1dd3df5e0acfa5e44b6c890da0a89b7303f54ed38e21f7364bc1e"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -351,7 +351,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["source_binding_runner"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -1348,6 +1348,21 @@ def effective_authority(a):
     return resolved
 
 
+def current_parser_contract(a, effective, predecessor_receipt):
+    """Admit the exact current-only six-case diagnostic successor."""
+    active = a["current"]
+    verify_map(REPOSITORY, [active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
+    module = types.ModuleType("unit4_record_composition_amendment")
+    module.__file__ = str(REPOSITORY / active["composition_parser_amendment_module"]["path"])
+    module_bytes = Path(module.__file__).read_bytes()
+    expected = active["composition_parser_amendment_module"]
+    same((len(module_bytes), sha(module_bytes)), (expected["bytes"], expected["sha256"]),
+         "composition parser module execution identity")
+    exec(compile(module_bytes, module.__file__, "exec"), module.__dict__)
+    return module.apply(effective, predecessor_receipt,
+                        (REPOSITORY / active["composition_parser_amendment"]["path"]).read_bytes())
+
+
 def compare(session_path, contract_dir):
     a = authority(); session, root = session_at(session_path, a)
     c, proof = comparator(); contract = c.load_contract(contract_dir)
@@ -1362,7 +1377,15 @@ def compare(session_path, contract_dir):
         same(actual, profile, "exact profile order")
         rows.extend(observed); identities[profile] = bound
     require(identities["debug"]["binary_sha256"] != identities["release"]["binary_sha256"], "same binary reused across profiles")
-    result = c.compare_effective_rows(effective, effective_receipt, rows, identities)
+    frozen_result = c.compare_effective_rows(effective, effective_receipt, rows, identities)
+    frozen_result.update(portable_authority_sha256=AUTHORITY_SHA, session=identity(session_path),
+                         derivation=proof, ordinary_passivity=ordinary_passivity)
+    current, current_receipt = current_parser_contract(a, effective, effective_receipt)
+    result = c.compare_rows(current, rows, identities)
+    result.update(current_receipt)
+    result["execution_contract"] = frozen_result["execution_contract"]
+    result["frozen_comparison"] = frozen_result
+    result["frozen_comparison_canonical_sha256"] = c.sha(c.canonical(frozen_result))
     result.update(portable_authority_sha256=AUTHORITY_SHA, session=identity(session_path), derivation=proof,
                   ordinary_passivity=ordinary_passivity, evidence_scope="fresh execution at recorded paths; hosting is not inferred")
     write(root / "comparison.json", result)
