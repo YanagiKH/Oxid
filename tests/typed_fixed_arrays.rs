@@ -191,6 +191,15 @@ fn public_array_excluded_grammar_and_length_caps() {
         if length <= 1024 {
             assert!(output.status.success(), "{length}: {output:?}");
             assert_eq!(output.stdout, format!("{length}\n").as_bytes());
+            if length == 1024 {
+                // The source cap does not expand the narrower native slot cap.
+                let native = project.json("compile");
+                assert_eq!(native.status.code(), Some(1));
+                let json = String::from_utf8(native.stdout).unwrap();
+                assert!(json.contains("\"code\":\"E0700\""), "{json}");
+                assert!(json.contains("\"stage\":\"native-admission\""), "{json}");
+                assert!(!json.contains("E0701"), "{json}");
+            }
         } else {
             assert_eq!(output.status.code(), Some(1));
             assert!(String::from_utf8(output.stderr).unwrap().contains("E0400"));
@@ -360,6 +369,7 @@ fn samples_project() -> Project {
     let main = include_str!("../fixtures/typed-array-samples/main.ox");
     // Check the full logical sequence independently as well as the checksum,
     // count and sum; a colliding weighted checksum cannot hide a wrong store.
+    assert_eq!(main.matches("    return crate::stats::count").count(), 1);
     let main = main.replace("    return crate::stats::count", "    if !(values[0] == 5 && values[1] == 7 && values[2] == 0 && values[3] == 9 && values[4] == 4 && values[5] == 0 && values[6] == 0 && values[7] == 0 && crate::stats::count(&result) == 5 && crate::stats::sum(&result) == 25) { return -1; }\n    return crate::stats::count");
     let project = Project::new(&main);
     fs::write(

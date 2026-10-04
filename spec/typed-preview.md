@@ -20,7 +20,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0012](../rfcs/0012-while-runtime-fuel.md),
 [RFC 0013](../rfcs/0013-loop-control.md),
 [RFC 0014](../rfcs/0014-owned-structs-call-borrows.md) and
-[RFC 0015](../rfcs/0015-bounded-typed-projects.md).
+[RFC 0015](../rfcs/0015-bounded-typed-projects.md) and
+[RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).
 
 ## Command and compatibility boundary
 
@@ -62,6 +63,56 @@ preview options are rejected. Backend/target/output options are available only f
 Manifest edition propagation and typed project builds are not implemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
+
+## Fixed scalar arrays
+
+Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept
+move-only `[bool; N]`, `[i32; N]` and `[(); N]` values for decimal lengths 0..1024.
+Nonempty literals infer one exact scalar element type and their element count:
+
+```text
+fn sum(a: &[i32; 2]) -> i32 { return a[0] + a[1]; }
+fn main() -> i32 {
+    let mut a: [i32; 2] = [5, 7];
+    a[0] = a[0] + 1;
+    return sum(&a) + a.len();
+}
+```
+
+This program returns 15. Equal element type and length identify the same array
+type across modules. Whole assignment, by-value calls and returns move the owner;
+indexed reads copy scalar snapshots. Writes require a mutable local or exclusive
+call-only reference. Borrow parameters use `&[T; N]` or `&mut [T; N]`, with the
+same exact-mode borrowing/reborrowing and whole-owner overlap rules as structs.
+Even a zero-length or unit array is move-only. `a.len()` also requires a readable,
+available owner, so it cannot bypass a move or an active exclusive loan.
+
+Only a named array local/parameter is an index or length base. Signed i32 indexes
+are checked at runtime: `0 <= i < N`; negative, upper-bound and every zero-array
+index fail with E0606/oir-owned-run, exactly `array index out of bounds`. Skipped
+branches do not execute bounds checks. For `a[index] = rhs`, the complete RHS is
+evaluated to a scalar snapshot before the index, then one access fuel unit is
+charged before checking bounds and storing. Earlier helper effects survive a
+later failure. Literal elements execute once, left to right.
+
+The empty literal has one narrow typing context: an explicitly annotated
+zero-length local initializer, such as `let a: [i32; 0] = ([]);`. It cannot infer
+from a call, return or replacement context. Length spellings may have leading
+zeros but not signs, separators, names or expressions. Arrays in record fields,
+nested/reference/record elements, repeated-element syntax, temporary or grouped
+index bases, element borrowing/moving, array equality/printing and slices remain
+unavailable. Existing source, ownership, runtime fuel and native admission limits
+are unchanged; native limits can reject a source-legal large program.
+
+`check` can accept an array-returning `main`; `run` and native compile still
+require an original zero-argument bool/i32/unit root main, rejecting other
+entries with E0600/E0700. The [three-module sample](../fixtures/typed-array-samples/README.md)
+returns 5325. Declared-child loading remains Linux-only; native compilation
+remains Linux x86_64 with LLVM 19.1.7 at O0. See [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md)
+for exact diagnostics, costs and exclusions, and the
+[public-route validation](../docs/architecture/fixed-array-public-validation.md)
+for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
+experimental and does not complete M2 or v1.0.
 
 ## Bounded typed projects
 
@@ -447,7 +498,7 @@ the predecessor's unsupported-keyword E0101 for those newly enabled keywords.
 The owned parser also recognizes struct/field/borrow syntax. Previously
 unsupported forms may therefore receive more precise errors: an `&bool`
 parameter changes from E0101/parse at `&` to E0202/resolve at `bool` because only
-record referents are supported. This does not enable scalar borrowing. Accepted
+record and fixed-scalar-array referents are supported. This does not enable scalar borrowing. Accepted
 scalar-only programs retain their behavior; byte-identical diagnostics are not
 promised for every formerly unsupported ownership token sequence.
 
@@ -456,8 +507,9 @@ promised for every formerly unsupported ownership token sequence.
 The compiler path is UTF-8 source → lossless token tape → spanned AST →
 resolved HIR → typed HIR → verified OIR. The source integration selects one
 route for the entire parsed project. Any struct declaration, non-scalar named
-type annotation/signature, reference parameter, struct literal, field access or
-borrow argument selects owned HIR and owned OIR for every function. This
+type annotation/signature, reference parameter, struct literal, field access,
+borrow argument, fixed-array type/literal, indexing or length access selects
+owned HIR and owned OIR for every function. This
 includes unused declarations and statically skipped paths; comments containing
 owned spellings do not select that route. Unknown nominal names also select it
 and fail resolution. Scalar-only modules retain the existing scalar pipeline,
@@ -632,7 +684,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return or loop control transfer |
 | E0304 | Mutation or exclusive borrowing of an immutable binding |
-| E0305 | Unknown projected field or projection on a non-record binding (type stage) |
+| E0305 | Unknown field, field projection on a non-record, or indexing/length on a non-array binding (type stage) |
 | E0310 | Owned value unavailable on a reaching path (ownership stage) |
 | E0311 | Access conflicts with an active loan (ownership stage) |
 | E0312 | Unsupported reference value use or forwarding form (type stage) |
@@ -645,6 +697,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0603 | Live local-slot limit exceeded |
 | E0604 | Checked i32 arithmetic overflow at its operator |
 | E0605 | Owned execution-plan, expanded-cell, requested-byte or allocation limit (oir-owned-run stage) |
+| E0606 | Signed array index out of bounds at the complete access or store target (oir-owned-run stage) |
 
 For check, exit 0 means successful type checking, lowering and OIR verification of this
 subset; for run it additionally means a bool/i32/unit result (including false, zero and negatives); ordinary source/CLI/resource failures still exit 1. Scalar lowering budget errors use E0400 with stage `oir-lower`; owned source
@@ -748,8 +801,8 @@ sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution
 ## Owned verification, execution and accounting
 
 Owned source lowering is a producer, never a proof. It emits explicit owner
-storage, construction/transfer/replacement/discard, field operations and ordered
-call/loan events. The independent raw verifier checks declarations, scalar CFG
+storage, construction/transfer/replacement/discard, field/index/length operations
+and ordered call/loan events. The independent raw verifier checks declarations, scalar CFG
 shape/dominance, availability and exact call/loan regions before constructing the
 sealed immutable owned witness. Reference and native consumers require that
 same witness through an immutable witness-bound plan. No mutable raw program,
@@ -757,8 +810,9 @@ standalone plan or source-side acceptance summary can authorize execution.
 
 For each function, let S count scalar locals and mutable places, A all call
 argument descriptors, O all owner slots, R incoming references, L loans, C call
-sites, and P the sum of `max(1, field_count)` for every owner. B is the checked
-aligned owner arena, including parameters, locals, expression temporaries,
+sites, and P the sum of each owner's width: `max(1, field_count)` for a record,
+`max(1, N)` for a fixed array. This includes zero-length and unit arrays. B is the
+checked aligned owner arena, including parameters, locals, expression temporaries,
 argument staging, call results and inter-owner padding. All declared storage is
 counted, including unused/skipped work. On the qualified x86_64 representation:
 
@@ -776,19 +830,28 @@ Execution-plan metadata is separately capped at 32 MiB. Owned return storage is
 already reserved in the caller's owner arena; no extra variable return scratch
 is hidden. Loops reuse activation storage with checked owner generations.
 
-The owned ledger charges before work. Let w be `max(1, field_count)` of the
-affected owner and r be the call's number of borrowed arguments:
+The owned ledger charges before work. Let w be the affected owner's width,
+`max(1, field_count)` for a record or `max(1, N)` for a fixed array, and r be the
+call's number of borrowed arguments:
 
 | Event | Fuel |
 | --- | ---: |
 | Root activation | `1 + X(root)` |
 | Scalar statement/merge, Branch/Goto, StorageLive, field read/write, scalar/borrow preparation | `1` |
-| Construct, move-initialize, discard, StorageEnd, owned preparation | `1 + w` |
+| Complete record/array construction, move-initialize, discard, StorageEnd, owned preparation | `1 + w` |
+| Array index read/write, after all operands | `1` before bounds and load/store |
+| Array length | `1` before consumer validation and result |
 | Whole replacement | `1 + 2w` |
 | OpenCall | `1 + owned_argument_count` |
 | Invoke | `1 + argc + X(callee) + sum(owned_argument_widths) + r(r-1)/2` |
 | Scalar return | `1 + P + L + C + R` |
 | Owned return | `scalar_return_charge + w(returned_owner)` |
+
+Array literal operands retain their own left-to-right evaluation costs before
+construction. Indexed writes evaluate the complete RHS before the index;
+operand failure skips the final access charge. Insufficient access fuel wins
+before bounds failure and performs no final access. Length still requires a
+statically available/readable base even though N is constant.
 
 Return's R term accounts for normal-edge loan release. Explicit lexical storage
 ends and frame teardown are distinct charged events, even for moved owners.
@@ -854,6 +917,7 @@ Owned source additionally applies the following inclusive preflight limits:
 | --- | ---: |
 | Nominal record declarations | 4,096 |
 | Fields per record / aggregate fields | 1,024 / 65,536 |
+| Fixed array length / elements per literal | 1,024 / 1,024 |
 | Checked declaration-table payload / sum of padded declaration layouts | 8 MiB / 1 MiB |
 | Aggregate scalar value/place plus owner slots | 100,000 |
 | Aggregate statements plus merges / expanded ownership events | 100,000 / 100,000 |
@@ -864,7 +928,8 @@ Owned source additionally applies the following inclusive preflight limits:
 
 Raw verification independently recounts actual nested vectors, rather than
 trusting source counts. Expanded events include statements/merges, call argument
-descriptors and preparation sites, and constructed field operands. Work is a
+descriptors and preparation sites, constructed field operands and every array
+constructor operand. Work is a
 checked inventory-based bound, not CPU instructions or a timeout. Declaration,
 raw-output, verifier, plan and consumer ledgers are separate admissions.
 

@@ -28,6 +28,11 @@ TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
+    "fixtures/typed-array-samples/main.ox": (
+        "fixtures/typed-array-samples/main.ox",
+        "fixtures/typed-array-samples/stats.ox",
+        "fixtures/typed-array-samples/samples.ox",
+    ),
     "fixtures/typed-project-batch/main.ox": (
         "fixtures/typed-project-batch/main.ox",
         "fixtures/typed-project-batch/jobs.ox",
@@ -130,6 +135,20 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     return legacy + [(source, True) for source in typed_entries], typed_entries, len(typed_members)
 
 
+def verify_test_fixture_registration(root: Path = ROOT) -> None:
+    """The CLI's opt-in exclusions must equal the already frozen data inventory."""
+    fixture_data = fixture_data_sources(root)
+    try:
+        manifest = tomllib.loads((root / "oxid.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"unreadable test fixture registration: {error}") from error
+    configured = manifest.get("test-fixtures", {})
+    expected = {path.relative_to(root).as_posix() for path in fixture_data}
+    if (not isinstance(configured, dict) or set(configured) != expected
+            or any(value is not True for value in configured.values())):
+        raise RuntimeError("test fixture registration must exactly match frozen source-only data")
+
+
 def main() -> int:
     executable = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/oxid").resolve()
     if not executable.is_file():
@@ -143,6 +162,7 @@ def main() -> int:
 
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
     checks, typed_entries, typed_member_count = source_plan(sources, ROOT)
+    verify_test_fixture_registration(ROOT)
     language_source_count = len(checks) + typed_member_count - len(typed_entries)
     print(
         f"fixture-data validation passed: {len(sources) - language_source_count} source-only files "

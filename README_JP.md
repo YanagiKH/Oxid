@@ -102,6 +102,8 @@ Oxid 0.9 は実験や小さなツール向けです。`.oxb` にはシリアラ�
 
 実験的な[型付きプロジェクト経路](spec/typed-preview.md#bounded-typed-projects)では、宣言専用モジュール、直接インポート、可視性を使用できます。[3 ファイルの Batch サンプル](fixtures/typed-project-batch/README.md)はフィールドを非公開に保ち、ソースから導いた結果は 816 です。宣言済み子モジュールの読み込みは現在 Linux に限定され、ルートファイルだけの構文にはこの探索用ホスト制限はありません。実際の検証範囲は[プロジェクト検証記録](docs/architecture/typed-project-unit4-validation.md)を参照してください。
 
+実験的な[固定長スカラー配列拡張](spec/typed-preview.md#fixed-scalar-arrays)は、typed-preview を明示した `check`、`run`、`compile` に、ムーブ専用 bool/i32/unit 配列、境界検査付き添字、`len()`、呼び出し中の配列全体の借用を追加します。[3 モジュールのサンプル](fixtures/typed-array-samples/README.md)は 5325 を返します。構文、対象プラットフォーム、より厳しいネイティブ制限は仕様を参照してください。既定および legacy の配列動作は変わりません。
+
 信頼できるプログラムだけを実行し、依存関係を確認してください。生成された C/C++ プロセスアダプターには、信頼できるパスだけを渡してください。脆弱性の非公開報告については[セキュリティポリシー](SECURITY.md)を参照してください。
 
 ## ソースからビルド

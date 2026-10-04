@@ -170,22 +170,26 @@ completion claim. See [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
 [source qualification](owned-source-validation.md).
 
 
-Fixed scalar arrays have private checked aggregate identity/layout, ownership
-and CFG validation, and bounded reference/native consumers for scalar elements.
-Both consumers are exercised through verifier-confined test entry points;
-production raw verification and typed source grammar still reject arrays.
-Legacy dynamic arrays retain their existing behavior. The
-[reference ledger](fixed-array-unit2c-validation.md) and
-[native ledger](fixed-array-unit2d-validation.md) record the exact local source,
-profile and execution limits. The committed controller completed one local
-producer and independent debug/release recipe, full retention and relocated
-compact admission. Exact-head hosted CI remains a separate publication gate. No public array
-feature count or v1.0 milestone completion follows from this groundwork.
+Fixed scalar arrays are now an experimental public typed-preview capability.
+Explicit check/run/native compile accepts move-only `[bool; N]`, `[i32; N]` and
+`[(); N]` for N=0..1024, named-base checked signed indexing, length and whole-array
+call-only borrows. Original files and bounded linked projects use the same
+checked source/ownership pipeline. Runtime writes snapshot the complete RHS
+before evaluating the index; fuel is charged before bounds. Default and explicit
+legacy dynamic arrays are unchanged. See the
+[current array contract](../../spec/typed-preview.md#fixed-scalar-arrays) and
+[public-route validation](fixed-array-public-validation.md) for new direct CLI
+and source-free native evidence. The [three-module sample](../../fixtures/typed-array-samples/README.md)
+returns 5325, with the test checking its complete final sequence.
 
-Private source work now covers dormant parsing, structural queries, HIR
-resolution and array typing through test-only entries. The
-[frontend ledger](fixed-array-unit3a-validation.md) records the parser boundary;
-the [typing ledger](fixed-array-unit3b1-validation.md) records the 54-case
-source-only comparison, bounded guard/resource controls and independently
-verified public replay. These results do not yet qualify source-array lowering,
-ownership or execution. Production array gates remain closed.
+The [reference ledger](fixed-array-unit2c-validation.md),
+[native ledger](fixed-array-unit2d-validation.md),
+[frontend ledger](fixed-array-unit3a-validation.md) and
+[typing ledger](fixed-array-unit3b1-validation.md) retain their historical gated
+source identities and results; they are not current public-route receipts.
+Private observation and ArrayConsumer admissions still cannot be promoted into
+public SourceProgram authority. Declared-child loading remains Linux-only, and
+native remains Linux x86_64 with LLVM 19.1.7 at O0 under stricter whole-program
+resource limits. Source-legal large arrays are not guaranteed native admission.
+Exact-head hosted CI remains separate. Nested arrays, slices, heap collections,
+element references and a v1.0 stability claim are outside this capability.

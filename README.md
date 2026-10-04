@@ -102,6 +102,8 @@ The opt-in [ownership-foundations extension](spec/typed-preview.md#nominal-owned
 
 The experimental [typed project route](spec/typed-preview.md#bounded-typed-projects) adds declaration-only modules, direct imports and visibility. The [three-file Batch example](fixtures/typed-project-batch/README.md) keeps its record fields private and has a source-derived result of 816. Declared-child loading admits Linux; root-only project syntax has no discovery host gate. Exact current qualification is recorded in the [project ledger](docs/architecture/typed-project-unit4-validation.md).
 
+The experimental [fixed scalar array extension](spec/typed-preview.md#fixed-scalar-arrays) adds move-only bool/i32/unit arrays, checked indexing, `len()` and whole-array call borrows to explicit typed-preview `check`, `run` and `compile`. The [three-module sample](fixtures/typed-array-samples/README.md) returns 5325. See the spec for grammar, platform and stricter native limits; default/legacy arrays are unchanged.
+
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.
 
 ## Build from source

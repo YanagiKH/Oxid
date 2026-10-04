@@ -38,7 +38,7 @@ currently admits Linux only.
 | `oxid new <name>` / `oxid init <name>` | Create a new directory and project scaffold; the directory must not exist |
 | `oxid web new <name>` / `oxid discord new <name>` | Create an HTTP or Discord starter project |
 | `oxid build [--offline\|--locked\|--frozen]` | Resolve dependencies and write `.oxid/bin/<project>.oxb` |
-| `oxid test` | Execute `.ox` files under `tests/` and `examples/` |
+| `oxid test` | Recursively execute `.ox` files under `tests/` and `examples/`, except explicitly registered source-data fixtures |
 | `oxid lint` | Run source checks across the project |
 | `oxid fmt [path]` | Rewrite source formatting in a file or project |
 | `oxid doctor` / `oxid diagnose` | Check the manifest, entry point, and project structure |
@@ -47,6 +47,28 @@ currently admits Linux only.
 | `oxid clean` | Delete the project's `.oxid` artifacts, caches, and dependency checkouts |
 
 `lint` currently runs syntax checks, not a separate static-analysis engine. Manifest scripts launch an executable and argument vector without a shell; see [Scripts](SCRIPTS.md).
+
+### Source-data fixtures
+
+Compiler inputs that are data rather than executable language tests can be
+registered by exact path in the current project's `oxid.toml`:
+
+```toml
+[test-fixtures]
+"tests/fixtures/parser/invalid-input.ox" = true
+```
+
+Paths are relative to that manifest's directory and must name existing `.ox`
+files beneath `tests/` or `examples/`. Directories, globs, parent traversal,
+absolute paths, symlinks, duplicate entries and values other than `true` are
+rejected before any tests execute. Unlisted files, including neighboring files
+in the same fixture directory, remain runnable. Without this section, recursive
+discovery is unchanged. Explicit `run` and `check` commands are unaffected, and
+a fixture-only project still reports that no runnable tests were found.
+
+In this repository, `scripts/verify_repo.py` requires these entries to match the
+validated frozen source-data inventory exactly. Registration does not establish
+compiler correctness or replace the dedicated tests for those inputs.
 
 ## Manage dependencies
 
