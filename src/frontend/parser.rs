@@ -694,10 +694,10 @@ impl Parser<'_> {
             let start = self.bump().span.start;
             let mutable = self.take(Kind::Mut).is_some();
             if self.arrays_enabled() && self.array_punctuation("[") {
-                let (array, end) = self.array_type()?;
+                let (kind, end) = self.array_parameter_type(mutable)?;
                 return Ok(TypeSyntax {
                     span: self.source.span(start, end),
-                    kind: TypeSyntaxKind::ArrayReference { mutable, array },
+                    kind,
                 });
             }
             let (referent, span) =

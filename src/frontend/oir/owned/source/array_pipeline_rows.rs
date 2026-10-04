@@ -65,6 +65,17 @@ impl fmt::Display for Aggregate {
         }
     }
 }
+struct Borrowed(BorrowedTy);
+impl fmt::Display for Borrowed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            BorrowedTy::Exact(aggregate) => Aggregate(aggregate).fmt(f),
+            BorrowedTy::ScalarSlice(element) => {
+                write!(f, "[\"scalar-slice\",{}]", ScalarType(element))
+            }
+        }
+    }
+}
 struct ValueType(ValueTy);
 impl fmt::Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -89,12 +100,9 @@ impl fmt::Display for ParameterType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             ParameterTy::Value(ty) => write!(f, "[\"value\",{}]", ValueType(ty)),
-            ParameterTy::Reference { aggregate, kind } => write!(
-                f,
-                "[\"reference\",{},{}]",
-                Aggregate(aggregate),
-                Borrow(kind)
-            ),
+            ParameterTy::Reference { referent, kind } => {
+                write!(f, "[\"reference\",{},{}]", Borrowed(referent), Borrow(kind))
+            }
         }
     }
 }
@@ -1092,7 +1100,7 @@ pub(super) fn raw(out: &mut Output, raw: &RawOwnedProgram) -> ObservationResult<
                 "raw-reference",
                 format_args!(
                     "{id},{reference},{},{},{},{}",
-                    Aggregate(r.aggregate()),
+                    Borrowed(r.referent()),
                     Borrow(r.kind),
                     r.position,
                     SpanRow(r.span)
@@ -1127,7 +1135,7 @@ pub(super) fn raw(out: &mut Output, raw: &RawOwnedProgram) -> ObservationResult<
                     l.argument,
                     Base(l.authority),
                     Borrow(l.kind),
-                    Aggregate(l.aggregate()),
+                    Borrowed(l.referent()),
                     SpanRow(l.span)
                 ),
             )?;

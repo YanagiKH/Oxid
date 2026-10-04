@@ -470,6 +470,14 @@ fn admit_accounted(
             "parameter count",
             f.span,
         )?;
+        // A slice contributes exactly one private i32 length beside its pointer.
+        // Keep the source parameter limit unchanged while bounding ABI expansion.
+        limit(
+            add(f.parameters.len(), slice_reference_count(f))?,
+            mul(limits.parameters, 2)?,
+            "flattened parameter count",
+            f.span,
+        )?;
         limit(
             u.scalar_slots,
             limits.function_slots,
@@ -1223,15 +1231,47 @@ fn field_pointer(out: &mut Emission, name: &str, base: &str, offset: usize) -> S
     .unwrap();
     format!("%{name}_ptr")
 }
-fn array_base(f: &RawOwnedFunction, base: AccessBase) -> FixedArrayTy {
-    let aggregate = match base {
-        AccessBase::Owner(owner) => f.owners[owner.0].aggregate(),
-        AccessBase::Parameter(reference) => f.references[reference.0].aggregate(),
-    };
-    let AggregateTy::FixedArray(array) = aggregate else {
-        unreachable!("verified array base")
-    };
-    array
+fn slice_reference_count(f: &RawOwnedFunction) -> usize {
+    f.references
+        .iter()
+        .filter(|reference| matches!(reference.referent(), BorrowedTy::ScalarSlice(_)))
+        .count()
+}
+fn slice_loan_count(f: &RawOwnedFunction) -> usize {
+    f.loans
+        .iter()
+        .filter(|loan| matches!(loan.referent(), BorrowedTy::ScalarSlice(_)))
+        .count()
+}
+fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
+    match base {
+        AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
+        AccessBase::Parameter(reference) => f.references[reference.0].referent(),
+    }
+}
+fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
+    match indexed_base(f, base) {
+        BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
+        BorrowedTy::ScalarSlice(_) => {
+            let AccessBase::Parameter(reference) = base else {
+                unreachable!("slices are borrowed parameter views")
+            };
+            writeln!(
+                out,
+                "  %{name}_length = load i32, ptr %rl{}, align 4",
+                reference.0
+            )
+            .unwrap();
+            format!("%{name}_length")
+        }
+        BorrowedTy::Exact(AggregateTy::Record(_)) => unreachable!("verified indexed base"),
+    }
+}
+fn element_stride(element: hir::Ty) -> usize {
+    match element {
+        hir::Ty::I32 => 4,
+        hir::Ty::Bool | hir::Ty::Unit => 1,
+    }
 }
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
@@ -1246,26 +1286,29 @@ fn index_pointer(
     statement: &OwnedStatement,
     diagnostics: &Diagnostics,
     out: &mut Emission,
-) -> (FixedArrayTy, String) {
+) -> (hir::Ty, String) {
     let (base, index) = match statement.kind {
         OwnedInstruction::ReadIndex { base, index, .. }
         | OwnedInstruction::WriteIndex { base, index, .. } => (base, index),
         _ => unreachable!("indexed operation"),
     };
     let f = &plan.witness().functions()[id.0];
-    let array = array_base(f, base);
+    let element = indexed_base(f, base)
+        .element()
+        .expect("verified indexed base");
+    let length = index_length(out, f, name, base);
     let index = load_operand(out, f, &format!("{name}_index"), index);
     let suffix = continuation(&statement.kind)
         .suffix()
         .expect("indexed continuation");
-    writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", array.length()).unwrap();
+    writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", length).unwrap();
     emit_failure(
         out,
         diagnostics,
         FailureKind::Bounds,
         plan::instruction_span(statement),
     );
-    writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", array.stride()).unwrap();
+    writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", element_stride(element)).unwrap();
     // Even resolving a reference base happens only on the successful edge.
     let base = base_pointer(out, name, base);
     writeln!(
@@ -1273,7 +1316,7 @@ fn index_pointer(
         "  %{name}_ptr = getelementptr i8, ptr {base}, i64 %{name}_offset"
     )
     .unwrap();
-    (array, format!("%{name}_ptr"))
+    (element, format!("%{name}_ptr"))
 }
 
 /// O(raw emit sites), never an eager walk of expanded scalar cells.
@@ -1556,6 +1599,14 @@ fn emit_function(
             _ => "ptr",
         };
         write!(out, "{separator}{t} %arg{i}").unwrap();
+        if let ParameterBinding::Reference(reference) = parameter {
+            if matches!(
+                f.references[reference.0].referent(),
+                BorrowedTy::ScalarSlice(_)
+            ) {
+                write!(out, ", i32 %arg{i}_length").unwrap();
+            }
+        }
         separator = ", ";
     }
     out.write_str(") noinline {\nentry:\n").unwrap();
@@ -1579,6 +1630,48 @@ fn emit_function(
             u.references + u.loans
         )
         .unwrap();
+    }
+    let slice_slots = slice_reference_count(f) + slice_loan_count(f);
+    if slice_slots != 0 {
+        writeln!(
+            out,
+            "  %slice_lengths = alloca [{slice_slots} x i32], align 4"
+        )
+        .unwrap();
+        // Only slice views retain lengths. Exact references keep their single
+        // pointer layout and array owners retain their existing payload layout.
+        let mut slot = 0;
+        for (i, reference) in f.references.iter().enumerate() {
+            if out.exceeded {
+                return;
+            }
+            out.ordinary_visits += 1;
+            if matches!(reference.referent(), BorrowedTy::ScalarSlice(_)) {
+                writeln!(
+                    out,
+                    "  %rl{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
+                    slot * 4
+                )
+                .unwrap();
+                slot += 1;
+            }
+        }
+        for (i, loan) in f.loans.iter().enumerate() {
+            if out.exceeded {
+                return;
+            }
+            out.ordinary_visits += 1;
+            if matches!(loan.referent(), BorrowedTy::ScalarSlice(_)) {
+                writeln!(
+                    out,
+                    "  %ll{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
+                    slot * 4
+                )
+                .unwrap();
+                slot += 1;
+            }
+        }
+        debug_assert_eq!(slot, slice_slots);
     }
     for i in 0..slots {
         if out.exceeded {
@@ -1631,7 +1724,10 @@ fn emit_function(
                 &format!("%arg{i}"),
             ),
             ParameterBinding::Reference(r) => {
-                writeln!(out, "  store ptr %arg{i}, ptr %r{}, align 8", r.0).unwrap()
+                writeln!(out, "  store ptr %arg{i}, ptr %r{}, align 8", r.0).unwrap();
+                if matches!(f.references[r.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                    writeln!(out, "  store i32 %arg{i}_length, ptr %rl{}, align 4", r.0).unwrap();
+                }
             }
             ParameterBinding::Owned(o) => transfer(
                 out,
@@ -1770,41 +1866,36 @@ fn emit_statement(
             }
         }
         OwnedInstruction::ReadIndex { destination, .. } => {
-            let (array, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
+            let (element, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
             writeln!(
                 out,
                 "  %{name}_value = load {}, ptr {ptr}, align 1",
-                ty(array.element())
+                ty(element)
             )
             .unwrap();
             store_slot(
                 out,
                 &format!("{name}_store"),
                 &format!("%s{}", destination.0),
-                array.element(),
+                element,
                 &format!("%{name}_value"),
             );
         }
         OwnedInstruction::WriteIndex { value, .. } => {
-            let (array, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
+            let (element, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
             // The operand is the scalar snapshot made before the index helper;
             // it is never recomputed from the mutated aggregate.
             let value = load_operand(out, f, &format!("{name}_value"), *value);
-            writeln!(
-                out,
-                "  store {} {value}, ptr {ptr}, align 1",
-                ty(array.element())
-            )
-            .unwrap();
+            writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(element)).unwrap();
         }
         OwnedInstruction::ArrayLength { destination, base } => {
-            let array = array_base(f, *base);
+            let length = index_length(out, f, name, *base);
             store_slot(
                 out,
                 &format!("{name}_store"),
                 &format!("%s{}", destination.0),
                 hir::Ty::I32,
-                &array.length().to_string(),
+                &length,
             );
         }
         OwnedInstruction::Scalar(_) => emit_scalar(plan, id, name, statement, diagnostics, out),
@@ -1942,6 +2033,12 @@ fn emit_statement(
                 f.references.len() + loan.0
             )
             .unwrap();
+            if matches!(f.loans[loan.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                // Stage the target view's length when its loan begins, alongside
+                // the pointer, before evaluating any later call argument.
+                let length = index_length(out, f, name, f.loans[loan.0].authority);
+                writeln!(out, "  store i32 {length}, ptr %ll{}, align 4", loan.0).unwrap();
+            }
         }
         // The witness proves these logical transitions. Backing storage remains
         // allocated throughout the activation, including suspended staging.
@@ -2132,7 +2229,8 @@ fn emit_terminator(
             let callee = &plan.witness().functions()[descriptor.target.0];
             // Bounded by MAX_PARAMS; argument strings are emission scratch only,
             // never runtime A-sized scalar or owned result scratch.
-            let mut args = Vec::with_capacity(descriptor.arguments.len() + 2);
+            let mut args =
+                Vec::with_capacity(descriptor.arguments.len() + slice_reference_count(callee) + 2);
             if guarded {
                 args.push("ptr %fuel".into());
             }
@@ -2166,6 +2264,15 @@ fn emit_terminator(
                         )
                         .unwrap();
                         args.push(format!("ptr %{name}_arg{i}"));
+                        if matches!(f.loans[l.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                            writeln!(
+                                out,
+                                "  %{name}_arg{i}_length = load i32, ptr %ll{}, align 4",
+                                l.0
+                            )
+                            .unwrap();
+                            args.push(format!("i32 %{name}_arg{i}_length"));
+                        }
                     }
                 }
             }

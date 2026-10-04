@@ -154,7 +154,9 @@ fn type_syntax(
 ) -> Result<Ty, Box<Diagnostic>> {
     if matches!(
         ty.kind,
-        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
+        ast::TypeSyntaxKind::Array(_)
+            | ast::TypeSyntaxKind::ArrayReference { .. }
+            | ast::TypeSyntaxKind::SliceReference { .. }
     ) {
         return Err(Diagnostic::new(
             "E0500",

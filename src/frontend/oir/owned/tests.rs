@@ -154,7 +154,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     callee.references.push(ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind,
         position: 0,
         span,
@@ -178,7 +178,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind,
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span,
     });
     f.blocks[0].statements.extend([
@@ -651,7 +651,7 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
         let mut f = unit_function(0, s);
         f.references = (0..count)
             .map(|position| ReferenceDecl {
-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
                     .unwrap(),
                 kind: BorrowKind::Shared,
                 position,
@@ -1121,7 +1121,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
     f.owners.clear();
     f.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     f.references = vec![ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind: parent,
         position: 0,
         span: s,
@@ -1140,7 +1140,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
         argument: 1,
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: children[1],
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span: s,
     });
     f.blocks[0].statements.push(instruction(
@@ -1156,7 +1156,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(1)));
     target.references.push(ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind: children[1],
         position: 1,
         span: s,
@@ -1295,7 +1295,8 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
                     }
                     3 | 4 => {
                         function.references.push(ReferenceDecl {
-                            aggregate: slot,
+                            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate()))
+                                .unwrap(),
                             kind: BorrowKind::Shared,
                             position: 0,
                             span: s,
@@ -1307,7 +1308,7 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
                         }
                     }
                     5 => function.loans.push(LoanDecl {
-                        aggregate: slot,
+                        referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
                         kind: BorrowKind::Shared,
                         call: CallSiteId(0),
                         argument: 0,
@@ -1377,7 +1378,7 @@ fn array_preflight_and_declarations_still_precede_shape_checks() {
     for ty in [
         ParameterTy::Value(ValueTy::Owned(aggregate)),
         ParameterTy::Reference {
-            aggregate,
+            referent: BorrowedTy::Exact(aggregate),
             kind: BorrowKind::Shared,
         },
     ] {
@@ -1410,7 +1411,7 @@ fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
         let mut raw = borrowed(s, BorrowKind::Shared);
         let f = &mut raw.functions[0];
         f.calls[0].span = at(10);
-        f.loans[0].aggregate = invalid;
+        f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(invalid.aggregate())).unwrap();
         match defect {
             0 => (),
             1 => f.loans[0].call = CallSiteId(4096),
@@ -1434,7 +1435,10 @@ fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
                 raw.functions[0].result = ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))
             }
             1 => raw.functions[0].owners[0].aggregate = invalid,
-            2 => raw.functions[1].references[0].aggregate = invalid,
+            2 => {
+                raw.functions[1].references[0].referent =
+                    BorrowedSlot::check(BorrowedTy::Exact(invalid.aggregate())).unwrap()
+            }
             _ => unreachable!(),
         }
         let failure = error(raw, &sources);
@@ -1474,8 +1478,9 @@ fn unit2b_promoted_record_loan_defects_preserve_all_short_circuits() {
                 }
             }
             if defects & 1 != 0 {
-                f.loans[0].aggregate =
-                    AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(4096))).unwrap();
+                f.loans[0].referent =
+                    BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(4096))))
+                        .unwrap();
             }
             if defects & 2 != 0 {
                 f.loans[0].call = CallSiteId(4096);

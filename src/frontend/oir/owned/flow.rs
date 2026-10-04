@@ -33,16 +33,16 @@ pub(super) enum DeniedSubject {
     Owner(OwnerSubject),
     Reference {
         id: ReferenceParamId,
-        aggregate: AggregateSlot,
+        referent: BorrowedSlot,
         granted: BorrowKind,
         declaration: Span,
     },
 }
 impl DeniedSubject {
-    pub(super) fn aggregate(self) -> AggregateTy {
+    pub(super) fn referent(self) -> BorrowedTy {
         match self {
-            Self::Owner(owner) => owner.aggregate(),
-            Self::Reference { aggregate, .. } => aggregate.aggregate(),
+            Self::Owner(owner) => BorrowedTy::Exact(owner.aggregate()),
+            Self::Reference { referent, .. } => referent.referent(),
         }
     }
 }
@@ -108,7 +108,7 @@ impl DenialContext {
                 let r = f.references.get(id.0)?;
                 DeniedSubject::Reference {
                     id,
-                    aggregate: r.aggregate,
+                    referent: r.referent,
                     granted: r.kind,
                     declaration: r.span,
                 }
@@ -728,12 +728,15 @@ enum Access {
     End,
     Borrow(BorrowKind),
 }
+fn views_may_alias(a: BorrowedTy, b: BorrowedTy) -> bool {
+    a.accepts(b) || b.accepts(a)
+}
 fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
     match (a, b) {
         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
             a == b
-                || (f.references[a.0].aggregate() == f.references[b.0].aggregate()
+                || (views_may_alias(f.references[a.0].referent(), f.references[b.0].referent())
                     && f.references[a.0].kind == BorrowKind::Shared
                     && f.references[b.0].kind == BorrowKind::Shared)
         }

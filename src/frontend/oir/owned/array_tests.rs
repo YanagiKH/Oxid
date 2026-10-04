@@ -449,7 +449,10 @@ fn unit2b_denials_preserve_distinct_operation_role_and_origins() {
                 flow::ObservedState::Moved
             )
         );
-        assert_eq!(facts.subject.aggregate(), expected_aggregate);
+        assert_eq!(
+            facts.subject.referent(),
+            BorrowedTy::Exact(expected_aggregate)
+        );
         assert_eq!(charge_span, at(s, 71));
     }
     let mut raw = fixture(s, hir::Ty::I32, 2);
@@ -619,14 +622,14 @@ fn unit2b_structural_identity_controls_loans_moves_and_returns() {
                 o.aggregate = slot;
             }
             for r in &mut f.references {
-                r.aggregate = slot;
+                r.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
                 r.span = Span {
                     file: foreign,
                     ..r.span
                 };
             }
             for l in &mut f.loans {
-                l.aggregate = slot;
+                l.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
             }
             for b in &mut f.blocks {
                 for i in &mut b.statements {
@@ -641,7 +644,9 @@ fn unit2b_structural_identity_controls_loans_moves_and_returns() {
         }
         // Structural identity carries no first-use file association.
         assert!(probe(&raw, &sources).is_ok());
-        raw.functions[1].references[0].aggregate = array_slot(hir::Ty::Bool, 0);
+        raw.functions[1].references[0].referent =
+            BorrowedSlot::check(BorrowedTy::Exact(array_slot(hir::Ty::Bool, 0).aggregate()))
+                .unwrap();
         let call_span = raw.functions[0].calls[0].span;
         malformed(&raw, &sources, Malformed::Binding, Some(call_span));
     }

@@ -39,3 +39,8 @@ mod array_pipeline;
 
 #[cfg(test)]
 mod array_consumer_tests;
+
+#[cfg(test)]
+mod slice_raw_tests;
+#[cfg(test)]
+mod slice_tests;

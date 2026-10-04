@@ -61,7 +61,7 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
     ) && facts.role == Role::ArrayBase
         && facts.counterpart.is_none()
         && facts.requested_borrow.is_none()
-        && matches!(facts.subject.aggregate(), AggregateTy::FixedArray(_))
+        && facts.subject.referent().element().is_some()
         && named_subject(facts.subject);
     let borrow = facts.operation == Op::PrepareBorrow
         && facts.role == Role::BorrowAuthority

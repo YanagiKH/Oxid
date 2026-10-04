@@ -2,7 +2,7 @@
 pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 pub(super) use crate::frontend::hir::{DefId, Ty};
 pub(super) use crate::frontend::oir::owned_types::{
-    AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+    AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
 };
 use crate::frontend::source::Span;
 

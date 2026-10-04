@@ -229,10 +229,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                     self.register(owner, binding.span)?;
                     BindingLocation::Owner(owner)
                 }
-                ParameterTy::Reference {
-                    aggregate: record,
-                    kind,
-                } => {
+                ParameterTy::Reference { referent, kind } => {
                     let id = ReferenceParamId(self.counts.references);
                     self.counts.references = budget::add(self.counts.references, 1)?;
                     self.counts.ownership_active = true;
@@ -240,7 +237,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                         budget::append(
                             &mut out.raw.references,
                             ReferenceDecl {
-                                aggregate: AggregateSlot::try_from_aggregate(record)?,
+                                referent: BorrowedSlot::check(referent)?,
                                 kind,
                                 position: index,
                                 span: binding.span,
@@ -1135,13 +1132,16 @@ impl<'a, 'b> Walk<'a, 'b> {
                     let binding = match place {
                         source::BorrowPlace::Owner(id) | source::BorrowPlace::Forwarded(id) => *id,
                     };
-                    let record = match self.view.binding_ty(binding) {
-                        ParameterTy::Value(ValueTy::Owned(record))
-                        | ParameterTy::Reference {
-                            aggregate: record, ..
-                        } => record,
-                        _ => return Err(invariant(*span)),
+                    // The argument retains its original authority identity, while the
+                    // loan carries exactly the callee's contextual borrowed view.
+                    let ParameterTy::Reference {
+                        referent,
+                        kind: expected_kind,
+                    } = self.view.call_parameter_ty(*target, argument)
+                    else {
+                        return Err(invariant(*span));
                     };
+                    require(*kind == expected_kind, *span)?;
                     let authority = self.base(binding, *span)?;
                     let loan = LoanId(self.counts.loans);
                     self.counts.loans = budget::add(self.counts.loans, 1)?;
@@ -1153,7 +1153,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 argument,
                                 authority,
                                 kind: *kind,
-                                aggregate: AggregateSlot::try_from_aggregate(record)?,
+                                referent: BorrowedSlot::check(referent)?,
                                 span: *span,
                             },
                             out.expected.loans,

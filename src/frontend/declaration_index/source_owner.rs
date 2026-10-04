@@ -215,6 +215,7 @@ impl<'s> SourceOwner<'s> {
             ast::TypeSyntaxKind::Reference { .. }
             | ast::TypeSyntaxKind::Array(_)
             | ast::TypeSyntaxKind::ArrayReference { .. }
+            | ast::TypeSyntaxKind::SliceReference { .. }
             | ast::TypeSyntaxKind::Name(ast::ItemPath::Absolute(_)) => Ok(true),
             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
                 let text = self.text(name)?;

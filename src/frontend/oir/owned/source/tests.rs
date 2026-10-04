@@ -388,7 +388,7 @@ fn typed_views_retain_identity_order_modes_projections_and_exact_origins() {
     assert_eq!(
         view.binding_ty(BindingId(1)),
         ParameterTy::Reference {
-            aggregate: AggregateTy::Record(RecordId(0)),
+            referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
             kind: BorrowKind::Exclusive
         }
     );

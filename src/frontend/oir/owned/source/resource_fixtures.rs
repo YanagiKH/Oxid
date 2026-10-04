@@ -184,3 +184,29 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
         1
     );
 }
+
+/// Native slice qualification uses the enabled array grammar while preserving
+/// the historical record-only helper and its frozen resource fixtures.
+pub(in crate::frontend::oir::owned) fn checked_arrays(text: &str) -> CheckedSource {
+    let mut sources = SourceMap::new();
+    let file = sources.add("slice-native.ox".into(), text.into());
+    let source = sources.get(file);
+    let (ast, _) = parser::parse_counted_with_arrays(
+        source,
+        lexer::lex(source).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+        parser::MAX_NODES,
+        &mut crate::frontend::project::budget::Allocator::default(),
+        parser::ArraySyntaxPolicy::Enabled,
+    )
+    .unwrap();
+    let typed = typeck::check(resolve::resolve_in_map(source, &ast, &sources).unwrap()).unwrap();
+    let entry = typed.entry().unwrap();
+    let raw = lower::lower(&typed).unwrap();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    CheckedSource {
+        sources,
+        witness,
+        entry,
+    }
+}

@@ -203,6 +203,15 @@ impl<'a> Fingerprint<'a> {
                 self.tag("array-type");
                 self.array_type(array);
             }
+            TypeSyntaxKind::SliceReference { mutable, element } => {
+                self.tag("slice-reference-type");
+                self.flag(mutable);
+                self.tag(match element {
+                    ScalarTypeSyntax::Bool => "bool",
+                    ScalarTypeSyntax::I32 => "i32",
+                    ScalarTypeSyntax::Unit => "unit",
+                });
+            }
             TypeSyntaxKind::ArrayReference { mutable, array } => {
                 self.tag("array-reference-type");
                 self.flag(mutable);
@@ -663,6 +672,10 @@ mod absent;use crate::absent::item;
 fn types(a:[bool;0],b:[i32;0002],c:[();1],s:&[bool;0],m:&mut [i32;2])->[();0]{
 let z:[();0]=([]);let mut values=[0001,- 2,];values[(0)]=m[1]+values.len();
 sink(&values,&mut *m,&*s);return [];}
+"#),
+    ("slice-types-and-reborrows", r#"
+fn view(s:&[i32],b:&[bool],u:&[()])->i32{return s.len();}
+fn mutate(p:&mut /* view */ [i32])->(){p[0]=p[0]+1;mutate(&mut *p);view(&*p,&*p,&*p);return;}
 "#),
     ("array-syntax-only-and-multiline", r#"
 fn loose()->(){let nested=[[1],[]];let mixed=[true,(),missing(),Record{x:1},[2],];
