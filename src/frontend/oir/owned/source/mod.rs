@@ -33,3 +33,6 @@ mod array_types_tests;
 
 #[cfg(test)]
 mod array_type_controls;
+
+#[cfg(test)]
+mod array_pipeline;

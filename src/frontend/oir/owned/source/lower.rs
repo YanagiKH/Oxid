@@ -144,12 +144,15 @@ struct Walk<'a, 'b> {
     active: usize,
     next_expression: usize,
     preparing: Option<(CallSiteId, usize)>,
+    #[cfg(test)]
+    pass: super::array_pipeline::LowerPass,
 }
 impl<'a, 'b> Walk<'a, 'b> {
     fn new(
         view: &'a TypedOwnedFunction<'a>,
         block_counts: Option<&'b mut [usize]>,
         expected: Option<Counts>,
+        #[cfg(test)] pass: super::array_pipeline::LowerPass,
     ) -> Result<Self> {
         if !view.admission().allows_lowering() {
             return Err(invariant(view.signature().span));
@@ -189,6 +192,8 @@ impl<'a, 'b> Walk<'a, 'b> {
             active: 0,
             next_expression: 0,
             preparing: None,
+            #[cfg(test)]
+            pass,
         };
         this.inventory()?;
         let entry = this.block(view.signature().span)?;
@@ -442,6 +447,13 @@ impl<'a, 'b> Walk<'a, 'b> {
             self.view.hir().expressions[id.0].span,
         )?;
         self.next_expression += 1;
+        #[cfg(test)]
+        super::array_pipeline::completed(
+            self.pass,
+            self.view.hir().id.0,
+            id.0,
+            self.view.hir().expressions[id.0].span,
+        );
         Ok(())
     }
     fn block(&mut self, span: Span) -> Result<BlockId> {
@@ -695,6 +707,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                             budget::add(self.counts.constructed_elements, elements.len())?;
                         self.check_counts()?;
                         let mut values = if self.output.is_some() {
+                            #[cfg(test)]
+                            super::array_pipeline::literal_context(
+                                self.view.hir().id.0,
+                                id.0,
+                                self.counts,
+                            );
                             budget::reserve_array_operands(elements.len())?
                         } else {
                             Vec::new()
@@ -1596,10 +1614,45 @@ pub(super) fn count_function(
     view: &TypedOwnedFunction<'_>,
     blocks: Option<&mut [usize]>,
 ) -> Result<Counts> {
-    let mut walk = Walk::new(view, blocks, None)?;
+    #[cfg(test)]
+    let pass = if blocks.is_some() {
+        super::array_pipeline::LowerPass::BlockCount
+    } else {
+        super::array_pipeline::LowerPass::EmissionCount
+    };
+    count_function_for(
+        view,
+        blocks,
+        #[cfg(test)]
+        pass,
+    )
+}
+pub(super) fn count_preflight_function(view: &TypedOwnedFunction<'_>) -> Result<Counts> {
+    count_function_for(
+        view,
+        None,
+        #[cfg(test)]
+        super::array_pipeline::LowerPass::PreflightCount,
+    )
+}
+fn count_function_for(
+    view: &TypedOwnedFunction<'_>,
+    blocks: Option<&mut [usize]>,
+    #[cfg(test)] pass: super::array_pipeline::LowerPass,
+) -> Result<Counts> {
+    let mut walk = Walk::new(
+        view,
+        blocks,
+        None,
+        #[cfg(test)]
+        pass,
+    )?;
     #[cfg(test)]
     budget::guard_event(budget::GuardEvent::CountEntry);
-    walk.body()?;
+    let result = walk.body();
+    #[cfg(test)]
+    super::array_pipeline::counted(pass, view.hir().id.0, walk.counts, result.is_ok());
+    result?;
     Ok(walk.counts)
 }
 pub(super) fn scratch_bytes(view: &TypedOwnedFunction<'_>, count: Counts) -> Result<usize> {
@@ -1672,8 +1725,26 @@ pub(super) fn lower_with_limits(
             count_function(&view, Some(&mut blocks))? == count,
             view.signature().span,
         )?;
-        let mut walk = Walk::new(&view, Some(&mut blocks), Some(count))?;
-        walk.body()?;
+        #[cfg(test)]
+        for (block, statements) in blocks.iter().copied().enumerate() {
+            super::array_pipeline::counted_block(view.hir().id.0, block, statements);
+        }
+        let mut walk = Walk::new(
+            &view,
+            Some(&mut blocks),
+            Some(count),
+            #[cfg(test)]
+            super::array_pipeline::LowerPass::Emit,
+        )?;
+        let result = walk.body();
+        #[cfg(test)]
+        super::array_pipeline::counted(
+            super::array_pipeline::LowerPass::Emit,
+            view.hir().id.0,
+            walk.counts,
+            result.is_ok(),
+        );
+        result?;
         require(walk.counts == count, view.signature().span)?;
         let output = walk
             .output
@@ -1711,7 +1782,13 @@ pub(super) fn lower_with_limits(
 /// the source test boundary; it cannot return raw storage or executable authority.
 #[cfg(test)]
 pub(super) fn check_array_type_emission_fence(view: &TypedOwnedFunction<'_>) -> Result<()> {
-    Walk::new(view, None, Some(Counts::default())).map(|_| ())
+    Walk::new(
+        view,
+        None,
+        Some(Counts::default()),
+        super::array_pipeline::LowerPass::Emit,
+    )
+    .map(|_| ())
 }
 
 #[test]

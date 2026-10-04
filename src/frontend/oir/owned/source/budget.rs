@@ -71,9 +71,10 @@ pub(super) fn reserve_array_operands(count: usize) -> Result<Vec<Operand>, Owned
         None => requested,
     });
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(requested)
-        .map_err(|_| OwnedFailure::resource("source allocation"))?;
+    let result = values.try_reserve_exact(requested);
+    #[cfg(test)]
+    super::array_pipeline::literal_reserved(count, requested == usize::MAX, result.is_ok());
+    result.map_err(|_| OwnedFailure::resource("source allocation"))?;
     Ok(values)
 }
 pub(super) fn filled<T: Clone>(count: usize, value: T) -> Result<Vec<T>, OwnedFailure> {
@@ -163,7 +164,7 @@ pub(super) fn preflight(
     guard_event(GuardEvent::FunctionIteration);
     for view in typed.functions() {
         let span = view.signature().span;
-        let count = lower::count_function(&view, None).map_err(|error| at(error, span))?;
+        let count = lower::count_preflight_function(&view).map_err(|error| at(error, span))?;
         raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)
             .map_err(|error| at(error, span))?;
         bytes = cap(
