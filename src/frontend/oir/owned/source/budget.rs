@@ -41,6 +41,8 @@ fn at(mut error: OwnedFailure, span: Span) -> OwnedFailure {
 }
 pub(super) fn reserve<T>(count: usize) -> Result<Vec<T>, OwnedFailure> {
     #[cfg(test)]
+    guard_event(GuardEvent::RawReservation);
+    #[cfg(test)]
     allocation_test_point()?;
     let mut values = Vec::new();
     values
@@ -106,6 +108,14 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
+    if !typed.admission().executable() {
+        return Err(OwnedFailure::malformed(
+            Malformed::CanonicalSite,
+            typed.index().sources().eof(),
+        ));
+    }
+    #[cfg(test)]
+    guard_event(GuardEvent::DeclarationAdmission);
     let declarations = admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
     admit_scalar_layouts(
         typed
@@ -123,6 +133,8 @@ pub(super) fn preflight(
     cap(bytes, ceiling, "source raw payload")?;
     let mut scratch = 0;
     let mut counts = raw_budget::ProgramCounts::default();
+    #[cfg(test)]
+    guard_event(GuardEvent::FunctionIteration);
     for view in typed.functions() {
         let span = view.signature().span;
         let count = lower::count_function(&view, None).map_err(|error| at(error, span))?;
@@ -167,4 +179,36 @@ pub(super) fn fail_allocation_after<T>(count: usize, operation: impl FnOnce() ->
     ALLOCATION_FAILURE.with(|point| point.set(Some(count)));
     let _reset = Reset;
     operation()
+}
+
+/// Fixed-size passive sentinels for the private types-only entry fences. No
+/// source payload or unbounded observation log is retained.
+#[cfg(test)]
+#[derive(Clone, Copy)]
+pub(super) enum GuardEvent {
+    DeclarationAdmission,
+    FunctionIteration,
+    CountEntry,
+    InventoryEntry,
+    BlockAllocation,
+    RawReservation,
+    EmitStep,
+}
+#[cfg(test)]
+thread_local! { static GUARD_COUNTS: std::cell::Cell<[usize; 7]> = const { std::cell::Cell::new([0; 7]) }; }
+#[cfg(test)]
+pub(super) fn guard_event(event: GuardEvent) {
+    GUARD_COUNTS.with(|counts| {
+        let mut next = counts.get();
+        next[event as usize] = next[event as usize].saturating_add(1);
+        counts.set(next);
+    });
+}
+#[cfg(test)]
+pub(super) fn reset_guard_counts() {
+    GUARD_COUNTS.with(|counts| counts.set([0; 7]));
+}
+#[cfg(test)]
+pub(super) fn guard_counts() -> [usize; 7] {
+    GUARD_COUNTS.with(|counts| counts.get())
 }

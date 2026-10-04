@@ -23,6 +23,14 @@ pub(in crate::frontend::oir) fn check_source(
 pub(in crate::frontend::oir) fn check_typed(
     typed: &typeck::TypedOwnedProgram<'_>,
 ) -> Result<SourceProgram, Vec<Diagnostic>> {
+    if !typed.admission().executable() {
+        return Err(vec![*crate::frontend::owned_diagnostic::diagnostic(
+            "E0500",
+            "oir-owned-lower",
+            format_args!("internal compiler error: owned invariant violation"),
+            Some(typed.index().sources().eof()),
+        )]);
+    }
     let index = typed.index();
     let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);

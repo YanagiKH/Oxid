@@ -1,5 +1,8 @@
 //! Complete source typing, deliberately without an ownership/loan checker.
-use super::{hir::*, resolve::ResolvedOwnedProgram};
+use super::{
+    hir::*,
+    resolve::{ResolvedOwnedProgram, SourceAdmission},
+};
 use crate::frontend::{
     declaration_index::{Access, PreparedTypeName},
     diagnostic::Diagnostic,
@@ -76,11 +79,15 @@ impl FlowSummary {
 }
 
 pub(super) struct TypedOwnedFunction<'a> {
+    admission: SourceAdmission,
     function: &'a Function,
     signature: &'a Signature,
     body: &'a TypedBody,
 }
 impl TypedOwnedProgram<'_> {
+    pub(super) fn admission(&self) -> SourceAdmission {
+        self.program.admission()
+    }
     pub(super) fn index(&self) -> &crate::frontend::declaration_index::DeclarationIndex<'_> {
         self.program.index()
     }
@@ -113,6 +120,7 @@ impl TypedOwnedProgram<'_> {
                 assert!(body.block_flows[function.body.0].returns_only());
                 assert_eq!(&body.bindings[..signature.params.len()], &signature.params);
                 TypedOwnedFunction {
+                    admission: self.admission(),
                     function,
                     signature,
                     body,
@@ -121,6 +129,9 @@ impl TypedOwnedProgram<'_> {
     }
 }
 impl<'a> TypedOwnedFunction<'a> {
+    pub(super) fn admission(&self) -> SourceAdmission {
+        self.admission
+    }
     pub(super) fn hir(&self) -> &'a Function {
         self.function
     }
@@ -169,12 +180,14 @@ impl Label for Box<Diagnostic> {
 #[allow(clippy::large_enum_variant)] // Both bounded formatter frames are preaccounted; no heap allocation.
 enum TypeName<'a> {
     Scalar(Ty),
+    Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
 }
 impl std::fmt::Display for TypeName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Scalar(ty) => write!(f, "{ty}"),
+            Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
         }
     }
@@ -189,9 +202,7 @@ fn type_name<'a>(
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
-        ValueTy::Owned(AggregateTy::FixedArray(_)) => {
-            Err(error("E0500", "unsupported aggregate type", span))
-        }
+        ValueTy::Owned(AggregateTy::FixedArray(array)) => Ok(TypeName::Array(array)),
     }
 }
 fn mismatch(
@@ -289,6 +300,29 @@ fn projection(
     }
     Ok(Projection { base, field })
 }
+fn array_access(
+    function: &Function,
+    binding: BindingId,
+    access_span: Span,
+    bindings: &[Option<ParameterTy>],
+) -> Result<(AccessBase, FixedArrayTy), Box<Diagnostic>> {
+    match bindings[binding.0].expect("resolved array base initialized") {
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
+            Ok((AccessBase::Owner(binding), array))
+        }
+        ParameterTy::Reference {
+            aggregate: AggregateTy::FixedArray(array),
+            kind,
+        } => Ok((AccessBase::Reference { binding, kind }, array)),
+        _ => Err(error(
+            "E0305",
+            "array access requires an array binding",
+            access_span,
+        )
+        .owned_secondary(function.bindings[binding.0].span, "binding declared here")),
+    }
+}
+
 fn borrow_type(
     function: &Function,
     kind: BorrowKind,
@@ -532,6 +566,61 @@ fn expression_type(
             }
             ValueTy::Owned(AggregateTy::Record(*record))
         }
+        ExprKind::ArrayLiteral { elements } => {
+            program.work().debit(1, expr.span, "array type literal")?;
+            if elements.is_empty() {
+                return Err(error("E0300", "empty array literal requires an explicit array annotation on its local initializer", expr.span));
+            }
+            let mut element_type = None;
+            for element in elements {
+                program.work().debit(1, expr.span, "array type edge")?;
+                let actual = child(*element)?;
+                let ValueTy::Scalar(scalar_type) = actual else {
+                    return Err(error(
+                        "E0300",
+                        "array elements must have scalar bool, i32 or () type",
+                        function.expressions[element.0].span,
+                    ));
+                };
+                if let Some(expected) = element_type {
+                    if scalar_type != expected {
+                        return Err(mismatch(
+                            program,
+                            scalar(expected),
+                            actual,
+                            function.expressions[element.0].span,
+                        ));
+                    }
+                } else {
+                    element_type = Some(scalar_type);
+                }
+            }
+            let array =
+                FixedArrayTy::check(element_type.expect("nonempty literal"), elements.len())
+                    .map_err(|_| error("E0500", "invalid resolved array length", expr.span))?;
+            ValueTy::Owned(AggregateTy::FixedArray(array))
+        }
+        ExprKind::IndexRead { base, index, .. } => {
+            program.work().debit(1, expr.span, "array type read")?;
+            let actual = child(*index)?;
+            program.work().debit(1, expr.span, "array type access")?;
+            let (_, array) = array_access(function, *base, expr.span, bindings)?;
+            if actual != scalar(Ty::I32) {
+                return Err(mismatch(
+                    program,
+                    scalar(Ty::I32),
+                    actual,
+                    function.expressions[index.0].span,
+                ));
+            }
+            scalar(array.element())
+        }
+        ExprKind::ArrayLength { base, .. } => {
+            program.work().debit(1, expr.span, "array type length")?;
+            program.work().debit(1, expr.span, "array type access")?;
+            array_access(function, *base, expr.span, bindings)?;
+            scalar(Ty::I32)
+        }
         ExprKind::FieldRead {
             base,
             base_span,
@@ -556,17 +645,70 @@ fn expression_type(
             ty
         }
     };
+    finish_expression_type(program, function, id, ty, expressions, projections);
+    Ok(ty)
+}
+fn finish_expression_type(
+    program: &ResolvedOwnedProgram<'_>,
+    function: &Function,
+    id: ExprId,
+    ty: ValueTy,
+    expressions: &mut [Option<ValueTy>],
+    projections: &[Option<Projection>],
+) {
+    assert!(expressions[id.0].is_none(), "type slot finalized once");
     expressions[id.0] = Some(ty);
     #[cfg(test)]
     program.work().observe(
         crate::frontend::declaration_index::Observation::Expression {
             function: function.id,
-            origin: expr.span,
+            origin: function.expressions[id.0].span,
             ty,
             field: projections[id.0].map(|p| p.field),
         },
     );
-    Ok(ty)
+    #[cfg(not(test))]
+    let _ = (program, function, projections);
+}
+fn initializer_type(
+    program: &ResolvedOwnedProgram<'_>,
+    function: &Function,
+    binding: BindingId,
+    root: ExprId,
+    bindings: &[Option<ParameterTy>],
+    expressions: &mut [Option<ValueTy>],
+    projections: &mut [Option<Projection>],
+) -> Result<ValueTy, Box<Diagnostic>> {
+    if let Some(ValueTy::Owned(AggregateTy::FixedArray(annotation))) =
+        function.bindings[binding.0].annotation
+    {
+        let mut leaf = root;
+        loop {
+            let expr = &function.expressions[leaf.0];
+            program
+                .work()
+                .debit(1, expr.span, "array initializer peel")?;
+            match &expr.kind {
+                ExprKind::Group(inner) => leaf = *inner,
+                ExprKind::ArrayLiteral { elements } if elements.is_empty() => {
+                    program.work().debit(1, expr.span, "array type literal")?;
+                    let array = FixedArrayTy::check(annotation.element(), 0)
+                        .expect("zero is a checked fixed-array length");
+                    finish_expression_type(
+                        program,
+                        function,
+                        leaf,
+                        ValueTy::Owned(AggregateTy::FixedArray(array)),
+                        expressions,
+                        projections,
+                    );
+                    break;
+                }
+                _ => break,
+            }
+        }
+    }
+    expression_type(program, function, root, bindings, expressions, projections)
 }
 fn check_body(
     program: &ResolvedOwnedProgram<'_>,
@@ -684,8 +826,38 @@ fn check_body(
             ));
         }
         let root = match statement.kind {
-            StmtKind::Let { init, .. }
-            | StmtKind::Assign { value: init, .. }
+            StmtKind::Let { binding, init } => {
+                initializer_type(
+                    program,
+                    function,
+                    binding,
+                    init,
+                    &bindings,
+                    &mut expressions,
+                    &mut projections,
+                )?;
+                None
+            }
+            StmtKind::IndexAssign {
+                value,
+                index,
+                target_span,
+                ..
+            } => {
+                program.work().debit(1, target_span, "array type store")?;
+                for root in [value, index] {
+                    expression_type(
+                        program,
+                        function,
+                        root,
+                        &bindings,
+                        &mut expressions,
+                        &mut projections,
+                    )?;
+                }
+                None
+            }
+            StmtKind::Assign { value: init, .. }
             | StmtKind::FieldAssign { value: init, .. }
             | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
@@ -803,6 +975,38 @@ fn check_body(
                         ty: expected,
                     },
                 );
+            }
+            StmtKind::IndexAssign {
+                base,
+                target_span,
+                value,
+                index,
+                ..
+            } => {
+                program.work().debit(1, target_span, "array type access")?;
+                let (access, array) = array_access(function, base, target_span, &bindings)?;
+                let index_ty = expressions[index.0].expect("typed store index");
+                if index_ty != ValueTy::Scalar(Ty::I32) {
+                    return Err(mismatch(
+                        program,
+                        ValueTy::Scalar(Ty::I32),
+                        index_ty,
+                        function.expressions[index.0].span,
+                    ));
+                }
+                let actual = expressions[value.0].expect("typed store value");
+                let expected = ValueTy::Scalar(array.element());
+                if actual != expected {
+                    return Err(mismatch(
+                        program,
+                        expected,
+                        actual,
+                        function.expressions[value.0].span,
+                    ));
+                }
+                if matches!(access, AccessBase::Owner(_)) && !function.bindings[base.0].mutable {
+                    return Err(immutable(function, base, target_span));
+                }
             }
             StmtKind::Expr(_) => {}
             StmtKind::Return(value) => {
@@ -941,4 +1145,41 @@ fn check_body(
         bindings,
         block_flows,
     })
+}
+
+#[cfg(test)]
+mod array_type_layout_tests {
+    use super::*;
+    #[test]
+    fn unit3b1_owner_slot_layouts() {
+        use std::mem::size_of;
+        macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
+        sizes!(
+            ResolvedOwnedProgram<'_>,
+            TypedOwnedProgram<'_>,
+            TypedOwnedFunction<'_>,
+            TypedBody,
+            SourceAdmission,
+            Record,
+            Field,
+            BodyBlock,
+            Argument,
+            FieldInit,
+            ValueTy,
+            Option<ValueTy>,
+            ParameterTy,
+            Option<ParameterTy>,
+            Projection,
+            Option<Projection>,
+            FlowSummary,
+            Option<FlowSummary>,
+            FixedArrayTy,
+            Vec<ValueTy>,
+            crate::frontend::project::budget::Allocator,
+            crate::frontend::project::budget::ReserveEvent,
+            crate::frontend::declaration_index::WorkMeter,
+            (ParameterTy, Span),
+            std::collections::HashMap<&str, (BindingId, Span)>
+        );
+    }
 }

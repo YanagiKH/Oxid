@@ -147,6 +147,9 @@ impl<'a, 'b> Walk<'a, 'b> {
         block_counts: Option<&'b mut [usize]>,
         expected: Option<Counts>,
     ) -> Result<Self> {
+        if !view.admission().executable() {
+            return Err(invariant(view.signature().span));
+        }
         let output = if let Some(c) = expected {
             let f = view.hir();
             let signature = view.signature();
@@ -189,6 +192,8 @@ impl<'a, 'b> Walk<'a, 'b> {
         Ok(this)
     }
     fn inventory(&mut self) -> Result<()> {
+        #[cfg(test)]
+        budget::guard_event(budget::GuardEvent::InventoryEntry);
         let f = self.view.hir();
         let signature = self.view.signature();
         self.counts.parameters = signature.params.len();
@@ -436,6 +441,8 @@ impl<'a, 'b> Walk<'a, 'b> {
         Ok(())
     }
     fn block(&mut self, span: Span) -> Result<BlockId> {
+        #[cfg(test)]
+        budget::guard_event(budget::GuardEvent::BlockAllocation);
         let id = BlockId(self.counts.blocks);
         self.counts.blocks = budget::add(self.counts.blocks, 1)?;
         self.check_counts()?;
@@ -500,6 +507,8 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         let block = self.record_statements(1, span)?;
         if let Some(out) = &mut self.output {
+            #[cfg(test)]
+            budget::guard_event(budget::GuardEvent::EmitStep);
             let count = self.block_counts.as_ref().ok_or_else(|| invariant(span))?[block.0];
             budget::append(
                 &mut out.raw.blocks[block.0].statements,
@@ -598,6 +607,11 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
+                        source::ExprKind::ArrayLiteral { .. }
+                        | source::ExprKind::IndexRead { .. }
+                        | source::ExprKind::ArrayLength { .. } => {
+                            return Err(invariant(expression.span))
+                        }
                         source::ExprKind::Logical { left, .. } => {
                             frames.push(ExprFrame::LogicalLeft(id), cause)?;
                             frames.push(ExprFrame::Visit(*left), cause)?;
@@ -868,6 +882,9 @@ impl<'a, 'b> Walk<'a, 'b> {
         let span = expression.span;
         if let ValueTy::Owned(record) = self.view.expression_ty(id) {
             match expression.kind {
+                source::ExprKind::ArrayLiteral { .. }
+                | source::ExprKind::IndexRead { .. }
+                | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
                 source::ExprKind::Binding(binding) => {
                     let BindingLocation::Owner(source) = self.location(binding, span)? else {
                         return Err(invariant(span));
@@ -902,6 +919,9 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         let destination = self.operand(id)?.local;
         let value = match expression.kind {
+            source::ExprKind::ArrayLiteral { .. }
+            | source::ExprKind::IndexRead { .. }
+            | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::Unit => Rvalue::Unit,
@@ -1192,6 +1212,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 continue;
             }
             let root = match statement.kind {
+                source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
                 source::StmtKind::Let { init, .. }
                 | source::StmtKind::Assign { value: init, .. }
                 | source::StmtKind::FieldAssign { value: init, .. }
@@ -1204,6 +1225,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 self.expression(root, s)?;
             }
             match statement.kind {
+                source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
                         BindingLocation::ScalarValue(destination) => {
@@ -1457,6 +1479,8 @@ pub(super) fn count_function(
     blocks: Option<&mut [usize]>,
 ) -> Result<Counts> {
     let mut walk = Walk::new(view, blocks, None)?;
+    #[cfg(test)]
+    budget::guard_event(budget::GuardEvent::CountEntry);
     walk.body()?;
     Ok(walk.counts)
 }
@@ -1563,4 +1587,11 @@ pub(super) fn lower_with_limits(
         return Err(error);
     }
     Ok(RawOwnedProgram { records, functions })
+}
+
+/// Exercises the same emission constructor before any output work. Kept inside
+/// the source test boundary; it cannot return raw storage or executable authority.
+#[cfg(test)]
+pub(super) fn check_array_type_emission_fence(view: &TypedOwnedFunction<'_>) -> Result<()> {
+    Walk::new(view, None, Some(Counts::default())).map(|_| ())
 }

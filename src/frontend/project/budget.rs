@@ -72,6 +72,24 @@ impl Allocator {
         result.map_err(|_| ReserveFailure::Allocation)
     }
 
+    /// Exact requested slots for a known bounded vector; the existing vector
+    /// reservation path intentionally retains its original growth behavior.
+    pub fn vector_exact<T>(
+        &mut self,
+        vector: &mut Vec<T>,
+        additional: usize,
+        kind: &'static str,
+    ) -> Result<(), ReserveFailure> {
+        let length = vector
+            .len()
+            .checked_add(additional)
+            .ok_or(ReserveFailure::Overflow)?;
+        let injected = self.request(length, size_of::<T>())?;
+        let result = vector.try_reserve_exact(if injected { usize::MAX } else { additional });
+        self.record(kind, length, size_of::<T>(), result.is_ok());
+        result.map_err(|_| ReserveFailure::Allocation)
+    }
+
     pub fn string(
         &mut self,
         string: &mut String,

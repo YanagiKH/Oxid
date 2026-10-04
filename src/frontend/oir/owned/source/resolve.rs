@@ -9,10 +9,27 @@ use crate::frontend::{
     diagnostic::Diagnostic,
     owned_diagnostic::{self, diagnostic, secondary},
     parser::MAX_DIAGNOSTICS,
-    project::{budget::Allocator, ItemPathRef, ModuleId},
+    project::{
+        budget::{Allocator, ReserveFailure},
+        ItemPathRef, ModuleId,
+    },
     source::{SourceFile, SourceMap, SourceView, Span},
 };
 use std::collections::HashMap;
+
+/// Construction policy, retained even for array-free inputs. No executable
+/// entrypoint accepts a caller-selected admission policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SourceAdmission {
+    Executable,
+    #[cfg(test)]
+    ObserveArrayTypes,
+}
+impl SourceAdmission {
+    pub(super) fn executable(self) -> bool {
+        self == Self::Executable
+    }
+}
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)] // Keep the checked legacy carrier allocation-free.
@@ -28,6 +45,7 @@ enum MeterOwner<'src> {
 }
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
+    admission: SourceAdmission,
     index: IndexOwner<'src>,
     work: MeterOwner<'src>,
     sources: SourceView<'src>,
@@ -37,6 +55,9 @@ pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
     entry: Option<DefId>,
 }
 impl<'src> ResolvedOwnedProgram<'src> {
+    pub(super) fn admission(&self) -> SourceAdmission {
+        self.admission
+    }
     pub(super) fn index(&self) -> &DeclarationIndex<'src> {
         match &self.index {
             IndexOwner::Owned(index) => index,
@@ -99,15 +120,21 @@ fn value_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
     ty: ast::TypeSyntax,
+    admission: SourceAdmission,
 ) -> Result<ValueTy, Box<Diagnostic>> {
-    source_type_enabled(ty)?;
+    source_type_enabled(ty, admission)?;
     query.value_type(requester, ty, TypeContext::Value)
 }
-fn source_type_enabled(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
-    if matches!(
-        ty.kind,
-        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
-    ) {
+fn source_type_enabled(
+    ty: ast::TypeSyntax,
+    admission: SourceAdmission,
+) -> Result<(), Box<Diagnostic>> {
+    if admission.executable()
+        && matches!(
+            ty.kind,
+            ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
+        )
+    {
         return Err(error(
             "E0500",
             format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
@@ -120,8 +147,9 @@ fn parameter_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
     ty: ast::TypeSyntax,
+    admission: SourceAdmission,
 ) -> Result<ParameterTy, Box<Diagnostic>> {
-    source_type_enabled(ty)?;
+    source_type_enabled(ty, admission)?;
     query.parameter_type(requester, ty)
 }
 fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
@@ -177,10 +205,16 @@ pub(in crate::frontend) fn resolve_sources(
 ) -> Result<ResolvedOwnedProgram<'_>, Vec<Diagnostic>> {
     let work = WorkMeter::default();
     let mut allocator = Allocator::default();
-    let (index, (records, signatures, functions)) =
-        resolve_source_parts(sources, &work, &mut allocator)?;
+    let (index, (records, signatures, functions)) = resolve_source_parts(
+        sources,
+        &work,
+        &mut allocator,
+        SourceAdmission::Executable,
+        IndexLimits::default(),
+    )?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        admission: SourceAdmission::Executable,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
         work: MeterOwner::Owned(work),
@@ -199,9 +233,16 @@ pub(in crate::frontend::oir) fn resolve_observed<'s>(
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
     let sources =
         SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
-    let (index, (records, signatures, functions)) = resolve_source_parts(sources, work, allocator)?;
+    let (index, (records, signatures, functions)) = resolve_source_parts(
+        sources,
+        work,
+        allocator,
+        SourceAdmission::Executable,
+        IndexLimits::default(),
+    )?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        admission: SourceAdmission::Executable,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
         work: MeterOwner::Borrowed(work),
@@ -215,19 +256,23 @@ fn resolve_source_parts<'s>(
     sources: SourceOwner<'s>,
     work: &WorkMeter,
     allocator: &mut Allocator,
+    admission: SourceAdmission,
+    limits: IndexLimits,
 ) -> Result<(DeclarationIndex<'s>, ResolvedParts), Vec<Diagnostic>> {
-    let facts = index::collect_originals(sources, IndexLimits::default(), work, allocator)
-        .map_err(|e| vec![*e])?;
+    let facts = index::collect_originals(sources, limits, work, allocator).map_err(|e| vec![*e])?;
     let index = facts.finish(work, allocator)?;
-    let parts = resolve_index(&index, work)?;
+    let parts = resolve_index(&index, work, allocator, admission)?;
     Ok((index, parts))
 }
 pub(in crate::frontend) fn resolve_project<'s>(
     index: &'s DeclarationIndex<'s>,
     work: &'s WorkMeter,
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
-    let (records, signatures, functions) = resolve_index(index, work)?;
+    let mut allocator = Allocator::default();
+    let (records, signatures, functions) =
+        resolve_index(index, work, &mut allocator, SourceAdmission::Executable)?;
     Ok(ResolvedOwnedProgram {
+        admission: SourceAdmission::Executable,
         sources: index.sources().view(),
         index: IndexOwner::Borrowed(index),
         work: MeterOwner::Borrowed(work),
@@ -241,6 +286,8 @@ type ResolvedParts = (Vec<Record>, Vec<Signature>, Vec<Function>);
 fn resolve_index(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
+    allocator: &mut Allocator,
+    admission: SourceAdmission,
 ) -> Result<ResolvedParts, Vec<Diagnostic>> {
     let sources = index.sources();
     let mut diagnostics = Vec::new();
@@ -260,7 +307,8 @@ fn resolve_index(
                 if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ValueTy::Scalar(ty) = value_type(&mut index.query(work), module, field.ty)?
+                let ValueTy::Scalar(ty) =
+                    value_type(&mut index.query(work), module, field.ty, admission)?
                 else {
                     return Err(error(
                         "E0202",
@@ -307,9 +355,9 @@ fn resolve_index(
             let params = function
                 .params
                 .iter()
-                .map(|p| parameter_type(&mut index.query(work), module, p.ty))
+                .map(|p| parameter_type(&mut index.query(work), module, p.ty, admission))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = value_type(&mut index.query(work), module, function.result)?;
+            let result = value_type(&mut index.query(work), module, function.result, admission)?;
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
@@ -317,7 +365,7 @@ fn resolve_index(
                         ..
                     } = statement.kind
                     {
-                        value_type(&mut index.query(work), module, ty)?;
+                        value_type(&mut index.query(work), module, ty, admission)?;
                     }
                 }
             }
@@ -417,6 +465,7 @@ fn resolve_index(
     }
     work.phase("body-resolution");
     let mut functions = Vec::new();
+    let mut array_entries = 0usize;
     for id in 0..index.function_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
@@ -424,6 +473,9 @@ fn resolve_index(
         let (key, requester) = index.function(DefId(id)).map_err(|e| vec![*e])?;
         let ast = sources.ast(requester).map_err(|e| vec![*e])?;
         let mut resolver = Resolver {
+            allocator,
+            admission,
+            array_entries: &mut array_entries,
             ast,
             index,
             work,
@@ -448,6 +500,9 @@ fn resolve_index(
     }
 }
 struct Resolver<'i, 'a> {
+    allocator: &'i mut Allocator,
+    admission: SourceAdmission,
+    array_entries: &'i mut usize,
     ast: &'a ast::Program,
     index: &'i DeclarationIndex<'a>,
     work: &'i WorkMeter,
@@ -577,7 +632,14 @@ impl<'a> Resolver<'_, 'a> {
                 } => {
                     let init = self.expression(*init)?;
                     let annotation = annotation
-                        .map(|ty| value_type(&mut self.index.query(self.work), self.requester, ty))
+                        .map(|ty| {
+                            value_type(
+                                &mut self.index.query(self.work),
+                                self.requester,
+                                ty,
+                                self.admission,
+                            )
+                        })
                         .transpose()?;
                     let local =
                         self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
@@ -632,11 +694,38 @@ impl<'a> Resolver<'_, 'a> {
                         value: self.expression(*value)?,
                     }
                 }
-                ast::StmtKind::IndexAssign { target, .. } => {
-                    return Err(error(
-                        "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
-                        self.ast.expressions[target.0].span,
-                    ));
+                ast::StmtKind::IndexAssign {
+                    target,
+                    operator_span,
+                    value,
+                } => {
+                    let target = &self.ast.expressions[target.0];
+                    if self.admission.executable() {
+                        return Err(error(
+                            "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
+                            target.span,
+                        ));
+                    }
+                    self.work.debit(1, target.span, "array resolve store")?;
+                    let ast::ExprKind::IndexRead { base, index } = target.kind else {
+                        return Err(error(
+                            "E0500",
+                            format_args!("invalid indexed assignment target"),
+                            target.span,
+                        ));
+                    };
+                    let binding = self.lookup(base)?;
+                    // The retained AST target wrapper is syntax only, never a HIR read.
+                    let value = self.expression(*value)?;
+                    let index = self.expression(index)?;
+                    StmtKind::IndexAssign {
+                        base: binding,
+                        base_span: base,
+                        target_span: target.span,
+                        operator_span: *operator_span,
+                        value,
+                        index,
+                    }
                 }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
                 ast::StmtKind::Return(expr) => {
@@ -709,7 +798,9 @@ impl<'a> Resolver<'_, 'a> {
         let kind = match &expr.kind {
             ast::ExprKind::ArrayLiteral { .. }
             | ast::ExprKind::IndexRead { .. }
-            | ast::ExprKind::ArrayLength { .. } => {
+            | ast::ExprKind::ArrayLength { .. }
+                if self.admission.executable() =>
+            {
                 return Err(error(
                     "E0500",
                     format_args!(
@@ -717,6 +808,38 @@ impl<'a> Resolver<'_, 'a> {
                     ),
                     expr.span,
                 ));
+            }
+            ast::ExprKind::ArrayLiteral { elements } => {
+                self.work.debit(1, expr.span, "array resolve literal")?;
+                let requested = checked_array_entries(*self.array_entries, elements.len())
+                    .map_err(|failure| array_reserve_error(failure, expr.span))?;
+                let mut resolved = Vec::new();
+                self.allocator
+                    .vector_exact(&mut resolved, elements.len(), "array HIR elements")
+                    .map_err(|failure| array_reserve_error(failure, expr.span))?;
+                *self.array_entries = requested;
+                for element in elements {
+                    self.work.debit(1, expr.span, "array resolve edge")?;
+                    resolved.push(self.expression(*element)?);
+                }
+                ExprKind::ArrayLiteral { elements: resolved }
+            }
+            ast::ExprKind::IndexRead { base, index } => {
+                self.work.debit(1, expr.span, "array resolve read")?;
+                let binding = self.lookup(*base)?;
+                let index = self.expression(*index)?;
+                ExprKind::IndexRead {
+                    base: binding,
+                    base_span: *base,
+                    index,
+                }
+            }
+            ast::ExprKind::ArrayLength { base } => {
+                self.work.debit(1, expr.span, "array resolve length")?;
+                ExprKind::ArrayLength {
+                    base: self.lookup(*base)?,
+                    base_span: *base,
+                }
             }
             ast::ExprKind::FieldRead { base, field } => ExprKind::FieldRead {
                 base: self.lookup(*base)?,
@@ -943,5 +1066,91 @@ mod source_identity_tests {
         assert_eq!(program.text(map.get(first).span(3, 6)), "old");
         assert_eq!(program.text(map.get(second).span(7, 8)), "C");
         assert_eq!(program.index().function(DefId(0)).unwrap().0.file, second);
+    }
+}
+
+// Cumulative requested slots include pending outer buffers and never reset at
+// function boundaries. These are checks, not a trusted allocation inventory.
+fn checked_array_entries(current: usize, length: usize) -> Result<usize, ReserveFailure> {
+    if length > 1024 {
+        return Err(ReserveFailure::Overflow);
+    }
+    let total = current
+        .checked_add(length)
+        .ok_or(ReserveFailure::Overflow)?;
+    total
+        .checked_mul(std::mem::size_of::<ExprId>())
+        .ok_or(ReserveFailure::Overflow)?;
+    Ok(total)
+}
+fn array_reserve_error(failure: ReserveFailure, span: Span) -> Box<Diagnostic> {
+    error(
+        "E0400",
+        format_args!(
+            "{}",
+            match failure {
+                ReserveFailure::Overflow => "array HIR count overflow",
+                ReserveFailure::Allocation => "array HIR allocation failed",
+            }
+        ),
+        span,
+    )
+}
+
+/// Private observation construction only. Callers must copy inert facts before
+/// typing consumes this owner; no executable entrypoint chooses this policy.
+#[cfg(test)]
+pub(super) fn resolve_array_types<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let (index, (records, signatures, functions)) = resolve_source_parts(
+        sources,
+        work,
+        allocator,
+        SourceAdmission::ObserveArrayTypes,
+        limits,
+    )?;
+    let entry = index.root_original_main();
+    Ok(ResolvedOwnedProgram {
+        admission: SourceAdmission::ObserveArrayTypes,
+        sources: sources.view(),
+        index: IndexOwner::Owned(index),
+        work: MeterOwner::Borrowed(work),
+        records,
+        signatures,
+        functions,
+        entry,
+    })
+}
+
+#[cfg(test)]
+mod array_reservation_tests {
+    use super::*;
+    #[test]
+    fn unit3b1_checked_array_entry_arithmetic_is_cumulative() {
+        assert_eq!(checked_array_entries(0, 0), Ok(0));
+        assert_eq!(checked_array_entries(2, 3), Ok(5));
+        assert_eq!(checked_array_entries(0, 1024), Ok(1024));
+        for (control, current, length) in [
+            ("length", 0, 1025),
+            ("cumulative", usize::MAX, 1),
+            ("multiply", usize::MAX / std::mem::size_of::<ExprId>(), 1),
+        ] {
+            let result = checked_array_entries(current, length);
+            println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"overflow\",\"control\":\"{control}\",\"synthetic\":true,\"current\":{current},\"length\":{length},\"element_bytes\":{},\"result\":\"{:?}\",\"reservation_attempts\":0}}", std::mem::size_of::<ExprId>(), result);
+            assert_eq!(result, Err(ReserveFailure::Overflow));
+        }
+        let mut allocator = Allocator {
+            attempts: usize::MAX,
+            ..Allocator::default()
+        };
+        let mut values = Vec::<ExprId>::new();
+        let result = allocator.vector_exact(&mut values, 0, "array HIR elements");
+        println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"overflow\",\"control\":\"attempt\",\"synthetic\":true,\"attempt_counter\":{},\"result\":\"{:?}\",\"trace_rows\":{}}}", allocator.attempts, result, allocator.trace.len());
+        assert_eq!(result, Err(ReserveFailure::Overflow));
+        assert!(allocator.trace.is_empty() && values.is_empty() && values.capacity() == 0);
     }
 }
