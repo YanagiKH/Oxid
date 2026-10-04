@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/workspace/scratch/8266abf56995/oxid-slices-native-fix-evidence/actual/producer/debug/bin/oxid-test",
+    "frontend::oir::owned::source::array_pipeline::tests::transport::controls::unit3b2_transport_layout_without_source_invocation",
+    "frontend::oir::owned::source::array_pipeline::tests::unit3b2_observer_layout_without_source_invocation",
+    "frontend::oir::owned::source::lower::unit3b2_lowering_layout_without_source_observation",
+    "frontend::oir::owned::source::tests::unit3a_unchanged_hir_enclosing_layouts",
+    "frontend::oir::owned::source::typeck::array_type_layout_tests::unit3b1_owner_slot_layouts",
+    "frontend::oir::owned_types::tests::production_record_and_field_boundaries_are_inclusive",
+    "frontend::project::tests::measured_layout_and_requested_inventory",
+    "frontend::project::unit2_tests::unit2_measured_layout_and_requested_inventory",
+    "--exact",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "exit_status": 0,
+  "binary_sha256": "c934df92daade82a193fc64f0d645138f9c64c6e36925f03eefaf5a855553c06",
+  "provenance_limit": "Existing native-fix debug producer copy; new run retains its bytes but source build identity is owned by separate native qualification."
+}

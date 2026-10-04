@@ -23,6 +23,9 @@ FROZEN = REPOSITORY / "tests/fixtures/typed_project_unit4_parser_portable/frozen
 sys.dont_write_bytecode = True
 HISTORICAL_AUTHORITY_SHA = "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0"
 CURRENT_PATHS = (
+    'fixtures/typed-record-composition-samples/main.ox',
+    'fixtures/typed-record-composition-samples/model.ox',
+    'fixtures/typed-record-composition-samples/ops.ox',
     'src/frontend/ast.rs',
     'src/frontend/declaration_index.rs',
     'src/frontend/declaration_index/source_owner.rs',
@@ -48,6 +51,9 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/array_tests.rs',
     'src/frontend/oir/owned/budget.rs',
     'src/frontend/oir/owned/cfg.rs',
+    'src/frontend/oir/owned/composition_native_tests.rs',
+    'src/frontend/oir/owned/composition_reference_tests.rs',
+    'src/frontend/oir/owned/composition_verifier_tests.rs',
     'src/frontend/oir/owned/consumer_fixtures.rs',
     'src/frontend/oir/owned/consumer_pilot.rs',
     'src/frontend/oir/owned/denial_tests.rs',
@@ -97,14 +103,18 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/verified.rs',
     'src/frontend/oir/owned_types.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
+    'src/frontend/oir/owned_types/composition_tests.rs',
     'src/frontend/options.rs',
+    'src/frontend/owned_syntax_tests.rs',
     'src/frontend/parser.rs',
+    'src/frontend/parser/activation_tests.rs',
     'src/frontend/parser/array_syntax_tests.rs',
     'src/frontend/parser/arrays.rs',
     'src/frontend/parser/project_tests.rs',
     'src/frontend/project.rs',
     'src/frontend/project/array_syntax_tests.rs',
     'src/frontend/project/budget.rs',
+    'src/frontend/project/unit2_tests.rs',
     'src/frontend/source.rs',
     'src/main.rs',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
@@ -149,8 +159,12 @@ CURRENT_PATHS = (
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
+    'tests/typed_record_composition.rs',
 )
 CURRENT_ADDED_PATHS = (
+    'fixtures/typed-record-composition-samples/main.ox',
+    'fixtures/typed-record-composition-samples/model.ox',
+    'fixtures/typed-record-composition-samples/ops.ox',
     'src/frontend/format.rs',
     'src/frontend/format/ast_tests.rs',
     'src/frontend/format/resource_tests.rs',
@@ -161,6 +175,9 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/array_reference_boundary_tests.rs',
     'src/frontend/oir/owned/array_reference_tests.rs',
     'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/composition_native_tests.rs',
+    'src/frontend/oir/owned/composition_reference_tests.rs',
+    'src/frontend/oir/owned/composition_verifier_tests.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
     'src/frontend/oir/owned/slice_native_tests.rs',
@@ -174,6 +191,7 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/source/slice_raw_tests.rs',
     'src/frontend/oir/owned/source/slice_tests.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
+    'src/frontend/oir/owned_types/composition_tests.rs',
     'src/frontend/parser/array_syntax_tests.rs',
     'src/frontend/parser/arrays.rs',
     'src/frontend/project/array_syntax_tests.rs',
@@ -219,11 +237,13 @@ CURRENT_ADDED_PATHS = (
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
+    'tests/typed_record_composition.rs',
 )
 ARRAY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs", "src/frontend/project/budget.rs")
 DIVISION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/lexer.rs", "src/frontend/parser.rs")
 SLICES_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
-AUTHORITY_SHA = "aa0df2032a6dbe65d02246e477635b24b0304ef4055850c5285c85f1bb4ffb11"
+COMPOSITION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
+AUTHORITY_SHA = "7a5038e38019e9994d0d20dc2df6241ee288ab9c82827140888463f37f6079b2"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -331,7 +351,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["source_binding_runner"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["source_binding_runner"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -343,13 +363,13 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 188, "complete current source count")
+    same(len(current["files"]), 196, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 188, "duplicate current member")
+    same(len(after), 196, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -364,7 +384,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 351, "current base count")
+    same(len(base), 359, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -392,7 +412,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 354, "current derived count")
+        same(len(ordered), 362, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -533,12 +553,42 @@ def restore_slices_source(a, name, raw):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact slices instrumentation source section")
     patch = selected[0]
-    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    slice_raw = restore_composition_source(a, name, raw)
+    restored, touched = module.apply_inverse_patch({name: slice_raw}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact slices instrumentation inverse scope")
     expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
     original = restored[name]
     same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
          "slices transition must recover exact division source")
+    return original
+
+
+def restore_composition_source(a, name, raw):
+    """Recover the exact slice predecessor at the two composition-overlap paths."""
+    require(name in COMPOSITION_INSTRUMENTATION_PATHS, "unapproved composition instrumentation path")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current composition identity")
+    runner, transition, predecessor = (active[key] for key in
+        ("source_binding_runner", "composition_transition_patch", "slices_source_manifest"))
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/composition-transition.patch", "composition transition path")
+    same(predecessor["path"], "tests/fixtures/typed_project_source_binding/slices-source.json", "slices predecessor path")
+    verify_map(REPOSITORY, [runner, transition, predecessor])
+    module = types.ModuleType("unit4_composition_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact composition instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact composition instrumentation inverse scope")
+    expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
+         "composition transition must recover exact slices source")
     return original
 
 
@@ -644,7 +694,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 139, "current compiler body count")
+    same(len(wanted), 143, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

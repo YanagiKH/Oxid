@@ -1,0 +1,1261 @@
+{
+  "changed_independent_layouts": {
+    "Field": {
+      "after": {
+        "align": 8,
+        "bytes": 80
+      },
+      "before": {
+        "align": 8,
+        "bytes": 72
+      }
+    },
+    "FieldDecl": {
+      "after": {
+        "align": 8,
+        "bytes": 64
+      },
+      "before": {
+        "align": 8,
+        "bytes": 56
+      }
+    },
+    "FunctionCounts": {
+      "after": {
+        "align": 8,
+        "bytes": 160
+      },
+      "before": {
+        "align": 8,
+        "bytes": 144
+      }
+    },
+    "Option<Projection>": {
+      "after": {
+        "align": 8,
+        "bytes": 56
+      },
+      "before": {
+        "align": 8,
+        "bytes": 32
+      }
+    },
+    "Projection": {
+      "after": {
+        "align": 8,
+        "bytes": 56
+      },
+      "before": {
+        "align": 8,
+        "bytes": 32
+      }
+    },
+    "RecordDecl": {
+      "after": {
+        "align": 8,
+        "bytes": 72
+      },
+      "before": {
+        "align": 8,
+        "bytes": 64
+      }
+    }
+  },
+  "declaration_predecessor_tree": "f8e2d39d8081b992969597649bad7fd9f28e7d04",
+  "derived_constants": {
+    "composition_dag_sum_before_empty": 1048575,
+    "maximum_graph_element_payload": 136192,
+    "maximum_table_after": 4489216,
+    "maximum_table_before": 3932160,
+    "maximum_table_plus_summary_element_payload": 4620288,
+    "observer_fixed_auxiliary_after": 1136,
+    "observer_fixed_auxiliary_before": 1104,
+    "projection_path_elements_cap": 4194304,
+    "scalar_only_maximum_sum_layout": 266176,
+    "sum_layout_cap": 1048576,
+    "table_cap": 8388608,
+    "table_delta": 557056
+  },
+  "existing_binary_observations": {
+    "composition": {
+      "LAYOUT:Allocator": {
+        "align": 8,
+        "bytes": 72
+      },
+      "LAYOUT:BindingLocation": {
+        "align": 8,
+        "bytes": 16
+      },
+      "LAYOUT:BodyFrame": {
+        "align": 8,
+        "bytes": 56
+      },
+      "LAYOUT:CallFrame": {
+        "align": 8,
+        "bytes": 72
+      },
+      "LAYOUT:EvaluatedValue": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:ExprFrame": {
+        "align": 8,
+        "bytes": 80
+      },
+      "LAYOUT:FunctionCounts": {
+        "align": 8,
+        "bytes": 160
+      },
+      "LAYOUT:LoopTargets": {
+        "align": 8,
+        "bytes": 32
+      },
+      "LAYOUT:Operand": {
+        "align": 8,
+        "bytes": 32
+      },
+      "LAYOUT:Option<BindingLocation>": {
+        "align": 8,
+        "bytes": 16
+      },
+      "LAYOUT:Option<BodyFrame>": {
+        "align": 8,
+        "bytes": 56
+      },
+      "LAYOUT:Option<EvaluatedValue>": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:Option<ExprFrame>": {
+        "align": 8,
+        "bytes": 80
+      },
+      "LAYOUT:Option<LoopTargets>": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:Option<Output>": {
+        "align": 8,
+        "bytes": 480
+      },
+      "LAYOUT:Output": {
+        "align": 8,
+        "bytes": 480
+      },
+      "LAYOUT:ReserveEvent": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:ResolvedOwnedProgram": {
+        "align": 8,
+        "bytes": 512
+      },
+      "LAYOUT:SourceAdmission": {
+        "align": 1,
+        "bytes": 1
+      },
+      "LAYOUT:Stack<BodyFrame,268>": {
+        "align": 8,
+        "bytes": 15016
+      },
+      "LAYOUT:Stack<ExprFrame,203>": {
+        "align": 8,
+        "bytes": 16248
+      },
+      "LAYOUT:Stack<LoopTargets,65>": {
+        "align": 8,
+        "bytes": 2608
+      },
+      "LAYOUT:TypedOwnedFunction": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:TypedOwnedProgram": {
+        "align": 8,
+        "bytes": 536
+      },
+      "LAYOUT:Vec<Operand>": {
+        "align": 8,
+        "bytes": 24
+      },
+      "LAYOUT:Walk": {
+        "align": 8,
+        "bytes": 728
+      },
+      "OBSERVER_LAYOUT": {
+        "BoundedWrite": 40,
+        "CaptureWrapper": 536,
+        "Counter": 24,
+        "Limits": 200,
+        "LiteralRequest": 176,
+        "LoadFailure": 192,
+        "Output": 528,
+        "Receipt": 64
+      },
+      "OWNERSHIP_LAYOUT:(FieldId,Operand)": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:(usize,bool)": {
+        "align": 8,
+        "bytes": 16
+      },
+      "OWNERSHIP_LAYOUT:ArgumentSlot": {
+        "align": 8,
+        "bytes": 16
+      },
+      "OWNERSHIP_LAYOUT:CallDecl": {
+        "align": 8,
+        "bytes": 96
+      },
+      "OWNERSHIP_LAYOUT:CallSites": {
+        "align": 8,
+        "bytes": 64
+      },
+      "OWNERSHIP_LAYOUT:LoanDecl": {
+        "align": 8,
+        "bytes": 72
+      },
+      "OWNERSHIP_LAYOUT:LocalDecl": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OWNERSHIP_LAYOUT:ModuleHeader": {
+        "align": 8,
+        "bytes": 144
+      },
+      "OWNERSHIP_LAYOUT:Operand": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OWNERSHIP_LAYOUT:Option<DiagnosticOrigins>": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OWNERSHIP_LAYOUT:Option<Site>": {
+        "align": 8,
+        "bytes": 24
+      },
+      "OWNERSHIP_LAYOUT:OwnedBlock": {
+        "align": 8,
+        "bytes": 328
+      },
+      "OWNERSHIP_LAYOUT:OwnedStatement": {
+        "align": 8,
+        "bytes": 208
+      },
+      "OWNERSHIP_LAYOUT:OwnerDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OWNERSHIP_LAYOUT:OwnerSites": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:ParameterBinding": {
+        "align": 8,
+        "bytes": 16
+      },
+      "OWNERSHIP_LAYOUT:PlaceDecl": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OWNERSHIP_LAYOUT:RawFieldDecl": {
+        "align": 8,
+        "bytes": 64
+      },
+      "OWNERSHIP_LAYOUT:RawOwnedFunction": {
+        "align": 8,
+        "bytes": 248
+      },
+      "OWNERSHIP_LAYOUT:RawOwnedProgram": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:RawRecordDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OWNERSHIP_LAYOUT:ReferenceDecl": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:ReserveEvent": {
+        "align": 8,
+        "bytes": 40
+      },
+      "OWNERSHIP_LAYOUT:SourceFile": {
+        "align": 8,
+        "bytes": 88
+      },
+      "OWNERSHIP_LAYOUT:ast::ExprId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "OWNERSHIP_LAYOUT:ast::Program": {
+        "align": 8,
+        "bytes": 248
+      },
+      "OWNERSHIP_LAYOUT:source::hir::ExprId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "OWNERSHIP_LAYOUT:u32": {
+        "align": 4,
+        "bytes": 4
+      },
+      "OWNERSHIP_LAYOUT:u8": {
+        "align": 1,
+        "bytes": 1
+      },
+      "OWNERSHIP_LAYOUT:usize": {
+        "align": 8,
+        "bytes": 8
+      },
+      "TRANSPORT_LAYOUT": {
+        "BytesFrame": 32,
+        "Error": 1,
+        "FramePlan": 16,
+        "InputKind": 1,
+        "Stdin": 8,
+        "StdinLock": 16,
+        "header_bytes": 24,
+        "max_path_bytes": 4194304,
+        "max_payload_bytes": 5242880,
+        "max_text_bytes": 1048576,
+        "sentinel_bytes": 1
+      },
+      "layout:(ParameterTy, Span)": {
+        "bytes": 48
+      },
+      "layout:Argument": {
+        "bytes": 104
+      },
+      "layout:Binding": {
+        "bytes": 72
+      },
+      "layout:BlockKey": {
+        "bytes": 24
+      },
+      "layout:BodyBlock": {
+        "bytes": 72
+      },
+      "layout:ExprKey": {
+        "bytes": 16
+      },
+      "layout:ExprKind": {
+        "bytes": 64
+      },
+      "layout:Field": {
+        "bytes": 80
+      },
+      "layout:FieldInit": {
+        "bytes": 48
+      },
+      "layout:FixedArrayTy": {
+        "bytes": 4
+      },
+      "layout:FlowSummary": {
+        "bytes": 4
+      },
+      "layout:Frame": {
+        "bytes": 16
+      },
+      "layout:Function": {
+        "bytes": 112
+      },
+      "layout:FunctionAstKey": {
+        "bytes": 16
+      },
+      "layout:ItemPathRef": {
+        "bytes": 40
+      },
+      "layout:ModuleHeader": {
+        "bytes": 144
+      },
+      "layout:Option<Binding>": {
+        "bytes": 72
+      },
+      "layout:Option<Expr>": {
+        "bytes": 88
+      },
+      "layout:Option<FlowSummary>": {
+        "bytes": 4
+      },
+      "layout:Option<ParameterTy>": {
+        "bytes": 24
+      },
+      "layout:Option<Projection>": {
+        "bytes": 56
+      },
+      "layout:Option<Stmt>": {
+        "bytes": 144
+      },
+      "layout:Option<ValueTy>": {
+        "bytes": 16
+      },
+      "layout:ParameterTy": {
+        "bytes": 24
+      },
+      "layout:ProjectSources": {
+        "bytes": 176
+      },
+      "layout:Projection": {
+        "bytes": 56
+      },
+      "layout:Record": {
+        "bytes": 104
+      },
+      "layout:RecordAstKey": {
+        "bytes": 16
+      },
+      "layout:Signature": {
+        "bytes": 64
+      },
+      "layout:SourceAdmission": {
+        "bytes": 1
+      },
+      "layout:SourceUsage": {
+        "bytes": 72
+      },
+      "layout:Span": {
+        "bytes": 24
+      },
+      "layout:Stmt": {
+        "bytes": 144
+      },
+      "layout:StmtKind": {
+        "bytes": 120
+      },
+      "layout:TypedBody": {
+        "bytes": 120
+      },
+      "layout:TypedOwnedFunction<'_>": {
+        "bytes": 40
+      },
+      "layout:TypedOwnedProgram<'_>": {
+        "bytes": 536
+      },
+      "layout:ValueTy": {
+        "bytes": 16
+      },
+      "layout:Vec<Binding>": {
+        "bytes": 24
+      },
+      "layout:Vec<Expr>": {
+        "bytes": 24
+      },
+      "layout:Vec<Stmt>": {
+        "bytes": 24
+      },
+      "layout:Vec<ValueTy>": {
+        "bytes": 24
+      },
+      "layout:ast::AbsolutePath": {
+        "bytes": 40
+      },
+      "layout:ast::Argument": {
+        "bytes": 88
+      },
+      "layout:ast::BodyBlock": {
+        "bytes": 72
+      },
+      "layout:ast::Expr": {
+        "bytes": 88
+      },
+      "layout:ast::FieldInit": {
+        "bytes": 56
+      },
+      "layout:ast::Function": {
+        "bytes": 200
+      },
+      "layout:ast::ImportDecl": {
+        "bytes": 56
+      },
+      "layout:ast::ItemId": {
+        "bytes": 16
+      },
+      "layout:ast::ItemPath": {
+        "bytes": 32
+      },
+      "layout:ast::ModuleDecl": {
+        "bytes": 80
+      },
+      "layout:ast::Param": {
+        "bytes": 88
+      },
+      "layout:ast::PathId": {
+        "bytes": 8
+      },
+      "layout:ast::Program": {
+        "bytes": 248
+      },
+      "layout:ast::Stmt": {
+        "bytes": 136
+      },
+      "layout:ast::StructDecl": {
+        "bytes": 128
+      },
+      "layout:ast::StructField": {
+        "bytes": 144
+      },
+      "layout:ast::TypeSyntax": {
+        "bytes": 64
+      },
+      "layout:ast::TypeSyntaxKind": {
+        "bytes": 40
+      },
+      "layout:crate::frontend::declaration_index::WorkMeter": {
+        "bytes": 104
+      },
+      "layout:crate::frontend::project::budget::Allocator": {
+        "bytes": 72
+      },
+      "layout:crate::frontend::project::budget::ReserveEvent": {
+        "bytes": 40
+      },
+      "layout:lexer::Token": {
+        "bytes": 32
+      },
+      "layout:std::collections::HashMap<&str, (BindingId, Span)>": {
+        "bytes": 48
+      },
+      "layout:super::super::source::SourceFile": {
+        "bytes": 88
+      }
+    },
+    "limitation": "Not a fresh source-bound compiler build; retain executable hashes and source-bound rerun requirement.",
+    "predecessor": {
+      "LAYOUT:Allocator": {
+        "align": 8,
+        "bytes": 72
+      },
+      "LAYOUT:BindingLocation": {
+        "align": 8,
+        "bytes": 16
+      },
+      "LAYOUT:BodyFrame": {
+        "align": 8,
+        "bytes": 56
+      },
+      "LAYOUT:CallFrame": {
+        "align": 8,
+        "bytes": 72
+      },
+      "LAYOUT:EvaluatedValue": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:ExprFrame": {
+        "align": 8,
+        "bytes": 80
+      },
+      "LAYOUT:FunctionCounts": {
+        "align": 8,
+        "bytes": 144
+      },
+      "LAYOUT:LoopTargets": {
+        "align": 8,
+        "bytes": 32
+      },
+      "LAYOUT:Operand": {
+        "align": 8,
+        "bytes": 32
+      },
+      "LAYOUT:Option<BindingLocation>": {
+        "align": 8,
+        "bytes": 16
+      },
+      "LAYOUT:Option<BodyFrame>": {
+        "align": 8,
+        "bytes": 56
+      },
+      "LAYOUT:Option<EvaluatedValue>": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:Option<ExprFrame>": {
+        "align": 8,
+        "bytes": 80
+      },
+      "LAYOUT:Option<LoopTargets>": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:Option<Output>": {
+        "align": 8,
+        "bytes": 464
+      },
+      "LAYOUT:Output": {
+        "align": 8,
+        "bytes": 464
+      },
+      "LAYOUT:ReserveEvent": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:ResolvedOwnedProgram": {
+        "align": 8,
+        "bytes": 504
+      },
+      "LAYOUT:SourceAdmission": {
+        "align": 1,
+        "bytes": 1
+      },
+      "LAYOUT:Stack<BodyFrame,268>": {
+        "align": 8,
+        "bytes": 15016
+      },
+      "LAYOUT:Stack<ExprFrame,203>": {
+        "align": 8,
+        "bytes": 16248
+      },
+      "LAYOUT:Stack<LoopTargets,65>": {
+        "align": 8,
+        "bytes": 2608
+      },
+      "LAYOUT:TypedOwnedFunction": {
+        "align": 8,
+        "bytes": 40
+      },
+      "LAYOUT:TypedOwnedProgram": {
+        "align": 8,
+        "bytes": 528
+      },
+      "LAYOUT:Vec<Operand>": {
+        "align": 8,
+        "bytes": 24
+      },
+      "LAYOUT:Walk": {
+        "align": 8,
+        "bytes": 696
+      },
+      "OBSERVER_LAYOUT": {
+        "BoundedWrite": 40,
+        "CaptureWrapper": 520,
+        "Counter": 24,
+        "Limits": 200,
+        "LiteralRequest": 160,
+        "LoadFailure": 192,
+        "Output": 512,
+        "Receipt": 64
+      },
+      "OWNERSHIP_LAYOUT:(FieldId,Operand)": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:(usize,bool)": {
+        "align": 8,
+        "bytes": 16
+      },
+      "OWNERSHIP_LAYOUT:ArgumentSlot": {
+        "align": 8,
+        "bytes": 16
+      },
+      "OWNERSHIP_LAYOUT:CallDecl": {
+        "align": 8,
+        "bytes": 96
+      },
+      "OWNERSHIP_LAYOUT:CallSites": {
+        "align": 8,
+        "bytes": 64
+      },
+      "OWNERSHIP_LAYOUT:LoanDecl": {
+        "align": 8,
+        "bytes": 72
+      },
+      "OWNERSHIP_LAYOUT:LocalDecl": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OWNERSHIP_LAYOUT:ModuleHeader": {
+        "align": 8,
+        "bytes": 144
+      },
+      "OWNERSHIP_LAYOUT:Operand": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OWNERSHIP_LAYOUT:Option<DiagnosticOrigins>": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OWNERSHIP_LAYOUT:Option<Site>": {
+        "align": 8,
+        "bytes": 24
+      },
+      "OWNERSHIP_LAYOUT:OwnedBlock": {
+        "align": 8,
+        "bytes": 328
+      },
+      "OWNERSHIP_LAYOUT:OwnedStatement": {
+        "align": 8,
+        "bytes": 208
+      },
+      "OWNERSHIP_LAYOUT:OwnerDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OWNERSHIP_LAYOUT:OwnerSites": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:ParameterBinding": {
+        "align": 8,
+        "bytes": 16
+      },
+      "OWNERSHIP_LAYOUT:PlaceDecl": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OWNERSHIP_LAYOUT:RawFieldDecl": {
+        "align": 8,
+        "bytes": 64
+      },
+      "OWNERSHIP_LAYOUT:RawOwnedFunction": {
+        "align": 8,
+        "bytes": 248
+      },
+      "OWNERSHIP_LAYOUT:RawOwnedProgram": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:RawRecordDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OWNERSHIP_LAYOUT:ReferenceDecl": {
+        "align": 8,
+        "bytes": 48
+      },
+      "OWNERSHIP_LAYOUT:ReserveEvent": {
+        "align": 8,
+        "bytes": 40
+      },
+      "OWNERSHIP_LAYOUT:SourceFile": {
+        "align": 8,
+        "bytes": 88
+      },
+      "OWNERSHIP_LAYOUT:ast::ExprId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "OWNERSHIP_LAYOUT:ast::Program": {
+        "align": 8,
+        "bytes": 248
+      },
+      "OWNERSHIP_LAYOUT:source::hir::ExprId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "OWNERSHIP_LAYOUT:u32": {
+        "align": 4,
+        "bytes": 4
+      },
+      "OWNERSHIP_LAYOUT:u8": {
+        "align": 1,
+        "bytes": 1
+      },
+      "OWNERSHIP_LAYOUT:usize": {
+        "align": 8,
+        "bytes": 8
+      },
+      "TRANSPORT_LAYOUT": {
+        "BytesFrame": 32,
+        "Error": 1,
+        "FramePlan": 16,
+        "InputKind": 1,
+        "Stdin": 8,
+        "StdinLock": 16,
+        "header_bytes": 24,
+        "max_path_bytes": 4194304,
+        "max_payload_bytes": 5242880,
+        "max_text_bytes": 1048576,
+        "sentinel_bytes": 1
+      },
+      "layout:(ParameterTy, Span)": {
+        "bytes": 48
+      },
+      "layout:Argument": {
+        "bytes": 104
+      },
+      "layout:Binding": {
+        "bytes": 72
+      },
+      "layout:BlockKey": {
+        "bytes": 24
+      },
+      "layout:BodyBlock": {
+        "bytes": 72
+      },
+      "layout:ExprKey": {
+        "bytes": 16
+      },
+      "layout:ExprKind": {
+        "bytes": 64
+      },
+      "layout:Field": {
+        "bytes": 72
+      },
+      "layout:FieldInit": {
+        "bytes": 48
+      },
+      "layout:FixedArrayTy": {
+        "bytes": 4
+      },
+      "layout:FlowSummary": {
+        "bytes": 4
+      },
+      "layout:Frame": {
+        "bytes": 16
+      },
+      "layout:Function": {
+        "bytes": 112
+      },
+      "layout:FunctionAstKey": {
+        "bytes": 16
+      },
+      "layout:ItemPathRef": {
+        "bytes": 40
+      },
+      "layout:ModuleHeader": {
+        "bytes": 144
+      },
+      "layout:Option<Binding>": {
+        "bytes": 72
+      },
+      "layout:Option<Expr>": {
+        "bytes": 88
+      },
+      "layout:Option<FlowSummary>": {
+        "bytes": 4
+      },
+      "layout:Option<ParameterTy>": {
+        "bytes": 24
+      },
+      "layout:Option<Projection>": {
+        "bytes": 32
+      },
+      "layout:Option<Stmt>": {
+        "bytes": 144
+      },
+      "layout:Option<ValueTy>": {
+        "bytes": 16
+      },
+      "layout:ParameterTy": {
+        "bytes": 24
+      },
+      "layout:ProjectSources": {
+        "bytes": 176
+      },
+      "layout:Projection": {
+        "bytes": 32
+      },
+      "layout:Record": {
+        "bytes": 104
+      },
+      "layout:RecordAstKey": {
+        "bytes": 16
+      },
+      "layout:Signature": {
+        "bytes": 64
+      },
+      "layout:SourceAdmission": {
+        "bytes": 1
+      },
+      "layout:SourceUsage": {
+        "bytes": 72
+      },
+      "layout:Span": {
+        "bytes": 24
+      },
+      "layout:Stmt": {
+        "bytes": 144
+      },
+      "layout:StmtKind": {
+        "bytes": 120
+      },
+      "layout:TypedBody": {
+        "bytes": 120
+      },
+      "layout:TypedOwnedFunction<'_>": {
+        "bytes": 40
+      },
+      "layout:TypedOwnedProgram<'_>": {
+        "bytes": 528
+      },
+      "layout:ValueTy": {
+        "bytes": 16
+      },
+      "layout:Vec<Binding>": {
+        "bytes": 24
+      },
+      "layout:Vec<Expr>": {
+        "bytes": 24
+      },
+      "layout:Vec<Stmt>": {
+        "bytes": 24
+      },
+      "layout:Vec<ValueTy>": {
+        "bytes": 24
+      },
+      "layout:ast::AbsolutePath": {
+        "bytes": 40
+      },
+      "layout:ast::Argument": {
+        "bytes": 88
+      },
+      "layout:ast::BodyBlock": {
+        "bytes": 72
+      },
+      "layout:ast::Expr": {
+        "bytes": 88
+      },
+      "layout:ast::FieldInit": {
+        "bytes": 56
+      },
+      "layout:ast::Function": {
+        "bytes": 200
+      },
+      "layout:ast::ImportDecl": {
+        "bytes": 56
+      },
+      "layout:ast::ItemId": {
+        "bytes": 16
+      },
+      "layout:ast::ItemPath": {
+        "bytes": 32
+      },
+      "layout:ast::ModuleDecl": {
+        "bytes": 80
+      },
+      "layout:ast::Param": {
+        "bytes": 88
+      },
+      "layout:ast::PathId": {
+        "bytes": 8
+      },
+      "layout:ast::Program": {
+        "bytes": 248
+      },
+      "layout:ast::Stmt": {
+        "bytes": 136
+      },
+      "layout:ast::StructDecl": {
+        "bytes": 128
+      },
+      "layout:ast::StructField": {
+        "bytes": 144
+      },
+      "layout:ast::TypeSyntax": {
+        "bytes": 64
+      },
+      "layout:ast::TypeSyntaxKind": {
+        "bytes": 40
+      },
+      "layout:crate::frontend::declaration_index::WorkMeter": {
+        "bytes": 104
+      },
+      "layout:crate::frontend::project::budget::Allocator": {
+        "bytes": 72
+      },
+      "layout:crate::frontend::project::budget::ReserveEvent": {
+        "bytes": 40
+      },
+      "layout:lexer::Token": {
+        "bytes": 32
+      },
+      "layout:std::collections::HashMap<&str, (BindingId, Span)>": {
+        "bytes": 48
+      },
+      "layout:super::super::source::SourceFile": {
+        "bytes": 88
+      }
+    }
+  },
+  "independent_layouts": {
+    "composition": {
+      "(FieldId, FieldInitializer)": {
+        "align": 8,
+        "bytes": 56
+      },
+      "(FieldId, Operand)": {
+        "align": 8,
+        "bytes": 48
+      },
+      "(usize,usize)": {
+        "align": 8,
+        "bytes": 16
+      },
+      "AccessBase": {
+        "align": 8,
+        "bytes": 16
+      },
+      "AggregateTy": {
+        "align": 8,
+        "bytes": 16
+      },
+      "BindingId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "BorrowKind": {
+        "align": 1,
+        "bytes": 1
+      },
+      "BorrowedTy": {
+        "align": 8,
+        "bytes": 16
+      },
+      "ContainmentSummary": {
+        "align": 8,
+        "bytes": 32
+      },
+      "DeclarationUsage": {
+        "align": 8,
+        "bytes": 32
+      },
+      "Declarations": {
+        "align": 8,
+        "bytes": 80
+      },
+      "Field": {
+        "align": 8,
+        "bytes": 80
+      },
+      "FieldDecl": {
+        "align": 8,
+        "bytes": 64
+      },
+      "FieldId": {
+        "align": 8,
+        "bytes": 16
+      },
+      "FieldInitializer": {
+        "align": 8,
+        "bytes": 40
+      },
+      "FixedArrayTy": {
+        "align": 2,
+        "bytes": 4
+      },
+      "FunctionCounts": {
+        "align": 8,
+        "bytes": 160
+      },
+      "Layout": {
+        "align": 8,
+        "bytes": 16
+      },
+      "LocalId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "Operand": {
+        "align": 8,
+        "bytes": 32
+      },
+      "Option<(ValueTy, usize, usize)>": {
+        "align": 8,
+        "bytes": 32
+      },
+      "Option<Projection>": {
+        "align": 8,
+        "bytes": 56
+      },
+      "OwnerPlaceId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "ParameterTy": {
+        "align": 8,
+        "bytes": 24
+      },
+      "Projection": {
+        "align": 8,
+        "bytes": 56
+      },
+      "RawFieldDecl": {
+        "align": 8,
+        "bytes": 64
+      },
+      "RawRecordDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "Record": {
+        "align": 8,
+        "bytes": 104
+      },
+      "RecordDecl": {
+        "align": 8,
+        "bytes": 72
+      },
+      "RecordId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "ScalarLeaf": {
+        "align": 8,
+        "bytes": 16
+      },
+      "ScalarLeaves": {
+        "align": 8,
+        "bytes": 2096
+      },
+      "SourceFileId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "Span": {
+        "align": 8,
+        "bytes": 24
+      },
+      "Ty": {
+        "align": 1,
+        "bytes": 1
+      },
+      "ValueTy": {
+        "align": 8,
+        "bytes": 16
+      },
+      "[Option<(ValueTy, usize, usize)>;65]": {
+        "align": 8,
+        "bytes": 2080
+      }
+    },
+    "predecessor": {
+      "(FieldId, Operand)": {
+        "align": 8,
+        "bytes": 48
+      },
+      "(usize,usize)": {
+        "align": 8,
+        "bytes": 16
+      },
+      "AccessBase": {
+        "align": 8,
+        "bytes": 16
+      },
+      "AggregateTy": {
+        "align": 8,
+        "bytes": 16
+      },
+      "BindingId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "BorrowKind": {
+        "align": 1,
+        "bytes": 1
+      },
+      "BorrowedTy": {
+        "align": 8,
+        "bytes": 16
+      },
+      "DeclarationUsage": {
+        "align": 8,
+        "bytes": 32
+      },
+      "Declarations": {
+        "align": 8,
+        "bytes": 80
+      },
+      "Field": {
+        "align": 8,
+        "bytes": 72
+      },
+      "FieldDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "FieldId": {
+        "align": 8,
+        "bytes": 16
+      },
+      "FixedArrayTy": {
+        "align": 2,
+        "bytes": 4
+      },
+      "FunctionCounts": {
+        "align": 8,
+        "bytes": 144
+      },
+      "Layout": {
+        "align": 8,
+        "bytes": 16
+      },
+      "LocalId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "Operand": {
+        "align": 8,
+        "bytes": 32
+      },
+      "Option<(ValueTy, usize, usize)>": {
+        "align": 8,
+        "bytes": 32
+      },
+      "Option<Projection>": {
+        "align": 8,
+        "bytes": 32
+      },
+      "OwnerPlaceId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "ParameterTy": {
+        "align": 8,
+        "bytes": 24
+      },
+      "Projection": {
+        "align": 8,
+        "bytes": 32
+      },
+      "RawFieldDecl": {
+        "align": 8,
+        "bytes": 64
+      },
+      "RawRecordDecl": {
+        "align": 8,
+        "bytes": 56
+      },
+      "Record": {
+        "align": 8,
+        "bytes": 104
+      },
+      "RecordDecl": {
+        "align": 8,
+        "bytes": 64
+      },
+      "RecordId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "SourceFileId": {
+        "align": 8,
+        "bytes": 8
+      },
+      "Span": {
+        "align": 8,
+        "bytes": 24
+      },
+      "Ty": {
+        "align": 1,
+        "bytes": 1
+      },
+      "ValueTy": {
+        "align": 8,
+        "bytes": 16
+      },
+      "[Option<(ValueTy, usize, usize)>;65]": {
+        "align": 8,
+        "bytes": 2080
+      }
+    }
+  },
+  "qualification": "partial: pinned declaration-only layout measurements and independent formulas; full successor source-bound resource replay remains required",
+  "schema": "oxid-record-composition-current-resource-v1",
+  "source_tree": "f6b7dee8bac4ebcc27ad020db9940344c5e4ae41"
+}

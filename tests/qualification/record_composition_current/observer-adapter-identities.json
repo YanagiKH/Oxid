@@ -1,0 +1,81 @@
+{
+  "adapters": {
+    "journal": {
+      "archived_container": {
+        "bytes": 45496,
+        "path": "tests/fixtures/typed_project_unit3_independent/components/observer/overlay-v5.patch",
+        "sha256": "62a2b6382f7684c5aaf03c355580f2e8d582c6c2688d7bab970f0b50f9c0ed54"
+      },
+      "derived": {
+        "bytes": 9459,
+        "path": "derived/unit3_observer.rs",
+        "sha256": "68b72b333273db47158b01cb55ec81f1ccd309f6c5519c3a07d06f10caf22ef9"
+      },
+      "original": {
+        "bytes": 9372,
+        "path": "src/frontend/unit3_observer.rs",
+        "sha256": "3654621dd6f173c18f4416d6cdd999273431f774808bdec51785f911e517a543"
+      },
+      "substitutions": 1
+    },
+    "prepare": {
+      "derived": {
+        "bytes": 15484,
+        "path": "derived/observer-prepare.py",
+        "sha256": "ab6d92e3c46099270a788bed0204e53e10b75069871eaeaf9c53aea5408c7d36"
+      },
+      "original": {
+        "bytes": 14411,
+        "path": "tests/fixtures/typed_project_unit3_independent/components/observer/prepare.py",
+        "sha256": "b040216c2484e9d4fd28a725d3ea7af85f0c57bd889263996b26df87aff9f1d9"
+      },
+      "substitutions": 1
+    },
+    "raw_walker": {
+      "archived_container": {
+        "bytes": 45496,
+        "path": "tests/fixtures/typed_project_unit3_independent/components/observer/overlay-v5.patch",
+        "sha256": "62a2b6382f7684c5aaf03c355580f2e8d582c6c2688d7bab970f0b50f9c0ed54"
+      },
+      "derived": {
+        "bytes": 6279,
+        "path": "derived/unit3_raw_owned.rs",
+        "sha256": "5d8b42dab3a707af67e0e3a2972bdfcca901a85792821a800e466f313ac4e870"
+      },
+      "original": {
+        "bytes": 3309,
+        "path": "src/frontend/oir/owned/unit3_raw_owned.rs",
+        "sha256": "07852e6e613a292f55b34a53bd0f1c82b343cb2323a5f23be0affb184df7742d"
+      },
+      "substitutions": 2
+    },
+    "store": {
+      "derived": {
+        "bytes": 81055,
+        "path": "derived/owned-execute-store.rs",
+        "sha256": "90c9e3d55b7a410c9c8197878c70a44eda1e27b2af1ccb487414061312246e42"
+      },
+      "original": {
+        "bytes": 80482,
+        "path": "src/frontend/oir/owned/execute.rs",
+        "sha256": "6e5fbf2687161543f1b5d0b640dd182df30bd2b5c65e6dd7b12a54428ed976fe"
+      },
+      "substitutions": 1
+    },
+    "typing": {
+      "derived": {
+        "bytes": 36781,
+        "path": "derived/typing-observer.rs",
+        "sha256": "b2e2229a1d3a0beddf664f03a448e254e2a1db4696104ce06d237696d91bbbc2"
+      },
+      "original": {
+        "bytes": 36020,
+        "path": "tests/fixtures/fixed_array_source_unit3/typing-replay-v1/components/observer.rs",
+        "sha256": "48b406fc0250a55933fb5f8720a2f83d0f8518e9baa758faf8d13a982ba5dd29"
+      },
+      "substitutions": 8
+    }
+  },
+  "schema": "oxid-record-composition-observer-adapters-v1",
+  "scope": "Archived scalar record JSON only; owned fields, slices and non-single-hop paths remain unsupported. Test-only scalar store event follows successful encode; no expected observations are rewritten."
+}

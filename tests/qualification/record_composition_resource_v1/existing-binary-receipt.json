@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/workspace/scratch/8266abf56995/oxid-record-composition-source-target/debug/deps/oxid-5f10fcb36143f9fc",
+    "frontend::oir::owned::source::array_pipeline::tests::transport::controls::unit3b2_transport_layout_without_source_invocation",
+    "frontend::oir::owned::source::array_pipeline::tests::unit3b2_observer_layout_without_source_invocation",
+    "frontend::oir::owned::source::lower::unit3b2_lowering_layout_without_source_observation",
+    "frontend::oir::owned::source::tests::unit3a_unchanged_hir_enclosing_layouts",
+    "frontend::oir::owned::source::typeck::array_type_layout_tests::unit3b1_owner_slot_layouts",
+    "frontend::oir::owned_types::tests::production_record_and_field_boundaries_are_inclusive",
+    "frontend::project::tests::measured_layout_and_requested_inventory",
+    "frontend::project::unit2_tests::unit2_measured_layout_and_requested_inventory",
+    "--exact",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "exit_status": 0,
+  "binary_sha256": "d7bcaa8a38359ee10300d74e32414f957cdfec07210ab7e6f287a1bf7b18bb8e",
+  "provenance_limit": "Existing local test executable; this run does not independently establish its build source tree. Source-bound successor build must rerun these tests before qualification."
+}

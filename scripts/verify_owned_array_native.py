@@ -42,6 +42,13 @@ SLICE_ROSTER = (
     PREFIX + "slices::native_slices_checkpoint_and_mutation_use_source_free_llvm",
     PREFIX + "slices::native_slices_signed_bounds_and_fuel_use_source_free_llvm",
 )
+COMPOSITION_ROSTER = (
+    PREFIX + "composition::native_composition_projected_array_bounds_fuel_and_rhs_precedence",
+    PREFIX + "composition::native_composition_raw_empty_sentinels_source_free",
+    PREFIX + "composition::native_composition_raw_pilot_source_free_every_fuel",
+    PREFIX + "composition::native_composition_source_free_depth_sixty_four",
+    PREFIX + "composition::native_composition_source_free_pilot_sentinels_effects_and_phi",
+)
 FAMILIES = ({'additional_guarded_modules': 195,
   'compiled_elfs': 390,
   'distinct_inputs': 195,
@@ -205,13 +212,13 @@ def admit_discovery(data):
     for line in data.decode("utf-8").splitlines():
         if not line:
             continue
-        if line == "19 tests, 0 benchmarks" and not footer:
+        if line == "24 tests, 0 benchmarks" and not footer:
             footer = True
         else:
             require(not footer and line.endswith(": test"), "unknown or misplaced discovery line")
             names.append(line[:-6])
     require(footer, "missing discovery footer")
-    exact_inventory(names, (*ROSTER, *SLICE_ROSTER), "current ignored prefix roster")
+    exact_inventory(names, (*ROSTER, *SLICE_ROSTER, *COMPOSITION_ROSTER), "current ignored prefix roster")
     return names
 
 

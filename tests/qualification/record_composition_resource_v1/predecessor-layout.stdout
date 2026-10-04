@@ -1,0 +1,32 @@
+SourceFileId 8 8
+Span 24 8
+Ty 1 1
+RecordId 8 8
+FixedArrayTy 4 2
+AggregateTy 16 8
+BorrowedTy 16 8
+FieldId 16 8
+OwnerPlaceId 8 8
+ValueTy 16 8
+BorrowKind 1 1
+ParameterTy 24 8
+RawRecordDecl 56 8
+RawFieldDecl 64 8
+Layout 16 8
+FieldDecl 56 8
+RecordDecl 64 8
+DeclarationUsage 32 8
+Declarations 80 8
+LocalId 8 8
+Operand 32 8
+FunctionCounts 144 8
+BindingId 8 8
+Record 104 8
+Field 72 8
+AccessBase 16 8
+Projection 32 8
+Option<Projection> 32 8
+(FieldId, Operand) 48 8
+Option<(ValueTy, usize, usize)> 32 8
+[Option<(ValueTy, usize, usize)>;65] 2080 8
+(usize,usize) 16 8

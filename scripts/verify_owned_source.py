@@ -29,6 +29,9 @@ import owned_source_model as model
 CLI_AMENDMENT_ID = "checked-division-v1"
 CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_checked_division_cli_v1.json")
 CLI_AMENDMENT_SHA256 = "568ec18e2869c9519ba34c3e1adde910dd52698efa9dda071bb3833ec6749ac8"
+COMPOSITION_CLI_AMENDMENT_ID = "owned-record-composition-v1"
+COMPOSITION_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_record_composition_cli_v1.json")
+COMPOSITION_CLI_AMENDMENT_SHA256 = 'f4e64492da636285f006790bbecc7ea4c5989acf46dd10cc4f558c8d8bfc3420'
 
 
 @dataclass(frozen=True)
@@ -120,16 +123,22 @@ def verify_frozen(directory):
 def load_cli_amendment(selection, directory, *, mode):
     """Load the sealed current-CLI-only contract without rewriting the oracle.
 
-    The version pins the complete two-row data document, including historical
-    rejection facts and effective results. It cannot widen candidate/raw-IR or
+    Each version pins its complete data document, including historical facts
+    and effective results. The composition successor preserves both division
+    rows and adds two named cases. It cannot widen candidate/raw-IR or
     native-budget expectations, and is never selected implicitly.
     """
     if selection is None: return None
     if mode != "cli": raise ValueError("CLI amendment is only valid with explicit --mode cli")
-    if selection != CLI_AMENDMENT_ID: raise ValueError("unknown current CLI amendment")
-    encoded = CLI_AMENDMENT_PATH.read_bytes()
+    if selection == CLI_AMENDMENT_ID:
+        path, expected_sha = CLI_AMENDMENT_PATH, CLI_AMENDMENT_SHA256
+    elif selection == COMPOSITION_CLI_AMENDMENT_ID:
+        path, expected_sha = COMPOSITION_CLI_AMENDMENT_PATH, COMPOSITION_CLI_AMENDMENT_SHA256
+    else:
+        raise ValueError("unknown current CLI amendment")
+    encoded = path.read_bytes()
     identity = hashlib.sha256(encoded).hexdigest()
-    if identity != CLI_AMENDMENT_SHA256:
+    if identity != expected_sha:
         raise ValueError("current CLI amendment data differs from its sealed version")
     amendment = strict_json_loads(encoded)
     directory = Path(directory)
@@ -152,7 +161,8 @@ def apply_cli_amendment(item, amendment):
     encoded = (json.dumps(item, indent=2, sort_keys=True) + "\n").encode()
     if (hashlib.sha256(encoded).hexdigest() != row["old_expectation_sha256"]
             or item["source_sha256"] != row["source_sha256"]
-            or type(item["function_count"]) is not int or item["function_count"] != row["function_count"]
+            or item.get("function_count") != row["function_count"]
+            or (row["function_count"] is not None and type(item.get("function_count")) is not int)
             or not RawInspector.equal(item["expected"], row["old_expected"])):
         raise ValueError("CLI amendment does not match the historical case: " + item["id"])
     return {**item, "expected": dict(row["effective_expected"])}
@@ -1341,7 +1351,7 @@ def main(argv=None):
     parser.add_argument("--frozen", type=Path)
     parser.add_argument("--candidate-observations", type=Path)
     parser.add_argument("--collection-manifest", type=Path)
-    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID,),
+    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID),
                         help="explicit current-CLI expectations; requires --mode cli and preserves the frozen model")
     parser.add_argument("--jobs", type=int, choices=(1, 2), default=1)
     parser.add_argument("--timeout", type=float, default=1800)

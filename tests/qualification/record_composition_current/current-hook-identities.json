@@ -1,0 +1,67 @@
+{
+  "src/frontend/declaration_index/resource.rs": {
+    "derived": {
+      "bytes": 13430,
+      "path": "src/frontend/declaration_index/resource.rs",
+      "sha256": "b8cc717f2863924e796316c96084c5133b93e22883ea9fc0e304f27feb86a59e"
+    },
+    "original": {
+      "bytes": 13343,
+      "path": "src/frontend/declaration_index/resource.rs",
+      "sha256": "5f9201347edfba22a57f0020c61ebcf8080fda0249fab0322b0dfb35c9139e9f"
+    },
+    "substitutions": 1
+  },
+  "src/frontend/oir/owned/array_observe.rs": {
+    "derived": {
+      "bytes": 16504,
+      "path": "src/frontend/oir/owned/array_observe.rs",
+      "sha256": "2a42af5b87d738630de34cf392ede82d4a8c0ad0ae0ce51deb658dc5fa9a8d85"
+    },
+    "original": {
+      "bytes": 16256,
+      "path": "src/frontend/oir/owned/array_observe.rs",
+      "sha256": "59289c38e1e89d28fc5563e643fcaab12586c39ce4c48f46d3d7dcaa0a1137af"
+    },
+    "substitutions": 1
+  },
+  "src/frontend/oir/owned/source/mod.rs": {
+    "derived": {
+      "bytes": 859,
+      "path": "src/frontend/oir/owned/source/mod.rs",
+      "sha256": "0790e70154c45e25f0b0ea172163b373b932041794207c4a37c66279cc30cd82"
+    },
+    "original": {
+      "bytes": 818,
+      "path": "src/frontend/oir/owned/source/mod.rs",
+      "sha256": "aa83e332b8bf646cd83c4749d6d56e1d8fa9f936b36e0bf211c8ab94e0855ae4"
+    },
+    "substitutions": 1
+  },
+  "src/frontend/project.rs": {
+    "derived": {
+      "bytes": 35861,
+      "path": "src/frontend/project.rs",
+      "sha256": "3dd4af8d361083599bd80599225017f2b2748687a8d662b6504bedbe9eef6166"
+    },
+    "original": {
+      "bytes": 35585,
+      "path": "src/frontend/project.rs",
+      "sha256": "7931b70180c72e99488709bd8d05cf673dd32d29c4091883e608a03a91d18f85"
+    },
+    "substitutions": 3
+  },
+  "src/frontend/project/budget.rs": {
+    "derived": {
+      "bytes": 8151,
+      "path": "src/frontend/project/budget.rs",
+      "sha256": "0040fa45e97a4d45c6e5d8cafcb6a39e23e2c704ddd915fbd618e098c727503f"
+    },
+    "original": {
+      "bytes": 7740,
+      "path": "src/frontend/project/budget.rs",
+      "sha256": "b4bfc05194f785cb9af42d6d1dcc1b4d847259befd54abd585e41eccece5524b"
+    },
+    "substitutions": 2
+  }
+}

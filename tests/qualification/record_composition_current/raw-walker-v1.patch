@@ -1,0 +1,79 @@
+--- a/src/frontend/oir/owned/unit3_raw_owned.rs
++++ b/src/frontend/oir/owned/unit3_raw_owned.rs
+@@ -5,7 +5,61 @@
+ fn origins(v:&Option<DiagnosticOrigins>,p:&str) {
+     if let Some(v)=v {span(&v.primary,format!("{p}.diagnostic_origins.primary"));span(&v.cause,format!("{p}.diagnostic_origins.cause"));}
+ }
++// This historical registry has no array, slice or composed-record schema.
++// Reject the complete raw input before capturing output or registering addresses.
++fn historical_instruction(value: &OwnedInstruction) -> bool {
++    match value {
++        OwnedInstruction::ConstructComposite { .. }
++        | OwnedInstruction::ReadProjection { .. }
++        | OwnedInstruction::WriteProjection { .. }
++        | OwnedInstruction::ProjectionLength { .. }
++        | OwnedInstruction::ConstructArray { .. }
++        | OwnedInstruction::ReadIndex { .. }
++        | OwnedInstruction::WriteIndex { .. }
++        | OwnedInstruction::ArrayLength { .. } => false,
++        OwnedInstruction::Scalar(_)
++        | OwnedInstruction::StorageLive(_)
++        | OwnedInstruction::StorageEnd(_)
++        | OwnedInstruction::Construct { .. }
++        | OwnedInstruction::MoveInitialize { .. }
++        | OwnedInstruction::Replace { .. }
++        | OwnedInstruction::Discard(_)
++        | OwnedInstruction::ReadField { .. }
++        | OwnedInstruction::WriteField { .. }
++        | OwnedInstruction::OpenCall(_)
++        | OwnedInstruction::PrepareScalar { .. }
++        | OwnedInstruction::PrepareOwned { .. }
++        | OwnedInstruction::PrepareBorrow { .. } => true,
++    }
++}
++fn historical_domain(raw: &RawOwnedProgram) {
++    const ERROR: &str = "OBSERVATION_UNSUPPORTED: historical scalar-record domain";
++    for record in &raw.records {
++        for field in &record.fields {
++            assert!(matches!(field.ty, ParameterTy::Value(ValueTy::Scalar(_))), "{ERROR}");
++        }
++    }
++    for function in &raw.functions {
++        assert!(matches!(function.result, ValueTy::Scalar(_) | ValueTy::Owned(AggregateTy::Record(_))), "{ERROR}");
++        for owner in &function.owners {
++            assert!(matches!(owner.aggregate(), AggregateTy::Record(_)), "{ERROR}");
++        }
++        for reference in &function.references {
++            assert!(matches!(reference.referent(), BorrowedTy::Exact(AggregateTy::Record(_))), "{ERROR}");
++        }
++        for loan in &function.loans {
++            assert!(matches!(loan.referent(), BorrowedTy::Exact(AggregateTy::Record(_))), "{ERROR}");
++        }
++        for block in &function.blocks {
++            for statement in &block.statements {
++                assert!(historical_instruction(&statement.kind), "{ERROR}");
++            }
++        }
++    }
++}
+ pub(super) fn register(raw:&RawOwnedProgram) {
++    if !journal::enabled() { return; }
++    historical_domain(raw);
+     journal::registry_begin();
+     journal::capture("raw-before-audit",raw);
+     for (ri,r) in raw.records.iter().enumerate(){
+@@ -26,6 +80,14 @@
+             for (si,s) in b.statements.iter().enumerate(){
+                 let p=format!("{p}.statements[{si}]");span(&s.span,format!("{p}.span"));origins(&s.diagnostic_origins,&p);
+                 match &s.kind {
++                    OwnedInstruction::ConstructComposite { .. }
++                    | OwnedInstruction::ReadProjection { .. }
++                    | OwnedInstruction::WriteProjection { .. }
++                    | OwnedInstruction::ProjectionLength { .. }
++                    | OwnedInstruction::ConstructArray { .. }
++                    | OwnedInstruction::ReadIndex { .. }
++                    | OwnedInstruction::WriteIndex { .. }
++                    | OwnedInstruction::ArrayLength { .. } => panic!("OBSERVATION_UNSUPPORTED: historical scalar-record domain"),
+                     OwnedInstruction::Scalar(v)=>statement(v,&format!("{p}.kind.scalar")),
+                     OwnedInstruction::Construct{fields,..}=>for (i,(_,v)) in fields.iter().enumerate(){span(&v.span,format!("{p}.kind.fields[{i}].value.span"));},
+                     OwnedInstruction::WriteField{value,..}|OwnedInstruction::PrepareScalar{value,..}=>span(&value.span,format!("{p}.kind.value.span")),

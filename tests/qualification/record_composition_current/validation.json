@@ -1,0 +1,69 @@
+{
+  "cargo_check": {
+    "command": "cargo check --tests --locked --offline -j1",
+    "evidence": "check-02.log",
+    "exit_status": 0
+  },
+  "evidence": [
+    {
+      "bytes": 1963,
+      "path": "check-02.log",
+      "sha256": "20ca979099dd6664ebe1459bf9e966cbb0d1624b93c8221de577619943fdcd38"
+    },
+    {
+      "bytes": 6604,
+      "path": "controls-01.log",
+      "sha256": "b96b75298f5f1b8f026170cccd93f28b0e4d22fd7fb2f6b8e3ef690df5d72da7"
+    },
+    {
+      "bytes": 3917,
+      "path": "controls-02.log",
+      "sha256": "2498bfd2f347348b36bde0de5cd59ec07cbf30f29f97724158bf1f517326df43"
+    },
+    {
+      "bytes": 3324,
+      "path": "controls-03.log",
+      "sha256": "d7c99edba481165eaaacc06b4035d8e612dcda646fa88734acce2f9a3475a031"
+    },
+    {
+      "bytes": 1702,
+      "path": "python-controls.log",
+      "sha256": "787d2ec9a959c8285cd3721f8619dde1c848fe85199ed015cf902fb875995d7a"
+    },
+    {
+      "bytes": 1702,
+      "path": "python-controls-optimized.log",
+      "sha256": "1b77094e8ab7b818be14bd954fead2e6c320831bf9a7010e177203921ae9fe15"
+    }
+  ],
+  "failures_preserved": [
+    {
+      "cause": "New tests initially used wrong existing type-constructor names; tests corrected, no compiler source changed.",
+      "evidence": "controls-01.log"
+    },
+    {
+      "cause": "Runtime order control detected missing migrated existing-event journal. Fixed through exact record_event helper adapter; control unchanged.",
+      "evidence": "controls-02.log"
+    }
+  ],
+  "not_claimed": [
+    "54-case current typing semantic/resource pass",
+    "full current Unit3 frozen-oracle equivalence",
+    "release observer qualification",
+    "native overlay current build"
+  ],
+  "python_controls": {
+    "exit_status": 0,
+    "normal": 13,
+    "optimized": 13
+  },
+  "rust_controls": {
+    "command": "cargo test --locked --offline -j1 --bin oxid record_adapter_ -- --test-threads=1",
+    "evidence": "controls-03.log",
+    "exit_status": 0,
+    "passed": 9,
+    "typing_control_placement": "Exact adapted helper/display definitions instantiated in sibling module; complete observer compiled alongside."
+  },
+  "schema": "oxid-record-observer-adapter-validation-v1",
+  "status": "focused-controls-passed-full-replay-unverified"
+}

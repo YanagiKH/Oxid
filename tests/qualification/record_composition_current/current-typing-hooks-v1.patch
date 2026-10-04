@@ -1,0 +1,79 @@
+--- a/src/frontend/declaration_index/resource.rs
++++ b/src/frontend/declaration_index/resource.rs
+@@ -65,6 +65,8 @@
+             phase: Cell::new("collection"),
+         }
+     }
++    #[cfg(test)]
++    pub fn observer_phase(&self) -> &'static str { self.phase.get() }
+     pub fn used(&self) -> u64 {
+         self.used.get()
+     }
+--- a/src/frontend/project/budget.rs
++++ b/src/frontend/project/budget.rs
+@@ -15,6 +15,8 @@
+     pub observer_trace_limit: Option<usize>,
+     #[cfg(test)]
+     pub observer_trace_overflow: bool,
++    #[cfg(test)]
++    pub observer_loader_phases: [usize; 4],
+     #[cfg(test)]
+     pub fail_at: Option<usize>,
+     /// Qualification instrumentation is not part of production storage.
+@@ -32,6 +34,15 @@
+ }
+ 
+ impl Allocator {
++    #[cfg(test)]
++    pub fn observer_loader_mark(&mut self, slot: usize) {
++        if self.observer_trace_limit.is_some() {
++            match self.observer_loader_phases[slot].checked_add(1) {
++                Some(n) => self.observer_loader_phases[slot] = n,
++                None => self.observer_trace_overflow = true,
++            }
++        }
++    }
+     /// Qualification-only retention bound; allocation attempts and results are
+     /// unchanged. The caller admits this separate trace payload before reserve.
+     #[cfg(test)]
+--- a/src/frontend/project.rs
++++ b/src/frontend/project.rs
+@@ -727,7 +727,11 @@
+             .min(lexer::MAX_TOKENS)
+             .checked_sub(self.project.usage.non_eof_tokens)
+             .ok_or_else(|| one(overflow(origin)))?;
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(0);
+         let tokens = lexer::lex_with_limit(source, remaining_tokens).map_err(one)?;
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(1);
+         self.project.usage.non_eof_tokens =
+             add(self.project.usage.non_eof_tokens, tokens.len() - 1, origin).map_err(one)?;
+         let remaining_nodes = self
+@@ -736,6 +740,8 @@
+             .min(parser::MAX_NODES)
+             .checked_sub(self.project.usage.syntax_nodes)
+             .ok_or_else(|| one(overflow(origin)))?;
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(2);
+         let (program, nodes) = if self.arrays == parser::ArraySyntaxPolicy::Closed {
+             parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?
+         } else {
+@@ -748,6 +754,8 @@
+                 self.arrays,
+             )?
+         };
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(3);
+         self.project.usage.syntax_nodes =
+             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
+         if program.uses_project_syntax() {
+--- a/src/frontend/oir/owned/source/mod.rs
++++ b/src/frontend/oir/owned/source/mod.rs
+@@ -44,3 +44,6 @@
+ mod slice_raw_tests;
+ #[cfg(test)]
+ mod slice_tests;
++
++#[cfg(test)]
++mod array_typing_observer;

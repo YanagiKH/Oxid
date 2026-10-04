@@ -1,0 +1,169 @@
+
+running 8 tests
+test frontend::oir::owned::source::array_pipeline::tests::transport::controls::unit3b2_transport_layout_without_source_invocation ... TRANSPORT_LAYOUT {"BytesFrame":32,"FramePlan":16,"Error":1,"InputKind":1,"Stdin":8,"StdinLock":16,"header_bytes":24,"sentinel_bytes":1,"max_text_bytes":1048576,"max_path_bytes":4194304,"max_payload_bytes":5242880}
+ok
+test frontend::oir::owned::source::array_pipeline::tests::unit3b2_observer_layout_without_source_invocation ... OBSERVER_LAYOUT {"Output":512,"Counter":24,"BoundedWrite":40,"Limits":200,"LiteralRequest":160,"Receipt":64,"LoadFailure":192,"CaptureWrapper":520}
+OWNERSHIP_LAYOUT {"name":"usize","bytes":8,"align":8}
+OWNERSHIP_LAYOUT {"name":"Operand","bytes":32,"align":8}
+OWNERSHIP_LAYOUT {"name":"ReserveEvent","bytes":40,"align":8}
+OWNERSHIP_LAYOUT {"name":"Option<DiagnosticOrigins>","bytes":56,"align":8}
+OWNERSHIP_LAYOUT {"name":"OwnerSites","bytes":48,"align":8}
+OWNERSHIP_LAYOUT {"name":"CallSites","bytes":64,"align":8}
+OWNERSHIP_LAYOUT {"name":"Option<Site>","bytes":24,"align":8}
+OWNERSHIP_LAYOUT {"name":"(usize,bool)","bytes":16,"align":8}
+OWNERSHIP_LAYOUT {"name":"ParameterBinding","bytes":16,"align":8}
+OWNERSHIP_LAYOUT {"name":"ReferenceDecl","bytes":48,"align":8}
+OWNERSHIP_LAYOUT {"name":"LoanDecl","bytes":72,"align":8}
+OWNERSHIP_LAYOUT {"name":"(FieldId,Operand)","bytes":48,"align":8}
+OWNERSHIP_LAYOUT {"name":"RawOwnedProgram","bytes":48,"align":8}
+OWNERSHIP_LAYOUT {"name":"RawOwnedFunction","bytes":248,"align":8}
+OWNERSHIP_LAYOUT {"name":"RawRecordDecl","bytes":56,"align":8}
+OWNERSHIP_LAYOUT {"name":"RawFieldDecl","bytes":64,"align":8}
+OWNERSHIP_LAYOUT {"name":"LocalDecl","bytes":32,"align":8}
+OWNERSHIP_LAYOUT {"name":"PlaceDecl","bytes":32,"align":8}
+OWNERSHIP_LAYOUT {"name":"OwnerDecl","bytes":56,"align":8}
+OWNERSHIP_LAYOUT {"name":"CallDecl","bytes":96,"align":8}
+OWNERSHIP_LAYOUT {"name":"ArgumentSlot","bytes":16,"align":8}
+OWNERSHIP_LAYOUT {"name":"OwnedBlock","bytes":328,"align":8}
+OWNERSHIP_LAYOUT {"name":"OwnedStatement","bytes":208,"align":8}
+OWNERSHIP_LAYOUT {"name":"SourceFile","bytes":88,"align":8}
+OWNERSHIP_LAYOUT {"name":"ast::Program","bytes":248,"align":8}
+OWNERSHIP_LAYOUT {"name":"ModuleHeader","bytes":144,"align":8}
+OWNERSHIP_LAYOUT {"name":"ast::ExprId","bytes":8,"align":8}
+OWNERSHIP_LAYOUT {"name":"source::hir::ExprId","bytes":8,"align":8}
+OWNERSHIP_LAYOUT {"name":"u8","bytes":1,"align":1}
+OWNERSHIP_LAYOUT {"name":"u32","bytes":4,"align":4}
+ok
+test frontend::oir::owned::source::lower::unit3b2_lowering_layout_without_source_observation ... LAYOUT {"name":"ExprFrame","bytes":80,"align":8}
+LAYOUT {"name":"Option<ExprFrame>","bytes":80,"align":8}
+LAYOUT {"name":"Stack<ExprFrame,203>","bytes":16248,"align":8}
+LAYOUT {"name":"BodyFrame","bytes":56,"align":8}
+LAYOUT {"name":"Option<BodyFrame>","bytes":56,"align":8}
+LAYOUT {"name":"Stack<BodyFrame,268>","bytes":15016,"align":8}
+LAYOUT {"name":"LoopTargets","bytes":32,"align":8}
+LAYOUT {"name":"Option<LoopTargets>","bytes":40,"align":8}
+LAYOUT {"name":"Stack<LoopTargets,65>","bytes":2608,"align":8}
+LAYOUT {"name":"CallFrame","bytes":72,"align":8}
+LAYOUT {"name":"Walk","bytes":696,"align":8}
+LAYOUT {"name":"Output","bytes":464,"align":8}
+LAYOUT {"name":"Option<Output>","bytes":464,"align":8}
+LAYOUT {"name":"FunctionCounts","bytes":144,"align":8}
+LAYOUT {"name":"BindingLocation","bytes":16,"align":8}
+LAYOUT {"name":"Option<BindingLocation>","bytes":16,"align":8}
+LAYOUT {"name":"EvaluatedValue","bytes":40,"align":8}
+LAYOUT {"name":"Option<EvaluatedValue>","bytes":40,"align":8}
+LAYOUT {"name":"Vec<Operand>","bytes":24,"align":8}
+LAYOUT {"name":"Operand","bytes":32,"align":8}
+LAYOUT {"name":"SourceAdmission","bytes":1,"align":1}
+LAYOUT {"name":"ResolvedOwnedProgram","bytes":504,"align":8}
+LAYOUT {"name":"TypedOwnedProgram","bytes":528,"align":8}
+LAYOUT {"name":"TypedOwnedFunction","bytes":40,"align":8}
+LAYOUT {"name":"Allocator","bytes":72,"align":8}
+LAYOUT {"name":"ReserveEvent","bytes":40,"align":8}
+ok
+test frontend::oir::owned::source::tests::unit3a_unchanged_hir_enclosing_layouts ... layout Expr 88
+layout ExprKind 64
+layout Stmt 144
+layout StmtKind 120
+layout Binding 72
+layout Signature 64
+layout Function 112
+layout Option<Expr> 88
+layout Option<Stmt> 144
+layout Option<Binding> 72
+layout Vec<Expr> 24
+layout Vec<Stmt> 24
+layout Vec<Binding> 24
+ok
+test frontend::oir::owned::source::typeck::array_type_layout_tests::unit3b1_owner_slot_layouts ... layout ResolvedOwnedProgram<'_> 504
+layout TypedOwnedProgram<'_> 528
+layout TypedOwnedFunction<'_> 40
+layout TypedBody 120
+layout SourceAdmission 1
+layout Record 104
+layout Field 72
+layout BodyBlock 72
+layout Argument 104
+layout FieldInit 48
+layout ValueTy 16
+layout Option<ValueTy> 16
+layout ParameterTy 24
+layout Option<ParameterTy> 24
+layout Projection 32
+layout Option<Projection> 32
+layout FlowSummary 4
+layout Option<FlowSummary> 4
+layout FixedArrayTy 4
+layout Vec<ValueTy> 24
+layout crate::frontend::project::budget::Allocator 72
+layout crate::frontend::project::budget::ReserveEvent 40
+layout crate::frontend::declaration_index::WorkMeter 104
+layout (ParameterTy, Span) 48
+layout std::collections::HashMap<&str, (BindingId, Span)> 48
+ok
+test frontend::oir::owned_types::tests::production_record_and_field_boundaries_are_inclusive ... ok
+test frontend::project::tests::measured_layout_and_requested_inventory ... layout SourceMap 24
+layout super::super::source::SourceFile 88
+layout Span 24
+layout lexer::Token 32
+layout ast::Program 248
+layout ast::Function 200
+layout ast::Param 88
+layout ast::BodyBlock 72
+layout ast::Stmt 136
+layout ast::StructDecl 128
+layout ast::StructField 144
+layout ast::Expr 88
+layout ast::Argument 88
+layout ast::FieldInit 56
+layout ast::ItemId 16
+layout ast::ModuleDecl 80
+layout ModuleHeader 144
+layout ProjectSources 176
+layout FunctionAstKey 16
+layout RecordAstKey 16
+layout ExprKey 16
+layout BlockKey 24
+layout Frame 16
+layout SourceUsage 72
+usage SourceUsage { source_bytes: 28, non_eof_tokens: 17, syntax_nodes: 4, line_starts: 2, modules: 2, retained_path_bytes: 123, probes: 1, directory_entries: 2, directory_name_units: 10 }
+inventory Inventory { owner_bytes: 176, source_bytes: 28, source_headers: 176, line_starts: 16, tokens: 608, ast_headers: 496, ast_payload: 608, module_headers: 288, path_bytes: 123, fixed_loader_scratch: 8720 }
+ok
+test frontend::project::unit2_tests::unit2_measured_layout_and_requested_inventory ... layout SourceMap 24
+layout super::super::source::SourceFile 88
+layout Span 24
+layout lexer::Token 32
+layout ast::Program 248
+layout ast::Function 200
+layout ast::Param 88
+layout ast::TypeSyntax 64
+layout ast::TypeSyntaxKind 40
+layout ast::BodyBlock 72
+layout ast::Stmt 136
+layout ast::StructDecl 128
+layout ast::StructField 144
+layout ast::Expr 88
+layout ast::Argument 88
+layout ast::FieldInit 56
+layout ast::ItemId 16
+layout ast::ModuleDecl 80
+layout ast::PathId 8
+layout ast::ItemPath 32
+layout ast::AbsolutePath 40
+layout ast::ImportDecl 56
+layout ItemPathRef 40
+layout ModuleHeader 144
+layout ProjectSources 176
+layout FunctionAstKey 16
+layout RecordAstKey 16
+layout ExprKey 16
+layout BlockKey 24
+layout Frame 16
+layout SourceUsage 72
+usage SourceUsage { source_bytes: 74, non_eof_tokens: 42, syntax_nodes: 10, line_starts: 1, modules: 1, retained_path_bytes: 33, probes: 0, directory_entries: 0, directory_name_units: 0 }
+inventory Inventory { owner_bytes: 176, source_bytes: 74, source_headers: 88, line_starts: 8, tokens: 1376, ast_headers: 248, ast_payload: 1048, module_headers: 144, path_bytes: 33, fixed_loader_scratch: 8720 }
+validation span callbacks 69
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 880 filtered out; finished in 0.02s
+

@@ -1,0 +1,12 @@
+--- a/src/frontend/unit3_observer.rs
++++ b/src/frontend/unit3_observer.rs
+@@ -73,6 +73,9 @@
+         reserve(j,path.len()+64,j.addresses.len());
+         assert!(j.addresses.insert(key,path).is_none(),"duplicate observer address");
+     });
++}
++pub(super) fn enabled() -> bool {
++    JOURNAL.with_borrow(|journal| journal.enabled)
+ }
+ pub(super) fn registry_begin() {
+     JOURNAL.with_borrow_mut(|j| { j.addresses.clear(); });
