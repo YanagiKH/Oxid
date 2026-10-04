@@ -1,9 +1,10 @@
 # RFC 0016: fixed scalar arrays and checked indexing
 
-Status: proposed language capability; Unit 1 groundwork and gated Unit 2A–2B
-private identity carriers and raw verification.
-Array syntax and executable raw array operations are not enabled by this RFC or
-the current preparatory slices. The current public contract remains
+Status: proposed language capability; Unit 1 groundwork and gated Unit 2A–2E
+private identity carriers, raw verification, reference/native consumers and
+local combined qualification.
+Array syntax and production raw array admission remain disabled. Private
+consumer qualification uses verifier-confined test entry points. The current public contract remains
 [RFC 0014](0014-owned-structs-call-borrows.md) and
 [RFC 0015](0015-bounded-typed-projects.md). Implementation ownership and independent
 review are recorded by the associated pull request. Acceptance of groundwork
@@ -388,6 +389,34 @@ metadata; no per-element verifier scratch is introduced. Source lowering still
 emits Q=0. FunctionCounts gains one transient usize, while retained raw, AST and
 runtime row envelopes remain unchanged. Source association separately walks all
 new operand spans without providing source grammar or lowering authority.
+
+### 7.3 Gated Unit 2C–2D consumers
+
+The [reference ledger](../docs/architecture/fixed-array-unit2c-validation.md)
+and [native ledger](../docs/architecture/fixed-array-unit2d-validation.md)
+record implementations of the four raw operations and whole-owner transfers.
+Both replace the earlier unsupported consumer arms, but production raw
+admission still rejects array carriers/opcodes before constructing a witness.
+The verifier-confined cfg(test) bridges run the same authoritative preparation
+and validation, synchronously invoke the real consumer, and return only copied,
+bounded outcomes. They expose no witness, plan, arbitrary callback or bypass.
+
+Qualification covers signed bounds after fuel and before address formation,
+full aggregate identity, whole transfers, positive initialized zero-length
+sentinels, canonical unit bytes, permission/provenance checks, source origins,
+and bounded storage/emission. Native bool observations concern logical i1
+values rather than canonical unused padding bits. Its metadata accounting
+includes retained vector capacities and separately bounded transient scratch;
+it does not claim total RSS or universal allocation recovery. The native ledger
+records the exact phase/work formulas and the limits of physical observation.
+
+The committed independent runner preserves its historical expectations and
+fresh source/binary/tool/result identities. The combined controller completed
+producer and independent debug/release execution, full retention and relocated
+compact admission on the local head recorded in the native ledger. Exact-head
+hosted qualification remains a separate publication gate.
+This amendment changes no proposed source grammar, edition selection, public
+feature status or raw production gate.
 
 ## 8. Resource and compatibility obligations
 

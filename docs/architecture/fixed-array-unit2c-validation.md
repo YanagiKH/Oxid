@@ -1,6 +1,6 @@
 # Fixed scalar arrays: gated reference execution
 
-This phase implements and qualifies reference execution for fixed scalar arrays in RFC0016 Unit 2C. The production verifier still rejects every array carrier and opcode. Source grammar and selectors remain closed for fixed arrays, and native array execution remains pending. These results do not activate public array support.
+This phase implements and qualifies reference execution for fixed scalar arrays in RFC0016 Unit 2C. The production verifier still rejects every array carrier and opcode. Source grammar and selectors remain closed for fixed arrays. Native execution was pending at this reference checkpoint; the later [private native ledger](fixed-array-unit2d-validation.md) records its separate qualification. These results do not activate public array support.
 
 The published implementation checkpoint was `df12a2999bc8c44e1c7c30238646bad70ef0449e`, tree `331bd2066459b6bddfb53f2a41e1df1d6ca94630`. Final qualified compiler and test code is frozen at `c5229f115450c0f2250bfdd71654733ae17e35e5`, tree `9670a4da18f708c66db8348b3324bf34edf8b5f1`. This documentation closeout preserves every qualified compiler and test blob from that commit.
 
