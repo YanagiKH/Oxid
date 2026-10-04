@@ -432,14 +432,12 @@ impl<'p, 'w> Machine<'p, 'w> {
             .declarations()
             .field(record_type(owner.aggregate(), span)?, field)
             .map_err(|_| bad("payload field type", span))?;
-        Ok((
-            self.plan
-                .function(f.id)
-                .owner_offset(OwnerPlaceId(key.owner as usize))
-                + field.offset(),
-            field.ty(),
-        ))
+        let ValueTy::Scalar(ty) = field.value_ty() else {
+            return Err(bad("aggregate field scalar access", span));
+        };
+        Ok((self.leaf_offset(key, field.offset(), ty, span)?, ty))
     }
+
     fn load_field(&self, key: OwnerKey, field: FieldId, span: Span) -> Result<Scalar> {
         let (offset, ty) = self.payload_field(key, field, span)?;
         decode(&self.frames[key.frame as usize].payload, offset, ty, span)
@@ -538,6 +536,116 @@ impl<'p, 'w> Machine<'p, 'w> {
             .ok_or_else(|| bad("payload range", span))?;
         Ok(offset..end)
     }
+    fn leaf_offset(
+        &self,
+        key: OwnerKey,
+        relative: usize,
+        ty: hir::Ty,
+        span: Span,
+    ) -> Result<usize> {
+        let extent = self.owner_extent(key, span)?;
+        scalar_offset(extent, relative, ty, span)
+    }
+    fn load_leaf(&self, key: OwnerKey, leaf: ScalarLeaf, span: Span) -> Result<Scalar> {
+        let offset = self.leaf_offset(key, leaf.offset, leaf.ty, span)?;
+        decode(
+            &self.frames[key.frame as usize].payload,
+            offset,
+            leaf.ty,
+            span,
+        )
+    }
+    fn store_leaf(
+        &mut self,
+        key: OwnerKey,
+        leaf: ScalarLeaf,
+        value: Scalar,
+        span: Span,
+    ) -> Result<()> {
+        if leaf.ty != value.ty() {
+            return Err(bad("leaf value type", span));
+        }
+        let offset = self.leaf_offset(key, leaf.offset, leaf.ty, span)?;
+        encode(
+            &mut self.frames[key.frame as usize].payload,
+            offset,
+            value,
+            span,
+        )
+    }
+    fn projection_base(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        access: Access,
+        path: &[FieldId],
+        span: Span,
+    ) -> Result<(OwnerKey, ValueTy, usize)> {
+        let key = self.base(frame, base, access, span)?;
+        let function = self.function(self.frames[frame].function);
+        let expected = match base {
+            AccessBase::Owner(owner) => BorrowedTy::Exact(function.owners[owner.0].aggregate()),
+            AccessBase::Parameter(reference) => function
+                .references
+                .get(reference.0)
+                .ok_or_else(|| bad("projection reference declaration", span))?
+                .referent(),
+        };
+        let actual = self.aggregate(key, span)?;
+        let declarations = self.plan.witness().declarations();
+        declarations
+            .check_borrowed_view(BorrowedTy::Exact(actual), expected)
+            .map_err(|_| bad("projection base type", span))?;
+        let (ty, relative) = declarations
+            .projection(actual, path)
+            .map_err(|_| bad("projection path", span))?;
+        let size = match ty {
+            ValueTy::Scalar(ty) => scalar_size(ty),
+            ValueTy::Owned(aggregate) => declarations
+                .aggregate_layout(aggregate)
+                .map_err(|_| bad("projection layout", span))?
+                .size(),
+        };
+        let extent = self.owner_extent(key, span)?;
+        relative
+            .checked_add(size)
+            .filter(|end| *end <= extent.len())
+            .ok_or_else(|| bad("projection extent", span))?;
+        Ok((key, ty, relative))
+    }
+    fn projection_leaf(
+        &self,
+        frame: usize,
+        ty: ValueTy,
+        relative: usize,
+        operand: Option<Operand>,
+        span: Span,
+    ) -> Result<(ScalarLeaf, Option<usize>)> {
+        match (ty, operand) {
+            (ValueTy::Scalar(ty), None) => Ok((
+                ScalarLeaf {
+                    offset: relative,
+                    ty,
+                },
+                None,
+            )),
+            (ValueTy::Owned(AggregateTy::FixedArray(array)), Some(operand)) => {
+                let ordinal = array_index(self.read(frame, operand)?, array, span)?;
+                let offset = ordinal
+                    .checked_mul(array.stride())
+                    .and_then(|n| relative.checked_add(n))
+                    .ok_or_else(|| bad("projection element offset", span))?;
+                Ok((
+                    ScalarLeaf {
+                        offset,
+                        ty: array.element(),
+                    },
+                    Some(ordinal),
+                ))
+            }
+            _ => Err(bad("projection leaf type", span)),
+        }
+    }
     fn array_offset(
         &self,
         key: OwnerKey,
@@ -618,52 +726,42 @@ impl<'p, 'w> Machine<'p, 'w> {
             .declarations()
             .same_aggregate_type(record, target)
             .map_err(|_| bad("nominal transfer", span))?;
-        if let AggregateTy::FixedArray(array) = record {
-            let source = self.owner_extent(from, span)?;
-            let destination = self.owner_extent(to, span)?;
-            if from.frame == to.frame
-                && source.start < destination.end
-                && destination.start < source.end
-            {
-                return Err(bad("overlapping whole transfer", span));
-            }
-            #[cfg(test)]
-            let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
-            if array.length() == 0 {
-                self.zero_sentinel(to, span)?;
-            }
-            for ordinal in 0..array.length() {
-                let value = self.load_element(from, array, ordinal, span)?;
-                self.store_element(to, array, ordinal, value, span)?;
-            }
-            #[cfg(test)]
-            {
-                self.record_event(Event::Transfer(from, initialized_destination));
-                self.observe_end(observation);
-            }
-            return Ok(());
+        let source = self.owner_extent(from, span)?;
+        let destination = self.owner_extent(to, span)?;
+        if from.frame == to.frame
+            && source.start < destination.end
+            && destination.start < source.end
+        {
+            return Err(bad("overlapping whole transfer", span));
         }
-        let record = record_type(record, span)?;
-        let fields = self.plan.witness().declarations().fields(record).unwrap();
-        if fields.is_empty() {
-            let source_offset = self
-                .plan
-                .function(f.id)
-                .owner_offset(OwnerPlaceId(from.owner as usize));
-            let target_offset = self
-                .plan
-                .function(self.frames[to.frame as usize].function)
-                .owner_offset(OwnerPlaceId(to.owner as usize));
-            let byte = self.frames[from.frame as usize].payload[source_offset];
-            self.frames[to.frame as usize].payload[target_offset] = byte;
-        } else {
-            for field in fields {
-                let value = self.load_field(from, field.id(), span)?;
-                self.store_field(to, field.id(), value, span)?;
-            }
+        let declarations = self.plan.witness().declarations();
+        // Preflight all scalar leaves, including positive empty-value sentinels,
+        // before changing payload or ownership. Padding is never copied.
+        for leaf in declarations
+            .leaves(record)
+            .map_err(|_| bad("transfer leaves", span))?
+        {
+            self.load_leaf(from, leaf, span)?;
+            self.leaf_offset(to, leaf.offset, leaf.ty, span)?;
         }
         #[cfg(test)]
-        self.record_event(Event::Transfer(from, initialized_destination));
+        let observation = if matches!(record, AggregateTy::FixedArray(_)) {
+            self.observe_begin(to, StorageObservationKind::Transfer, true, span)
+        } else {
+            None
+        };
+        for leaf in declarations
+            .leaves(record)
+            .map_err(|_| bad("transfer leaves", span))?
+        {
+            let value = self.load_leaf(from, leaf, span)?;
+            self.store_leaf(to, leaf, value, span)?;
+        }
+        #[cfg(test)]
+        {
+            self.record_event(Event::Transfer(from, initialized_destination));
+            self.observe_end(observation);
+        }
         Ok(())
     }
     fn raw_key(&self, frame: usize, owner: OwnerPlaceId) -> OwnerKey {
@@ -941,6 +1039,197 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ConstructComposite {
+                destination,
+                fields,
+            } => {
+                self.expect_owner(frame, *destination, &[UNINITIALIZED], span)?;
+                let key = self.raw_key(frame, *destination);
+                let aggregate = self.aggregate(key, span)?;
+                let record = record_type(aggregate, span)?;
+                let declarations = self.plan.witness().declarations();
+                if declarations
+                    .fields(record)
+                    .map_err(|_| bad("construction record", span))?
+                    .len()
+                    != fields.len()
+                {
+                    return Err(bad("construction field count", span));
+                }
+                let destination_extent = self.owner_extent(key, span)?;
+                // Complete source snapshots, authority, type, range, and transition
+                // checks all precede the first payload write or child consumption.
+                // Static field/source uniqueness is established by the sealed verifier.
+                for (field, initializer) in fields {
+                    let field = declarations
+                        .field(record, *field)
+                        .map_err(|_| bad("construction field", span))?;
+                    match (field.value_ty(), initializer) {
+                        (ValueTy::Scalar(ty), FieldInitializer::Scalar(operand)) => {
+                            if self.read(frame, *operand)?.ty() != ty {
+                                return Err(bad("construction type", span));
+                            }
+                            self.leaf_offset(key, field.offset(), ty, span)?;
+                        }
+                        (ValueTy::Owned(expected), FieldInitializer::Owned(source)) => {
+                            let source_decl = f
+                                .owners
+                                .get(source.0)
+                                .filter(|owner| owner.kind == OwnerKind::Temporary)
+                                .ok_or_else(|| bad("construction owned stage", span))?;
+                            declarations
+                                .same_aggregate_type(source_decl.aggregate(), expected)
+                                .map_err(|_| bad("construction owned type", span))?;
+                            let from = self.base(
+                                frame,
+                                AccessBase::Owner(*source),
+                                Access::Consume,
+                                span,
+                            )?;
+                            self.expect_owner(frame, *source, &[AVAILABLE], span)?;
+                            let source_extent = self.owner_extent(from, span)?;
+                            if source_extent.start < destination_extent.end
+                                && destination_extent.start < source_extent.end
+                            {
+                                return Err(bad("overlapping composite transfer", span));
+                            }
+                            for leaf in declarations
+                                .leaves(expected)
+                                .map_err(|_| bad("construction leaves", span))?
+                            {
+                                self.load_leaf(from, leaf, span)?;
+                                let relative = field
+                                    .offset()
+                                    .checked_add(leaf.offset)
+                                    .ok_or_else(|| bad("construction leaf offset", span))?;
+                                self.leaf_offset(key, relative, leaf.ty, span)?;
+                            }
+                        }
+                        _ => return Err(bad("construction initializer type", span)),
+                    }
+                }
+                #[cfg(test)]
+                let observation =
+                    self.observe_begin(key, StorageObservationKind::Construction, true, span);
+                if fields.is_empty() {
+                    self.store_leaf(
+                        key,
+                        ScalarLeaf {
+                            offset: 0,
+                            ty: hir::Ty::Unit,
+                        },
+                        Scalar::Unit,
+                        span,
+                    )?;
+                }
+                for (id, initializer) in fields {
+                    let field = declarations
+                        .field(record, *id)
+                        .map_err(|_| bad("construction field", span))?;
+                    match initializer {
+                        FieldInitializer::Scalar(operand) => {
+                            let value = self.read(frame, *operand)?;
+                            self.store_field(key, *id, value, span)?;
+                        }
+                        FieldInitializer::Owned(source) => {
+                            let from = self.owner_key(frame, *source, span)?;
+                            for leaf in declarations
+                                .leaves(self.aggregate(from, span)?)
+                                .map_err(|_| bad("construction leaves", span))?
+                            {
+                                let value = self.load_leaf(from, leaf, span)?;
+                                let relative = field
+                                    .offset()
+                                    .checked_add(leaf.offset)
+                                    .ok_or_else(|| bad("construction leaf offset", span))?;
+                                self.store_leaf(
+                                    key,
+                                    ScalarLeaf {
+                                        offset: relative,
+                                        ty: leaf.ty,
+                                    },
+                                    value,
+                                    span,
+                                )?;
+                            }
+                        }
+                    }
+                }
+                for (_, initializer) in fields {
+                    if let FieldInitializer::Owned(source) = initializer {
+                        self.change_owner(frame, *source, MOVED, span)?;
+                    }
+                }
+                self.change_owner(frame, *destination, AVAILABLE, span)?;
+                #[cfg(test)]
+                self.observe_end(observation);
+            }
+            OwnedInstruction::ReadProjection {
+                destination,
+                base,
+                path,
+                index,
+            } => {
+                let (key, ty, relative) =
+                    self.projection_base(frame, *base, Access::Read, path, span)?;
+                let (leaf, _ordinal) = self.projection_leaf(frame, ty, relative, *index, span)?;
+                if f.locals.get(destination.0).map(|local| local.ty) != Some(leaf.ty) {
+                    return Err(bad("projection read type", span));
+                }
+                let value = self.load_leaf(key, leaf, span)?;
+                self.write(frame, *destination, value, span)?;
+                #[cfg(test)]
+                if let Some(ordinal) = _ordinal {
+                    self.record_event(Event::ReadIndex(key, ordinal, value));
+                }
+            }
+            OwnedInstruction::WriteProjection {
+                base,
+                path,
+                index,
+                value,
+            } => {
+                let (key, ty, relative) =
+                    self.projection_base(frame, *base, Access::Write, path, span)?;
+                let value = self.read(frame, *value)?;
+                let expected = match (ty, index) {
+                    (ValueTy::Scalar(ty), None) => ty,
+                    (ValueTy::Owned(AggregateTy::FixedArray(array)), Some(_)) => array.element(),
+                    _ => return Err(bad("projection write leaf type", span)),
+                };
+                if value.ty() != expected {
+                    return Err(bad("projection write type", span));
+                }
+                let (leaf, _ordinal) = self.projection_leaf(frame, ty, relative, *index, span)?;
+                self.store_leaf(key, leaf, value, span)?;
+                #[cfg(test)]
+                if let Some(ordinal) = _ordinal {
+                    self.record_event(Event::WriteIndex(key, ordinal, value));
+                    let observation =
+                        self.observe_begin(key, StorageObservationKind::IndexWrite, false, span);
+                    self.observe_end(observation);
+                } else if let Some(field) = path.last() {
+                    self.record_event(Event::WriteField(key, *field, value));
+                }
+            }
+            OwnedInstruction::ProjectionLength {
+                destination,
+                base,
+                path,
+            } => {
+                let (_key, ty, _) = self.projection_base(frame, *base, Access::Read, path, span)?;
+                let ValueTy::Owned(AggregateTy::FixedArray(array)) = ty else {
+                    return Err(bad("projection length type", span));
+                };
+                self.write(
+                    frame,
+                    *destination,
+                    Scalar::I32(array.length() as i32),
+                    span,
+                )?;
+                #[cfg(test)]
+                self.record_event(Event::ArrayLength(_key, array.length()));
+            }
             OwnedInstruction::ConstructArray {
                 destination,
                 elements,
@@ -1044,7 +1333,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                             *field,
                         )
                         .map_err(|_| bad("construction field", span))?;
-                    if d.ty() != v.ty() {
+                    if d.value_ty() != ValueTy::Scalar(v.ty()) {
                         return Err(bad("construction type", span));
                     }
                 }
@@ -1257,62 +1546,50 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .same_aggregate_type(record, f.owners[source.0].aggregate())
                         .map_err(|_| bad("incoming owned type", span))?;
                     let offset = self.plan.function(callee.id).owner_offset(*destination);
-                    match record {
-                        AggregateTy::Record(record) => {
-                            let fields = self.plan.witness().declarations().fields(record).unwrap();
-                            if fields.is_empty() {
-                                child.payload[offset] = 0;
-                            }
-                            for field in fields {
-                                let value = self.load_field(key, field.id(), span)?;
-                                encode(&mut child.payload, offset + field.offset(), value, span)?;
-                            }
-                        }
-                        AggregateTy::FixedArray(array) => {
-                            let size = self
-                                .plan
-                                .witness()
-                                .declarations()
-                                .aggregate_layout(record)
-                                .map_err(|_| bad("incoming array layout", span))?
-                                .size();
-                            let end = offset
-                                .checked_add(size)
-                                .filter(|end| *end <= child.payload.len())
-                                .ok_or_else(|| bad("incoming array range", span))?;
-                            #[cfg(test)]
-                            let observation = self.observer.begin(
-                                &mut child.payload,
-                                offset..end,
-                                OwnerKey {
-                                    frame: self.frames.len() as u64,
-                                    activation: child.activation,
-                                    owner: destination.0 as u64,
-                                    generation: 1,
-                                },
-                                AVAILABLE,
-                                StorageObservationKind::Incoming,
-                                true,
-                            );
-                            if array.length() == 0 {
-                                child.payload[offset..end].fill(0);
-                            }
-                            for ordinal in 0..array.length() {
-                                let value = self.load_element(key, array, ordinal, span)?;
-                                let element = ordinal
-                                    .checked_mul(array.stride())
-                                    .and_then(|n| offset.checked_add(n))
-                                    .ok_or_else(|| bad("incoming array offset", span))?;
-                                element
-                                    .checked_add(array.stride())
-                                    .filter(|n| *n <= end)
-                                    .ok_or_else(|| bad("incoming array range", span))?;
-                                encode(&mut child.payload, element, value, span)?;
-                            }
-                            #[cfg(test)]
-                            self.observer.end(&child.payload, observation);
-                        }
+                    let declarations = self.plan.witness().declarations();
+                    let size = declarations
+                        .aggregate_layout(record)
+                        .map_err(|_| bad("incoming aggregate layout", span))?
+                        .size();
+                    let end = offset
+                        .checked_add(size)
+                        .filter(|end| *end <= child.payload.len())
+                        .ok_or_else(|| bad("incoming aggregate range", span))?;
+                    for leaf in declarations
+                        .leaves(record)
+                        .map_err(|_| bad("incoming leaves", span))?
+                    {
+                        self.load_leaf(key, leaf, span)?;
+                        scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
                     }
+                    #[cfg(test)]
+                    let observation = if matches!(record, AggregateTy::FixedArray(_)) {
+                        self.observer.begin(
+                            &mut child.payload,
+                            offset..end,
+                            OwnerKey {
+                                frame: self.frames.len() as u64,
+                                activation: child.activation,
+                                owner: destination.0 as u64,
+                                generation: 1,
+                            },
+                            AVAILABLE,
+                            StorageObservationKind::Incoming,
+                            true,
+                        )
+                    } else {
+                        None
+                    };
+                    for leaf in declarations
+                        .leaves(record)
+                        .map_err(|_| bad("incoming leaves", span))?
+                    {
+                        let value = self.load_leaf(key, leaf, span)?;
+                        let leaf_offset = scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
+                        encode(&mut child.payload, leaf_offset, value, span)?;
+                    }
+                    #[cfg(test)]
+                    self.observer.end(&child.payload, observation);
                     #[cfg(test)]
                     self.record_event(Event::Transfer(
                         key,
@@ -1507,6 +1784,28 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
         }
     }
+}
+fn scalar_size(ty: hir::Ty) -> usize {
+    match ty {
+        hir::Ty::I32 => 4,
+        hir::Ty::Bool | hir::Ty::Unit => 1,
+    }
+}
+fn scalar_offset(
+    extent: std::ops::Range<usize>,
+    relative: usize,
+    ty: hir::Ty,
+    span: Span,
+) -> Result<usize> {
+    let offset = extent
+        .start
+        .checked_add(relative)
+        .ok_or_else(|| bad("leaf offset overflow", span))?;
+    offset
+        .checked_add(scalar_size(ty))
+        .filter(|end| *end <= extent.end)
+        .ok_or_else(|| bad("leaf payload range", span))?;
+    Ok(offset)
 }
 fn array_index(value: Scalar, array: FixedArrayTy, span: Span) -> Result<usize> {
     let Scalar::I32(index) = value else {

@@ -7,11 +7,13 @@ These hand-authored design fixtures are consumed by the ordinary
 executable, for example `python3 scripts/verify_typed_formatter.py target/debug/oxid`.
 The same check runs in repository verification and the portable CI host matrix.
 The original 28 positive and 13 malformed fixtures remain unchanged from the
-design checkpoint. Six array goldens and nine array rejection cases extend the
-combined grammar contract; fixture presence alone is not evidence that a
+design checkpoint. Six array goldens originally added nine array rejection cases. RFC0020 moves
+the formerly excluded array-record-field case to an exact positive and adds one
+hand-authored bounded-path golden; the other eight array rejection cases stay
+unchanged. These extend the current combined grammar contract; fixture presence alone is not evidence that a
 particular executable passed.
 
-- `cases.json`: 34 exact UTF-8 positive input/output pairs and 22 malformed
+- `cases.json`: 36 exact UTF-8 positive input/output pairs and 21 malformed
   inputs with source-inspected error classes. JSON escapes make CRLF, tabs,
   Unicode whitespace and preserved trailing comment spaces unambiguous.
 - `obligations.json`: public CLI, resource-boundary and invariant checks to

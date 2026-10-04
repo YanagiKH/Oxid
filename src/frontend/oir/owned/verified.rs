@@ -51,15 +51,6 @@ fn prepare(
     limits: budget::Limits,
 ) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
     let usage = budget::preflight(raw, limits)?;
-    // Declaration facade checkpoint only: no composed record may acquire an
-    // executable witness until raw operations and both consumers are complete.
-    for record in &raw.records {
-        for field in &record.fields {
-            if !matches!(field.ty, ParameterTy::Value(ValueTy::Scalar(_))) {
-                return Err(DeclarationError::NonScalarField(field.id).into());
-            }
-        }
-    }
     let declarations = Declarations::check(&raw.records, sources)?;
     Ok((
         usage,

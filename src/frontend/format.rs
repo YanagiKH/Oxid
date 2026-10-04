@@ -141,7 +141,15 @@ fn roles(
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
             ExprKind::IndexRead { base, .. } => {
-                roles[base.start] |= TIGHT_AFTER;
+                // A projected array receiver ends at its final field token.
+                let end = program
+                    .tokens
+                    .partition_point(|token| token.span.end <= base.end);
+                let receiver = program
+                    .tokens
+                    .get(end.saturating_sub(1))
+                    .ok_or_else(|| invariant("missing indexed receiver"))?;
+                roles[receiver.span.start] |= TIGHT_AFTER;
             }
             ExprKind::Call { args, .. } => {
                 for argument in args {

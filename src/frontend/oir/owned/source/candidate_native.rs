@@ -127,6 +127,10 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
+        OwnedInstruction::ConstructComposite { .. } => "ConstructComposite",
+        OwnedInstruction::ReadProjection { .. } => "ReadProjection",
+        OwnedInstruction::WriteProjection { .. } => "WriteProjection",
+        OwnedInstruction::ProjectionLength { .. } => "ProjectionLength",
         OwnedInstruction::ConstructArray { .. }
         | OwnedInstruction::ReadIndex { .. }
         | OwnedInstruction::WriteIndex { .. }

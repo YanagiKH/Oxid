@@ -1374,12 +1374,15 @@ fn array_preflight_and_declarations_still_precede_shape_checks() {
         )))
     );
     assert_eq!(failure.primary.get(), None);
-    // A raw signature embedded in a record field remains a non-scalar field.
+    // References remain forbidden stored fields after composition activation.
     for ty in [
-        ParameterTy::Value(ValueTy::Owned(aggregate)),
         ParameterTy::Reference {
             referent: BorrowedTy::Exact(aggregate),
             kind: BorrowKind::Shared,
+        },
+        ParameterTy::Reference {
+            referent: BorrowedTy::Exact(aggregate),
+            kind: BorrowKind::Exclusive,
         },
     ] {
         let mut raw = subject(s);

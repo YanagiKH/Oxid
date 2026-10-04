@@ -58,6 +58,7 @@ enum MeterOwner<'src> {
 }
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
+    projection_fields: std::cell::Cell<usize>,
     admission: SourceAdmission,
     index: IndexOwner<'src>,
     work: MeterOwner<'src>,
@@ -68,6 +69,46 @@ pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
     entry: Option<DefId>,
 }
 impl<'src> ResolvedOwnedProgram<'src> {
+    /// Retained typed path payload is cumulative across functions. Admit the
+    /// complete exact reservation before allocating; raw paths are independently
+    /// inventoried again by lowering and by the verifier.
+    pub(super) fn admit_projection(
+        &self,
+        length: usize,
+        span: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        if length == 0 || length > 64 {
+            return Err(error(
+                "E0400",
+                format_args!("record access path depth limit exceeded"),
+                span,
+            ));
+        }
+        let total = self
+            .projection_fields
+            .get()
+            .checked_add(length)
+            .and_then(|total| {
+                total
+                    .checked_mul(std::mem::size_of::<FieldId>())
+                    .map(|bytes| (total, bytes))
+            })
+            .filter(|(_, bytes)| *bytes <= super::budget::MAX_RAW_BYTES)
+            .ok_or_else(|| {
+                error(
+                    "E0400",
+                    format_args!("typed record projection payload limit exceeded"),
+                    span,
+                )
+            })?;
+        // Existing one-hop fields retain their permission-query work charge.
+        if length > 1 {
+            self.work()
+                .debit(length as u64, span, "record projection path")?;
+        }
+        self.projection_fields.set(total.0);
+        Ok(())
+    }
     pub(super) fn admission(&self) -> SourceAdmission {
         self.admission
     }
@@ -200,6 +241,7 @@ pub(in crate::frontend) fn resolve_sources(
         resolve_source_parts(sources, &work, &mut allocator, IndexLimits::default())?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        projection_fields: std::cell::Cell::new(0),
         admission: SourceAdmission::Executable,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -223,6 +265,7 @@ pub(in crate::frontend::oir) fn resolve_observed<'s>(
         resolve_source_parts(sources, work, allocator, IndexLimits::default())?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        projection_fields: std::cell::Cell::new(0),
         admission: SourceAdmission::Executable,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -251,6 +294,7 @@ pub(in crate::frontend) fn resolve_project<'s>(
     let mut allocator = Allocator::default();
     let (records, signatures, functions) = resolve_index(index, work, &mut allocator)?;
     Ok(ResolvedOwnedProgram {
+        projection_fields: std::cell::Cell::new(0),
         admission: SourceAdmission::Executable,
         sources: index.sources().view(),
         index: IndexOwner::Borrowed(index),
@@ -285,14 +329,7 @@ fn resolve_index(
                 if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ValueTy::Scalar(ty) = value_type(&mut index.query(work), module, field.ty)?
-                else {
-                    return Err(error(
-                        "E0202",
-                        format_args!("record fields must have scalar bool, i32 or () type"),
-                        field.ty.span,
-                    ));
-                };
+                let ty = value_type(&mut index.query(work), module, field.ty)?;
                 fields.push(Field {
                     id: FieldId {
                         record: RecordId(id),
@@ -362,6 +399,42 @@ fn resolve_index(
     }
     if !diagnostics.is_empty() {
         return Err(diagnostics);
+    }
+    if records.iter().any(|record| {
+        record
+            .fields
+            .iter()
+            .any(|field| matches!(field.ty, ValueTy::Owned(_)))
+    }) {
+        use crate::frontend::oir::owned_types::{admit_value_layouts, DeclarationError};
+        if let Err(failure) = admit_value_layouts(
+            records
+                .iter()
+                .map(|record| record.fields.iter().map(|field| field.ty)),
+        ) {
+            let (code, message, span) = match failure {
+                DeclarationError::ContainmentCycle(record) => (
+                    "E0202",
+                    "record containment must be acyclic",
+                    records[record.0].name_span,
+                ),
+                DeclarationError::ResourceLimit(resource) => ("E0400", resource, sources.eof()),
+                DeclarationError::LayoutOverflow => {
+                    ("E0400", "record layout overflow", sources.eof())
+                }
+                DeclarationError::Allocation => (
+                    "E0400",
+                    "record declaration allocation failed",
+                    sources.eof(),
+                ),
+                _ => (
+                    "E0500",
+                    "invalid resolved record declaration",
+                    sources.eof(),
+                ),
+            };
+            return Err(vec![*error(code, format_args!("{message}"), span)]);
+        }
     }
     work.phase("exposure");
     // Exposure consumes already selected nominal identities; it does not resolve
@@ -495,8 +568,20 @@ impl<'a> Resolver<'_, 'a> {
             .expect("validated source span")
     }
     fn lookup(&self, span: Span) -> Result<BindingId, Box<Diagnostic>> {
+        // Projected array access retains the complete named-root path in its
+        // base span; only its first identifier participates in local lookup.
+        let start = self
+            .ast
+            .tokens
+            .partition_point(|token| token.span.end <= span.start);
+        let root = self
+            .ast
+            .tokens
+            .get(start)
+            .map(|token| token.span)
+            .unwrap_or(span);
         self.scope
-            .get(self.text(span))
+            .get(self.text(root))
             .map(|entry| entry.0)
             .ok_or_else(|| {
                 error(
@@ -1001,6 +1086,31 @@ impl<'a> Resolver<'_, 'a> {
 mod source_identity_tests {
     use super::*;
     #[test]
+    fn projection_payload_admission_is_cumulative_and_checked_before_growth() {
+        let mut map = SourceMap::new();
+        let file = map.add("paths.ox".into(), "struct C{}".into());
+        let source = map.get(file);
+        let ast = crate::frontend::parser::parse_with_mode(
+            source,
+            crate::frontend::lexer::lex(source).unwrap(),
+            crate::frontend::parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let program = resolve(source, &ast).unwrap();
+        let span = source.span(0, 0);
+        let maximum = super::super::budget::MAX_RAW_BYTES / std::mem::size_of::<FieldId>();
+        program.projection_fields.set(maximum - 1);
+        program.admit_projection(1, span).unwrap();
+        assert_eq!(program.admit_projection(1, span).unwrap_err().code, "E0400");
+        assert_eq!(program.projection_fields.get(), maximum);
+        program.projection_fields.set(0);
+        assert_eq!(
+            program.admit_projection(65, span).unwrap_err().code,
+            "E0400"
+        );
+        assert_eq!(program.projection_fields.get(), 0);
+    }
+    #[test]
     fn resolved_owned_names_select_each_original_file() {
         let mut map = SourceMap::new();
         let first = map.add("first.ox".into(), "fn old() -> () { return; }".into());
@@ -1059,6 +1169,7 @@ pub(super) fn resolve_array_types<'s>(
         resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        projection_fields: std::cell::Cell::new(0),
         admission: SourceAdmission::ObserveArrayTypes,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -1083,6 +1194,7 @@ pub(super) fn resolve_array_pipeline<'s>(
         resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        projection_fields: std::cell::Cell::new(0),
         admission: SourceAdmission::ObserveArrayPipeline,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -1107,6 +1219,7 @@ pub(super) fn resolve_array_consumer<'s>(
         resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
+        projection_fields: std::cell::Cell::new(0),
         admission: SourceAdmission::ArrayConsumer,
         sources: sources.view(),
         index: IndexOwner::Owned(index),

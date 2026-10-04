@@ -89,6 +89,8 @@ pub(super) struct FunctionCounts {
     pub preparations: usize,
     pub constructed_fields: usize,
     pub constructed_elements: usize,
+    pub composite_fields: usize,
+    pub projection_fields: usize,
     pub diagnostic_origins: usize,
     pub max_constructor_fields: usize,
     pub ownership_active: bool,
@@ -138,13 +140,14 @@ pub(super) fn account_function(
     )?;
     if c.ownership_active {
         let a = add(c.descriptor_arguments, c.preparations)?;
+        let composition = add(c.composite_fields, c.projection_fields)?;
         u.owners = cap(add(u.owners, c.owners)?, limits.owners, "owners")?;
         u.expanded_events = cap(
             add(
                 u.expanded_events,
                 add(
                     add(add(s, a)?, c.constructed_fields)?,
-                    c.constructed_elements,
+                    add(c.constructed_elements, composition)?,
                 )?,
             )?,
             limits.events,
@@ -158,6 +161,7 @@ pub(super) fn account_function(
             a,
             c.constructed_fields,
             c.constructed_elements,
+            composition,
             c.owners,
             c.loans,
             c.calls,
@@ -183,6 +187,8 @@ pub(super) fn account_function(
             (c.loans, size_of::<LoanDecl>()),
             (c.constructed_fields, size_of::<(FieldId, Operand)>()),
             (c.constructed_elements, size_of::<Operand>()),
+            (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+            (c.projection_fields, size_of::<FieldId>()),
         ] {
             metadata = add(metadata, mul(count, size)?)?;
         }
@@ -292,6 +298,17 @@ pub(super) fn preflight(
                     OwnedInstruction::Construct { fields, .. } => {
                         c.constructed_fields = add(c.constructed_fields, fields.len())?;
                         c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
+                    }
+                    OwnedInstruction::ConstructComposite { fields, .. } => {
+                        cap(fields.len(), 1024, "composite constructor fields")?;
+                        c.composite_fields = add(c.composite_fields, fields.len())?;
+                        c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
+                    }
+                    OwnedInstruction::ReadProjection { path, .. }
+                    | OwnedInstruction::WriteProjection { path, .. }
+                    | OwnedInstruction::ProjectionLength { path, .. } => {
+                        cap(path.len(), MAX_CONTAINMENT_DEPTH, "record projection depth")?;
+                        c.projection_fields = add(c.projection_fields, path.len())?;
                     }
                     OwnedInstruction::ConstructArray { elements, .. } => {
                         // Inspect only the caller-owned vector length here. The

@@ -328,7 +328,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -922,6 +922,41 @@
       ],
       "evidence": [],
       "limitations": "Only i32; no unary negation extension, casts, wider types or optimization. No completed milestone or stability claim."
+    },
+    {
+      "id": "typed-owned-record-composition",
+      "summary": "Bounded acyclic nominal record composition with complete owned constructors and named-root scalar leaf or contained-array access",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "verified-oir-reference-and-llvm",
+      "target_scope": "Local reference qualification; native Linux x86_64 LLVM 19.1.7 O0; hosted exact-head qualification remains separate",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0020-owned-record-composition.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned_types.rs",
+        "src/frontend/oir/owned/shape.rs",
+        "src/frontend/oir/owned/flow.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/oir/owned/source/lower.rs"
+      ],
+      "tests": [
+        "src/frontend/oir/owned_types/composition_tests.rs",
+        "src/frontend/oir/owned/composition_verifier_tests.rs",
+        "src/frontend/oir/owned/composition_reference_tests.rs",
+        "src/frontend/oir/owned/composition_native_tests.rs",
+        "tests/typed_record_composition.rs"
+      ],
+      "evidence": [
+        "docs/architecture/record-composition-validation.md"
+      ],
+      "limitations": "Containment/path depth64 and unchanged storage/work ceilings. Whole-root ownership/borrowing only. No aggregate-field extraction/replacement/projected borrow or slice conversion, partial moves, stored references, nested arrays or arrays of records. No completed milestone, soundness proof, stability or v1.0 claim."
     }
   ]
 }

@@ -67,8 +67,8 @@
         "4",
         "5.2"
       ],
-      "input": "// 雪 { (((\nfn f()->(){\n/* } ) } */return;\n}\n",
-      "expected": "// 雪 { (((\nfn f() -> () {\n    /* } ) } */ return;\n}\n",
+      "input": "// \u96ea { (((\nfn f()->(){\n/* } ) } */return;\n}\n",
+      "expected": "// \u96ea { (((\nfn f() -> () {\n    /* } ) } */ return;\n}\n",
       "check_input_exit": 1
     },
     {
@@ -98,8 +98,8 @@
         "4",
         "5.2"
       ],
-      "input": "fn f()->(){\n/* keep\r\n \t}  \n    雪 */return;\n}\n",
-      "expected": "fn f() -> () {\n    /* keep\r\n \t}  \n    雪 */ return;\n}\n",
+      "input": "fn f()->(){\n/* keep\r\n \t}  \n    \u96ea */return;\n}\n",
+      "expected": "fn f() -> () {\n    /* keep\r\n \t}  \n    \u96ea */ return;\n}\n",
       "check_input_exit": 1
     },
     {
@@ -147,7 +147,7 @@
         "5.1",
         "5.3"
       ],
-      "input": "fn f( )->( ){return;}",
+      "input": "fn\u00a0f(\u2003)->(\u00a0){return;}",
       "expected": "fn f() -> () { return; }\n",
       "check_input_exit": 1
     },
@@ -258,7 +258,7 @@
         "3",
         "5.1"
       ],
-      "input": " \t\r\n\n ",
+      "input": " \t\r\n\n\u2003",
       "expected": "",
       "check_input_exit": 1
     },
@@ -363,6 +363,30 @@
       ],
       "input": "fn f(a:&mut [\ni32;\n0002\n])->(){\nlet z:[();0]=([\n]);\nreturn;\n}",
       "expected": "fn f(a: &mut [\n        i32;\n        0002\n]) -> () {\n    let z: [(); 0] = ([\n    ]);\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "composition_array_record_field",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "struct R{a:[i32;1]}",
+      "expected": "struct R { a: [i32; 1] }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "composition_named_root_paths",
+      "rules": [
+        "3",
+        "5.2",
+        "5.3",
+        "6"
+      ],
+      "input": "fn f(p:&mut R)->i32{p.inner.n=p.a[0];return p.inner.n+p.a.len();}",
+      "expected": "fn f(p: &mut R) -> i32 { p.inner.n = p.a[0]; return p.inner.n + p.a.len(); }\n",
       "check_input_exit": 1
     }
   ],
@@ -482,12 +506,6 @@
       "expected_stage": "parse"
     },
     {
-      "id": "array_record_field_excluded",
-      "input": "struct R{a:[i32;1]}",
-      "expected_code": "E0101",
-      "expected_stage": "parse"
-    },
-    {
       "id": "array_grouped_index_base_excluded",
       "input": "fn f()->(){(a)[0];return;}",
       "expected_code": "E0101",
@@ -507,6 +525,7 @@
     "source_bytes_unchanged": true,
     "stderr": "At least one escaped diagnostic matching expected_code/expected_stage; additional recovery diagnostics are allowed within the bound."
   },
-  "negative_code_provenance": "Published parser.rs error() lines 446–480, import() lines 397–431, primary() lines 1089–1117 and lexer.rs lexical-error branches; code assertions refer to the first relevant diagnostic.",
-  "array_extension_provenance": "Additional array cases are hand-authored from RFC 0016 / parser/arrays.rs and RFC 0017 bracket rules; the original 28 positive and 13 negative design fixtures remain unchanged."
+  "negative_code_provenance": "Published parser.rs error() lines 446\u2013480, import() lines 397\u2013431, primary() lines 1089\u20131117 and lexer.rs lexical-error branches; code assertions refer to the first relevant diagnostic.",
+  "array_extension_provenance": "Additional array cases are hand-authored from RFC 0016 / parser/arrays.rs and RFC 0017 bracket rules; the original 28 positive and 13 negative design fixtures remain unchanged.",
+  "grammar_amendment": "RFC 0020 admits array record fields and bounded named-root paths. The former array_record_field_excluded case is now an exact positive; all other original and array cases are unchanged."
 }

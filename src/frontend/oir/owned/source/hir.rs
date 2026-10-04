@@ -26,7 +26,7 @@ pub(super) struct Record {
 #[derive(Debug)]
 pub(super) struct Field {
     pub(super) id: FieldId,
-    pub(super) ty: Ty,
+    pub(super) ty: ValueTy,
     pub(super) name_span: Span,
     pub(super) span: Span,
 }
@@ -202,8 +202,9 @@ pub(super) enum AccessBase {
         kind: BorrowKind,
     },
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Projection {
     pub(super) base: AccessBase,
     pub(super) field: FieldId,
+    pub(super) path: Vec<FieldId>,
 }

@@ -110,7 +110,7 @@ fn failed_typed_loader_retains_sources_and_does_not_discover_children() {
     for text in [
         "fn pub()->i32{return 0;} mod missing;",
         "mod missing; struct R {pub n:}",
-        "mod missing; struct R {n:crate::T}",
+        "mod missing; struct R {n:self::T}",
     ] {
         f.write("app.ox", text);
         let failure = ProjectSources::load_typed(

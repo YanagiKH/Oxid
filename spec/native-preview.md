@@ -61,8 +61,9 @@ Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0018](../rfcs/0018-checked-i32-division.md). Comparisons follow
 [RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
 [RFC 0010](../rfcs/0010-boolean-logical-operators.md), and mutable scalar storage
-follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports scalar-field or empty nominal structs,
-whole-value transfers/replacement, scalar field access, owned helper returns and
+follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports nominal structs containing scalars,
+records and fixed scalar arrays under [RFC 0020](../rfcs/0020-owned-record-composition.md),
+whole-value transfers/replacement, bounded scalar leaf access, owned helper returns and
 explicit call-only shared/exclusive loans and reborrows through its sealed
 witness. Fixed scalar arrays also support complete construction/transfers,
 checked signed indexing and `len()` under [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).

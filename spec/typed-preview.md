@@ -22,7 +22,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0014](../rfcs/0014-owned-structs-call-borrows.md) and
 [RFC 0015](../rfcs/0015-bounded-typed-projects.md) and
 [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md) and
-[RFC 0019](../rfcs/0019-borrowed-scalar-slices.md).
+[RFC 0019](../rfcs/0019-borrowed-scalar-slices.md) and
+[RFC 0020](../rfcs/0020-owned-record-composition.md).
 
 ## Command and compatibility boundary
 
@@ -88,7 +89,8 @@ same exact-mode borrowing/reborrowing and whole-owner overlap rules as structs.
 Even a zero-length or unit array is move-only. `a.len()` also requires a readable,
 available owner, so it cannot bypass a move or an active exclusive loan.
 
-Only a named array local/parameter is an index or length base. Signed i32 indexes
+A named array local/parameter, or a bounded record-field path ending in a fixed
+scalar array, is an index or length base. Signed i32 indexes
 are checked at runtime: `0 <= i < N`; negative, upper-bound and every zero-array
 index fail with E0606/oir-owned-run, exactly `array index out of bounds`. Skipped
 branches do not execute bounds checks. For `a[index] = rhs`, the complete RHS is
@@ -99,8 +101,8 @@ later failure. Literal elements execute once, left to right.
 The empty literal has one narrow typing context: an explicitly annotated
 zero-length local initializer, such as `let a: [i32; 0] = ([]);`. It cannot infer
 from a call, return or replacement context. Length spellings may have leading
-zeros but not signs, separators, names or expressions. Arrays in record fields,
-nested/reference/record elements, repeated-element syntax, temporary or grouped
+zeros but not signs, separators, names or expressions. Nested/reference/record
+elements, repeated-element syntax, temporary or grouped
 index bases, element borrowing/moving and array equality/printing remain
 unavailable. Call-only whole-array slice views are the bounded exception described
 below; owned unsized values, ranges and subslices remain unavailable.
@@ -116,6 +118,61 @@ for exact diagnostics, costs and exclusions, and the
 [public-route validation](../docs/architecture/fixed-array-public-validation.md)
 for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
 experimental and does not complete M2 or v1.0.
+
+## Bounded owned record composition
+
+[RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold
+bool/i32/unit, another nominal record, or a fixed scalar array. Forward type
+references are allowed, but by-value containment must be acyclic even in unused
+declarations. Records remain nominal and move-only. Containment and named-root
+field paths are bounded to 64 levels, with the existing byte and work ceilings.
+
+```text
+struct Meta { completed: i32 }
+struct Batch { meta: Meta, samples: [i32; 3] }
+fn relay(b: Batch) -> Batch { return b; }
+fn bump(b: &mut Batch) -> () {
+    let mut i = 0;
+    while i < b.samples.len() {
+        b.samples[i] = b.samples[i] + 1;
+        b.meta.completed = b.meta.completed + 1;
+        i = i + 1;
+    }
+    return;
+}
+fn main() -> i32 {
+    let m = Meta { completed: 0 };
+    let a = [1, 2, 3];
+    let mut b = relay(Batch { meta: m, samples: a });
+    bump(&mut b);
+    return b.meta.completed * 100 + b.samples[0] * 10 + b.samples[2];
+}
+```
+
+The result is 324. Each initializer runs once in written order, independent of
+field layout order. Moving an earlier child makes its source unavailable to
+later initializer expressions. Constructors require every field exactly once;
+only the completed outer record becomes available. For an empty array field,
+move an explicitly annotated zero-length local; `field: []` does not infer a type.
+
+Named-root paths may copy or write a scalar leaf, index a contained fixed scalar
+array, or call its `len()`. Visibility is checked at every intermediate and final
+field. The root must remain available and its existing whole-root permissions
+must allow the access. A shared/exclusive helper borrows the complete outer
+record; explicit reborrows keep existing parent-suspension rules.
+
+No aggregate field may be extracted, moved, discarded, passed or returned by
+value, independently replaced, borrowed or converted to a slice. Replace the
+complete outer record instead. Partial initialization, arrays of records,
+nested arrays, stored references and temporary/grouped path roots remain
+excluded. Subobjects never gain independent ownership or loan authority.
+
+Whole-value work is charged by recursive width: scalar 1, array max(1,N), and
+record max(1,sum of field widths); padded storage bytes are bounded separately.
+Scalar leaf accesses retain their existing fuel charge. Indexed writes evaluate
+RHS then index, charge fuel, check signed bounds, and finally store. Earlier
+moves/helper effects survive a later failure. Reference and native consumers
+transfer initialized leaves and empty sentinels without copying padding.
 
 ## Call-only borrowed scalar slices
 
@@ -287,12 +344,13 @@ value_type     := scalar_type | item_path | fixed_array_type
 referent_type  := item_path | fixed_array_type | slice_type
 parameter_type := value_type | "&" referent_type | "&" "mut" referent_type
 struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
-field_decl     := "pub"? name ":" scalar_type
+field_decl     := "pub"? name ":" value_type
 field_decls    := field_decl ("," field_decl)* ","?
 block          := "{" statement* "}"
 statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
                 | name "=" expression ";"
-                | name "." name "=" expression ";"
+                | field_path "=" expression ";"
+                | array_base "[" expression "]" "=" expression ";"
                 | expression ";"
                 | "return" expression? ";"
                 | "break" ";" | "continue" ";"
@@ -308,7 +366,10 @@ product        := unary ("*" unary)*
 unary          := "!" unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
                 | item_path "(" arguments? ")" | decimal | "-" decimal
-                | name "." name | item_path "{" field_inits? "}"
+                | field_path | item_path "{" field_inits? "}"
+                | array_base "[" expression "]" | array_base "." "len" "(" ")"
+field_path     := name ("." name)+
+array_base     := name | field_path
 decimal        := ASCII_DIGIT+
 field_inits    := name ":" expression ("," name ":" expression)* ","?
 arguments      := argument ("," argument)*
@@ -531,8 +592,10 @@ The owned contract is [RFC 0014](../rfcs/0014-owned-structs-call-borrows.md).
 Type names have a separate namespace from functions/locals; fields belong to
 their declaring struct. All declarations are collected before bodies. Types are
 nominal: equal layouts do not make two structs interchangeable. A literal names
-every field exactly once, with an exactly matching scalar expression. Fields
-evaluate once in written source order, then construction occurs. There are no
+every field exactly once, with an exactly matching scalar or complete owned
+value expression. Fields evaluate once in written source order; each owned
+initializer moves into staging before the next initializer runs, then complete
+construction occurs. There are no
 defaults, shorthand fields, spread/update syntax or implicit conversions.
 
 | Form | Contract |
@@ -580,8 +643,8 @@ whereas `a.field = consume(a);` fails when the final target is unavailable.
 Earlier moves and writes are not rolled back if a later operation fails; an
 unpaid store performs no write.
 
-Nested owned fields, partial moves, destructuring, aggregate equality, stored or
-returned references, scalar/field/temporary borrows, general dereference,
+Partial moves, aggregate-field extraction/replacement, destructuring, aggregate
+equality, stored or returned references, scalar/field/temporary borrows, general dereference,
 reference coercions, mutable parameter bindings, heap resources and user
 destructors remain unavailable.
 

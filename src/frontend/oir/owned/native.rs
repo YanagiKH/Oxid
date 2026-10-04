@@ -35,6 +35,8 @@ fn add(a: usize, b: usize) -> Result<usize, Box<Diagnostic>> {
 /// Requested metadata payload; inherited formatter/name allocations have a
 /// separately bounded transient envelope, never an element-sized buffer.
 const DIAGNOSTIC_TRANSIENT_BYTES: usize = size_of::<Diagnostic>() + 64;
+// Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
+// resolution and composite emission never retain an expanded leaf collection.
 const EMITTER_TRANSIENT_BYTES: usize = 32_768;
 
 #[derive(Clone, Debug, Default)]
@@ -903,7 +905,10 @@ fn diagnostic_occurrences(
                             visit(FailureKind::DivisionByZero, *operator_span)?;
                         }
                     }
-                    OwnedInstruction::ReadIndex { .. } | OwnedInstruction::WriteIndex { .. } => {
+                    OwnedInstruction::ReadIndex { .. }
+                    | OwnedInstruction::WriteIndex { .. }
+                    | OwnedInstruction::ReadProjection { index: Some(_), .. }
+                    | OwnedInstruction::WriteProjection { index: Some(_), .. } => {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?
                     }
                     _ => {}
@@ -1279,6 +1284,23 @@ fn sentinel_ty(array: FixedArrayTy) -> &'static str {
         hir::Ty::Bool | hir::Ty::Unit => "i8",
     }
 }
+/// Resolve from the verified nominal root every time; raw offsets are never
+/// authority, and this bounded path walk allocates no projection metadata.
+fn projection(
+    plan: &ExecutionPlan<'_>,
+    f: &RawOwnedFunction,
+    base: AccessBase,
+    path: &[FieldId],
+) -> (ValueTy, usize) {
+    let BorrowedTy::Exact(root) = indexed_base(f, base) else {
+        unreachable!("verified record projection root")
+    };
+    plan.witness()
+        .declarations()
+        .projection(root, path)
+        .expect("verified projection")
+}
+
 fn index_pointer(
     plan: &ExecutionPlan<'_>,
     id: hir::DefId,
@@ -1287,16 +1309,44 @@ fn index_pointer(
     diagnostics: &Diagnostics,
     out: &mut Emission,
 ) -> (hir::Ty, String) {
-    let (base, index) = match statement.kind {
+    let f = &plan.witness().functions()[id.0];
+    let (base, index, element, length, projection_offset) = match &statement.kind {
         OwnedInstruction::ReadIndex { base, index, .. }
-        | OwnedInstruction::WriteIndex { base, index, .. } => (base, index),
+        | OwnedInstruction::WriteIndex { base, index, .. } => (
+            *base,
+            *index,
+            indexed_base(f, *base)
+                .element()
+                .expect("verified indexed base"),
+            index_length(out, f, name, *base),
+            None,
+        ),
+        OwnedInstruction::ReadProjection {
+            base,
+            path,
+            index: Some(index),
+            ..
+        }
+        | OwnedInstruction::WriteProjection {
+            base,
+            path,
+            index: Some(index),
+            ..
+        } => {
+            let (value, offset) = projection(plan, f, *base, path);
+            let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
+                unreachable!("verified projected indexed base")
+            };
+            (
+                *base,
+                *index,
+                array.element(),
+                array.length().to_string(),
+                Some(offset),
+            )
+        }
         _ => unreachable!("indexed operation"),
     };
-    let f = &plan.witness().functions()[id.0];
-    let element = indexed_base(f, base)
-        .element()
-        .expect("verified indexed base");
-    let length = index_length(out, f, name, base);
     let index = load_operand(out, f, &format!("{name}_index"), index);
     let suffix = continuation(&statement.kind)
         .suffix()
@@ -1311,6 +1361,10 @@ fn index_pointer(
     writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", element_stride(element)).unwrap();
     // Even resolving a reference base happens only on the successful edge.
     let base = base_pointer(out, name, base);
+    let base = match projection_offset {
+        Some(offset) => field_pointer(out, &format!("{name}_projection"), &base, offset),
+        None => base,
+    };
     writeln!(
         out,
         "  %{name}_ptr = getelementptr i8, ptr {base}, i64 %{name}_offset"
@@ -1337,6 +1391,7 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                 visits = add(visits, 1)?;
                 let owner = match statement.kind {
                     OwnedInstruction::Construct { destination, .. }
+                    | OwnedInstruction::ConstructComposite { destination, .. }
                     | OwnedInstruction::ConstructArray { destination, .. } => Some(destination),
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
@@ -1404,19 +1459,47 @@ fn transfer(
             return;
         }
         writeln!(out, "  %{name}_empty = load i8, ptr {source}, align 1\n  store i8 %{name}_empty, ptr {destination}, align 1").unwrap();
+        return;
     }
-    for (i, field) in fields.iter().enumerate() {
-        if !out.expand(Expansion::Transfer) {
+    // Scalar-only records retain their field order, instruction text and
+    // expansion counts. Composite records use the same bounded lazy walk.
+    transfer_leaves(
+        out,
+        plan,
+        name,
+        aggregate,
+        (source, destination),
+        Expansion::Transfer,
+    );
+}
+
+/// The declaration iterator stores at most one frame per admitted containment
+/// level. It yields initialized scalar/sentinel cells, never record padding.
+fn transfer_leaves(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    aggregate: AggregateTy,
+    pointers: (&str, &str),
+    kind: Expansion,
+) {
+    let (source, destination) = pointers;
+    let leaves = plan
+        .witness()
+        .declarations()
+        .leaves(aggregate)
+        .expect("verified aggregate leaves");
+    for (i, leaf) in leaves.enumerate() {
+        if !out.expand(kind) {
             return;
         }
         #[cfg(test)]
         {
             out.field_visits += 1;
         }
-        let input = field_pointer(out, &format!("{name}_in{i}"), source, field.offset());
-        let output = field_pointer(out, &format!("{name}_out{i}"), destination, field.offset());
-        // Field-wise transfer deliberately never reads record padding.
-        writeln!(out, "  %{name}_field{i} = load {}, ptr {input}, align 1\n  store {} %{name}_field{i}, ptr {output}, align 1", ty(field.ty()), ty(field.ty())).unwrap();
+        let input = field_pointer(out, &format!("{name}_in{i}"), source, leaf.offset);
+        let output = field_pointer(out, &format!("{name}_out{i}"), destination, leaf.offset);
+        writeln!(out, "  %{name}_field{i} = load {}, ptr {input}, align 1\n  store {} %{name}_field{i}, ptr {output}, align 1", ty(leaf.ty), ty(leaf.ty)).unwrap();
     }
 }
 
@@ -1524,13 +1607,18 @@ fn continuation(instruction: &OwnedInstruction) -> Continuation {
             },
             Statement::Initialize { .. } | Statement::Store { .. } => Continuation::Unsplit,
         },
-        OwnedInstruction::ReadIndex { .. } | OwnedInstruction::WriteIndex { .. } => {
-            Continuation::Bounds
-        }
+        OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ReadProjection { index: Some(_), .. }
+        | OwnedInstruction::WriteProjection { index: Some(_), .. } => Continuation::Bounds,
         OwnedInstruction::StorageLive(_)
         | OwnedInstruction::StorageEnd(_)
         | OwnedInstruction::Construct { .. }
         | OwnedInstruction::ConstructArray { .. }
+        | OwnedInstruction::ConstructComposite { .. }
+        | OwnedInstruction::ReadProjection { index: None, .. }
+        | OwnedInstruction::WriteProjection { index: None, .. }
+        | OwnedInstruction::ProjectionLength { .. }
         | OwnedInstruction::MoveInitialize { .. }
         | OwnedInstruction::Replace { .. }
         | OwnedInstruction::Discard(_)
@@ -1865,7 +1953,12 @@ fn emit_statement(
                 .unwrap();
             }
         }
-        OwnedInstruction::ReadIndex { destination, .. } => {
+        OwnedInstruction::ReadIndex { destination, .. }
+        | OwnedInstruction::ReadProjection {
+            destination,
+            index: Some(_),
+            ..
+        } => {
             let (element, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
             writeln!(
                 out,
@@ -1881,7 +1974,12 @@ fn emit_statement(
                 &format!("%{name}_value"),
             );
         }
-        OwnedInstruction::WriteIndex { value, .. } => {
+        OwnedInstruction::WriteIndex { value, .. }
+        | OwnedInstruction::WriteProjection {
+            value,
+            index: Some(_),
+            ..
+        } => {
             let (element, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
             // The operand is the scalar snapshot made before the index helper;
             // it is never recomputed from the mutated aggregate.
@@ -1897,6 +1995,119 @@ fn emit_statement(
                 hir::Ty::I32,
                 &length,
             );
+        }
+        OwnedInstruction::ProjectionLength {
+            destination,
+            base,
+            path,
+        } => {
+            let (value, _) = projection(plan, f, *base, path);
+            let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
+                unreachable!("verified projected array length")
+            };
+            store_slot(
+                out,
+                &format!("{name}_store"),
+                &format!("%s{}", destination.0),
+                hir::Ty::I32,
+                &array.length().to_string(),
+            );
+        }
+        OwnedInstruction::ReadProjection {
+            destination,
+            base,
+            path,
+            index: None,
+        } => {
+            let (value, offset) = projection(plan, f, *base, path);
+            let ValueTy::Scalar(scalar) = value else {
+                unreachable!("verified scalar projection")
+            };
+            let base = base_pointer(out, name, *base);
+            let ptr = field_pointer(out, name, &base, offset);
+            writeln!(
+                out,
+                "  %{name}_value = load {}, ptr {ptr}, align 1",
+                ty(scalar)
+            )
+            .unwrap();
+            store_slot(
+                out,
+                &format!("{name}_store"),
+                &format!("%s{}", destination.0),
+                scalar,
+                &format!("%{name}_value"),
+            );
+        }
+        OwnedInstruction::WriteProjection {
+            base,
+            path,
+            index: None,
+            value,
+        } => {
+            let (field_ty, offset) = projection(plan, f, *base, path);
+            let ValueTy::Scalar(scalar) = field_ty else {
+                unreachable!("verified scalar projection")
+            };
+            let value = load_operand(out, f, &format!("{name}_value"), *value);
+            let base = base_pointer(out, name, *base);
+            let ptr = field_pointer(out, name, &base, offset);
+            writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(scalar)).unwrap();
+        }
+        OwnedInstruction::ConstructComposite {
+            destination,
+            fields,
+        } => {
+            if fields.is_empty() {
+                if !out.expand(Expansion::Construct) {
+                    return;
+                }
+                writeln!(out, "  store i8 0, ptr %o{}, align 1", destination.0).unwrap();
+            }
+            for (i, (field, value)) in fields.iter().enumerate() {
+                if out.exceeded {
+                    return;
+                }
+                let field = plan
+                    .witness()
+                    .declarations()
+                    .field(field.record, *field)
+                    .expect("verified composite field");
+                let n = format!("{name}_field{i}");
+                match *value {
+                    FieldInitializer::Scalar(value) => {
+                        if !out.expand(Expansion::Construct) {
+                            return;
+                        }
+                        #[cfg(test)]
+                        {
+                            out.field_visits += 1;
+                        }
+                        let ValueTy::Scalar(scalar) = field.value_ty() else {
+                            unreachable!("verified scalar initializer")
+                        };
+                        let value = load_operand(out, f, &format!("{n}_value"), value);
+                        let ptr =
+                            field_pointer(out, &n, &format!("%o{}", destination.0), field.offset());
+                        writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(scalar))
+                            .unwrap();
+                    }
+                    FieldInitializer::Owned(source) => {
+                        // Each child is a complete, already-evaluated staging owner.
+                        // No recursive native calls or intermediate leaf buffers.
+                        let ptr =
+                            field_pointer(out, &n, &format!("%o{}", destination.0), field.offset());
+                        transfer_leaves(
+                            out,
+                            plan,
+                            &n,
+                            f.owners[source.0].aggregate(),
+                            (&format!("%o{}", source.0), &ptr),
+                            Expansion::Construct,
+                        );
+                    }
+                }
+            }
         }
         OwnedInstruction::Scalar(_) => emit_scalar(plan, id, name, statement, diagnostics, out),
         OwnedInstruction::Construct {

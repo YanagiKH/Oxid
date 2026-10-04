@@ -81,12 +81,14 @@ pub enum ExprKind {
     },
     FieldRead {
         base: Span,
+        /// The bounded dot-separated field path, including retained trivia.
         field: Span,
     },
     ArrayLiteral {
         elements: Vec<ExprId>,
     },
     IndexRead {
+        /// A named root, optionally followed by a bounded record field path.
         base: Span,
         index: ExprId,
     },
@@ -479,7 +481,7 @@ impl Program {
                     || !type_valid(field.ty, &mut valid)
                     || matches!(
                         field.ty.kind,
-                        TypeSyntaxKind::Array(_)
+                        TypeSyntaxKind::Reference { .. }
                             | TypeSyntaxKind::ArrayReference { .. }
                             | TypeSyntaxKind::SliceReference { .. }
                     )

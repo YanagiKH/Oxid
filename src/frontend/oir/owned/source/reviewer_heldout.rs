@@ -125,7 +125,7 @@ fn heldout_postfix_and_list_boundaries_are_closed() {
     for expr in [
         "(v).item",
         "call().item",
-        "v.item.next",
+        "(v.item).next",
         "v.item()",
         "(*p).item",
         "Packet { item }",

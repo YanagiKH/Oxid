@@ -111,6 +111,7 @@ struct CallFrame {
 enum ExprFrame {
     Visit(source::ExprId),
     Emit(source::ExprId),
+    StageField(source::ExprId),
     LogicalLeft(source::ExprId),
     LogicalRight {
         expression: source::ExprId,
@@ -326,7 +327,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                 statements,
                 budget::add(c.descriptor_arguments, c.preparations)?,
             )?,
-            budget::add(c.constructed_fields, c.constructed_elements)?,
+            budget::add(
+                budget::add(c.constructed_fields, c.constructed_elements)?,
+                budget::add(c.composite_fields, c.projection_fields)?,
+            )?,
         )?;
         budget::cap(expanded, MAX_ASSIGNMENTS, "expanded ownership events")?;
         budget::cap(
@@ -430,6 +434,26 @@ impl<'a, 'b> Walk<'a, 'b> {
         if let Some(out) = &mut self.output {
             out.expressions[id.0] = Some(EvaluatedValue::Owned(owner));
         }
+    }
+    fn projection_path(
+        &mut self,
+        projection: &source::Projection,
+        span: Span,
+    ) -> Result<Vec<FieldId>> {
+        self.counts.projection_fields =
+            budget::add(self.counts.projection_fields, projection.path.len())?;
+        self.check_counts()?;
+        let mut path = if self.output.is_some() {
+            budget::reserve(projection.path.len())?
+        } else {
+            Vec::new()
+        };
+        if self.output.is_some() {
+            for field in &projection.path {
+                budget::append(&mut path, *field, projection.path.len(), span)?;
+            }
+        }
+        Ok(path)
     }
     fn base(&self, id: source::BindingId, span: Span) -> Result<AccessBase> {
         match self.location(id, span)? {
@@ -737,6 +761,33 @@ impl<'a, 'b> Walk<'a, 'b> {
                         self.complete(id)?;
                     }
                 }
+                ExprFrame::StageField(id) => {
+                    let span = self.view.hir().expressions[id.0].span;
+                    let ValueTy::Owned(aggregate) = self.view.expression_ty(id) else {
+                        return Err(invariant(span));
+                    };
+                    let EvaluatedValue::Owned(source) = self.value(id)? else {
+                        return Err(invariant(span));
+                    };
+                    let destination = self.owner(aggregate, OwnerKind::Temporary, span)?;
+                    self.statement(
+                        OwnedInstruction::StorageLive(destination),
+                        span,
+                        span,
+                        cause,
+                    )?;
+                    self.statement(
+                        OwnedInstruction::MoveInitialize {
+                            destination,
+                            source,
+                        },
+                        span,
+                        span,
+                        cause,
+                    )?;
+                    self.end_value(source, span, span, cause)?;
+                    self.set_owned(id, destination);
+                }
                 ExprFrame::Literal {
                     expression: id,
                     next,
@@ -754,6 +805,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                             },
                             cause,
                         )?;
+                        if matches!(self.view.expression_ty(field.value), ValueTy::Owned(_)) {
+                            frames.push(ExprFrame::StageField(field.value), cause)?;
+                        }
                         frames.push(ExprFrame::Visit(field.value), cause)?;
                     } else {
                         let owner = self.owner(
@@ -767,37 +821,90 @@ impl<'a, 'b> Walk<'a, 'b> {
                             expression.span,
                             cause,
                         )?;
-                        self.counts.constructed_fields =
-                            budget::add(self.counts.constructed_fields, fields.len())?;
+                        let composite = fields.iter().any(|field| {
+                            matches!(self.view.expression_ty(field.value), ValueTy::Owned(_))
+                        });
+                        if composite {
+                            self.counts.composite_fields =
+                                budget::add(self.counts.composite_fields, fields.len())?;
+                        } else {
+                            self.counts.constructed_fields =
+                                budget::add(self.counts.constructed_fields, fields.len())?;
+                        }
                         self.counts.max_constructor_fields = self
                             .counts
                             .max_constructor_fields
                             .max(fields.len().min(1024));
                         self.check_counts()?;
-                        let mut values = if self.output.is_some() {
-                            budget::reserve(fields.len())?
-                        } else {
-                            Vec::new()
-                        };
-                        if self.output.is_some() {
-                            for field in fields {
-                                budget::append(
-                                    &mut values,
-                                    (field.field, self.operand(field.value)?),
-                                    fields.len(),
-                                    expression.span,
-                                )?;
+                        if composite {
+                            let mut values = if self.output.is_some() {
+                                budget::reserve(fields.len())?
+                            } else {
+                                Vec::new()
+                            };
+                            if self.output.is_some() {
+                                for field in fields {
+                                    let value = match self.value(field.value)? {
+                                        EvaluatedValue::Scalar(value) => {
+                                            FieldInitializer::Scalar(value)
+                                        }
+                                        EvaluatedValue::Owned(value) => {
+                                            FieldInitializer::Owned(value)
+                                        }
+                                    };
+                                    budget::append(
+                                        &mut values,
+                                        (field.field, value),
+                                        fields.len(),
+                                        expression.span,
+                                    )?;
+                                }
                             }
+                            self.statement(
+                                OwnedInstruction::ConstructComposite {
+                                    destination: owner,
+                                    fields: values,
+                                },
+                                expression.span,
+                                expression.span,
+                                cause,
+                            )?;
+                            for field in fields {
+                                if let EvaluatedValue::Owned(owner) = self.value(field.value)? {
+                                    self.end_value(
+                                        owner,
+                                        expression.span,
+                                        self.view.hir().expressions[field.value.0].span,
+                                        cause,
+                                    )?;
+                                }
+                            }
+                        } else {
+                            let mut values = if self.output.is_some() {
+                                budget::reserve(fields.len())?
+                            } else {
+                                Vec::new()
+                            };
+                            if self.output.is_some() {
+                                for field in fields {
+                                    budget::append(
+                                        &mut values,
+                                        (field.field, self.operand(field.value)?),
+                                        fields.len(),
+                                        expression.span,
+                                    )?;
+                                }
+                            }
+                            self.statement(
+                                OwnedInstruction::Construct {
+                                    destination: owner,
+                                    fields: values,
+                                },
+                                expression.span,
+                                expression.span,
+                                cause,
+                            )?;
                         }
-                        self.statement(
-                            OwnedInstruction::Construct {
-                                destination: owner,
-                                fields: values,
-                            },
-                            expression.span,
-                            expression.span,
-                            cause,
-                        )?;
                         self.set_owned(id, owner);
                         self.complete(id)?;
                     }
@@ -1010,28 +1117,37 @@ impl<'a, 'b> Walk<'a, 'b> {
         let value = match expression.kind {
             source::ExprKind::ArrayLiteral { .. } => return Err(invariant(span)),
             source::ExprKind::IndexRead { base, index, .. } => {
-                self.statement(
+                let kind = if let Some(projection) = self.view.expression_projection(id) {
+                    OwnedInstruction::ReadProjection {
+                        destination,
+                        base: self.base(base, span)?,
+                        path: self.projection_path(projection, span)?,
+                        index: Some(self.operand(index)?),
+                    }
+                } else {
                     OwnedInstruction::ReadIndex {
                         destination,
                         base: self.base(base, span)?,
                         index: self.operand(index)?,
-                    },
-                    span,
-                    span,
-                    cause,
-                )?;
+                    }
+                };
+                self.statement(kind, span, span, cause)?;
                 return Ok(());
             }
             source::ExprKind::ArrayLength { base, .. } => {
-                self.statement(
+                let kind = if let Some(projection) = self.view.expression_projection(id) {
+                    OwnedInstruction::ProjectionLength {
+                        destination,
+                        base: self.base(base, span)?,
+                        path: self.projection_path(projection, span)?,
+                    }
+                } else {
                     OwnedInstruction::ArrayLength {
                         destination,
                         base: self.base(base, span)?,
-                    },
-                    span,
-                    span,
-                    cause,
-                )?;
+                    }
+                };
+                self.statement(kind, span, span, cause)?;
                 return Ok(());
             }
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
@@ -1077,16 +1193,21 @@ impl<'a, 'b> Walk<'a, 'b> {
                     .view
                     .expression_projection(id)
                     .ok_or_else(|| invariant(span))?;
-                self.statement(
+                let kind = if projection.path.len() == 1 {
                     OwnedInstruction::ReadField {
                         destination,
                         base: self.base(base, span)?,
                         field: projection.field,
-                    },
-                    span,
-                    span,
-                    cause,
-                )?;
+                    }
+                } else {
+                    OwnedInstruction::ReadProjection {
+                        destination,
+                        base: self.base(base, span)?,
+                        path: self.projection_path(projection, span)?,
+                        index: None,
+                    }
+                };
+                self.statement(kind, span, span, cause)?;
                 return Ok(());
             }
             _ => return Err(invariant(span)),
@@ -1326,6 +1447,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 )?;
                 continue;
             }
+            let statement_index = index;
             if let source::StmtKind::IndexAssign {
                 base,
                 target_span,
@@ -1336,16 +1458,23 @@ impl<'a, 'b> Walk<'a, 'b> {
             {
                 self.expression(value, s)?;
                 self.expression(index, s)?;
-                self.statement(
+                let kind = if let Some(projection) =
+                    self.view.statement_projection(block, statement_index)
+                {
+                    OwnedInstruction::WriteProjection {
+                        base: self.base(base, target_span)?,
+                        path: self.projection_path(projection, target_span)?,
+                        index: Some(self.operand(index)?),
+                        value: self.operand(value)?,
+                    }
+                } else {
                     OwnedInstruction::WriteIndex {
                         base: self.base(base, target_span)?,
                         index: self.operand(index)?,
                         value: self.operand(value)?,
-                    },
-                    s,
-                    target_span,
-                    s,
-                )?;
+                    }
+                };
+                self.statement(kind, s, target_span, s)?;
                 continue;
             }
             let root = match statement.kind {
@@ -1474,16 +1603,21 @@ impl<'a, 'b> Walk<'a, 'b> {
                         .view
                         .statement_projection(block, index)
                         .ok_or_else(|| invariant(s))?;
-                    self.statement(
+                    let kind = if projection.path.len() == 1 {
                         OwnedInstruction::WriteField {
                             base: self.base(base, target_span)?,
                             field: projection.field,
                             value: self.operand(value)?,
-                        },
-                        s,
-                        target_span,
-                        s,
-                    )?;
+                        }
+                    } else {
+                        OwnedInstruction::WriteProjection {
+                            base: self.base(base, target_span)?,
+                            path: self.projection_path(projection, target_span)?,
+                            index: None,
+                            value: self.operand(value)?,
+                        }
+                    };
+                    self.statement(kind, s, target_span, s)?;
                 }
                 source::StmtKind::Expr(id) => {
                     if let EvaluatedValue::Owned(owner) = self.value(id)? {
@@ -1689,7 +1823,7 @@ pub(super) fn lower_with_limits(
                 &mut fields,
                 RawFieldDecl {
                     id: field.id,
-                    ty: ParameterTy::Value(ValueTy::Scalar(field.ty)),
+                    ty: ParameterTy::Value(field.ty),
                     span: field.name_span,
                 },
                 record.fields.len(),

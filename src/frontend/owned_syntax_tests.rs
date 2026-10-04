@@ -36,7 +36,7 @@ fn parsed(
     parser::parse_with_mode(source, lexer::lex(source).unwrap(), mode)
 }
 #[test]
-fn grammar_rejects_reference_storage_projection_chains_and_partial_borrows() {
+fn grammar_rejects_reference_storage_unsupported_roots_and_partial_borrows() {
     for text in [
         "struct C { p: &C }",
         "fn f() -> &C { return; }",
@@ -53,7 +53,7 @@ fn grammar_rejects_reference_storage_projection_chains_and_partial_borrows() {
         "fn f() -> () { (p).field; return; }",
         "fn f() -> () { (*p).field; return; }",
         "fn f() -> () { make().field; return; }",
-        "fn f() -> () { p.field.next; return; }",
+        "fn f() -> () { (p.field).next; return; }",
         "fn f() -> () { p.method(); return; }",
         "fn f() -> () { *p = 1; return; }",
         "fn f() -> () { C { field }; return; }",

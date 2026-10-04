@@ -60,15 +60,15 @@ fn recognized_project_attempts_keep_project_recovery_even_when_denied() {
             "}",
         ),
         (
-            "struct R { n: crate::T }",
+            "struct R { n: super::T }",
             "E0101",
-            "qualified paths are unavailable in scalar record fields",
-            "crate",
+            "only absolute item paths beginning with `crate::` are supported",
+            "super",
         ),
         (
             "struct R { n: self::T }",
             "E0101",
-            "qualified paths are unavailable in scalar record fields",
+            "only absolute item paths beginning with `crate::` are supported",
             "self",
         ),
         (

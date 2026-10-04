@@ -29,6 +29,11 @@ TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
+    "fixtures/typed-record-composition-samples/main.ox": (
+        "fixtures/typed-record-composition-samples/main.ox",
+        "fixtures/typed-record-composition-samples/model.ox",
+        "fixtures/typed-record-composition-samples/ops.ox",
+    ),
     "fixtures/typed-array-samples/main.ox": (
         "fixtures/typed-array-samples/main.ox",
         "fixtures/typed-array-samples/stats.ox",
