@@ -24,10 +24,21 @@ pub(super) enum SourceAdmission {
     Executable,
     #[cfg(test)]
     ObserveArrayTypes,
+    #[cfg(test)]
+    ObserveArrayPipeline,
 }
 impl SourceAdmission {
     pub(super) fn executable(self) -> bool {
         self == Self::Executable
+    }
+    pub(super) fn allows_lowering(self) -> bool {
+        match self {
+            Self::Executable => true,
+            #[cfg(test)]
+            Self::ObserveArrayPipeline => true,
+            #[cfg(test)]
+            Self::ObserveArrayTypes => false,
+        }
     }
 }
 
@@ -1116,6 +1127,35 @@ pub(super) fn resolve_array_types<'s>(
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::ObserveArrayTypes,
+        sources: sources.view(),
+        index: IndexOwner::Owned(index),
+        work: MeterOwner::Borrowed(work),
+        records,
+        signatures,
+        functions,
+        entry,
+    })
+}
+
+/// Only the separate source-only test entry chooses this immutable policy.
+/// A types-only owner cannot be converted or forwarded into this construction.
+#[cfg(test)]
+pub(super) fn resolve_array_pipeline<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let (index, (records, signatures, functions)) = resolve_source_parts(
+        sources,
+        work,
+        allocator,
+        SourceAdmission::ObserveArrayPipeline,
+        limits,
+    )?;
+    let entry = index.root_original_main();
+    Ok(ResolvedOwnedProgram {
+        admission: SourceAdmission::ObserveArrayPipeline,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
         work: MeterOwner::Borrowed(work),

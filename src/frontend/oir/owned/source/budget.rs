@@ -50,6 +50,32 @@ pub(super) fn reserve<T>(count: usize) -> Result<Vec<T>, OwnedFailure> {
         .map_err(|_| OwnedFailure::resource("source allocation"))?;
     Ok(values)
 }
+/// The only new literal payload request. Complete source preflight and the
+/// emission count have admitted full S/Q/payload before output allocation.
+/// The call site also checks its current partial counts before this request;
+/// ConstructArray itself increments S when the completed instruction is emitted.
+/// Even a zero-length literal performs one logical fallible reservation.
+pub(super) fn reserve_array_operands(count: usize) -> Result<Vec<Operand>, OwnedFailure> {
+    #[cfg(test)]
+    guard_event(GuardEvent::RawReservation);
+    #[cfg(test)]
+    allocation_test_point()?;
+    let requested = count;
+    #[cfg(test)]
+    let requested = ARRAY_OPERAND_FAILURE.with(|point| match point.get() {
+        Some(0) => usize::MAX,
+        Some(n) => {
+            point.set(Some(n - 1));
+            requested
+        }
+        None => requested,
+    });
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(requested)
+        .map_err(|_| OwnedFailure::resource("source allocation"))?;
+    Ok(values)
+}
 pub(super) fn filled<T: Clone>(count: usize, value: T) -> Result<Vec<T>, OwnedFailure> {
     let mut values = reserve(count)?;
     values.resize(count, value);
@@ -108,7 +134,7 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
-    if !typed.admission().executable() {
+    if !typed.admission().allows_lowering() {
         return Err(OwnedFailure::malformed(
             Malformed::CanonicalSite,
             typed.index().sources().eof(),
@@ -157,6 +183,37 @@ pub(super) fn preflight(
 
 #[cfg(test)]
 thread_local! { static ALLOCATION_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
+#[cfg(test)]
+thread_local! { static ARRAY_OPERAND_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
+/// Zero-based literal emission request; forcing usize::MAX exercises the real
+/// fallible capacity-error path rather than the older synthetic failpoint.
+#[cfg(test)]
+pub(super) fn fail_array_operand_after<T>(count: usize, operation: impl FnOnce() -> T) -> T {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            ARRAY_OPERAND_FAILURE.with(|point| point.set(self.0));
+        }
+    }
+    let previous = ARRAY_OPERAND_FAILURE.with(|point| point.replace(Some(count)));
+    let _reset = Reset(previous);
+    operation()
+}
+
+#[test]
+fn unit3b2_operand_failure_restores_outer_state_and_unwind() {
+    fail_array_operand_after(1, || {
+        assert!(reserve_array_operands(0).is_ok());
+        assert!(fail_array_operand_after(0, || reserve_array_operands(0)).is_err());
+        assert!(reserve_array_operands(1).is_err());
+        let panic = std::panic::catch_unwind(|| {
+            fail_array_operand_after(9, || panic!("restore the enclosing failure control"));
+        });
+        assert!(panic.is_err());
+        assert!(reserve_array_operands(0).is_err());
+    });
+    assert!(reserve_array_operands(0).is_ok());
+}
 #[cfg(test)]
 fn allocation_test_point() -> Result<(), OwnedFailure> {
     ALLOCATION_FAILURE.with(|point| match point.get() {

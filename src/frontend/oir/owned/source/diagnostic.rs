@@ -55,6 +55,14 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         && facts.role == Role::FieldBase
         && facts.counterpart.is_none()
         && facts.requested_borrow.is_none();
+    let array = matches!(
+        facts.operation,
+        Op::ReadIndex | Op::WriteIndex | Op::ArrayLength
+    ) && facts.role == Role::ArrayBase
+        && facts.counterpart.is_none()
+        && facts.requested_borrow.is_none()
+        && matches!(facts.subject.aggregate(), AggregateTy::FixedArray(_))
+        && named_subject(facts.subject);
     let borrow = facts.operation == Op::PrepareBorrow
         && facts.role == Role::BorrowAuthority
         && facts.counterpart.is_none()
@@ -63,7 +71,7 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         OwnedFailureKind::Ownership(Violation::Unavailable)
             if facts.state == ObservedState::Moved
                 && (named_move
-                    || ((field || borrow)
+                    || ((field || array || borrow)
                         && matches!(facts.subject, DeniedSubject::Owner(owner) if named(owner)))) =>
         {
             Some("E0310")
@@ -71,9 +79,12 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         OwnedFailureKind::Ownership(Violation::LoanConflict)
             if facts.state == ObservedState::NotObserved
                 && (named_move
-                    || (field
+                    || ((field || array)
                         && named_subject(facts.subject)
-                        && (facts.operation == Op::ReadField || writable(facts.subject)))
+                        && (matches!(
+                            facts.operation,
+                            Op::ReadField | Op::ReadIndex | Op::ArrayLength
+                        ) || writable(facts.subject)))
                     || (facts.operation == Op::Replace
                         && facts.role == Role::ReplacementDestination
                         && facts.requested_borrow.is_none()
@@ -98,6 +109,7 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                     }
                 )
                 && ((field && facts.operation == Op::WriteField)
+                    || (array && facts.operation == Op::WriteIndex)
                     || (borrow && facts.requested_borrow == Some(BorrowKind::Exclusive))) =>
         {
             Some("E0313")

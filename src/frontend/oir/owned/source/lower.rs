@@ -121,6 +121,10 @@ enum ExprFrame {
         expression: source::ExprId,
         next: usize,
     },
+    ArrayLiteral {
+        expression: source::ExprId,
+        next: usize,
+    },
     Call(CallFrame),
     Prepare(CallFrame),
 }
@@ -147,7 +151,7 @@ impl<'a, 'b> Walk<'a, 'b> {
         block_counts: Option<&'b mut [usize]>,
         expected: Option<Counts>,
     ) -> Result<Self> {
-        if !view.admission().executable() {
+        if !view.admission().allows_lowering() {
             return Err(invariant(view.signature().span));
         }
         let output = if let Some(c) = expected {
@@ -320,7 +324,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 statements,
                 budget::add(c.descriptor_arguments, c.preparations)?,
             )?,
-            c.constructed_fields,
+            budget::add(c.constructed_fields, c.constructed_elements)?,
         )?;
         budget::cap(expanded, MAX_ASSIGNMENTS, "expanded ownership events")?;
         budget::cap(
@@ -607,11 +611,13 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
-                        source::ExprKind::ArrayLiteral { .. }
-                        | source::ExprKind::IndexRead { .. }
-                        | source::ExprKind::ArrayLength { .. } => {
-                            return Err(invariant(expression.span))
-                        }
+                        source::ExprKind::ArrayLiteral { .. } => frames.push(
+                            ExprFrame::ArrayLiteral {
+                                expression: id,
+                                next: 0,
+                            },
+                            cause,
+                        )?,
                         source::ExprKind::Logical { left, .. } => {
                             frames.push(ExprFrame::LogicalLeft(id), cause)?;
                             frames.push(ExprFrame::Visit(*left), cause)?;
@@ -631,7 +637,8 @@ impl<'a, 'b> Walk<'a, 'b> {
                             frames.push(ExprFrame::Emit(id), cause)?;
                             match other {
                                 source::ExprKind::Group(inner)
-                                | source::ExprKind::Not { operand: inner, .. } => {
+                                | source::ExprKind::Not { operand: inner, .. }
+                                | source::ExprKind::IndexRead { index: inner, .. } => {
                                     frames.push(ExprFrame::Visit(*inner), cause)?
                                 }
                                 source::ExprKind::Arithmetic { left, right, .. }
@@ -647,6 +654,73 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Emit(id) => {
                     self.simple_expression(id, cause)?;
                     self.complete(id)?;
+                }
+                ExprFrame::ArrayLiteral {
+                    expression: id,
+                    next,
+                } => {
+                    let expression = &self.view.hir().expressions[id.0];
+                    let source::ExprKind::ArrayLiteral { elements } = &expression.kind else {
+                        return Err(invariant(expression.span));
+                    };
+                    if let Some(child) = elements.get(next) {
+                        frames.push(
+                            ExprFrame::ArrayLiteral {
+                                expression: id,
+                                next: next + 1,
+                            },
+                            cause,
+                        )?;
+                        frames.push(ExprFrame::Visit(*child), cause)?;
+                    } else {
+                        let ValueTy::Owned(AggregateTy::FixedArray(array)) =
+                            self.view.expression_ty(id)
+                        else {
+                            return Err(invariant(expression.span));
+                        };
+                        require(array.length() == elements.len(), expression.span)?;
+                        budget::cap(elements.len(), 1024, "fixed array length")?;
+                        let owner = self.owner(
+                            AggregateTy::FixedArray(array),
+                            OwnerKind::Temporary,
+                            expression.span,
+                        )?;
+                        self.statement(
+                            OwnedInstruction::StorageLive(owner),
+                            expression.span,
+                            expression.span,
+                            cause,
+                        )?;
+                        self.counts.constructed_elements =
+                            budget::add(self.counts.constructed_elements, elements.len())?;
+                        self.check_counts()?;
+                        let mut values = if self.output.is_some() {
+                            budget::reserve_array_operands(elements.len())?
+                        } else {
+                            Vec::new()
+                        };
+                        if self.output.is_some() {
+                            for child in elements {
+                                budget::append(
+                                    &mut values,
+                                    self.operand(*child)?,
+                                    elements.len(),
+                                    expression.span,
+                                )?;
+                            }
+                        }
+                        self.statement(
+                            OwnedInstruction::ConstructArray {
+                                destination: owner,
+                                elements: values,
+                            },
+                            expression.span,
+                            expression.span,
+                            cause,
+                        )?;
+                        self.set_owned(id, owner);
+                        self.complete(id)?;
+                    }
                 }
                 ExprFrame::Literal {
                     expression: id,
@@ -919,9 +993,32 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         let destination = self.operand(id)?.local;
         let value = match expression.kind {
-            source::ExprKind::ArrayLiteral { .. }
-            | source::ExprKind::IndexRead { .. }
-            | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
+            source::ExprKind::ArrayLiteral { .. } => return Err(invariant(span)),
+            source::ExprKind::IndexRead { base, index, .. } => {
+                self.statement(
+                    OwnedInstruction::ReadIndex {
+                        destination,
+                        base: self.base(base, span)?,
+                        index: self.operand(index)?,
+                    },
+                    span,
+                    span,
+                    cause,
+                )?;
+                return Ok(());
+            }
+            source::ExprKind::ArrayLength { base, .. } => {
+                self.statement(
+                    OwnedInstruction::ArrayLength {
+                        destination,
+                        base: self.base(base, span)?,
+                    },
+                    span,
+                    span,
+                    cause,
+                )?;
+                return Ok(());
+            }
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::Unit => Rvalue::Unit,
@@ -1211,8 +1308,29 @@ impl<'a, 'b> Walk<'a, 'b> {
                 )?;
                 continue;
             }
+            if let source::StmtKind::IndexAssign {
+                base,
+                target_span,
+                value,
+                index,
+                ..
+            } = statement.kind
+            {
+                self.expression(value, s)?;
+                self.expression(index, s)?;
+                self.statement(
+                    OwnedInstruction::WriteIndex {
+                        base: self.base(base, target_span)?,
+                        index: self.operand(index)?,
+                        value: self.operand(value)?,
+                    },
+                    s,
+                    target_span,
+                    s,
+                )?;
+                continue;
+            }
             let root = match statement.kind {
-                source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
                 source::StmtKind::Let { init, .. }
                 | source::StmtKind::Assign { value: init, .. }
                 | source::StmtKind::FieldAssign { value: init, .. }
@@ -1594,4 +1712,51 @@ pub(super) fn lower_with_limits(
 #[cfg(test)]
 pub(super) fn check_array_type_emission_fence(view: &TypedOwnedFunction<'_>) -> Result<()> {
     Walk::new(view, None, Some(Counts::default())).map(|_| ())
+}
+
+#[test]
+fn unit3b2_lowering_layout_without_source_observation() {
+    assert_eq!((EXPR_FRAMES, BODY_FRAMES, LOOP_FRAMES), (203, 268, 65));
+    macro_rules! layout {
+        ($name:literal, $ty:ty) => {
+            println!(
+                "LAYOUT {{\"name\":{},\"bytes\":{},\"align\":{}}}",
+                concat!("\"", $name, "\""),
+                size_of::<$ty>(),
+                std::mem::align_of::<$ty>()
+            );
+        };
+    }
+    layout!("ExprFrame", ExprFrame);
+    layout!("Option<ExprFrame>", Option<ExprFrame>);
+    layout!("Stack<ExprFrame,203>", Stack<ExprFrame, EXPR_FRAMES>);
+    layout!("BodyFrame", BodyFrame);
+    layout!("Option<BodyFrame>", Option<BodyFrame>);
+    layout!("Stack<BodyFrame,268>", Stack<BodyFrame, BODY_FRAMES>);
+    layout!("LoopTargets", LoopTargets);
+    layout!("Option<LoopTargets>", Option<LoopTargets>);
+    layout!("Stack<LoopTargets,65>", Stack<LoopTargets, LOOP_FRAMES>);
+    layout!("CallFrame", CallFrame);
+    layout!("Walk", Walk<'_, '_>);
+    layout!("Output", Output);
+    layout!("Option<Output>", Option<Output>);
+    layout!("FunctionCounts", Counts);
+    layout!("BindingLocation", BindingLocation);
+    layout!("Option<BindingLocation>", Option<BindingLocation>);
+    layout!("EvaluatedValue", EvaluatedValue);
+    layout!("Option<EvaluatedValue>", Option<EvaluatedValue>);
+    layout!("Vec<Operand>", Vec<Operand>);
+    layout!("Operand", Operand);
+    layout!("SourceAdmission", super::resolve::SourceAdmission);
+    layout!(
+        "ResolvedOwnedProgram",
+        super::resolve::ResolvedOwnedProgram<'_>
+    );
+    layout!("TypedOwnedProgram", TypedOwnedProgram<'_>);
+    layout!("TypedOwnedFunction", TypedOwnedFunction<'_>);
+    layout!("Allocator", crate::frontend::project::budget::Allocator);
+    layout!(
+        "ReserveEvent",
+        crate::frontend::project::budget::ReserveEvent
+    );
 }
