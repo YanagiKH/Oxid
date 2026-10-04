@@ -12,7 +12,7 @@ use super::{
     ast,
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
-    oir::owned_types::{FieldId, RecordId, ValueTy},
+    oir::owned_types::{AggregateTy, FieldId, RecordId, ValueTy},
     owned_diagnostic,
     project::{
         budget::{Allocator, ReserveFailure},
@@ -682,7 +682,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     },
                     context,
                 )
-                .map(ValueTy::Owned)
+                .map(|record| ValueTy::Owned(AggregateTy::Record(record)))
             }
         }
     }

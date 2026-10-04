@@ -17,8 +17,8 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '00c9f9cfae8516cc924532e66c570633bf0f0f69f697e3047301865fc908a280'
-CURRENT_SHA = '5cfb8ec5ed7f8244de155acd17dc12c414f4f4d7d82fb2d76495f1344e8c560c'
+INPUTS_SHA = 'b7750bad91e630d9f8c727a9aea872be334d16965591357141c213605514cd75'
+CURRENT_SHA = '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
 HOSTED = 'tests/qualification/unit4_hosted_capability'
@@ -171,14 +171,14 @@ def admit(repo, expected_head, event_sha, committed=True):
     inputs = read(HERE / 'inputs.json')
     verify_package(repo, inputs)
     source_path = repo / SOURCE / 'current-source.json'
-    need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved source121 manifest')
+    need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved source129 manifest')
     source = read(source_path)
-    need(len(source['files']) == 121, 'source121 count')
+    need(len(source['files']) == 129, 'source129 count')
     for row in source['files']:
         verify(repo / relative(row['path']), row)
     actual = sorted(p.relative_to(repo).as_posix() for sub in ('src', 'native') for p in (repo / sub).rglob('*') if p.is_file())
     expected = sorted(row['path'] for row in source['files'] if row['path'].startswith(('src/', 'native/')))
-    need(actual == expected, 'source121 exact membership')
+    need(actual == expected, 'source129 exact membership')
     head = git(repo, 'rev-parse', 'HEAD')
     need(head == expected_head, 'checkout is not expected event head')
     names = [row['path'] for row in inputs['files']] + [row['path'] for row in source['files']]

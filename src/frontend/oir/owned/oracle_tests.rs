@@ -2,7 +2,8 @@
 //!
 //! The models below know no OIR IDs, production CFG traversal, transfer helpers,
 //! overlap predicates, or verifier state. Only the adapters and assertions use
-//! the production representation. Every mandatory case reaches `verify_owned`.
+//! the production representation. Record cases reach `verify_owned`; array cases
+//! reach the unprivileged probe of the same authoritative validation pipeline.
 use super::*;
 
 mod model {
@@ -394,7 +395,7 @@ fn local(ty: hir::Ty, span: Span) -> LocalDecl {
 }
 fn owner(kind: OwnerKind, span: Span) -> OwnerDecl {
     OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         span,
     }
@@ -654,7 +655,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
             argument: position,
             authority: AccessBase::Owner(OwnerPlaceId(root)),
             kind,
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: acquisition,
         });
         statements.push(instruction(
@@ -669,7 +670,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(position)));
         target.references.push(ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind,
             position,
             span: at(span, 1_100 + position),
@@ -1103,7 +1104,8 @@ fn region_raw(graph: &model::Graph, case: RegionCase, span: Span) -> RawOwnedPro
                 .parameters
                 .push(ParameterBinding::Reference(ReferenceParamId(0)));
             caller.references.push(ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: if matches!(case.authority, RegionAuthority::SharedParameter) {
                     BorrowKind::Shared
                 } else {
@@ -1312,8 +1314,8 @@ fn lifecycle_shape(initial: model::Storage, events: &[Vec<model::Event>]) -> boo
     lives == 1 && initializes <= 1
 }
 
-fn lifecycle_matches(
-    actual: &Result<verified::VerifiedOwnedProgram, OwnedFailure>,
+fn lifecycle_matches<T>(
+    actual: &Result<T, OwnedFailure>,
     canonical: bool,
     reachable: bool,
     faults: [bool; 3],
@@ -1960,7 +1962,10 @@ impl NestedRawBuilder<'_> {
                         argument,
                         authority,
                         kind,
-                        record: RecordId(0),
+                        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(
+                            RecordId(0),
+                        ))
+                        .unwrap(),
                         span,
                     });
                     arguments.push(ArgumentSlot::Borrow(loan));
@@ -2037,7 +2042,8 @@ fn nested_raw(model: &nested_model::Program, span: Span) -> RawOwnedProgram {
             raw.parameters
                 .push(ParameterBinding::Reference(ReferenceParamId(position)));
             raw.references.push(ReferenceDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: if *mode == nested_model::Mode::Shared {
                     BorrowKind::Shared
                 } else {
@@ -2211,4 +2217,710 @@ fn independent_nested_reborrow_capability_tree_768_plus_1536_alias_tuples() {
         output.flush().expect("finish requested raw corpus");
     }
     println!("9E total: exactly768 base dimension tuples +1536 shared alias/distinct instantiations; all2304 have actual raw verifier comparisons, with out-of-activation tuples deliberately represented as invalid IDs rather than valid executable scenarios");
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArrayProbe {
+    Read,
+    Write,
+    Length,
+}
+
+const ARRAY_PROBES: [ArrayProbe; 3] = [ArrayProbe::Read, ArrayProbe::Write, ArrayProbe::Length];
+
+/// Representation-only adapter. Expectations stay in the independent models;
+/// no production event summary, flow helper, or seal participates in this path.
+/// A fresh scalar zero at the actual entry dominates every index use. Existing
+/// writes keep their values; replacing model reads with writes is used only in
+/// fixtures whose read results are unused and whose subject is a mutable owner.
+fn array_raw(mut raw: RawOwnedProgram, probe: ArrayProbe, length: usize) -> RawOwnedProgram {
+    let aggregate = AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, length).unwrap());
+    let slot = AggregateSlot::try_from_aggregate(aggregate).unwrap();
+    raw.records.clear();
+    for f in &mut raw.functions {
+        if matches!(f.result, ValueTy::Owned(_)) {
+            f.result = ValueTy::Owned(aggregate);
+        }
+        for owner in &mut f.owners {
+            owner.aggregate = slot;
+        }
+        for reference in &mut f.references {
+            reference.aggregate = slot;
+        }
+        for loan in &mut f.loans {
+            loan.aggregate = slot;
+        }
+        let index = f.locals.len();
+        f.locals.push(local(hir::Ty::I32, f.span));
+        f.blocks[f.entry.0]
+            .statements
+            .insert(0, scalar(index, Rvalue::I32(0), f.span));
+        for b in &mut f.blocks {
+            for statement in &mut b.statements {
+                let s = statement.span;
+                let replacement = match &statement.kind {
+                    OwnedInstruction::Construct {
+                        destination,
+                        fields,
+                    } => {
+                        assert_eq!(fields.len(), 1, "model has one scalar record field");
+                        Some(OwnedInstruction::ConstructArray {
+                            destination: *destination,
+                            elements: vec![fields[0].1; length],
+                        })
+                    }
+                    OwnedInstruction::ReadField {
+                        destination, base, ..
+                    } => Some(match probe {
+                        ArrayProbe::Read => OwnedInstruction::ReadIndex {
+                            destination: *destination,
+                            base: *base,
+                            index: operand(index, s),
+                        },
+                        ArrayProbe::Write => OwnedInstruction::WriteIndex {
+                            base: *base,
+                            index: operand(index, s),
+                            value: operand(index, s),
+                        },
+                        ArrayProbe::Length => OwnedInstruction::ArrayLength {
+                            destination: *destination,
+                            base: *base,
+                        },
+                    }),
+                    OwnedInstruction::WriteField { base, value, .. } => {
+                        Some(OwnedInstruction::WriteIndex {
+                            base: *base,
+                            index: operand(index, s),
+                            value: *value,
+                        })
+                    }
+                    _ => None,
+                };
+                if let Some(kind) = replacement {
+                    statement.kind = kind;
+                }
+            }
+        }
+    }
+    raw
+}
+
+fn probe_array(raw: &RawOwnedProgram, sources: &SourceMap) -> Result<OwnershipUsage, OwnedFailure> {
+    verified::probe_array_validation(raw, sources, budget::Limits::DEFAULT)
+}
+
+#[test]
+fn array_model_lifecycle_words_cover_all_initial_states_and_accesses() {
+    use model::{Event, Storage};
+    let (sources, span) = context();
+    // Omit Idle padding and words without an array access. The existing record
+    // family retains its larger domain; this is a separately counted slice.
+    let choices = [
+        Event::Read,
+        Event::Consume,
+        Event::Restore,
+        Event::Live,
+        Event::Initialize,
+        Event::End,
+    ];
+    let mut subjects = 0usize;
+    let mut comparisons = 0usize;
+    let mut outcomes = [0usize; 3];
+    for length in 1u32..=3 {
+        for encoding in 0..6usize.pow(length) {
+            let mut digits = encoding;
+            let word: Vec<_> = (0..length)
+                .map(|_| {
+                    let event = choices[digits % choices.len()];
+                    digits /= choices.len();
+                    event
+                })
+                .collect();
+            if !word.iter().any(|event| matches!(event, Event::Read)) {
+                continue;
+            }
+            for initial in [
+                Storage::Dead,
+                Storage::Uninitialized,
+                Storage::Available,
+                Storage::Moved,
+            ] {
+                let canonical = lifecycle_shape(initial, std::slice::from_ref(&word));
+                let expected = word
+                    .iter()
+                    .try_fold(initial, |state, &event| model::transition(state, event));
+                let mut faults = [false; 3];
+                if let Err(fault) = expected {
+                    faults[match fault {
+                        model::Fault::Unavailable => 0,
+                        model::Fault::Lifetime => 1,
+                        model::Fault::Initialization => 2,
+                    }] = true;
+                }
+                subjects += 1;
+                for probe in ARRAY_PROBES {
+                    let raw = array_raw(lifecycle_raw(initial, &word, span), probe, 3);
+                    let actual = probe_array(&raw, &sources);
+                    assert!(lifecycle_matches(&actual, canonical, true, faults), "array lifecycle mismatch: initial={initial:?}, word={word:?}, probe={probe:?}, canonical={canonical}, expected={expected:?}, actual={actual:?}");
+                    comparisons += 1;
+                    outcomes[if !canonical {
+                        2
+                    } else if expected.is_ok() {
+                        0
+                    } else {
+                        1
+                    }] += 1;
+                }
+            }
+        }
+    }
+    assert_eq!((subjects, comparisons), (412, 1_236));
+    assert_eq!(outcomes.iter().sum::<usize>(), comparisons);
+    assert!(outcomes.iter().all(|&count| count != 0));
+    println!("array lifecycle: 412 model subjects, 1236 raw probe comparisons; [accepted,ownership,canonical]={outcomes:?}; six-event words of length 1..3 containing Read, without Idle padding");
+}
+
+#[test]
+fn array_model_reachable_two_block_graphs_use_every_entry_and_prologue() {
+    let (sources, span) = context();
+    let mut subjects = [0usize; 2];
+    let mut comparisons = [0usize; 2];
+    let mut outcomes = [0usize; 2];
+    for n in 1usize..=2 {
+        let choices = 1 + n + n * n;
+        for edges in 0..choices.pow(n as u32) {
+            for entry in 0..n {
+                let mut graph = model::graph(n, edges, entry);
+                if !model::reachable(&graph) {
+                    continue;
+                }
+                for labels in 0..4usize.pow(n as u32) {
+                    model::label(&mut graph, labels);
+                    if !graph.actions.contains(&model::Action::Read) {
+                        continue;
+                    }
+                    let expected = model::available(&graph);
+                    subjects[n - 1] += 1;
+                    for prologue in 0..=n {
+                        for probe in ARRAY_PROBES {
+                            let raw = array_raw(availability_raw(&graph, prologue, span), probe, 3);
+                            let actual = probe_array(&raw, &sources);
+                            let matched = match expected {
+                                Ok(()) => actual.is_ok(),
+                                Err(model::Fault::Unavailable) => {
+                                    matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::Unavailable))
+                                }
+                                _ => false,
+                            };
+                            assert!(matched, "array availability mismatch: graph={graph:?}, prologue={prologue}, probe={probe:?}, expected={expected:?}, actual={actual:?}");
+                            comparisons[n - 1] += 1;
+                            outcomes[usize::from(expected.is_err())] += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(subjects, [3, 392]);
+    assert_eq!(comparisons, [18, 3_528]);
+    assert_eq!(comparisons.iter().sum::<usize>(), 3_546);
+    assert!(outcomes.iter().all(|&count| count != 0));
+    println!("array availability: 395 reachable labeled 1..2-block model subjects, 3546 raw probe comparisons across read/write/length and all prologue positions; [accepted,unavailable]={outcomes:?}");
+}
+
+#[test]
+fn array_model_unreachable_two_block_graphs_reject_all_access_variants() {
+    let (sources, span) = context();
+    let mut subjects = 0usize;
+    let mut comparisons = 0usize;
+    for edges in 0..7usize.pow(2) {
+        for entry in 0..2 {
+            let mut graph = model::graph(2, edges, entry);
+            if model::reachable(&graph) {
+                continue;
+            }
+            graph.actions.fill(model::Action::Read);
+            subjects += 1;
+            for prologue in 0..=2 {
+                for probe in ARRAY_PROBES {
+                    let raw = array_raw(availability_raw(&graph, prologue, span), probe, 3);
+                    let actual = probe_array(&raw, &sources);
+                    assert!(matches!(actual, Err(OwnedFailure { kind: OwnedFailureKind::Malformed(Malformed::Scalar(FailureKind::Unreachable)), .. })), "array unreachable mismatch: graph={graph:?}, prologue={prologue}, probe={probe:?}, actual={actual:?}");
+                    comparisons += 1;
+                }
+            }
+        }
+    }
+    assert_eq!((subjects, comparisons), (42, 378));
+    println!("array unreachable: 42 all-Read two-block graph-entry subjects, 378 raw probe comparisons; no unvisited action label candidates counted");
+}
+
+#[test]
+fn array_model_joins_backedges_generations_and_empty_length_need_availability() {
+    use model::{Event::*, Storage};
+    let (sources, span) = context();
+    let cases = [
+        (
+            "join_restore_A_or_M",
+            Storage::Available,
+            vec![vec![1, 2], vec![3], vec![3], vec![]],
+            vec![vec![Idle], vec![Consume], vec![Idle], vec![Restore, Read]],
+        ),
+        (
+            "join_access_A_or_M",
+            Storage::Available,
+            vec![vec![1, 2], vec![3], vec![3], vec![]],
+            vec![vec![Idle], vec![Consume], vec![Idle], vec![Read]],
+        ),
+        (
+            "generation_end_before_backedge",
+            Storage::Dead,
+            vec![vec![1], vec![2, 3], vec![0], vec![]],
+            vec![
+                vec![Live, Initialize],
+                vec![Read],
+                vec![Read, End],
+                vec![End],
+            ],
+        ),
+        (
+            "generation_missing_end_before_backedge",
+            Storage::Dead,
+            vec![vec![1], vec![2, 3], vec![0], vec![]],
+            vec![vec![Live, Initialize], vec![Read], vec![Read], vec![End]],
+        ),
+        (
+            "generation_move_restore_end",
+            Storage::Dead,
+            vec![vec![1], vec![2, 3], vec![0], vec![]],
+            vec![
+                vec![Live, Initialize],
+                vec![Read],
+                vec![Consume, Restore, End],
+                vec![End],
+            ],
+        ),
+        (
+            "generation_early_return_cleanup",
+            Storage::Dead,
+            vec![vec![1], vec![2, 3], vec![0], vec![]],
+            vec![vec![Live, Initialize], vec![Read], vec![End], vec![Read]],
+        ),
+        (
+            "dead_or_available_not_revived",
+            Storage::Dead,
+            vec![vec![1, 2], vec![3], vec![3], vec![]],
+            vec![
+                vec![Idle],
+                vec![Live, Initialize],
+                vec![Idle],
+                vec![Restore, Read],
+            ],
+        ),
+        (
+            "use_after_end_before_branch",
+            Storage::Available,
+            vec![vec![1], vec![2, 3], vec![], vec![]],
+            vec![vec![End], vec![Read], vec![Idle], vec![Idle]],
+        ),
+    ];
+    let mut comparisons = 0usize;
+    for (seed, initial, successors, events) in cases {
+        let graph = model::Graph {
+            entry: 0,
+            actions: vec![model::Action::Idle; successors.len()],
+            successors,
+        };
+        let faults = model::lifecycle(&graph, initial, &events);
+        assert!(lifecycle_shape(initial, &events));
+        assert!(model::reachable(&graph));
+        for prologue in 0..=graph.actions.len() {
+            for length in [0, 3] {
+                for probe in ARRAY_PROBES {
+                    let raw = array_raw(
+                        lifecycle_graph_raw(&graph, initial, &events, prologue, span),
+                        probe,
+                        length,
+                    );
+                    let actual = probe_array(&raw, &sources);
+                    assert!(lifecycle_matches(&actual, true, true, faults), "array lifecycle graph mismatch: seed={seed}, prologue={prologue}, length={length}, probe={probe:?}, faults={faults:?}, actual={actual:?}");
+                    comparisons += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(comparisons, 240);
+    println!("array lifecycle graphs: 8 model subjects, 240 raw probe comparisons across 5 prologue positions, lengths 0/3, and read/write/length; verifier availability only, no runtime bounds claim");
+}
+
+#[test]
+fn array_model_ordered_capabilities_probe_every_argument_boundary() {
+    let (sources, span) = context();
+    let mut subjects = 0usize;
+    let mut comparisons = [0usize; 5];
+    let mut accepted = [0usize; 3];
+    for (arity, count) in comparisons.iter_mut().enumerate() {
+        for partition in model::partitions(arity) {
+            let roots = partition.iter().max().map_or(0, |root| root + 1);
+            for modes in 0..(1usize << arity) {
+                let exclusive: Vec<_> = (0..arity)
+                    .map(|position| modes & (1 << position) != 0)
+                    .collect();
+                for boundary in 0..=arity {
+                    for root in 0..roots {
+                        subjects += 1;
+                        for (probe_index, probe) in ARRAY_PROBES.into_iter().enumerate() {
+                            let model_probe = if probe == ArrayProbe::Write {
+                                model::Probe::Write
+                            } else {
+                                model::Probe::Read
+                            };
+                            let expected = model::instrumented_aliases(
+                                &partition,
+                                &exclusive,
+                                boundary,
+                                root,
+                                model_probe,
+                            );
+                            let source = instrumented_alias_raw(
+                                &partition,
+                                &exclusive,
+                                boundary,
+                                root,
+                                model_probe,
+                                span,
+                            );
+                            // Writes were already emitted at the requested boundary.
+                            // Callee shared-reference reads remain readable operations.
+                            let read = if probe == ArrayProbe::Length {
+                                ArrayProbe::Length
+                            } else {
+                                ArrayProbe::Read
+                            };
+                            let raw = array_raw(source, read, 3);
+                            let actual = probe_array(&raw, &sources);
+                            let matched = if expected {
+                                actual.is_ok()
+                            } else {
+                                matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::LoanConflict))
+                            };
+                            assert!(matched, "array ordered capability mismatch: partition={partition:?}, modes={exclusive:?}, boundary={boundary}, root={root}, probe={probe:?}, expected={expected}, actual={actual:?}");
+                            *count += 1;
+                            accepted[probe_index] += usize::from(expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(subjects, 3_320);
+    assert_eq!(comparisons, [0, 12, 108, 960, 8_880]);
+    assert_eq!(comparisons.iter().sum::<usize>(), 9_960);
+    assert_eq!(accepted[0], accepted[2]);
+    assert!(accepted[1] < accepted[0]);
+    println!("array ordered capabilities: 3320 partition/mode/boundary/root subjects, 9960 raw probe comparisons; accepted read/write/length={accepted:?}; immediate acquisition retained through invocation");
+}
+
+#[test]
+fn array_model_nested_reborrows_preserve_independent_capability_outcomes() {
+    use nested_model::{Mode, Outcome, Tuple, Variant};
+    let (sources, span) = context();
+    let mut counts = [[[0usize; 4]; 3]; 2];
+    let mut subjects = 0usize;
+    for (variant_index, variant) in [
+        Variant::OwnerBase,
+        Variant::SharedAliasing,
+        Variant::SharedDistinct,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for parent in [Mode::Shared, Mode::Exclusive] {
+            for first in [Mode::Shared, Mode::Exclusive] {
+                for second in [Mode::Shared, Mode::Exclusive] {
+                    for request_child in [false, true] {
+                        for timing in 0..4 {
+                            for probe in 0..4 {
+                                for probe_authority in 0..3 {
+                                    let tuple = Tuple {
+                                        parent,
+                                        first,
+                                        second,
+                                        request_child,
+                                        timing,
+                                        probe,
+                                        probe_authority,
+                                    };
+                                    let model = nested_model::program(tuple, variant);
+                                    let expected = nested_model::evaluate(&model);
+                                    subjects += 1;
+                                    for (read_index, read) in [ArrayProbe::Read, ArrayProbe::Length]
+                                        .into_iter()
+                                        .enumerate()
+                                    {
+                                        let raw = array_raw(nested_raw(&model, span), read, 3);
+                                        let actual = probe_array(&raw, &sources);
+                                        let (outcome, matched) = match expected {
+                                            Outcome::Accept => (0, actual.is_ok()),
+                                            Outcome::Provenance => (
+                                                1,
+                                                matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Malformed(Malformed::Id)),
+                                            ),
+                                            Outcome::Permission => (
+                                                2,
+                                                matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::Permission)),
+                                            ),
+                                            Outcome::Conflict => (
+                                                3,
+                                                matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::LoanConflict)),
+                                            ),
+                                        };
+                                        assert!(matched, "array nested capability mismatch: variant={variant:?}, tuple={tuple:?}, read={read:?}, expected={expected:?}, actual={actual:?}");
+                                        counts[read_index][variant_index][outcome] += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(subjects, 2_304);
+    assert_eq!(
+        counts,
+        [[[52, 640, 62, 14], [14, 544, 210, 0], [14, 544, 210, 0]]; 2]
+    );
+    assert_eq!(counts.iter().flatten().flatten().sum::<usize>(), 4_608);
+    println!("array nested capabilities: 2304 inherited independent model subjects, 4608 actual raw probe comparisons using ReadIndex/ArrayLength plus existing writes mapped to WriteIndex; per access/variant [accept,provenance,permission,conflict]={counts:?}");
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArrayOwnerClass {
+    Mutable,
+    Immutable,
+    Parameter,
+    Temporary,
+    CallResult,
+}
+
+/// Start with one available subject, then apply an optional consume/end and an
+/// access. A result is established by a real owned argument/return/Invoke edge.
+fn array_class_source(
+    class: ArrayOwnerClass,
+    prefix: &[model::Event],
+    span: Span,
+) -> RawOwnedProgram {
+    let mut events = prefix.to_vec();
+    events.push(model::Event::Read);
+    let mut raw = lifecycle_raw(model::Storage::Available, &events, span);
+    let f = &mut raw.functions[0];
+    match class {
+        ArrayOwnerClass::Mutable => {}
+        ArrayOwnerClass::Immutable => f.owners[0].kind = OwnerKind::Local { mutable: false },
+        ArrayOwnerClass::Temporary => f.owners[0].kind = OwnerKind::Temporary,
+        ArrayOwnerClass::Parameter => {
+            f.owners[0].kind = OwnerKind::Parameter { position: 0 };
+            f.parameters.push(ParameterBinding::Owned(OwnerPlaceId(0)));
+            f.blocks[0].statements.retain(|statement| {
+                !matches!(
+                    statement.kind,
+                    OwnedInstruction::StorageLive(_) | OwnedInstruction::Construct { .. }
+                )
+            });
+        }
+        ArrayOwnerClass::CallResult => {
+            let continuation = f.blocks[0].statements.split_off(4);
+            f.owners[0].kind = OwnerKind::CallResult {
+                call: CallSiteId(0),
+            };
+            f.owners.push(owner(OwnerKind::Temporary, span));
+            f.owners.push(owner(
+                OwnerKind::StagedArgument {
+                    call: CallSiteId(0),
+                    argument: 0,
+                },
+                span,
+            ));
+            f.calls.push(CallDecl {
+                target: hir::DefId(1),
+                arguments: vec![ArgumentSlot::Owned(OwnerPlaceId(2))],
+                result: CallResult::Owned(OwnerPlaceId(0)),
+                parent: None,
+                span,
+            });
+            f.blocks = vec![
+                block(
+                    vec![
+                        scalar(0, Rvalue::Unit, span),
+                        scalar(1, Rvalue::I32(7), span),
+                        instruction(OwnedInstruction::StorageLive(OwnerPlaceId(1)), span),
+                        construct(1, span),
+                        instruction(OwnedInstruction::OpenCall(CallSiteId(0)), span),
+                        instruction(
+                            OwnedInstruction::PrepareOwned {
+                                call: CallSiteId(0),
+                                argument: 0,
+                                source: OwnerPlaceId(1),
+                            },
+                            span,
+                        ),
+                    ],
+                    OwnedTerminatorKind::Invoke {
+                        call: CallSiteId(0),
+                        continuation: BlockId(1),
+                    },
+                    span,
+                ),
+                block(
+                    continuation,
+                    OwnedTerminatorKind::ReturnScalar(operand(0, span)),
+                    span,
+                ),
+            ];
+            let mut helper = empty_function(1, at(span, 1_000));
+            helper.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
+            helper
+                .parameters
+                .push(ParameterBinding::Owned(OwnerPlaceId(0)));
+            helper
+                .owners
+                .push(owner(OwnerKind::Parameter { position: 0 }, helper.span));
+            helper.blocks.push(block(
+                vec![],
+                OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(0)),
+                helper.span,
+            ));
+            raw.functions.push(helper);
+        }
+    }
+    raw
+}
+
+#[test]
+fn array_model_owner_classes_read_write_length_after_consume_or_end() {
+    let (sources, span) = context();
+    let prefixes = [vec![], vec![model::Event::Consume], vec![model::Event::End]];
+    let mut comparisons = 0usize;
+    let mut outcomes = [0usize; 3];
+    for class in [
+        ArrayOwnerClass::Mutable,
+        ArrayOwnerClass::Immutable,
+        ArrayOwnerClass::Parameter,
+        ArrayOwnerClass::Temporary,
+        ArrayOwnerClass::CallResult,
+    ] {
+        for prefix in &prefixes {
+            let available = prefix
+                .iter()
+                .try_fold(model::Storage::Available, |state, &event| {
+                    model::transition(state, event)
+                })
+                .and_then(|state| model::transition(state, model::Event::Read));
+            for length in [0, 3] {
+                for probe in ARRAY_PROBES {
+                    let raw = array_raw(array_class_source(class, prefix, span), probe, length);
+                    let actual = probe_array(&raw, &sources);
+                    // Declaration permissions are checked before storage flow.
+                    // The independent class table grants owner writes only to a
+                    // mutable Local; a write never restores a moved subject.
+                    let (outcome, matched) = if probe == ArrayProbe::Write
+                        && class != ArrayOwnerClass::Mutable
+                    {
+                        (
+                            1,
+                            matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::Permission)),
+                        )
+                    } else if available.is_err() {
+                        (
+                            2,
+                            matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::Unavailable)),
+                        )
+                    } else {
+                        (0, actual.is_ok())
+                    };
+                    assert!(matched, "array owner class mismatch: class={class:?}, prefix={prefix:?}, length={length}, probe={probe:?}, actual={actual:?}");
+                    comparisons += 1;
+                    outcomes[outcome] += 1;
+                }
+            }
+        }
+    }
+    assert_eq!((comparisons, outcomes), (90, [22, 24, 44]));
+    println!("array owner classes: 15 class/state subjects, 90 raw probe comparisons across lengths 0/3 and read/write/length; [accepted,permission,unavailable]={outcomes:?}");
+}
+
+#[test]
+fn array_model_staged_access_and_reference_permissions_match_class_table() {
+    let (sources, span) = context();
+    let mut staged = 0usize;
+    let mut references = 0usize;
+    let mut accepted_references = 0usize;
+    for length in [0, 3] {
+        for probe in ARRAY_PROBES {
+            let mut source = array_class_source(ArrayOwnerClass::CallResult, &[], span);
+            let caller = &mut source.functions[0];
+            let mut access = caller.blocks[1].statements.pop().unwrap();
+            let OwnedInstruction::ReadField { base, .. } = &mut access.kind else {
+                panic!("class fixture ends in its requested access");
+            };
+            *base = AccessBase::Owner(OwnerPlaceId(2));
+            caller.blocks[0].statements.push(access);
+            let raw = array_raw(source, probe, length);
+            let actual = probe_array(&raw, &sources);
+            assert!(
+                matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Malformed(Malformed::OwnerClass)),
+                "array staged access mismatch: length={length}, probe={probe:?}, actual={actual:?}"
+            );
+            staged += 1;
+            for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
+                let mut f = empty_function(0, span);
+                f.parameters
+                    .push(ParameterBinding::Reference(ReferenceParamId(0)));
+                f.references.push(ReferenceDecl {
+                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                        .unwrap(),
+                    kind,
+                    position: 0,
+                    span,
+                });
+                f.locals = vec![local(hir::Ty::Unit, span), local(hir::Ty::I32, span)];
+                f.blocks.push(block(
+                    vec![
+                        scalar(0, Rvalue::Unit, span),
+                        instruction(
+                            OwnedInstruction::ReadField {
+                                destination: LocalId(1),
+                                base: AccessBase::Parameter(ReferenceParamId(0)),
+                                field: field(),
+                            },
+                            span,
+                        ),
+                    ],
+                    OwnedTerminatorKind::ReturnScalar(operand(0, span)),
+                    span,
+                ));
+                let raw = array_raw(
+                    RawOwnedProgram {
+                        records: vec![record(span)],
+                        functions: vec![f],
+                    },
+                    probe,
+                    length,
+                );
+                let actual = probe_array(&raw, &sources);
+                let expected = probe != ArrayProbe::Write || kind == BorrowKind::Exclusive;
+                let matched = if expected {
+                    actual.is_ok()
+                } else {
+                    matches!(&actual, Err(failure) if failure.kind == OwnedFailureKind::Ownership(Violation::Permission))
+                };
+                assert!(matched, "array reference class mismatch: kind={kind:?}, length={length}, probe={probe:?}, actual={actual:?}");
+                references += 1;
+                accepted_references += usize::from(expected);
+            }
+        }
+    }
+    assert_eq!((staged, references, accepted_references), (6, 12, 10));
+    println!("array staged/reference classes: 6 staged raw probe rejections and 12 reference raw probe comparisons (10 accepted, 2 shared-write denials)");
 }

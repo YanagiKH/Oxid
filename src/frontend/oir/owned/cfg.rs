@@ -59,7 +59,9 @@ impl CfgView for RawOwnedFunction {
         let i = self.instruction(b, s)?;
         Ok(match &i.kind {
             OwnedInstruction::Scalar(Statement::Assign(a)) => Some((a.destination, a.span)),
-            OwnedInstruction::ReadField { destination, .. } => Some((*destination, i.span)),
+            OwnedInstruction::ReadField { destination, .. }
+            | OwnedInstruction::ReadIndex { destination, .. }
+            | OwnedInstruction::ArrayLength { destination, .. } => Some((*destination, i.span)),
             _ => None,
         })
     }
@@ -87,6 +89,16 @@ impl CfgView for RawOwnedFunction {
                 for (_, v) in fields {
                     visit(ScalarUse::Operand(*v))?;
                 }
+            }
+            OwnedInstruction::ConstructArray { elements, .. } => {
+                for value in elements {
+                    visit(ScalarUse::Operand(*value))?;
+                }
+            }
+            OwnedInstruction::ReadIndex { index, .. } => visit(ScalarUse::Operand(*index))?,
+            OwnedInstruction::WriteIndex { index, value, .. } => {
+                visit(ScalarUse::Operand(*value))?;
+                visit(ScalarUse::Operand(*index))?;
             }
             OwnedInstruction::WriteField { value, .. }
             | OwnedInstruction::PrepareScalar { value, .. } => visit(ScalarUse::Operand(*value))?,

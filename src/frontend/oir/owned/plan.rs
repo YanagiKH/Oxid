@@ -141,7 +141,8 @@ impl<'a> ExecutionPlan<'a> {
             OwnedInstruction::StorageEnd(o) | OwnedInstruction::Discard(o) => {
                 1 + self.owner_width(f, *o)
             }
-            OwnedInstruction::Construct { destination, .. } => {
+            OwnedInstruction::Construct { destination, .. }
+            | OwnedInstruction::ConstructArray { destination, .. } => {
                 1 + self.owner_width(f, *destination)
             }
             OwnedInstruction::MoveInitialize { source, .. }
@@ -227,7 +228,7 @@ impl<'a> ExecutionPlan<'a> {
             for owner in &f.owners {
                 let layout = witness
                     .declarations()
-                    .aggregate_layout(AggregateTy::Record(owner.record))
+                    .aggregate_layout(owner.aggregate())
                     .expect("verified record");
                 next = align(next, layout.align())?;
                 owner_offsets.push(next);
@@ -315,7 +316,7 @@ impl<'a> ExecutionPlan<'a> {
 fn width(witness: &VerifiedOwnedProgram, f: &RawOwnedFunction, o: OwnerPlaceId) -> usize {
     witness
         .declarations()
-        .aggregate_width(AggregateTy::Record(f.owners[o.0].record))
+        .aggregate_width(f.owners[o.0].aggregate())
         .expect("verified record")
 }
 fn usage(
@@ -336,7 +337,7 @@ fn usage(
     for (index, owner) in f.owners.iter().enumerate() {
         let layout = witness
             .declarations()
-            .aggregate_layout(AggregateTy::Record(owner.record))
+            .aggregate_layout(owner.aggregate())
             .expect("verified record");
         u.owner_cells = add(u.owner_cells, width(witness, f, OwnerPlaceId(index)))?;
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
@@ -370,6 +371,9 @@ fn usage(
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {
         OwnedInstruction::Scalar(s) => s.span(),
+        OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ArrayLength { .. } => statement.primary_span(),
         _ => statement.span,
     }
 }
@@ -414,6 +418,12 @@ mod tests {
             assert_eq!(size_of::<$ty>(), $bytes, "{} accounting changed", stringify!($ty));
         )* }; }
         sizes!(
+            AggregateSlot => 8,
+            AggregateTy => 16,
+            ValueTy => 16,
+            Option<ValueTy> => 16,
+            ParameterTy => 24,
+            Option<ParameterTy> => 24,
             RawOwnedProgram => 48,
             RawOwnedFunction => 248,
             OwnerDecl => 56,
@@ -421,6 +431,9 @@ mod tests {
             LoanDecl => 72,
             CallDecl => 96,
             OwnedInstruction => 128,
+            OwnedStatement => 208,
+            OwnedBlock => 328,
+            Operand => 32,
             ParameterBinding => 16,
             FunctionPlan => 184,
             CallPlan => 48,
@@ -428,7 +441,12 @@ mod tests {
             OwnerRuntime => 32,
             ReferenceHandle => 64,
             LoanRuntime => 96,
-            CallRuntime => 16
+            CallRuntime => 16,
+            flow::DenialContext => 136,
+            flow::DenialFacts => 136,
+            flow::OwnerSubject => 64,
+            flow::DeniedSubject => 64,
+            OwnedFailure => 240
         );
     }
     #[test]

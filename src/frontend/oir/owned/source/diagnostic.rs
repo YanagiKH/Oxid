@@ -49,7 +49,7 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         && matches!((facts.subject, facts.counterpart),
             (DeniedSubject::Owner(source), Some(destination))
                 if named(source) && destination.class == OwnerKind::Temporary
-                    && source.record == destination.record && source.id != destination.id)
+                    && source.aggregate() == destination.aggregate() && source.id != destination.id)
         && facts.requested_borrow.is_none();
     let field = matches!(facts.operation, Op::ReadField | Op::WriteField)
         && facts.role == Role::FieldBase
@@ -79,7 +79,7 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                         && facts.requested_borrow.is_none()
                         && matches!((facts.subject, facts.counterpart),
                             (DeniedSubject::Owner(destination), Some(source))
-                                if mutable(destination) && source.record == destination.record
+                                if mutable(destination) && source.aggregate() == destination.aggregate()
                                     && source.id != destination.id))
                     || (borrow
                         && named_subject(facts.subject)

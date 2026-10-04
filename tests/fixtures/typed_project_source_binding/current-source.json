@@ -77,9 +77,9 @@
       "sha256": "962d4310ae3674c3ab97ad14fb7e3f8eae618c4c871c71001af36b60ed398fe3"
     },
     {
-      "bytes": 34523,
+      "bytes": 34574,
       "path": "src/frontend/declaration_index.rs",
-      "sha256": "6bcd816d860d39e913dadc5b19f8d6607fb824da196a5fcd8b150a033ae944d5"
+      "sha256": "a779b9de2d9adf37222bbff1f0fa33c86d2870a5b6f6db80254fdec4cce0f5b5"
     },
     {
       "bytes": 13343,
@@ -97,14 +97,14 @@
       "sha256": "f30e5fbbf1aae89a2bd38c61e8977e8ba3c238d665b58dc37a69412595016086"
     },
     {
-      "bytes": 18857,
+      "bytes": 18881,
       "path": "src/frontend/declaration_index/tests.rs",
-      "sha256": "acc0851badfb0dbc5e956d9d0ce1c32907973e88d58a5ec0b336639574bc9d84"
+      "sha256": "3b913bbfdc073451ce316a4b9b7071e825a82d1c5059d6a73354f131ca6e4286"
     },
     {
-      "bytes": 10360,
+      "bytes": 10885,
       "path": "src/frontend/diagnostic.rs",
-      "sha256": "e62a8f66fda93a30135a9ab9026802082823adb1cf66e82e9e07547f735ca85e"
+      "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
       "bytes": 7381,
@@ -202,24 +202,54 @@
       "sha256": "844d3219d639c52fc4058370a859d88fff53caacfcdaaebd0e543395cb031243"
     },
     {
-      "bytes": 11812,
+      "bytes": 51410,
+      "path": "src/frontend/oir/owned/array_native_resource_tests.rs",
+      "sha256": "594a8fab716a27190cb9f33b8ec7e2e2d26e110a764911644cb902823382c149"
+    },
+    {
+      "bytes": 50215,
+      "path": "src/frontend/oir/owned/array_native_tests.rs",
+      "sha256": "53bd43856863f28232e659c4ffdafe18eb9a34e37e0aa1d878dcddf3513ee96e"
+    },
+    {
+      "bytes": 15652,
+      "path": "src/frontend/oir/owned/array_observe.rs",
+      "sha256": "ca98a54533e67d96316708921b9a7945b481c4dbb39c11b7c9cbabab1b0d2d31"
+    },
+    {
+      "bytes": 32949,
+      "path": "src/frontend/oir/owned/array_reference_boundary_tests.rs",
+      "sha256": "5e34adf14dbe92fc784d704a1bd48b845457ca4b95a765ba39585ab0dfbec97b"
+    },
+    {
+      "bytes": 44056,
+      "path": "src/frontend/oir/owned/array_reference_tests.rs",
+      "sha256": "b64bcb442203fddbcf4dee8f58bfde544a5860302cb30a84d36c3edece9a4de3"
+    },
+    {
+      "bytes": 32239,
+      "path": "src/frontend/oir/owned/array_tests.rs",
+      "sha256": "9cb5d14376a5e4799a182a91bc8551217d4702dc9a4c4a52a538cfe3952d36b8"
+    },
+    {
+      "bytes": 12515,
       "path": "src/frontend/oir/owned/budget.rs",
-      "sha256": "c789b322113d83593a1e9ac40b3970e55e243b62b66e47b872471a36d1819717"
+      "sha256": "ec9f13f9228c96cdfeabb102c7fff2ab1de0ca1b02dcad48a77399acef59c762"
     },
     {
-      "bytes": 4550,
+      "bytes": 5149,
       "path": "src/frontend/oir/owned/cfg.rs",
-      "sha256": "ec6dc0c5224ce88c256c2e04b2c7debc289cf87f4277ed6be451229bf6358529"
+      "sha256": "496ac21fd6c95c2b30c3d1d65a7fa695dcb68e200ba60dc19c9c7349d7ac0928"
     },
     {
-      "bytes": 44569,
+      "bytes": 45066,
       "path": "src/frontend/oir/owned/consumer_fixtures.rs",
-      "sha256": "4bf44386d42d84b1ed05cc4e7b5e5ad4cee25ea8cc1424515bafc166c90d910c"
+      "sha256": "1ef6fcbabe38ade0a4b57d299822676303740ee3571dfa731186af6cc1ebd051"
     },
     {
-      "bytes": 34731,
+      "bytes": 34987,
       "path": "src/frontend/oir/owned/consumer_pilot.rs",
-      "sha256": "0d28cba9f8968e278d720173f9502f24beb8cfb8101f854be47a66ce81149567"
+      "sha256": "2dd65029f54bc4ebf64c9df6e74edace84b0d8e1a8b56326c64ebe57963f6649"
     },
     {
       "bytes": 2296,
@@ -227,59 +257,59 @@
       "sha256": "c3e31686fd1a419eaf5f3d33c30c4f967d8183e697d17bd97f528c672af3d11a"
     },
     {
-      "bytes": 26276,
+      "bytes": 26970,
       "path": "src/frontend/oir/owned/denial_tests.rs",
-      "sha256": "f350074325d518215ccc11a199d1e4d0da50fdcfbe5a21979871b43214e52023"
+      "sha256": "9350c0d5ab0787bbfaa66e18a04789e01010d2e238e7a516628da038151ed3a9"
     },
     {
-      "bytes": 50868,
+      "bytes": 67374,
       "path": "src/frontend/oir/owned/execute.rs",
-      "sha256": "bd23c1a0df31bedf3e9f7f7ba5411360a6541f6dcf023f7f066d831cca9d3231"
+      "sha256": "72219cd91eb26710aa72455c1f33e185d5c976d5639e87e7e0f31ba0374a3af5"
     },
     {
-      "bytes": 34869,
+      "bytes": 35260,
       "path": "src/frontend/oir/owned/execute_tests.rs",
-      "sha256": "ffdfbfc35582eb963f129e1c13dea41b91448cc39ab9e94362d6ef1636e2c1fb"
+      "sha256": "a1c60d8575af0ea542b13af7372ca3c55fb0d905e6a8aeb5defb91bd0e15aae0"
     },
     {
-      "bytes": 35489,
+      "bytes": 37743,
       "path": "src/frontend/oir/owned/flow.rs",
-      "sha256": "c3501e6b57f145d7d4fe54a5880105da7c8fa8bb642b1a5fc66277709a4aa1ed"
+      "sha256": "e32d8a03bce12cacb0f6c20b22be9ff1f4d5aff2b545412247ba77c3a240218c"
     },
     {
-      "bytes": 8863,
+      "bytes": 9685,
       "path": "src/frontend/oir/owned/mod.rs",
-      "sha256": "bf170de2c7987e528305b061143bf7188b8e3b90d02876fe50676fff92759a03"
+      "sha256": "ca0d4650d96087835c2ed6f11bb2eff511bd450fa00035bccb6be0afb3bb1947"
     },
     {
-      "bytes": 43267,
+      "bytes": 76786,
       "path": "src/frontend/oir/owned/native.rs",
-      "sha256": "fb5440fbaa507338da7063b053df01d2807dc142a498499b1750a951ae84c36a"
+      "sha256": "a5fec5f442f3538012067795c95a932bda9d7359ea2ecde2bf1f415e4e4eed9b"
     },
     {
-      "bytes": 24670,
+      "bytes": 24963,
       "path": "src/frontend/oir/owned/native_heldout_review.rs",
-      "sha256": "fadf91d78b018daac0a9c984eccc65ee238ba936b7b8aae727fed1ab65947fda"
+      "sha256": "672056365bf6b66d6dfddd9821ab5b3ad9e49c2cbdd77ffb1209879004c2136b"
     },
     {
-      "bytes": 84109,
+      "bytes": 84389,
       "path": "src/frontend/oir/owned/native_tests.rs",
-      "sha256": "e0aba59961a67175a21dbff507b160016aa612a54600691bb3dffc1dc29cb833"
+      "sha256": "46474c3bb11b1944ed74d4cba44ad6bae4d011c242d8e873bb3e26b15ff95bc4"
     },
     {
-      "bytes": 82193,
+      "bytes": 114100,
       "path": "src/frontend/oir/owned/oracle_tests.rs",
-      "sha256": "6bbb1cbe606c227f35e5812d140e77870901f2e156f99e91a721da606e01d8a8"
+      "sha256": "614220b2030c5193a32bb4c807f577ac7dc12d1f48f2b014d5a85a4dc114830f"
     },
     {
-      "bytes": 21170,
+      "bytes": 21238,
       "path": "src/frontend/oir/owned/origin_tests.rs",
-      "sha256": "fc4071aacc957b54d8031a5012ef2957d9e74c8f40ba99a2710fb9c057a43b62"
+      "sha256": "70a229468d0fb5b9f484e8b59f3d993550ba57d779501ac35423dff6bd93c80c"
     },
     {
-      "bytes": 16929,
+      "bytes": 17589,
       "path": "src/frontend/oir/owned/plan.rs",
-      "sha256": "765fc8539d90cae8077a142141da9628b501a5f04731d5442bcf5a119a8fd318"
+      "sha256": "f14116dd7f19c0e6f6eba568f7025cbb5a201bd096323b1cf5b81c7adc1dfe85"
     },
     {
       "bytes": 1705,
@@ -287,34 +317,44 @@
       "sha256": "856b9b99829e82d7872d0690db92d92df8db85696162e4127a956e5c924128bf"
     },
     {
-      "bytes": 56246,
+      "bytes": 1616,
+      "path": "src/frontend/oir/owned/reviewer_array_observer_tests.rs",
+      "sha256": "de545a0ff0d68e851d474e0fbac43a54def930ecf86113b456340bb36fd5ba30"
+    },
+    {
+      "bytes": 63785,
+      "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
+      "sha256": "3f0e28a4f0cfa9ee34133d50db55d7e7df9ed18cb68629794dcd87139dcff9a4"
+    },
+    {
+      "bytes": 57466,
       "path": "src/frontend/oir/owned/reviewer_heldout.rs",
-      "sha256": "f78130dcc425c44262781b212bd963d9ce3ef31bfaf1a09284a4bcdad32b1705"
+      "sha256": "d8e5ef55d5fab0f08a7004ff62f6d649330134eb023c19ea93dd315e1dee4866"
     },
     {
-      "bytes": 22227,
+      "bytes": 22384,
       "path": "src/frontend/oir/owned/reviewer_origins.rs",
-      "sha256": "2525ea1d79fb5dcea4265040845316d86454565f25ad6dca3c0566491aee1ee2"
+      "sha256": "6a3a353da733bdffc703929ae0d1b8c131169b1b4e736a2a1043d89444587429"
     },
     {
-      "bytes": 70002,
+      "bytes": 70689,
       "path": "src/frontend/oir/owned/reviewer_reference_tests.rs",
-      "sha256": "d8723269611c8dbda31faec97246f7440d9f9347a8b182a15fc6a8158a1de69e"
+      "sha256": "9a5555bda52c1ff7da937d0c9738fe39969c25baaf2678d3250c7100d6fdb368"
     },
     {
-      "bytes": 24270,
+      "bytes": 28575,
       "path": "src/frontend/oir/owned/shape.rs",
-      "sha256": "40387c7019ee71a026501880d0d49db2643565f8e8979a5b423e1115940dc5bd"
+      "sha256": "556fa0d9b35587250ebc2d282895c43bc19afde708c5536aff0f094a0c5a64b6"
     },
     {
-      "bytes": 5338,
+      "bytes": 10962,
       "path": "src/frontend/oir/owned/source/association.rs",
-      "sha256": "c31c3cd73cc31b48844ac693a724851fbc1cd451331550222df8768ab211fa33"
+      "sha256": "2e08a8d4e2aa95449ef14088f4eec1c7212487c19d4854d29a7469334b681e28"
     },
     {
-      "bytes": 4990,
+      "bytes": 5604,
       "path": "src/frontend/oir/owned/source/budget.rs",
-      "sha256": "d8146260cfb894c9053748d66fe2cc63bee83c292c7ef9c82bdc59b5f0bfeff8"
+      "sha256": "e0898745a97481d375b848601846bcf2a8fdabbdf0a8d1056ed395405fb3cd94"
     },
     {
       "bytes": 10960,
@@ -322,24 +362,24 @@
       "sha256": "718ebf9e7672ac1b9d1536c8d593ff974661164769da802ec6d0b3f6ef098595"
     },
     {
-      "bytes": 39345,
+      "bytes": 39938,
       "path": "src/frontend/oir/owned/source/candidate_adapter.rs",
-      "sha256": "a65f7b297968a015d3ac8818fef8eb0636c1ce2219998613d86d9a047109c85f"
+      "sha256": "5ab7d897381baa0c868db6b0db2f10bc047a5392b6bdb04ffcffc13b2f953a82"
     },
     {
-      "bytes": 20997,
+      "bytes": 21323,
       "path": "src/frontend/oir/owned/source/candidate_mutations.rs",
-      "sha256": "49f3322be0f507ded233146bcf7e2764d18bbf068ff410583fcdf38c0369086e"
+      "sha256": "ea166409b5a50edf8dc4528c9eb9bb6936ade51e2bf5dfee9733c8c2f6dbd35e"
     },
     {
-      "bytes": 30327,
+      "bytes": 30860,
       "path": "src/frontend/oir/owned/source/candidate_native.rs",
-      "sha256": "d00cf34e5cc235c5403eaf0cd81f7e6a2b86045c69758633c7cc3b9241f7eefb"
+      "sha256": "e7239e6bd25e11f56b16f0eb878dd99ada20f51c3fd61fc7cef45a4419beb5bb"
     },
     {
-      "bytes": 7022,
+      "bytes": 7042,
       "path": "src/frontend/oir/owned/source/diagnostic.rs",
-      "sha256": "336200eb4501c2a4b79ea7aa18f1209da6ab1870f41e60b4ea14bd41c26ce7ad"
+      "sha256": "f40f5b3c8339fb978a130f7ef650ef05f49b812d10d99077bbe94d105525fb93"
     },
     {
       "bytes": 19667,
@@ -347,14 +387,14 @@
       "sha256": "589bd31889a77a27c8ec0f7916e75a470cf50d9e04d0477b65e9fe71f572cf76"
     },
     {
-      "bytes": 4520,
+      "bytes": 4533,
       "path": "src/frontend/oir/owned/source/hir.rs",
-      "sha256": "3067e2def154fdf0c4dcd53603069f9e7ef0aead1bce8c58240b0c2b822b9cb7"
+      "sha256": "80af7ccc0ddb253c9558072c0f26044475e11bd1fb302749d3827f07b3ef574c"
     },
     {
-      "bytes": 60569,
+      "bytes": 61098,
       "path": "src/frontend/oir/owned/source/lower.rs",
-      "sha256": "efd50cbe64a9c742fc92139f54bc69be5a35239ffa6185c60d4bfc2ae8ce2446"
+      "sha256": "90352854c103f5b084072b4ce46d06c9fb0b78e81246c2951f68db7b81a0dbca"
     },
     {
       "bytes": 10371,
@@ -377,9 +417,9 @@
       "sha256": "aeb1969a292d2489a5cbdc04dce87a156ce2d161336239b9fa67097460a9c697"
     },
     {
-      "bytes": 33655,
+      "bytes": 33833,
       "path": "src/frontend/oir/owned/source/resolve.rs",
-      "sha256": "ec8dc896f629f99c21b3a41ecdc2241df4ad90885810e839ac8e85b00baab97c"
+      "sha256": "5528236ed250f6913a5a8dc059ba04c2b405f921336bfb7278978f09b654ea4b"
     },
     {
       "bytes": 5988,
@@ -387,9 +427,9 @@
       "sha256": "d443166f1caaf594ac56a334a50bced3b6f89563de8de1decfff859a86308335"
     },
     {
-      "bytes": 26468,
+      "bytes": 26537,
       "path": "src/frontend/oir/owned/source/reviewer_heldout.rs",
-      "sha256": "759eafbfd8d79789f83f77ca20ef306c880484aad31f14dc7b005150e34a4062"
+      "sha256": "180bfcff5d73cfc551296820f7c7b034ddaa293b22ff281ee311dbea39a0d9ef"
     },
     {
       "bytes": 1862,
@@ -402,9 +442,9 @@
       "sha256": "9d247b483e42dd86c452c86221119628fd35c34b0e3a3d267c1e247829562e8f"
     },
     {
-      "bytes": 25939,
+      "bytes": 26086,
       "path": "src/frontend/oir/owned/source/reviewer_source.rs",
-      "sha256": "e7af616d7d062ef570b088267d0f38806d17aaa63430a0f3c55faee1d9dd90ee"
+      "sha256": "8a5e408568ddf0548de422ee0ae82e08b94ebca342aa8f5cbe09ea275902d39c"
     },
     {
       "bytes": 9570,
@@ -412,14 +452,14 @@
       "sha256": "794e81b0c16645ec25f25ac70e140c300f11bbfa41aeb8f5dc606667f37d734f"
     },
     {
-      "bytes": 15994,
+      "bytes": 16018,
       "path": "src/frontend/oir/owned/source/tests.rs",
-      "sha256": "178847526f3bec8c1ae6222242ba1b3eb34ac1b2df8c38f582ac80a6c9010d31"
+      "sha256": "91bec5ee12bdff2775c27ca48cd7d9a4992ee90b9855b09ae3aeacb7d2678915"
     },
     {
-      "bytes": 33965,
+      "bytes": 34292,
       "path": "src/frontend/oir/owned/source/typeck.rs",
-      "sha256": "53d591d6ee03d14ed9923c14dc1c5a32aa16d0a45687db715eee238bdddb3aa4"
+      "sha256": "a904be5c4169f1d0e14f21eed17dfeafb8e4dc911377336f708a406b92cc3d32"
     },
     {
       "bytes": 1630,
@@ -427,24 +467,24 @@
       "sha256": "57fe594c36068d687960c3b2b8a47ba10d3fc7ff1a7e5be9138b02c3f4ab7f88"
     },
     {
-      "bytes": 38057,
+      "bytes": 49671,
       "path": "src/frontend/oir/owned/tests.rs",
-      "sha256": "18c7d35225f9b02d00347c36a2ae678208b827c092c07e791f0922d4e50a32f0"
+      "sha256": "41fa7a3abe2e93d9f36b5fc88199b55149fe1d53a7c65c320cc51d01b89cb1cf"
     },
     {
-      "bytes": 2280,
+      "bytes": 8053,
       "path": "src/frontend/oir/owned/verified.rs",
-      "sha256": "06222fc920789f7e3765e10315ba3cd7835b1dfd65caa538dce610e4c37a77f3"
+      "sha256": "0183555cb9ac7032118a2a76c4694467ffbc924a174a37ccccda7be35a3605a4"
     },
     {
-      "bytes": 48291,
+      "bytes": 49930,
       "path": "src/frontend/oir/owned_types.rs",
-      "sha256": "f9b166ce29af411cf6babe3d3ea7ded46607a335902b54b540eaeeb2e6baa67a"
+      "sha256": "3d1d0be701979ed557ee2890763ea04a9448487c671b5851dfdfd6eada950c3c"
     },
     {
-      "bytes": 8588,
+      "bytes": 11087,
       "path": "src/frontend/oir/owned_types/array_tests.rs",
-      "sha256": "ab62e471a0a4edcbe054f6df5acb0b26ad5db9cb28037d6093e456703bc09cca"
+      "sha256": "2db52d5f33311cc7b8aca7ab004005f52210573bc6a91c8bed6b89ed80a9b467"
     },
     {
       "bytes": 3916,
@@ -607,8 +647,8 @@
       "sha256": "23e5bb6d0050b8adef32aada00f779c1a43c07dc42bd762d23529b794ac5d6a5"
     }
   ],
-  "purpose": "Actual current compiler inputs, including activation and private fixed-array groundwork tests; base_head is historical activation provenance, reviewed_source_head is the immutable current source checkpoint; not historical core qualification",
-  "reviewed_source_head": "1f0f29066e411a87910a614495fc3c503d931654",
+  "purpose": "Actual current compiler inputs, including activation and private fixed-array implementation/tests; base_head is historical activation provenance, reviewed_source_head is the immutable current source checkpoint; not historical core qualification",
+  "reviewed_source_head": "f8a30b2443d9d7a89498e0c243f75072cbf26c2f",
   "schema": 1,
-  "source_only_tree": "d32c9fe5c0650e2a4765b92320068dd3dd5d7696"
+  "source_only_tree": "18a4611f46b3cdf59f37a9f2241dc4e39e2d8ba6"
 }

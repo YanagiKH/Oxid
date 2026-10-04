@@ -2,7 +2,7 @@
 //!
 //! Production record source, verification and consumers use this facade.
 //! Fixed scalar arrays have only a checked type/layout seam: source syntax and
-//! executable raw carriers remain record-only until the array consumer phase.
+//! executable array witnesses remain gated until the array consumer phase.
 //! References describe call parameters, never stored language values.
 #![allow(dead_code)]
 
@@ -58,11 +58,43 @@ impl FixedArrayTy {
 }
 
 /// Explicit aggregate identity; RecordId is never packed or reinterpreted.
-/// This transient query type is not yet a raw executable value descriptor.
+/// Semantic identity. Raw array carriers are gated before executable verification.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum AggregateTy {
     Record(RecordId),
     FixedArray(FixedArrayTy),
+}
+
+/// Compact retained identity, never an ownership or declaration witness.
+/// The independent tag cannot reinterpret malformed nominal IDs as arrays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) struct AggregateSlot(AggregateSlotRepr);
+#[repr(C, align(8))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AggregateSlotRepr {
+    Record(u32),
+    FixedArray(FixedArrayTy),
+}
+impl AggregateSlot {
+    pub(in crate::frontend) fn try_from_aggregate(
+        ty: AggregateTy,
+    ) -> Result<Self, DeclarationError> {
+        Ok(Self(match ty {
+            AggregateTy::Record(id) => AggregateSlotRepr::Record(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            AggregateTy::FixedArray(array) => AggregateSlotRepr::FixedArray(array),
+        }))
+    }
+    pub(in crate::frontend) fn aggregate(self) -> AggregateTy {
+        match self.0 {
+            // All qualified hosts are 64-bit; no truncation on supported targets.
+            AggregateSlotRepr::Record(id) => AggregateTy::Record(RecordId(
+                usize::try_from(id).expect("qualified ordinal width"),
+            )),
+            AggregateSlotRepr::FixedArray(array) => AggregateTy::FixedArray(array),
+        }
+    }
 }
 
 /// An ordinal alone is not a field identity: its declaring record is essential.
@@ -84,7 +116,7 @@ pub(super) struct CallSiteId(pub(super) usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum ValueTy {
     Scalar(hir::Ty),
-    Owned(RecordId),
+    Owned(AggregateTy),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,7 +129,10 @@ pub(in crate::frontend) enum BorrowKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum ParameterTy {
     Value(ValueTy),
-    Reference { record: RecordId, kind: BorrowKind },
+    Reference {
+        aggregate: AggregateTy,
+        kind: BorrowKind,
+    },
 }
 
 #[derive(Debug)]
@@ -400,15 +435,13 @@ impl Declarations {
     pub(super) fn check_value_type(&self, ty: ValueTy) -> Result<(), DeclarationError> {
         match ty {
             ValueTy::Scalar(_) => Ok(()),
-            ValueTy::Owned(id) => self.check_aggregate_type(AggregateTy::Record(id)),
+            ValueTy::Owned(aggregate) => self.check_aggregate_type(aggregate),
         }
     }
     pub(super) fn check_parameter_type(&self, ty: ParameterTy) -> Result<(), DeclarationError> {
         match ty {
             ParameterTy::Value(value) => self.check_value_type(value),
-            ParameterTy::Reference { record, .. } => {
-                self.check_aggregate_type(AggregateTy::Record(record))
-            }
+            ParameterTy::Reference { aggregate, .. } => self.check_aggregate_type(aggregate),
         }
     }
     pub(super) fn same_value_type(
@@ -704,7 +737,10 @@ mod tests {
             table.record(RecordId(1)).unwrap().layout()
         );
         assert_eq!(
-            table.same_value_type(ValueTy::Owned(RecordId(0)), ValueTy::Owned(RecordId(1))),
+            table.same_value_type(
+                ValueTy::Owned(AggregateTy::Record(RecordId(0))),
+                ValueTy::Owned(AggregateTy::Record(RecordId(1)))
+            ),
             Err(DeclarationError::TypeMismatch)
         );
         assert_eq!(
@@ -783,14 +819,14 @@ mod tests {
     fn nested_owned_and_borrowed_fields_are_rejected() {
         let (sources, span) = source();
         for ty in [
-            ParameterTy::Value(ValueTy::Owned(RecordId(0))),
-            ParameterTy::Value(ValueTy::Owned(RecordId(usize::MAX))),
+            ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0)))),
+            ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))),
             ParameterTy::Reference {
-                record: RecordId(0),
+                aggregate: AggregateTy::Record(RecordId(0)),
                 kind: BorrowKind::Shared,
             },
             ParameterTy::Reference {
-                record: RecordId(0),
+                aggregate: AggregateTy::Record(RecordId(0)),
                 kind: BorrowKind::Exclusive,
             },
         ] {
@@ -881,7 +917,7 @@ mod tests {
             ValueTy::Scalar(hir::Ty::Bool),
             ValueTy::Scalar(hir::Ty::I32),
             ValueTy::Scalar(hir::Ty::Unit),
-            ValueTy::Owned(RecordId(0)),
+            ValueTy::Owned(AggregateTy::Record(RecordId(0))),
         ] {
             assert_eq!(table.check_value_type(ty), Ok(()));
             assert_eq!(table.check_parameter_type(ParameterTy::Value(ty)), Ok(()));
@@ -890,20 +926,20 @@ mod tests {
         for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
             assert_eq!(
                 table.check_parameter_type(ParameterTy::Reference {
-                    record: RecordId(0),
+                    aggregate: AggregateTy::Record(RecordId(0)),
                     kind
                 }),
                 Ok(())
             );
             assert_eq!(
                 table.check_parameter_type(ParameterTy::Reference {
-                    record: RecordId(1),
+                    aggregate: AggregateTy::Record(RecordId(1)),
                     kind
                 }),
                 Err(DeclarationError::InvalidRecordId(RecordId(1)))
             );
         }
-        let bad = ValueTy::Owned(RecordId(usize::MAX));
+        let bad = ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)));
         assert_eq!(
             table.same_value_type(bad, bad),
             Err(DeclarationError::InvalidRecordId(RecordId(usize::MAX)))
@@ -913,7 +949,10 @@ mod tests {
                 ValueTy::Scalar(hir::Ty::Bool),
                 ValueTy::Scalar(hir::Ty::I32),
             ),
-            (ValueTy::Scalar(hir::Ty::Unit), ValueTy::Owned(RecordId(0))),
+            (
+                ValueTy::Scalar(hir::Ty::Unit),
+                ValueTy::Owned(AggregateTy::Record(RecordId(0))),
+            ),
         ] {
             assert_eq!(
                 table.same_value_type(actual, expected),
@@ -922,11 +961,11 @@ mod tests {
         }
         assert_ne!(
             ParameterTy::Reference {
-                record: RecordId(0),
+                aggregate: AggregateTy::Record(RecordId(0)),
                 kind: BorrowKind::Shared
             },
             ParameterTy::Reference {
-                record: RecordId(0),
+                aggregate: AggregateTy::Record(RecordId(0)),
                 kind: BorrowKind::Exclusive
             }
         );

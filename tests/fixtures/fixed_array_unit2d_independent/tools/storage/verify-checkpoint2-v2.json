@@ -1,0 +1,17 @@
+{
+  "status": "text-reconstruction-passed-native-execution-pending",
+  "cases": 29,
+  "positives": 18,
+  "mutants": 11,
+  "positive_observation_sites": 174,
+  "positive_zero_payload_bytes_checked": 9425,
+  "positive_i32_payload_bytes_checked": 37220,
+  "positive_bool_i1_cells_checked": 9305,
+  "positive_guard_bytes_checked": 348,
+  "harness_sha256": "d25e9b111ef26ae5147934960074f17bb4d21f8365056a339a21d54b37ed9265",
+  "all_selected_production_bodies_unchanged": true,
+  "all_original_modules_reconstructed": true,
+  "all_mutants_exact_narrow_type_replays": true,
+  "compiler_invoked": false,
+  "elf_executed": false
+}

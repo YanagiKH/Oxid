@@ -49,6 +49,21 @@ impl Diagnostic {
         sources: &SourceMap,
         out: &mut impl std::fmt::Write,
     ) -> std::fmt::Result {
+        self.write_human_with_locations(out, |span| {
+            let source = sources.get(span.file);
+            source.span(span.start, span.end);
+            let (line, column) = source.location(span.start);
+            Ok((source.path(), line, column))
+        })
+    }
+
+    /// One formatting body for ordinary and bounded, prelocated diagnostics.
+    /// The provider is presentation-only and must reject an unexpected span.
+    pub(super) fn write_human_with_locations<'a>(
+        &self,
+        out: &mut impl std::fmt::Write,
+        mut location: impl FnMut(Span) -> Result<(&'a str, usize, usize), std::fmt::Error>,
+    ) -> std::fmt::Result {
         out.write_str("error[")?;
         write_human_text(out, self.code)?;
         out.write_str("] (")?;
@@ -58,12 +73,12 @@ impl Diagnostic {
         out.write_char('\n')?;
         if let Some(span) = self.primary {
             out.write_str("  --> ")?;
-            write_human_location(out, span, sources)?;
+            write_human_location(out, location(span)?)?;
             out.write_char('\n')?;
         }
         for (span, message) in &self.secondary {
             out.write_str("  ::: ")?;
-            write_human_location(out, *span, sources)?;
+            write_human_location(out, location(*span)?)?;
             out.write_str(": ")?;
             write_human_text(out, message)?;
             out.write_char('\n')?;
@@ -149,13 +164,9 @@ fn json_span(span: Span, sources: &SourceMap) -> String {
 
 fn write_human_location(
     out: &mut impl std::fmt::Write,
-    span: Span,
-    sources: &SourceMap,
+    (path, line, column): (&str, usize, usize),
 ) -> std::fmt::Result {
-    let source = sources.get(span.file);
-    source.span(span.start, span.end);
-    let (line, column) = source.location(span.start);
-    write_human_text(out, source.path())?;
+    write_human_text(out, path)?;
     write!(out, ":{line}:{column}")
 }
 

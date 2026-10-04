@@ -226,12 +226,12 @@ fn heldout_mixed_signature_binding_positions_and_projection_views_are_complete()
         let expected = [
             ParameterTy::Value(ValueTy::Scalar(Ty::I32)),
             ParameterTy::Reference {
-                record: RecordId(0),
+                aggregate: AggregateTy::Record(RecordId(0)),
                 kind: BorrowKind::Shared,
             },
-            ParameterTy::Value(ValueTy::Owned(RecordId(0))),
+            ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0)))),
             ParameterTy::Reference {
-                record: RecordId(0),
+                aggregate: AggregateTy::Record(RecordId(0)),
                 kind: BorrowKind::Exclusive,
             },
             ParameterTy::Value(ValueTy::Scalar(Ty::Bool)),

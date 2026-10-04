@@ -215,7 +215,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                     self.register(owner, binding.span)?;
                     BindingLocation::Owner(owner)
                 }
-                ParameterTy::Reference { record, kind } => {
+                ParameterTy::Reference {
+                    aggregate: record,
+                    kind,
+                } => {
                     let id = ReferenceParamId(self.counts.references);
                     self.counts.references = budget::add(self.counts.references, 1)?;
                     self.counts.ownership_active = true;
@@ -223,7 +226,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                         budget::append(
                             &mut out.raw.references,
                             ReferenceDecl {
-                                record,
+                                aggregate: AggregateSlot::try_from_aggregate(record)?,
                                 kind,
                                 position: index,
                                 span: binding.span,
@@ -336,14 +339,23 @@ impl<'a, 'b> Walk<'a, 'b> {
         self.check_counts()?;
         Ok(id)
     }
-    fn owner(&mut self, record: RecordId, kind: OwnerKind, span: Span) -> Result<OwnerPlaceId> {
+    fn owner(
+        &mut self,
+        aggregate: AggregateTy,
+        kind: OwnerKind,
+        span: Span,
+    ) -> Result<OwnerPlaceId> {
         let id = OwnerPlaceId(self.counts.owners);
         self.counts.owners = budget::add(self.counts.owners, 1)?;
         self.counts.ownership_active = true;
         if let Some(out) = &mut self.output {
             budget::append(
                 &mut out.raw.owners,
-                OwnerDecl { record, kind, span },
+                OwnerDecl {
+                    aggregate: AggregateSlot::try_from_aggregate(aggregate)?,
+                    kind,
+                    span,
+                },
                 out.expected.owners,
                 span,
             )?;
@@ -641,7 +653,11 @@ impl<'a, 'b> Walk<'a, 'b> {
                         )?;
                         frames.push(ExprFrame::Visit(field.value), cause)?;
                     } else {
-                        let owner = self.owner(*record, OwnerKind::Temporary, expression.span)?;
+                        let owner = self.owner(
+                            AggregateTy::Record(*record),
+                            OwnerKind::Temporary,
+                            expression.span,
+                        )?;
                         self.statement(
                             OwnedInstruction::StorageLive(owner),
                             expression.span,
@@ -986,7 +1002,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                     };
                     let record = match self.view.binding_ty(binding) {
                         ParameterTy::Value(ValueTy::Owned(record))
-                        | ParameterTy::Reference { record, .. } => record,
+                        | ParameterTy::Reference {
+                            aggregate: record, ..
+                        } => record,
                         _ => return Err(invariant(*span)),
                     };
                     let authority = self.base(binding, *span)?;
@@ -1000,7 +1018,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 argument,
                                 authority,
                                 kind: *kind,
-                                record,
+                                aggregate: AggregateSlot::try_from_aggregate(record)?,
                                 span: *span,
                             },
                             out.expected.loans,

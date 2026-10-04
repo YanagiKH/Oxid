@@ -87,11 +87,38 @@ fn equal<T: PartialEq>(a: T, b: T, s: Span) -> Result<(), OwnedFailure> {
         Err(bad(Malformed::Type, s))
     }
 }
+/// Equality validates actual then expected, with the historical site's error
+/// category and origin. Resource failures must never become malformed types.
+fn same_aggregate(
+    d: &Declarations,
+    actual: AggregateTy,
+    expected: AggregateTy,
+    kind: Malformed,
+    s: Span,
+) -> Result<(), OwnedFailure> {
+    d.same_aggregate_type(actual, expected)
+        .map_err(|error| match error {
+            DeclarationError::InvalidRecordId(_) | DeclarationError::TypeMismatch => bad(kind, s),
+            other => other.into(),
+        })
+}
+fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
+    match aggregate {
+        AggregateTy::Record(record) => Ok(record),
+        AggregateTy::FixedArray(_) => Err(bad(Malformed::Type, s)),
+    }
+}
+fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
+    match aggregate {
+        AggregateTy::FixedArray(array) => Ok(array),
+        AggregateTy::Record(_) => Err(bad(Malformed::Type, s)),
+    }
+}
 pub(super) fn base(
     f: &RawOwnedFunction,
     b: AccessBase,
     s: Span,
-) -> Result<(RecordId, bool), OwnedFailure> {
+) -> Result<(AggregateTy, bool), OwnedFailure> {
     match b {
         AccessBase::Owner(id) => {
             let o = owner(f, id, s)?;
@@ -99,13 +126,13 @@ pub(super) fn base(
                 return Err(bad(Malformed::OwnerClass, s));
             }
             Ok((
-                o.record,
+                o.aggregate(),
                 matches!(o.kind, OwnerKind::Local { mutable: true }),
             ))
         }
         AccessBase::Parameter(id) => {
             let r = reference(f, id, s)?;
-            Ok((r.record, r.kind == BorrowKind::Exclusive))
+            Ok((r.aggregate(), r.kind == BorrowKind::Exclusive))
         }
     }
 }
@@ -132,11 +159,13 @@ pub(super) fn parameter(
 ) -> Result<ParameterTy, OwnedFailure> {
     Ok(match p {
         ParameterBinding::Scalar(id) => ParameterTy::Value(ValueTy::Scalar(local(f, id, s)?)),
-        ParameterBinding::Owned(id) => ParameterTy::Value(ValueTy::Owned(owner(f, id, s)?.record)),
+        ParameterBinding::Owned(id) => {
+            ParameterTy::Value(ValueTy::Owned(owner(f, id, s)?.aggregate()))
+        }
         ParameterBinding::Reference(id) => {
             let r = reference(f, id, s)?;
             ParameterTy::Reference {
-                record: r.record,
+                aggregate: r.aggregate(),
                 kind: r.kind,
             }
         }
@@ -194,7 +223,7 @@ pub(super) fn signatures(
         let mut parameter_owners = 0;
         for (id, o) in f.owners.iter().enumerate() {
             span(sources, o.span)?;
-            d.record(o.record)?;
+            d.check_aggregate_type(o.aggregate())?;
             match o.kind {
                 OwnerKind::Parameter { position } => {
                     parameter_owners += 1;
@@ -223,7 +252,7 @@ pub(super) fn signatures(
         }
         for (id, r) in f.references.iter().enumerate() {
             span(sources, r.span)?;
-            d.record(r.record)?;
+            d.check_aggregate_type(r.aggregate())?;
             if !matches!(f.parameters.get(r.position),Some(ParameterBinding::Reference(p)) if p.0==id)
             {
                 return Err(bad(Malformed::Binding, r.span));
@@ -281,7 +310,7 @@ pub(super) fn check(
                 (ArgumentSlot::Scalar, ParameterTy::Value(ValueTy::Scalar(_))) => {}
                 (ArgumentSlot::Owned(o), ParameterTy::Value(ValueTy::Owned(r))) => {
                     let owner = owner(f, *o, c.span)?;
-                    equal(owner.record, r, c.span)?;
+                    same_aggregate(d, owner.aggregate(), r, Malformed::Type, c.span)?;
                     if owner.kind
                         != (OwnerKind::StagedArgument {
                             call: CallSiteId(id),
@@ -291,13 +320,19 @@ pub(super) fn check(
                         return Err(bad(Malformed::Binding, c.span));
                     }
                 }
-                (ArgumentSlot::Borrow(l), ParameterTy::Reference { record, kind }) => {
+                (
+                    ArgumentSlot::Borrow(l),
+                    ParameterTy::Reference {
+                        aggregate: record,
+                        kind,
+                    },
+                ) => {
                     let loan = loan(f, *l, c.span)?;
-                    if loan.call != CallSiteId(id)
-                        || loan.argument != arg
-                        || loan.record != record
-                        || loan.kind != kind
-                    {
+                    if loan.call != CallSiteId(id) || loan.argument != arg {
+                        return Err(bad(Malformed::Binding, c.span));
+                    }
+                    same_aggregate(d, loan.aggregate(), record, Malformed::Binding, c.span)?;
+                    if loan.kind != kind {
                         return Err(bad(Malformed::Binding, c.span));
                     }
                 }
@@ -308,7 +343,7 @@ pub(super) fn check(
             (CallResult::Scalar(v), ValueTy::Scalar(t)) => equal(local(f, v, c.span)?, t, c.span)?,
             (CallResult::Owned(v), ValueTy::Owned(r)) => {
                 let o = owner(f, v, c.span)?;
-                equal(o.record, r, c.span)?;
+                same_aggregate(d, o.aggregate(), r, Malformed::Type, c.span)?;
                 if o.kind
                     != (OwnerKind::CallResult {
                         call: CallSiteId(id),
@@ -327,7 +362,7 @@ pub(super) fn check(
             return Err(bad(Malformed::Binding, l.span));
         }
         let (record, _) = base(f, l.authority, l.span)?;
-        equal(record, l.record, l.span)?;
+        same_aggregate(d, record, l.aggregate(), Malformed::Type, l.span)?;
         if let AccessBase::Owner(o) = l.authority {
             if !matches!(
                 owner(f, o, l.span)?.kind,
@@ -389,18 +424,42 @@ pub(super) fn check(
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
                     *prev = Some(site);
-                    let declared = d.fields(o.record)?;
+                    let declared = d.fields(record(o.aggregate(), s)?)?;
                     if fields.len() != declared.len() {
                         return Err(bad(Malformed::Type, s));
                     }
                     field_seen[..declared.len()].fill(0);
                     for (id, value) in fields {
-                        let field = d.field(o.record, *id)?;
+                        let field = d.field(record(o.aggregate(), s)?, *id)?;
                         if field_seen[id.index] != 0 {
                             return Err(bad(Malformed::Type, s));
                         }
                         field_seen[id.index] = 1;
                         equal(operand(f, *value, sources)?, field.ty(), value.span)?;
+                    }
+                }
+                OwnedInstruction::ConstructArray {
+                    destination,
+                    elements,
+                } => {
+                    let o = ordinary(f, *destination, s)?;
+                    if !matches!(o.kind, OwnerKind::Local { .. } | OwnerKind::Temporary) {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    let prev = &mut owners[destination.0].initialize;
+                    if prev.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *prev = Some(site);
+                    let declared = array(o.aggregate(), s)?;
+                    if elements.len() != declared.length() {
+                        return Err(bad(Malformed::Type, s));
+                    }
+                    // Both all-shape passes charge actual admitted operands;
+                    // arrays need no element-sized scratch or field-ID table.
+                    for value in elements {
+                        meter.visit()?;
+                        equal(operand(f, *value, sources)?, declared.element(), value.span)?;
                     }
                 }
                 OwnedInstruction::MoveInitialize {
@@ -413,7 +472,7 @@ pub(super) fn check(
                 } => {
                     let dst = ordinary(f, *destination, s)?;
                     let src = ordinary(f, *source, s)?;
-                    equal(dst.record, src.record, s)?;
+                    same_aggregate(d, dst.aggregate(), src.aggregate(), Malformed::Type, s)?;
                     if destination == source {
                         return Err(bad(Malformed::OwnerClass, s));
                     }
@@ -438,7 +497,11 @@ pub(super) fn check(
                     field,
                 } => {
                     let (r, _) = base(f, *b, s)?;
-                    equal(local(f, *destination, s)?, d.field(r, *field)?.ty(), s)?;
+                    equal(
+                        local(f, *destination, s)?,
+                        d.field(record(r, s)?, *field)?.ty(),
+                        s,
+                    )?;
                 }
                 OwnedInstruction::WriteField {
                     base: b,
@@ -448,9 +511,37 @@ pub(super) fn check(
                     let (r, _) = base(f, *b, s)?;
                     equal(
                         operand(f, *value, sources)?,
-                        d.field(r, *field)?.ty(),
+                        d.field(record(r, s)?, *field)?.ty(),
                         value.span,
                     )?;
+                }
+                OwnedInstruction::ReadIndex {
+                    destination,
+                    base: b,
+                    index,
+                } => {
+                    let (aggregate, _) = base(f, *b, s)?;
+                    let declared = array(aggregate, s)?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                    equal(local(f, *destination, s)?, declared.element(), s)?;
+                }
+                OwnedInstruction::WriteIndex {
+                    base: b,
+                    index,
+                    value,
+                } => {
+                    let (aggregate, _) = base(f, *b, s)?;
+                    let declared = array(aggregate, s)?;
+                    equal(operand(f, *value, sources)?, declared.element(), value.span)?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                }
+                OwnedInstruction::ArrayLength {
+                    destination,
+                    base: b,
+                } => {
+                    let (aggregate, _) = base(f, *b, s)?;
+                    array(aggregate, s)?;
+                    equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
                 }
                 OwnedInstruction::OpenCall(c) => {
                     call(f, *c, s)?;
@@ -491,9 +582,11 @@ pub(super) fn check(
                     let Some(ArgumentSlot::Owned(staged)) = decl.arguments.get(*argument) else {
                         return Err(bad(Malformed::Binding, s));
                     };
-                    equal(
-                        ordinary(f, *source, s)?.record,
-                        owner(f, *staged, s)?.record,
+                    same_aggregate(
+                        d,
+                        ordinary(f, *source, s)?.aggregate(),
+                        owner(f, *staged, s)?.aggregate(),
+                        Malformed::Type,
                         s,
                     )?;
                     slot(
@@ -568,11 +661,13 @@ pub(super) fn check(
             OwnedTerminatorKind::ReturnScalar(v) => {
                 equal(ValueTy::Scalar(operand(f, v, sources)?), f.result, v.span)?
             }
-            OwnedTerminatorKind::ReturnOwned(o) => equal(
-                ValueTy::Owned(ordinary(f, o, end.span)?.record),
-                f.result,
-                end.span,
-            )?,
+            OwnedTerminatorKind::ReturnOwned(o) => {
+                let actual = ordinary(f, o, end.span)?.aggregate();
+                let ValueTy::Owned(expected) = f.result else {
+                    return Err(bad(Malformed::Type, end.span));
+                };
+                same_aggregate(d, actual, expected, Malformed::Type, end.span)?;
+            }
         }
     }
     if calls.iter().any(|c| c.open.is_none() || c.invoke.is_none())

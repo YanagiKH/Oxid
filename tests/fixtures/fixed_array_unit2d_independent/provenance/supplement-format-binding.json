@@ -1,0 +1,12 @@
+{
+  "input_sha256": "a16ce319a0b982c05bc3f4dfcb431e7eb82a241dacb1760ec764d04aa253bba1",
+  "output_sha256": "b6b8f0a012c4d3b7dc1fa0140769174ee868af04db7e5ae3f34c8d1baa478c21",
+  "command": [
+    "rustfmt",
+    "--edition",
+    "2021",
+    "/workspace/shared/oxid-reset-recovery-20261003/fixed-array-unit2/unit2d-independent/preimplementation/reviewer-array-native-v3.rs"
+  ],
+  "preserved_prebuild_attempt": "reviewer-array-native-v2.rs contains the rustfmt stdout filename heading; identified before compilation and never executed",
+  "semantic_expectations_unchanged_by_formatting": true
+}

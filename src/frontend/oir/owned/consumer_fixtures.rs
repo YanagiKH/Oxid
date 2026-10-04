@@ -103,7 +103,7 @@ pub(super) fn record(types: &[hir::Ty], span: Span) -> RawRecordDecl {
 }
 pub(super) fn owner(kind: OwnerKind, span: Span) -> OwnerDecl {
     OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         span,
     }
@@ -232,7 +232,7 @@ pub(super) fn owned_relay() -> (SourceMap, RawOwnedProgram, Schedule) {
         OwnedTerminatorKind::ReturnScalar(operand(1, s(12))),
         s(12),
     ));
-    let mut callee = function(1, ValueTy::Owned(RecordId(0)), s(20));
+    let mut callee = function(1, ValueTy::Owned(AggregateTy::Record(RecordId(0))), s(20));
     callee.parameters = vec![ParameterBinding::Owned(OwnerPlaceId(0))];
     callee.owners = vec![owner(OwnerKind::Parameter { position: 0 }, s(20))];
     callee.blocks = vec![block(
@@ -279,7 +279,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: s(5),
     }];
     f.blocks.push(block(
@@ -320,7 +320,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
     let mut callee = function(1, ValueTy::Scalar(hir::Ty::I32), s(20));
     callee.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     callee.references = vec![ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: s(20),
@@ -395,7 +395,7 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
             argument: i,
             authority: AccessBase::Parameter(ReferenceParamId(0)),
             kind: BorrowKind::Shared,
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: s(if i == 0 { 22 } else { 24 }),
         })
         .collect();
@@ -464,7 +464,7 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
         .collect();
     pair.references = (0..2)
         .map(|position| ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: BorrowKind::Shared,
             position,
             span: s(40),
@@ -1225,7 +1225,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
         argument: 0,
         authority: root,
         kind: BorrowKind::Exclusive,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: s(24),
     }];
     let init = |place, value, origin| {
@@ -1422,7 +1422,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
     let mut increment = function(1, ValueTy::Scalar(I32), s(50));
     increment.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     increment.references = vec![ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: BorrowKind::Exclusive,
         position: 0,
         span: s(50),

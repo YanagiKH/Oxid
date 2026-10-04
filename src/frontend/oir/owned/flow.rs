@@ -19,19 +19,32 @@ pub(super) struct DenialFacts {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct OwnerSubject {
     pub id: OwnerPlaceId,
-    pub record: RecordId,
+    aggregate: AggregateSlot,
     pub class: OwnerKind,
     pub declaration: Span,
+}
+impl OwnerSubject {
+    pub(super) fn aggregate(self) -> AggregateTy {
+        self.aggregate.aggregate()
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum DeniedSubject {
     Owner(OwnerSubject),
     Reference {
         id: ReferenceParamId,
-        record: RecordId,
+        aggregate: AggregateSlot,
         granted: BorrowKind,
         declaration: Span,
     },
+}
+impl DeniedSubject {
+    pub(super) fn aggregate(self) -> AggregateTy {
+        match self {
+            Self::Owner(owner) => owner.aggregate(),
+            Self::Reference { aggregate, .. } => aggregate.aggregate(),
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ObservedState {
@@ -46,11 +59,15 @@ pub(super) enum DeniedOperation {
     StorageLive,
     StorageEnd,
     Construct,
+    ConstructArray,
     MoveInitialize,
     Replace,
     Discard,
     ReadField,
     WriteField,
+    ReadIndex,
+    WriteIndex,
+    ArrayLength,
     OpenCall,
     PrepareScalar,
     PrepareOwned,
@@ -65,6 +82,7 @@ pub(super) enum DeniedRole {
     SourceConsume,
     ReplacementDestination,
     FieldBase,
+    ArrayBase,
     BorrowAuthority,
     StagedInput,
     CallResult,
@@ -78,7 +96,7 @@ impl DenialContext {
         let owner = f.owners.get(id.0)?;
         Some(OwnerSubject {
             id,
-            record: owner.record,
+            aggregate: owner.aggregate,
             class: owner.kind,
             declaration: owner.span,
         })
@@ -90,7 +108,7 @@ impl DenialContext {
                 let r = f.references.get(id.0)?;
                 DeniedSubject::Reference {
                     id,
-                    record: r.record,
+                    aggregate: r.aggregate,
                     granted: r.kind,
                     declaration: r.span,
                 }
@@ -120,6 +138,11 @@ impl DenialContext {
                 if base == AccessBase::Owner(*destination) =>
             {
                 DeniedOperation::Construct
+            }
+            (OwnedInstruction::ConstructArray { destination, .. }, InitializationDestination)
+                if base == AccessBase::Owner(*destination) =>
+            {
+                DeniedOperation::ConstructArray
             }
             (
                 OwnedInstruction::MoveInitialize {
@@ -169,6 +192,15 @@ impl DenialContext {
             }
             (OwnedInstruction::WriteField { base: actual, .. }, FieldBase) if base == *actual => {
                 DeniedOperation::WriteField
+            }
+            (OwnedInstruction::ReadIndex { base: actual, .. }, ArrayBase) if base == *actual => {
+                DeniedOperation::ReadIndex
+            }
+            (OwnedInstruction::WriteIndex { base: actual, .. }, ArrayBase) if base == *actual => {
+                DeniedOperation::WriteIndex
+            }
+            (OwnedInstruction::ArrayLength { base: actual, .. }, ArrayBase) if base == *actual => {
+                DeniedOperation::ArrayLength
             }
             (OwnedInstruction::PrepareBorrow { loan, .. }, BorrowAuthority) => {
                 let loan = f.loans.get(loan.0)?;
@@ -324,6 +356,7 @@ fn step(
             failure = Violation::Lifetime;
         }
         OwnedInstruction::Construct { destination, .. }
+        | OwnedInstruction::ConstructArray { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
         {
@@ -363,6 +396,23 @@ fn step(
             legal = &[Available];
             next = Available;
             role = DeniedRole::FieldBase;
+        }
+        OwnedInstruction::ReadIndex {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::WriteIndex {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::ArrayLength {
+            base: AccessBase::Owner(o),
+            ..
+        } if *o == owner => {
+            event = true;
+            legal = &[Available];
+            next = Available;
+            role = DeniedRole::ArrayBase;
         }
         OwnedInstruction::PrepareBorrow { loan, .. }
             if f.loans[loan.0].authority == AccessBase::Owner(owner) =>
@@ -683,7 +733,7 @@ fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
             a == b
-                || (f.references[a.0].record == f.references[b.0].record
+                || (f.references[a.0].aggregate() == f.references[b.0].aggregate()
                     && f.references[a.0].kind == BorrowKind::Shared
                     && f.references[b.0].kind == BorrowKind::Shared)
         }
@@ -701,6 +751,12 @@ fn accesses(
         }
         OwnedInstruction::WriteField { base, .. } => {
             visit(*base, Access::Write, DeniedRole::FieldBase)?
+        }
+        OwnedInstruction::ReadIndex { base, .. } | OwnedInstruction::ArrayLength { base, .. } => {
+            visit(*base, Access::Read, DeniedRole::ArrayBase)?
+        }
+        OwnedInstruction::WriteIndex { base, .. } => {
+            visit(*base, Access::Write, DeniedRole::ArrayBase)?
         }
         OwnedInstruction::MoveInitialize {
             source,
@@ -725,7 +781,8 @@ fn accesses(
                 },
             )?;
         }
-        OwnedInstruction::Construct { destination, .. } => visit(
+        OwnedInstruction::Construct { destination, .. }
+        | OwnedInstruction::ConstructArray { destination, .. } => visit(
             AccessBase::Owner(*destination),
             Access::Write,
             DeniedRole::InitializationDestination,
@@ -771,6 +828,9 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                 }
                 OwnedInstruction::WriteField { base, .. } if !shape::base(f, base, i.span)?.1 => {
                     Some((base, DeniedRole::FieldBase, None))
+                }
+                OwnedInstruction::WriteIndex { base, .. } if !shape::base(f, base, i.span)?.1 => {
+                    Some((base, DeniedRole::ArrayBase, None))
                 }
                 OwnedInstruction::PrepareBorrow { loan, .. } => {
                     let l = &f.loans[loan.0];

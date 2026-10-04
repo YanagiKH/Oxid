@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "status": "frozen from source before the supplemental observation; previously executed supplement passes",
+  "added_fixed_functions": {
+    "ordinary": [
+      "independent_unit2d_raw_authority_denials_precede_native_work"
+    ],
+    "ignored_native": [
+      "independent_unit2d_shared_aliases_llvm",
+      "independent_unit2d_payload_extremes_llvm"
+    ]
+  },
+  "raw_denials": [
+    {
+      "case": "length-N0-uninitialized",
+      "kind": "Ownership(Unavailable)",
+      "span": "original ArrayLength statement"
+    },
+    {
+      "case": "length-N0-moved",
+      "kind": "Ownership(Unavailable)",
+      "span": "original ArrayLength statement"
+    },
+    {
+      "case": "shared-parameter-write",
+      "kind": "Ownership(Permission)",
+      "span": "callee indexed write statement"
+    },
+    {
+      "case": "two-exclusive-aliases",
+      "kind": "Ownership(LoanConflict)",
+      "span": "second PrepareBorrow, s(base,90)"
+    },
+    {
+      "case": "length-N0-pending-exclusive",
+      "kind": "Ownership(LoanConflict)",
+      "span": "ArrayLength, s(base,91)"
+    },
+    {
+      "case": "excess-constructor-arity",
+      "kind": "Malformed(Type)",
+      "span": "ConstructArray statement"
+    },
+    {
+      "case": "invalid-index-local",
+      "kind": "Malformed(Id)",
+      "span": "index operand"
+    }
+  ],
+  "raw_failure_precedence": "each negative uses fail_after=Some(0); expected verifier failure and full primary span must precede native allocation",
+  "positive_shared_alias": {
+    "same_root_arguments": 2,
+    "permission": "Shared",
+    "expected_i32": 77,
+    "stdout_hex": "37370a",
+    "stderr_hex": "",
+    "status": 0
+  },
+  "extreme_cases": [
+    {
+      "name": "payload-extreme-construct-min",
+      "expected_i32": -2147483648,
+      "stdout_hex": "2d323134373438333634380a",
+      "stderr_hex": "",
+      "status": 0
+    },
+    {
+      "name": "payload-extreme-construct-max",
+      "expected_i32": 2147483647,
+      "stdout_hex": "323134373438333634370a",
+      "stderr_hex": "",
+      "status": 0
+    },
+    {
+      "name": "payload-extreme-transfer-min",
+      "expected_i32": -2147483648,
+      "stdout_hex": "2d323134373438333634380a",
+      "stderr_hex": "",
+      "status": 0
+    },
+    {
+      "name": "payload-extreme-transfer-max",
+      "expected_i32": 2147483647,
+      "stdout_hex": "323134373438333634370a",
+      "stderr_hex": "",
+      "status": 0
+    }
+  ],
+  "work_assertion": {
+    "diagnostic_bytes": 164,
+    "cap": 65536,
+    "count_expansions_greater_than": 292,
+    "derivation": "two distinct full Fuel diagnostics, followed by two 64-cell constructions; progress into transfer expansions",
+    "provenance": "Resource/input-completeness check strengthened after the original v1 observation: the fixed two-message formatting is source-inspected to total 164 bytes, consistent with the retained original metrics. This is not a newly independent semantic oracle. The stronger assertion was frozen before the supplemental run."
+  },
+  "new_semantic_cases": {
+    "raw_negative": 7,
+    "shared_alias_emit": 1,
+    "shared_alias_elf": 1,
+    "extreme_elf": 4
+  },
+  "unchanged_semantics": "All frozen v1 fixtures and outcomes preserved; two parity predicates rewritten equivalently and formatting mechanically applied."
+}

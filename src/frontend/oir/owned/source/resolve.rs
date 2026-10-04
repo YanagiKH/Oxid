@@ -117,7 +117,7 @@ fn parameter_type(
             TypeContext::Reference,
         )?;
         Ok(ParameterTy::Reference {
-            record,
+            aggregate: AggregateTy::Record(record),
             kind: if mutable {
                 BorrowKind::Exclusive
             } else {
@@ -355,8 +355,11 @@ fn resolve_index(
             .map(|(ty, p)| {
                 (
                     match *ty {
-                        ParameterTy::Value(ValueTy::Owned(r))
-                        | ParameterTy::Reference { record: r, .. } => Some(r),
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
+                        | ParameterTy::Reference {
+                            aggregate: AggregateTy::Record(r),
+                            ..
+                        } => Some(r),
                         _ => None,
                     },
                     &p.ty,
@@ -364,7 +367,7 @@ fn resolve_index(
             });
         let result = (
             match signature.result {
-                ValueTy::Owned(r) => Some(r),
+                ValueTy::Owned(AggregateTy::Record(r)) => Some(r),
                 _ => None,
             },
             &function.result,

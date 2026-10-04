@@ -95,8 +95,10 @@ impl Mutation {
             Self::NominalIdentity => {
                 let function = &mut raw.functions[0];
                 for owner in &mut function.owners {
-                    assert_eq!(owner.record, RecordId(0));
-                    owner.record = RecordId(1);
+                    assert_eq!(owner.aggregate(), AggregateTy::Record(RecordId(0)));
+                    owner.aggregate =
+                        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(1)))
+                            .unwrap();
                 }
                 for block in &mut function.blocks {
                     for statement in &mut block.statements {
@@ -285,6 +287,9 @@ fn loan_key(key: storage::LoanKey) -> String {
 fn event(value: &execute::Event) -> String {
     use execute::Event;
     match value {
+        Event::ReadIndex(..) | Event::WriteIndex(..) | Event::ArrayLength(..) => {
+            unreachable!("source arrays and production array witnesses remain gated")
+        }
         Event::Charge(at, cost) => object([
             ("event", json_string("Charge")),
             ("span", span(*at)),

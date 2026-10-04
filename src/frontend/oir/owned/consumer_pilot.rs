@@ -152,7 +152,7 @@ fn reference_function(
     let span = o.at(label);
     let mut f = function(id, ValueTy::Scalar(result), span);
     f.references = vec![ReferenceDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind,
         position: 0,
         span,
@@ -273,7 +273,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
         argument: 0,
         authority: root,
         kind,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: o.at(label),
     })
     .collect();
@@ -581,7 +581,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
         argument: 0,
         authority: parameter,
         kind: BorrowKind::Exclusive,
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         span: o.at("dispatch.prepare_exclusive_child"),
     }];
     dispatch.blocks.push(bb(
@@ -627,7 +627,11 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
         ],
         OwnedTerminatorKind::ReturnScalar(op(&o, "done.return", 2)),
     ));
-    let mut relay = function(5, ValueTy::Owned(RecordId(0)), o.at("relay.return_owned"));
+    let mut relay = function(
+        5,
+        ValueTy::Owned(AggregateTy::Record(RecordId(0))),
+        o.at("relay.return_owned"),
+    );
     relay.parameters = vec![ParameterBinding::Owned(OwnerPlaceId(0))];
     relay.owners = vec![owner(OwnerKind::Parameter { position: 0 }, relay.span)];
     relay.blocks.push(bb(

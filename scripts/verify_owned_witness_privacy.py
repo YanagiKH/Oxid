@@ -14,6 +14,23 @@ import tempfile
 
 
 PROBES = [
+    ("compact-slot-checked-construction", True, (), """
+        fn construct() {
+            let slot = AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap();
+            let _ = slot.aggregate();
+        }
+    """),
+    ("compact-slot-private-representation", False, ("E0616",), """
+        fn inspect(slot: AggregateSlot) { let _ = slot.0; }
+    """),
+    ("compact-slot-no-infallible-record-conversion", False, ("E0277",), """
+        fn construct(record: RecordId) -> AggregateSlot { record.into() }
+    """),
+    ("array-validation-probe-absent-in-production", False, ("E0425",), """
+        fn probe(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = verified::probe_array_validation(raw, sources, budget::Limits::DEFAULT);
+        }
+    """),
     ("source-facade-immutable-methods", True, (), """
         fn inspect(w: &SourceProgram, sources: &SourceMap) {
             let _ = w.function_count();
@@ -133,6 +150,91 @@ PROBES = [
 ]
 
 
+TEST_PROBES = [
+    ("array-reference-observation-is-unprivileged", True, (), """
+        fn inspect(raw: RawOwnedProgram, sources: &SourceMap) {
+            let observation = verified::probe_array_reference(raw, sources,
+                budget::Limits::DEFAULT, Some(hir::DefId(0)), execute::Limits::default(),
+                execute::ObservationControl::default()).unwrap();
+            let _ = (observation.result, observation.events, observation.storage,
+                     observation.remaining_fuel, observation.truncated);
+        }
+    """),
+    ("array-reference-observation-cannot-be-witness", False, ("E0308",), """
+        fn forge(observation: execute::ReferenceObservation) -> VerifiedOwnedProgram { observation }
+    """),
+    ("array-reference-observation-cannot-build-plan", False, ("E0308",), """
+        fn forge(observation: &execute::ReferenceObservation) {
+            let _ = plan::ExecutionPlan::build(observation);
+        }
+    """),
+    ("array-reference-observation-has-no-executable-accessor", False, ("E0599",), """
+        fn forge(observation: &execute::ReferenceObservation) { let _ = observation.witness(); }
+    """),
+    ("array-reference-observation-has-no-raw-body", False, ("E0609",), """
+        fn forge(observation: &execute::ReferenceObservation) { let _ = &observation.program; }
+    """),
+    ("array-native-observation-is-unprivileged", True, (), """
+        fn inspect(raw: RawOwnedProgram, verification_sources: &SourceMap,
+                   rendering_sources: &SourceMap) {
+            let native::NativeObservation { result, metrics } = verified::probe_array_native(
+                raw, verification_sources, budget::Limits::DEFAULT, Some(hir::DefId(0)),
+                rendering_sources, native::NativeControl::default()).unwrap();
+            let _: Result<String, Box<Diagnostic>> = result;
+            let _: (usize, usize, usize, usize, Option<&'static str>) = (
+                metrics.occurrences, metrics.unique, metrics.count_bytes,
+                metrics.render_bytes, metrics.failed_allocation);
+        }
+    """),
+    ("array-native-observation-cannot-be-witness", False, ("E0308",), """
+        fn forge(observation: native::NativeObservation) -> VerifiedOwnedProgram { observation }
+    """),
+    ("array-native-observation-cannot-build-plan", False, ("E0308",), """
+        fn forge(observation: &native::NativeObservation) {
+            let _ = plan::ExecutionPlan::build(observation);
+        }
+    """),
+    ("array-native-observation-has-no-raw-body", False, ("E0609",), """
+        fn forge(observation: &native::NativeObservation) { let _ = &observation.program; }
+    """),
+    ("array-native-observation-has-no-declarations", False, ("E0609",), """
+        fn forge(observation: &native::NativeObservation) { let _ = &observation.declarations; }
+    """),
+    ("array-native-observation-has-no-executable-accessor", False, ("E0599",), """
+        fn forge(observation: &native::NativeObservation) { let _ = observation.witness(); }
+    """),
+    ("array-native-observation-cannot-enter-native", False, ("E0308",), """
+        fn compile(observation: &native::NativeObservation, sources: &SourceMap) {
+            let _ = native::native_module(observation, Some(hir::DefId(0)), sources);
+        }
+    """),
+    ("raw-program-cannot-enter-observed-native", False, ("E0308",), """
+        fn compile(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = native::run_array_observed(raw, Some(hir::DefId(0)), sources,
+                native::NativeControl::default());
+        }
+    """),
+    ("array-native-probe-cannot-accept-witness-callback", False, ("E0308",), """
+        fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
+            let _ = verified::probe_array_native(raw, sources, budget::Limits::DEFAULT,
+                Some(hir::DefId(0)), sources, |_: &VerifiedOwnedProgram| ());
+        }
+    """),
+]
+PROBES.append(("array-reference-probe-absent-in-production", False, ("E0425",), """
+    fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
+        let _ = verified::probe_array_reference(raw, sources, budget::Limits::DEFAULT,
+            Some(hir::DefId(0)), execute::Limits::default(), Default::default());
+    }
+"""))
+PROBES.append(("array-native-probe-absent-in-production", False, ("E0425",), """
+    fn probe(raw: RawOwnedProgram, sources: &SourceMap) {
+        let _ = verified::probe_array_native(raw, sources, budget::Limits::DEFAULT,
+            Some(hir::DefId(0)), sources, Default::default());
+    }
+"""))
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="oxid-owned-privacy-") as directory:
@@ -140,18 +242,20 @@ def main():
         checkout.mkdir()
         for name in ["Cargo.toml", "Cargo.lock", "build.rs"]:
             shutil.copy2(root / name, checkout / name)
-        for name in ["src", "native", "compiler", "stdlib"]:
+        for name in ["src", "native", "compiler", "stdlib", "rfcs", "fixtures"]:
             shutil.copytree(root / name, checkout / name)
         module = checkout / "src/frontend/oir/owned/mod.rs"
         original = module.read_text()
         env = dict(os.environ, CARGO_TARGET_DIR=str(Path(directory) / "target"))
         reports = []
-        for name, succeeds, codes, body in PROBES:
-            module.write_text(original + "\nmod consumer_privacy_probe {\n"
+        for (name, succeeds, codes, body), test in [(probe, False) for probe in PROBES] + [(probe, True) for probe in TEST_PROBES]:
+            module.write_text(original + ("\n#[cfg(test)]" if test else "") + "\nmod consumer_privacy_probe {\n"
                               "use super::*;\n"
                               "use super::verified::VerifiedOwnedProgram;\n"
                               + body + "\n}\n")
             command = ["cargo", "check", "--locked", "--bin", "oxid", "--message-format=json"]
+            if test:
+                command.append("--tests")
             result = subprocess.run(command, cwd=checkout, env=env,
                                     text=True, capture_output=True, timeout=180)
             errors = []

@@ -1,8 +1,10 @@
 # RFC 0016: fixed scalar arrays and checked indexing
 
-Status: proposed language capability; Unit 1 private type/layout groundwork.
-Array syntax and executable raw array operations are not enabled by this RFC or
-its first implementation unit. The current public contract remains
+Status: proposed language capability; Unit 1 groundwork and gated Unit 2A–2E
+private identity carriers, raw verification, reference/native consumers and
+local combined qualification.
+Array syntax and production raw array admission remain disabled. Private
+consumer qualification uses verifier-confined test entry points. The current public contract remains
 [RFC 0014](0014-owned-structs-call-borrows.md) and
 [RFC 0015](0015-bounded-typed-projects.md). Implementation ownership and independent
 review are recorded by the associated pull request. Acceptance of groundwork
@@ -338,6 +340,83 @@ The new descriptors are transient values: no persistent table, interning lookup,
 new heap allocation, AST form, raw array operand vector or per-occurrence field
 expansion is introduced in Unit 1. Length validation/layout/width are O(1).
 Zero length never permits invalid element types or malformed nominal IDs.
+
+### 7.1 Gated Unit 2A retained-carrier amendment
+
+The [Unit 2A ledger](../docs/architecture/fixed-array-unit2a-validation.md) records
+an explicit amendment to Unit 1's transient-only representation. Semantic
+`ValueTy::Owned` and reference `ParameterTy` now carry `AggregateTy`; retained
+owner/reference/loan and diagnostic-subject rows store an eight-byte
+`AggregateSlot` with an independent record/array tag. Its checked conversion
+stores nominal ordinals as u32 without changing `RecordId(usize)` or treating
+an invalid nominal ID as an array. Declaration queries still validate semantic
+identity before equality, with each raw verification site's old failure mapping.
+
+The only raw construction exception is a retained RecordId above u32::MAX:
+conversion fails immediately with the original `InvalidRecordId`. Such values
+cannot identify valid records under the unchanged 4096-record cap. Full-width
+semantic descriptors and raw declaration/field IDs are unchanged. A representable
+invalid ordinal preserves resource-before-validation tests; separate controls
+cover the earlier conversion failure.
+
+Unit 2A explicitly rejects fixed-array carriers at authoritative raw admission,
+after existing resource/declaration checks and before any executable witness.
+The gate covers every result, owner, reference and loan, including unused and
+infinite-loop cases. The declaration query facade may still describe arrays.
+No opcode, source grammar, routing selector or array consumer is enabled. The
+gate remains until subsequent Unit 2 verifier and consumer work is complete.
+
+### 7.2 Gated Unit 2B raw-verifier slice
+
+The [Unit 2B ledger](../docs/architecture/fixed-array-unit2b-validation.md) records
+four private raw operations: `ConstructArray`, `ReadIndex`, `WriteIndex` and
+`ArrayLength`. Their constructor operands, scalar definitions/uses, whole-owner
+availability, permissions, loan accesses and denial origins use the existing
+authoritative shape/CFG/flow pipeline. The cfg(test)-only probe borrows raw input
+and returns only usage or failure; it cannot produce an executable witness.
+
+Production admission still rejects every array carrier and now every array
+opcode before seal construction, including inactive and malformed opcode-only
+inputs. Reference dispatch rejects unsupported execution, while infallible
+consumer matches have explicit sealed-invariant assertions. These temporary
+arms must be replaced before the gate is removed. This slice does not implement
+array reference/native execution, bounds diagnostics or source syntax/routing.
+
+Raw preflight independently counts actual constructor operands as Q and rejects
+a vector above 1024 before inspecting its elements. Q contributes to expanded
+events, verification work and the exact Operand payload in ownership/source
+metadata; no per-element verifier scratch is introduced. Source lowering still
+emits Q=0. FunctionCounts gains one transient usize, while retained raw, AST and
+runtime row envelopes remain unchanged. Source association separately walks all
+new operand spans without providing source grammar or lowering authority.
+
+### 7.3 Gated Unit 2C–2D consumers
+
+The [reference ledger](../docs/architecture/fixed-array-unit2c-validation.md)
+and [native ledger](../docs/architecture/fixed-array-unit2d-validation.md)
+record implementations of the four raw operations and whole-owner transfers.
+Both replace the earlier unsupported consumer arms, but production raw
+admission still rejects array carriers/opcodes before constructing a witness.
+The verifier-confined cfg(test) bridges run the same authoritative preparation
+and validation, synchronously invoke the real consumer, and return only copied,
+bounded outcomes. They expose no witness, plan, arbitrary callback or bypass.
+
+Qualification covers signed bounds after fuel and before address formation,
+full aggregate identity, whole transfers, positive initialized zero-length
+sentinels, canonical unit bytes, permission/provenance checks, source origins,
+and bounded storage/emission. Native bool observations concern logical i1
+values rather than canonical unused padding bits. Its metadata accounting
+includes retained vector capacities and separately bounded transient scratch;
+it does not claim total RSS or universal allocation recovery. The native ledger
+records the exact phase/work formulas and the limits of physical observation.
+
+The committed independent runner preserves its historical expectations and
+fresh source/binary/tool/result identities. The combined controller completed
+producer and independent debug/release execution, full retention and relocated
+compact admission on the local head recorded in the native ledger. Exact-head
+hosted qualification remains a separate publication gate.
+This amendment changes no proposed source grammar, edition selection, public
+feature status or raw production gate.
 
 ## 8. Resource and compatibility obligations
 

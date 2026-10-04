@@ -121,7 +121,7 @@ fn base(s: Span, owners: usize) -> RawOwnedProgram {
     let mut f = body(0, s);
     for id in 0..owners {
         f.owners.push(OwnerDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: OwnerKind::Local { mutable: true },
             span: s,
         });
@@ -144,7 +144,7 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(i)));
         callee.references.push(ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: *kind,
             position: i,
             span: s,
@@ -172,7 +172,7 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
             argument: i,
             authority: AccessBase::Owner(OwnerPlaceId(*owner)),
             kind: *kind,
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: t,
         });
         f.blocks[0].statements.push(ins(
@@ -204,16 +204,16 @@ fn owned_call(s: Span) -> RawOwnedProgram {
     let mut callee = body(1, s);
     callee.parameters = vec![ParameterBinding::Owned(OwnerPlaceId(0))];
     callee.owners = vec![OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: OwnerKind::Parameter { position: 0 },
         span: s,
     }];
-    callee.result = ValueTy::Owned(RecordId(0));
+    callee.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     callee.blocks[0].terminator = term(OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(0)), s);
     p.functions.push(callee);
     let f = &mut p.functions[0];
     f.owners.push(OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: OwnerKind::StagedArgument {
             call: CallSiteId(0),
             argument: 0,
@@ -221,7 +221,7 @@ fn owned_call(s: Span) -> RawOwnedProgram {
         span: s,
     });
     f.owners.push(OwnerDecl {
-        record: RecordId(0),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
         kind: OwnerKind::CallResult {
             call: CallSiteId(0),
         },
@@ -706,7 +706,8 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
                 leaf.parameters
                     .push(ParameterBinding::Reference(ReferenceParamId(0)));
                 leaf.references.push(ReferenceDecl {
-                    record: RecordId(0),
+                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                        .unwrap(),
                     kind: child,
                     position: 0,
                     span: s,
@@ -727,7 +728,8 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
                     argument: 0,
                     authority: AccessBase::Parameter(ReferenceParamId(0)),
                     kind: child,
-                    record: RecordId(0),
+                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                        .unwrap(),
                     span: s,
                 });
                 f.blocks[0].statements.extend([
@@ -785,7 +787,7 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
         leaf.parameters
             .push(ParameterBinding::Reference(ReferenceParamId(i)));
         leaf.references.push(ReferenceDecl {
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             kind: BorrowKind::Shared,
             position: i,
             span: s,
@@ -813,7 +815,7 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
             argument: i,
             authority: AccessBase::Parameter(ReferenceParamId(i)),
             kind: BorrowKind::Shared,
-            record: RecordId(0),
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
             span: s,
         });
         f.blocks[0].statements.push(ins(
@@ -1147,7 +1149,8 @@ fn reviewer_heldout_two_owner_irreducible_graph_corpus() {
         ];
         f.owners = (0..2)
             .map(|i| OwnerDecl {
-                record: RecordId(0),
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
                 kind: OwnerKind::Parameter { position: i + 1 },
                 span: s,
             })
@@ -1292,7 +1295,10 @@ fn reviewer_exhaustive_one_two_block_lifecycle_cfgs() {
                             let mut p = base(s, 0);
                             let f = &mut p.functions[0];
                             f.owners.push(OwnerDecl {
-                                record: RecordId(0),
+                                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(
+                                    RecordId(0),
+                                ))
+                                .unwrap(),
                                 kind: OwnerKind::Local { mutable: true },
                                 span: s,
                             });
@@ -1328,7 +1334,10 @@ fn reviewer_exhaustive_one_two_block_lifecycle_cfgs() {
                                     3 => {
                                         let id = f.owners.len();
                                         f.owners.push(OwnerDecl {
-                                            record: RecordId(0),
+                                            aggregate: AggregateSlot::try_from_aggregate(
+                                                AggregateTy::Record(RecordId(0)),
+                                            )
+                                            .unwrap(),
                                             kind: OwnerKind::Temporary,
                                             span: s,
                                         });

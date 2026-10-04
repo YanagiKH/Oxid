@@ -1,6 +1,6 @@
 //! Authoritative private ownership OIR and bounded verified consumers.
 //! Production record source lowering and both consumers require the sealed witness.
-//! Fixed-array type/layout groundwork does not yet extend these raw carriers.
+//! Fixed-array carriers are rejected before an executable witness can be built.
 #![allow(dead_code)]
 // Denials retain exact verifier-derived facts on the stack. Boxing this fixed
 // transport would add an allocation on ownership/resource failure paths.
@@ -50,9 +50,14 @@ enum ParameterBinding {
 }
 #[derive(Clone, Debug)]
 struct OwnerDecl {
-    record: RecordId,
+    aggregate: AggregateSlot,
     kind: OwnerKind,
     span: Span,
+}
+impl OwnerDecl {
+    fn aggregate(&self) -> AggregateTy {
+        self.aggregate.aggregate()
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OwnerKind {
@@ -64,10 +69,15 @@ enum OwnerKind {
 }
 #[derive(Clone, Debug)]
 struct ReferenceDecl {
-    record: RecordId,
+    aggregate: AggregateSlot,
     kind: BorrowKind,
     position: usize,
     span: Span,
+}
+impl ReferenceDecl {
+    fn aggregate(&self) -> AggregateTy {
+        self.aggregate.aggregate()
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AccessBase {
@@ -80,8 +90,13 @@ struct LoanDecl {
     argument: usize,
     authority: AccessBase,
     kind: BorrowKind,
-    record: RecordId,
+    aggregate: AggregateSlot,
     span: Span,
+}
+impl LoanDecl {
+    fn aggregate(&self) -> AggregateTy {
+        self.aggregate.aggregate()
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ArgumentSlot {
@@ -137,6 +152,10 @@ enum OwnedInstruction {
         destination: OwnerPlaceId,
         fields: Vec<(FieldId, Operand)>,
     },
+    ConstructArray {
+        destination: OwnerPlaceId,
+        elements: Vec<Operand>,
+    },
     MoveInitialize {
         destination: OwnerPlaceId,
         source: OwnerPlaceId,
@@ -155,6 +174,20 @@ enum OwnedInstruction {
         base: AccessBase,
         field: FieldId,
         value: Operand,
+    },
+    ReadIndex {
+        destination: LocalId,
+        base: AccessBase,
+        index: Operand,
+    },
+    WriteIndex {
+        base: AccessBase,
+        index: Operand,
+        value: Operand,
+    },
+    ArrayLength {
+        destination: LocalId,
+        base: AccessBase,
     },
     OpenCall(CallSiteId),
     PrepareScalar {
@@ -205,6 +238,7 @@ enum OwnedTerminatorKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Malformed {
+    UnsupportedArray,
     Id,
     Span,
     Type,
@@ -349,3 +383,9 @@ mod origin_tests;
 mod reviewer_allocator;
 #[cfg(test)]
 mod reviewer_origins;
+
+#[cfg(test)]
+mod array_reference_tests;
+
+#[cfg(test)]
+mod reviewer_array_reference_tests;

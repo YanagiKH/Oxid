@@ -19,6 +19,7 @@ const IN_FLIGHT: u64 = 2;
 pub(super) enum OwnedRunFailure {
     Scalar(RunFailure),
     EntryResult(Span),
+    Bounds(Span),
     Resource(plan::AdmissionFailure),
     Invariant(&'static str, Option<Span>),
 }
@@ -49,6 +50,12 @@ impl OwnedRunFailure {
                 "oir-run",
                 "typed-preview main must return bool, i32 or ()",
                 Some(*s),
+            ),
+            Self::Bounds(span) => Diagnostic::new(
+                "E0606",
+                "oir-owned-run",
+                "array index out of bounds",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::Resource(e) => Diagnostic::new(
                 "E0605",
@@ -164,6 +171,9 @@ pub(super) enum Event {
     Charge(Span, usize),
     Enter(hir::DefId, u64),
     WriteField(OwnerKey, FieldId, Scalar),
+    ReadIndex(OwnerKey, usize, Scalar),
+    WriteIndex(OwnerKey, usize, Scalar),
+    ArrayLength(OwnerKey, usize),
     Transfer(OwnerKey, OwnerKey),
     Acquire(LoanKey, OwnerKey, BorrowKind),
     Release(LoanKey),
@@ -188,6 +198,8 @@ struct Machine<'p, 'w> {
     header_bytes: usize,
     #[cfg(test)]
     events: Vec<Event>,
+    #[cfg(test)]
+    observer: array_observe::Observer,
 }
 impl<'p, 'w> Machine<'p, 'w> {
     fn function(&self, id: hir::DefId) -> &'w RawOwnedFunction {
@@ -196,7 +208,7 @@ impl<'p, 'w> Machine<'p, 'w> {
     fn charge(&mut self, cost: usize, span: Span) -> Result<()> {
         self.fuel = self.fuel.checked_sub(cost).ok_or(RunFailure::Fuel(span))?;
         #[cfg(test)]
-        self.events.push(Event::Charge(span, cost));
+        self.record_event(Event::Charge(span, cost));
         Ok(())
     }
     fn activation_preflight(&mut self, id: hir::DefId, cost: usize, span: Span) -> Result<()> {
@@ -228,8 +240,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         self.live_bytes += u.reference_bytes;
         self.next_activation += 1; // preflight checked this epoch before allocation/transfer
         #[cfg(test)]
-        self.events
-            .push(Event::Enter(frame.function, frame.activation));
+        self.record_event(Event::Enter(frame.function, frame.activation));
         self.frames.push(frame);
     }
     fn read(&self, frame: usize, operand: Operand) -> Result<Scalar> {
@@ -419,7 +430,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             .plan
             .witness()
             .declarations()
-            .field(owner.record, field)
+            .field(record_type(owner.aggregate(), span)?, field)
             .map_err(|_| bad("payload field type", span))?;
         Ok((
             self.plan
@@ -431,28 +442,7 @@ impl<'p, 'w> Machine<'p, 'w> {
     }
     fn load_field(&self, key: OwnerKey, field: FieldId, span: Span) -> Result<Scalar> {
         let (offset, ty) = self.payload_field(key, field, span)?;
-        let bytes = &self.frames[key.frame as usize].payload;
-        Ok(match ty {
-            hir::Ty::I32 => Scalar::I32(i32::from_le_bytes(
-                bytes
-                    .get(offset..offset + 4)
-                    .ok_or_else(|| bad("payload range", span))?
-                    .try_into()
-                    .unwrap(),
-            )),
-            hir::Ty::Bool => match bytes.get(offset) {
-                Some(0) => Scalar::Bool(false),
-                Some(1) => Scalar::Bool(true),
-                _ => return Err(bad("bool payload", span)),
-            },
-            hir::Ty::Unit => {
-                if bytes.get(offset) == Some(&0) {
-                    Scalar::Unit
-                } else {
-                    return Err(bad("unit payload", span));
-                }
-            }
-        })
+        decode(&self.frames[key.frame as usize].payload, offset, ty, span)
     }
     fn store_field(
         &mut self,
@@ -465,25 +455,150 @@ impl<'p, 'w> Machine<'p, 'w> {
         if ty != value.ty() {
             return Err(bad("field value type", span));
         }
-        let bytes = &mut self.frames[key.frame as usize].payload;
-        match value {
-            Scalar::I32(v) => bytes
-                .get_mut(offset..offset + 4)
-                .ok_or_else(|| bad("payload range", span))?
-                .copy_from_slice(&v.to_le_bytes()),
-            Scalar::Bool(v) => {
-                *bytes
-                    .get_mut(offset)
-                    .ok_or_else(|| bad("payload range", span))? = u8::from(v)
-            }
-            Scalar::Unit => {
-                *bytes
-                    .get_mut(offset)
-                    .ok_or_else(|| bad("payload range", span))? = 0
-            }
+        encode(
+            &mut self.frames[key.frame as usize].payload,
+            offset,
+            value,
+            span,
+        )
+    }
+    fn aggregate(&self, key: OwnerKey, span: Span) -> Result<AggregateTy> {
+        let frame = self
+            .frames
+            .get(index(key.frame, span)?)
+            .filter(|frame| frame.activation == key.activation && key.activation != 0)
+            .ok_or_else(|| bad("payload frame", span))?;
+        let function = self
+            .plan
+            .witness()
+            .functions()
+            .get(frame.function.0)
+            .filter(|f| f.id == frame.function)
+            .ok_or_else(|| bad("dynamic payload function identity", span))?;
+        let owner = function
+            .owners
+            .get(index(key.owner, span)?)
+            .ok_or_else(|| bad("payload owner", span))?;
+        let aggregate = owner.aggregate();
+        self.plan
+            .witness()
+            .declarations()
+            .check_aggregate_type(aggregate)
+            .map_err(|_| bad("payload aggregate type", span))?;
+        Ok(aggregate)
+    }
+    fn array_type(&self, key: OwnerKey, span: Span) -> Result<FixedArrayTy> {
+        match self.aggregate(key, span)? {
+            AggregateTy::FixedArray(array) => Ok(array),
+            AggregateTy::Record(_) => Err(bad("array aggregate type", span)),
         }
+    }
+    fn array_base(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        access: Access,
+        span: Span,
+    ) -> Result<(OwnerKey, FixedArrayTy)> {
+        let key = self.base(frame, base, access, span)?;
+        let f = self.function(self.frames[frame].function);
+        let expected = match base {
+            AccessBase::Owner(owner) => f.owners[owner.0].aggregate(),
+            AccessBase::Parameter(reference) => f
+                .references
+                .get(reference.0)
+                .ok_or_else(|| bad("reference declaration", span))?
+                .aggregate(),
+        };
+        let actual = self.aggregate(key, span)?;
+        self.plan
+            .witness()
+            .declarations()
+            .same_aggregate_type(actual, expected)
+            .map_err(|_| bad("array base type", span))?;
+        Ok((key, self.array_type(key, span)?))
+    }
+    fn owner_extent(&self, key: OwnerKey, span: Span) -> Result<std::ops::Range<usize>> {
+        let aggregate = self.aggregate(key, span)?;
+        let frame = &self.frames[key.frame as usize];
+        let offset = self
+            .plan
+            .function(frame.function)
+            .owner_offset(OwnerPlaceId(key.owner as usize));
+        let size = self
+            .plan
+            .witness()
+            .declarations()
+            .aggregate_layout(aggregate)
+            .map_err(|_| bad("payload aggregate layout", span))?
+            .size();
+        let end = offset
+            .checked_add(size)
+            .filter(|end| *end <= frame.payload.len())
+            .ok_or_else(|| bad("payload range", span))?;
+        Ok(offset..end)
+    }
+    fn array_offset(
+        &self,
+        key: OwnerKey,
+        array: FixedArrayTy,
+        ordinal: usize,
+        span: Span,
+    ) -> Result<usize> {
+        if self.array_type(key, span)? != array || ordinal >= array.length() {
+            return Err(bad("array element identity", span));
+        }
+        let extent = self.owner_extent(key, span)?;
+        let offset = ordinal
+            .checked_mul(array.stride())
+            .and_then(|offset| extent.start.checked_add(offset))
+            .ok_or_else(|| bad("array offset overflow", span))?;
+        offset
+            .checked_add(array.stride())
+            .filter(|end| *end <= extent.end)
+            .ok_or_else(|| bad("array element range", span))?;
+        Ok(offset)
+    }
+    fn load_element(
+        &self,
+        key: OwnerKey,
+        array: FixedArrayTy,
+        ordinal: usize,
+        span: Span,
+    ) -> Result<Scalar> {
+        let offset = self.array_offset(key, array, ordinal, span)?;
+        decode(
+            &self.frames[key.frame as usize].payload,
+            offset,
+            array.element(),
+            span,
+        )
+    }
+    fn store_element(
+        &mut self,
+        key: OwnerKey,
+        array: FixedArrayTy,
+        ordinal: usize,
+        value: Scalar,
+        span: Span,
+    ) -> Result<()> {
+        if value.ty() != array.element() {
+            return Err(bad("array element type", span));
+        }
+        let offset = self.array_offset(key, array, ordinal, span)?;
+        encode(
+            &mut self.frames[key.frame as usize].payload,
+            offset,
+            value,
+            span,
+        )
+    }
+    fn zero_sentinel(&mut self, key: OwnerKey, span: Span) -> Result<()> {
+        let extent = self.owner_extent(key, span)?;
+        self.frames[key.frame as usize].payload[extent].fill(0);
         Ok(())
     }
+
     fn transfer_payload(&mut self, from: OwnerKey, to: OwnerKey, span: Span) -> Result<()> {
         // Observation identifies the newly installed value, matching parameter transfers.
         // Every caller preflights this same epoch before the logical transition.
@@ -493,14 +608,42 @@ impl<'p, 'w> Machine<'p, 'w> {
             ..to
         };
         let f = self.function(self.frames[from.frame as usize].function);
-        let record = f.owners[from.owner as usize].record;
+        let record = f.owners[from.owner as usize].aggregate();
         let target = self
             .function(self.frames[to.frame as usize].function)
             .owners[to.owner as usize]
-            .record;
-        if record != target {
-            return Err(bad("nominal transfer", span));
+            .aggregate();
+        self.plan
+            .witness()
+            .declarations()
+            .same_aggregate_type(record, target)
+            .map_err(|_| bad("nominal transfer", span))?;
+        if let AggregateTy::FixedArray(array) = record {
+            let source = self.owner_extent(from, span)?;
+            let destination = self.owner_extent(to, span)?;
+            if from.frame == to.frame
+                && source.start < destination.end
+                && destination.start < source.end
+            {
+                return Err(bad("overlapping whole transfer", span));
+            }
+            #[cfg(test)]
+            let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
+            if array.length() == 0 {
+                self.zero_sentinel(to, span)?;
+            }
+            for ordinal in 0..array.length() {
+                let value = self.load_element(from, array, ordinal, span)?;
+                self.store_element(to, array, ordinal, value, span)?;
+            }
+            #[cfg(test)]
+            {
+                self.record_event(Event::Transfer(from, initialized_destination));
+                self.observe_end(observation);
+            }
+            return Ok(());
         }
+        let record = record_type(record, span)?;
         let fields = self.plan.witness().declarations().fields(record).unwrap();
         if fields.is_empty() {
             let source_offset = self
@@ -520,8 +663,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
         }
         #[cfg(test)]
-        self.events
-            .push(Event::Transfer(from, initialized_destination));
+        self.record_event(Event::Transfer(from, initialized_destination));
         Ok(())
     }
     fn raw_key(&self, frame: usize, owner: OwnerPlaceId) -> OwnerKey {
@@ -638,7 +780,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             exclusive_children: 0,
         };
         #[cfg(test)]
-        self.events.push(Event::Acquire(
+        self.record_event(Event::Acquire(
             LoanKey {
                 frame: frame as u64,
                 activation: self.frames[frame].activation,
@@ -691,7 +833,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         }
         self.frames[key.frame as usize].loans[key.loan as usize].state = 0;
         #[cfg(test)]
-        self.events.push(Event::Release(key));
+        self.record_event(Event::Release(key));
         Ok(())
     }
     fn scalar_statement(&mut self, frame: usize, statement: &Statement) -> Result<()> {
@@ -785,6 +927,78 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ConstructArray {
+                destination,
+                elements,
+            } => {
+                self.expect_owner(frame, *destination, &[UNINITIALIZED], span)?;
+                let key = self.raw_key(frame, *destination);
+                let array = self.array_type(key, span)?;
+                if elements.len() != array.length() {
+                    return Err(bad("array construction length", span));
+                }
+                // Check every immutable snapshot before any payload write. No element scratch.
+                for operand in elements {
+                    if self.read(frame, *operand)?.ty() != array.element() {
+                        return Err(bad("array construction type", span));
+                    }
+                }
+                #[cfg(test)]
+                let observation =
+                    self.observe_begin(key, StorageObservationKind::Construction, true, span);
+                if array.length() == 0 {
+                    self.zero_sentinel(key, span)?;
+                }
+                for (ordinal, operand) in elements.iter().enumerate() {
+                    let value = self.read(frame, *operand)?;
+                    self.store_element(key, array, ordinal, value, span)?;
+                }
+                self.change_owner(frame, *destination, AVAILABLE, span)?;
+                #[cfg(test)]
+                self.observe_end(observation);
+            }
+            OwnedInstruction::ReadIndex {
+                destination,
+                base,
+                index,
+            } => {
+                let (key, array) = self.array_base(frame, *base, Access::Read, span)?;
+                if f.locals.get(destination.0).map(|local| local.ty) != Some(array.element()) {
+                    return Err(bad("array read type", span));
+                }
+                let ordinal = array_index(self.read(frame, *index)?, array, span)?;
+                let value = self.load_element(key, array, ordinal, span)?;
+                self.write(frame, *destination, value, span)?;
+                #[cfg(test)]
+                self.record_event(Event::ReadIndex(key, ordinal, value));
+            }
+            OwnedInstruction::WriteIndex { base, index, value } => {
+                let (key, array) = self.array_base(frame, *base, Access::Write, span)?;
+                let value = self.read(frame, *value)?;
+                if value.ty() != array.element() {
+                    return Err(bad("array write type", span));
+                }
+                let ordinal = array_index(self.read(frame, *index)?, array, span)?;
+                self.store_element(key, array, ordinal, value, span)?;
+                #[cfg(test)]
+                {
+                    self.record_event(Event::WriteIndex(key, ordinal, value));
+                    let observation =
+                        self.observe_begin(key, StorageObservationKind::IndexWrite, false, span);
+                    self.observe_end(observation);
+                }
+            }
+            OwnedInstruction::ArrayLength { destination, base } => {
+                let (_key, array) = self.array_base(frame, *base, Access::Read, span)?;
+                self.write(
+                    frame,
+                    *destination,
+                    Scalar::I32(array.length() as i32),
+                    span,
+                )?;
+                #[cfg(test)]
+                self.record_event(Event::ArrayLength(_key, array.length()));
+            }
             OwnedInstruction::Scalar(s) => self.scalar_statement(frame, s)?,
             OwnedInstruction::StorageLive(o) => {
                 self.expect_owner(frame, *o, &[DEAD], span)?;
@@ -811,7 +1025,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .plan
                         .witness()
                         .declarations()
-                        .field(f.owners[destination.0].record, *field)
+                        .field(
+                            record_type(f.owners[destination.0].aggregate(), span)?,
+                            *field,
+                        )
                         .map_err(|_| bad("construction field", span))?;
                     if d.ty() != v.ty() {
                         return Err(bad("construction type", span));
@@ -871,7 +1088,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                 let value = self.read(frame, *value)?;
                 self.store_field(key, *field, value, span)?;
                 #[cfg(test)]
-                self.events.push(Event::WriteField(key, *field, value));
+                self.record_event(Event::WriteField(key, *field, value));
             }
             OwnedInstruction::OpenCall(call) => {
                 if self.frames[frame].calls[call.0].phase != CLOSED {
@@ -1000,7 +1217,15 @@ impl<'p, 'w> Machine<'p, 'w> {
                     let declared = &callee.references[reference.0];
                     let root_function =
                         self.function(self.frames[handle.root.frame as usize].function);
-                    if root_function.owners[handle.root.owner as usize].record != declared.record
+                    if self
+                        .plan
+                        .witness()
+                        .declarations()
+                        .same_aggregate_type(
+                            root_function.owners[handle.root.owner as usize].aggregate(),
+                            declared.aggregate(),
+                        )
+                        .is_err()
                         || self.loan_kind(handle.permission, span)? != declared.kind
                     {
                         return Err(bad("incoming reference type", span));
@@ -1009,21 +1234,71 @@ impl<'p, 'w> Machine<'p, 'w> {
                 }
                 (ArgumentSlot::Owned(source), ParameterBinding::Owned(destination)) => {
                     let key = self.owner_key(frame, *source, span)?;
-                    let record = callee.owners[destination.0].record;
-                    if record != f.owners[source.0].record {
-                        return Err(bad("incoming owned type", span));
-                    }
+                    let record = callee.owners[destination.0].aggregate();
+                    self.plan
+                        .witness()
+                        .declarations()
+                        .same_aggregate_type(record, f.owners[source.0].aggregate())
+                        .map_err(|_| bad("incoming owned type", span))?;
                     let offset = self.plan.function(callee.id).owner_offset(*destination);
-                    let fields = self.plan.witness().declarations().fields(record).unwrap();
-                    if fields.is_empty() {
-                        child.payload[offset] = 0;
-                    }
-                    for field in fields {
-                        let value = self.load_field(key, field.id(), span)?;
-                        encode(&mut child.payload, offset + field.offset(), value, span)?;
+                    match record {
+                        AggregateTy::Record(record) => {
+                            let fields = self.plan.witness().declarations().fields(record).unwrap();
+                            if fields.is_empty() {
+                                child.payload[offset] = 0;
+                            }
+                            for field in fields {
+                                let value = self.load_field(key, field.id(), span)?;
+                                encode(&mut child.payload, offset + field.offset(), value, span)?;
+                            }
+                        }
+                        AggregateTy::FixedArray(array) => {
+                            let size = self
+                                .plan
+                                .witness()
+                                .declarations()
+                                .aggregate_layout(record)
+                                .map_err(|_| bad("incoming array layout", span))?
+                                .size();
+                            let end = offset
+                                .checked_add(size)
+                                .filter(|end| *end <= child.payload.len())
+                                .ok_or_else(|| bad("incoming array range", span))?;
+                            #[cfg(test)]
+                            let observation = self.observer.begin(
+                                &mut child.payload,
+                                offset..end,
+                                OwnerKey {
+                                    frame: self.frames.len() as u64,
+                                    activation: child.activation,
+                                    owner: destination.0 as u64,
+                                    generation: 1,
+                                },
+                                AVAILABLE,
+                                StorageObservationKind::Incoming,
+                                true,
+                            );
+                            if array.length() == 0 {
+                                child.payload[offset..end].fill(0);
+                            }
+                            for ordinal in 0..array.length() {
+                                let value = self.load_element(key, array, ordinal, span)?;
+                                let element = ordinal
+                                    .checked_mul(array.stride())
+                                    .and_then(|n| offset.checked_add(n))
+                                    .ok_or_else(|| bad("incoming array offset", span))?;
+                                element
+                                    .checked_add(array.stride())
+                                    .filter(|n| *n <= end)
+                                    .ok_or_else(|| bad("incoming array range", span))?;
+                                encode(&mut child.payload, element, value, span)?;
+                            }
+                            #[cfg(test)]
+                            self.observer.end(&child.payload, observation);
+                        }
                     }
                     #[cfg(test)]
-                    self.events.push(Event::Transfer(
+                    self.record_event(Event::Transfer(
                         key,
                         OwnerKey {
                             frame: self.frames.len() as u64,
@@ -1120,7 +1395,9 @@ impl<'p, 'w> Machine<'p, 'w> {
             return Err(bad("entry return", span));
         }
         #[cfg(test)]
-        self.events.push(Event::Return(f.id));
+        self.record_event(Event::Return(f.id));
+        #[cfg(test)]
+        self.observe_frame(frame, StorageObservationKind::Return, span);
         let u = self.plan.function(f.id).usage();
         self.frames.pop();
         self.live_slots -= u.scalar_slots;
@@ -1171,6 +1448,8 @@ impl<'p, 'w> Machine<'p, 'w> {
             if let Some(statement) = b.statements.get(self.frames[frame].next) {
                 let span = plan::instruction_span(statement);
                 self.charge(self.plan.statement_cost(f.id, &statement.kind), span)?;
+                #[cfg(test)]
+                self.inject_statement(frame, &statement.kind, span);
                 self.statement(frame, &statement.kind, span)?;
                 self.frames[frame].next += 1;
                 continue;
@@ -1185,6 +1464,8 @@ impl<'p, 'w> Machine<'p, 'w> {
             let cost = self.plan.terminator_cost(f.id, &end.kind);
             if let OwnedTerminatorKind::Invoke { call, continuation } = end.kind {
                 self.activation_preflight(f.calls[call.0].target, cost, end.span)?;
+                #[cfg(test)]
+                self.inject_invoke(frame, call, end.span);
                 self.dispatch(frame, call, continuation, end.span)?;
                 continue;
             }
@@ -1211,10 +1492,51 @@ impl<'p, 'w> Machine<'p, 'w> {
         }
     }
 }
+fn array_index(value: Scalar, array: FixedArrayTy, span: Span) -> Result<usize> {
+    let Scalar::I32(index) = value else {
+        return Err(bad("array index type", span));
+    };
+    if index < 0 || index >= array.length() as i32 {
+        return Err(OwnedRunFailure::Bounds(span));
+    }
+    usize::try_from(index).map_err(|_| bad("array index conversion", span))
+}
+fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar> {
+    Ok(match ty {
+        hir::Ty::I32 => Scalar::I32(i32::from_le_bytes(
+            bytes
+                .get(
+                    offset
+                        ..offset
+                            .checked_add(4)
+                            .ok_or_else(|| bad("payload range", span))?,
+                )
+                .ok_or_else(|| bad("payload range", span))?
+                .try_into()
+                .unwrap(),
+        )),
+        hir::Ty::Bool => match bytes.get(offset) {
+            Some(0) => Scalar::Bool(false),
+            Some(1) => Scalar::Bool(true),
+            _ => return Err(bad("bool payload", span)),
+        },
+        hir::Ty::Unit => {
+            if bytes.get(offset) != Some(&0) {
+                return Err(bad("unit payload", span));
+            }
+            Scalar::Unit
+        }
+    })
+}
 fn encode(bytes: &mut [u8], offset: usize, value: Scalar, span: Span) -> Result<()> {
     match value {
         Scalar::I32(v) => bytes
-            .get_mut(offset..offset + 4)
+            .get_mut(
+                offset
+                    ..offset
+                        .checked_add(4)
+                        .ok_or_else(|| bad("payload range", span))?,
+            )
             .ok_or_else(|| bad("payload range", span))?
             .copy_from_slice(&v.to_le_bytes()),
         Scalar::Bool(v) => {
@@ -1238,6 +1560,17 @@ pub(super) fn run_limits(
     entry: Option<hir::DefId>,
     limits: Limits,
 ) -> Result<Scalar> {
+    let entry = checked_entry(witness, entry)?;
+    let plan = ExecutionPlan::build(witness)?;
+    execute_plan(
+        &plan,
+        entry,
+        limits,
+        #[cfg(test)]
+        None,
+    )
+}
+fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<hir::DefId> {
     let entry = entry.ok_or(RunFailure::Entry(None))?;
     let f = witness
         .functions()
@@ -1250,20 +1583,33 @@ pub(super) fn run_limits(
     if matches!(f.result, ValueTy::Owned(_)) {
         return Err(OwnedRunFailure::EntryResult(f.span));
     }
-    let plan = ExecutionPlan::build(witness)?;
-    execute_plan(
-        &plan,
-        entry,
-        limits,
-        #[cfg(test)]
-        None,
-    )
+    Ok(entry)
 }
 fn execute_plan(
     plan: &ExecutionPlan<'_>,
     entry: hir::DefId,
     limits: Limits,
     #[cfg(test)] events: Option<&mut Vec<Event>>,
+) -> Result<Scalar> {
+    execute_plan_inner(
+        plan,
+        entry,
+        limits,
+        #[cfg(test)]
+        events,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+    )
+}
+fn execute_plan_inner(
+    plan: &ExecutionPlan<'_>,
+    entry: hir::DefId,
+    limits: Limits,
+    #[cfg(test)] events: Option<&mut Vec<Event>>,
+    #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
+    #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<Scalar> {
     let limits = limits.bounded();
     let f = &plan.witness().functions()[entry.0];
@@ -1279,6 +1625,11 @@ fn execute_plan(
         header_bytes: plan::mul(limits.frames, size_of::<Frame>())?,
         #[cfg(test)]
         events: Vec::new(),
+        #[cfg(test)]
+        observer: observation
+            .as_mut()
+            .map(|observer| std::mem::take(*observer))
+            .unwrap_or_default(),
     };
     let result = (|| {
         machine.activation_preflight(
@@ -1293,6 +1644,24 @@ fn execute_plan(
         machine.install(root);
         machine.execute()
     })();
+    #[cfg(test)]
+    {
+        if result.is_err() && machine.observer.collecting() {
+            for frame in 0..machine.frames.len() {
+                if !machine.observer.collecting() {
+                    break;
+                }
+                let span = machine.function(machine.frames[frame].function).span;
+                machine.observe_frame(frame, StorageObservationKind::Failure, span);
+            }
+        }
+        if let Some(observation) = observation {
+            *observation = machine.observer;
+        }
+        if let Some(fuel) = remaining_fuel {
+            *fuel = machine.fuel;
+        }
+    }
     #[cfg(test)]
     if let Some(events) = events {
         *events = machine.events;
@@ -1310,5 +1679,58 @@ pub(super) fn run_observed(
     execute_plan(&plan, entry, limits, Some(events))
 }
 #[cfg(test)]
+#[path = "array_observe.rs"]
+mod array_observe;
+#[cfg(test)]
+pub(super) use array_observe::{
+    FaultInjection, FaultKind, ObservationAllocationSite, ObservationControl, ReferenceObservation,
+    StorageObservationKind,
+};
+#[cfg(test)]
+pub(super) type StorageSnapshot = array_observe::StorageSnapshot;
+#[cfg(test)]
+pub(super) fn run_array_observed(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    limits: Limits,
+    control: ObservationControl,
+) -> ReferenceObservation {
+    let mut events = Vec::new();
+    let mut observer = array_observe::Observer {
+        enabled: true,
+        control,
+        ..Default::default()
+    };
+    let mut remaining_fuel = limits.bounded().fuel;
+    let result = (|| {
+        let entry = checked_entry(witness, entry)?;
+        let plan = ExecutionPlan::build(witness)?;
+        execute_plan_inner(
+            &plan,
+            entry,
+            limits,
+            Some(&mut events),
+            Some(&mut observer),
+            Some(&mut remaining_fuel),
+        )
+    })();
+    ReferenceObservation {
+        fault_applied: observer.fault_applied,
+        allocation_fault_applied: observer.allocation_fault_applied,
+        result,
+        events,
+        storage: observer.storage,
+        remaining_fuel,
+        truncated: observer.truncated,
+    }
+}
+#[cfg(test)]
 #[path = "execute_tests.rs"]
 mod tests;
+
+fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
+    match aggregate {
+        AggregateTy::Record(record) => Ok(record),
+        AggregateTy::FixedArray(_) => Err(bad("unsupported aggregate carrier", span)),
+    }
+}

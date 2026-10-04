@@ -32,17 +32,50 @@ pub(super) fn verify_with_limits(
     sources: &SourceMap,
     limits: budget::Limits,
 ) -> Result<VerifiedOwnedProgram, OwnedFailure> {
-    let mut usage = budget::preflight(&raw, limits)?;
-    let mut meter = budget::Meter {
-        visits: 0,
-        ceiling: usage.work,
-    };
+    let (mut usage, declarations, mut meter) = prepare(&raw, sources, limits)?;
+    // Mandatory production boundary until both array consumers are complete.
+    // This call cannot be selected away by a caller or by a test-only flag.
+    reject_array_carriers(&raw, &mut meter)?;
+    validate(&raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    })
+}
+
+fn prepare(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
+    let usage = budget::preflight(raw, limits)?;
     let declarations = Declarations::check(&raw.records, sources)?;
-    shape::signatures(&raw, &declarations, sources)?;
+    Ok((
+        usage,
+        declarations,
+        budget::Meter {
+            visits: 0,
+            ceiling: usage.work,
+        },
+    ))
+}
+
+/// One authoritative continuation for production and the non-executable test
+/// probe. It never constructs a seal and cannot return an executable value.
+fn validate(
+    raw: &RawOwnedProgram,
+    declarations: &Declarations,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    shape::signatures(raw, declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
     for f in &raw.functions {
-        shape::check(f, &raw, &declarations, sources, &mut meter)?;
+        shape::check(f, raw, declarations, sources, meter)?;
     }
     for f in &raw.functions {
         super::super::verify::cfg(f)?;
@@ -51,22 +84,150 @@ pub(super) fn verify_with_limits(
         for owner in &f.owners {
             usage.owner_cells = budget::add(
                 usage.owner_cells,
-                declarations.fields(owner.record)?.len().max(1),
+                declarations.aggregate_width(owner.aggregate())?,
             )?;
             usage.owner_layout_bytes = budget::add(
                 usage.owner_layout_bytes,
-                declarations.record(owner.record)?.layout().size(),
+                declarations.aggregate_layout(owner.aggregate())?.size(),
             )?;
         }
         if budget::active(f) {
-            let checked = shape::check(f, &raw, &declarations, sources, &mut meter)?;
-            flow::check(f, &checked, &mut meter)?;
+            let checked = shape::check(f, raw, declarations, sources, meter)?;
+            flow::check(f, &checked, meter)?;
         }
     }
-    Ok(VerifiedOwnedProgram {
+    Ok(())
+}
+
+/// Exercise the exact authoritative checks while array execution is gated.
+/// Only unprivileged usage or a failure escapes; neither raw data, declarations,
+/// a plan nor an executable witness is returned, even under cfg(test).
+#[cfg(test)]
+pub(super) fn probe_array_validation(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
+    validate(raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(usage)
+}
+
+/// Qualification runs the real reference consumer while the witness remains
+/// sealed inside this trusted boundary. No privileged object can escape.
+#[cfg(test)]
+pub(super) fn probe_array_reference(
+    raw: RawOwnedProgram,
+    sources: &SourceMap,
+    verification_limits: budget::Limits,
+    entry: Option<hir::DefId>,
+    execution_limits: execute::Limits,
+    observation: execute::ObservationControl,
+) -> Result<execute::ReferenceObservation, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(&raw, sources, verification_limits)?;
+    validate(&raw, &declarations, sources, &mut usage, &mut meter)?;
+    let witness = VerifiedOwnedProgram {
         program: raw,
         declarations,
         usage,
         seal: OwnershipSeal,
-    })
+    };
+    Ok(execute::run_array_observed(
+        &witness,
+        entry,
+        execution_limits,
+        observation,
+    ))
+}
+
+/// Qualification invokes the complete real native consumer synchronously while
+/// the authoritative witness stays inside this boundary. Only bounded emitted
+/// text/error and inert accounting escape; no callback receives privileged data.
+#[cfg(test)]
+pub(super) fn probe_array_native(
+    raw: RawOwnedProgram,
+    verification_sources: &SourceMap,
+    verification_limits: budget::Limits,
+    entry: Option<hir::DefId>,
+    rendering_sources: &SourceMap,
+    control: native::NativeControl,
+) -> Result<native::NativeObservation, OwnedFailure> {
+    let (mut usage, declarations, mut meter) =
+        prepare(&raw, verification_sources, verification_limits)?;
+    validate(
+        &raw,
+        &declarations,
+        verification_sources,
+        &mut usage,
+        &mut meter,
+    )?;
+    let witness = VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    };
+    Ok(native::run_array_observed(
+        &witness,
+        entry,
+        rendering_sources,
+        control,
+    ))
+}
+
+/// One fixed inventory pass, no allocation. Active rows fit the existing
+/// 32*n fixed-pass allowance: owners + references + loans <= n; the meter
+/// records each retained-row visit. Per-function result inspection is ordinary
+/// signature inventory under the unchanged program function cap. Inactive
+/// functions have no retained rows and only inspect their result, as signatures
+/// already does, under the existing program function cap. Admission costs and
+/// preflight/declaration error precedence are unchanged.
+fn reject_array_carriers(
+    raw: &RawOwnedProgram,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    let check = |aggregate, span| match aggregate {
+        AggregateTy::Record(_) => Ok(()),
+        AggregateTy::FixedArray(_) => {
+            Err(OwnedFailure::malformed(Malformed::UnsupportedArray, span))
+        }
+    };
+    for f in &raw.functions {
+        if let ValueTy::Owned(aggregate) = f.result {
+            check(aggregate, f.span)?;
+        }
+        for owner in &f.owners {
+            meter.visit()?;
+            check(owner.aggregate(), owner.span)?;
+        }
+        for reference in &f.references {
+            meter.visit()?;
+            check(reference.aggregate(), reference.span)?;
+        }
+        for loan in &f.loans {
+            meter.visit()?;
+            check(loan.aggregate(), loan.span)?;
+        }
+        // A malformed array operation may have no array carrier at all. It
+        // must not reach a seal merely because the carrier inventory was empty.
+        // This fixed scan is bounded by the already admitted statement count;
+        // it allocates nothing and does not alter array-free admission costs.
+        for block in &f.blocks {
+            for instruction in &block.statements {
+                if matches!(
+                    instruction.kind,
+                    OwnedInstruction::ConstructArray { .. }
+                        | OwnedInstruction::ReadIndex { .. }
+                        | OwnedInstruction::WriteIndex { .. }
+                        | OwnedInstruction::ArrayLength { .. }
+                ) {
+                    return Err(OwnedFailure::malformed(
+                        Malformed::UnsupportedArray,
+                        instruction.span,
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }

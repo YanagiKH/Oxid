@@ -168,3 +168,16 @@ completion claim. See [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
 [raw verifier validation](owned-verifier-validation.md),
 [historical raw-consumer validation](owned-consumers-validation.md), and
 [source qualification](owned-source-validation.md).
+
+
+Fixed scalar arrays have private checked aggregate identity/layout, ownership
+and CFG validation, and bounded reference/native consumers for scalar elements.
+Both consumers are exercised through verifier-confined test entry points;
+production raw verification and typed source grammar still reject arrays.
+Legacy dynamic arrays retain their existing behavior. The
+[reference ledger](fixed-array-unit2c-validation.md) and
+[native ledger](fixed-array-unit2d-validation.md) record the exact local source,
+profile and execution limits. The committed controller completed one local
+producer and independent debug/release recipe, full retention and relocated
+compact admission. Exact-head hosted CI remains a separate publication gate. No public array
+feature count or v1.0 milestone completion follows from this groundwork.

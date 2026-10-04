@@ -22,9 +22,67 @@ REPOSITORY = HERE.parents[2]
 FROZEN = REPOSITORY / "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3"
 sys.dont_write_bytecode = True
 HISTORICAL_AUTHORITY_SHA = "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0"
-CURRENT_PATHS = ("src/frontend/oir/owned/mod.rs", "src/frontend/oir/owned/plan.rs",
-                 "src/frontend/oir/owned_types.rs", "src/frontend/oir/owned_types/array_tests.rs")
-AUTHORITY_SHA = "59b45b681b47aa0c5754c985e24dd3c93e428f58eea42e16721590cc098192d1"
+CURRENT_PATHS = (
+    'src/frontend/declaration_index.rs',
+    'src/frontend/declaration_index/tests.rs',
+    'src/frontend/diagnostic.rs',
+    'src/frontend/oir/owned/array_native_resource_tests.rs',
+    'src/frontend/oir/owned/array_native_tests.rs',
+    'src/frontend/oir/owned/array_observe.rs',
+    'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+    'src/frontend/oir/owned/array_reference_tests.rs',
+    'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/budget.rs',
+    'src/frontend/oir/owned/cfg.rs',
+    'src/frontend/oir/owned/consumer_fixtures.rs',
+    'src/frontend/oir/owned/consumer_pilot.rs',
+    'src/frontend/oir/owned/denial_tests.rs',
+    'src/frontend/oir/owned/execute.rs',
+    'src/frontend/oir/owned/execute_tests.rs',
+    'src/frontend/oir/owned/flow.rs',
+    'src/frontend/oir/owned/mod.rs',
+    'src/frontend/oir/owned/native.rs',
+    'src/frontend/oir/owned/native_heldout_review.rs',
+    'src/frontend/oir/owned/native_tests.rs',
+    'src/frontend/oir/owned/oracle_tests.rs',
+    'src/frontend/oir/owned/origin_tests.rs',
+    'src/frontend/oir/owned/plan.rs',
+    'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
+    'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned/reviewer_heldout.rs',
+    'src/frontend/oir/owned/reviewer_origins.rs',
+    'src/frontend/oir/owned/reviewer_reference_tests.rs',
+    'src/frontend/oir/owned/shape.rs',
+    'src/frontend/oir/owned/source/association.rs',
+    'src/frontend/oir/owned/source/budget.rs',
+    'src/frontend/oir/owned/source/candidate_adapter.rs',
+    'src/frontend/oir/owned/source/candidate_mutations.rs',
+    'src/frontend/oir/owned/source/candidate_native.rs',
+    'src/frontend/oir/owned/source/diagnostic.rs',
+    'src/frontend/oir/owned/source/hir.rs',
+    'src/frontend/oir/owned/source/lower.rs',
+    'src/frontend/oir/owned/source/resolve.rs',
+    'src/frontend/oir/owned/source/reviewer_heldout.rs',
+    'src/frontend/oir/owned/source/reviewer_source.rs',
+    'src/frontend/oir/owned/source/tests.rs',
+    'src/frontend/oir/owned/source/typeck.rs',
+    'src/frontend/oir/owned/tests.rs',
+    'src/frontend/oir/owned/verified.rs',
+    'src/frontend/oir/owned_types.rs',
+    'src/frontend/oir/owned_types/array_tests.rs',
+)
+CURRENT_ADDED_PATHS = (
+    'src/frontend/oir/owned/array_native_resource_tests.rs',
+    'src/frontend/oir/owned/array_native_tests.rs',
+    'src/frontend/oir/owned/array_observe.rs',
+    'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+    'src/frontend/oir/owned/array_reference_tests.rs',
+    'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
+    'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned_types/array_tests.rs',
+)
+AUTHORITY_SHA = "fccebbd814ce0ea207f4e3ada3bee00e3a36c635d0a90827cb2775f271aaea31"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -143,22 +201,25 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 121, "complete current source count")
+    same(len(current["files"]), 129, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 121, "duplicate current member")
+    same(len(after), 129, "duplicate current member")
+    historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
+                           or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
+    require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
     changes = [{"path": name, "before": before.get(name), "after": row}
                for name, row in after.items() if before.get(name) != row]
     same([row["path"] for row in changes], list(CURRENT_PATHS), "unexpected current transition scope")
     same(changes, active["source_delta"], "current transition before/after identities")
     require(not set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"] + result["control_instrumentation"]), "transition overlaps instrumentation")
-    same([row["path"] for row in changes if row["before"] is None], [CURRENT_PATHS[-1]], "unexpected transition addition/deletion")
+    same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 284, "current base count")
+    same(len(base), 292, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -170,7 +231,7 @@ def authority():
         derived.update({row["path"]: row["after"] for row in changes})
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 287, "current derived count")
+        same(len(ordered), 295, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -233,7 +294,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 114, "current compiler body count")
+    same(len(wanted), 122, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []
@@ -390,7 +451,7 @@ def verify_overlay(root, a, control=False):
     expected = current_overlay(source, a, control)
     verify_map(source, expected["files"], exact=True, extras=("observer-source-manifest.json", "overlay-manifest.json"))
     same(read(source / "overlay-manifest.json"), expected, "current overlay must match reviewed transition exactly")
-    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered284 base map")
+    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered292 base map")
     same(sha((source / "observer-source-manifest.json").read_bytes()), a["helper_manifest_sha256"], "unchanged helper manifest bytes")
     verify_map(Path(root) / "helpers", a["helper_files"], exact=True)
     no_cargo_configs(source)
@@ -412,7 +473,7 @@ def verify_transition_records(session, a, resolve=artifact):
     for transition, control in zip(session["transitions"], (False, True)):
         same(set(transition), {"control", "historical_candidate", "historical_overlay", "current_candidate", "current_overlay", "changes"}, "transition fields")
         same(transition["control"], control, "transition role/order")
-        same(transition["changes"], a["current"]["source_delta"], "transition exact four changes")
+        same(transition["changes"], a["current"]["source_delta"], "transition exact 47 changes")
         source = root / ("control-source" if control else "source")
         invocation = root / ("prepare-control" if control else "prepare")
         for key, filename in (("historical_candidate", "historical-candidate-source-manifest.json"), ("historical_overlay", "historical-overlay-manifest.json")):

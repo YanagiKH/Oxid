@@ -98,7 +98,7 @@ fn native_owned_entry_denial_precedes_plan_allocation() {
     }
     let (sources, mut raw, _) = fixtures::empty_record();
     let f = &mut raw.functions[0];
-    f.result = ValueTy::Owned(RecordId(0));
+    f.result = ValueTy::Owned(AggregateTy::Record(RecordId(0)));
     f.locals.clear();
     f.blocks[0].statements.truncate(2);
     f.blocks[0].terminator.as_mut().unwrap().kind =
@@ -269,7 +269,7 @@ fn native_owned_guarded_table_has_independent_costs_and_origins() {
         assert!(module.contains(&format!(
             "%root_exhausted = icmp ult i64 %root_remaining, {root_cost}"
         )));
-        let (id, len) = diag.get(false, root_span);
+        let (id, len) = diag.get(FailureKind::Fuel, root_span);
         assert!(module.contains(&format!("root_error:\n  call void @__oxid_overflow(ptr @__oxid_owned_error_{id}, i64 {len})\n  unreachable")));
         for &(span, cost) in &schedule.events[1..] {
             let mut found = false;
@@ -1514,7 +1514,7 @@ fn expanded_depth_boundary(extra_field: bool) -> (SourceMap, RawOwnedProgram) {
         let record = if id == 0 { RecordId(1) } else { RecordId(0) };
         let fields = if id == 0 { small.fields.len() } else { 256 };
         f.owners = vec![OwnerDecl {
-            record,
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(record)).unwrap(),
             kind: OwnerKind::Local { mutable: false },
             span: s(0),
         }];
@@ -1697,7 +1697,8 @@ fn empty_adjacent_sentinels() -> (SourceMap, RawOwnedProgram, fixtures::Schedule
         index,
     };
     let own = |record, kind| OwnerDecl {
-        record: RecordId(record),
+        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(record)))
+            .unwrap(),
         kind,
         span: s(0),
     };
@@ -1893,7 +1894,11 @@ fn empty_adjacent_sentinels() -> (SourceMap, RawOwnedProgram, fixtures::Schedule
     ));
     let mut functions = vec![f];
     for (id, record, return_label) in [(1, 0, 15), (2, 1, 19)] {
-        let mut f = function(id, ValueTy::Owned(RecordId(record)), s(40 + id));
+        let mut f = function(
+            id,
+            ValueTy::Owned(AggregateTy::Record(RecordId(record))),
+            s(40 + id),
+        );
         f.parameters.push(ParameterBinding::Owned(OwnerPlaceId(0)));
         f.owners
             .push(own(record, OwnerKind::Parameter { position: 0 }));
@@ -2013,14 +2018,10 @@ fn native_owned_acyclic_overflow_data_and_embedded_scalar_origins_are_bounded() 
     let plan = ExecutionPlan::build(&witness).unwrap();
     let diagnostics =
         Diagnostics::new(&plan, schedule.entry, &sources, true, MAX_DIAGNOSTIC_BYTES).unwrap();
-    assert!(diagnostics
-        .ids
-        .contains_key(&(false, embedded.file.0, embedded.start, embedded.end)));
-    assert!(!diagnostics
-        .ids
-        .contains_key(&(false, outer.file.0, outer.start, outer.end)));
+    assert!(diagnostics.contains(FailureKind::Fuel, embedded));
+    assert!(!diagnostics.contains(FailureKind::Fuel, outer));
     let module = native_module_with_fuel(&witness, schedule.entry, &sources, 14).unwrap();
-    let (id, len) = diagnostics.get(false, embedded);
+    let (id, len) = diagnostics.get(FailureKind::Fuel, embedded);
     assert!(module.contains(&format!("f0_b0_g5_error:\n  call void @__oxid_overflow(ptr @__oxid_owned_error_{id}, i64 {len})\n  unreachable")));
 }
 
@@ -2350,3 +2351,9 @@ mod heldout_review;
 
 #[path = "source/reviewer_resource_native.rs"]
 mod reviewer_resources;
+
+#[path = "array_native_resource_tests.rs"]
+mod array_resources;
+
+#[path = "array_native_tests.rs"]
+mod arrays;

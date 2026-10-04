@@ -1,0 +1,13 @@
+# Independent native supplement inputs
+
+These seven new files preserve the already-passed authority/extreme-value supplement. Every existing v1 input remains unchanged. `sources/reviewer-array-native-v3.rs` replaces the combined v1 module only for the new complete replay scope; do not register both modules together. Keep the four existing ordinary-control/exporter appends and generate a fresh source-bound marker.
+
+The complete inventory is 17 functions: eight ordinary including the marker and nine ignored native families. Three new fixed names are listed in `expectations/supplement-v1.json`. Seven raw denials check exact failure kind and full span before native allocation; legal shared aliasing prints 77; four ELF cases print i32 MIN/MAX through construction and full transfer chains. Their expectations are specified in the source, independently of emitter output.
+
+`qualification-v2.json` distinguishes source-derived expectations from historical inventory constraints. The 336 ELF / 1,210 execution / 3,360 tool-receipt aggregate combines the original 331/1,205/3,310 run with a separately passed 5/5/50 supplement. It is a target for a fresh complete replay, not a claim that the full combined suite has already run on one head/profile. The historical structural completeness counts remain 379 bounds sites and 28 pointer phis from the existing v1 sidecar scope.
+
+The supplement ran on published e087e232b4a9885447352b69b4279e5c30978d16 with Rust 1.99.0 and LLVM 19.1.7 on Linux x86_64. All original files were rechecked, eight ordinary functions and the five new native cases passed, all 90 old modules and the TSV stayed byte-exact, and full Clippy passed. Production compiler files were unchanged from the original native qualification.
+
+Two unsigned parity predicates were rewritten equivalently for Clippy, the resource check now verifies exactly 164 diagnostic bytes and progress beyond 164+128 expansions, and rustfmt only reformatted the assembled module. The exact component inputs and formatting provenance are included. A prebuild rustfmt-stdout filename-heading mistake was preserved in historical evidence and was never compiled. The old v1 sources, models, qualification record and prior 14-test runner remain historical evidence.
+
+The strengthened 164-byte resource assertion was added after the original v1 metrics had been observed. The fixed two-message formatting was inspected to explain that count; the >164+128 assertion then ensures the lower-cap fixture reaches transfers after escaping and two constructors. This is explicitly a resource/input-completeness check, not a newly independent semantic oracle. It was frozen before the supplemental execution.

@@ -49,6 +49,11 @@ fn event_receipts(events: &[execute::Event]) -> String {
     array(events.iter().enumerate().map(|(index, event)| {
         let mut values = vec![("index", index.to_string())];
         match event {
+            execute::Event::ReadIndex(..)
+            | execute::Event::WriteIndex(..)
+            | execute::Event::ArrayLength(..) => {
+                unreachable!("source arrays and production array witnesses remain gated")
+            }
             execute::Event::Charge(at, cost) => {
                 last_charge = Some(*at);
                 values.extend([
@@ -122,6 +127,12 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
+        OwnedInstruction::ConstructArray { .. }
+        | OwnedInstruction::ReadIndex { .. }
+        | OwnedInstruction::WriteIndex { .. }
+        | OwnedInstruction::ArrayLength { .. } => {
+            unreachable!("source array production and executable witnesses remain gated")
+        }
         OwnedInstruction::Scalar(Statement::Assign(_)) => "Scalar(Assign)",
         OwnedInstruction::Scalar(Statement::Initialize { .. }) => "Scalar(Initialize)",
         OwnedInstruction::Scalar(Statement::Store { .. }) => "Scalar(Store)",
