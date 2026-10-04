@@ -1,0 +1,3 @@
+# Frozen source data is hashed as published; preserve bytes on every host.
+tests/fixtures/fixed_array_source_unit3/contracts-v2/** -text
+tests/fixtures/fixed_array_source_unit3/element-boundary-supplement-v1/** -text
