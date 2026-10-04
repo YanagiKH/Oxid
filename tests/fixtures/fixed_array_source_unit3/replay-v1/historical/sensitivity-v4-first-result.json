@@ -1,0 +1,96 @@
+{
+  "schema": "oxid-unit3a-comparator-sensitivity-v1",
+  "controls": [
+    {
+      "id": "wrong-valid-file",
+      "rejected": false
+    },
+    {
+      "id": "swapped-elements",
+      "rejected": true,
+      "reason": "literal child separator role"
+    },
+    {
+      "id": "duplicated-element",
+      "rejected": true,
+      "reason": "duplicate literal child"
+    },
+    {
+      "id": "missing-element",
+      "rejected": true,
+      "reason": "literal element count"
+    },
+    {
+      "id": "wrong-group-child",
+      "rejected": true,
+      "reason": "group child role"
+    },
+    {
+      "id": "lost-store-target-role",
+      "rejected": true,
+      "reason": "index assignment role"
+    },
+    {
+      "id": "index-root-as-scalar",
+      "rejected": true,
+      "reason": "number role"
+    },
+    {
+      "id": "unknown-expression-tag",
+      "rejected": true,
+      "reason": "unknown expression kind"
+    },
+    {
+      "id": "wrong-token-tag",
+      "rejected": true,
+      "reason": "public bracket token changed"
+    },
+    {
+      "id": "query-reference-kind",
+      "rejected": true,
+      "reason": "checked descriptor mismatch"
+    },
+    {
+      "id": "parameter-query-site",
+      "rejected": true,
+      "reason": "parameter query position"
+    },
+    {
+      "id": "structural-type-length",
+      "rejected": true,
+      "reason": "checked descriptor mismatch"
+    },
+    {
+      "id": "incomplete-footer",
+      "rejected": true,
+      "reason": "incomplete observer"
+    },
+    {
+      "id": "source-bytes",
+      "rejected": true,
+      "reason": "source binding mismatch"
+    },
+    {
+      "id": "source-file-id-duplicate",
+      "rejected": true,
+      "reason": "duplicate/missing source id"
+    },
+    {
+      "id": "unit-literal-origin-is-type-unit",
+      "rejected": true,
+      "reason": "literal child containment/order"
+    },
+    {
+      "id": "source-allocation-identity-duplicate",
+      "rejected": true,
+      "reason": "duplicate source-allocation identity"
+    },
+    {
+      "id": "source-allocation-identity-zero",
+      "rejected": true,
+      "reason": "invalid source-allocation identity"
+    }
+  ],
+  "pass": 17,
+  "total": 18
+}

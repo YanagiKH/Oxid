@@ -65,6 +65,42 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "missing listing footer"):
             admission.admit_list(terse)
 
+    def test_container_upload_paths_cover_all_members_after_early_failure(self):
+        # Observed on runner 2.337.0, runs 37169581641 and 37169578747.
+        # ContainerInfo.TranslateToContainerPath translates one leading prefix
+        # per whole INPUT_PATH value, not each line of that value.
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        package = workflow.split('      - name: Index and preserve combined Unit2E evidence on every terminal state\n', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('        id: unit2e_preservation\n', package)
+        self.assertIn('        if: always()\n', package)
+        shell = '\n'.join(line[10:] for line in package.split('        run: |\n', 1)[1].splitlines())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'step-output'
+            environment = dict(os.environ, RUNNER_TEMP='/__w/_temp', GITHUB_OUTPUT=str(output))
+            process = subprocess.run(['/bin/bash', '-e', '-o', 'pipefail', '-c', 'python3() { return 7; }\n' + shell],
+                                     env=environment, capture_output=True)
+            self.assertEqual(process.returncode, 7)
+            self.assertEqual(output.read_text(), 'upload-root=/__w/_temp/fixed-array-unit2e-upload\n')
+        def translate(value):
+            prefix = '/home/runner/work'
+            return '/__w' + value[len(prefix):] if value.startswith(prefix + '/') else value
+        uploads = [('Retain compact Unit2E evidence and original receipt bodies',
+                    [admission.INDEX_NAME, admission.COMPACT_NAME, admission.COMPACT_NAME + '.sha256']),
+                   ('Retain complete or explicitly incomplete combined Unit2E evidence',
+                    [admission.ARCHIVE_NAME, admission.ARCHIVE_NAME + '.sha256'])]
+        for title, names in uploads:
+            block = workflow.split('      - name: ' + title + '\n', 1)[1].split('\n      - name:', 1)[0].split('\n  unit4-linux:', 1)[0]
+            self.assertIn('        if: always()\n', block)
+            paths = [line.strip() for line in block.split('          path: |\n', 1)[1].splitlines() if line.strip()]
+            self.assertEqual(paths, ['${{ steps.unit2e_preservation.outputs.upload-root }}/' + name for name in names])
+            actual = translate('\n'.join(paths).replace('${{ steps.unit2e_preservation.outputs.upload-root }}',
+                                                    '/__w/_temp/fixed-array-unit2e-upload')).splitlines()
+            wanted = ['/__w/_temp/fixed-array-unit2e-upload/' + name for name in names]
+            self.assertEqual(actual, wanted)
+            old = translate('\n'.join('/home/runner/work/_temp/fixed-array-unit2e-upload/' + name for name in names)).splitlines()
+            self.assertEqual([path for path in old if path in wanted], wanted[:1])
+
     def test_full_stdout_exact_multiline_attribution_and_byte_spans(self):
         data = stdout_fixture()
         rows = admission.admit_stdout(data)
@@ -607,6 +643,39 @@ class PackageTests(unittest.TestCase):
         self.assertIn("synthetic stale producer source", receipt["error"])
         self.assertFalse(output.exists())
 
+    def test_initial_git_failure_retains_compact_command_bodies_and_sidecars(self):
+        self.fixture()
+        independent = self.base / 'early-independent'
+        debug = independent / 'debug'
+        commands = debug / 'evidence/commands'
+        commands.mkdir(parents=True)
+        # Same original failure shape as hosted d582: first Git read exits 128,
+        # before state.json, inputs, any compiler or independent test exists.
+        stderr = b"fatal: detected dubious ownership in repository at '/__w/Oxid/Oxid'\n"
+        command = {'argv': ['git', '--no-optional-locks', '-C', '/__w/Oxid/Oxid', 'rev-parse', '--show-toplevel'],
+                   'label': 'git-rev-parse', 'exit': 128, 'expected_exit': 0,
+                   'stdout': '0001-git-rev-parse.stdout', 'stderr': '0001-git-rev-parse.stderr'}
+        admission.write_json(commands / '0001-git-rev-parse.json', command)
+        (commands / command['stdout']).write_bytes(b'')
+        (commands / command['stderr']).write_bytes(stderr)
+        admission.write_json(debug / 'evidence/failure.json', {'status': 'failed', 'error': 'retained Git command failure'})
+        output = self.base / 'early-failure-package'
+        code = admission.package_evidence(self.root, output, self.ci, 'success', independent={
+            'debug': {'root': debug, 'outcome': 'failure'},
+            'release': {'root': independent / 'release', 'outcome': 'skipped'}})
+        self.assertEqual(code, 1)
+        index = admission.read_json(output / admission.INDEX_NAME)
+        self.assertEqual(index['status'], 'INCOMPLETE')
+        self.assertFalse(index['complete_unit2e_qualification'])
+        self.assertEqual({path.name for path in output.iterdir()}, {admission.INDEX_NAME, admission.ARCHIVE_NAME,
+            admission.COMPACT_NAME, admission.ARCHIVE_NAME + '.sha256', admission.COMPACT_NAME + '.sha256'})
+        for name in (admission.ARCHIVE_NAME, admission.COMPACT_NAME):
+            with tarfile.open(output / name) as archive:
+                self.assertEqual(archive.extractfile('independent/debug/evidence/commands/' + command['stderr']).read(), stderr)
+                self.assertEqual(json.loads(archive.extractfile('independent/debug/evidence/commands/0001-git-rev-parse.json').read()), command)
+                self.assertIn('producer/debug/run/stdout', archive.getnames())
+                self.assertIn('producer/release/run/stdout', archive.getnames())
+
     def test_missing_output_and_failed_skipped_upstream_are_incomplete(self):
         for outcome in ("success", "failure", "skipped", "cancelled"):
             output = self.base / ("upload-" + outcome)
@@ -834,7 +903,7 @@ class IndependentReaderTests(unittest.TestCase):
         for value in states:
             (self.root / "state.json").write_bytes(admission.json_bytes(value))
             with self.subTest(value=value), self.assertRaises(admission.AdmissionError):
-                admission.independent_body(self.root, head="1" * 40, tree="2" * 40, profile="debug", tools={}, schema=None)
+                admission.independent_body(self.root, head="1" * 40, tree="2" * 40, profile="debug", tools={}, schema=None, checkout=self.root)
 
 
     def terminal_fixture(self):
@@ -931,7 +1000,7 @@ class IndependentReaderTests(unittest.TestCase):
 
     def test_head_tree_profile_and_run_root_are_joined_before_later_admission(self):
         baseline = {"schema": 1, "commit": "1" * 40, "checkout_head": "1" * 40, "tree": "2" * 40,
-                    "profile": "debug", "run_root": str(self.root), "checkout_clean": True,
+                    "profile": "debug", "run_root": str(self.root), "input_checkout": str(self.root), "checkout_clean": True,
                     "runner_sha256": admission.INDEPENDENT_RUNNER_SHA}
         for field, value in (("commit", "3" * 40), ("tree", "3" * 40), ("profile", "release"),
                              ("run_root", str(self.root / "other")), ("runner_sha256", "0" * 64)):
@@ -946,7 +1015,7 @@ class IndependentReaderTests(unittest.TestCase):
                      "source_binding_sha256": admission.file_record(self.root / "evidence/source-binding.json")["sha256"]}
             (self.root / "state.json").write_bytes(admission.json_bytes(state))
             with self.subTest(field=field), self.assertRaises(admission.AdmissionError) as failure:
-                admission.independent_body(self.root, head="1" * 40, tree="2" * 40, profile="debug", tools={}, schema=None)
+                admission.independent_body(self.root, head="1" * 40, tree="2" * 40, profile="debug", tools={}, schema=None, checkout=self.root)
             self.assertIn("source/head/profile/run", str(failure.exception))
 
 
@@ -1081,7 +1150,7 @@ class CombinedReceiptTests(unittest.TestCase):
         put('replay_unit2d_tool_capture.py', b'# SYNTHETIC capture helper, never invoked\n')
         binding = {'schema': 1, 'synthetic_only': True, 'commit': cls.ci['expected_head'], 'checkout_head': cls.ci['expected_head'],
             'tree': cls.producer_admission['binding']['tree'], 'profile': profile, 'run_root': str(root), 'checkout_clean': True,
-            'runner_sha256': admission.INDEPENDENT_RUNNER_SHA,
+            'runner_sha256': admission.INDEPENDENT_RUNNER_SHA, 'input_checkout': str((cls.host.base / 'repo')),
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
             'input_manifest_sha256': cls.input_digest, 'original_input_manifest_sha256': cls.input_digest,
@@ -1119,10 +1188,17 @@ class CombinedReceiptTests(unittest.TestCase):
         labels += [name.rsplit('::', 1)[-1] for name in cls.schema.ORDINARY + cls.schema.NATIVE]
         labels += ['storage-text-tests', 'prepare-physical', 'verify-physical', cls.schema.PHYSICAL.rsplit('::', 1)[-1]]
         by_label = {name.rsplit('::', 1)[-1]: name for name in names}
+        git_arguments = [('rev-parse', '--show-toplevel'), ('status', '--porcelain=v1', '--untracked-files=all'),
+            ('rev-parse', 'HEAD'), ('rev-parse', cls.ci['expected_head'] + '^{commit}'),
+            ('rev-parse', cls.ci['expected_head'] + '^{tree}'), ('ls-tree', '-r', '-z', cls.ci['expected_head']),
+            ('archive', '--format=tar', '--output=' + str(evidence / 'source.tar'), cls.ci['expected_head']),
+            ('status', '--porcelain=v1', '--untracked-files=all'), ('rev-parse', 'HEAD')]
         for i, label in enumerate(labels):
             stem = f'{i:03d}'
             test = by_label.get(label)
             argv = ['synthetic-unexecuted', label]
+            if i < len(git_arguments):
+                argv = cls.schema.git_argv((cls.host.base / 'repo'), *git_arguments[i])
             stdout, stderr = b'SYNTHETIC unexecuted original receipt\n', b''
             if test:
                 argv = [str(root / binary['relative_path']), '--exact', test, '--nocapture', '--test-threads=1']
@@ -1134,7 +1210,7 @@ class CombinedReceiptTests(unittest.TestCase):
             put('commands/' + stem + '.stdout', stdout)
             put('commands/' + stem + '.stderr', stderr)
             put('commands/' + stem + '.json', {'label': label, 'exit': 0, 'expected_exit': 0, 'argv': argv,
-                'cwd': str(root / 'source'), 'stdout': stem + '.stdout', 'stderr': stem + '.stderr', 'synthetic_only': True})
+                'cwd': str(root if i < len(git_arguments) else root / 'source'), 'stdout': stem + '.stdout', 'stderr': stem + '.stderr', 'synthetic_only': True})
         native_record = put('native/synthetic.elf', elf_fixture(), True)
         native = {'path': 'native/synthetic.elf', 'sha256': native_record['sha256'], 'bytes': native_record['bytes']}
         llvm_record = put('native/synthetic.ll', b'; SYNTHETIC native IR, never compiled\n')
@@ -1190,7 +1266,7 @@ class CombinedReceiptTests(unittest.TestCase):
                 'cargo_home': cls.tools['effective_environment']['CARGO_HOME'], 'trusted_map_path': str(cls.producer / 'independent-llvm-tools.json'),
                 'trusted_map_sha256': admission.file_record(cls.producer / 'independent-llvm-tools.json')['sha256']}, 'synthetic_only': True}
         replace_json(root / 'state.json', state)
-        observed = admission.independent_body(root, head=cls.ci['expected_head'], tree=binding['tree'], profile=profile, tools=cls.tools, schema=cls.schema)
+        observed = admission.independent_body(root, head=cls.ci['expected_head'], tree=binding['tree'], profile=profile, tools=cls.tools, schema=cls.schema, checkout=(cls.host.base / 'repo'))
         launch = root.with_name(profile + '-invocation')
         launch.mkdir()
         invocation = admission.read_json(cls.producer / 'invocation.json')
@@ -1260,7 +1336,7 @@ class CombinedReceiptTests(unittest.TestCase):
 
     def read_body(self, root):
         return admission.independent_body(root, head=self.ci['expected_head'],
-            tree=self.producer_admission['binding']['tree'], profile='debug', tools=self.tools, schema=self.schema)
+            tree=self.producer_admission['binding']['tree'], profile='debug', tools=self.tools, schema=self.schema, checkout=(self.host.base / 'repo'))
 
     def rewrite_download(self, output, transform):
         output.mkdir()
@@ -1375,6 +1451,26 @@ class CombinedReceiptTests(unittest.TestCase):
             mutate(value)
             with self.subTest(path=str(path)), self.changed(path, admission.json_bytes(value)):
                 self.reject_package()
+
+    def test_independent_git_receipts_require_exact_checkout_and_reset(self):
+        root = self.independent['debug']['root']
+        commands = [admission.read_json(path) for path in sorted((root / 'evidence/commands').glob('*.json'))]
+        admission.admit_independent_git_commands(commands, (self.host.base / 'repo'), self.ci['expected_head'], root, self.schema)
+        for field, value in [('safe', 'safe.directory=*'), ('checkout', '/different/checkout'),
+                             ('reset', 'safe.directory=/inherited/other'), ('cwd', '/different/cwd')]:
+            changed = copy.deepcopy(commands)
+            if field == 'cwd':
+                changed[0]['cwd'] = value
+            else:
+                changed[0]['argv'][{'safe': 4, 'checkout': 7, 'reset': 2}[field]] = value
+            with self.subTest(field=field), self.assertRaisesRegex(admission.AdmissionError, 'exact-checkout Git invocation differs'):
+                admission.admit_independent_git_commands(changed, (self.host.base / 'repo'), self.ci['expected_head'], root, self.schema)
+        path = root / 'evidence/commands/000.json'
+        row = admission.read_json(path)
+        row['argv'][4] = 'safe.directory=*'
+        with self.changed(path, admission.json_bytes(row)), self.resealed(root):
+            with self.assertRaisesRegex(admission.AdmissionError, 'exact-checkout Git invocation differs'):
+                self.read_body(root)
 
     def test_phase_completion_and_zero_execution_fake_success_rejected(self):
         root = self.independent['debug']['root']

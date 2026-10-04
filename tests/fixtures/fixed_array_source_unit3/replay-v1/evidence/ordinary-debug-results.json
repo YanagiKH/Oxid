@@ -1,0 +1,9 @@
+{
+  "suites": 17,
+  "passed": 900,
+  "failed": 0,
+  "ignored": 27,
+  "log_sha256": "852c3a7bbc5cc5c176c3fb13a42bbdfef11349aab852df2c496429d50c40681e",
+  "all_working_files_match_snapshot": true,
+  "copied_binary_sha256": "ce9c0d2e7f5c7d9e099fb85ac56cab9889aba4f5ed7c398227d0a686a6b0cac6"
+}

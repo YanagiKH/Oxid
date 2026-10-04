@@ -1,0 +1,50 @@
+{
+  "schema": "oxid-unit3a-retained-failures-v1",
+  "original_failure_artifacts": "Original artifacts remain retained separately. This public package contains unchanged path-neutral results and source revisions, plus hashes and technical descriptions for omitted path-dependent raw logs. A hash or description does not provide the omitted raw log body.",
+  "failures": [
+    {
+      "id": "sensitivity-v3-helper-collision",
+      "artifact_sha256": "76a1ab2cb321ff83d391342e156c40324ae570faa48a87cbcc054d23cc2fe66d",
+      "artifact_bytes": 843,
+      "omitted": "Raw traceback includes execution-directory paths",
+      "error": "TypeError: row() got multiple values for argument 'kind'",
+      "cause": "row(rs, kind, **k) received a positional row category and the expression-kind keyword",
+      "correction": "v4 renamed only the helper parameter to row_type; production, observer and comparator acceptance were unchanged"
+    },
+    {
+      "id": "sensitivity-v4-unrequested-query",
+      "included_result": "sensitivity-v4-first-result.json",
+      "result_sha256": "0b334f63384de5076b1f633cb921c13dfbc78377c8d0553590335d20b763c63d",
+      "result": "17 of 18 rejected; wrong-valid-file survived",
+      "cause": "The mutation selected an unrequested scalar return query outside the declared independent comparison scope",
+      "correction": "v5 targets the explicitly requested root fixed-array query, changing only origin file 0 to file 1 at bytes 37..45, a valid UTF-8 range in the other file",
+      "unchanged": "No authority, compiler, observer or comparator acceptance change",
+      "corrected_result": "../evidence/sensitivity-v5-result.json"
+    },
+    {
+      "id": "stale-success-and-incomplete-output",
+      "phase": "Static inspection before source observations",
+      "cause": "Reusing an output directory plus accepting a union of success/error stems could credit a stale JSONL alongside a new error",
+      "correction": "Fresh absent output directory, create-new writes, exact exclusive artifact roster in core/supplement/limit comparisons",
+      "result": "Four unchanged artifact-admission controls are included under evidence"
+    },
+    {
+      "id": "request-metadata-read-race",
+      "phase": "Static inspection before source observations",
+      "cause": "A file-size metadata check before an unrestricted read did not enforce a hard request bound if the file grew",
+      "correction": "v3 reads one descriptor through a 256 KiB plus one detection-byte bound and rejects lengths at or above 256 KiB"
+    },
+    {
+      "id": "source-literal-boundary",
+      "phase": "Static inspection before source observations",
+      "cause": "Checkpoint2 treated a non-expression token following the 1024th-element comma as an excess element",
+      "correction": "Checkpoint3 shares the primary-expression starter classification; independently frozen six-case supplemental authority covers the boundary"
+    },
+    {
+      "id": "source-long-token-formatting",
+      "phase": "Static inspection before source observations",
+      "cause": "The new nonstarter branch could invoke the full-token generic formatter",
+      "correction": "Checkpoint4 uses bounded borrowed formatting for candidate diagnostics while preserving public diagnostic behavior"
+    }
+  ]
+}

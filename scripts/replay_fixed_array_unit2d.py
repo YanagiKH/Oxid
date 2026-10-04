@@ -120,6 +120,18 @@ def load(path):
     return json.loads(Path(path).read_text())
 
 
+def git_argv(checkout, *arguments):
+    """Trust only this canonical checkout for one read-only Git command."""
+    path = Path(checkout)
+    require(path.is_absolute() and str(path) == str(checkout) and ".." not in path.parts
+            and not str(path).endswith("/*") and not any(ord(c) < 32 for c in str(path)),
+            "Git checkout scope must be one canonical absolute path")
+    # The empty value resets any inherited safe.directory list before the exact
+    # checkout is admitted. Neither value is written to Git configuration.
+    return ["git", "-c", "safe.directory=", "-c", "safe.directory=" + str(path),
+            "--no-optional-locks", "-C", str(path), *map(str, arguments)]
+
+
 def safe_relative(value):
     path = PurePosixPath(value)
     require(value and not path.is_absolute() and ".." not in path.parts
@@ -251,6 +263,7 @@ class Replay:
         self.sequence = 0
         self.owned_output = False
         self.command_directory = None
+        self.git_checkout = None
 
     def command(self, label, argv, cwd=None, env=None):
         self.sequence += 1
@@ -279,12 +292,24 @@ class Replay:
         require(result.returncode == 0, "command failed; retained receipt: " + str(receipts / (stem + ".json")))
         return (receipts / record["stdout"]).read_bytes(), (receipts / record["stderr"]).read_bytes()
 
-    def git(self, *args):
-        return self.command("git-" + args[0], ["git", "--no-optional-locks", "-C", self.args.repo, *args])[0]
+    def bind_git_checkout(self, checkout):
+        checkout = Path(checkout).resolve(strict=True)
+        require(checkout.is_dir() and ((checkout / ".git").is_dir() or (checkout / ".git").is_file()),
+                "--repo must be the Git checkout root")
+        git_argv(checkout)  # Reject unsafe configuration-pattern path spellings.
+        require(self.git_checkout is None or checkout == self.git_checkout, "Git checkout scope changed")
+        self.git_checkout = checkout
+        return checkout
+
+    def git(self, *args, label=None):
+        require(self.git_checkout is not None, "Git checkout scope was not bound")
+        environment = {key: value for key, value in self.environment.items() if not key.startswith("GIT_")}
+        environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        return self.command(label or "git-" + args[0], git_argv(self.git_checkout, *args), env=environment)[0]
 
     def prepare(self):
         require(self.args.repo is not None, "--repo is required to prepare")
-        repo = self.args.repo.resolve()
+        repo = self.bind_git_checkout(self.args.repo)
         self.args.repo = repo
         separate_paths(repo, self.root)
         fixture = self.args.fixtures.resolve()
@@ -431,10 +456,9 @@ class Replay:
         self.command_directory = directory
         self.sequence = 0
         try:
-            repo = Path(self.binding["input_checkout"])
-            head, _ = self.command("original-head", ["git", "--no-optional-locks", "-C", repo, "rev-parse", "HEAD"])
-            status, _ = self.command("original-status", ["git", "--no-optional-locks", "-C", repo,
-                                   "status", "--porcelain=v1", "--untracked-files=all"])
+            self.bind_git_checkout(self.binding["input_checkout"])
+            head = self.git("rev-parse", "HEAD", label="original-head")
+            status = self.git("status", "--porcelain=v1", "--untracked-files=all", label="original-status")
             require(head.decode().strip() == self.binding["checkout_head"], "original checkout HEAD changed since preparation")
             require(not status, "original checkout is dirty since preparation")
         finally:

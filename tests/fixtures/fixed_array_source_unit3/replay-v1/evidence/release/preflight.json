@@ -1,0 +1,14 @@
+{
+  "contracts-v2": {
+    "manifest_sha256": "45e01b88abfd91a1a30eb80cfa65c033a1b2986f365d05caa44836c8051231bf",
+    "files": 120
+  },
+  "element-boundary-supplement-v1": {
+    "manifest_sha256": "a8c8454ac11355708cebbd749ade26335ed477e6649da75089184c5b7162fb00",
+    "files": 10
+  },
+  "overlay_sha256": "9c016315ea910d00cc5fda77ef8aabc09eea3002709af59298679c612c3c6d39",
+  "binary_sha256": "4b550d1408df166b90ad2b2a4f00485691fa5db9b41814f761d4d28caf7405b1",
+  "assembled_sha256": "f091756f3f6c9a38a8896bec6040673a74480d4c1f45bd2e51b09011d6857198",
+  "source_archive_sha256": "aace15bc61711ce9f7731c435f5618eb9b6a1118da4f226e9172b4b053891624"
+}

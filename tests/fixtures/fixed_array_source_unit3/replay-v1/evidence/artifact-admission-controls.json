@@ -1,0 +1,28 @@
+{
+  "schema": "oxid-unit3a-artifact-admission-controls-v1",
+  "new_successful_source_observations": 0,
+  "controls": [
+    {
+      "id": "stale-jsonl-plus-fresh-error",
+      "rejected": true,
+      "reason": "case must have exactly one complete or error artifact: c"
+    },
+    {
+      "id": "missing",
+      "rejected": true,
+      "reason": "case must have exactly one complete or error artifact: c"
+    },
+    {
+      "id": "unknown",
+      "rejected": true,
+      "reason": "unknown observation artifact"
+    },
+    {
+      "id": "error-plus-jsonl",
+      "rejected": true,
+      "reason": "case must have exactly one complete or error artifact: c"
+    }
+  ],
+  "pass": 4,
+  "total": 4
+}

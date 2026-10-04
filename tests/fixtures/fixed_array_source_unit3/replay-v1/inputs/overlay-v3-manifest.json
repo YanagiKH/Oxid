@@ -1,0 +1,44 @@
+{
+  "status": "FROZEN_PRE_OBSERVATION_FOR_REVIEW",
+  "version": 3,
+  "predecessor_manifest_sha256": "6613aaa8e75a1a1397e2f66527af88316c3a047e7bdad88aef59c0fac5424bbf",
+  "compiler_source_archive": "aace15bc61711ce9f7731c435f5618eb9b6a1118da4f226e9172b4b053891624",
+  "changes": [
+    "one descriptor hard-bounded request read, at most256KiB+1 detection byte, with checked/fallible pre-reservation",
+    "exact README resource description"
+  ],
+  "files": {
+    "README.md": {
+      "bytes": 6634,
+      "sha256": "d9f9acb588873c44e832d70ecf4bb968d0e040e7bfce1438e4f6d025b7736786"
+    },
+    "admission_controls.py": {
+      "bytes": 1121,
+      "sha256": "a804e2180c51008a712c91470876097b561a548b47e6ef4eac970e7e2e2073ed"
+    },
+    "compare.py": {
+      "bytes": 18016,
+      "sha256": "bde2e4a79979f3d9e40a7edd172309fb3237e881b42324e4f85dea04e686a8ad"
+    },
+    "compare_limits.py": {
+      "bytes": 639,
+      "sha256": "98084deb55cc793258f4bf24f2ae2fe4c72947eee2eaadef3850417eeccc5333"
+    },
+    "compare_supplement.py": {
+      "bytes": 2593,
+      "sha256": "a4a06e0349aef304ec37c4e5e2194b7fe8f240b9a93f05ff9a30cc8912540e3c"
+    },
+    "observer.rs": {
+      "bytes": 23060,
+      "sha256": "519947182badf7bf534da63dcb6bc9a236d8adcc24a49497a67d1298211a6f82"
+    },
+    "prepare.py": {
+      "bytes": 1673,
+      "sha256": "81bf3d5435d255aff84a130efbce2202c128a773916073f8dd8352a35a1a0dbc"
+    },
+    "sensitivity.py": {
+      "bytes": 3543,
+      "sha256": "451513de63dd2137c45d734d618d144fd9b0b97f652412776a2592db6050aea9"
+    }
+  }
+}

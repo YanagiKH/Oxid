@@ -1,0 +1,26 @@
+{
+  "schema": "oxid-unit3a-observer-limits-v1",
+  "controls": [
+    {
+      "id": "zero-rows",
+      "status": "PASS",
+      "error": "incomplete-observation: observer limit exceeded"
+    },
+    {
+      "id": "one-row",
+      "status": "PASS",
+      "error": "incomplete-observation: observer limit exceeded"
+    },
+    {
+      "id": "zero-bytes",
+      "status": "PASS",
+      "error": "incomplete-observation: observer limit exceeded"
+    },
+    {
+      "id": "one-byte",
+      "status": "PASS",
+      "error": "incomplete-observation: observer limit exceeded"
+    }
+  ],
+  "pass": 4
+}

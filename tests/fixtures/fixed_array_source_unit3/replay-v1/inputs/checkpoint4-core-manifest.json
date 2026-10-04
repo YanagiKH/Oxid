@@ -1,0 +1,85 @@
+{
+  "base": "d582d1dca2a26eb3230632a921f9e8166c39d5c0",
+  "source_archive_sha256": "aace15bc61711ce9f7731c435f5618eb9b6a1118da4f226e9172b4b053891624",
+  "files": [
+    {
+      "path": "docs/architecture/fixed-array-unit3a-design.md",
+      "bytes": 10027,
+      "sha256": "60790b06fef68b6b0017e75c0ff4a5368b519cc12ba924ffb89eba49a8347bd8",
+      "base_sha256": null
+    },
+    {
+      "path": "src/frontend/ast.rs",
+      "bytes": 23031,
+      "sha256": "d791e53d294cfd4adfdbc7af30874c471c1b358ce164e8f9bd7ec340222ace41",
+      "base_sha256": "3632fc114303be571166307ddab04f78b508226789b7c1495b4a692c538d3d2f"
+    },
+    {
+      "path": "src/frontend/declaration_index.rs",
+      "bytes": 36931,
+      "sha256": "92e143b2cef61cdcc4679e6075872d616c6d44d0c2580e6e5693aa9c2e927a56",
+      "base_sha256": "a779b9de2d9adf37222bbff1f0fa33c86d2870a5b6f6db80254fdec4cce0f5b5"
+    },
+    {
+      "path": "src/frontend/declaration_index/source_owner.rs",
+      "bytes": 9276,
+      "sha256": "e894146825b7c79d25cfbcbe92f371decad8ebcaee37dc45abbc8d3611730030",
+      "base_sha256": "f30e5fbbf1aae89a2bd38c61e8977e8ba3c238d665b58dc37a69412595016086"
+    },
+    {
+      "path": "src/frontend/hir.rs",
+      "bytes": 24213,
+      "sha256": "f16591e77c660931b689dd2fbc2621b253f226d7b2c6541fc450e38ec8b799fa",
+      "base_sha256": "7deac5ed3f11b6632c3c5f622cf1940bd3ebdbe48054bd424f51126e4a11e966"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/resolve.rs",
+      "bytes": 34471,
+      "sha256": "049aaab2dbd43ef7e3837641babcbd6bcc14781c922aa9d9b509c3f7c868f0d9",
+      "base_sha256": "5528236ed250f6913a5a8dc059ba04c2b405f921336bfb7278978f09b654ea4b"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/tests.rs",
+      "bytes": 20173,
+      "sha256": "29b43f237e8029606600351dadb617cb76de25a6bf61f914525bc31f25c1d40a",
+      "base_sha256": "91bec5ee12bdff2775c27ca48cd7d9a4992ee90b9855b09ae3aeacb7d2678915"
+    },
+    {
+      "path": "src/frontend/parser.rs",
+      "bytes": 50268,
+      "sha256": "48f0e813fd64a4fdb55c41a22d35bd2d2742a8fe6bc57e908453842b2e93f72c",
+      "base_sha256": "41c68af1f499bc6768ec5fd96b3940687bd4cdbec3c8d73f23c101e0341fd2d8"
+    },
+    {
+      "path": "src/frontend/parser/array_syntax_tests.rs",
+      "bytes": 13509,
+      "sha256": "c44510bb40dfc3a6c970a442f7a323fcff43ceadaa359f858a4c23a6de4e45fd",
+      "base_sha256": null
+    },
+    {
+      "path": "src/frontend/parser/arrays.rs",
+      "bytes": 6212,
+      "sha256": "ab29d73db07da72c6fb485247f601a91f2a0bf9830be8f9b7758a8cb7e09ee5b",
+      "base_sha256": null
+    },
+    {
+      "path": "src/frontend/parser/project_tests.rs",
+      "bytes": 20423,
+      "sha256": "3eddeea5407ad41caa99efac53d1f4e369f50be8cd8e83ab8e7b16146dce98bc",
+      "base_sha256": "1c459cdb2582ed4e386f8b7c09117872a852af3f31212536245e6d727b298566"
+    },
+    {
+      "path": "src/frontend/project.rs",
+      "bytes": 35609,
+      "sha256": "3e16ed002320d3579d971cf2761381049f383e1dc41bbc823988b8478557e97c",
+      "base_sha256": "f48d7a457a1e388f0ce30f52bf663426ae7015b2b7a7301cba6afd3497c73679"
+    },
+    {
+      "path": "src/frontend/project/array_syntax_tests.rs",
+      "bytes": 7016,
+      "sha256": "b0ceaa8968c18bbd96a04231e8b829bffb93b1423eecaf06023b249af1fa328b",
+      "base_sha256": null
+    }
+  ],
+  "patch_sha256": "0f9dad255cbcc73556bfd0dc4c64f8bbb1c3c0b13f6fa42e48ec86e95284b899"
+}

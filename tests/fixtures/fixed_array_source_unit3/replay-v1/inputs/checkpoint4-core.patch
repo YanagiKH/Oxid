@@ -1,0 +1,1894 @@
+--- /dev/null
++++ b/docs/architecture/fixed-array-unit3a-design.md
+@@ -0,0 +1,156 @@
++# Dormant array source syntax: Unit 3A checkpoint
++
++Implementation boundary, 2026-10-04. Base commit
++`d582d1dca2a26eb3230632a921f9e8166c39d5c0`, tree
++`a826c1782dac19b8c34bdafb0202240e5d414719`.
++
++This checkpoint adds parser/AST groundwork only. Public grammar and production
++raw array admission remain closed. It does not establish source execution,
++type checking, lowering, origin association, native support or activation.
++
++## Interfaces and affected files
++
++- `src/frontend/parser.rs`, `src/frontend/parser/arrays.rs`: private `ArraySyntaxPolicy::Closed` and test-only
++  `Candidate`, alongside unchanged `SourceMode`; production `parse_counted`
++  supplies Closed. Candidate bracket recognition uses the existing Unsupported
++  token spellings and does not alter the lexer tape. Dedicated candidate syntax
++  helpers use the adopted diagnostic contract; new prose awaits independent
++  source-authority freeze.
++- `src/frontend/ast.rs`: compact scalar array descriptor, value/reference type
++  variants, literal/index/length expression variants and direct-index assignment
++  target wrapper. Validate retained spans, bounded descriptors and arena edges;
++  select the owned route for every form.
++- `src/frontend/project.rs`: test-only policy entry through the same bounded
++  project loader, cumulative B/T/N and provenance; actual literal-vector payload
++  in inventory.
++- `src/frontend/declaration_index/source_owner.rs`: independent metered selector
++  recognizes all new forms in all loaded modules.
++- `src/frontend/declaration_index.rs`, `src/frontend/hir.rs` and
++  `src/frontend/oir/owned/source/resolve.rs`: explicit array-source rejection at
++  resolver seams. The index query itself returns checked structural array
++  descriptors through the existing `FixedArrayTy::check`; array reference
++  syntax stays distinct from value syntax. No implicit scalar fallback or admitted-AST panic. The
++  chosen rejection code/stage and exact wording are recorded before observations.
++- `src/frontend/parser/array_syntax_tests.rs` and
++  `src/frontend/project/array_syntax_tests.rs`: narrow tests over the actual
++  parser/AST/loader, public negative controls, resource and selector controls.
++- `src/frontend/parser/project_tests.rs`: supply Closed to the one existing
++  manually constructed parser used by its overflow test.
++- `src/frontend/oir/owned/source/tests.rs`: measure unchanged enclosing HIR rows.
++
++No HIR forms, executable witness, lowering, raw operations, public CLI flag,
++environment switch, type interner, nominal array row or generic place is added.
++
++## Resource change inventory before implementation
++
++The array descriptor has scalar kind plus u16 length (0..1024); its full origin
++is the enclosing TypeSyntax span. Index assignment retains exactly one direct
++IndexRead AST wrapper and its index child. Each literal owns one Vec<ExprId>;
++element count is independent of the unchanged 256 parameter/argument cap.
++
++Every new element append preflights checked logical count and bytes and uses
++the existing fallible Allocator before allocation. The first excess element is
++rejected before parsing or reserving it. Length parsing uses checked bounded
++arithmetic and never allocates placeholder elements. Literal/index nesting and
++tree height preserve both existing depth-64 limits.
++
++Measure actual enclosing Expr, Stmt, TypeSyntax, Param, Function, Program,
++Option/Vec and HIR rows in supported profiles. Re-derive the disjoint 288N AST
++payload envelope; do not infer that compact tags preserve enum sizes. Actual
++retained element entries E_ast add E_ast*sizeof(ExprId) to inventory; each entry
++is charged to its distinct child root. Preserve existing array-free layouts,
++limits, allocations and diagnostic behavior. Account parser in-flight vectors,
++new validation edge visits and selector visits; length spelling scans are O(B)
++parser work, not declaration-index W debits. Index/raw/consumer caps stay fixed.
++
++The checkpoint will record measured results, exact tested bytes, checks actually
++run and unexecuted obligations separately. Downstream source-array completion
++and independent semantic/resource qualification remain later Unit 3 work.
++
++## Checkpoint 1 measurements and proof
++
++Local Linux x86_64 Rust 1.99.0 debug test compilation succeeded. The predecessor
++test binary was hash-verified and its existing layout control rerun into a new
++receipt. Running that same array-free control against the candidate measured
++identical rows: Expr 88, Stmt 136, TypeSyntax 64, TypeSyntaxKind 40, Param 88,
++Function 200, BodyBlock 72, Argument 88, FieldInit 56, ItemId 16 and Program 248
++bytes. Unchanged source HIR measured Expr 88, Stmt 144, Binding 72, Signature 64
++and Function 112 bytes. These are local debug measurements, not release/host
++qualification. No candidate array parser/type/resource comparison had run when
++the first immutable source snapshot was made.
++
++The disjoint-node AST payload bound remains 288N with Program headers separate:
++
++- A function node owns Function + outer BodyBlock + ItemId = 200+72+16 = 288.
++- A statement node owns its Stmt and at most two newly introduced child blocks:
++  136+2*72 = 280. IndexAssign has no heap vector and its retained IndexRead target
++  is a separately charged expression node.
++- An expression node owns 88 bytes. At most one external wrapper belongs to its
++  root: a value call argument (88), an array literal element edge (8), or no
++  wrapper. These are syntactically disjoint: a call argument containing an array
++  attaches its argument wrapper to the array root, and array edges to its
++  separate child roots. Thus the former maximum 176 remains sufficient.
++- A record field/literal field/parameter retains its previous separately charged
++  row, with no array field/nested type allocation; scalar array annotations are
++  inline. Existing module/import/path categories keep their earlier charges.
++
++New literal-vector payload is exactly E_ast*sizeof(ExprId), counted from actual
++retained element vectors, independent of all future HIR/raw counts. A successful
++literal element reserves one additional logical entry using the existing
++Allocator's checked count/product before the child parse; no element reservation
++occurs after the inclusive 1024 limit. At most one not-yet-attached reservation
++per active literal is live while recursively parsing its child. At depth 64,
++this adds at most 64 logical ExprId entries plus 64 Vec headers to the retained
++node inventory; allocator capacity/rounding and compiler call frames are not
++included in this requested-storage envelope. Expression heights keep their
++existing parallel Vec<usize> bound; no 1024-child scratch stack is created.
++
++The existing metered validation theorem V<=11N+2T+4 is conservative for the new
++forms: a literal has its usual expression/span callbacks plus one arena-edge
++callback per distinct child, charged to that child's node; IndexRead has four
++callbacks, ArrayLength three, and IndexAssign five. An array type has one full
++span callback and a constant checked length, with no nominal path. Existing call
++argument cases already dominate the new child-edge charge. The independent
++selector visits each existing declaration/statement/expression once and marks
++array forms directly; it does not rescan literal entries. Its earlier bound
++6N+2B+1 therefore remains conservative. The new structural query contributes one
++explicit `query array type` debit, plus one `query value type` debit when using
++that entry; its scalar tag/length check is constant work with no table growth.
++Array-free queries, admission order and debits stay unchanged.
++
++Length spelling validation and bounded accumulation scan each decimal spelling
++at most twice, so add at most 2B parser byte inspections; this is separate from
++the index meter. No length scan, literal-entry clone, new HIR storage or raw Q
++claim is attributed to index W. The predecessor full W theorem covers old source
++resolution; future array HIR typing/lowering needs its own extension when it is
++implemented. Both existing expression recursion and constructed-tree height
++limits remain 64 through the actual parser's literal/index child cases.
++
++Execution admission is explicitly temporary: E0500/resolve with message `array
++source execution is unavailable in this dormant syntax checkpoint`, at a full
++array type/expression or store target, before an array HIR node can be made.
++This belongs to a Unit 3A admission roster, not the eventual language diagnostic
++contract. The array type facade remains usable independently. Production
++`verify_with_limits` still unconditionally invokes `reject_array_carriers`.
++
++## Prospective boundary corrections before observations
++
++After 1024 elements, a closing bracket still completes a trailing-comma literal.
++EOF/nonstarters receive the existing missing/excluded-expression classification
++before another reserve; only a possible expression starter receives the element
++limit error first. Primary dispatch is shared by actual expression parsing and
++this decision, with the existing unary/borrow prefixes also recognized.
++
++The new nonstarter diagnostic reuses the public unsupported-token classifier,
++but formats through the existing bounded candidate helpers using borrowed
++`format_args!`. Public error formatting remains unchanged. The focused resource
++control prepares a 63,002-byte quoted UTF-8 token in immutable source before
++measurement, then runs lexing and the full parser-error path inside the existing
++test global allocation observer. Tokens and parser buffers are allocated inside
++the interval, so their deallocation cannot hide a preexisting source-sized
++allocation. The prospective bound is less than 16 KiB of peak successful
++requested heap payload for the candidate; the unchanged public error control
++must expose at least the token length, proving sensitivity to the old temporary
++String behavior. A separate existing formatter observer checks one bounded
++message reservation and at most 1024 copied bytes. These controls do not measure
++allocator rounding, failed allocations, total RSS or universal OOM recovery.
+--- a/src/frontend/ast.rs
++++ b/src/frontend/ast.rs
+@@ -81,6 +81,16 @@
+         base: Span,
+         field: Span,
+     },
++    ArrayLiteral {
++        elements: Vec<ExprId>,
++    },
++    IndexRead {
++        base: Span,
++        index: ExprId,
++    },
++    ArrayLength {
++        base: Span,
++    },
+     Group(ExprId),
+     Arithmetic {
+         op: ArithmeticOp,
+@@ -95,10 +105,29 @@
+     pub span: Span,
+ }
+ #[derive(Clone, Copy, Debug)]
++pub enum ScalarTypeSyntax {
++    Bool,
++    I32,
++    Unit,
++}
++#[derive(Clone, Copy, Debug)]
++pub struct FixedArraySyntax {
++    pub element: ScalarTypeSyntax,
++    pub length: u16,
++}
++#[derive(Clone, Copy, Debug)]
+ pub enum TypeSyntaxKind {
+     Name(ItemPath),
+     Unit,
+-    Reference { mutable: bool, referent: ItemPath },
++    Reference {
++        mutable: bool,
++        referent: ItemPath,
++    },
++    Array(FixedArraySyntax),
++    ArrayReference {
++        mutable: bool,
++        array: FixedArraySyntax,
++    },
+ }
+ #[derive(Clone, Copy, Debug)]
+ pub struct TypeSyntax {
+@@ -178,6 +207,12 @@
+         base: Span,
+         field: Span,
+         target_span: Span,
++        operator_span: Span,
++        value: ExprId,
++    },
++    /// The target is one retained direct IndexRead syntax node, not a load.
++    IndexAssign {
++        target: ExprId,
+         operator_span: Span,
+         value: ExprId,
+     },
+@@ -313,6 +348,9 @@
+             valid(ty.span)
+                 && match ty.kind {
+                     TypeSyntaxKind::Unit => true,
++                    TypeSyntaxKind::Array(array) | TypeSyntaxKind::ArrayReference { array, .. } => {
++                        usize::from(array.length) <= super::parser::MAX_ARRAY_ELEMENTS
++                    }
+                     TypeSyntaxKind::Name(path)
+                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
+                 }
+@@ -433,6 +471,10 @@
+                 if !valid(field.name)
+                     || !valid(field.span)
+                     || !type_valid(field.ty, &mut valid)
++                    || matches!(
++                        field.ty.kind,
++                        TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. }
++                    )
+                     || field.public.is_some_and(|span| !valid(span))
+                 {
+                     return false;
+@@ -508,6 +550,19 @@
+                                 && valid(operator_span)
+                                 && expr_valid(value)
+                         }
++                        StmtKind::IndexAssign {
++                            target,
++                            operator_span,
++                            value,
++                        } => {
++                            expr_valid(target)
++                                && matches!(
++                                    self.expressions[target.0].kind,
++                                    ExprKind::IndexRead { .. }
++                                )
++                                && valid(operator_span)
++                                && expr_valid(value)
++                        }
+                         StmtKind::Expr(expression) => expr_valid(expression),
+                         StmtKind::Return(expression) => expression.is_none_or(expr_valid),
+                         StmtKind::Break | StmtKind::Continue => true,
+@@ -594,6 +649,12 @@
+                         })
+                 }
+                 ExprKind::FieldRead { base, field } => valid(*base) && valid(*field),
++                ExprKind::ArrayLiteral { elements } => {
++                    elements.len() <= super::parser::MAX_ARRAY_ELEMENTS
++                        && elements.iter().all(|element| earlier(*element))
++                }
++                ExprKind::IndexRead { base, index } => valid(*base) && earlier(*index),
++                ExprKind::ArrayLength { base } => valid(*base),
+                 ExprKind::Group(inner) => earlier(*inner),
+             };
+             if !ok {
+@@ -607,6 +668,7 @@
+         let owned_type = |ty: &TypeSyntax| match ty.kind {
+             TypeSyntaxKind::Unit => false,
+             TypeSyntaxKind::Reference { .. } => true,
++            TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. } => true,
+             TypeSyntaxKind::Name(ItemPath::Unqualified(name)) => {
+                 !matches!(source.text_at(name), "bool" | "i32")
+             }
+@@ -622,13 +684,17 @@
+                                 annotation: Some(ty),
+                                 ..
+                             } => owned_type(ty),
+-                            StmtKind::FieldAssign { .. } => true,
++                            StmtKind::FieldAssign { .. } | StmtKind::IndexAssign { .. } => true,
+                             _ => false,
+                         })
+                     })
+             })
+             || self.expressions.iter().any(|e| match &e.kind {
+-                ExprKind::StructLiteral { .. } | ExprKind::FieldRead { .. } => true,
++                ExprKind::StructLiteral { .. }
++                | ExprKind::FieldRead { .. }
++                | ExprKind::ArrayLiteral { .. }
++                | ExprKind::IndexRead { .. }
++                | ExprKind::ArrayLength { .. } => true,
+                 ExprKind::Call { args, .. } => {
+                     args.iter().any(|a| matches!(a, Argument::Borrow { .. }))
+                 }
+--- a/src/frontend/declaration_index.rs
++++ b/src/frontend/declaration_index.rs
+@@ -12,7 +12,9 @@
+     ast,
+     diagnostic::Diagnostic,
+     hir::{DefId, Ty},
+-    oir::owned_types::{AggregateTy, FieldId, RecordId, ValueTy},
++    oir::owned_types::{
++        AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
++    },
+     owned_diagnostic,
+     project::{
+         budget::{Allocator, ReserveFailure},
+@@ -645,21 +647,26 @@
+         self.work.debit(1, ty.span, "query value type")?;
+         self.requester(requester, ty.span)?;
+         match ty.kind {
++            ast::TypeSyntaxKind::Array(array) => self
++                .array_type(requester, array, ty.span)
++                .map(|array| ValueTy::Owned(AggregateTy::FixedArray(array))),
+             ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
+-            ast::TypeSyntaxKind::Reference { .. } => Err(diagnostic(
+-                if matches!(context, TypeContext::Scalar) {
+-                    "E0500"
+-                } else {
+-                    "E0202"
+-                },
+-                "resolve",
+-                if matches!(context, TypeContext::Scalar) {
+-                    "owned syntax entered scalar resolution"
+-                } else {
+-                    "reference types are restricted to parameters"
+-                },
+-                ty.span,
+-            )),
++            ast::TypeSyntaxKind::Reference { .. } | ast::TypeSyntaxKind::ArrayReference { .. } => {
++                Err(diagnostic(
++                    if matches!(context, TypeContext::Scalar) {
++                        "E0500"
++                    } else {
++                        "E0202"
++                    },
++                    "resolve",
++                    if matches!(context, TypeContext::Scalar) {
++                        "owned syntax entered scalar resolution"
++                    } else {
++                        "reference types are restricted to parameters"
++                    },
++                    ty.span,
++                ))
++            }
+             ast::TypeSyntaxKind::Name(path) => {
+                 self.tables.sources.path_span(ItemPathRef {
+                     file: ty.span.file,
+@@ -686,6 +693,60 @@
+             }
+         }
+     }
++    /// Structural query only: no nominal row, HIR or executable authority.
++    pub fn array_type(
++        &mut self,
++        requester: ModuleId,
++        array: ast::FixedArraySyntax,
++        at: Span,
++    ) -> Result<FixedArrayTy, Box<Diagnostic>> {
++        self.work.debit(1, at, "query array type")?;
++        self.requester(requester, at)?;
++        self.tables.sources.text(at)?;
++        let element = match array.element {
++            ast::ScalarTypeSyntax::Bool => Ty::Bool,
++            ast::ScalarTypeSyntax::I32 => Ty::I32,
++            ast::ScalarTypeSyntax::Unit => Ty::Unit,
++        };
++        FixedArrayTy::check(element, usize::from(array.length)).map_err(|_| bad(at))
++    }
++    /// Type-only parameter view. References never become stored value types.
++    pub fn parameter_type(
++        &mut self,
++        requester: ModuleId,
++        ty: ast::TypeSyntax,
++    ) -> Result<ParameterTy, Box<Diagnostic>> {
++        let (mutable, aggregate) = match ty.kind {
++            ast::TypeSyntaxKind::Reference { mutable, referent } => {
++                let record = self.record_type(
++                    requester,
++                    ItemPathRef {
++                        file: ty.span.file,
++                        path: referent,
++                    },
++                    TypeContext::Reference,
++                )?;
++                (mutable, AggregateTy::Record(record))
++            }
++            ast::TypeSyntaxKind::ArrayReference { mutable, array } => (
++                mutable,
++                AggregateTy::FixedArray(self.array_type(requester, array, ty.span)?),
++            ),
++            _ => {
++                return self
++                    .value_type(requester, ty, TypeContext::Value)
++                    .map(ParameterTy::Value)
++            }
++        };
++        Ok(ParameterTy::Reference {
++            aggregate,
++            kind: if mutable {
++                BorrowKind::Exclusive
++            } else {
++                BorrowKind::Shared
++            },
++        })
++    }
+     pub fn record_type(
+         &mut self,
+         requester: ModuleId,
+--- a/src/frontend/declaration_index/source_owner.rs
++++ b/src/frontend/declaration_index/source_owner.rs
+@@ -181,7 +181,8 @@
+                                 annotation: Some(ty),
+                                 ..
+                             } => owned |= self.owned_type(ty, work)?,
+-                            ast::StmtKind::FieldAssign { .. } => owned = true,
++                            ast::StmtKind::FieldAssign { .. }
++                            | ast::StmtKind::IndexAssign { .. } => owned = true,
+                             _ => (),
+                         }
+                     }
+@@ -190,9 +191,11 @@
+             for expression in &program.expressions {
+                 work.preflight(expression.span)?;
+                 match &expression.kind {
+-                    ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
+-                        owned = true
+-                    }
++                    ast::ExprKind::StructLiteral { .. }
++                    | ast::ExprKind::FieldRead { .. }
++                    | ast::ExprKind::ArrayLiteral { .. }
++                    | ast::ExprKind::IndexRead { .. }
++                    | ast::ExprKind::ArrayLength { .. } => owned = true,
+                     ast::ExprKind::Call { args, .. } => {
+                         for argument in args {
+                             work.preflight(expression.span)?;
+@@ -210,6 +213,8 @@
+         match ty.kind {
+             ast::TypeSyntaxKind::Unit => Ok(false),
+             ast::TypeSyntaxKind::Reference { .. }
++            | ast::TypeSyntaxKind::Array(_)
++            | ast::TypeSyntaxKind::ArrayReference { .. }
+             | ast::TypeSyntaxKind::Name(ast::ItemPath::Absolute(_)) => Ok(true),
+             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
+                 let text = self.text(name)?;
+--- a/src/frontend/hir.rs
++++ b/src/frontend/hir.rs
+@@ -152,6 +152,17 @@
+     requester: ModuleId,
+     ty: ast::TypeSyntax,
+ ) -> Result<Ty, Box<Diagnostic>> {
++    if matches!(
++        ty.kind,
++        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
++    ) {
++        return Err(Diagnostic::new(
++            "E0500",
++            "resolve",
++            "array source execution is unavailable in this dormant syntax checkpoint",
++            Some(ty.span),
++        ));
++    }
+     match query.value_type(requester, ty, TypeContext::Scalar)? {
+         ValueTy::Scalar(ty) => Ok(ty),
+         ValueTy::Owned(_) => Err(Diagnostic::new(
+@@ -527,6 +538,14 @@
+                         Some(*target_span),
+                     ))
+                 }
++                ast::StmtKind::IndexAssign { target, .. } => {
++                    return Err(Diagnostic::new(
++                        "E0500",
++                        "resolve",
++                        "array source execution is unavailable in this dormant syntax checkpoint",
++                        Some(self.ast.expressions[target.0].span),
++                    ));
++                }
+                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
+                 ast::StmtKind::Return(expr) => {
+                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
+@@ -594,6 +613,16 @@
+     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
+         let expr = &self.ast.expressions[id.0];
+         let kind = match &expr.kind {
++            ast::ExprKind::ArrayLiteral { .. }
++            | ast::ExprKind::IndexRead { .. }
++            | ast::ExprKind::ArrayLength { .. } => {
++                return Err(Diagnostic::new(
++                    "E0500",
++                    "resolve",
++                    "array source execution is unavailable in this dormant syntax checkpoint",
++                    Some(expr.span),
++                ));
++            }
+             ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
+                 return Err(Diagnostic::new(
+                     "E0500",
+--- a/src/frontend/oir/owned/source/resolve.rs
++++ b/src/frontend/oir/owned/source/resolve.rs
+@@ -100,33 +100,29 @@
+     requester: ModuleId,
+     ty: ast::TypeSyntax,
+ ) -> Result<ValueTy, Box<Diagnostic>> {
++    source_type_enabled(ty)?;
+     query.value_type(requester, ty, TypeContext::Value)
++}
++fn source_type_enabled(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
++    if matches!(
++        ty.kind,
++        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
++    ) {
++        return Err(error(
++            "E0500",
++            format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
++            ty.span,
++        ));
++    }
++    Ok(())
+ }
+ fn parameter_type(
+     query: &mut QuerySession<'_, '_>,
+     requester: ModuleId,
+     ty: ast::TypeSyntax,
+ ) -> Result<ParameterTy, Box<Diagnostic>> {
+-    if let ast::TypeSyntaxKind::Reference { mutable, referent } = ty.kind {
+-        let record = query.record_type(
+-            requester,
+-            ItemPathRef {
+-                file: ty.span.file,
+-                path: referent,
+-            },
+-            TypeContext::Reference,
+-        )?;
+-        Ok(ParameterTy::Reference {
+-            aggregate: AggregateTy::Record(record),
+-            kind: if mutable {
+-                BorrowKind::Exclusive
+-            } else {
+-                BorrowKind::Shared
+-            },
+-        })
+-    } else {
+-        value_type(query, requester, ty).map(ParameterTy::Value)
+-    }
++    source_type_enabled(ty)?;
++    query.parameter_type(requester, ty)
+ }
+ fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
+     let mut value = 0i32;
+@@ -636,6 +632,12 @@
+                         value: self.expression(*value)?,
+                     }
+                 }
++                ast::StmtKind::IndexAssign { target, .. } => {
++                    return Err(error(
++                        "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
++                        self.ast.expressions[target.0].span,
++                    ));
++                }
+                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
+                 ast::StmtKind::Return(expr) => {
+                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
+@@ -705,6 +707,17 @@
+     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
+         let expr = &self.ast.expressions[id.0];
+         let kind = match &expr.kind {
++            ast::ExprKind::ArrayLiteral { .. }
++            | ast::ExprKind::IndexRead { .. }
++            | ast::ExprKind::ArrayLength { .. } => {
++                return Err(error(
++                    "E0500",
++                    format_args!(
++                        "array source execution is unavailable in this dormant syntax checkpoint"
++                    ),
++                    expr.span,
++                ));
++            }
+             ast::ExprKind::FieldRead { base, field } => ExprKind::FieldRead {
+                 base: self.lookup(*base)?,
+                 base_span: *base,
+--- a/src/frontend/oir/owned/source/tests.rs
++++ b/src/frontend/oir/owned/source/tests.rs
+@@ -1,5 +1,123 @@
+ use super::{hir::*, resolve, typeck};
+ use crate::frontend::{diagnostic::Diagnostic, lexer, parser, source::SourceMap};
++
++#[test]
++fn unit3a_unchanged_hir_enclosing_layouts() {
++    use std::mem::size_of;
++    macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
++    sizes!(
++        Expr,
++        ExprKind,
++        Stmt,
++        StmtKind,
++        Binding,
++        Signature,
++        Function,
++        Option<Expr>,
++        Option<Stmt>,
++        Option<Binding>,
++        Vec<Expr>,
++        Vec<Stmt>,
++        Vec<Binding>
++    );
++}
++
++#[test]
++fn unit3a_array_ast_stops_before_owned_hir_execution() {
++    for text in [
++        "fn f(a:[i32;1])->(){}",
++        "fn f(a:&mut [i32;1])->(){}",
++        "fn f()->[();0]{}",
++        "fn f()->(){let a:[bool;0]=true;}",
++        "fn f()->(){[1];}",
++        "fn f()->(){a[0];}",
++        "fn f()->(){a.len();}",
++        "fn f()->(){a[0]=1;}",
++    ] {
++        let mut map = SourceMap::new();
++        let file = map.add("dormant.ox".into(), text.into());
++        let file = map.get(file);
++        let (ast, _) = parser::parse_counted_with_arrays(
++            file,
++            lexer::lex(file).unwrap(),
++            parser::SourceMode::OwnedCandidate,
++            parser::MAX_NODES,
++            &mut crate::frontend::project::budget::Allocator::default(),
++            parser::ArraySyntaxPolicy::Candidate,
++        )
++        .unwrap();
++        let errors = resolve::resolve(file, &ast).unwrap_err();
++        assert_eq!(
++            (errors[0].code, errors[0].stage),
++            ("E0500", "resolve"),
++            "{text}"
++        );
++        assert_eq!(
++            errors[0].message,
++            "array source execution is unavailable in this dormant syntax checkpoint"
++        );
++        assert!(file.try_text(errors[0].primary.unwrap()).is_some());
++    }
++}
++
++#[test]
++fn unit3a_long_nonstarter_uses_bounded_actual_parser_allocations() {
++    // Prepare only immutable source bytes outside measurement. Lexing and the
++    // complete parser error path run inside the existing real allocator observer,
++    // so no pre-measurement token allocation is freed to hide a temporary String.
++    let token = format!("\"{}\"", "雪".repeat(21_000));
++    for candidate in [true, false] {
++        let mut map = SourceMap::new();
++        let text = if candidate {
++            format!("fn f()->(){{[1,{token}];}}")
++        } else {
++            format!("fn f()->(){{{token};}}")
++        };
++        let file = map.add("allocation.ox".into(), text);
++        let file = map.get(file);
++        let (errors, (calls, live, peak)) = super::reviewer_source::integration_measured(|| {
++            let tokens = lexer::lex(file).unwrap();
++            let result = if candidate {
++                parser::parse_counted_with_arrays(
++                    file,
++                    tokens,
++                    parser::SourceMode::OwnedCandidate,
++                    parser::MAX_NODES,
++                    &mut crate::frontend::project::budget::Allocator::default(),
++                    parser::ArraySyntaxPolicy::Candidate,
++                )
++                .map(|(program, _)| program)
++            } else {
++                parser::parse_with_mode(file, tokens, parser::SourceMode::OwnedCandidate)
++            };
++            result.unwrap_err()
++        });
++        assert_eq!((errors[0].code, errors[0].stage), ("E0101", "parse"));
++        assert_eq!(file.text_at(errors[0].primary.unwrap()), token);
++        assert!(calls > 0 && live > 0 && peak >= live);
++        if candidate {
++            assert!(
++                errors[0].message.len() <= crate::frontend::owned_diagnostic::MAX_MESSAGE_BYTES
++            );
++            assert!(
++                peak < 16 * 1024,
++                "candidate diagnostic copied source-sized text: {peak}"
++            );
++        } else {
++            assert_eq!(
++                errors[0].message,
++                format!("unsupported typed-preview construct `{token}`")
++            );
++            assert!(
++                peak >= token.len() as isize,
++                "public control must detect a source-sized diagnostic"
++            );
++        }
++        println!(
++            "nonstarter candidate={candidate} allocation_calls={calls} retained={live} peak={peak}"
++        );
++    }
++}
+ 
+ fn errors(text: &str) -> Vec<Diagnostic> {
+     let mut sources = SourceMap::new();
+--- a/src/frontend/parser.rs
++++ b/src/frontend/parser.rs
+@@ -42,6 +42,7 @@
+ /// Active statement blocks, including the outer function body; independent of expressions.
+ pub const MAX_BLOCK_NESTING: usize = 64;
+ pub const MAX_PARAMS: usize = 256;
++pub(super) const MAX_ARRAY_ELEMENTS: usize = 1024;
+ pub(super) const MAX_PATH_SEGMENTS: usize = 34;
+ pub const MAX_DIAGNOSTICS: usize = 100;
+ 
+@@ -63,10 +64,33 @@
+         true
+     }
+ }
++/// Independent of edition/module routing. Production callers cannot open it.
++#[derive(Clone, Copy, PartialEq, Eq)]
++pub(super) enum ArraySyntaxPolicy {
++    Closed,
++    #[cfg(test)]
++    Candidate,
++}
++impl ArraySyntaxPolicy {
++    fn enabled(self) -> bool {
++        match self {
++            Self::Closed => false,
++            #[cfg(test)]
++            Self::Candidate => true,
++        }
++    }
++}
+ #[derive(Clone, Copy, PartialEq, Eq)]
+ enum LiteralContext {
+     Allowed,
+     ConditionRoot,
++}
++enum PrimaryStart {
++    Boolean,
++    Number,
++    Name,
++    Group,
++    Array,
+ }
+ #[cfg(test)]
+ pub fn parse(source: &SourceFile, tokens: Vec<Token>) -> Result<Program, Vec<Diagnostic>> {
+@@ -98,10 +122,29 @@
+     node_limit: usize,
+     allocator: &mut Allocator,
+ ) -> Result<(Program, usize), Vec<Diagnostic>> {
++    parse_counted_with_arrays(
++        source,
++        tokens,
++        mode,
++        node_limit,
++        allocator,
++        ArraySyntaxPolicy::Closed,
++    )
++}
++
++pub(super) fn parse_counted_with_arrays(
++    source: &SourceFile,
++    tokens: Vec<Token>,
++    mode: SourceMode,
++    node_limit: usize,
++    allocator: &mut Allocator,
++    arrays: ArraySyntaxPolicy,
++) -> Result<(Program, usize), Vec<Diagnostic>> {
+     let mut parser = Parser {
+         source,
+         allocator,
+         mode,
++        arrays,
+         project_recovery: false,
+         tokens,
+         cursor: 0,
+@@ -225,6 +268,7 @@
+     source: &'a SourceFile,
+     allocator: &'a mut Allocator,
+     mode: SourceMode,
++    arrays: ArraySyntaxPolicy,
+     // Sticky only after ordinary parsing enters project grammar. Recovery
+     // scans never set it; successful source flavor comes from the AST instead.
+     project_recovery: bool,
+@@ -443,9 +487,9 @@
+             Diagnostic::new(code, stage, message.to_string(), primary)
+         }
+     }
+-    fn error(&self, message: &str) -> Box<Diagnostic> {
++    fn unsupported_token(&self) -> bool {
+         let token = self.peek();
+-        let unsupported = matches!(
++        matches!(
+             token.kind,
+             Kind::Unsupported
+                 | Kind::Mod
+@@ -458,8 +502,11 @@
+                 | Kind::Struct
+                 | Kind::Ampersand
+                 | Kind::Dot
+-        ) || (token.kind == Kind::Ident
+-            && self.source.text_at(token.span) == "as");
++        ) || (token.kind == Kind::Ident && self.source.text_at(token.span) == "as")
++    }
++    fn error(&self, message: &str) -> Box<Diagnostic> {
++        let token = self.peek();
++        let unsupported = self.unsupported_token();
+         // Report an unsupported cast in an already-invalid grammar position,
+         // without reserving `as` as a declaration or expression identifier.
+         // Shared parser diagnostics retain the original scalar formatting. The
+@@ -618,7 +665,13 @@
+     }
+     fn ty_with_paths(&mut self, paths: bool) -> Result<TypeSyntax, Box<Diagnostic>> {
+         let token = self.peek();
+-        let (kind, end) = if self.take(Kind::LParen).is_some() {
++        let (kind, end) = if self.arrays_enabled() && self.array_punctuation("[") {
++            if !paths {
++                return Err(self.array_unsupported(token.span));
++            }
++            let (array, end) = self.array_type()?;
++            (TypeSyntaxKind::Array(array), end)
++        } else if self.take(Kind::LParen).is_some() {
+             (
+                 TypeSyntaxKind::Unit,
+                 self.expect(Kind::RParen, "only the unit type `()` is supported here")?
+@@ -638,6 +691,13 @@
+         if self.mode.owned() && self.peek().kind == Kind::Ampersand {
+             let start = self.bump().span.start;
+             let mutable = self.take(Kind::Mut).is_some();
++            if self.arrays_enabled() && self.array_punctuation("[") {
++                let (array, end) = self.array_type()?;
++                return Ok(TypeSyntax {
++                    span: self.source.span(start, end),
++                    kind: TypeSyntaxKind::ArrayReference { mutable, array },
++                });
++            }
+             let (referent, span) =
+                 self.item_path("reference parameter requires a record name", true)?;
+             return Ok(TypeSyntax {
+@@ -850,7 +910,20 @@
+                 value: self.expression(0, LiteralContext::Allowed)?,
+             }
+         } else {
+-            StmtKind::Expr(self.expression(0, LiteralContext::Allowed)?)
++            let target = self.expression(0, LiteralContext::Allowed)?;
++            if self.arrays_enabled() && self.peek().kind == Kind::Equal {
++                if !matches!(self.expressions[target.0].kind, ExprKind::IndexRead { .. }) {
++                    return Err(self.array_unsupported(self.expressions[target.0].span));
++                }
++                let operator_span = self.bump().span;
++                StmtKind::IndexAssign {
++                    target,
++                    operator_span,
++                    value: self.expression(0, LiteralContext::Allowed)?,
++                }
++            } else {
++                StmtKind::Expr(target)
++            }
+         };
+         if matches!(kind, StmtKind::Break | StmtKind::Continue) && self.peek().kind != Kind::Semi {
+             return Err(self.diagnostic(
+@@ -883,6 +956,24 @@
+         context: LiteralContext,
+     ) -> Result<ExprId, Box<Diagnostic>> {
+         self.logical(depth, LogicalOp::Or, context)
++    }
++    /// Canonical primary dispatch, also used before admitting a literal element.
++    fn primary_start(&self) -> Option<PrimaryStart> {
++        Some(match self.peek().kind {
++            Kind::True | Kind::False => PrimaryStart::Boolean,
++            Kind::Number | Kind::Minus => PrimaryStart::Number,
++            Kind::Ident => PrimaryStart::Name,
++            Kind::LParen => PrimaryStart::Group,
++            Kind::Unsupported if self.arrays_enabled() && self.array_punctuation("[") => {
++                PrimaryStart::Array
++            }
++            _ => return None,
++        })
++    }
++    fn expression_starter(&self) -> bool {
++        self.primary_start().is_some()
++            || self.peek().kind == Kind::Not // unary() prefix
++            || (self.mode.owned() && self.peek().kind == Kind::Ampersand) // argument() prefix
+     }
+     fn logical(
+         &mut self,
+@@ -1045,6 +1136,12 @@
+                 .map(|f| self.heights[f.value.0])
+                 .max()
+                 .unwrap_or(0),
++            ExprKind::ArrayLiteral { elements } => elements
++                .iter()
++                .map(|element| self.heights[element.0])
++                .max()
++                .unwrap_or(0),
++            ExprKind::IndexRead { index, .. } => self.heights[index.0],
+             ExprKind::Arithmetic { left, right, .. }
+             | ExprKind::Comparison { left, right, .. }
+             | ExprKind::Logical { left, right, .. } => {
+@@ -1081,12 +1178,12 @@
+         self.node()?;
+         let token = self.peek();
+         let mut end = token.span.end;
+-        let kind = match token.kind {
+-            Kind::True | Kind::False => {
++        let kind = match self.primary_start() {
++            Some(PrimaryStart::Boolean) => {
+                 self.bump();
+                 ExprKind::Bool(token.kind == Kind::True)
+             }
+-            Kind::Number | Kind::Minus => {
++            Some(PrimaryStart::Number) => {
+                 let negative = token.kind == Kind::Minus;
+                 if negative {
+                     self.bump();
+@@ -1116,7 +1213,7 @@
+                 }
+                 ExprKind::Number { digits, negative }
+             }
+-            Kind::Ident => {
++            Some(PrimaryStart::Name) => {
+                 let (path, path_span) = self.item_path("expected item name", true)?;
+                 end = path_span.end;
+                 if self.take(Kind::LParen).is_some() {
+@@ -1139,6 +1236,20 @@
+                     }
+                     end = self.expect(Kind::RParen, "call requires `)`")?.span.end;
+                     ExprKind::Call { callee: path, args }
++                } else if self.arrays_enabled()
++                    && matches!(path, ItemPath::Unqualified(_))
++                    && self.array_punctuation("[")
++                {
++                    self.bump();
++                    if self.array_punctuation("]") {
++                        return Err(self.array_missing("array index requires an expression"));
++                    }
++                    let index = self.expression(depth + 1, LiteralContext::Allowed)?;
++                    end = self.array_close("array index requires `]`")?;
++                    ExprKind::IndexRead {
++                        base: token.span,
++                        index,
++                    }
+                 } else if self.mode.owned()
+                     && matches!(path, ItemPath::Unqualified(_))
+                     && self.take(Kind::Dot).is_some()
+@@ -1157,10 +1268,19 @@
+                             Some(self.peek().span),
+                         ));
+                     }
+-                    end = field.end;
+-                    ExprKind::FieldRead {
+-                        base: token.span,
+-                        field,
++                    if self.arrays_enabled() && self.peek().kind == Kind::LParen {
++                        if self.source.text_at(field) != "len" {
++                            return Err(self.array_unsupported(self.peek().span));
++                        }
++                        self.bump();
++                        end = self.array_length_close()?;
++                        ExprKind::ArrayLength { base: token.span }
++                    } else {
++                        end = field.end;
++                        ExprKind::FieldRead {
++                            base: token.span,
++                            field,
++                        }
+                     }
+                 } else if self.mode.owned()
+                     && context == LiteralContext::Allowed
+@@ -1201,7 +1321,7 @@
+                     ExprKind::Name(token.span)
+                 }
+             }
+-            Kind::LParen => {
++            Some(PrimaryStart::Group) => {
+                 self.bump();
+                 if let Some(close) = self.take(Kind::RParen) {
+                     end = close.span.end;
+@@ -1212,11 +1332,26 @@
+                     ExprKind::Group(inner)
+                 }
+             }
+-            _ => return Err(self.error("expected a bool, i32 or unit expression")),
++            Some(PrimaryStart::Array) => {
++                let (elements, close) = self.array_literal(depth)?;
++                end = close;
++                ExprKind::ArrayLiteral { elements }
++            }
++            None => return Err(self.error("expected a bool, i32 or unit expression")),
+         };
++        if self.arrays_enabled() && (self.array_punctuation("[") || self.peek().kind == Kind::Dot) {
++            return Err(self.array_unsupported(self.peek().span));
++        }
+         self.push_expr(kind, self.source.span(token.span.start, end))
+     }
+ }
++
++#[path = "parser/arrays.rs"]
++mod arrays;
++
++#[cfg(test)]
++#[path = "parser/array_syntax_tests.rs"]
++mod array_syntax_tests;
+ 
+ #[cfg(test)]
+ pub(super) fn parse_with_lowered_node_limit(
+--- /dev/null
++++ b/src/frontend/parser/array_syntax_tests.rs
+@@ -0,0 +1,379 @@
++//! Local structural/resource checks; independent source-authority receipts are separate.
++use super::*;
++use crate::frontend::{
++    declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
++    lexer,
++    project::ModuleId,
++    source::{SourceFileId, SourceMap, SourceView},
++};
++
++fn source(text: &str) -> SourceMap {
++    let mut map = SourceMap::new();
++    map.add("arrays.ox".into(), text.into());
++    map
++}
++fn parsed(map: &SourceMap, allocator: &mut Allocator) -> Result<(Program, usize), Vec<Diagnostic>> {
++    let file = map.get(SourceFileId(0));
++    parse_counted_with_arrays(
++        file,
++        lexer::lex(file).unwrap(),
++        SourceMode::OwnedCandidate,
++        MAX_NODES,
++        allocator,
++        ArraySyntaxPolicy::Candidate,
++    )
++}
++fn candidate(map: &SourceMap) -> Program {
++    parsed(map, &mut Allocator::default()).unwrap().0
++}
++
++#[test]
++fn unit3a_real_ast_retains_target_once_and_original_origins() {
++    let map = source("// 雪\nfn f(p:&mut [i32; 2])->[();0]{let mut a:[i32;2]=[5,7,];a[(0)]=a[1];a.len();return [];}");
++    let file = map.get(SourceFileId(0));
++    let p = candidate(&map);
++    assert!(p.belongs_to(file));
++    assert!(p.validate_spans_and_ids(|span| file.try_text(span).is_some()));
++    assert!(p.uses_owned_syntax(file));
++    assert!(!p.uses_project_syntax());
++    let function = &p.functions[0];
++    assert!(matches!(
++        function.params[0].ty.kind,
++        TypeSyntaxKind::ArrayReference {
++            mutable: true,
++            array: FixedArraySyntax {
++                element: ScalarTypeSyntax::I32,
++                length: 2
++            }
++        }
++    ));
++    assert!(matches!(
++        function.result.kind,
++        TypeSyntaxKind::Array(FixedArraySyntax {
++            element: ScalarTypeSyntax::Unit,
++            length: 0
++        })
++    ));
++    let StmtKind::IndexAssign {
++        target,
++        operator_span,
++        value,
++    } = function.blocks[0].body[1].kind
++    else {
++        panic!("direct indexed store")
++    };
++    assert_eq!(file.text_at(operator_span), "=");
++    assert_eq!(file.text_at(p.expressions[target.0].span), "a[(0)]");
++    assert_eq!(file.text_at(p.expressions[value.0].span), "a[1]");
++    assert_eq!(
++        p.expressions
++            .iter()
++            .filter(|e| matches!(e.kind, ExprKind::IndexRead { .. }))
++            .count(),
++        2
++    );
++    let ExprKind::IndexRead { base, index } = p.expressions[target.0].kind else {
++        unreachable!()
++    };
++    assert_eq!(file.text_at(base), "a");
++    assert_eq!(file.text_at(p.expressions[index.0].span), "(0)");
++    assert_eq!(
++        p.expressions
++            .iter()
++            .filter(|e| matches!(e.kind, ExprKind::Name(_)))
++            .count(),
++        0
++    );
++    let other = source(file.text());
++    assert!(!p.belongs_to(other.get(SourceFileId(0))));
++}
++
++#[test]
++fn unit3a_structural_queries_are_checked_without_execution() {
++    use crate::frontend::{
++        declaration_index::TypeContext,
++        hir::Ty,
++        oir::owned_types::{AggregateTy, BorrowKind, FixedArrayTy, ParameterTy, ValueTy},
++    };
++    let map = source("fn f(a:[bool;0],b:[i32;0],c:[();0],d:&[i32;0])->[i32;0000]{}");
++    let file = map.get(SourceFileId(0));
++    let ast = candidate(&map);
++    let work = WorkMeter::default();
++    let mut alloc = Allocator::default();
++    let owner = SourceOwner::original(file, &ast, SourceView::Map(&map)).unwrap();
++    let facts = collect_originals(owner, IndexLimits::default(), &work, &mut alloc).unwrap();
++    let index = facts.finish(&work, &mut alloc).unwrap();
++    let mut query = index.query(&work);
++    for (param, element) in ast.functions[0].params[..3]
++        .iter()
++        .zip([Ty::Bool, Ty::I32, Ty::Unit])
++    {
++        assert_eq!(
++            query
++                .value_type(ModuleId(0), param.ty, TypeContext::Value)
++                .unwrap(),
++            ValueTy::Owned(AggregateTy::FixedArray(
++                FixedArrayTy::check(element, 0).unwrap()
++            ))
++        );
++    }
++    let param = ast.functions[0].params[3].ty;
++    let TypeSyntaxKind::ArrayReference { mutable, array } = param.kind else {
++        unreachable!()
++    };
++    assert!(!mutable);
++    assert_eq!(
++        query.parameter_type(ModuleId(0), param).unwrap(),
++        ParameterTy::Reference {
++            aggregate: AggregateTy::FixedArray(FixedArrayTy::check(Ty::I32, 0).unwrap()),
++            kind: BorrowKind::Shared,
++        }
++    );
++    assert_eq!(
++        query.array_type(ModuleId(0), array, param.span).unwrap(),
++        FixedArrayTy::check(Ty::I32, 0).unwrap()
++    );
++    assert_eq!(
++        query
++            .value_type(ModuleId(0), ast.functions[0].result, TypeContext::Value)
++            .unwrap(),
++        query
++            .value_type(
++                ModuleId(0),
++                ast.functions[0].params[1].ty,
++                TypeContext::Value
++            )
++            .unwrap()
++    );
++    let forged = FixedArraySyntax {
++        element: ScalarTypeSyntax::I32,
++        length: 1025,
++    };
++    assert!(query.array_type(ModuleId(0), forged, param.span).is_err());
++    let errors = crate::frontend::hir::resolve(file, &ast).unwrap_err();
++    assert_eq!((errors[0].code, errors[0].stage), ("E0500", "resolve"));
++    assert_eq!(
++        errors[0].message,
++        "array source execution is unavailable in this dormant syntax checkpoint"
++    );
++}
++
++#[test]
++fn unit3a_literal_limits_reservations_and_tree_height_are_bounded() {
++    for count in [0, 1, 256, 257, 1024] {
++        let values = "0,".repeat(count);
++        let map = source(&format!("fn f()->(){{[{values}];}}"));
++        let mut alloc = Allocator::default();
++        let (p, nodes) = parsed(&map, &mut alloc).unwrap();
++        assert_eq!(nodes, count + 3); // function, statement, literal, and scalar children
++        let ExprKind::ArrayLiteral { elements } = &p.expressions.last().unwrap().kind else {
++            unreachable!()
++        };
++        assert_eq!(elements.len(), count);
++        assert_eq!(alloc.trace.len(), count);
++        for (i, event) in alloc.trace.iter().enumerate() {
++            assert_eq!(
++                (event.kind, event.length, event.element_bytes, event.success),
++                (
++                    "array literal elements",
++                    i + 1,
++                    std::mem::size_of::<ExprId>(),
++                    true
++                )
++            );
++        }
++    }
++    let map = source(&format!("fn f()->(){{[{}unknown()];}}", "0,".repeat(1024)));
++    let mut alloc = Allocator::default();
++    let d = parsed(&map, &mut alloc).unwrap_err().remove(0);
++    assert_eq!(
++        (d.code, d.stage, d.message.as_str()),
++        ("E0400", "parse", "array element limit exceeded (1024)")
++    );
++    assert_eq!(map.text(d.primary.unwrap()), "unknown");
++    assert_eq!(alloc.trace.len(), 1024);
++    for depth in [63, 64] {
++        let map = source(&format!(
++            "fn f()->(){{{}0{};}}",
++            "[".repeat(depth),
++            "]".repeat(depth)
++        ));
++        let result = parsed(&map, &mut Allocator::default());
++        assert_eq!(result.is_ok(), depth == 63);
++    }
++    // A deep index child has the same height accounting as a literal child.
++    for depth in [62, 63] {
++        let map = source(&format!(
++            "fn f()->(){{a[{}0{}];}}",
++            "(".repeat(depth),
++            ")".repeat(depth)
++        ));
++        assert_eq!(parsed(&map, &mut Allocator::default()).is_ok(), depth == 62);
++    }
++}
++
++#[test]
++fn unit3a_array_lengths_are_bounded_without_placeholder_nodes() {
++    for (spelling, expected) in [("0".repeat(65536), 0), ("0001024".into(), 1024)] {
++        let map = source(&format!("fn f(a:[bool;{spelling}])->(){{}}"));
++        let mut alloc = Allocator::default();
++        let (p, nodes) = parsed(&map, &mut alloc).unwrap();
++        assert_eq!(nodes, 2); // function and parameter only
++        assert!(p.expressions.is_empty());
++        assert!(alloc.trace.is_empty());
++        let TypeSyntaxKind::Array(array) = p.functions[0].params[0].ty.kind else {
++            unreachable!()
++        };
++        assert_eq!(usize::from(array.length), expected);
++    }
++}
++
++#[test]
++fn unit3a_reserve_failure_drops_candidate_without_partial_ast() {
++    let map = source("fn f()->(){[1,2,3];}");
++    for fail_at in 1..=3 {
++        let mut alloc = Allocator {
++            fail_at: Some(fail_at),
++            ..Allocator::default()
++        };
++        let d = parsed(&map, &mut alloc).unwrap_err().remove(0);
++        assert_eq!(
++            (d.code, d.stage, d.message.as_str()),
++            ("E0400", "parse", "array syntax allocation failed")
++        );
++        assert_eq!(alloc.trace.len(), fail_at);
++        assert!(!alloc.trace.last().unwrap().success);
++    }
++}
++
++#[test]
++fn unit3a_flat_children_preserve_tree_height_limit() {
++    for terms in [63, 64] {
++        let sum = std::iter::repeat_n("0", terms)
++            .collect::<Vec<_>>()
++            .join("+");
++        for wrapper in [format!("[{sum}]"), format!("a[{sum}]")] {
++            let map = source(&format!("fn f()->(){{{wrapper};}}"));
++            let result = parsed(&map, &mut Allocator::default());
++            if terms == 63 {
++                assert!(result.is_ok(), "{wrapper}");
++            } else {
++                let error = result.unwrap_err().remove(0);
++                assert_eq!((error.code, error.stage), ("E0400", "parse"));
++                assert_eq!(error.message, "expression nesting limit exceeded");
++                assert_eq!(map.text(error.primary.unwrap()), wrapper);
++            }
++        }
++    }
++}
++
++#[test]
++fn unit3a_allocator_request_counter_overflow_precedes_reservation() {
++    let map = source("fn f()->(){[1];}");
++    let mut allocator = Allocator {
++        attempts: usize::MAX,
++        ..Allocator::default()
++    };
++    let error = parsed(&map, &mut allocator).unwrap_err().remove(0);
++    assert_eq!(
++        (error.code, error.stage, error.message.as_str()),
++        ("E0400", "parse", "array syntax count overflow")
++    );
++    assert_eq!(map.text(error.primary.unwrap()), "1");
++    assert!(allocator.trace.is_empty());
++    assert_eq!(allocator.attempts, usize::MAX);
++}
++
++#[test]
++fn unit3a_new_ast_edges_spans_and_descriptors_fail_closed_when_corrupted() {
++    let map = source("fn f()->[i32;1]{let a=[1];a[0]=1;return a;}");
++    let valid = |p: &Program| p.validate_spans_and_ids(|span| map.try_text(span).is_some());
++    let mut p = candidate(&map);
++    p.functions[0].result.kind = TypeSyntaxKind::Array(FixedArraySyntax {
++        element: ScalarTypeSyntax::I32,
++        length: 1025,
++    });
++    assert!(!valid(&p));
++    let mut p = candidate(&map);
++    let n = p.expressions.len();
++    let ExprKind::ArrayLiteral { elements } = &mut p.expressions[1].kind else {
++        unreachable!()
++    };
++    elements[0] = ExprId(n);
++    assert!(!valid(&p));
++    let mut p = candidate(&map);
++    let StmtKind::IndexAssign { target, .. } = &mut p.functions[0].blocks[0].body[1].kind else {
++        unreachable!()
++    };
++    *target = ExprId(0); // scalar expression exists but is not a direct IndexRead
++    assert!(!valid(&p));
++    let mut p = candidate(&map);
++    let ExprKind::IndexRead { base, .. } = &mut p.expressions[3].kind else {
++        unreachable!()
++    };
++    base.file = SourceFileId(1);
++    assert!(!valid(&p));
++}
++
++#[test]
++fn unit3a_public_token_tape_and_rejections_stay_closed() {
++    for text in [
++        "fn f(a:[i32;1])->(){}",
++        "fn f()->(){[1];}",
++        "fn f()->(){a[0];}",
++        "fn f()->(){a.len();}",
++    ] {
++        let map = source(text);
++        let file = map.get(SourceFileId(0));
++        let tape = lexer::lex(file).unwrap();
++        assert_eq!(
++            tape.iter()
++                .map(|t| file.text_at(t.span))
++                .collect::<String>(),
++            text
++        );
++        for token in &tape {
++            if matches!(file.text_at(token.span), "[" | "]") {
++                assert_eq!(token.kind, Kind::Unsupported);
++            }
++        }
++        for mode in [
++            SourceMode::ScalarOnly,
++            SourceMode::OwnedCandidate,
++            SourceMode::ModuleCandidate,
++            SourceMode::ProjectCandidate,
++        ] {
++            assert!(parse_with_mode(file, lexer::lex(file).unwrap(), mode).is_err());
++        }
++    }
++}
++
++#[test]
++fn unit3a_nonstarter_diagnostic_is_bounded_without_changing_public_formatting() {
++    use crate::frontend::owned_diagnostic::{measure_formatting, MAX_MESSAGE_BYTES};
++    let token = format!("\"{}\"", "雪".repeat(21_000));
++    let map = source(&format!("fn f()->(){{[1,{token}];}}"));
++    let mut allocator = Allocator::default();
++    let (result, metrics) = measure_formatting(|| parsed(&map, &mut allocator));
++    let error = result.unwrap_err().remove(0);
++    assert_eq!((error.code, error.stage), ("E0101", "parse"));
++    assert_eq!(map.text(error.primary.unwrap()), token);
++    assert!(error
++        .message
++        .starts_with("unsupported typed-preview construct `\"雪"));
++    assert!(error.message.ends_with("..."));
++    assert!(error.message.len() <= MAX_MESSAGE_BYTES);
++    assert_eq!(metrics.allocations, 1);
++    assert!(metrics.copied_bytes <= MAX_MESSAGE_BYTES);
++    assert_eq!(allocator.trace.len(), 1); // no entry reserved for the nonstarter
++
++    let map = source(&format!("fn f()->(){{{token};}}"));
++    let file = map.get(SourceFileId(0));
++    let error = parse_with_mode(file, lexer::lex(file).unwrap(), SourceMode::OwnedCandidate)
++        .unwrap_err()
++        .remove(0);
++    assert_eq!(
++        error.message,
++        format!("unsupported typed-preview construct `{token}`")
++    );
++}
+--- /dev/null
++++ b/src/frontend/parser/arrays.rs
+@@ -0,0 +1,165 @@
++//! Dormant array grammar over the original lossless token tape.
++use super::*;
++use crate::frontend::source::Span;
++
++impl Parser<'_> {
++    pub(super) fn arrays_enabled(&self) -> bool {
++        self.mode.owned() && self.arrays.enabled()
++    }
++
++    pub(super) fn array_punctuation(&self, spelling: &str) -> bool {
++        self.peek().kind == Kind::Unsupported && self.source.text_at(self.peek().span) == spelling
++    }
++
++    pub(super) fn array_unsupported(&self, span: Span) -> Box<Diagnostic> {
++        self.diagnostic(
++            "E0101",
++            "parse",
++            format_args!(
++                "unsupported typed-preview construct `{}`",
++                self.source.text_at(span)
++            ),
++            Some(span),
++        )
++    }
++
++    pub(super) fn array_missing(&self, message: &'static str) -> Box<Diagnostic> {
++        self.diagnostic("E0100", "parse", message, Some(self.peek().span))
++    }
++
++    fn array_reserve_error(&self, error: ReserveFailure, at: Span) -> Box<Diagnostic> {
++        self.diagnostic(
++            "E0400",
++            "parse",
++            match error {
++                ReserveFailure::Overflow => "array syntax count overflow",
++                ReserveFailure::Allocation => "array syntax allocation failed",
++            },
++            Some(at),
++        )
++    }
++
++    pub(super) fn array_close(&mut self, message: &'static str) -> Result<usize, Box<Diagnostic>> {
++        if self.array_punctuation("]") {
++            Ok(self.bump().span.end)
++        } else {
++            Err(self.array_missing(message))
++        }
++    }
++
++    pub(super) fn array_type(&mut self) -> Result<(FixedArraySyntax, usize), Box<Diagnostic>> {
++        self.bump(); // The caller checked the opening bracket.
++        let token = self.peek();
++        let element = match token.kind {
++            Kind::Ident if self.source.text_at(token.span) == "bool" => {
++                self.bump();
++                ScalarTypeSyntax::Bool
++            }
++            Kind::Ident if self.source.text_at(token.span) == "i32" => {
++                self.bump();
++                ScalarTypeSyntax::I32
++            }
++            Kind::LParen if self.next_kind() == Kind::RParen => {
++                self.bump();
++                self.bump();
++                ScalarTypeSyntax::Unit
++            }
++            _ => return Err(self.array_unsupported(token.span)),
++        };
++        if self.take(Kind::Semi).is_none() {
++            return Err(self.array_missing("array type requires `;` after its element type"));
++        }
++        let length_token = self.peek();
++        let spelling = self.source.text_at(length_token.span);
++        if length_token.kind != Kind::Number || !spelling.bytes().all(|byte| byte.is_ascii_digit())
++        {
++            return Err(self.array_unsupported(length_token.span));
++        }
++        // Spellings, including all-zero 65,536-byte tokens, never overflow.
++        // Validate spelling first so suffixes remain excluded grammar.
++        let mut length = 0usize;
++        for byte in spelling.bytes() {
++            length = length
++                .checked_mul(10)
++                .and_then(|n| n.checked_add(usize::from(byte - b'0')))
++                .filter(|&n| n <= MAX_ARRAY_ELEMENTS)
++                .ok_or_else(|| {
++                    self.diagnostic(
++                        "E0400",
++                        "parse",
++                        "array length limit exceeded (1024)",
++                        Some(length_token.span),
++                    )
++                })?;
++        }
++        self.bump();
++        if matches!(self.peek().kind, Kind::Plus | Kind::Minus | Kind::Star) {
++            return Err(self.array_unsupported(self.peek().span));
++        }
++        let end = self.array_close("array type requires `]`")?;
++        Ok((
++            FixedArraySyntax {
++                element,
++                length: length as u16,
++            },
++            end,
++        ))
++    }
++
++    pub(super) fn array_literal(
++        &mut self,
++        depth: usize,
++    ) -> Result<(Vec<ExprId>, usize), Box<Diagnostic>> {
++        self.bump();
++        let mut elements = Vec::new();
++        while !self.array_punctuation("]") {
++            // A missing close/nonstarter is not an actual excess element.
++            // Use the same primary dispatch and prefix grammar as expressions.
++            if !self.expression_starter() {
++                return Err(if self.unsupported_token() {
++                    self.array_unsupported(self.peek().span)
++                } else {
++                    self.array_missing("expected a bool, i32 or unit expression")
++                });
++            }
++            let at = self.peek().span;
++            let next = elements
++                .len()
++                .checked_add(1)
++                .ok_or_else(|| self.array_reserve_error(ReserveFailure::Overflow, at))?;
++            if next > MAX_ARRAY_ELEMENTS {
++                return Err(self.diagnostic(
++                    "E0400",
++                    "parse",
++                    "array element limit exceeded (1024)",
++                    Some(at),
++                ));
++            }
++            // Preflight count/bytes and reserve before parsing the child.
++            self.allocator
++                .vector(&mut elements, 1, "array literal elements")
++                .map_err(|error| self.array_reserve_error(error, at))?;
++            elements.push(self.expression(depth + 1, LiteralContext::Allowed)?);
++            if self.array_punctuation("]") {
++                break;
++            }
++            if self.peek().kind == Kind::Semi {
++                return Err(self.array_unsupported(self.peek().span));
++            }
++            if self.take(Kind::Comma).is_none() {
++                return Err(self.array_missing("array literal requires `,` or `]`"));
++            }
++        }
++        Ok((elements, self.array_close("array literal requires `]`")?))
++    }
++
++    pub(super) fn array_length_close(&mut self) -> Result<usize, Box<Diagnostic>> {
++        if let Some(close) = self.take(Kind::RParen) {
++            return Ok(close.span.end);
++        }
++        if self.expression_starter() {
++            return Err(self.array_unsupported(self.peek().span));
++        }
++        Err(self.array_missing("call requires `)`"))
++    }
++}
+--- a/src/frontend/parser/project_tests.rs
++++ b/src/frontend/parser/project_tests.rs
+@@ -548,6 +548,7 @@
+         source: file,
+         allocator: &mut allocator,
+         mode: SourceMode::ProjectCandidate,
++        arrays: ArraySyntaxPolicy::Closed,
+         project_recovery: false,
+         tokens: super::super::lexer::lex(file).unwrap(),
+         cursor: 0,
+--- a/src/frontend/project.rs
++++ b/src/frontend/project.rs
+@@ -3,6 +3,9 @@
+ //! Public typed dispatch and historical adapters share one source-discovery owner.
+ #![allow(dead_code)] // Historical qualification adapters retain their private API.
+ 
++#[cfg(test)]
++#[path = "project/array_syntax_tests.rs"]
++mod array_syntax_tests;
+ pub(super) mod budget;
+ mod filesystem;
+ #[cfg(test)]
+@@ -173,11 +176,41 @@
+         mode: parser::SourceMode,
+         allocator: &mut Allocator,
+     ) -> Result<Self, LoadFailure> {
++        Self::load_with_arrays(
++            entry,
++            limits,
++            mode,
++            allocator,
++            parser::ArraySyntaxPolicy::Closed,
++        )
++    }
++    #[cfg(test)]
++    pub(super) fn load_array_candidate(
++        entry: &str,
++        limits: ProjectLimits,
++        allocator: &mut Allocator,
++    ) -> Result<Self, LoadFailure> {
++        Self::load_with_arrays(
++            entry,
++            limits,
++            parser::SourceMode::ProjectCandidate,
++            allocator,
++            parser::ArraySyntaxPolicy::Candidate,
++        )
++    }
++    fn load_with_arrays(
++        entry: &str,
++        limits: ProjectLimits,
++        mode: parser::SourceMode,
++        allocator: &mut Allocator,
++        arrays: parser::ArraySyntaxPolicy,
++    ) -> Result<Self, LoadFailure> {
+         let mut builder = SourceSetBuilder {
+             entry,
+             limits,
+             allocator,
+             mode,
++            arrays,
+             project: Self {
+                 sources: SourceMap::new(),
+                 programs: Vec::new(),
+@@ -375,6 +408,9 @@
+                     ast::ExprKind::StructLiteral { fields, .. } => {
+                         fields.len().checked_mul(size_of::<ast::FieldInit>())?
+                     }
++                    ast::ExprKind::ArrayLiteral { elements } => {
++                        elements.len().checked_mul(size_of::<ast::ExprId>())?
++                    }
+                     _ => 0,
+                 })?;
+             }
+@@ -452,6 +488,7 @@
+     limits: ProjectLimits,
+     allocator: &'a mut Allocator,
+     mode: parser::SourceMode,
++    arrays: parser::ArraySyntaxPolicy,
+     project: ProjectSources,
+ }
+ #[derive(Clone, Copy)]
+@@ -698,8 +735,20 @@
+             .min(parser::MAX_NODES)
+             .checked_sub(self.project.usage.syntax_nodes)
+             .ok_or_else(|| one(overflow(origin)))?;
+-        let (program, nodes) =
+-            parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?;
++        let (program, nodes) = match self.arrays {
++            parser::ArraySyntaxPolicy::Closed => {
++                parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?
++            }
++            #[cfg(test)]
++            parser::ArraySyntaxPolicy::Candidate => parser::parse_counted_with_arrays(
++                source,
++                tokens,
++                self.mode,
++                remaining_nodes,
++                self.allocator,
++                self.arrays,
++            )?,
++        };
+         self.project.usage.syntax_nodes =
+             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
+         if program.uses_project_syntax() {
+--- /dev/null
++++ b/src/frontend/project/array_syntax_tests.rs
+@@ -0,0 +1,216 @@
++//! Candidate arrays use the production source owner and cumulative loader limits.
++use super::*;
++use crate::frontend::declaration_index::{SourceOwner, WorkMeter};
++use std::sync::atomic::{AtomicUsize, Ordering};
++
++static SERIAL: AtomicUsize = AtomicUsize::new(0);
++struct Fixture(PathBuf);
++impl Fixture {
++    fn new() -> Self {
++        let path = std::env::temp_dir().join(format!(
++            "oxid-unit3a-{}-{}",
++            std::process::id(),
++            SERIAL.fetch_add(1, Ordering::Relaxed)
++        ));
++        std::fs::create_dir(&path).unwrap();
++        Self(path)
++    }
++    fn write(&self, path: &str, text: &str) {
++        std::fs::write(self.0.join(path), text).unwrap();
++    }
++    #[allow(clippy::result_large_err)]
++    fn load(&self, limits: ProjectLimits) -> Result<ProjectSources, LoadFailure> {
++        ProjectSources::load_array_candidate(
++            self.0.join("main.ox").to_str().unwrap(),
++            limits,
++            &mut Allocator::default(),
++        )
++    }
++}
++impl Drop for Fixture {
++    fn drop(&mut self) {
++        std::fs::remove_dir_all(&self.0).unwrap();
++    }
++}
++
++#[test]
++fn unit3a_actual_literal_elements_are_inventoried_with_target_wrappers() {
++    let f = Fixture::new();
++    f.write("main.ox", "fn f()->(){[1,2];a[0]=1;}");
++    let p = f.load(ProjectLimits::default()).unwrap();
++    let a = p.try_file_ast(SourceFileId(0)).unwrap();
++    assert_eq!(a.expressions.len(), 6);
++    assert_eq!(p.usage().syntax_nodes, 9);
++    let expected = size_of::<ast::Function>()
++        + size_of::<ast::BodyBlock>()
++        + size_of::<ast::ItemId>()
++        + 2 * size_of::<ast::Stmt>()
++        + 6 * size_of::<ast::Expr>()
++        + 2 * size_of::<ast::ExprId>();
++    assert_eq!(p.inventory().unwrap().ast_payload, expected);
++    assert!(expected <= 288 * p.usage().syntax_nodes);
++    assert!(p.uses_owned_syntax());
++    assert!(SourceOwner::project(&p)
++        .owned(&WorkMeter::default())
++        .unwrap());
++}
++
++#[test]
++fn unit3a_both_selectors_cover_every_form_and_ignore_comment_text() {
++    for text in [
++        "fn unused(a:[bool;0])->(){}",
++        "fn unused(a:&mut [i32;1])->(){}",
++        "fn unused()->[();0]{}",
++        "fn unused()->(){let a:[i32;1]=0;}",
++        "fn unused()->(){[];}",
++        "fn unused()->(){a[0];}",
++        "fn unused()->(){a.len();}",
++        "fn unused()->(){a[0]=1;}",
++    ] {
++        let f = Fixture::new();
++        f.write("main.ox", text);
++        let p = f.load(ProjectLimits::default()).unwrap();
++        assert!(p.uses_owned_syntax(), "{text}");
++        let meter = WorkMeter::default();
++        assert!(SourceOwner::project(&p).owned(&meter).unwrap(), "{text}");
++        assert!(meter.used() > 0);
++        for program in &p.programs {
++            assert!(program.validate_spans_and_ids(|span| p.try_text(span).is_some()));
++        }
++    }
++    let f = Fixture::new();
++    f.write(
++        "main.ox",
++        "// [1] a[0]=1; a.len();\nfn main()->i32{return 0;}",
++    );
++    let p = f.load(ProjectLimits::default()).unwrap();
++    assert!(!p.uses_owned_syntax());
++    assert!(!SourceOwner::project(&p)
++        .owned(&WorkMeter::default())
++        .unwrap());
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn unit3a_child_only_syntax_keeps_cumulative_source_token_node_admission() {
++    let f = Fixture::new();
++    f.write("main.ox", "mod child; fn main()->i32{return 0;}");
++    f.write("child.ox", "fn unused(a:[i32;1024])->(){}");
++    let p = f.load(ProjectLimits::default()).unwrap();
++    assert_eq!(p.usage().modules, 2);
++    assert!(p.uses_owned_syntax());
++    assert!(SourceOwner::project(&p)
++        .owned(&WorkMeter::default())
++        .unwrap());
++    let usage = p.usage();
++    for limits in [
++        ProjectLimits {
++            source_bytes: usage.source_bytes,
++            ..ProjectLimits::default()
++        },
++        ProjectLimits {
++            tokens: usage.non_eof_tokens,
++            ..ProjectLimits::default()
++        },
++        ProjectLimits {
++            nodes: usage.syntax_nodes,
++            ..ProjectLimits::default()
++        },
++    ] {
++        assert!(f.load(limits).is_ok());
++    }
++    for limits in [
++        ProjectLimits {
++            source_bytes: usage.source_bytes - 1,
++            ..ProjectLimits::default()
++        },
++        ProjectLimits {
++            tokens: usage.non_eof_tokens - 1,
++            ..ProjectLimits::default()
++        },
++        ProjectLimits {
++            nodes: usage.syntax_nodes - 1,
++            ..ProjectLimits::default()
++        },
++    ] {
++        let failure = f.load(limits).unwrap_err();
++        assert_eq!(failure.diagnostics[0].code, "E0400");
++    }
++    assert!(ProjectSources::load_typed(
++        f.0.join("main.ox").to_str().unwrap(),
++        ProjectLimits::default()
++    )
++    .is_err());
++}
++
++#[test]
++fn unit3a_remeasure_enclosing_rows_and_disjoint_ast_envelope() {
++    macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
++    sizes!(
++        ast::Program,
++        ast::Function,
++        ast::Param,
++        ast::TypeSyntax,
++        ast::TypeSyntaxKind,
++        ast::FixedArraySyntax,
++        ast::ScalarTypeSyntax,
++        Option<ast::TypeSyntax>,
++        ast::Expr,
++        ast::ExprKind,
++        ast::ExprId,
++        Vec<ast::ExprId>,
++        Option<ast::Expr>,
++        ast::Stmt,
++        ast::StmtKind,
++        ast::Argument,
++        ast::BodyBlock,
++        ProjectSources,
++        SourceSetBuilder<'_>
++    );
++    #[cfg(target_pointer_width = "64")]
++    {
++        assert_eq!(
++            (
++                size_of::<ast::Expr>(),
++                size_of::<ast::Stmt>(),
++                size_of::<ast::TypeSyntax>()
++            ),
++            (88, 136, 64)
++        );
++        assert_eq!(
++            (
++                size_of::<ast::Param>(),
++                size_of::<ast::Function>(),
++                size_of::<ast::Program>()
++            ),
++            (88, 200, 248)
++        );
++        assert_eq!(
++            size_of::<ast::Function>() + size_of::<ast::BodyBlock>() + size_of::<ast::ItemId>(),
++            288
++        );
++    }
++    for text in [
++        "fn f()->(){}".repeat(100),
++        format!("fn f()->(){{[{}];}}", "0,".repeat(1024)),
++        "fn f()->(){a[0]=[1,2];if true {[1];} else {[];}}".into(),
++        "fn f(a:[bool;0],b:&mut [();1024])->[i32;1]{}".into(),
++        "fn f()->(){[g(1),g(2),a[0],a.len()];}".into(),
++    ] {
++        let f = Fixture::new();
++        f.write("main.ox", &text);
++        let p = f.load(ProjectLimits::default()).unwrap();
++        assert!(p.inventory().unwrap().ast_payload <= 288 * p.usage().syntax_nodes);
++        let mut visits = 0;
++        assert!(p.programs[0].validate_spans_and_ids_counted(|span| {
++            visits += 1;
++            span.is_none_or(|at| p.try_text(at).is_some())
++        }));
++        assert!(visits <= 11 * p.usage().syntax_nodes + 2 * p.usage().non_eof_tokens + 4);
++        println!(
++            "resource nodes={} ast_bytes={} validation_visits={visits}",
++            p.usage().syntax_nodes,
++            p.inventory().unwrap().ast_payload
++        );
++    }
++}

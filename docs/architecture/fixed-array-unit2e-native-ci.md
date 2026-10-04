@@ -72,6 +72,14 @@ boundaries. The independent source clone's external Cargo discovery locations
 receive the same metadata-only checks. Builds use locked offline dependencies,
 two jobs and no incremental compilation.
 
+Independent replay Git reads share one canonical checkout scope for preparation
+and original-input checks. Each command resets inherited `safe.directory` entries
+and admits only that exact checkout with command-local `-c` options. Git routing
+and configuration environment overrides are removed for these reads, and ambient
+system/global Git configuration is disabled. No trust entry is persisted, and no
+ownership or permission is changed. Hosted and downloaded readers bind the
+original preparation argv to this scope and the reviewed replay helper hash.
+
 Each child starts a controller-owned process group. On every exit path the
 controller checks and stops all members remaining in that group, reaps adopted
 members of that group, and only then seals stream hashes. Surviving members after
@@ -176,6 +184,14 @@ Both archives have SHA-256 sidecars and separate always-run uploads. The quality
 job separately retains the new source observer-control JSON/stdout/stderr bodies
 through three exact additive globs and its own relocated-capsule audit helper.
 Forced runner termination can prevent an upload; no receipt claims otherwise.
+
+The preservation step emits its actual container upload root through
+`GITHUB_OUTPUT` before invoking packaging. Both upload lists use that scalar
+output for every member, including sidecars. This avoids the runner's
+[whole-value leading-prefix translation](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Worker/Container/ContainerInfo.cs#L152-L181),
+which otherwise translates only the first host path in a multiline action input.
+An incomplete package remains nonzero and incomplete while its available
+archives, index and sidecars are retained through the same paths.
 
 `fixed-array-unit2e-index.json` remains the convenience summary. Producer-only
 packaging always sets `complete_unit2e_qualification: false`. Combined completion
