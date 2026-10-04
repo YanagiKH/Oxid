@@ -20,6 +20,9 @@ use std::{
 mod rows;
 use rows::{Json, Optional, SpanRow};
 
+#[path = "array_pipeline_tests.rs"]
+mod tests;
+
 const MAX_ROWS: usize = 200_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_AUXILIARY: usize = 16 * 1024 * 1024;
@@ -53,6 +56,13 @@ impl Control {
     }
     fn resource_only(self) -> bool {
         self == Self::ExpandedBoundaryFirstOperandFailure
+    }
+    fn ordinal(self) -> Option<usize> {
+        match self {
+            Self::FailLiteralOperand { ordinal } => Some(ordinal),
+            Self::ExpandedBoundaryFirstOperandFailure => Some(0),
+            _ => None,
+        }
     }
 }
 #[derive(Clone, Copy)]
@@ -198,6 +208,24 @@ impl Write for Counter {
         Ok(())
     }
 }
+/// Enforce the already admitted row extent on every actual write. The second
+/// counter also detects equal-byte renderings with a different JSON unit count.
+struct BoundedWrite<'a> {
+    text: &'a mut String,
+    end: usize,
+    count: Counter,
+}
+impl Write for BoundedWrite<'_> {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        let next = self.text.len().checked_add(text.len()).ok_or(fmt::Error)?;
+        if next > self.end || next > self.text.capacity() {
+            return Err(fmt::Error);
+        }
+        self.count.write_str(text)?;
+        self.text.push_str(text);
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum LowerPass {
@@ -280,14 +308,8 @@ impl Output {
         fields: fmt::Arguments<'_>,
     ) -> ObservationResult<()> {
         let mut count = Counter::default();
-        write!(
-            &mut count,
-            "[1,{},{},{}]\n",
-            self.rows,
-            Json(family),
-            fields
-        )
-        .map_err(|_| "row counting overflow")?;
+        writeln!(&mut count, "[1,{},{},{}]", self.rows, Json(family), fields)
+            .map_err(|_| "row counting overflow")?;
         let bytes = self
             .text
             .len()
@@ -304,15 +326,17 @@ impl Output {
         if bytes > self.text.capacity() {
             return Err("unadmitted transcript growth");
         }
-        write!(
-            &mut self.text,
-            "[1,{},{},{}]\n",
-            self.rows,
-            Json(family),
-            fields
-        )
-        .map_err(|_| "row formatting failed")?;
-        if self.text.len() != bytes {
+        let mut writer = BoundedWrite {
+            text: &mut self.text,
+            end: bytes,
+            count: Counter::default(),
+        };
+        writeln!(&mut writer, "[1,{},{},{}]", self.rows, Json(family), fields)
+            .map_err(|_| "row formatting failed")?;
+        if writer.count.bytes != count.bytes
+            || writer.count.units != count.units
+            || writer.text.len() != bytes
+        {
             return Err("row count/render mismatch");
         }
         self.rows = rows;
@@ -529,6 +553,17 @@ pub(super) fn observe(
         Err(error) => Receipt::incomplete(error),
     }
 }
+fn admit_bytes_input(
+    path_bytes: usize,
+    source_bytes: usize,
+    limits: ProjectLimits,
+) -> ObservationResult<()> {
+    if limits.modules < 1 || source_bytes > limits.source_bytes || path_bytes > limits.path_bytes {
+        Err("single-source input limit exceeded")
+    } else {
+        Ok(())
+    }
+}
 fn observe_inner(
     input: SourceInput<'_>,
     mode: Mode,
@@ -537,7 +572,10 @@ fn observe_inner(
 ) -> ObservationResult<(Output, Outcome)> {
     let mut out = Output::new(limits, control)?;
     let Mode::Validate = mode;
-    out.aux(size_of::<Output>() + size_of::<Allocator>())?;
+    // Include the fixed TLS wrapper while empty as well as the outside-capture
+    // Output. During capture the wrapper contains that Output, not a second
+    // transcript; this fixed allowance safely covers both lifetime phases.
+    out.aux(size_of::<Output>() + size_of::<Allocator>() + size_of::<RefCell<Option<Output>>>())?;
     out.aux(
         limits
             .trace_rows
@@ -557,10 +595,15 @@ fn observe_inner(
     out.row(
         "header",
         format_args!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             Json("oxid-array-source-lowering-v1"),
             Json("validate"),
             Json(control.name()),
+            Optional(control.ordinal()),
+            Json(match input {
+                SourceInput::Bytes { .. } => "bytes",
+                SourceInput::Root { .. } => "root",
+            }),
             Json("ObserveArrayPipeline"),
             limits.units,
             limits.bytes,
@@ -575,6 +618,32 @@ fn observe_inner(
             limits.diagnostic_work
         ),
     )?;
+    let s = limits.source;
+    out.row(
+        "source-limits",
+        format_args!(
+            "{},{},{},{},{},{},{},{},{},{},{}",
+            s.source_bytes,
+            s.tokens,
+            s.nodes,
+            s.modules,
+            s.depth,
+            s.component_bytes,
+            s.relative_bytes,
+            s.path_bytes,
+            s.probes,
+            s.directory_entries,
+            s.directory_name_units
+        ),
+    )?;
+    let v = limits.verification;
+    out.row(
+        "verification-limits",
+        format_args!(
+            "{},{},{},{},{}",
+            v.owners, v.events, v.work, v.scratch, v.metadata
+        ),
+    )?;
     out.phase("load-parse", "attempted")?;
     match input {
         SourceInput::Root { path } => {
@@ -585,11 +654,19 @@ fn observe_inner(
             ) {
                 Ok(project) => project,
                 Err(mut failure) => {
+                    // load_array_candidate moved its Allocator into LoadFailure;
+                    // the original now-empty local remains alive as well.
+                    out.aux(size_of::<crate::frontend::project::LoadFailure>())?;
                     out.phase("load-parse", "failed")?;
                     rows::sources(&mut out, &failure.sources)?;
                     rows::trace(&mut out, &failure.allocator)?;
                     release_trace(&mut out, &mut failure.allocator)?;
-                    rows::diagnostics(&mut out, &failure.sources, &failure.diagnostics)?;
+                    rows::diagnostics(
+                        &mut out,
+                        &failure.sources,
+                        &failure.diagnostics,
+                        failure.diagnostics.capacity(),
+                    )?;
                     return Ok((out, Outcome::Diagnostic));
                 }
             };
@@ -600,9 +677,7 @@ fn observe_inner(
             checked_owner(owner, project.sources(), &mut allocator, out)
         }
         SourceInput::Bytes { path, text } => {
-            if text.len() > limits.source.source_bytes || path.len() > limits.source.path_bytes {
-                return Err("single-source input limit exceeded");
-            }
+            admit_bytes_input(path.len(), text.len(), limits.source)?;
             let mut source_text = String::new();
             allocator
                 .string(&mut source_text, text.len(), "observer original source")
@@ -639,7 +714,7 @@ fn observe_inner(
                     out.phase("load-parse", "failed")?;
                     rows::trace(&mut out, &allocator)?;
                     release_trace(&mut out, &mut allocator)?;
-                    rows::diagnostics(&mut out, &sources, &errors)?;
+                    rows::diagnostics(&mut out, &sources, &errors, errors.capacity())?;
                     return Ok((out, Outcome::Diagnostic));
                 }
             };
@@ -678,7 +753,7 @@ fn checked_owner(
             out.phase("select", "failed")?;
             rows::trace(&mut out, allocator)?;
             release_trace(&mut out, allocator)?;
-            rows::diagnostics(&mut out, sources, &[*error])?;
+            rows::diagnostics(&mut out, sources, &[*error], 1)?;
             return Ok((out, Outcome::Diagnostic));
         }
     };
@@ -704,7 +779,7 @@ fn checked_owner(
             out.phase("resolve-index", "failed")?;
             rows::trace(&mut out, allocator)?;
             release_trace(&mut out, allocator)?;
-            rows::diagnostics(&mut out, sources, &errors)?;
+            rows::diagnostics(&mut out, sources, &errors, errors.capacity())?;
             return Ok((out, Outcome::Diagnostic));
         }
     };
@@ -717,7 +792,7 @@ fn checked_owner(
             out.phase("type", "failed")?;
             rows::trace(&mut out, allocator)?;
             release_trace(&mut out, allocator)?;
-            rows::diagnostics(&mut out, sources, &errors)?;
+            rows::diagnostics(&mut out, sources, &errors, errors.capacity())?;
             return Ok((out, Outcome::Diagnostic));
         }
     };
@@ -745,7 +820,7 @@ fn checked_owner(
         Err(error) => {
             drop(typed);
             out.phase("lower", "failed")?;
-            rows::diagnostics(&mut out, sources, &[*diagnostic::lower(&error, sources)])?;
+            rows::diagnostics(&mut out, sources, &[*diagnostic::lower(&error, sources)], 1)?;
             let outcome = if out.control.resource_only() {
                 Outcome::ResourceControl
             } else {
@@ -784,7 +859,7 @@ fn checked_owner(
         }
         Err(error) => {
             out.phase("associate", "failed")?;
-            rows::diagnostics(&mut out, sources, &[*error])?;
+            rows::diagnostics(&mut out, sources, &[*error], 1)?;
             return Ok((out, Outcome::Diagnostic));
         }
     }
@@ -797,7 +872,12 @@ fn checked_owner(
         }
         Err(error) => {
             out.phase("validate", "failed")?;
-            rows::diagnostics(&mut out, sources, &[*diagnostic::verify(&error, sources)])?;
+            rows::diagnostics(
+                &mut out,
+                sources,
+                &[*diagnostic::verify(&error, sources)],
+                1,
+            )?;
             Ok((out, Outcome::Diagnostic))
         }
     }

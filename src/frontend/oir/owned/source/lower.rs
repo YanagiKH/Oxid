@@ -1738,12 +1738,14 @@ pub(super) fn lower_with_limits(
         )?;
         let result = walk.body();
         #[cfg(test)]
-        super::array_pipeline::counted(
-            super::array_pipeline::LowerPass::Emit,
-            view.hir().id.0,
-            walk.counts,
-            result.is_ok(),
-        );
+        if result.is_err() {
+            super::array_pipeline::counted(
+                super::array_pipeline::LowerPass::Emit,
+                view.hir().id.0,
+                walk.counts,
+                false,
+            );
+        }
         result?;
         require(walk.counts == count, view.signature().span)?;
         let output = walk
@@ -1762,6 +1764,13 @@ pub(super) fn lower_with_limits(
                 && f.blocks.len() == count.blocks,
             view.signature().span,
         )?;
+        #[cfg(test)]
+        super::array_pipeline::counted(
+            super::array_pipeline::LowerPass::Emit,
+            view.hir().id.0,
+            walk.counts,
+            true,
+        );
         bytes = budget::add(bytes, budget::function_bytes(count)?)?;
         budget::append(
             &mut functions,

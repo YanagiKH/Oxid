@@ -1272,25 +1272,60 @@ impl fmt::Display for DiagnosticHuman<'_> {
         f.write_char('"')
     }
 }
-fn diagnostic_work(d: &Diagnostic, sources: &SourceMap) -> ObservationResult<usize> {
-    let mut work = d
-        .code
-        .len()
-        .checked_add(d.stage.len())
-        .and_then(|n| n.checked_add(d.message.len()))
-        .ok_or("diagnostic text overflow")?;
-    for (span, text) in &d.secondary {
-        add(&mut work, text.len())?;
-        if !sources.is_valid_span(*span) {
-            return Err("invalid diagnostic span");
+fn json_character_width(ch: char) -> usize {
+    match ch {
+        '"' | '\\' | '\u{8}' | '\t' | '\n' | '\u{c}' | '\r' => 2,
+        '\u{0}'..='\u{1f}' => 6,
+        _ => ch.len_utf8(),
+    }
+}
+/// Conservative byte-visit accounting, including this preflight itself, both
+/// count/render passes, and the actual sink's independent scan/copy. Human
+/// escape_default expansion and its subsequent JSON escaping are distinct.
+fn diagnostic_text_work(text: &str) -> ObservationResult<usize> {
+    let mut json = 2usize;
+    let mut human = 0usize;
+    let mut human_json = 0usize;
+    for ch in text.chars() {
+        add(&mut json, json_character_width(ch))?;
+        if ch.is_control() {
+            for escaped in ch.escape_default() {
+                add(&mut human, escaped.len_utf8())?;
+                add(&mut human_json, json_character_width(escaped))?;
+            }
+        } else {
+            add(&mut human, ch.len_utf8())?;
+            add(&mut human_json, json_character_width(ch))?;
         }
     }
-    for note in &d.notes {
-        add(&mut work, note.len())?;
+    let mut work = text
+        .len()
+        .checked_mul(6)
+        .ok_or("diagnostic input work overflow")?;
+    for length in [json, human, human_json] {
+        add(
+            &mut work,
+            length
+                .checked_mul(4)
+                .ok_or("diagnostic escaping work overflow")?,
+        )?;
     }
-    // Every message/path appears in both JSON and human formatting, each with
-    // an independent counting and rendering pass. Escaping visits all bytes.
-    work = work.checked_mul(4).ok_or("diagnostic text work overflow")?;
+    Ok(work)
+}
+fn diagnostic_work(d: &Diagnostic, sources: &SourceMap) -> ObservationResult<usize> {
+    // Covers fixed JSON/human punctuation, field names and formatter headers.
+    // This is a work envelope, not a measurement of CPU instructions or time.
+    let mut work = 2048usize;
+    for text in [d.code, d.stage, d.message.as_str()] {
+        add(&mut work, diagnostic_text_work(text)?)?;
+    }
+    for (_, text) in &d.secondary {
+        add(&mut work, diagnostic_text_work(text)?)?;
+    }
+    for note in &d.notes {
+        add(&mut work, diagnostic_text_work(note)?)?;
+        add(&mut work, 256)?;
+    }
     for span in d
         .primary
         .iter()
@@ -1300,6 +1335,9 @@ fn diagnostic_work(d: &Diagnostic, sources: &SourceMap) -> ObservationResult<usi
         if !sources.is_valid_span(span) {
             return Err("invalid diagnostic span");
         }
+        let source = sources.get(span.file);
+        // Human start plus JSON start/end, on both formatting passes. Scanning
+        // from byte0 is conservative relative to location's actual line start.
         let prefix = span
             .start
             .checked_mul(2)
@@ -1307,15 +1345,17 @@ fn diagnostic_work(d: &Diagnostic, sources: &SourceMap) -> ObservationResult<usi
             .and_then(|n| n.checked_mul(2))
             .ok_or("diagnostic location work overflow")?;
         add(&mut work, prefix)?;
+        add(&mut work, diagnostic_text_work(source.path())?)?;
+        let comparisons = usize::BITS - source.line_count().max(1).leading_zeros();
         add(
             &mut work,
-            sources
-                .get(span.file)
-                .path()
-                .len()
-                .checked_mul(4)
-                .ok_or("diagnostic path work overflow")?,
+            (comparisons as usize)
+                .checked_mul(6)
+                .ok_or("diagnostic location search overflow")?,
         )?;
+        // Fixed location punctuation, all at-most20-digit usize values, span
+        // validation and the two count/render passes are bounded separately.
+        add(&mut work, 1024)?;
     }
     Ok(work)
 }
@@ -1347,9 +1387,12 @@ pub(super) fn diagnostics(
     out: &mut Output,
     sources: &SourceMap,
     errors: &[Diagnostic],
+    header_capacity: usize,
 ) -> ObservationResult<()> {
-    let mut payload = errors
-        .len()
+    if header_capacity < errors.len() {
+        return Err("diagnostic header capacity mismatch");
+    }
+    let mut payload = header_capacity
         .checked_mul(size_of::<Diagnostic>())
         .ok_or("diagnostic header overflow")?;
     for d in errors {
@@ -1375,4 +1418,29 @@ pub(super) fn diagnostics(
         .checked_sub(payload)
         .ok_or("diagnostic lifetime underflow")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod formatter_controls {
+    use super::*;
+    #[test]
+    fn unit3b2_observer_diagnostic_stream_matches_existing_renderers() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("a\"\\\n.ox".into(), "é\r\n🦀".into());
+        let span = sources.get(id).span(4, 8);
+        let mut diagnostic =
+            Diagnostic::new("E0311", "ownership", "control\u{7f}\u{85}\\\"", Some(span))
+                .secondary(sources.get(id).span(0, 2), "original\nlabel");
+        diagnostic.notes.push("note\twith\rcontrols".into());
+        assert_eq!(
+            format!("{}", DiagnosticJson(&diagnostic, &sources)),
+            diagnostic.render_json(&sources)
+        );
+        assert_eq!(
+            format!("{}", DiagnosticHuman(&diagnostic, &sources)),
+            crate::frontend::diagnostic::json_string(&diagnostic.render_human(&sources))
+        );
+        let work = diagnostic_work(&diagnostic, &sources).unwrap();
+        assert!(work > diagnostic.message.len() * 4);
+    }
 }
