@@ -102,6 +102,8 @@ The opt-in [ownership-foundations extension](spec/typed-preview.md#nominal-owned
 
 The experimental [typed project route](spec/typed-preview.md#bounded-typed-projects) adds declaration-only modules, direct imports and visibility. The [three-file Batch example](fixtures/typed-project-batch/README.md) keeps its record fields private and has a source-derived result of 816. Declared-child loading admits Linux; root-only project syntax has no discovery host gate. Exact current qualification is recorded in the [project ledger](docs/architecture/typed-project-unit4-validation.md).
 
+The experimental [typed formatter](spec/typed-preview.md#single-file-formatting) supports `oxid fmt --edition typed-preview input.ox` (complete source on stdout) and `--check` (exit 1 for drift). It preserves comments and existing line breaks while normalizing spacing and indentation, without loading modules or writing files. Default legacy formatting is unchanged.
+
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.
 
 ## Build from source

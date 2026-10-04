@@ -35,7 +35,13 @@ EXTRA = {
 RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
-CURRENT_SOURCE_SHA = '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8'
+CURRENT_SOURCE_SHA = '69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06'
+PREDECESSOR_SOURCE_SHA = '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8'
+FORMATTER_AUTHORITY_SHA = 'f060dd4e264a7261517f496176d9d3def438a1e151616e313972db0545f9b4d2'
+FORMATTER_PATCH_SHA = '8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4'
+FORMATTER_PATCH_BYTES = 75550
+FORMATTER_PATHS = ('src/frontend/driver.rs', 'src/frontend/format.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/format/resource_tests.rs', 'src/frontend/format_cli.rs', 'src/frontend/mod.rs', 'src/frontend/options.rs', 'src/frontend/source.rs')
+FORMATTER_ADDITIONS = ('src/frontend/format.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/format/resource_tests.rs', 'src/frontend/format_cli.rs')
 PATCH_SHA = '63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18'
 PATCH_BYTES = 605300
 PATCH_PREFIX_BYTES = 28881
@@ -194,7 +200,16 @@ def check_bytes(inputs, entries):
 
 def inverse_patch(inputs, patch):
     """Apply the pinned git patch backwards with exact offsets and byte context."""
-    require(digest(patch) == PATCH_SHA and len(patch) == PATCH_BYTES, "wrong transition patch")
+    return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
+
+
+def inverse_formatter_patch(inputs, patch):
+    """Remove only the pinned formatter delta before historical reconstruction."""
+    return apply_inverse_patch(inputs, patch, FORMATTER_PATCH_SHA, FORMATTER_PATCH_BYTES, FORMATTER_PATHS)
+
+
+def apply_inverse_patch(inputs, patch, expected_sha, expected_bytes, expected_paths):
+    require(digest(patch) == expected_sha and len(patch) == expected_bytes, "wrong transition patch")
     lines = patch.splitlines(keepends=True)
     at, touched = 0, []
     result = dict(inputs)
@@ -249,7 +264,7 @@ def inverse_patch(inputs, patch):
             del result[name]
         else:
             result[name] = b"".join(after)
-    require(tuple(touched) == PATCH_PATHS, "wrong transition scope")
+    require(tuple(touched) == expected_paths, "wrong transition scope")
     return result, touched
 
 
@@ -274,8 +289,19 @@ def preflight(repo, package=PACKAGE):
     package_bytes = check_entries(package, package_entries)
     require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA,
             "unapproved current source manifest")
+    require(digest(package_bytes["predecessor-source.json"]) == PREDECESSOR_SOURCE_SHA,
+            "unapproved predecessor source manifest")
+    require(digest(package_bytes["formatter-authority.json"]) == FORMATTER_AUTHORITY_SHA,
+            "stale formatter authority")
+    formatter = json.loads(package_bytes["formatter-authority.json"])
+    require(formatter["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and formatter["predecessor_source_sha256"] == PREDECESSOR_SOURCE_SHA
+            and formatter["transition_patch_sha256"] == FORMATTER_PATCH_SHA
+            and formatter["transition_patch_bytes"] == FORMATTER_PATCH_BYTES
+            and formatter["transition_touched_paths"] == list(FORMATTER_PATHS)
+            and formatter["added_source_paths"] == list(FORMATTER_ADDITIONS), "stale formatter transition authority")
     authority = json.loads(package_bytes["authority.json"])
-    require(authority["current_source_sha256"] == CURRENT_SOURCE_SHA, "stale current manifest authority")
+    require(authority["current_source_sha256"] == PREDECESSOR_SOURCE_SHA, "stale predecessor manifest authority")
     patch = package_bytes["source-transition.patch"]
     require(authority["transition_patch_sha256"] == PATCH_SHA
             and authority["transition_patch_bytes"] == PATCH_BYTES
@@ -294,19 +320,28 @@ def preflight(repo, package=PACKAGE):
     require(members(repo / U2) == sorted([x["path"] for x in historical["files"]] + ["package-inputs.json"]),
             "missing or extra historical Unit2 member")
     current = json.loads(package_bytes["current-source.json"])
+    predecessor = json.loads(package_bytes["predecessor-source.json"])
     selected = json.loads(references[U3 + "/manifests/selected-current.json"])
-    require(len(current["files"]) == 129 and len(selected["files"]) == 117, "wrong source count")
-    require(delta["reviewed_source_head"] == current["reviewed_source_head"]
-            and delta["source_only_tree"] == current["source_only_tree"], "stale source checkpoint provenance")
-    require({x["path"] for x in current["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
+    require(len(current["files"]) == 133 and len(predecessor["files"]) == 129
+            and len(selected["files"]) == 117, "wrong source count")
+    require(delta["reviewed_source_head"] == predecessor["reviewed_source_head"]
+            and delta["source_only_tree"] == predecessor["source_only_tree"], "stale source checkpoint provenance")
+    require(current["reviewed_source_head"] == formatter["reviewed_source_head"]
+            and current["source_only_tree"] == formatter["source_only_tree"]
+            and current["formatter_base_head"] == formatter["base_head"]
+            and current["predecessor_source_sha256"] == PREDECESSOR_SOURCE_SHA,
+            "stale formatter checkpoint provenance")
+    require({x["path"] for x in predecessor["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
+            "unexpected predecessor source membership")
+    require({x["path"] for x in current["files"]} == {x["path"] for x in predecessor["files"]} | set(FORMATTER_ADDITIONS),
             "unexpected current source membership")
-    require(digest(package_bytes["current-source.json"]) == authority["current_source_sha256"],
-            "stale current manifest")
     inputs = check_entries(repo, current["files"])
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
-    reconstructed, touched = inverse_patch(inputs, package_bytes["source-transition.patch"])
+    predecessor_inputs, formatter_touched = inverse_formatter_patch(inputs, package_bytes["formatter-transition.patch"])
+    check_bytes(predecessor_inputs, predecessor["files"])
+    reconstructed, touched = inverse_patch(predecessor_inputs, package_bytes["source-transition.patch"])
     archived_extra = authority["inverse_only_inputs"]
     for item in archived_extra:
         require(entry(item["path"], reconstructed.pop(item["path"])) == item,
@@ -325,12 +360,16 @@ def preflight(repo, package=PACKAGE):
                           for old, new in OBSERVER_SEAMS],
         "scope": "Four exact substitutions in an isolated current Unit2 copy: AggregateTy import, fail-closed record projection and four compiled adapter controls, Owned projection, Reference aggregate projection. Scalar/record JSON and frozen expectations remain unchanged; FixedArray projection panics.",
     }, "stale Unit2 observer adapter authority")
+    require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
+            "changed predecessor authority")
     return {"current": current, "selected": selected, "historical": historical,
             "inputs": inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": adapted_resource,
             "observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
-            "touched": touched, "authority": authority}
+            "touched": touched, "authority": authority,
+            "predecessor_inputs": predecessor_inputs, "formatter_touched": formatter_touched,
+            "formatter_authority": formatter}
 
 
 def materialize(root, inputs):
@@ -356,7 +395,10 @@ def prepare_archived(output, captured):
             "archived_root": str(output / "archived-selected"),
             "archived_files": captured["selected"]["files"],
             "archived_manifest_sha256": digest(captured["references"][U3 + "/manifests/selected-current.json"]),
-            "inverse_patch_sha256": PATCH_SHA, "inverse_touched": captured["touched"]}
+            "inverse_patch_sha256": PATCH_SHA, "inverse_touched": captured["touched"],
+            "formatter_inverse_patch_sha256": FORMATTER_PATCH_SHA,
+            "formatter_inverse_touched": captured["formatter_touched"],
+            "predecessor_source_sha256": PREDECESSOR_SOURCE_SHA}
 
 
 def prepare_unit2(output, captured):
@@ -544,9 +586,11 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
-                      authority_sha256=digest(captured["package_bytes"]["authority.json"]))
+                      authority_sha256=digest(captured["package_bytes"]["authority.json"]),
+                      formatter_authority_sha256=FORMATTER_AUTHORITY_SHA,
+                      predecessor_source_sha256=PREDECESSOR_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 129, "archive_members": 117,
+                "current_source_members": 133, "predecessor_source_members": 129, "archive_members": 117,
                 "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21,
                 "unit2_current_observer_controls_per_profile": 4}
         write_json(output / "plan.json", plan)

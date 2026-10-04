@@ -102,6 +102,8 @@ Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器
 
 實驗性的[型別專案路徑](spec/typed-preview.md#bounded-typed-projects)加入只含宣告的模組、直接匯入與可見性。[三檔案 Batch 範例](fixtures/typed-project-batch/README.md)保留私有欄位，依原始碼推導的結果為 816。載入已宣告子模組目前限 Linux；只使用根檔案的專案語法沒有此探索平台限制。實際驗證範圍見[專案驗證紀錄](docs/architecture/typed-project-unit4-validation.md)。
 
+實驗性的[型別格式化工具](spec/typed-preview.md#single-file-formatting)支援 `oxid fmt --edition typed-preview input.ox`（將完整格式化原始碼寫至標準輸出）及 `--check`（需要格式化時回傳結束碼 1）。它會保留註解和既有換行，調整空白與縮排，不載入模組或寫入檔案。預設的舊版格式化行為不變。
+
 只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。
 
 ## 從原始碼建置

@@ -155,43 +155,44 @@ class ObserverPreparationControls(unittest.TestCase):
         cls.temp.cleanup()
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 130)
+        self.assertEqual(len(self.manifest['files']), 134)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
         self.assertEqual(self.config.read_bytes(), b'[core]\n autocrlf = true\n eol = crlf\n')
         self.assertEqual(q.read(self.output / 'prepared.json')['compiler_invocations'], 0)
 
-    def test_groundwork_current_identity_rejects_before_observer_materialization(self):
-        for control in ('changed', 'coherent-changed', 'missing', 'coherent-missing', 'stale-checkpoint'):
-            with self.subTest(control=control), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary).resolve()
-                source = root / 'source'
-                manifest = q.read(REPO / q.SOURCE / 'current-source.json')
-                for row in manifest['files']:
+    def test_current_identity_rejects_before_observer_materialization(self):
+        for member in ('src/frontend/oir/owned_types/array_tests.rs', 'src/frontend/format.rs'):
+            for control in ('changed', 'coherent-changed', 'missing', 'coherent-missing', 'stale-checkpoint'):
+                with self.subTest(member=member, control=control), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve()
+                    source = root / 'source'
+                    manifest = q.read(REPO / q.SOURCE / 'current-source.json')
+                    for row in manifest['files']:
+                        path = source / row['path']
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes((REPO / row['path']).read_bytes())
+                    row = next(row for row in manifest['files'] if row['path'] == member)
                     path = source / row['path']
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes((REPO / row['path']).read_bytes())
-                row = next(row for row in manifest['files'] if row['path'] == 'src/frontend/oir/owned_types/array_tests.rs')
-                path = source / row['path']
-                if control.endswith('changed'):
-                    path.write_bytes(path.read_bytes() + b'// unauthorized groundwork change\n')
-                    if control.startswith('coherent'):
-                        row.update(bytes=path.stat().st_size, sha256=q.sha(path.read_bytes()))
-                elif control.endswith('missing'):
-                    path.unlink()
-                    if control.startswith('coherent'):
-                        manifest['files'].remove(row)
-                else:
-                    manifest['reviewed_source_head'] = '0' * 40
-                manifest_path = root / 'current-source.json'
-                q.save(manifest_path, manifest)
-                output = root / 'observer'
-                args = SimpleNamespace(source_root=source, manifest=manifest_path, out=output)
-                with patch.object(self.builder.subprocess, 'run', side_effect=AssertionError('patch/tool must not run')):
-                    with self.assertRaises((self.c.Reject, OSError)):
-                        self.builder.prepare(args)
-                self.assertFalse(output.exists())
+                    if control.endswith('changed'):
+                        path.write_bytes(path.read_bytes() + b'// unauthorized groundwork change\n')
+                        if control.startswith('coherent'):
+                            row.update(bytes=path.stat().st_size, sha256=q.sha(path.read_bytes()))
+                    elif control.endswith('missing'):
+                        path.unlink()
+                        if control.startswith('coherent'):
+                            manifest['files'].remove(row)
+                    else:
+                        manifest['reviewed_source_head'] = '0' * 40
+                    manifest_path = root / 'current-source.json'
+                    q.save(manifest_path, manifest)
+                    output = root / 'observer'
+                    args = SimpleNamespace(source_root=source, manifest=manifest_path, out=output)
+                    with patch.object(self.builder.subprocess, 'run', side_effect=AssertionError('patch/tool must not run')):
+                        with self.assertRaises((self.c.Reject, OSError)):
+                            self.builder.prepare(args)
+                    self.assertFalse(output.exists())
 
     def test_coherently_rehashed_groundwork_observer_rejects_before_compiler(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -896,7 +897,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 592)
+        self.assertEqual(report['full_archive_only'], 600)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1106,6 +1107,54 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         plan = {'provenance': {'checkout_head': 'a' * 40, 'checkout_tree': 'b' * 40}}
         with self.assertRaisesRegex(q.Reject, 'parser current checkout identity'):
             join.parser_records(capsule, REPO, None, plan, {'comparison': 'result'})
+
+    def current_source_session(self):
+        source = q.read(REPO / q.SOURCE / 'current-source.json')
+        compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
+                    or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
+        self.assertEqual(len(compiler), 126)
+        return {'root': '/synthetic/current-parser',
+                'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
+                'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
+                             'historical_source_equivalent': False, 'current_source_bound': True,
+                             'compiler_files': compiler,
+                             'current_source_manifest_sha256': q.CURRENT_SHA,
+                             'reviewed_source_head': source['reviewed_source_head'],
+                             'source_only_tree': source['source_only_tree']},
+                'current_source_manifest': {'sha256': q.CURRENT_SHA},
+                'authority_sha256': '1' * 64}
+
+    def check_current_source_boundary(self, session, expected_rejection):
+        # An intentionally stale comparator authority stops after source admission;
+        # this bounded control makes no compiler execution or semantic claim.
+        result = {'status': 'pass', 'issues': [], 'session': 'session',
+                  'portable_authority_sha256': '0' * 64}
+        capsule = SimpleNamespace(json=lambda record: result if record == 'result' else session)
+        plan = {'provenance': {'checkout_head': 'a' * 40, 'checkout_tree': 'b' * 40}}
+        with self.assertRaisesRegex(q.Reject, expected_rejection):
+            join.parser_records(capsule, REPO, None, plan, {'comparison': 'result'})
+
+    def test_exact_current_compiler_map_reaches_comparator_authority_check(self):
+        self.check_current_source_boundary(self.current_source_session(), 'stale parser adapter/authority')
+
+    def test_current_compiler_map_and_checkpoint_mutations_reject(self):
+        for mutation in ('missing', 'extra', 'path', 'bytes', 'hash', 'order',
+                         'manifest', 'reviewed_source_head', 'source_only_tree'):
+            with self.subTest(mutation=mutation):
+                session = self.current_source_session()
+                checkout = session['checkout']
+                compiler = checkout['compiler_files']
+                if mutation == 'missing': compiler.pop()
+                elif mutation == 'extra': compiler.append(copy.deepcopy(compiler[-1]))
+                elif mutation == 'path': compiler[-1]['path'] = 'src/unapproved.rs'
+                elif mutation == 'bytes': compiler[-1]['bytes'] += 1
+                elif mutation == 'hash': compiler[-1]['sha256'] = '0' * 64
+                elif mutation == 'order': compiler.reverse()
+                elif mutation == 'manifest':
+                    checkout['current_source_manifest_sha256'] = '0' * 64
+                    session['current_source_manifest']['sha256'] = '0' * 64
+                else: checkout[mutation] = '0' * 40
+                self.check_current_source_boundary(session, 'parser exact current source map/checkpoint')
 
 
 class FinalFailureControls(unittest.TestCase):

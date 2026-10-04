@@ -1,0 +1,385 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "17ed3de243785006ab888d87af4428d06117b21d",
+  "status": "proposed_acceptance_data_not_executed",
+  "oracle": "Hand-authored from RFC 0017 rules and the published grammar; never generated from formatter output.",
+  "defaults": {
+    "format_exit": 0,
+    "format_stderr": "",
+    "check_stdout": "",
+    "source_bytes_unchanged": true,
+    "second_format_equals_expected": true,
+    "check_expected_exit": 0
+  },
+  "positive": [
+    {
+      "id": "compact_scalar",
+      "rules": [
+        "5.3"
+      ],
+      "input": "fn main( )->i32{let x:i32=1+2*3;return x;}",
+      "expected": "fn main() -> i32 { let x: i32 = 1 + 2 * 3; return x; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "block_indentation",
+      "rules": [
+        "5.1",
+        "5.2",
+        "5.3"
+      ],
+      "input": "fn f(x:bool)->bool{\nif x{\nreturn true;\n}else{\nreturn false;\n}\n}\n",
+      "expected": "fn f(x: bool) -> bool {\n    if x {\n        return true;\n    } else {\n        return false;\n    }\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "while_mutation_and_transfers",
+      "rules": [
+        "5.2",
+        "5.3"
+      ],
+      "input": "fn f()->(){\nlet mut n:i32=0;\nwhile n<2{\nn=n+1;\nif n==1{continue;}else{break;}\n}\nreturn;\n}\n",
+      "expected": "fn f() -> () {\n    let mut n: i32 = 0;\n    while n < 2 {\n        n = n + 1;\n        if n == 1 { continue; } else { break; }\n    }\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "exact_decimal_sign_and_grouping",
+      "rules": [
+        "5.3",
+        "6.1"
+      ],
+      "input": "fn f()->i32{return (0007)- - 0002*03;}",
+      "expected": "fn f() -> i32 { return (0007) - -0002 * 03; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "logical_and_comparison_operators",
+      "rules": [
+        "5.3"
+      ],
+      "input": "fn f(a:i32,b:i32,x:bool)->bool{return ! x&&((a<=b)||(a!=b))&&!!true;}",
+      "expected": "fn f(a: i32, b: i32, x: bool) -> bool { return !x && ((a <= b) || (a != b)) && !!true; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "comment_braces_are_opaque",
+      "rules": [
+        "4",
+        "5.2"
+      ],
+      "input": "// 雪 { (((\nfn f()->(){\n/* } ) } */return;\n}\n",
+      "expected": "// 雪 { (((\nfn f() -> () {\n    /* } ) } */ return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "adjacent_inline_comments",
+      "rules": [
+        "4",
+        "5.3"
+      ],
+      "input": "fn/*A*/f( )->(){/*B*//*C*/return;/*D*/}\n",
+      "expected": "fn /*A*/ f() -> () { /*B*/ /*C*/ return; /*D*/ }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "standalone_and_trailing_comments",
+      "rules": [
+        "4",
+        "5.1",
+        "5.2"
+      ],
+      "input": "fn f()->(){\n// standalone  \nreturn;// tail  \n}\n",
+      "expected": "fn f() -> () {\n    // standalone  \n    return; // tail  \n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "multiline_comment_internal_bytes",
+      "rules": [
+        "4",
+        "5.2"
+      ],
+      "input": "fn f()->(){\n/* keep\r\n \t}  \n    雪 */return;\n}\n",
+      "expected": "fn f() -> () {\n    /* keep\r\n \t}  \n    雪 */ return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "comment_before_closer_interrupts_dedent",
+      "rules": [
+        "4",
+        "5.2"
+      ],
+      "input": "fn f()->(){\nreturn;\n/* end */ }\n",
+      "expected": "fn f() -> () {\n    return;\n    /* end */ }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "blank_lines_and_boundary_whitespace",
+      "rules": [
+        "5.1",
+        "5.2"
+      ],
+      "input": " \n\t\nfn f()->(){\n\t\n \t\nreturn;\n}\n \n\t",
+      "expected": "fn f() -> () {\n\n\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "crlf_code_gaps",
+      "rules": [
+        "5.1"
+      ],
+      "input": "fn f()->(){\r\n\treturn;\r\n}\r\n",
+      "expected": "fn f() -> () {\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "crlf_line_comment_protected_cr",
+      "rules": [
+        "4",
+        "5.1"
+      ],
+      "input": "// keep\r\nfn f()->(){return;}\r\n",
+      "expected": "// keep\r\nfn f() -> () { return; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "unicode_horizontal_whitespace",
+      "rules": [
+        "5.1",
+        "5.3"
+      ],
+      "input": "fn f( )->( ){return;}",
+      "expected": "fn f() -> () { return; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "module_import_and_qualified_names",
+      "rules": [
+        "3",
+        "5.3"
+      ],
+      "input": "pub  mod missing;\nuse crate ::missing::read as read_value;\npub fn f(x:& crate :: missing :: Flag)->bool{return crate ::missing::read(x);}\n",
+      "expected": "pub mod missing;\nuse crate::missing::read as read_value;\npub fn f(x: &crate::missing::Flag) -> bool { return crate::missing::read(x); }\n",
+      "environment": "No missing.ox exists; success must not depend on discovering it.",
+      "check_input_exit": 1
+    },
+    {
+      "id": "struct_declaration_literal_and_fields",
+      "rules": [
+        "5.2",
+        "5.3",
+        "6.1"
+      ],
+      "input": "pub struct Pair{\npub left :i32,\nright:bool,\n}\nfn f()->i32{\nlet mut p =Pair{left:001,right:true,};\np . left=p . left+1;\nreturn p . left;\n}\n",
+      "expected": "pub struct Pair {\n    pub left: i32,\n    right: bool,\n}\nfn f() -> i32 {\n    let mut p = Pair { left: 001, right: true, };\n    p.left = p.left + 1;\n    return p.left;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "empty_struct_and_trailing_comma_preservation",
+      "rules": [
+        "5.3",
+        "6.1"
+      ],
+      "input": "struct Empty{ }\nstruct One{x:i32}\nfn f()->Empty{return Empty{ };}\n",
+      "expected": "struct Empty {}\nstruct One { x: i32 }\nfn f() -> Empty { return Empty {}; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "reference_borrow_star_and_multiplication",
+      "rules": [
+        "5.3"
+      ],
+      "input": "fn f(p : & mut Pair,q:&Pair)->(){\nsink(& mut * p,& * q);\nlet n=2*3;\nreturn;\n}\n",
+      "expected": "fn f(p: &mut Pair, q: &Pair) -> () {\n    sink(&mut *p, &*q);\n    let n = 2 * 3;\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "continuation_parentheses",
+      "rules": [
+        "5.1",
+        "5.2",
+        "5.3"
+      ],
+      "input": "fn f(\na:i32,\nb:i32\n)->i32{\nreturn add(\na,\nb\n);\n}\n",
+      "expected": "fn f(\n    a: i32,\n    b: i32\n) -> i32 {\n    return add(\n        a,\n        b\n    );\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "multiple_leading_closers",
+      "rules": [
+        "5.2",
+        "5.3"
+      ],
+      "input": "fn f()->(){\nsink(Pair{\nx:1\n});\nreturn;\n}\n",
+      "expected": "fn f() -> () {\n    sink(Pair {\n            x: 1\n    });\n    return;\n}\n",
+      "note": "All open delimiters count: body, call, and literal give 12 spaces before x; the leading }) pair reduces depth by two.",
+      "check_input_exit": 1
+    },
+    {
+      "id": "retains_existing_newline_between_call_and_paren",
+      "rules": [
+        "5.1",
+        "5.2"
+      ],
+      "input": "fn f()->(){\nsink\n(\ntrue\n);\nreturn;\n}\n",
+      "expected": "fn f() -> () {\n    sink\n    (\n        true\n    );\n    return;\n}\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "comment_between_minus_and_digits",
+      "rules": [
+        "4",
+        "5.3"
+      ],
+      "input": "fn f()->i32{return -/* sign */0007;}",
+      "expected": "fn f() -> i32 { return - /* sign */ 0007; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "semantic_errors_do_not_block_formatting",
+      "rules": [
+        "3"
+      ],
+      "input": "mod absent;fn f()->Unknown{return 999999999999999999999;}fn g()->bool{return 1;}",
+      "expected": "mod absent; fn f() -> Unknown { return 999999999999999999999; } fn g() -> bool { return 1; }\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "empty_file",
+      "rules": [
+        "3"
+      ],
+      "input": "",
+      "expected": "",
+      "check_input_exit": 0
+    },
+    {
+      "id": "whitespace_only",
+      "rules": [
+        "3",
+        "5.1"
+      ],
+      "input": " \t\r\n\n ",
+      "expected": "",
+      "check_input_exit": 1
+    },
+    {
+      "id": "line_comment_at_eof",
+      "rules": [
+        "3",
+        "4",
+        "5.1"
+      ],
+      "input": " // tail  ",
+      "expected": "// tail  \n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "block_comment_only",
+      "rules": [
+        "3",
+        "4",
+        "5.1"
+      ],
+      "input": "\n/* keep\n \t */ \n\n",
+      "expected": "/* keep\n \t */\n",
+      "check_input_exit": 1
+    },
+    {
+      "id": "already_formatted",
+      "rules": [
+        "6.4"
+      ],
+      "input": "fn main() -> () {\n    return;\n}\n",
+      "expected": "fn main() -> () {\n    return;\n}\n",
+      "check_input_exit": 0
+    }
+  ],
+  "negative": [
+    {
+      "id": "unterminated_block_comment",
+      "input": "fn f()->(){return;} /* never closed",
+      "expected_code": "E0100",
+      "expected_stage": "lex"
+    },
+    {
+      "id": "unterminated_string",
+      "input": "fn f()->(){\"never closed",
+      "expected_code": "E0100",
+      "expected_stage": "lex"
+    },
+    {
+      "id": "missing_closing_brace",
+      "input": "fn f()->(){return;",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "missing_statement_semicolon",
+      "input": "fn f()->(){return}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "unsupported_string_expression",
+      "input": "fn f()->(){\"text\";return;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "unsupported_numeric_spelling",
+      "input": "fn f()->i32{return 0x10;}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "trailing_function_parameter_comma",
+      "input": "fn f(x:i32,)->i32{return x;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "trailing_call_argument_comma",
+      "input": "fn f()->(){sink(true,);return;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "split_path_colons",
+      "input": "use crate: :missing;",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "inline_module",
+      "input": "mod child {}",
+      "expected_code": "E0101",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "else_if_unavailable",
+      "input": "fn f()->(){if true{}else if false{}return;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "legacy_keyword_alias",
+      "input": "fun f()->(){give;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    },
+    {
+      "id": "do_not_format_recovered_suffix",
+      "input": "fn broken()->(){return} fn intact()->(){return;}",
+      "expected_code": "E0100",
+      "expected_stage": "parse"
+    }
+  ],
+  "negative_defaults": {
+    "format_exit": 2,
+    "check_exit": 2,
+    "stdout": "",
+    "source_bytes_unchanged": true,
+    "stderr": "At least one escaped diagnostic matching expected_code/expected_stage; additional recovery diagnostics are allowed within the bound."
+  },
+  "negative_code_provenance": "Published parser.rs error() lines 446–480, import() lines 397–431, primary() lines 1089–1117 and lexer.rs lexical-error branches; code assertions refer to the first relevant diagnostic."
+}

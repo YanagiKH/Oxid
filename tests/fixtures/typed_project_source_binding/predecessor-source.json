@@ -107,29 +107,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 7568,
+      "bytes": 7381,
       "path": "src/frontend/driver.rs",
-      "sha256": "930fd365ddc45cb07e664379b218921e6687ad0504528a79a3a5d8c2f77d11f9"
-    },
-    {
-      "bytes": 13385,
-      "path": "src/frontend/format.rs",
-      "sha256": "746468410a70adc9eebda11c97c319843cb1bed8e5c2a8e303d91a87a812ac99"
-    },
-    {
-      "bytes": 32529,
-      "path": "src/frontend/format/ast_tests.rs",
-      "sha256": "518592cbc737d7ac36460b0ae3fc9f51d78dcfd80e77ba54115f79a8d999594a"
-    },
-    {
-      "bytes": 5785,
-      "path": "src/frontend/format/resource_tests.rs",
-      "sha256": "597e2b7f456975cfa0068a2a0d94423cd095606860eab8b86ffc7d855e709b30"
-    },
-    {
-      "bytes": 12960,
-      "path": "src/frontend/format_cli.rs",
-      "sha256": "906e80991e2d8ba33e0b4b5ef3aee3a0986da55a5a50637931cce48c7b0ffdcd"
+      "sha256": "50b5a53acb8af6208cad8a923f937898b1376312541f3bfac3729aeb58f62573"
     },
     {
       "bytes": 23073,
@@ -142,9 +122,9 @@
       "sha256": "6e75954085943e3b3018a51d91dcae1c2bf7bda1ebaff86efd10bfccde12de51"
     },
     {
-      "bytes": 387,
+      "bytes": 359,
       "path": "src/frontend/mod.rs",
-      "sha256": "da20f3e1d112eeb5fbf0403bdd9950da301eed73895e565f1804f0dfc219ab88"
+      "sha256": "5f73b77d7f10a0580284ab74f0248d9adcb43660ce333706473cd3377d1e1771"
     },
     {
       "bytes": 7505,
@@ -547,9 +527,9 @@
       "sha256": "16a798823d33151efc924f5728148138a412e147ff5612e39eba841129dc0643"
     },
     {
-      "bytes": 20252,
+      "bytes": 15461,
       "path": "src/frontend/options.rs",
-      "sha256": "abe4bf6f24dce645bf557a669ff88315b9656821a3e5ad43d7eb0548a411a59c"
+      "sha256": "6eb1c651c604e25887cf6926604598e27a390613ef9f43347c0b5fa9ab6bab06"
     },
     {
       "bytes": 33156,
@@ -602,9 +582,9 @@
       "sha256": "152b29862d12a4d0aa952bcf640b3cc3e1d68a58b0f21494211d124255f81302"
     },
     {
-      "bytes": 12739,
+      "bytes": 12395,
       "path": "src/frontend/source.rs",
-      "sha256": "3574d2e4598fa77b82aeee2ba3457dfdd39652d750771d4c56102aa706c0db3e"
+      "sha256": "4928bf26220a08ce36dcbb0f939b912619169cf4e9a082ae26cf8d6554b6134f"
     },
     {
       "bytes": 31294,
@@ -667,10 +647,8 @@
       "sha256": "23e5bb6d0050b8adef32aada00f779c1a43c07dc42bd762d23529b794ac5d6a5"
     }
   ],
-  "formatter_base_head": "17ed3de243785006ab888d87af4428d06117b21d",
-  "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
-  "purpose": "Actual current compiler inputs including the typed formatter; predecessor binding and archived selected-current expectations remain distinct and unchanged",
-  "reviewed_source_head": "8a08a2908b2ceb73c80112e6ddd82e2dbda91976",
+  "purpose": "Actual current compiler inputs, including activation and private fixed-array implementation/tests; base_head is historical activation provenance, reviewed_source_head is the immutable current source checkpoint; not historical core qualification",
+  "reviewed_source_head": "f8a30b2443d9d7a89498e0c243f75072cbf26c2f",
   "schema": 1,
-  "source_only_tree": "afa181dab5aa3341ceae4f7b882a81a635e08fa0"
+  "source_only_tree": "18a4611f46b3cdf59f37a9f2241dc4e39e2d8ba6"
 }

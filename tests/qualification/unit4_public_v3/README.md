@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact129-file compiler manifest, the reviewed130-file
+`authority.py` pins the exact133-file formatter compiler manifest, the reviewed134-file
 lifecycle overlay map and the retained additive patch. A caller cannot select a
 different compiler body merely by supplying a coherent rewritten manifest.
 `authority_controls.py` deterministically rejects both current-source and
@@ -125,3 +125,8 @@ Every new receipt and result carries all five mandatory effective-authority
 fields. Base v3 identity metadata remains historical base metadata; an old v3
 receipt is rejected for an effective-contract tuple. Original on-disk authorities
 and failed first-run evidence remain byte-identical.
+
+The formatter source checkpoint is `8a08a2908b2ceb73c80112e6ddd82e2dbda91976`.
+Only current source/observer identities and counts advance for that checkpoint;
+the lifecycle patch, frozen cases, expected observations and runtime identity
+stay unchanged. Preparation binds files but does not establish execution results.

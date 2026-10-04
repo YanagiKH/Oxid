@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from verify_feature_status import verify_feature_status
+from verify_typed_formatter import verify as verify_typed_formatter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +125,7 @@ def main() -> int:
     verify_readmes()
     verify_assets()
     verify_local_markdown_links()
+    verify_typed_formatter(executable)
 
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
     checks, typed_entries, typed_member_count = source_plan(sources)

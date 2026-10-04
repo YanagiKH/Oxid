@@ -137,6 +137,13 @@ impl SourceMap {
         })
     }
 
+    /// Consume a single-source owner after syntax-only candidate validation.
+    /// Moving its text back out avoids a second full formatter output buffer.
+    pub(super) fn into_single_text(mut self) -> String {
+        assert_eq!(self.files.len(), 1, "expected exactly one source");
+        self.files.pop().expect("one source").text
+    }
+
     pub fn get(&self, id: SourceFileId) -> &SourceFile {
         &self.files[id.0]
     }

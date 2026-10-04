@@ -26,6 +26,12 @@ CURRENT_PATHS = (
     'src/frontend/declaration_index.rs',
     'src/frontend/declaration_index/tests.rs',
     'src/frontend/diagnostic.rs',
+    'src/frontend/driver.rs',
+    'src/frontend/format.rs',
+    'src/frontend/format/ast_tests.rs',
+    'src/frontend/format/resource_tests.rs',
+    'src/frontend/format_cli.rs',
+    'src/frontend/mod.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
     'src/frontend/oir/owned/array_native_tests.rs',
     'src/frontend/oir/owned/array_observe.rs',
@@ -70,8 +76,14 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/verified.rs',
     'src/frontend/oir/owned_types.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
+    'src/frontend/options.rs',
+    'src/frontend/source.rs',
 )
 CURRENT_ADDED_PATHS = (
+    'src/frontend/format.rs',
+    'src/frontend/format/ast_tests.rs',
+    'src/frontend/format/resource_tests.rs',
+    'src/frontend/format_cli.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
     'src/frontend/oir/owned/array_native_tests.rs',
     'src/frontend/oir/owned/array_observe.rs',
@@ -82,7 +94,7 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
 )
-AUTHORITY_SHA = "fccebbd814ce0ea207f4e3ada3bee00e3a36c635d0a90827cb2775f271aaea31"
+AUTHORITY_SHA = "8eebade73ff8f0c4ce005189bd19a3a583c86cd52e2605025c268ad668ed5529"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -190,10 +202,11 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
+    same(active["formatter_transition_patch"]["path"], "tests/fixtures/typed_project_source_binding/formatter-transition.patch", "formatter transition patch path")
     result = read(FROZEN / "authority.json")
     same(len(result["original_files"]), 283, "historical input count")
     same(len(result["derived_files"]), 286, "historical derived input count")
@@ -201,13 +214,13 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 129, "complete current source count")
+    same(len(current["files"]), 133, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 129, "duplicate current member")
+    same(len(after), 133, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -215,25 +228,68 @@ def authority():
                for name, row in after.items() if before.get(name) != row]
     same([row["path"] for row in changes], list(CURRENT_PATHS), "unexpected current transition scope")
     same(changes, active["source_delta"], "current transition before/after identities")
-    require(not set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"] + result["control_instrumentation"]), "transition overlaps instrumentation")
+    same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"])),
+         ["src/frontend/source.rs"], "transition overlaps instrumentation outside exact source-read composition")
+    require(not set(CURRENT_PATHS).intersection(row["path"] for row in result["control_instrumentation"]), "transition overlaps control instrumentation")
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 292, "current base count")
+    same(len(base), 296, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
+    composed = compose_source_read(result, (REPOSITORY / "src/frontend/source.rs").read_bytes())
+    composed_row = {"path": "src/frontend/source.rs", "bytes": len(composed), "sha256": sha(composed)}
     candidate = (json.dumps(current_candidate(result), sort_keys=True, indent=2) + "\n").encode()
     same(sha(candidate), active["current_candidate_source_manifest_sha256"], "current candidate manifest identity")
     candidate_row = {"path": "candidate-source-manifest.json", "bytes": len(candidate), "sha256": sha(candidate)}
     for field in ("derived_files", "control_derived_files"):
         derived = {row["path"]: row for row in result[field]}
         derived.update({row["path"]: row["after"] for row in changes})
+        if field == "derived_files":
+            derived[composed_row["path"]] = composed_row
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 295, "current derived count")
+        same(len(ordered), 299, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
+
+
+def compose_source_read(a, raw):
+    """Compose only the pinned formatter accessor with unchanged historical hooks."""
+    name = "src/frontend/source.rs"
+    current = next(row for row in a["current"]["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current source identity")
+    patch = a["current"]["formatter_transition_patch"]
+    verify_map(REPOSITORY, [patch])
+    parts = (REPOSITORY / patch["path"]).read_bytes().split(b"diff --git a/src/frontend/source.rs b/src/frontend/source.rs\n")
+    same(len(parts), 2, "exact source-read formatter patch section")
+    section = parts[1].split(b"\ndiff --git ", 1)[0]
+    require(not any(line.startswith(b"-") and not line.startswith(b"---") for line in section.splitlines()),
+            "source-read formatter patch must be insertion only")
+    addition = b"".join(line[1:] for line in section.splitlines(keepends=True)
+                       if line.startswith(b"+") and not line.startswith(b"+++"))
+    same(len(addition.splitlines()), 7, "exact seven-line formatter accessor")
+    same(raw.count(addition), 1, "exact formatter accessor occurrence")
+    original = raw.replace(addition, b"", 1)
+    historical = next(row for row in a["original_files"] if row["path"] == name)
+    same(current["before"], historical, "composition historical source identity")
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
+         "formatter accessor must leave exact historical source")
+    observer = b"crate::frontend::parser::unit4_observer"
+    for before, after in (
+        (b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        if span.file",
+         b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        " + observer + b"::source_read(span.end.saturating_sub(span.start));\n        if span.file"),
+        (b"    pub fn text(&self) -> &str {\n        &self.text",
+         b"    pub fn text(&self) -> &str {\n        " + observer + b"::source_read(self.text.len());\n        &self.text"),
+    ):
+        same(raw.count(before), 1, "exact historical source-read hook location")
+        raw = raw.replace(before, after, 1)
+    historical_instrumented = next(row for row in a["derived_files"] if row["path"] == name)
+    original_instrumented = raw.replace(addition, b"", 1)
+    same({"path": name, "bytes": len(original_instrumented), "sha256": sha(original_instrumented)},
+         historical_instrumented, "composition must preserve exact historical instrumentation")
+    return raw
 
 
 def current_candidate(a):
@@ -294,7 +350,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 122, "current compiler body count")
+    same(len(wanted), 126, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []
@@ -403,6 +459,10 @@ def prepare(repo, checkout, output):
             historical[key] = identity(target)
         for change in a["current"]["source_delta"]:
             target = source / change["path"]
+            if not control and change["path"] == "src/frontend/source.rs":
+                verify_map(source, [next(row for row in a["derived_files"] if row["path"] == change["path"])])
+                target.write_bytes(compose_source_read(a, (checkout / change["path"]).read_bytes()))
+                continue
             if change["before"] is None:
                 require(not target.exists(), "new current source already exists")
             else:
@@ -437,12 +497,17 @@ def prepare(repo, checkout, output):
 
 def current_overlay(source, a, control):
     active = a["current"]
+    instrumentation = [dict(row) for row in a["control_instrumentation" if control else "instrumentation"]]
+    if not control:
+        row = next(row for row in instrumentation if row["path"] == "src/frontend/source.rs")
+        row["before_sha256"] = next(row["sha256"] for row in active["current_base_files"] if row["path"] == "src/frontend/source.rs")
+        row["after_sha256"] = next(row["sha256"] for row in active["current_derived_files"] if row["path"] == "src/frontend/source.rs")
     return {"schema": "oxid-unit4-current-observer-overlay-v1", "historical_base_commit": a["base_commit"], "control": control,
             "source": str(source), "reviewed_source_head": active["reviewed_source_head"], "source_only_tree": active["source_only_tree"],
             "current_source_manifest_sha256": active["current_source_manifest"]["sha256"], "transition_authority_sha256": AUTHORITY_SHA,
             "candidate_source_manifest_sha256": active["current_candidate_source_manifest_sha256"],
             "observer_source_sha256": a["helper_manifest_sha256"], "observer_files": a["helper_files"],
-            "instrumentation": a["control_instrumentation" if control else "instrumentation"],
+            "instrumentation": instrumentation,
             "files": active["current_control_derived_files" if control else "current_derived_files"]}
 
 
@@ -451,7 +516,7 @@ def verify_overlay(root, a, control=False):
     expected = current_overlay(source, a, control)
     verify_map(source, expected["files"], exact=True, extras=("observer-source-manifest.json", "overlay-manifest.json"))
     same(read(source / "overlay-manifest.json"), expected, "current overlay must match reviewed transition exactly")
-    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered292 base map")
+    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered296 base map")
     same(sha((source / "observer-source-manifest.json").read_bytes()), a["helper_manifest_sha256"], "unchanged helper manifest bytes")
     verify_map(Path(root) / "helpers", a["helper_files"], exact=True)
     no_cargo_configs(source)
@@ -473,7 +538,7 @@ def verify_transition_records(session, a, resolve=artifact):
     for transition, control in zip(session["transitions"], (False, True)):
         same(set(transition), {"control", "historical_candidate", "historical_overlay", "current_candidate", "current_overlay", "changes"}, "transition fields")
         same(transition["control"], control, "transition role/order")
-        same(transition["changes"], a["current"]["source_delta"], "transition exact 47 changes")
+        same(transition["changes"], a["current"]["source_delta"], "transition exact 55 changes")
         source = root / ("control-source" if control else "source")
         invocation = root / ("prepare-control" if control else "prepare")
         for key, filename in (("historical_candidate", "historical-candidate-source-manifest.json"), ("historical_overlay", "historical-overlay-manifest.json")):
