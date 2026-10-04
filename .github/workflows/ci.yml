@@ -181,6 +181,9 @@ jobs:
       - name: Run unit and native bridge tests
         run: cargo test --all-targets --locked
 
+      - name: Verify exact typed formatter goldens
+        run: python scripts/verify_typed_formatter.py ${{ matrix.binary }}
+
       - name: Run Oxid language tests
         run: cargo run --release --locked -- test
 

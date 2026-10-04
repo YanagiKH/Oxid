@@ -13,6 +13,18 @@ const MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 const TIGHT_AFTER: u8 = 1;
 const PATH_COLON: u8 = 2;
 
+#[derive(Clone, Copy)]
+struct Limits {
+    delimiters: usize,
+    work_bytes: usize,
+}
+impl Limits {
+    const DEFAULT: Self = Self {
+        delimiters: MAX_DELIMITERS,
+        work_bytes: MAX_WORK_BYTES,
+    };
+}
+
 /// No file access, project discovery, type checking or execution. Diagnostics
 /// refer only to `source`; candidate validation failures have no source span.
 pub(super) fn format_source(source: &SourceFile) -> Result<String, Vec<Diagnostic>> {
@@ -23,24 +35,29 @@ fn format_with_allocator(
     source: &SourceFile,
     allocator: &mut Allocator,
 ) -> Result<String, Vec<Diagnostic>> {
+    format_with_limits(source, allocator, Limits::DEFAULT)
+}
+
+fn format_with_limits(
+    source: &SourceFile,
+    allocator: &mut Allocator,
+    limits: Limits,
+) -> Result<String, Vec<Diagnostic>> {
     if source.text().len() > MAX_SOURCE_BYTES {
         return Err(resource("source byte limit exceeded"));
     }
     let program = parse(source, allocator)?;
-    let roles = roles(source, &program, allocator)?;
+    let roles = roles(source, &program, allocator, limits.work_bytes)?;
     let mut length = 0usize;
-    layout(source, &program, &roles, |part| {
-        length = length
-            .checked_add(part.len())
-            .filter(|&length| length <= MAX_SOURCE_BYTES)
-            .ok_or_else(|| resource("formatted source byte limit exceeded"))?;
+    layout(source, &program, &roles, limits.delimiters, |part| {
+        length = output_length(length, part.len())?;
         Ok(())
     })?;
     let mut output = String::new();
     allocator
         .string(&mut output, length, "formatted source")
         .map_err(|_| resource("formatted source allocation failed"))?;
-    layout(source, &program, &roles, |part| {
+    layout(source, &program, &roles, limits.delimiters, |part| {
         output.push_str(part);
         Ok(())
     })?;
@@ -80,6 +97,13 @@ fn parse(source: &SourceFile, allocator: &mut Allocator) -> Result<Program, Vec<
     .map(|(program, _)| program)
 }
 
+fn output_length(current: usize, additional: usize) -> Result<usize, Vec<Diagnostic>> {
+    current
+        .checked_add(additional)
+        .filter(|&length| length <= MAX_SOURCE_BYTES)
+        .ok_or_else(|| resource("formatted source byte limit exceeded"))
+}
+
 fn resource(message: &str) -> Vec<Diagnostic> {
     vec![*Diagnostic::new("E0400", "format", message, None)]
 }
@@ -96,12 +120,13 @@ fn roles(
     source: &SourceFile,
     program: &Program,
     allocator: &mut Allocator,
+    work_limit: usize,
 ) -> Result<Vec<u8>, Vec<Diagnostic>> {
     if !program.belongs_to(source) {
         return Err(invariant("formatter source association mismatch"));
     }
     let length = source.text().len();
-    if length > MAX_WORK_BYTES {
+    if length > work_limit.min(MAX_WORK_BYTES) {
         return Err(resource("formatter work table limit exceeded"));
     }
     let mut roles = Vec::new();
@@ -158,6 +183,7 @@ fn layout(
     source: &SourceFile,
     program: &Program,
     roles: &[u8],
+    delimiter_limit: usize,
     mut emit: impl FnMut(&str) -> Result<(), Vec<Diagnostic>>,
 ) -> Result<(), Vec<Diagnostic>> {
     let mut stack = [Kind::Eof; MAX_DELIMITERS];
@@ -181,13 +207,15 @@ fn layout(
                 .checked_sub(closers)
                 .ok_or_else(|| invariant("formatter delimiter underflow"))?;
             emit(&spaces[..indent * 4])?;
-        } else if horizontal_space(previous.expect("preceding atom"), token, roles) {
-            emit(" ")?;
+        } else if let Some(previous) = previous {
+            if horizontal_space(previous, token, roles) {
+                emit(" ")?;
+            }
         }
         emit(source.text_at(token.span))?;
         match token.kind {
             Kind::LParen | Kind::LBrace => {
-                if depth == MAX_DELIMITERS {
+                if depth >= delimiter_limit.min(MAX_DELIMITERS) {
                     return Err(resource("formatter delimiter limit exceeded"));
                 }
                 stack[depth] = token.kind;
@@ -290,13 +318,13 @@ fn same_projection(
 mod tests {
     use super::*;
 
-    fn source(text: &str) -> SourceMap {
+    pub(super) fn source(text: &str) -> SourceMap {
         let mut sources = SourceMap::new();
         sources.add("format.ox".into(), text.into());
         sources
     }
 
-    fn formatted(text: &str) -> Result<String, Vec<Diagnostic>> {
+    pub(super) fn formatted(text: &str) -> Result<String, Vec<Diagnostic>> {
         let sources = source(text);
         format_source(sources.get(super::super::source::SourceFileId(0)))
     }
@@ -349,3 +377,11 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "format/resource_tests.rs"]
+mod resource_tests;
+
+#[cfg(test)]
+#[path = "format/ast_tests.rs"]
+mod ast_tests;

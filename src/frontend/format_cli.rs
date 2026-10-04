@@ -56,7 +56,11 @@ fn process_with_io(
             .write_all(b"typed-preview fmt: formatting required\n")
             .and_then(|()| stderr.flush())
         {
-            report(&sources, &io_error("write formatter stderr", error), stderr);
+            report(
+                &sources,
+                &io_error("io", "write formatter stderr", error),
+                stderr,
+            );
             return 2;
         }
         return 1;
@@ -65,7 +69,11 @@ fn process_with_io(
         .write_all(candidate.as_bytes())
         .and_then(|()| stdout.flush())
     {
-        report(&sources, &io_error("write formatter stdout", error), stderr);
+        report(
+            &sources,
+            &io_error("io", "write formatter stdout", error),
+            stderr,
+        );
         return 2;
     }
     0
@@ -78,12 +86,13 @@ fn load_source(
     // This is a stable-filesystem policy, not an OS sandbox against races or
     // blocking host I/O. A symlink resolving to a regular file is permitted.
     let metadata =
-        fs::metadata(path).map_err(|error| io_error("inspect formatter source", error))?;
+        fs::metadata(path).map_err(|error| io_error("read", "inspect formatter source", error))?;
     require_regular(&metadata)?;
-    let mut file = File::open(path).map_err(|error| io_error("open formatter source", error))?;
+    let mut file =
+        File::open(path).map_err(|error| io_error("read", "open formatter source", error))?;
     let metadata = file
         .metadata()
-        .map_err(|error| io_error("inspect opened formatter source", error))?;
+        .map_err(|error| io_error("read", "inspect opened formatter source", error))?;
     require_regular(&metadata)?;
     let text = read_bounded(&mut file, allocator)?;
     let mut display_path = String::new();
@@ -102,7 +111,7 @@ fn require_regular(metadata: &Metadata) -> Result<(), Box<Diagnostic>> {
     if !metadata.is_file() {
         return Err(owned_diagnostic::diagnostic(
             "E0002",
-            "io",
+            "read",
             format_args!("typed-preview fmt requires a regular source file"),
             None,
         ));
@@ -144,13 +153,13 @@ fn read_bounded(
                 bytes.extend_from_slice(&chunk[..count]);
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(io_error("read formatter source", error)),
+            Err(error) => return Err(io_error("read", "read formatter source", error)),
         }
     }
     String::from_utf8(bytes).map_err(|_| {
         owned_diagnostic::diagnostic(
             "E0003",
-            "io",
+            "read",
             format_args!("formatter source is not valid UTF-8"),
             None,
         )
@@ -165,10 +174,10 @@ fn reserve_error(error: ReserveFailure) -> Box<Diagnostic> {
     owned_diagnostic::diagnostic("E0400", "format", format_args!("{message}"), None)
 }
 
-fn io_error(action: &str, error: io::Error) -> Box<Diagnostic> {
+fn io_error(stage: &'static str, action: &str, error: io::Error) -> Box<Diagnostic> {
     owned_diagnostic::diagnostic(
         "E0002",
-        "io",
+        stage,
         format_args!("cannot {action}: {error}"),
         None,
     )
@@ -213,7 +222,7 @@ mod tests {
     #[test]
     fn reader_rejects_encoding_and_read_failures_without_partial_source() {
         let error = read_bounded(&mut Cursor::new(b"\xff"), &mut Allocator::default()).unwrap_err();
-        assert_eq!(error.code, "E0003");
+        assert_eq!((error.code, error.stage), ("E0003", "read"));
         struct FailsAfterPrefix(bool);
         impl Read for FailsAfterPrefix {
             fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
@@ -226,8 +235,9 @@ mod tests {
                 }
             }
         }
-        let error = read_bounded(&mut FailsAfterPrefix(false), &mut Allocator::default()).unwrap_err();
-        assert_eq!(error.code, "E0002");
+        let error =
+            read_bounded(&mut FailsAfterPrefix(false), &mut Allocator::default()).unwrap_err();
+        assert_eq!((error.code, error.stage), ("E0002", "read"));
         let mut stderr = Vec::new();
         report(&SourceMap::new(), &error, &mut stderr);
         let text = String::from_utf8(stderr).unwrap();
@@ -249,7 +259,10 @@ mod tests {
             }
         }
         let mut reader = InterruptOnce(false).take(2);
-        assert_eq!(read_bounded(&mut reader, &mut Allocator::default()).unwrap(), "\r\n");
+        assert_eq!(
+            read_bounded(&mut reader, &mut Allocator::default()).unwrap(),
+            "\r\n"
+        );
     }
 
     struct Source(std::path::PathBuf);
@@ -257,15 +270,21 @@ mod tests {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "oxid-format-reader-{}-{}.ox", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+                "oxid-format-reader-{}-{}.ox",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             fs::write(&path, "// reader\n").unwrap();
             Self(path)
         }
-        fn path(&self) -> &str { self.0.to_str().unwrap() }
+        fn path(&self) -> &str {
+            self.0.to_str().unwrap()
+        }
     }
     impl Drop for Source {
-        fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
     }
 
     #[test]
@@ -276,14 +295,20 @@ mod tests {
         assert_eq!(sources.get(id).text(), "// reader\n");
         assert_eq!(successful.attempts, 4);
         for fail_at in 1..=successful.attempts {
-            let mut allocator = Allocator { fail_at: Some(fail_at), ..Allocator::default() };
+            let mut allocator = Allocator {
+                fail_at: Some(fail_at),
+                ..Allocator::default()
+            };
             let error = load_source(source.path(), &mut allocator).unwrap_err();
             assert_eq!((error.code, error.stage), ("E0400", "format"));
             assert_eq!(allocator.attempts, fail_at);
         }
     }
 
-    struct FailingWriter { fail_flush: bool, bytes: Vec<u8> }
+    struct FailingWriter {
+        fail_flush: bool,
+        bytes: Vec<u8>,
+    }
     impl Write for FailingWriter {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
             if self.fail_flush {
@@ -296,32 +321,72 @@ mod tests {
                 Err(io::ErrorKind::BrokenPipe.into())
             }
         }
-        fn flush(&mut self) -> io::Result<()> { Err(io::ErrorKind::BrokenPipe.into()) }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
     }
 
     #[test]
     fn stdout_partial_write_and_flush_failures_are_code_two_without_panics() {
         let source = Source::new();
         for fail_flush in [false, true] {
-            let mut stdout = FailingWriter { fail_flush, bytes: Vec::new() };
+            let mut stdout = FailingWriter {
+                fail_flush,
+                bytes: Vec::new(),
+            };
             let mut stderr = Vec::new();
-            assert_eq!(process_with_io(source.path(), false, &mut stdout, &mut stderr, &mut Allocator::default()), 2);
+            assert_eq!(
+                process_with_io(
+                    source.path(),
+                    false,
+                    &mut stdout,
+                    &mut stderr,
+                    &mut Allocator::default()
+                ),
+                2
+            );
             assert!(!stdout.bytes.is_empty());
-            assert!(String::from_utf8(stderr).unwrap().contains("cannot write formatter stdout"));
+            assert!(String::from_utf8(stderr)
+                .unwrap()
+                .contains("cannot write formatter stdout"));
         }
     }
 
     #[test]
     fn check_never_touches_stdout_and_stderr_failure_is_not_drift() {
         let source = Source::new();
-        let mut stdout = FailingWriter { fail_flush: false, bytes: Vec::new() };
+        let mut stdout = FailingWriter {
+            fail_flush: false,
+            bytes: Vec::new(),
+        };
         let mut stderr = Vec::new();
-        assert_eq!(process_with_io(source.path(), true, &mut stdout, &mut stderr, &mut Allocator::default()), 0);
+        assert_eq!(
+            process_with_io(
+                source.path(),
+                true,
+                &mut stdout,
+                &mut stderr,
+                &mut Allocator::default()
+            ),
+            0
+        );
         assert!(stdout.bytes.is_empty());
         assert!(stderr.is_empty());
         fs::write(&source.0, "// reader").unwrap();
-        let mut stderr = FailingWriter { fail_flush: false, bytes: Vec::new() };
-        assert_eq!(process_with_io(source.path(), true, &mut stdout, &mut stderr, &mut Allocator::default()), 2);
+        let mut stderr = FailingWriter {
+            fail_flush: false,
+            bytes: Vec::new(),
+        };
+        assert_eq!(
+            process_with_io(
+                source.path(),
+                true,
+                &mut stdout,
+                &mut stderr,
+                &mut Allocator::default()
+            ),
+            2
+        );
         assert!(stdout.bytes.is_empty());
     }
 }

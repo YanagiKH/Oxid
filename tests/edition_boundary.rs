@@ -160,7 +160,6 @@ fn typed_project_and_other_operations_reject_before_any_effects() {
         &["new", "created-project"],
         &["init", "created-project"],
         &["clean"],
-        &["fmt", "main.ox"],
         &["doc"],
         &["doctor"],
         &["diagnose"],
@@ -480,4 +479,21 @@ fn typed_check_separator_allows_a_dash_prefixed_source_filename() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("\"success\":true"), "{text}");
     assert_eq!(project.snapshot(), before);
+}
+
+#[test]
+fn typed_format_rejects_legacy_syntax_without_effects_at_any_option_placement() {
+    for position in 0..=2 {
+        let project = Project::new(LEGACY_SOURCE);
+        let before = project.snapshot();
+        let mut args = vec!["fmt", "main.ox"];
+        args.splice(position..position, ["--edition", "typed-preview"]);
+        let output = project.command(&args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("parameter requires an explicit type")
+        );
+        assert_eq!(project.snapshot(), before);
+    }
 }

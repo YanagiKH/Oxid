@@ -1,10 +1,13 @@
 # Typed formatter acceptance data
 
-Proposed RFC: [0017](../../../rfcs/0017-bounded-typed-formatter.md).
+Experimental RFC: [0017](../../../rfcs/0017-bounded-typed-formatter.md).
 
-These are design fixtures, not passing test evidence. No formatter or test
-runner is included. All inputs and exact expected outputs were written by hand
-against the published scalar/struct/module grammar and RFC policy.
+These hand-authored design fixtures are consumed by the ordinary
+`scripts/verify_typed_formatter.py` CLI check. Run it with an explicit built
+executable, for example `python3 scripts/verify_typed_formatter.py target/debug/oxid`.
+The same check runs in repository verification and the portable CI host matrix.
+All exact expected outputs remain unchanged from the design checkpoint; fixture
+presence alone is not evidence that a particular executable passed.
 
 - `cases.json`: 28 exact UTF-8 positive input/output pairs and 13 malformed
   inputs with source-inspected error classes. JSON escapes make CRLF, tabs,
@@ -31,6 +34,6 @@ seams to produce one formatted string, then wire the explicit CLI route.
 A few ordinary unit/public-CLI tests can consume this contract; it does not
 require a new validation system or any unrelated language work.
 
-Baseline: `17ed3de243785006ab888d87af4428d06117b21d`. No production source,
-grammar or existing test was changed by this design.
+Design baseline: `17ed3de243785006ab888d87af4428d06117b21d`. The JSON status
+fields preserve their design provenance, not a current test-result claim.
 

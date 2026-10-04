@@ -108,3 +108,11 @@ cross-references the same ownership capability, without creating another feature
 for it. Stored-reference lifetimes, partial moves, field-disjoint loans,
 heap/resource cleanup, unsafe/FFI safety, broader native targets and stable ABI
 remain outside this increment. No inventory count certifies a milestone or v1.0.
+
+The experimental [typed formatter](../../spec/typed-preview.md#single-file-formatting)
+is a separate syntax-only operation. It preserves token/comment spelling and
+interior line breaks while normalizing spaces and indentation. Explicit `fmt`
+writes complete source to stdout; `--check` distinguishes drift from errors.
+No module loading, typechecking, execution or file writes occur. Ordinary
+formatter tests are registered in the repository and portable-host CI; this
+registration is not itself cross-platform validation or a stable-format claim.

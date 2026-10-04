@@ -542,42 +542,88 @@ mod tests {
     fn typed_format_accepts_only_its_scoped_flag_and_single_literal_path() {
         for values in [
             &["fmt", "--edition", "typed-preview", "file.ox"][..],
-            &["--edition=typed-preview", "fmt", "--message-format=text", "file.ox"],
+            &[
+                "--edition=typed-preview",
+                "fmt",
+                "--message-format=text",
+                "file.ox",
+            ],
             &["fmt", "file.ox", "--edition=typed-preview"],
         ] {
-            assert_eq!(route(&arguments(values)), Route::TypedFormat { path: "file.ox".into(), check: false });
+            assert_eq!(
+                route(&arguments(values)),
+                Route::TypedFormat {
+                    path: "file.ox".into(),
+                    check: false
+                }
+            );
         }
         for values in [
             &["--edition=typed-preview", "fmt", "--check", "file.ox"][..],
             &["fmt", "file.ox", "--edition=typed-preview", "--check"],
         ] {
-            assert_eq!(route(&arguments(values)), Route::TypedFormat { path: "file.ox".into(), check: true });
+            assert_eq!(
+                route(&arguments(values)),
+                Route::TypedFormat {
+                    path: "file.ox".into(),
+                    check: true
+                }
+            );
         }
         for name in ["--check", "--flag-named.ox", "./-"] {
-            assert_eq!(route(&arguments(&["fmt", "--edition=typed-preview", "--", name])), Route::TypedFormat { path: name.into(), check: false });
+            assert_eq!(
+                route(&arguments(&["fmt", "--edition=typed-preview", "--", name])),
+                Route::TypedFormat {
+                    path: name.into(),
+                    check: false
+                }
+            );
         }
     }
 
     #[test]
     fn typed_format_owns_selected_errors_but_preserves_global_errors() {
         for trailing in [
-            &[][..], &["a.ox", "b.ox"], &["--check", "--check", "a.ox"],
-            &["--check=true", "a.ox"], &["--write", "a.ox"], &["--output", "a.ox"],
-            &["-"], &["--", "-"], &["a.ox", "--message-format=json"],
+            &[][..],
+            &["a.ox", "b.ox"],
+            &["--check", "--check", "a.ox"],
+            &["--check=true", "a.ox"],
+            &["--write", "a.ox"],
+            &["--output", "a.ox"],
+            &["-"],
+            &["--", "-"],
+            &["a.ox", "--message-format=json"],
         ] {
             let mut values = vec!["fmt", "--edition=typed-preview"];
             values.extend_from_slice(trailing);
-            assert!(matches!(route(&arguments(&values)), Route::FormatError { .. }), "{values:?}");
+            assert!(
+                matches!(route(&arguments(&values)), Route::FormatError { .. }),
+                "{values:?}"
+            );
         }
         for values in [
             &["--check", "fmt", "file.ox", "--edition=typed-preview"][..],
             &["fmt", "file.ox", "--edition=nope", "--message-format=json"],
-            &["fmt", "file.ox", "--edition=typed-preview", "--message-format=json", "--message-format=text"],
+            &[
+                "fmt",
+                "file.ox",
+                "--edition=typed-preview",
+                "--message-format=json",
+                "--message-format=text",
+            ],
         ] {
-            assert!(matches!(route(&arguments(values)), Route::Error { .. }), "{values:?}");
+            assert!(
+                matches!(route(&arguments(values)), Route::Error { .. }),
+                "{values:?}"
+            );
         }
-        assert_eq!(route(&arguments(&["fmt", "file.ox"])), Route::Legacy(arguments(&["fmt", "file.ox"])));
-        assert_eq!(route(&arguments(&["fmt", "file.ox", "--edition=legacy-0.9"])), Route::Legacy(arguments(&["fmt", "file.ox"])));
+        assert_eq!(
+            route(&arguments(&["fmt", "file.ox"])),
+            Route::Legacy(arguments(&["fmt", "file.ox"]))
+        );
+        assert_eq!(
+            route(&arguments(&["fmt", "file.ox", "--edition=legacy-0.9"])),
+            Route::Legacy(arguments(&["fmt", "file.ox"]))
+        );
     }
-
 }

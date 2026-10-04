@@ -1,10 +1,10 @@
 # RFC 0017: bounded, line-preserving typed-preview formatting
 
-- Status: proposed; design and acceptance data only, not implemented or validated
+- Status: experimental implementation; independent review and exact-head CI pending
 - Baseline: published main `17ed3de243785006ab888d87af4428d06117b21d`
 - Owner: Oxid language/tooling maintainers
-- Review: independent contract and fixture review required before implementation
-- Acceptance decision: pending; this document does not activate a command
+- Review: independent implementation review required before merge
+- Acceptance decision: experimental command implemented; no stability or v1.0 claim
 - Scope: one explicit UTF-8 source file; stdout formatting and read-only `--check`
 
 ## 1. Decision and motivation
@@ -349,10 +349,11 @@ using the formatter's spacing helper.
 
 Repository documented checks include cargo fmt, Clippy with warnings denied,
 locked all-target/all-feature tests, Python script tests, release build and
-`scripts/verify_repo.py`. A later implementation owner must select the
-applicable authorized checks and respect any independently paused work; this
-design does not authorize running unrelated/private qualification packages.
-No tests or compilers were run for this design-only deliverable.
+`scripts/verify_repo.py`. Contributors should run the documented checks for
+changed code and report their exact commands and results.
+The initial design-only checkpoint ran no compilers or tests. The implementation
+adds ordinary unit/integration tests and `scripts/verify_typed_formatter.py` for
+the unchanged hand-authored goldens; exact-head results must be reported separately.
 
 Target ordinary-host evidence: Linux x86_64, Windows x86_64, macOS x86_64 and
 macOS arm64, following the published ordinary CI host set. Output gap LF
