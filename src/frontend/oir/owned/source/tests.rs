@@ -23,19 +23,19 @@ fn unit3a_unchanged_hir_enclosing_layouts() {
 }
 
 #[test]
-fn unit3a_array_ast_stops_before_owned_hir_execution() {
-    for text in [
-        "fn f(a:[i32;1])->(){}",
-        "fn f(a:&mut [i32;1])->(){}",
-        "fn f()->[();0]{}",
-        "fn f()->(){let a:[bool;0]=true;}",
-        "fn f()->(){[1];}",
-        "fn f()->(){a[0];}",
-        "fn f()->(){a.len();}",
-        "fn f()->(){a[0]=1;}",
+fn public_array_ast_enters_owned_resolution_with_normal_errors() {
+    for (text, expected) in [
+        ("fn f(a:[i32;1])->(){}", None),
+        ("fn f(a:&mut [i32;1])->(){}", None),
+        ("fn f()->[();0]{}", None),
+        ("fn f()->(){let a:[bool;0]=true;}", None),
+        ("fn f()->(){[1];}", None),
+        ("fn f()->(){a[0];}", Some("E0200")),
+        ("fn f()->(){a.len();}", Some("E0200")),
+        ("fn f()->(){a[0]=1;}", Some("E0200")),
     ] {
         let mut map = SourceMap::new();
-        let file = map.add("dormant.ox".into(), text.into());
+        let file = map.add("public.ox".into(), text.into());
         let file = map.get(file);
         let (ast, _) = parser::parse_counted_with_arrays(
             file,
@@ -43,20 +43,21 @@ fn unit3a_array_ast_stops_before_owned_hir_execution() {
             parser::SourceMode::OwnedCandidate,
             parser::MAX_NODES,
             &mut crate::frontend::project::budget::Allocator::default(),
-            parser::ArraySyntaxPolicy::Candidate,
+            parser::ArraySyntaxPolicy::Enabled,
         )
         .unwrap();
-        let errors = resolve::resolve(file, &ast).unwrap_err();
-        assert_eq!(
-            (errors[0].code, errors[0].stage),
-            ("E0500", "resolve"),
-            "{text}"
-        );
-        assert_eq!(
-            errors[0].message,
-            "array source execution is unavailable in this dormant syntax checkpoint"
-        );
-        assert!(file.try_text(errors[0].primary.unwrap()).is_some());
+        match expected {
+            None => assert!(resolve::resolve(file, &ast).is_ok(), "{text}"),
+            Some(code) => {
+                let errors = resolve::resolve(file, &ast).unwrap_err();
+                assert_eq!(
+                    (errors[0].code, errors[0].stage),
+                    (code, "resolve"),
+                    "{text}"
+                );
+                assert!(file.try_text(errors[0].primary.unwrap()).is_some());
+            }
+        }
     }
 }
 

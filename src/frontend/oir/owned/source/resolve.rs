@@ -133,36 +133,14 @@ fn value_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
     ty: ast::TypeSyntax,
-    admission: SourceAdmission,
 ) -> Result<ValueTy, Box<Diagnostic>> {
-    source_type_enabled(ty, admission)?;
     query.value_type(requester, ty, TypeContext::Value)
-}
-fn source_type_enabled(
-    ty: ast::TypeSyntax,
-    admission: SourceAdmission,
-) -> Result<(), Box<Diagnostic>> {
-    if admission.executable()
-        && matches!(
-            ty.kind,
-            ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
-        )
-    {
-        return Err(error(
-            "E0500",
-            format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
-            ty.span,
-        ));
-    }
-    Ok(())
 }
 fn parameter_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
     ty: ast::TypeSyntax,
-    admission: SourceAdmission,
 ) -> Result<ParameterTy, Box<Diagnostic>> {
-    source_type_enabled(ty, admission)?;
     query.parameter_type(requester, ty)
 }
 fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
@@ -218,13 +196,8 @@ pub(in crate::frontend) fn resolve_sources(
 ) -> Result<ResolvedOwnedProgram<'_>, Vec<Diagnostic>> {
     let work = WorkMeter::default();
     let mut allocator = Allocator::default();
-    let (index, (records, signatures, functions)) = resolve_source_parts(
-        sources,
-        &work,
-        &mut allocator,
-        SourceAdmission::Executable,
-        IndexLimits::default(),
-    )?;
+    let (index, (records, signatures, functions)) =
+        resolve_source_parts(sources, &work, &mut allocator, IndexLimits::default())?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::Executable,
@@ -246,13 +219,8 @@ pub(in crate::frontend::oir) fn resolve_observed<'s>(
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
     let sources =
         SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
-    let (index, (records, signatures, functions)) = resolve_source_parts(
-        sources,
-        work,
-        allocator,
-        SourceAdmission::Executable,
-        IndexLimits::default(),
-    )?;
+    let (index, (records, signatures, functions)) =
+        resolve_source_parts(sources, work, allocator, IndexLimits::default())?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::Executable,
@@ -269,12 +237,11 @@ fn resolve_source_parts<'s>(
     sources: SourceOwner<'s>,
     work: &WorkMeter,
     allocator: &mut Allocator,
-    admission: SourceAdmission,
     limits: IndexLimits,
 ) -> Result<(DeclarationIndex<'s>, ResolvedParts), Vec<Diagnostic>> {
     let facts = index::collect_originals(sources, limits, work, allocator).map_err(|e| vec![*e])?;
     let index = facts.finish(work, allocator)?;
-    let parts = resolve_index(&index, work, allocator, admission)?;
+    let parts = resolve_index(&index, work, allocator)?;
     Ok((index, parts))
 }
 pub(in crate::frontend) fn resolve_project<'s>(
@@ -282,8 +249,7 @@ pub(in crate::frontend) fn resolve_project<'s>(
     work: &'s WorkMeter,
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
     let mut allocator = Allocator::default();
-    let (records, signatures, functions) =
-        resolve_index(index, work, &mut allocator, SourceAdmission::Executable)?;
+    let (records, signatures, functions) = resolve_index(index, work, &mut allocator)?;
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::Executable,
         sources: index.sources().view(),
@@ -300,7 +266,6 @@ fn resolve_index(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
     allocator: &mut Allocator,
-    admission: SourceAdmission,
 ) -> Result<ResolvedParts, Vec<Diagnostic>> {
     let sources = index.sources();
     let mut diagnostics = Vec::new();
@@ -320,8 +285,7 @@ fn resolve_index(
                 if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ValueTy::Scalar(ty) =
-                    value_type(&mut index.query(work), module, field.ty, admission)?
+                let ValueTy::Scalar(ty) = value_type(&mut index.query(work), module, field.ty)?
                 else {
                     return Err(error(
                         "E0202",
@@ -368,9 +332,9 @@ fn resolve_index(
             let params = function
                 .params
                 .iter()
-                .map(|p| parameter_type(&mut index.query(work), module, p.ty, admission))
+                .map(|p| parameter_type(&mut index.query(work), module, p.ty))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = value_type(&mut index.query(work), module, function.result, admission)?;
+            let result = value_type(&mut index.query(work), module, function.result)?;
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
@@ -378,7 +342,7 @@ fn resolve_index(
                         ..
                     } = statement.kind
                     {
-                        value_type(&mut index.query(work), module, ty, admission)?;
+                        value_type(&mut index.query(work), module, ty)?;
                     }
                 }
             }
@@ -487,7 +451,6 @@ fn resolve_index(
         let ast = sources.ast(requester).map_err(|e| vec![*e])?;
         let mut resolver = Resolver {
             allocator,
-            admission,
             array_entries: &mut array_entries,
             ast,
             index,
@@ -514,7 +477,6 @@ fn resolve_index(
 }
 struct Resolver<'i, 'a> {
     allocator: &'i mut Allocator,
-    admission: SourceAdmission,
     array_entries: &'i mut usize,
     ast: &'a ast::Program,
     index: &'i DeclarationIndex<'a>,
@@ -645,14 +607,7 @@ impl<'a> Resolver<'_, 'a> {
                 } => {
                     let init = self.expression(*init)?;
                     let annotation = annotation
-                        .map(|ty| {
-                            value_type(
-                                &mut self.index.query(self.work),
-                                self.requester,
-                                ty,
-                                self.admission,
-                            )
-                        })
+                        .map(|ty| value_type(&mut self.index.query(self.work), self.requester, ty))
                         .transpose()?;
                     let local =
                         self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
@@ -713,12 +668,6 @@ impl<'a> Resolver<'_, 'a> {
                     value,
                 } => {
                     let target = &self.ast.expressions[target.0];
-                    if self.admission.executable() {
-                        return Err(error(
-                            "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
-                            target.span,
-                        ));
-                    }
                     self.work.debit(1, target.span, "array resolve store")?;
                     let ast::ExprKind::IndexRead { base, index } = target.kind else {
                         return Err(error(
@@ -809,19 +758,6 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
-            ast::ExprKind::ArrayLiteral { .. }
-            | ast::ExprKind::IndexRead { .. }
-            | ast::ExprKind::ArrayLength { .. }
-                if self.admission.executable() =>
-            {
-                return Err(error(
-                    "E0500",
-                    format_args!(
-                        "array source execution is unavailable in this dormant syntax checkpoint"
-                    ),
-                    expr.span,
-                ));
-            }
             ast::ExprKind::ArrayLiteral { elements } => {
                 self.work.debit(1, expr.span, "array resolve literal")?;
                 let requested = checked_array_entries(*self.array_entries, elements.len())
@@ -1119,13 +1055,8 @@ pub(super) fn resolve_array_types<'s>(
     work: &'s WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
-    let (index, (records, signatures, functions)) = resolve_source_parts(
-        sources,
-        work,
-        allocator,
-        SourceAdmission::ObserveArrayTypes,
-        limits,
-    )?;
+    let (index, (records, signatures, functions)) =
+        resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::ObserveArrayTypes,
@@ -1148,13 +1079,8 @@ pub(super) fn resolve_array_pipeline<'s>(
     work: &'s WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
-    let (index, (records, signatures, functions)) = resolve_source_parts(
-        sources,
-        work,
-        allocator,
-        SourceAdmission::ObserveArrayPipeline,
-        limits,
-    )?;
+    let (index, (records, signatures, functions)) =
+        resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::ObserveArrayPipeline,
@@ -1177,13 +1103,8 @@ pub(super) fn resolve_array_consumer<'s>(
     work: &'s WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
-    let (index, (records, signatures, functions)) = resolve_source_parts(
-        sources,
-        work,
-        allocator,
-        SourceAdmission::ArrayConsumer,
-        limits,
-    )?;
+    let (index, (records, signatures, functions)) =
+        resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
         admission: SourceAdmission::ArrayConsumer,

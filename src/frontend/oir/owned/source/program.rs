@@ -50,8 +50,8 @@ pub(in crate::frontend::oir) fn check_typed(
     Ok(SourceProgram { witness })
 }
 
-/// Source-produced arrays can reach the real Reference consumer only through
-/// this private test seam. No typed owner, raw program or witness is returned.
+/// Private consumer qualification remains separate from public SourceProgram
+/// admission. No typed owner, raw program or witness is returned by this seam.
 #[cfg(test)]
 pub(super) fn run_array_source<'s>(
     owner: SourceOwner<'s>,

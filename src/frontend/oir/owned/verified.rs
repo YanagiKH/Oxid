@@ -33,9 +33,9 @@ pub(super) fn verify_with_limits(
     limits: budget::Limits,
 ) -> Result<VerifiedOwnedProgram, OwnedFailure> {
     let (mut usage, declarations, mut meter) = prepare(&raw, sources, limits)?;
-    // Mandatory production boundary until both array consumers are complete.
-    // This call cannot be selected away by a caller or by a test-only flag.
-    reject_array_carriers(&raw, &mut meter)?;
+    // Retain the pre-existing fixed carrier-inventory work charges for all
+    // programs. Array admission still requires every authoritative check below.
+    inventory_carriers(&raw, &mut meter)?;
     validate(&raw, &declarations, sources, &mut usage, &mut meter)?;
     Ok(VerifiedOwnedProgram {
         program: raw,
@@ -99,7 +99,7 @@ fn validate(
     Ok(())
 }
 
-/// Exercise the exact authoritative checks while array execution is gated.
+/// Observe the authoritative checks without acquiring execution authority.
 /// Only unprivileged usage or a failure escapes; neither raw data, declarations,
 /// a plan nor an executable witness is returned, even under cfg(test).
 #[cfg(test)]
@@ -175,58 +175,22 @@ pub(super) fn probe_array_native(
     ))
 }
 
-/// One fixed inventory pass, no allocation. Active rows fit the existing
-/// 32*n fixed-pass allowance: owners + references + loans <= n; the meter
-/// records each retained-row visit. Per-function result inspection is ordinary
-/// signature inventory under the unchanged program function cap. Inactive
-/// functions have no retained rows and only inspect their result, as signatures
-/// already does, under the existing program function cap. Admission costs and
-/// preflight/declaration error precedence are unchanged.
-fn reject_array_carriers(
+/// Preserve the fixed carrier-inventory charge used before array activation.
+/// Shape, identity, availability and loan checks remain mandatory in `validate`,
+/// including every malformed instruction in unreachable blocks.
+fn inventory_carriers(
     raw: &RawOwnedProgram,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
-    let check = |aggregate, span| match aggregate {
-        AggregateTy::Record(_) => Ok(()),
-        AggregateTy::FixedArray(_) => {
-            Err(OwnedFailure::malformed(Malformed::UnsupportedArray, span))
-        }
-    };
     for f in &raw.functions {
-        if let ValueTy::Owned(aggregate) = f.result {
-            check(aggregate, f.span)?;
-        }
-        for owner in &f.owners {
+        for _ in &f.owners {
             meter.visit()?;
-            check(owner.aggregate(), owner.span)?;
         }
-        for reference in &f.references {
+        for _ in &f.references {
             meter.visit()?;
-            check(reference.aggregate(), reference.span)?;
         }
-        for loan in &f.loans {
+        for _ in &f.loans {
             meter.visit()?;
-            check(loan.aggregate(), loan.span)?;
-        }
-        // A malformed array operation may have no array carrier at all. It
-        // must not reach a seal merely because the carrier inventory was empty.
-        // This fixed scan is bounded by the already admitted statement count;
-        // it allocates nothing and does not alter array-free admission costs.
-        for block in &f.blocks {
-            for instruction in &block.statements {
-                if matches!(
-                    instruction.kind,
-                    OwnedInstruction::ConstructArray { .. }
-                        | OwnedInstruction::ReadIndex { .. }
-                        | OwnedInstruction::WriteIndex { .. }
-                        | OwnedInstruction::ArrayLength { .. }
-                ) {
-                    return Err(OwnedFailure::malformed(
-                        Malformed::UnsupportedArray,
-                        instruction.span,
-                    ));
-                }
-            }
         }
     }
     Ok(())

@@ -136,11 +136,13 @@ fn unit3a_child_only_syntax_keeps_cumulative_source_token_node_admission() {
         let failure = f.load(limits).unwrap_err();
         assert_eq!(failure.diagnostics[0].code, "E0400");
     }
-    assert!(ProjectSources::load_typed(
+    let public = ProjectSources::load_typed(
         f.0.join("main.ox").to_str().unwrap(),
-        ProjectLimits::default()
+        ProjectLimits::default(),
     )
-    .is_err());
+    .unwrap();
+    assert!(public.uses_owned_syntax());
+    assert_eq!(public.usage(), p.usage());
 }
 
 #[test]

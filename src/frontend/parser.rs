@@ -64,10 +64,11 @@ impl SourceMode {
         true
     }
 }
-/// Independent of edition/module routing. Production callers cannot open it.
+/// Independent of module routing; only the explicit typed loader enables arrays.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ArraySyntaxPolicy {
     Closed,
+    Enabled,
     #[cfg(test)]
     Candidate,
 }
@@ -75,6 +76,7 @@ impl ArraySyntaxPolicy {
     fn enabled(self) -> bool {
         match self {
             Self::Closed => false,
+            Self::Enabled => true,
             #[cfg(test)]
             Self::Candidate => true,
         }
@@ -911,7 +913,10 @@ impl Parser<'_> {
             }
         } else {
             let target = self.expression(0, LiteralContext::Allowed)?;
-            if self.arrays_enabled() && self.peek().kind == Kind::Equal {
+            if self.arrays_enabled()
+                && self.peek().kind == Kind::Equal
+                && self.array_assignment_expression(target)
+            {
                 if !matches!(self.expressions[target.0].kind, ExprKind::IndexRead { .. }) {
                     return Err(self.array_unsupported(self.expressions[target.0].span));
                 }

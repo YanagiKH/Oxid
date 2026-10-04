@@ -1250,17 +1250,17 @@ fn scalar_dominance_uses_real_owned_instruction_positions_and_return_edges() {
 mod reviewer_heldout;
 
 #[test]
-fn unit2a_all_array_carriers_reject_before_witness_or_consumers() {
+fn production_array_carriers_require_consistent_signatures_and_loans() {
     let (sources, s) = context();
     let mut rejected = 0;
-    let mut consumer_entries = 0;
+    let mut admitted = 0;
     for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
         for length in [0, 1, 1024] {
             let aggregate = AggregateTy::FixedArray(FixedArrayTy::check(element, length).unwrap());
             let slot = AggregateSlot::try_from_aggregate(aggregate).unwrap();
             for carrier in 0..6 {
                 // A result-only, ownership-inactive function has no array use.
-                // An infinite loop is valid for either result type absent the gate.
+                // An infinite loop is valid for either result type.
                 let mut function = unit_function(0, s);
                 function.blocks[0].statements.clear();
                 function.blocks[0].terminator = end(OwnedTerminatorKind::Goto(BlockId(0)), s);
@@ -1316,30 +1316,35 @@ fn unit2a_all_array_carriers_reject_before_witness_or_consumers() {
                     }),
                     _ => unreachable!(),
                 }
-                let error = verify_owned(raw(function), &sources)
-                    .map(|witness| {
-                        consumer_entries += 1;
-                        // All three public consumer paths require this same witness.
-                        let _ = plan::ExecutionPlan::build(&witness);
-                        let _ = execute::run(&witness, Some(hir::DefId(0)));
-                        let _ = native::native_module(&witness, Some(hir::DefId(0)), &sources);
-                    })
-                    .unwrap_err();
-                assert_eq!(
-                    error.kind,
-                    OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
-                );
-                assert_eq!(error.primary.get(), Some(s));
-                rejected += 1;
+                let result = verify_owned(raw(function), &sources);
+                if carrier <= 3 {
+                    let witness = result.unwrap();
+                    plan::ExecutionPlan::build(&witness).unwrap();
+                    admitted += 1;
+                } else {
+                    // Unbound references and loans without their call/owner
+                    // remain malformed even though their array identity is valid.
+                    let error = result.unwrap_err();
+                    assert_eq!(
+                        error.kind,
+                        OwnedFailureKind::Malformed(if carrier == 4 {
+                            Malformed::Binding
+                        } else {
+                            Malformed::Id
+                        })
+                    );
+                    assert_eq!(error.primary.get(), Some(s));
+                    rejected += 1;
+                }
             }
         }
     }
-    assert_eq!(rejected, 54);
-    assert_eq!(consumer_entries, 0);
+    assert_eq!(admitted, 36);
+    assert_eq!(rejected, 18);
 }
 
 #[test]
-fn unit2a_preflight_and_declarations_still_precede_array_gate() {
+fn array_preflight_and_declarations_still_precede_shape_checks() {
     let (sources, s) = context();
     let aggregate = AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, 0).unwrap());
     let mut raw = subject(s);

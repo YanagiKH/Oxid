@@ -428,13 +428,10 @@ fn native_arrays_core_matrix_and_maximum_width_emit_without_privileged_witnesses
                 assert!(!text.contains(forbidden), "{case:?}: {forbidden}");
             }
             if case.access == Access::Length {
-                let error =
+                let witness =
                     verified::verify_with_limits(case.build(&s), &sources, budget::Limits::DEFAULT)
-                        .unwrap_err();
-                assert_eq!(
-                    error.kind,
-                    OwnedFailureKind::Malformed(Malformed::UnsupportedArray)
-                );
+                        .unwrap();
+                assert!(native::native_module(&witness, Some(hir::DefId(0)), &sources).is_ok());
             }
             counts[group] += 1;
         }

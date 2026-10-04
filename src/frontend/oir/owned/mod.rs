@@ -238,7 +238,6 @@ enum OwnedTerminatorKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Malformed {
-    UnsupportedArray,
     Id,
     Span,
     Type,

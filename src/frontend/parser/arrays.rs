@@ -1,10 +1,24 @@
-//! Dormant array grammar over the original lossless token tape.
+//! Bounded fixed-scalar-array grammar over the original lossless token tape.
 use super::*;
 use crate::frontend::source::Span;
 
 impl Parser<'_> {
     pub(super) fn arrays_enabled(&self) -> bool {
         self.mode.owned() && self.arrays.enabled()
+    }
+
+    /// Refine only newly admitted array targets. Existing scalar/record invalid
+    /// assignments still fail at the required semicolon with their old origin.
+    pub(super) fn array_assignment_expression(&self, mut target: ExprId) -> bool {
+        while let ExprKind::Group(inner) = self.expressions[target.0].kind {
+            target = inner;
+        }
+        matches!(
+            self.expressions[target.0].kind,
+            ExprKind::ArrayLiteral { .. }
+                | ExprKind::IndexRead { .. }
+                | ExprKind::ArrayLength { .. }
+        )
     }
 
     pub(super) fn array_punctuation(&self, spelling: &str) -> bool {
