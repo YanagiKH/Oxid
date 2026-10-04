@@ -67,7 +67,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 188)
+        self.assertEqual(len(captured["inputs"]), 196)
+        self.assertEqual(len(captured["slices_inputs"]), 188)
         self.assertEqual(len(captured["division_inputs"]), 185)
         self.assertEqual(len(captured["combined_inputs"]), 185)
         self.assertEqual(len(captured["formatter_inputs"]), 133)
@@ -86,6 +87,93 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(receipt["slices_inverse_patch_sha256"], binding.SLICES_PATCH_SHA)
         self.assertEqual(receipt["division_source_sha256"], binding.DIVISION_SOURCE_SHA)
         binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
+
+
+    def test_composition_inverse_restores_exact_slice_predecessor(self):
+        captured = self.captured
+        restored, touched = binding.inverse_composition_patch(
+            captured["inputs"], captured["package_bytes"]["composition-transition.patch"])
+        self.assertEqual(restored, captured["slices_inputs"])
+        self.assertEqual(touched, list(binding.COMPOSITION_PATHS))
+        self.assertEqual(len(touched), 40)
+        self.assertEqual(len(set(touched)), 40)
+        self.assertEqual(len(binding.COMPOSITION_ADDITIONS), 8)
+        self.assertEqual(set(captured["inputs"]) - set(restored), set(binding.COMPOSITION_ADDITIONS))
+        binding.check_bytes(restored, captured["slices_source"]["files"])
+        self.assertEqual(binding.digest(captured["package_bytes"]["slices-source.json"]),
+                         "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660")
+        self.assertEqual(captured["current"]["reviewed_source_head"],
+                         "8ae66ef5543bcb1251868b84ea38a82c2649a3a4")
+        self.assertEqual(captured["current"]["source_only_tree"],
+                         "f6b7dee8bac4ebcc27ad020db9940344c5e4ae41")
+        self.assertEqual(len([n for n in captured["inputs"] if n.startswith(("src/", "native/"))]), 140)
+
+    def test_composition_members_are_required_and_byte_bound(self):
+        for name in binding.COMPOSITION_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// changed composition member\n")
+                with patch.object(binding, "inverse_composition_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+
+    def test_composition_additions_cannot_be_omitted(self):
+        for name in binding.COMPOSITION_ADDITIONS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(raw)
+
+    def test_composition_manifest_coherent_tampering_rejects(self):
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = current["files"][:-1]
+        binding.write_json(self.package / "current-source.json", current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_composition_authority_coherent_tampering_rejects(self):
+        authority = binding.read_json(self.package / "composition-authority.json")
+        authority["public_sample_closure"]["references"] = 2
+        binding.write_json(self.package / "composition-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale composition authority")
+
+    def test_composition_patch_changed_or_missing_rejects(self):
+        source = self.package / "composition-transition.patch"
+        original = source.read_bytes()
+        source.write_bytes(original + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_composition_inverse_requires_each_exact_context(self):
+        original = self.captured["package_bytes"]["composition-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 40)
+        for name, section in zip(binding.COMPOSITION_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_composition_patch(inputs, original)
+
+    def test_composition_inverse_scope_order_and_duplicate_controls(self):
+        original = self.captured["package_bytes"]["composition-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.COMPOSITION_PATHS)
 
     def test_division_successor_restores_every_combined_input_before_older_stages(self):
         captured = self.captured
@@ -135,7 +223,7 @@ class SourceBindingTests(unittest.TestCase):
                 calls.append(name)
                 return original(*args)
             return wrapper
-        names = ("inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
+        names = ("inverse_composition_patch", "inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
         with ExitStack() as stack:
             for name in names:
                 stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
@@ -145,31 +233,31 @@ class SourceBindingTests(unittest.TestCase):
     def test_slices_successor_restores_exact_division_before_older_stages(self):
         captured = self.captured
         restored, touched = binding.inverse_slices_patch(
-            captured["inputs"], captured["package_bytes"]["slices-transition.patch"])
+            captured["slices_inputs"], captured["package_bytes"]["slices-transition.patch"])
         self.assertEqual(touched, list(binding.SLICES_PATHS))
         self.assertEqual(len(touched), 47)
         self.assertEqual(len(set(touched)), 47)
         self.assertEqual(restored, captured["division_inputs"])
-        self.assertEqual(set(captured["inputs"]) - set(restored), set(binding.SLICES_ADDITIONS))
+        self.assertEqual(set(captured["slices_inputs"]) - set(restored), set(binding.SLICES_ADDITIONS))
         self.assertEqual(len(binding.SLICES_ADDITIONS), 3)
         self.assertEqual(len(restored), 185)
         binding.check_bytes(restored, captured["division_source"]["files"])
-        self.assertEqual([name for name in captured["inputs"]
-                          if captured["inputs"][name] != restored.get(name)], list(binding.SLICES_PATHS))
-        self.assertEqual(captured["current"]["reviewed_source_head"],
+        self.assertEqual([name for name in captured["slices_inputs"]
+                          if captured["slices_inputs"][name] != restored.get(name)], list(binding.SLICES_PATHS))
+        self.assertEqual(captured["slices_source"]["reviewed_source_head"],
                          "03aead9755b1dd6aaec2b4b165ee3881a7a1f7b7")
-        self.assertEqual(captured["current"]["source_only_tree"],
+        self.assertEqual(captured["slices_source"]["source_only_tree"],
                          "450f016ed57bc3d960e0857bb8253e71a8aa718a")
-        self.assertEqual(captured["current"]["slices_base_head"],
+        self.assertEqual(captured["slices_source"]["slices_base_head"],
                          "c5798a232ebdacaf720d580007ee8d760957a081")
         self.assertEqual(binding.entry("division-source.json", captured["package_bytes"]["division-source.json"]),
                          {"path": "division-source.json", "bytes": 35161,
                           "sha256": "d3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33"})
-        compiler = [name for name in captured["inputs"] if name.startswith(("src/", "native/"))]
+        compiler = [name for name in captured["slices_inputs"] if name.startswith(("src/", "native/"))]
         self.assertEqual(len(compiler), 136)
         self.assertEqual(len(compiler) + 3, 139)
         self.assertEqual(captured["slices_authority"]["current_input_git_modes"],
-                         [{"path": name, "mode": "100644"} for name in captured["inputs"]])
+                         [{"path": name, "mode": "100644"} for name in captured["slices_inputs"]])
         for row in captured["slices_authority"]["transition_inputs"]:
             self.assertEqual(row["before"] is None, row["path"] in binding.SLICES_ADDITIONS)
             self.assertEqual(row["after"]["mode"], "100644")
@@ -291,12 +379,12 @@ class SourceBindingTests(unittest.TestCase):
     def test_slices_inverse_requires_exact_patch_and_each_current_context(self):
         original = self.captured["package_bytes"]["slices-transition.patch"]
         with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
-            binding.inverse_slices_patch(self.captured["inputs"], original + b"\n")
+            binding.inverse_slices_patch(self.captured["slices_inputs"], original + b"\n")
         sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
         self.assertEqual(len(sections), 47)
         for path, section in zip(binding.SLICES_PATHS, sections):
             with self.subTest(path=path):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["slices_inputs"])
                 first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[path].splitlines(keepends=True)
@@ -312,7 +400,7 @@ class SourceBindingTests(unittest.TestCase):
                                   (b"".join(sections[:-1]), "wrong transition scope"),
                                   (original + sections[0], "duplicate transition member")):
             with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["slices_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.SLICES_PATHS)
 
     def test_compile_time_fixture_predecessor_and_current_pins_remain_distinct(self):
