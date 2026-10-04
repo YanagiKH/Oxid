@@ -215,3 +215,27 @@ evidence, but this appendix does not convert it into exact successor-head eviden
 - owned/source/lower.rs:132–150 enclosing types;1792–1809 variable scratch
 - owned/source/array_pipeline.rs:254–274 LiteralRequest/Output;570–585 fixed auxiliary
 - owned/plan.rs:6–11 runtime limits; owned/native.rs:7–16 native limits
+
+
+## Reproducing the declaration-only generation
+
+The extractor requires an explicit Git checkout, an existing source tree/ref,
+and a fresh output directory. It never guesses a sibling checkout, fetches Git
+objects, or overwrites the independently measured evidence in this package.
+For the published composition source use:
+
+```sh
+python3 -B tests/qualification/record_composition_resource_v1/derive-layout-probe.py \
+  --repo /path/to/Oxid --tree f6b7dee8bac4ebcc27ad020db9940344c5e4ae41 \
+  --output /fresh/output/composition-layout
+rustc --edition 2021 /fresh/output/composition-layout/declaration-layout-probe.rs \
+  -o /fresh/output/composition-layout/probe
+/fresh/output/composition-layout/probe
+```
+
+An explicit `--tree HEAD` is also supported. The generated input receipt records
+the resolved tree identity, requested ref, source-file and declaration hashes.
+A missing requested object produces a clear error; supply a checkout containing
+that object rather than silently substituting a different source. The original
+measured probe outputs and declaration-input receipts above are unchanged. The
+extractor packaging correction is separate from those historical measurements.

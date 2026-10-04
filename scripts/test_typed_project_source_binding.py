@@ -1404,10 +1404,13 @@ class SourceBindingTests(unittest.TestCase):
         self.assertFalse((output / "result.json").exists())
         self.assertEqual(prepared["plan_sha256"], binding.digest((output / "plan.json").read_bytes()))
         plan = binding.read_json(output / "plan.json")
+        self.assertEqual(plan["slices_source_members"], 188)
+        self.assertEqual(plan["composition_authority_sha256"], binding.COMPOSITION_AUTHORITY_SHA)
+        self.assertEqual(plan["slices_source_sha256"], binding.SLICES_SOURCE_SHA)
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (188, 185, 185, 133, 129, 117))
+                         (196, 185, 185, 133, 129, 117))
         self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
         self.assertEqual(plan["unit2_current_observer_controls_per_profile"], 6)
         self.assertEqual(prepared["slices_authority_sha256"], binding.SLICES_AUTHORITY_SHA)

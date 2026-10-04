@@ -2,9 +2,31 @@
 """Extract declaration shapes from a pinned git tree, without implementation code."""
 import argparse,hashlib,json,re,subprocess
 from pathlib import Path
-ROOT=Path(__file__).resolve().parent
-REPO=ROOT.parent/'oxid-record-composition'
-parser=argparse.ArgumentParser(); parser.add_argument('--tree',default='f6b7dee8bac4ebcc27ad020db9940344c5e4ae41'); parser.add_argument('--stem',default='declaration-layout'); args=parser.parse_args(); TREE=args.tree; STEM=args.stem
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--repo', type=Path, required=True, help='Git checkout supplying the declared source object')
+parser.add_argument('--tree', required=True, help='Explicit existing Git tree, commit, or ref; no fetch is performed')
+parser.add_argument('--output', type=Path, required=True, help='Fresh output directory; existing evidence is never overwritten')
+parser.add_argument('--stem', default='declaration-layout')
+args = parser.parse_args()
+REPO = args.repo.resolve()
+if not REPO.is_dir():
+    parser.error('requested repository directory does not exist: ' + str(REPO))
+if not re.fullmatch(r'[A-Za-z0-9_-]+', args.stem):
+    parser.error('stem must contain only letters, digits, underscores or hyphens')
+try:
+    TREE = subprocess.check_output(
+        ['git', '-C', str(REPO), 'rev-parse', '--verify', '--end-of-options', args.tree + '^{tree}'],
+        stderr=subprocess.PIPE, text=True).strip()
+except subprocess.CalledProcessError:
+    parser.error('requested Git source object is unavailable: ' + args.tree)
+if not re.fullmatch(r'[0-9a-f]{40}', TREE):
+    parser.error('requested source did not resolve to a supported Git tree identity')
+ROOT = args.output.resolve()
+try:
+    ROOT.mkdir(parents=True, exist_ok=False)
+except FileExistsError:
+    parser.error('output already exists; choose a fresh directory: ' + str(ROOT))
+STEM = args.stem
 SPECS={
  'src/frontend/source.rs':['SourceFileId','Span'],
  'src/frontend/hir.rs':['Ty'],
@@ -43,4 +65,4 @@ for name in names:
  ty=name+"<'_>" if name=='ScalarLeaves' else name
  program+=f'println!("{{}} {{}} {{}}", "{name}", std::mem::size_of::<{ty}>(), std::mem::align_of::<{ty}>());\n'
 program+='}\n';(ROOT/(STEM+'-probe.rs')).write_text(program)
-(ROOT/(STEM+'-inputs.json')).write_text(json.dumps({'tree':TREE,'method':'Exact type declarations only; visibility removed and hir::Ty path shortened. No implementation methods or candidate outputs used. Selected types have no repr attributes. Derive attributes intentionally absent because they do not affect representation. The depth64 constant is RFC0020 contract.','files':rows,'probe_sha256':hashlib.sha256(program.encode()).hexdigest()},indent=2)+'\n')
+(ROOT/(STEM+'-inputs.json')).write_text(json.dumps({'tree':TREE,'requested_ref':args.tree,'repository':str(REPO),'method':'Exact type declarations only; visibility removed and hir::Ty path shortened. No implementation methods or candidate outputs used. Selected types have no repr attributes. Derive attributes intentionally absent because they do not affect representation. The depth64 constant is RFC0020 contract.','files':rows,'probe_sha256':hashlib.sha256(program.encode()).hexdigest()},indent=2)+'\n')

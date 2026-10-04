@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = 'f4b609e1bb59217f00ee21eb3138959c5dce1a3c3f0ce9d5f5f0d4a684a2bf6b'
+INPUTS_SHA = '10da5e009f11ba642137866c5cc9b43a5bad456d4a5d9dbf20cabafb9dd0b159'
 CURRENT_SHA = 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'

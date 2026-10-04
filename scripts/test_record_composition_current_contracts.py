@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+import tempfile
 
 REPO = Path(__file__).resolve().parents[1]
 RESOURCE = REPO / 'tests/qualification/record_composition_resource_v1'
@@ -26,6 +27,42 @@ class CurrentCompositionContractTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('no candidate semantic output used', result.stdout)
+
+    def test_extractor_uses_explicit_clean_checkout_and_fresh_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); checkout = root / 'checkout'; output = root / 'probe'
+            subprocess.run(['git', 'clone', '--quiet', '--shared', str(REPO), str(checkout)], check=True)
+            self.assertEqual(subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain']), b'')
+            argv = [sys.executable, '-B', str(RESOURCE / 'derive-layout-probe.py'),
+                    '--repo', str(checkout), '--tree', 'HEAD', '--output', str(output)]
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((output / 'declaration-layout-probe.rs').read_bytes(),
+                             (RESOURCE / 'declaration-layout-probe.rs').read_bytes())
+            inputs = json.loads((output / 'declaration-layout-inputs.json').read_bytes())
+            original = json.loads((RESOURCE / 'declaration-layout-inputs.json').read_bytes())
+            self.assertEqual(inputs['files'], original['files'])
+            self.assertEqual(inputs['requested_ref'], 'HEAD')
+            self.assertEqual(inputs['tree'], subprocess.check_output(
+                ['git', '-C', str(checkout), 'rev-parse', 'HEAD^{tree}'], text=True).strip())
+            self.assertEqual(inputs['repository'], str(checkout))
+            before = {p.name: p.read_bytes() for p in output.iterdir()}
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('output already exists', result.stderr)
+            self.assertEqual(before, {p.name: p.read_bytes() for p in output.iterdir()})
+
+    def test_extractor_missing_repository_or_source_object_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for repo, tree, message in ((root / 'missing', 'HEAD', 'repository directory does not exist'),
+                                         (REPO, '0' * 40, 'Git source object is unavailable')):
+                result = subprocess.run([sys.executable, '-B', str(RESOURCE / 'derive-layout-probe.py'),
+                                         '--repo', str(repo), '--tree', tree, '--output', str(root / 'output')],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertFalse((root / 'output').exists())
 
     def test_array_record_case_amendment_preserves_unexecuted_historical_fact(self):
         amendment = json.loads((REPO / 'docs/architecture/record-composition-semantic-amendment-v1.json').read_bytes())

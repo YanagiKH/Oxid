@@ -18,8 +18,8 @@
     },
     {
       "path": "current-resource-appendix-v1.md",
-      "bytes": 12143,
-      "sha256": "c5f7635cd2861946924dd3225eebe00db1824cc9325b5c5d3af03481070066dc"
+      "bytes": 13328,
+      "sha256": "af99dec5314538154a57e09f92c41cdd976d365c351a28236a23d0c160bfdb0e"
     },
     {
       "path": "declaration-layout-build.stderr",
@@ -58,8 +58,8 @@
     },
     {
       "path": "derive-layout-probe.py",
-      "bytes": 3355,
-      "sha256": "38dccbd7e6cd4c549d524c731600443a1ab601b2a189fa2b2d9d1a7920687a72"
+      "bytes": 4498,
+      "sha256": "075a0525d80ae460cbe7178a4dea91f2fcaf4024453058a80fbcd2af4258e995"
     },
     {
       "path": "existing-binary-layout.stderr",
