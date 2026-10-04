@@ -6,10 +6,18 @@
 //! Typed commands accept `check|run|compile [options] [--] <source>` and options before the
 //! command or after the source. The separator is optional and makes all later
 //! words literal operands; exactly one source is required. It follows the command.
+//! Typed `fmt` is isolated from semantic operations and accepts a local `--check` flag.
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    TypedFormat {
+        path: String,
+        check: bool,
+    },
+    FormatError {
+        message: String,
+    },
     TypedCheck {
         path: String,
         json: bool,
@@ -136,12 +144,15 @@ pub fn route(args: &[String]) -> Route {
     if edition != Some("typed-preview") {
         return Route::Legacy(forwarded);
     }
+    if forwarded.first().map(String::as_str) == Some("fmt") {
+        return route_format(forwarded, json);
+    }
     let operation = match forwarded.first().map(String::as_str) {
         Some("check") => Operation::Check,
         Some("run") => Operation::Run,
         Some("compile") => Operation::Compile,
         _ => return Route::Error {
-            message: format!("edition `typed-preview` supports only `check`, explicit `run`, and explicit native `compile`; command `{}` is unavailable",
+            message: format!("edition `typed-preview` supports only `check`, explicit `run`, explicit native `compile`, and explicit `fmt`; command `{}` is unavailable",
                 forwarded.first().map(String::as_str).unwrap_or("<missing>")),
             json, operation: Operation::Check,
         },
@@ -239,6 +250,48 @@ pub fn route(args: &[String]) -> Route {
             json,
             operation,
         },
+    }
+}
+
+/// A selected formatter has its own text-only, exit-2 error contract.
+/// Keep it outside Operation so it cannot enter semantic loading or summaries.
+fn route_format(forwarded: Vec<String>, json: bool) -> Route {
+    let fail = |message: String| Route::FormatError { message };
+    if json {
+        return fail("typed-preview fmt does not support --message-format=json".into());
+    }
+    let mut path = None;
+    let mut check = false;
+    let mut separated = false;
+    for argument in forwarded.into_iter().skip(1) {
+        if !separated && argument == "--" {
+            separated = true;
+            continue;
+        }
+        if !separated && argument == "--check" {
+            if check {
+                return fail("typed-preview fmt --check may only be specified once".into());
+            }
+            check = true;
+            continue;
+        }
+        if argument == "-" {
+            return fail(
+                "typed-preview fmt does not support stdin; use a named source path".into(),
+            );
+        }
+        if !separated && argument.starts_with('-') {
+            return fail(format!(
+                "unsupported option for typed-preview fmt: {argument}"
+            ));
+        }
+        if path.replace(argument).is_some() {
+            return fail("typed-preview fmt requires exactly one source path".into());
+        }
+    }
+    match path {
+        Some(path) => Route::TypedFormat { path, check },
+        None => fail("typed-preview fmt requires exactly one source path".into()),
     }
 }
 
@@ -484,4 +537,47 @@ mod tests {
             false,
         );
     }
+
+    #[test]
+    fn typed_format_accepts_only_its_scoped_flag_and_single_literal_path() {
+        for values in [
+            &["fmt", "--edition", "typed-preview", "file.ox"][..],
+            &["--edition=typed-preview", "fmt", "--message-format=text", "file.ox"],
+            &["fmt", "file.ox", "--edition=typed-preview"],
+        ] {
+            assert_eq!(route(&arguments(values)), Route::TypedFormat { path: "file.ox".into(), check: false });
+        }
+        for values in [
+            &["--edition=typed-preview", "fmt", "--check", "file.ox"][..],
+            &["fmt", "file.ox", "--edition=typed-preview", "--check"],
+        ] {
+            assert_eq!(route(&arguments(values)), Route::TypedFormat { path: "file.ox".into(), check: true });
+        }
+        for name in ["--check", "--flag-named.ox", "./-"] {
+            assert_eq!(route(&arguments(&["fmt", "--edition=typed-preview", "--", name])), Route::TypedFormat { path: name.into(), check: false });
+        }
+    }
+
+    #[test]
+    fn typed_format_owns_selected_errors_but_preserves_global_errors() {
+        for trailing in [
+            &[][..], &["a.ox", "b.ox"], &["--check", "--check", "a.ox"],
+            &["--check=true", "a.ox"], &["--write", "a.ox"], &["--output", "a.ox"],
+            &["-"], &["--", "-"], &["a.ox", "--message-format=json"],
+        ] {
+            let mut values = vec!["fmt", "--edition=typed-preview"];
+            values.extend_from_slice(trailing);
+            assert!(matches!(route(&arguments(&values)), Route::FormatError { .. }), "{values:?}");
+        }
+        for values in [
+            &["--check", "fmt", "file.ox", "--edition=typed-preview"][..],
+            &["fmt", "file.ox", "--edition=nope", "--message-format=json"],
+            &["fmt", "file.ox", "--edition=typed-preview", "--message-format=json", "--message-format=text"],
+        ] {
+            assert!(matches!(route(&arguments(values)), Route::Error { .. }), "{values:?}");
+        }
+        assert_eq!(route(&arguments(&["fmt", "file.ox"])), Route::Legacy(arguments(&["fmt", "file.ox"])));
+        assert_eq!(route(&arguments(&["fmt", "file.ox", "--edition=legacy-0.9"])), Route::Legacy(arguments(&["fmt", "file.ox"])));
+    }
+
 }

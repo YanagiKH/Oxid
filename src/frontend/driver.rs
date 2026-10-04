@@ -24,6 +24,8 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             json,
             Summary::empty(operation),
         )),
+        Route::FormatError { message } => Some(super::format_cli::cli_error(&message)),
+        Route::TypedFormat { path, check } => Some(super::format_cli::process_file(&path, check)),
         Route::TypedCheck { path, json } => Some(process_file(&path, json, Operation::Check, None)),
         Route::TypedRun { path, json } => Some(process_file(&path, json, Operation::Run, None)),
         Route::TypedCompile { path, json, output } => {

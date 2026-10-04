@@ -3,6 +3,8 @@ mod ast;
 mod declaration_index;
 mod diagnostic;
 mod driver;
+mod format;
+mod format_cli;
 mod hir;
 mod lexer;
 mod native;
