@@ -104,6 +104,8 @@ The experimental [typed project route](spec/typed-preview.md#bounded-typed-proje
 
 The experimental [fixed scalar array extension](spec/typed-preview.md#fixed-scalar-arrays) adds move-only bool/i32/unit arrays, checked indexing, `len()` and whole-array call borrows to explicit typed-preview `check`, `run` and `compile`. The [three-module sample](fixtures/typed-array-samples/README.md) returns 5325. See the spec for grammar, platform and stricter native limits; default/legacy arrays are unchanged.
 
+The experimental [typed formatter](spec/typed-preview.md#single-file-formatting) supports fixed-array syntax and `oxid fmt --edition typed-preview input.ox` (complete source on stdout) and `--check` (exit 1 for drift). It preserves comments and existing line breaks while normalizing spacing and indentation, without loading modules or writing files. Default legacy formatting is unchanged.
+
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.
 
 ## Build from source

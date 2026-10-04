@@ -11,6 +11,7 @@ from pathlib import Path
 
 from verify_feature_status import verify_feature_status
 from verify_fixture_data import fixture_data_sources
+from verify_typed_formatter import verify as verify_typed_formatter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +169,9 @@ def main() -> int:
         f"fixture-data validation passed: {len(sources) - language_source_count} source-only files "
         "(frozen manifest/body identities only; no compiler checks, executions or feature claim)"
     )
+    # Admit all source-only fixture identities before invoking the executable,
+    # including the independently registered formatter golden check.
+    verify_typed_formatter(executable)
     for source, typed in checks:
         command = [str(executable), "check", str(source)]
         if typed:

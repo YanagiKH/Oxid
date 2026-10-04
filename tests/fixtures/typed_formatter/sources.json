@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "17ed3de243785006ab888d87af4428d06117b21d",
+  "read_date_utc": "2026-10-04",
+  "method": "Read-only GitHub connector reads pinned to the exact published commit.",
+  "instructions": "Published root/source/frontend/RFC/test/fixture directory listings contain no applicable AGENTS.md; the published root has no .agents directory. CONTRIBUTING.md and rfcs/README.md were read.",
+  "files": [
+    {
+      "path": "CONTRIBUTING.md",
+      "git_blob_sha": "25bdb3aa337ea0c6a30c0fb3db329c200031e099",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/CONTRIBUTING.md"
+    },
+    {
+      "path": "rfcs/README.md",
+      "git_blob_sha": "9efeaf407eb5510c43a3c7d1bf20f49d77222241",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/rfcs/README.md"
+    },
+    {
+      "path": "docs/ROADMAP.md",
+      "git_blob_sha": "74277a6c4d4a591be60214f5460349ca82897519",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/docs/ROADMAP.md"
+    },
+    {
+      "path": "spec/typed-preview.md",
+      "git_blob_sha": "5b8c68680ecc52d48363e535df8d69549a47bfde",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/spec/typed-preview.md"
+    },
+    {
+      "path": "src/cli.rs",
+      "git_blob_sha": "ef301581c26537ae6283f09cafdc41c50c819e05",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/cli.rs"
+    },
+    {
+      "path": "src/frontend/options.rs",
+      "git_blob_sha": "40938821024933790d662b16c409d71c2dc6e351",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/options.rs"
+    },
+    {
+      "path": "src/frontend/driver.rs",
+      "git_blob_sha": "6351a0b858abe779ee75c1441b124bc137720445",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/driver.rs"
+    },
+    {
+      "path": "src/frontend/source.rs",
+      "git_blob_sha": "2a8c1514c34948f42376f5cf3b7be6cdf5738271",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/source.rs"
+    },
+    {
+      "path": "src/frontend/lexer.rs",
+      "git_blob_sha": "7efcb34fbe84e69ddd14859b3384e7c6faa6ab95",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/lexer.rs"
+    },
+    {
+      "path": "src/frontend/parser.rs",
+      "git_blob_sha": "b7e939fd1a52ee12afc284b96a1f57b340e1cbc2",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/parser.rs"
+    },
+    {
+      "path": "src/frontend/ast.rs",
+      "git_blob_sha": "5d461927a565903da29ecd86e95fc90ec3e2dd3a",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/ast.rs"
+    },
+    {
+      "path": "src/frontend/mod.rs",
+      "git_blob_sha": "b22956329d0abc490723087959e36c9eb8ab106d",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/frontend/mod.rs"
+    },
+    {
+      "path": "src/main.rs",
+      "git_blob_sha": "b90b97f93561f8201bd01467c295fb6f48ee058b",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/src/main.rs"
+    },
+    {
+      "path": "Cargo.toml",
+      "git_blob_sha": "78c0c28ad1f278f62c06dc02d7e105ba9fda90dd",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/Cargo.toml"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "git_blob_sha": "73946e3540a9df791a911578db2c5d8e7581fc23",
+      "url": "https://github.com/YanagiKH/Oxid/blob/17ed3de243785006ab888d87af4428d06117b21d/.github/workflows/ci.yml"
+    }
+  ]
+}

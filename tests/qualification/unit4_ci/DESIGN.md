@@ -3,15 +3,15 @@
 This integration owns orchestration and evidence transport only. It does not
 change the public semantic contracts, portable parser, hosted capability
 controller, or existing CI gate responsibilities. Current compiler and observer
-identities are explicitly refreshed for the reviewed private fixed-array
-groundwork; the observer overlay and historical source/corpus authorities stay
-unchanged.
+identities are explicitly refreshed for the reviewed formatter and prior
+fixed-array groundwork; the lifecycle observer overlay and historical
+source/corpus authorities stay unchanged.
 
 ## Trust and command interfaces
 
 `gate.py host --repo REPO --output FRESH --expected-head SHA --event-sha SHA
 --host HOST [--historical-repo REPO --toolchain ROOT --cargo-cache CACHE]` is the
-mandatory actual-host route. All admitted component files, membership, source129,
+mandatory actual-host route. All admitted component files, membership, source133,
 Git head/full tree, contract transport and amendments are checked before importing
 component code, writing materialized inputs, or executing a compiler. Inputs are
 rechecked before every stage and before completion. HOST is an expectation checked
@@ -82,17 +82,22 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its 47 reviewed compiler changes are disjoint from parser instrumentation.
-Historical283/current292 base maps, historical286/current295 derived maps and
-historical113/current122 compiler rosters remain separate identity domains.
-Sessions explicitly deny historical source equivalence and bind the current129
-manifest, reviewed source checkpoint and both current build overlays. Retained
+Its 55 reviewed compiler changes include one instrumentation overlap:
+`src/frontend/source.rs` admits only the exact hash-bound composition of the
+seven-line formatter accessor with the two unchanged historical source-read
+hooks. All other instrumentation overlaps remain rejected.
+Historical283/current296 base maps, historical286/current299 derived maps and
+historical113/current126 compiler rosters remain separate identity domains.
+The source-binding transition separately verifies 133 current inputs, 129
+predecessor inputs and 117 archived inputs. Sessions explicitly deny historical
+source equivalence and bind the current133 manifest, reviewed source checkpoint
+and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 295-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 292-member base map. Compact omission is limited to the
-other 294 derived-tree members per role and four binaries, for 592 omitted identities.
+belong to the 299-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 296-member base map. Compact omission is limited to the
+other 298 derived-tree members per role and four binaries, for 600 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.

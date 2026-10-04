@@ -64,7 +64,7 @@ impl SourceMode {
         true
     }
 }
-/// Independent of module routing; only the explicit typed loader enables arrays.
+/// Independent of module routing; explicit typed routes opt into array syntax.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ArraySyntaxPolicy {
     Closed,

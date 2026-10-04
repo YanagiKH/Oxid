@@ -74,8 +74,11 @@ class PublishedRegistrationTests(unittest.TestCase):
     def test_main_reports_data_separately_and_never_sends_it_to_compiler(self):
         output = io.StringIO()
         with patch.object(sys, "argv", ["verify_repo.py", sys.executable]), \
-                patch.object(verify_repo, "run") as run, contextlib.redirect_stdout(output):
+                patch.object(verify_repo, "run") as run, \
+                patch.object(verify_repo, "verify_typed_formatter") as formatter, \
+                contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
+        formatter.assert_called_once_with(Path(sys.executable).resolve())
         self.assertEqual(len(run.call_args_list), 197)  # 124 checks, 70 runs, test/build/doctor.
         commands = [call.args[0] for call in run.call_args_list]
         sample_root = str(verify_repo.ROOT / SAMPLE_MEMBERS[0])

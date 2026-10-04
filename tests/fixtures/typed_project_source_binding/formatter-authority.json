@@ -1,0 +1,29 @@
+{
+  "added_source_paths": [
+    "src/frontend/format.rs",
+    "src/frontend/format/ast_tests.rs",
+    "src/frontend/format/resource_tests.rs",
+    "src/frontend/format_cli.rs"
+  ],
+  "base_head": "17ed3de243785006ab888d87af4428d06117b21d",
+  "current_source_sha256": "69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06",
+  "predecessor_authority_sha256": "73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce",
+  "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
+  "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS",
+  "reviewed_source_head": "8a08a2908b2ceb73c80112e6ddd82e2dbda91976",
+  "schema": 1,
+  "scope": "Reverse only the eight typed-formatter source changes, verify the exact 129-member predecessor, then apply its unchanged historical transition. This identity preparation does not establish semantic, native or formatter validation.",
+  "source_only_tree": "afa181dab5aa3341ceae4f7b882a81a635e08fa0",
+  "transition_patch_bytes": 75550,
+  "transition_patch_sha256": "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4",
+  "transition_touched_paths": [
+    "src/frontend/driver.rs",
+    "src/frontend/format.rs",
+    "src/frontend/format/ast_tests.rs",
+    "src/frontend/format/resource_tests.rs",
+    "src/frontend/format_cli.rs",
+    "src/frontend/mod.rs",
+    "src/frontend/options.rs",
+    "src/frontend/source.rs"
+  ]
+}

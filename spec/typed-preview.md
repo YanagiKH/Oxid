@@ -49,7 +49,7 @@ passed through. To select an Oxid edition for a script command, place the option
 before its name. An explicit typed selection there is rejected before launching
 anything. This prevents accidentally consuming an external process's options.
 
-The preview supports `check`, explicit `run`, and the separately specified
+The preview supports `check`, explicit `run`, syntax-only `fmt`, and the separately specified
 [native `compile --backend llvm`](native-preview.md). Direct-file invocation,
 `ast`, project commands, and every other operation fail before legacy dispatch. The gate runs before interpreter construction, preprocessing,
 dependency resolution, script execution, cache writes, or artifact generation.
@@ -113,6 +113,48 @@ for exact diagnostics, costs and exclusions, and the
 [public-route validation](../docs/architecture/fixed-array-public-validation.md)
 for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
 experimental and does not complete M2 or v1.0.
+
+## Single-file formatting
+
+```sh
+oxid fmt --edition typed-preview input.ox
+oxid --edition=typed-preview fmt --check input.ox
+```
+
+The experimental formatter writes the complete formatted UTF-8 source to stdout.
+It normalizes horizontal spaces and four-space delimiter indentation, preserving
+interior line breaks and exact token/comment spelling. Empty files format to
+empty output; nonempty output ends in LF. Comments are opaque, including their
+internal whitespace and line endings. Compact code stays compact.
+
+`--check` writes no source output: exit 0 means already formatted; exit 1 means
+formatting is required, with that message on stderr. All selected formatter
+errors exit 2 and use escaped text diagnostics on stderr. `--message-format=text`
+is accepted; JSON formatter diagnostics are unavailable. A stdout I/O error may
+occur after a prefix was written.
+
+Exactly one regular source file is required. Symlinks to regular files are
+allowed; directories, devices, FIFOs and stdin (`-`) are rejected. Use `--` for
+dash-prefixed filenames and `./-` for a file named `-`. There is no write-in-place,
+recursive, output-path or width option. Default/explicit legacy `fmt` retains
+its existing file-writing behavior.
+
+Formatting validates full-file syntax twice, including fixed-array syntax,
+and checks token/comment and interior-newline preservation before output.
+Brackets count toward delimiter indentation; types/literals format as
+`[i32; 2]` / `[1, 2]`, with name-based indexing tight as `a[0]`. It never loads modules, resolves
+names, typechecks, executes source or starts native tools. Unresolved imports,
+unknown types and other semantic errors therefore do not block syntactically
+valid formatting. Malformed input produces no candidate source.
+
+Input and candidate each have a 1 MiB source ceiling and the existing lexer and
+parser limits, including 100,000 tokens, 65,536 bytes per token, 100,000 syntax
+nodes, 64 expression/block nesting, 256 parameters/arguments, 34 path segments,
+and 1024 array elements/declared length.
+The formatter adds a 128-entry delimiter stack and an 8 MiB work-table ceiling;
+the current table uses one byte per source byte. These are logical payload
+limits, not whole-process memory or host-I/O guarantees. Full layout policy:
+[RFC 0017](../rfcs/0017-bounded-typed-formatter.md).
 
 ## Bounded typed projects
 

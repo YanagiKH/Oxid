@@ -119,3 +119,12 @@ remain. Nested arrays, slices, element references, heap collections and stable
 ABI are excluded. The [public-route ledger](fixed-array-public-validation.md)
 records new CLI/source-free ELF cases without reclassifying historical staged
 results or asserting a complete milestone. Default/legacy behavior is unchanged.
+
+The experimental [typed formatter](../../spec/typed-preview.md#single-file-formatting)
+is a separate syntax-only operation, including fixed-array syntax. It preserves
+token/comment spelling and
+interior line breaks while normalizing spaces and indentation. Explicit `fmt`
+writes complete source to stdout; `--check` distinguishes drift from errors.
+No module loading, typechecking, execution or file writes occur. Ordinary
+formatter tests are registered in the repository and portable-host CI; this
+registration is not itself cross-platform validation or a stable-format claim.

@@ -865,6 +865,34 @@
         "docs/architecture/fixed-array-public-validation.md"
       ],
       "limitations": "Length 0..1024; scalar bool/i32/unit elements only. Empty literal context is an explicitly annotated zero-length local initializer. Named bases only, complete-owner moves and exact-mode call-only borrows. No nested arrays, record fields/elements, slices, repetition, element moves/borrows, implicit array copies/equality/printing or stored references. All existing source, metadata, ownership, fuel and narrower native limits apply. Public check can accept array-returning main; run/native require zero-argument scalar root main. Private observation and ArrayConsumer admissions remain separate. No stability, general safety, performance, M2 or v1.0 certification."
+    },
+    {
+      "id": "typed-line-preserving-formatter",
+      "summary": "Explicit bounded syntax-only single-file formatter and read-only drift check",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "syntax-only token tape",
+      "target_scope": "Portable ordinary hosts; local Linux x86_64 checks only until exact-head CI verifies other hosts",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0017-bounded-typed-formatter.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/format.rs",
+        "src/frontend/format_cli.rs",
+        "src/frontend/options.rs"
+      ],
+      "tests": [
+        "tests/typed_formatter.rs",
+        "src/frontend/format/ast_tests.rs",
+        "src/frontend/format/resource_tests.rs",
+        "scripts/verify_typed_formatter.py"
+      ],
+      "evidence": [],
+      "limitations": "Line-preserving horizontal whitespace and delimiter indentation only. Explicit regular file, stdout or --check, text diagnostics. No in-place writes, discovery, typechecking, execution, width wrapping, stdin, recursion, JSON formatter diagnostics, stable formatter or v1.0 claim."
     }
   ]
 }

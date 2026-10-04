@@ -66,7 +66,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 129)
+        self.assertEqual(len(captured["inputs"]), 133)
+        self.assertEqual(len(captured["predecessor_inputs"]), 129)
         self.assertEqual(len(captured["archived"]), 117)
         self.assertNotEqual(captured["inputs"]["src/frontend/driver.rs"], captured["archived"]["src/frontend/driver.rs"])
         output = self.root / "archive"
@@ -96,10 +97,126 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(patch[:28881]),
                          "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8")
         self.assertEqual(binding.digest(patch[28881:]), delta["sha256"])
-        restored, _ = binding.inverse_patch(captured["inputs"], patch)
+        restored, _ = binding.inverse_patch(captured["predecessor_inputs"], patch)
         extra = captured["authority"]["inverse_only_inputs"][0]
         self.assertEqual(binding.entry(extra["path"], restored.pop(extra["path"])), extra)
         binding.check_bytes(restored, captured["selected"]["files"])
+
+    def test_formatter_successor_restores_exact_predecessor_and_archive(self):
+        captured = self.captured
+        predecessor = binding.read_json(self.package / "predecessor-source.json")
+        restored, touched = binding.inverse_formatter_patch(
+            captured["inputs"], captured["package_bytes"]["formatter-transition.patch"])
+        self.assertEqual(touched, list(binding.FORMATTER_PATHS))
+        self.assertEqual(len(touched), 8)
+        self.assertEqual(len(set(touched)), 8)
+        binding.check_bytes(restored, predecessor["files"])
+        self.assertEqual(restored, captured["predecessor_inputs"])
+        self.assertEqual(set(captured["inputs"]) - set(restored), set(binding.FORMATTER_ADDITIONS))
+        self.assertEqual(len(binding.FORMATTER_ADDITIONS), 4)
+        self.assertEqual(binding.digest(captured["package_bytes"]["predecessor-source.json"]),
+                         "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8")
+        self.assertEqual(binding.digest(captured["package_bytes"]["authority.json"]),
+                         "73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce")
+        self.assertEqual(binding.digest(captured["package_bytes"]["source-transition.patch"]),
+                         "63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18")
+        archived, _ = binding.inverse_patch(restored, captured["package_bytes"]["source-transition.patch"])
+        for extra in captured["authority"]["inverse_only_inputs"]:
+            self.assertEqual(binding.entry(extra["path"], archived.pop(extra["path"])), extra)
+        binding.check_bytes(archived, captured["selected"]["files"])
+        self.assertEqual(captured["current"]["reviewed_source_head"],
+                         "8a08a2908b2ceb73c80112e6ddd82e2dbda91976")
+        self.assertEqual(captured["current"]["source_only_tree"],
+                         "afa181dab5aa3341ceae4f7b882a81a635e08fa0")
+
+    def test_each_formatter_source_is_required_and_byte_bound(self):
+        for path in binding.FORMATTER_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed formatter source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_formatter_addition_omission_rejects_before_materialization(self):
+        (self.repo / binding.FORMATTER_ADDITIONS[0]).unlink()
+        self.rejects_before_materialization("missing regular input")
+
+    def test_coherently_rehashed_formatter_manifest_cannot_replace_source_authority(self):
+        path = binding.FORMATTER_ADDITIONS[0]
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent formatter mutation\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "formatter-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        binding.write_json(self.package / "formatter-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_formatter_source_cannot_relax_membership(self):
+        path = binding.FORMATTER_ADDITIONS[0]
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        binding.write_json(self.package / "current-source.json", manifest)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_missing_formatter_patch_rejects_before_materialization(self):
+        (self.package / "formatter-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_coherently_rehashed_formatter_patch_rejects_before_materialization(self):
+        path = self.package / "formatter-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "formatter-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(path.read_bytes())
+        authority["transition_patch_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "formatter-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale formatter authority")
+
+    def test_formatter_inverse_rejects_changed_patch_and_each_changed_current_context(self):
+        original = self.captured["package_bytes"]["formatter-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_formatter_patch(self.captured["inputs"], original + b"\n")
+        for path in binding.FORMATTER_PATHS:
+            with self.subTest(path=path):
+                inputs = dict(self.captured["inputs"])
+                # Mutate a byte consumed by a hunk, even for a late-file change.
+                marker = b"mod format;" if path.endswith("/mod.rs") else (
+                    b"pub(super) fn into_single_text" if path.endswith("/source.rs") else (
+                        b"Route::FormatError" if path.endswith("/driver.rs") else (
+                            b"TypedFormat" if path.endswith("/options.rs") else inputs[path][:20])))
+                self.assertIn(marker, inputs[path])
+                inputs[path] = inputs[path].replace(marker, b"X" + marker[1:], 1)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_formatter_patch(inputs, original)
+
+    def test_coherently_changed_predecessor_manifest_is_rejected(self):
+        path = self.package / "predecessor-source.json"
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved predecessor source manifest")
+
+    def test_formatter_checkpoint_scope_and_recipe_metadata_are_pinned(self):
+        original = (self.package / "formatter-authority.json").read_bytes()
+        for field, replacement in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                                   ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                                   ("transition_touched_paths", list(binding.FORMATTER_PATHS[:-1]))):
+            with self.subTest(field=field):
+                authority = binding.json.loads(original)
+                authority[field] = replacement
+                binding.write_json(self.package / "formatter-authority.json", authority)
+                self.rehash_package()
+                self.rejects("stale formatter authority")
+        (self.package / "formatter-authority.json").write_bytes(original)
+        self.rehash_package()
 
     def test_every_array_addition_is_required(self):
         additions = binding.EXTRA - {"src/frontend/parser/activation_tests.rs",
@@ -187,7 +304,7 @@ class SourceBindingTests(unittest.TestCase):
         self.rejects_before_materialization("stale source delta authority")
 
     def test_groundwork_inverse_requires_exact_current_context(self):
-        inputs = dict(self.captured["inputs"])
+        inputs = dict(self.captured["predecessor_inputs"])
         path = "src/frontend/oir/owned_types/array_tests.rs"
         inputs[path] = b"X" + inputs[path][1:]
         with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
@@ -390,6 +507,12 @@ class SourceBindingTests(unittest.TestCase):
         self.assertFalse(prepared["semantic_pass"])
         self.assertFalse((output / "result.json").exists())
         self.assertEqual(prepared["plan_sha256"], binding.digest((output / "plan.json").read_bytes()))
+        plan = binding.read_json(output / "plan.json")
+        self.assertEqual((plan["current_source_members"], plan["predecessor_source_members"], plan["archive_members"]),
+                         (133, 129, 117))
+        self.assertEqual(prepared["current_source_sha256"], binding.CURRENT_SOURCE_SHA)
+        self.assertEqual(prepared["formatter_authority_sha256"], binding.FORMATTER_AUTHORITY_SHA)
+        self.assertEqual(prepared["predecessor_source_sha256"], binding.PREDECESSOR_SOURCE_SHA)
 
     def test_failed_preflight_retains_failure_without_executing_tools(self):
         (self.repo / "src/frontend/driver.rs").unlink()
