@@ -801,6 +801,7 @@ impl Write for LimitedCount {
 enum FailureKind {
     Fuel,
     Overflow,
+    DivisionByZero,
     Bounds,
 }
 impl FailureKind {
@@ -808,6 +809,7 @@ impl FailureKind {
         match self {
             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
+            Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
         }
     }
@@ -882,9 +884,17 @@ fn diagnostic_occurrences(
                 }
                 match &statement.kind {
                     OwnedInstruction::Scalar(Statement::Assign(Assign {
-                        value: Rvalue::CheckedI32 { operator_span, .. },
+                        value:
+                            Rvalue::CheckedI32 {
+                                op, operator_span, ..
+                            },
                         ..
-                    })) => visit(FailureKind::Overflow, *operator_span)?,
+                    })) => {
+                        visit(FailureKind::Overflow, *operator_span)?;
+                        if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) {
+                            visit(FailureKind::DivisionByZero, *operator_span)?;
+                        }
+                    }
                     OwnedInstruction::ReadIndex { .. } | OwnedInstruction::WriteIndex { .. } => {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?
                     }
@@ -2017,21 +2027,51 @@ fn emit_scalar(
         } => {
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
-            let intrinsic = match op {
-                hir::ArithmeticOp::Add => "sadd",
-                hir::ArithmeticOp::Subtract => "ssub",
-                hir::ArithmeticOp::Multiply => "smul",
-            };
             let suffix = continuation(&owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
-            writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 {left}, i32 {right})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1\n  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_{suffix}\n{name}_checked_error:").unwrap();
+            match op {
+                hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
+                    // Keep both undefined LLVM operand pairs outside the block
+                    // that evaluates sdiv/srem, including MIN%-1 overflow.
+                    writeln!(out, "  %{name}_zero = icmp eq i32 {right}, 0\n  br i1 %{name}_zero, label %{name}_division_error, label %{name}_nonzero\n{name}_division_error:").unwrap();
+                    emit_failure(out, diagnostics, FailureKind::DivisionByZero, operator_span);
+                    writeln!(out, "{name}_nonzero:\n  %{name}_min = icmp eq i32 {left}, -2147483648\n  %{name}_negative_one = icmp eq i32 {right}, -1\n  %{name}_overflow = and i1 %{name}_min, %{name}_negative_one").unwrap();
+                }
+                hir::ArithmeticOp::Add
+                | hir::ArithmeticOp::Subtract
+                | hir::ArithmeticOp::Multiply => {
+                    let intrinsic = match op {
+                        hir::ArithmeticOp::Add => "sadd",
+                        hir::ArithmeticOp::Subtract => "ssub",
+                        hir::ArithmeticOp::Multiply => "smul",
+                        _ => unreachable!("overflow intrinsic"),
+                    };
+                    writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 {left}, i32 {right})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1").unwrap();
+                }
+            }
+            writeln!(out, "  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_{suffix}\n{name}_checked_error:").unwrap();
             emit_failure(out, diagnostics, FailureKind::Overflow, operator_span);
-            writeln!(
-                out,
-                "{name}_{suffix}:\n  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0"
-            )
-            .unwrap();
+            writeln!(out, "{name}_{suffix}:").unwrap();
+            match op {
+                hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
+                    let instruction = if op == hir::ArithmeticOp::Divide {
+                        "sdiv"
+                    } else {
+                        "srem"
+                    };
+                    writeln!(out, "  %{name}_value = {instruction} i32 {left}, {right}").unwrap();
+                }
+                hir::ArithmeticOp::Add
+                | hir::ArithmeticOp::Subtract
+                | hir::ArithmeticOp::Multiply => {
+                    writeln!(
+                        out,
+                        "  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0"
+                    )
+                    .unwrap();
+                }
+            }
             format!("%{name}_value")
         }
     };
@@ -2169,3 +2209,212 @@ fn emit_terminator(
 #[cfg(test)]
 #[path = "native_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod division_tests {
+    use super::*;
+    use crate::frontend::oir::owned::source::resource_fixtures;
+
+    #[test]
+    fn division_native_owned_guards_precede_instructions_and_keep_phi_exits() {
+        for prefix in ["", "while false {}"] {
+            let case = resource_fixtures::checked(&format!(
+                "struct Number {{ value:i32 }} fn main()->bool {{ let x=Number {{ value:-7 }}; {prefix} return (x.value/3==-2) && (x.value%3==-1); }}"
+            ));
+            let module = native_module(&case.witness, Some(case.entry), &case.sources).unwrap();
+            let f = &case.witness.functions()[case.entry.0];
+            for (b, block) in f.blocks.iter().enumerate() {
+                for (i, statement) in block.statements.iter().enumerate() {
+                    let OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedI32 { op, .. },
+                        ..
+                    })) = &statement.kind
+                    else {
+                        continue;
+                    };
+                    let name = format!("f{}_b{b}_i{i}", f.id.0);
+                    let instruction = if *op == hir::ArithmeticOp::Divide {
+                        "sdiv"
+                    } else {
+                        "srem"
+                    };
+                    let zero = module
+                        .find(&format!("  %{name}_zero = icmp eq i32 "))
+                        .unwrap();
+                    let nonzero = module
+                        .find(&format!("{name}_nonzero:\n  %{name}_min = icmp eq i32 "))
+                        .unwrap();
+                    let overflow = module
+                        .find(&format!(
+                            "  %{name}_overflow = and i1 %{name}_min, %{name}_negative_one"
+                        ))
+                        .unwrap();
+                    let success = module
+                        .find(&format!(
+                            "{name}_checked_ok:\n  %{name}_value = {instruction} i32 "
+                        ))
+                        .unwrap();
+                    assert!(zero < nonzero && nonzero < overflow && overflow < success);
+                    assert!(module.contains(&format!(
+                        "  br i1 %{name}_zero, label %{name}_division_error, label %{name}_nonzero"
+                    )));
+                    assert!(module.contains(&format!("  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_checked_ok")));
+                    assert!(module.contains(&format!("%{name}_right, -1")));
+                }
+                if let Some(merge) = &block.merge {
+                    for input in merge.incoming {
+                        let predecessor = &f.blocks[input.predecessor.0];
+                        let label = if prefix.is_empty() {
+                            predecessor
+                                .statements
+                                .iter()
+                                .enumerate()
+                                .rfind(|(_, s)| {
+                                    matches!(
+                                        s.kind,
+                                        OwnedInstruction::Scalar(Statement::Assign(Assign {
+                                            value: Rvalue::CheckedI32 { .. },
+                                            ..
+                                        }))
+                                    )
+                                })
+                                .map_or_else(
+                                    || format!("b{}", input.predecessor.0),
+                                    |(i, _)| {
+                                        format!(
+                                            "f{}_b{}_i{i}_checked_ok",
+                                            f.id.0, input.predecessor.0
+                                        )
+                                    },
+                                )
+                        } else {
+                            format!(
+                                "f{}_b{}_g{}_ok",
+                                f.id.0,
+                                input.predecessor.0,
+                                predecessor.statements.len() + 1
+                            )
+                        };
+                        assert!(module.lines().any(|line| line.contains(" = phi ptr ")
+                            && line.contains(&format!(", %{label} ]"))));
+                    }
+                }
+            }
+            assert_eq!(module.matches(" = sdiv i32 ").count(), 1);
+            assert_eq!(module.matches(" = srem i32 ").count(), 1);
+            assert_eq!(
+                execute::run(&case.witness, Some(case.entry)),
+                Ok(Scalar::Bool(true))
+            );
+        }
+    }
+
+    #[test]
+    fn division_native_owned_diagnostic_ledger_and_caps_include_zero_failures() {
+        for prefix in ["", "while false {}"] {
+            let case = resource_fixtures::checked(&format!(
+                "struct Number {{ value:i32 }} fn main()->i32 {{ let x=Number {{ value:7 }}; {prefix} return (x.value/3)%2; }}"
+            ));
+            let plan = ExecutionPlan::build(&case.witness).unwrap();
+            let diagnostics = Diagnostics::new(
+                &plan,
+                case.entry,
+                &case.sources,
+                !prefix.is_empty(),
+                MAX_DIAGNOSTIC_BYTES,
+            )
+            .unwrap();
+            for kind in [FailureKind::Overflow, FailureKind::DivisionByZero] {
+                assert_eq!(
+                    diagnostics
+                        .ids
+                        .iter()
+                        .filter(|(key, _)| key.0 == kind)
+                        .count(),
+                    2
+                );
+                for &(key, id) in diagnostics.ids.iter().filter(|(key, _)| key.0 == kind) {
+                    let span = Span {
+                        file: crate::frontend::source::SourceFileId(key.1),
+                        start: key.2,
+                        end: key.3,
+                    };
+                    assert_eq!(
+                        diagnostics.messages[id],
+                        kind.diagnostic(span, &case.sources)
+                            .render_human(&case.sources)
+                    );
+                }
+            }
+            let observation = run_array_observed(
+                &case.witness,
+                Some(case.entry),
+                &case.sources,
+                NativeControl::default(),
+            );
+            let module = observation.result.unwrap();
+            let metrics = observation.metrics;
+            let bytes = diagnostics.messages.iter().map(String::len).sum();
+            assert_eq!(metrics.message_bytes, bytes);
+            assert_eq!(metrics.count_bytes, module.len());
+            assert_eq!(metrics.render_bytes, module.len());
+            assert!(metrics.metadata_peak <= Limits::DEFAULT.metadata_bytes);
+            assert!(metrics.metadata_admitted_bytes <= Limits::DEFAULT.metadata_bytes);
+            assert_eq!(
+                metrics.occurrence_bytes,
+                metrics.occurrences * size_of::<DiagnosticOccurrence>()
+            );
+            assert_eq!(
+                metrics.lookup_bytes,
+                metrics.unique * size_of::<DiagnosticLookup>()
+            );
+            assert!(metrics.diagnostic_transient_peak <= DIAGNOSTIC_TRANSIENT_BYTES);
+            if prefix.is_empty() {
+                assert_eq!((metrics.occurrences, metrics.unique), (4, 4));
+            }
+            let limits = Limits {
+                diagnostic_bytes: bytes,
+                ir_bytes: module.len(),
+                ..Limits::DEFAULT
+            };
+            assert_eq!(
+                native_module_limits(
+                    &case.witness,
+                    Some(case.entry),
+                    &case.sources,
+                    plan::MAX_FUEL,
+                    limits
+                )
+                .unwrap(),
+                module
+            );
+            for (limits, marker) in [
+                (
+                    Limits {
+                        diagnostic_bytes: bytes - 1,
+                        ..limits
+                    },
+                    "diagnostic bytes",
+                ),
+                (
+                    Limits {
+                        ir_bytes: module.len() - 1,
+                        ..limits
+                    },
+                    "LLVM bytes",
+                ),
+            ] {
+                let error = native_module_limits(
+                    &case.witness,
+                    Some(case.entry),
+                    &case.sources,
+                    plan::MAX_FUEL,
+                    limits,
+                )
+                .unwrap_err();
+                assert_eq!(error.code, "E0700");
+                assert!(error.message.contains(marker));
+            }
+        }
+    }
+}

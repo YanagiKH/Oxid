@@ -1,0 +1,1019 @@
+{
+  "added_source_paths": [],
+  "base_head": "8a3b8683d911bdabfcdc7ca7d3ba867f6235ded3",
+  "combined_authority_sha256": "f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670",
+  "combined_source_bytes": 35021,
+  "combined_source_members": 185,
+  "combined_source_sha256": "221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487",
+  "compiler_bodies": 136,
+  "compiler_source_members": 133,
+  "current_input_git_modes": [
+    {
+      "mode": "100644",
+      "path": "Cargo.lock"
+    },
+    {
+      "mode": "100644",
+      "path": "Cargo.toml"
+    },
+    {
+      "mode": "100644",
+      "path": "build.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "compiler/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "compiler/providers.toml"
+    },
+    {
+      "mode": "100644",
+      "path": "fixtures/owned_source/batch.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_cpp_bridge.cpp"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_cpp_bridge.h"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_ffi.c"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_ffi.h"
+    },
+    {
+      "mode": "100644",
+      "path": "native/typed_preview.c"
+    },
+    {
+      "mode": "100644",
+      "path": "rfcs/0014-owned-structs-call-borrows.md"
+    },
+    {
+      "mode": "100644",
+      "path": "src/cli.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/ast.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/branch_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/resource.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/sealed.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/source_owner.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/diagnostic.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/driver.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format/ast_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format/resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format_cli.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/hir.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/lexer.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/arithmetic_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/cfg_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/comparison_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/cyclic_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/execute.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/execute_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/i32_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/logical_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/loop_control_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/lower.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/mutable_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/allocator_review_controls.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_native_resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_native_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_observe.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_reference_boundary_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_reference_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/budget.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/cfg.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/consumer_fixtures.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/consumer_pilot.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/consumer_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/denial_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/execute.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/execute_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/flow.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/native_heldout_review.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/native_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/oracle_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/origin_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/plan.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_allocator.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_array_observer_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_heldout.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_origins.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_reference_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/shape.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_consumer_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline_transport.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_type_controls.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_types_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/association.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/budget.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/budget_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/candidate_adapter.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/candidate_mutations.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/candidate_native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/diagnostic.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/diagnostic_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/hir.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/lower.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/lower_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/native_resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/program.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/resolve.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/resource_fixtures.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_heldout.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_resource_native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_resource_runtime.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_source.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/runtime_resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/typeck.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/storage.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/verified.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned_types.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned_types/array_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/project.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/project_execution_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source/association.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source/sealed.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source_oracle.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/verify.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/options.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/owned_diagnostic.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/owned_syntax_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/activation_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/array_syntax_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/arrays.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/project_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/array_syntax_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/budget.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/filesystem.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/unit2_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/source.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/typeck.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/legacy/syntax.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "src/main.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/artifact.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/benchmark.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/data.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/network.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/packages.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "stdlib/frontend/bytecode.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/typed_frontend.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/typed_project_dispatch.rs"
+    }
+  ],
+  "current_source_bytes": 35161,
+  "current_source_members": 185,
+  "current_source_sha256": "d3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33",
+  "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS",
+  "removed_source_paths": [],
+  "reviewed_source_head": "2c46521caa902b2afb88ef6b7bae58b9a1382776",
+  "schema": "oxid-checked-division-source-transition-v1",
+  "scope": "Fourteen exact modified compiler source files from the published checked i32 division checkpoint. No new input members, no removed inputs, and no change to preserved historical authority or instrumentation bytes. This source identity transition is not a semantic or native qualification.",
+  "source_only_tree": "7a74bf86edb53469dbcfd7839a8d3717a0d59a9a",
+  "transition_inputs": [
+    {
+      "after": {
+        "bytes": 23058,
+        "git_blob": "26e7d7b6f69c10da4e1ffe8147f7c8a32cec62cc",
+        "mode": "100644",
+        "path": "src/frontend/ast.rs",
+        "sha256": "3ed1baa023f78fea84e74168c420566b9a8481e4c4465f4a1126b242052eb378"
+      },
+      "before": {
+        "bytes": 23031,
+        "git_blob": "bfa32e2d746e7faa11fd4b01440c755e36a1cde5",
+        "mode": "100644",
+        "path": "src/frontend/ast.rs",
+        "sha256": "d791e53d294cfd4adfdbc7af30874c471c1b358ce164e8f9bd7ec340222ace41"
+      },
+      "path": "src/frontend/ast.rs"
+    },
+    {
+      "after": {
+        "bytes": 38717,
+        "git_blob": "edb6ecf304d41db8986ad83994a366f37488fe55",
+        "mode": "100644",
+        "path": "src/frontend/format/ast_tests.rs",
+        "sha256": "e4500f9ef87570b75a5c12acf6e0aa24263df0c07ec2d855295d3cf15d018133"
+      },
+      "before": {
+        "bytes": 38471,
+        "git_blob": "938da5e7db0d54b617f1d0909797af28cb15ac0a",
+        "mode": "100644",
+        "path": "src/frontend/format/ast_tests.rs",
+        "sha256": "6c5f8047a6cf9d26125954fdf4ca114efd55c807a404c375d1a3aeaef8a50eb6"
+      },
+      "path": "src/frontend/format/ast_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 8931,
+        "git_blob": "2cb023116f76ee272c3d5c54ae239099c1614ad7",
+        "mode": "100644",
+        "path": "src/frontend/lexer.rs",
+        "sha256": "1c282ff02383bf390105c7f6bcf5d7f58cc769c571ed3b8ca1bfc217740971b8"
+      },
+      "before": {
+        "bytes": 8853,
+        "git_blob": "7efcb34fbe84e69ddd14859b3384e7c6faa6ab95",
+        "mode": "100644",
+        "path": "src/frontend/lexer.rs",
+        "sha256": "6e75954085943e3b3018a51d91dcae1c2bf7bda1ebaff86efd10bfccde12de51"
+      },
+      "path": "src/frontend/lexer.rs"
+    },
+    {
+      "after": {
+        "bytes": 9856,
+        "git_blob": "6292dc45a7af847ef90fb230909a51718e1f641d",
+        "mode": "100644",
+        "path": "src/frontend/oir/arithmetic_tests.rs",
+        "sha256": "5f9bdcab64c21baa32148332b261edd4657133bc23b2b96ec0955dfa5b079af9"
+      },
+      "before": {
+        "bytes": 7219,
+        "git_blob": "95a126f64361dd49742eb8ecf70845b2ca90fe3e",
+        "mode": "100644",
+        "path": "src/frontend/oir/arithmetic_tests.rs",
+        "sha256": "df5a0e4ff7781f1baf92f12312ddc74e60a5dc4594d055d122aa87c5bf7dbc42"
+      },
+      "path": "src/frontend/oir/arithmetic_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 18562,
+        "git_blob": "c553e9984dfe18623ce7ed125885e14dc6c22256",
+        "mode": "100644",
+        "path": "src/frontend/oir/execute.rs",
+        "sha256": "71620baca0cc8f7120937a07d4a957a66fa3f640f1b99a570ad85012cc3dbc19"
+      },
+      "before": {
+        "bytes": 18118,
+        "git_blob": "a4c3c9b8a52e86451b01cfb03cb8c9eece4ffe1d",
+        "mode": "100644",
+        "path": "src/frontend/oir/execute.rs",
+        "sha256": "912080397df882b5478e57f415b30cdcc6205d3d000dfbdeccd4e8d22661b1c6"
+      },
+      "path": "src/frontend/oir/execute.rs"
+    },
+    {
+      "after": {
+        "bytes": 10121,
+        "git_blob": "a5b7d15045149c3fc645c57a4200c0ab1343b42b",
+        "mode": "100644",
+        "path": "src/frontend/oir/mod.rs",
+        "sha256": "6f8d3dc57cd22142850c4f22427481062b3fa36ec127120464684bc187940211"
+      },
+      "before": {
+        "bytes": 9998,
+        "git_blob": "2e5f3b0da7819090c4d7ea9aef56a8ea8a9e1c3d",
+        "mode": "100644",
+        "path": "src/frontend/oir/mod.rs",
+        "sha256": "d3ac55cdff2dfb2fe909b2f19e4e5ed1971e1b129ebe1e3e5242580f9e9fd4f5"
+      },
+      "path": "src/frontend/oir/mod.rs"
+    },
+    {
+      "after": {
+        "bytes": 61158,
+        "git_blob": "d7003353525c68e326defe2f9cead17f7a181075",
+        "mode": "100644",
+        "path": "src/frontend/oir/native.rs",
+        "sha256": "94994e04af35679352943af92caec78c35ea92fb61275e4b4d5275ee44577f6c"
+      },
+      "before": {
+        "bytes": 49487,
+        "git_blob": "154ae3c2e8c620aa6c1eee4fc1586217958c2332",
+        "mode": "100644",
+        "path": "src/frontend/oir/native.rs",
+        "sha256": "ca823b72bf102b6a3f019b74ab9fc0f0953bb26ed98fc10ddd771a65504c2640"
+      },
+      "path": "src/frontend/oir/native.rs"
+    },
+    {
+      "after": {
+        "bytes": 51519,
+        "git_blob": "7af15e286827d0e02195d43b453dab88ee802029",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_native_resource_tests.rs",
+        "sha256": "b6c58d0c7585c1018dd0aadc5f9f0a19f9d8926517cc5d885fdb06336c852810"
+      },
+      "before": {
+        "bytes": 51424,
+        "git_blob": "32cfd9834615cc9086dd0d6ce8eb2d1f7705b25a",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_native_resource_tests.rs",
+        "sha256": "674239df8ec009b60200ba56b7100e07dd7405cb528622fce546da666ebbbf3c"
+      },
+      "path": "src/frontend/oir/owned/array_native_resource_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 67737,
+        "git_blob": "bd49aa0ff1dc53add66abd2b219d4db00b8a4a38",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/execute.rs",
+        "sha256": "f06e2e105e1238db4d94b3515a73870428fc81b9c85c01e07f5097600b9d317d"
+      },
+      "before": {
+        "bytes": 67374,
+        "git_blob": "35b1d0062e70b04916c52c641c0472544f1acf7f",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/execute.rs",
+        "sha256": "72219cd91eb26710aa72455c1f33e185d5c976d5639e87e7e0f31ba0374a3af5"
+      },
+      "path": "src/frontend/oir/owned/execute.rs"
+    },
+    {
+      "after": {
+        "bytes": 87934,
+        "git_blob": "22ee85a6c9b32ca9ddf621b19c3631d1606f988a",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native.rs",
+        "sha256": "ed25d30c71f2beb67d7031e551b555ef489c8808e9015bcdc21a4e063f927c07"
+      },
+      "before": {
+        "bytes": 76786,
+        "git_blob": "f7878978d57ea4b0f7e750f2a98571e4a3f30cfc",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native.rs",
+        "sha256": "a5fec5f442f3538012067795c95a932bda9d7359ea2ecde2bf1f415e4e4eed9b"
+      },
+      "path": "src/frontend/oir/owned/native.rs"
+    },
+    {
+      "after": {
+        "bytes": 49399,
+        "git_blob": "c1e1e632d0c8b0057e1d21694a917ea5db51dfbb",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs",
+        "sha256": "e9b79c3135d6dabc9421ef08cf323c366cd1cc2888e8159c8defdbf3f4216517"
+      },
+      "before": {
+        "bytes": 49294,
+        "git_blob": "1c3c405d4adb8b077e2711efb8881e8fa2dc8ead",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs",
+        "sha256": "5c2bbcf8e6b883797ddbd738c3bc6926927257d74cf1b2ffcc0c416f4223abd2"
+      },
+      "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs"
+    },
+    {
+      "after": {
+        "bytes": 26494,
+        "git_blob": "9e868cf9e8ba144ca1f529b7db00fa0f874350ec",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/reviewer_heldout.rs",
+        "sha256": "d59914085b35a3d498b074dc75a679c2db157a6ed8490b30ab230465b4b67638"
+      },
+      "before": {
+        "bytes": 26537,
+        "git_blob": "15e49707509c0635f865b9bfe9620e734a336cea",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/reviewer_heldout.rs",
+        "sha256": "180bfcff5d73cfc551296820f7c7b034ddaa293b22ff281ee311dbea39a0d9ef"
+      },
+      "path": "src/frontend/oir/owned/source/reviewer_heldout.rs"
+    },
+    {
+      "after": {
+        "bytes": 50645,
+        "git_blob": "cdff160487df2456095f0e0256e3d24d9577fef2",
+        "mode": "100644",
+        "path": "src/frontend/parser.rs",
+        "sha256": "104438d1479ba14bc193af8a93dfe1d39772013abab44c226a7d5772dec83e83"
+      },
+      "before": {
+        "bytes": 50406,
+        "git_blob": "252ab17edcc9bcf0c924e0f6c2bc14c90190d466",
+        "mode": "100644",
+        "path": "src/frontend/parser.rs",
+        "sha256": "ec7e41a6665f84cd8cb358a885b348aedf2561fbe43afefad91d4f26fb6f27d5"
+      },
+      "path": "src/frontend/parser.rs"
+    },
+    {
+      "after": {
+        "bytes": 6862,
+        "git_blob": "ece3c66c45814acabb8bbc2fc72f65b589c4046b",
+        "mode": "100644",
+        "path": "src/frontend/parser/arrays.rs",
+        "sha256": "4b493aab7e0cf22fad12a3a2b9c310b0f4a463f735df7f79c847c2311799929b"
+      },
+      "before": {
+        "bytes": 6798,
+        "git_blob": "a07124c88f509d436db758b440463e5ec474b00f",
+        "mode": "100644",
+        "path": "src/frontend/parser/arrays.rs",
+        "sha256": "ddf39a0541a8f640224e41fadd6d9bc84acedea228ed96767490162f4fc0c881"
+      },
+      "path": "src/frontend/parser/arrays.rs"
+    }
+  ],
+  "transition_patch_bytes": 49895,
+  "transition_patch_sha256": "65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1",
+  "transition_touched_paths": [
+    "src/frontend/ast.rs",
+    "src/frontend/format/ast_tests.rs",
+    "src/frontend/lexer.rs",
+    "src/frontend/oir/arithmetic_tests.rs",
+    "src/frontend/oir/execute.rs",
+    "src/frontend/oir/mod.rs",
+    "src/frontend/oir/native.rs",
+    "src/frontend/oir/owned/array_native_resource_tests.rs",
+    "src/frontend/oir/owned/execute.rs",
+    "src/frontend/oir/owned/native.rs",
+    "src/frontend/oir/owned/source/array_pipeline_rows.rs",
+    "src/frontend/oir/owned/source/reviewer_heldout.rs",
+    "src/frontend/parser.rs",
+    "src/frontend/parser/arrays.rs"
+  ]
+}

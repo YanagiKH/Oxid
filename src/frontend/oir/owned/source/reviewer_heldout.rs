@@ -632,7 +632,6 @@ fn heldout_scalar_ast_and_diagnostics_match_candidate_mode_without_owned_markers
     });
     for text in [
         "fn f() -> () { 1.2; return; }",
-        "fn f() -> () { 3 / 2; return; }",
         "fn f() -> () { -x; return; }",
         "fn f() -> () { true < false < true; return; }",
     ] {

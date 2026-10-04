@@ -886,11 +886,17 @@ impl<'p, 'w> Machine<'p, 'w> {
                 else {
                     return Err(bad("arithmetic type", assign.span));
                 };
+                if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) && b == 0
+                {
+                    return Err(RunFailure::DivisionByZero(operator_span).into());
+                }
                 Scalar::I32(
                     match op {
                         hir::ArithmeticOp::Add => a.checked_add(b),
                         hir::ArithmeticOp::Subtract => a.checked_sub(b),
                         hir::ArithmeticOp::Multiply => a.checked_mul(b),
+                        hir::ArithmeticOp::Divide => a.checked_div(b),
+                        hir::ArithmeticOp::Remainder => a.checked_rem(b),
                     }
                     .ok_or(RunFailure::Overflow(operator_span))?,
                 )

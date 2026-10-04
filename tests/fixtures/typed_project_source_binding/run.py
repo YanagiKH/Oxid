@@ -36,8 +36,33 @@ RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
-CURRENT_SOURCE_SHA = '221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487'
-CURRENT_SOURCE_BYTES = 35021
+CURRENT_SOURCE_SHA = 'd3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33'
+CURRENT_SOURCE_BYTES = 35161
+COMBINED_SOURCE_SHA = '221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487'
+COMBINED_SOURCE_BYTES = 35021
+DIVISION_AUTHORITY_SHA = 'f2a848cf361ba2907d1f1e437256a28c0996189de9228de148f041a0ce9c0164'
+DIVISION_AUTHORITY_BYTES = 29723
+DIVISION_PATCH_SHA = '65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1'
+DIVISION_PATCH_BYTES = 49895
+DIVISION_BASE = '8a3b8683d911bdabfcdc7ca7d3ba867f6235ded3'
+DIVISION_HEAD = '2c46521caa902b2afb88ef6b7bae58b9a1382776'
+DIVISION_TREE = '7a74bf86edb53469dbcfd7839a8d3717a0d59a9a'
+DIVISION_PATHS = (
+    'src/frontend/ast.rs',
+    'src/frontend/format/ast_tests.rs',
+    'src/frontend/lexer.rs',
+    'src/frontend/oir/arithmetic_tests.rs',
+    'src/frontend/oir/execute.rs',
+    'src/frontend/oir/mod.rs',
+    'src/frontend/oir/native.rs',
+    'src/frontend/oir/owned/array_native_resource_tests.rs',
+    'src/frontend/oir/owned/execute.rs',
+    'src/frontend/oir/owned/native.rs',
+    'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+    'src/frontend/oir/owned/source/reviewer_heldout.rs',
+    'src/frontend/parser.rs',
+    'src/frontend/parser/arrays.rs',
+)
 FORMATTER_SOURCE_SHA = '69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06'
 FORMATTER_SOURCE_BYTES = 23052
 COMBINED_AUTHORITY_SHA = 'f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670'
@@ -371,6 +396,11 @@ def inverse_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
 
 
+def inverse_division_patch(inputs, patch):
+    """Remove the pinned division delta before combined-source reconstruction."""
+    return apply_inverse_patch(inputs, patch, DIVISION_PATCH_SHA, DIVISION_PATCH_BYTES, DIVISION_PATHS)
+
+
 def inverse_combined_patch(inputs, patch):
     """Remove the pinned combined source delta before formatter reconstruction."""
     return apply_inverse_patch(inputs, patch, COMBINED_PATCH_SHA, COMBINED_PATCH_BYTES, COMBINED_PATHS)
@@ -483,6 +513,33 @@ def preflight(repo, package=PACKAGE):
     require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA
             and len(package_bytes["current-source.json"]) == CURRENT_SOURCE_BYTES,
             "unapproved current source manifest")
+    require(digest(package_bytes["combined-source.json"]) == COMBINED_SOURCE_SHA
+            and len(package_bytes["combined-source.json"]) == COMBINED_SOURCE_BYTES,
+            "unapproved combined source manifest")
+    require(digest(package_bytes["division-authority.json"]) == DIVISION_AUTHORITY_SHA
+            and len(package_bytes["division-authority.json"]) == DIVISION_AUTHORITY_BYTES,
+            "stale division authority")
+    division = json.loads(package_bytes["division-authority.json"])
+    require(division["schema"] == "oxid-checked-division-source-transition-v1"
+            and division["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and division["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and division["combined_source_sha256"] == COMBINED_SOURCE_SHA
+            and division["combined_source_bytes"] == COMBINED_SOURCE_BYTES
+            and division["combined_authority_sha256"] == COMBINED_AUTHORITY_SHA
+            and division["transition_patch_sha256"] == DIVISION_PATCH_SHA
+            and division["transition_patch_bytes"] == DIVISION_PATCH_BYTES
+            and division["transition_touched_paths"] == list(DIVISION_PATHS)
+            and division["added_source_paths"] == [] and division["removed_source_paths"] == []
+            and division["base_head"] == DIVISION_BASE
+            and division["reviewed_source_head"] == DIVISION_HEAD
+            and division["source_only_tree"] == DIVISION_TREE
+            and division["recipe"] == SOURCE_DELTA_RECIPE
+            and (division["current_source_members"], division["combined_source_members"],
+                 division["compiler_source_members"], division["compiler_bodies"]) == (185, 185, 133, 136),
+            "stale division transition authority")
+    require(digest(package_bytes["division-transition.patch"]) == DIVISION_PATCH_SHA
+            and len(package_bytes["division-transition.patch"]) == DIVISION_PATCH_BYTES,
+            "wrong division transition patch")
     require(digest(package_bytes["formatter-source.json"]) == FORMATTER_SOURCE_SHA
             and len(package_bytes["formatter-source.json"]) == FORMATTER_SOURCE_BYTES,
             "unapproved formatter source manifest")
@@ -490,8 +547,8 @@ def preflight(repo, package=PACKAGE):
             and len(package_bytes["combined-authority.json"]) == COMBINED_AUTHORITY_BYTES,
             "stale combined authority")
     combined = json.loads(package_bytes["combined-authority.json"])
-    require(combined["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and combined["current_source_bytes"] == CURRENT_SOURCE_BYTES
+    require(combined["current_source_sha256"] == COMBINED_SOURCE_SHA
+            and combined["current_source_bytes"] == COMBINED_SOURCE_BYTES
             and combined["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
             and combined["formatter_source_bytes"] == FORMATTER_SOURCE_BYTES
             and combined["formatter_authority_sha256"] == FORMATTER_AUTHORITY_SHA
@@ -550,10 +607,12 @@ def preflight(repo, package=PACKAGE):
     require(members(repo / U2) == sorted([x["path"] for x in historical["files"]] + ["package-inputs.json"]),
             "missing or extra historical Unit2 member")
     current = json.loads(package_bytes["current-source.json"])
+    combined_source = json.loads(package_bytes["combined-source.json"])
     formatter_source = json.loads(package_bytes["formatter-source.json"])
     predecessor = json.loads(package_bytes["predecessor-source.json"])
     selected = json.loads(references[U3 + "/manifests/selected-current.json"])
-    require(len(current["files"]) == 185 and len(formatter_source["files"]) == 133
+    require(len(current["files"]) == 185 and len(combined_source["files"]) == 185
+            and len(formatter_source["files"]) == 133
             and len(predecessor["files"]) == 129 and len(selected["files"]) == 117,
             "wrong source count")
     require(delta["reviewed_source_head"] == predecessor["reviewed_source_head"]
@@ -563,22 +622,40 @@ def preflight(repo, package=PACKAGE):
             and formatter_source["formatter_base_head"] == formatter["base_head"]
             and formatter_source["predecessor_source_sha256"] == PREDECESSOR_SOURCE_SHA,
             "stale formatter checkpoint provenance")
-    require(current["reviewed_source_head"] == COMBINED_HEAD
-            and current["source_only_tree"] == COMBINED_TREE
+    require(combined_source["reviewed_source_head"] == COMBINED_HEAD
+            and combined_source["source_only_tree"] == COMBINED_TREE
+            and combined_source["combined_base_head"] == COMBINED_BASE
+            and combined_source["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
+            and combined_source["compile_time_fixture_source"] == COMPILE_FIXTURE_SOURCE
+            and combined_source["compile_time_fixture_references"] == 47
+            and combined_source["compile_time_fixture_members"] == 42,
+            "stale combined checkpoint provenance")
+    require(current["reviewed_source_head"] == DIVISION_HEAD
+            and current["source_only_tree"] == DIVISION_TREE
+            and current["division_base_head"] == DIVISION_BASE
+            and current["combined_source_sha256"] == COMBINED_SOURCE_SHA
             and current["combined_base_head"] == COMBINED_BASE
             and current["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
             and current["compile_time_fixture_source"] == COMPILE_FIXTURE_SOURCE
             and current["compile_time_fixture_references"] == 47
             and current["compile_time_fixture_members"] == 42,
-            "stale combined checkpoint provenance")
+            "stale division checkpoint provenance")
     require({x["path"] for x in predecessor["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
             "unexpected predecessor source membership")
     require({x["path"] for x in formatter_source["files"]}
             == {x["path"] for x in predecessor["files"]} | set(FORMATTER_ADDITIONS),
             "unexpected formatter source membership")
-    require({x["path"] for x in current["files"]}
+    require({x["path"] for x in combined_source["files"]}
             == {x["path"] for x in formatter_source["files"]} | set(COMBINED_ADDITIONS),
+            "unexpected combined source membership")
+    require([x["path"] for x in current["files"]] == [x["path"] for x in combined_source["files"]],
             "unexpected current source membership")
+    current_rows = {x["path"]: x for x in current["files"]}
+    combined_rows = {x["path"]: x for x in combined_source["files"]}
+    require([name for name in current_rows if current_rows[name] != combined_rows[name]] == list(DIVISION_PATHS),
+            "unexpected division source delta")
+    require(division["current_input_git_modes"] == [{"path": name, "mode": "100644"} for name in current_rows],
+            "unexpected current source modes")
     retained = [x for x in current["files"] if not x["path"].startswith(("src/", "native/"))
                 and x["path"] not in COMBINED_FIXTURE_ADDITIONS]
     require([x["path"] for x in retained] == list(RETAINED_NON_SOURCE_PATHS)
@@ -586,13 +663,27 @@ def preflight(repo, package=PACKAGE):
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
     inputs = check_entries(repo, current["files"])
+    for item in division["current_input_git_modes"]:
+        require(regular(repo, item["path"]).stat().st_mode & 0o111 == 0,
+                "changed input mode: " + item["path"])
     fixture_paths = compile_fixture_paths(inputs[COMPILE_FIXTURE_SOURCE])
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
-    formatter_inputs, combined_touched = inverse_combined_patch(inputs, package_bytes["combined-transition.patch"])
+    combined_inputs, division_touched = inverse_division_patch(inputs, package_bytes["division-transition.patch"])
+    check_bytes(combined_inputs, combined_source["files"])
+    transition_inputs = []
+    for name in DIVISION_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", combined_inputs), ("after", inputs)):
+            data = source_inputs[name]
+            blob = hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+            identities[label] = {**entry(name, data), "mode": "100644", "git_blob": blob}
+        transition_inputs.append(identities)
+    require(division["transition_inputs"] == transition_inputs, "stale division input identities")
+    formatter_inputs, combined_touched = inverse_combined_patch(combined_inputs, package_bytes["combined-transition.patch"])
     check_bytes(formatter_inputs, formatter_source["files"])
     predecessor_inputs, formatter_touched = inverse_formatter_patch(formatter_inputs, package_bytes["formatter-transition.patch"])
     check_bytes(predecessor_inputs, predecessor["files"])
@@ -639,7 +730,9 @@ def preflight(repo, package=PACKAGE):
             "predecessor_inputs": predecessor_inputs, "formatter_touched": formatter_touched,
             "formatter_authority": formatter, "formatter_source": formatter_source,
             "formatter_inputs": formatter_inputs, "combined_touched": combined_touched,
-            "combined_authority": combined, "predecessor_resource": predecessor_resource}
+            "combined_authority": combined, "predecessor_resource": predecessor_resource,
+            "combined_source": combined_source, "combined_inputs": combined_inputs,
+            "division_authority": division, "division_touched": division_touched}
 
 
 def materialize(root, inputs):
@@ -671,7 +764,10 @@ def prepare_archived(output, captured):
             "predecessor_source_sha256": PREDECESSOR_SOURCE_SHA,
             "combined_inverse_patch_sha256": COMBINED_PATCH_SHA,
             "combined_inverse_touched": captured["combined_touched"],
-            "formatter_source_sha256": FORMATTER_SOURCE_SHA}
+            "formatter_source_sha256": FORMATTER_SOURCE_SHA,
+            "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
+            "division_inverse_touched": captured["division_touched"],
+            "combined_source_sha256": COMBINED_SOURCE_SHA}
 
 
 def prepare_unit2(output, captured):
@@ -864,9 +960,12 @@ def main():
                       formatter_authority_sha256=FORMATTER_AUTHORITY_SHA,
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
-                      formatter_source_sha256=FORMATTER_SOURCE_SHA)
+                      formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      division_authority_sha256=DIVISION_AUTHORITY_SHA,
+                      combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 185, "formatter_source_members": 133,
+                "current_source_members": 185, "combined_source_members": 185,
+                "formatter_source_members": 133,
                 "compile_time_fixture_members": 42, "compile_time_fixture_references": 47,
                 "predecessor_source_members": 129, "archive_members": 117,
                 "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21,

@@ -363,6 +363,8 @@ impl<'a> Fingerprint<'a> {
                     ArithmeticOp::Add => "add",
                     ArithmeticOp::Subtract => "subtract",
                     ArithmeticOp::Multiply => "multiply",
+                    ArithmeticOp::Divide => "div",
+                    ArithmeticOp::Remainder => "rem",
                 });
                 self.span(*operator_span);
                 self.expression(*left);
@@ -678,6 +680,7 @@ a[
 use crate::as as crate;struct crate{as:i32}fn as(self:i32)->i32{return self;}
 fn self()->(){let crate=crate{as:as(2)};let as=crate.as;crate::self::as();return;}
 "#),
+    ("division-remainder", "fn f(x:i32)->i32{return x/ /* divisor */ -3%2*7+1;}fn g()->i32{let a=[17,23,35];return(a[0]/10)*100+a[0]%10;}"),
     ("comment-boundaries", "// first\r\npub/*a*/mod/*b*/child;\r\nuse crate/*c*/::/*d*/child::f;\r\nfn f(x\u{2003}: i32)->(){\r\nlet n=-/* minus */1; /* middle\n雪 */if true{/* inside */return;}// tail\r\n}\r\n// eof"),
 ];
 

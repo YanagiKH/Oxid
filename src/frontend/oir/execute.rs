@@ -356,10 +356,17 @@ fn execute(
                     let Scalar::I32(right_value) = read(active, right)? else {
                         return Err(internal(FailureKind::TypeMismatch, Some(right.span)));
                     };
+                    if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder)
+                        && right_value == 0
+                    {
+                        return Err(RunFailure::DivisionByZero(operator_span));
+                    }
                     let result = match op {
                         hir::ArithmeticOp::Add => left_value.checked_add(right_value),
                         hir::ArithmeticOp::Subtract => left_value.checked_sub(right_value),
                         hir::ArithmeticOp::Multiply => left_value.checked_mul(right_value),
+                        hir::ArithmeticOp::Divide => left_value.checked_div(right_value),
+                        hir::ArithmeticOp::Remainder => left_value.checked_rem(right_value),
                     }
                     .ok_or(RunFailure::Overflow(operator_span))?;
                     Scalar::I32(result)

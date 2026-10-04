@@ -208,3 +208,75 @@ fn arithmetic_operator_and_both_operand_spans_are_validated() {
         }
     }
 }
+
+#[test]
+fn division_remainder_exact_fuel_and_runtime_failure_boundary() {
+    for (expression, expected, zero) in [
+        ("7 / 3", Some(2), false),
+        ("-7 % 3", Some(-1), false),
+        ("7 / 0", None, true),
+        ("7 % 0", None, true),
+        ("-2147483648 / -1", None, false),
+        ("-2147483648 % -1", None, false),
+    ] {
+        let (sources, p) = raw(&format!("fn main() -> i32 {{ return {expression}; }}"));
+        let arithmetic = p.functions[0].blocks[0].statements[2].assignment();
+        let arithmetic_span = arithmetic.span;
+        let Rvalue::CheckedI32 { operator_span, .. } = arithmetic.value else {
+            panic!()
+        };
+        let end = p.functions[0].blocks[0].terminator.as_ref().unwrap().span;
+        let verified = verify::verify(p, &sources).unwrap();
+        assert_eq!(
+            execute::run_with_fuel(&verified, hir::DefId(0), 6),
+            Err(RunFailure::Fuel(arithmetic_span))
+        );
+        if let Some(value) = expected {
+            assert_eq!(
+                execute::run_with_fuel(&verified, hir::DefId(0), 7),
+                Err(RunFailure::Fuel(end))
+            );
+            assert_eq!(
+                execute::run_with_fuel(&verified, hir::DefId(0), 8),
+                Ok(Scalar::I32(value))
+            );
+        } else {
+            let failure = if zero {
+                RunFailure::DivisionByZero(operator_span)
+            } else {
+                RunFailure::Overflow(operator_span)
+            };
+            assert_eq!(
+                execute::run_with_fuel(&verified, hir::DefId(0), 7),
+                Err(failure)
+            );
+        }
+    }
+}
+
+#[test]
+fn division_and_remainder_raw_oir_keep_type_and_origin_checks() {
+    for op in [hir::ArithmeticOp::Divide, hir::ArithmeticOp::Remainder] {
+        for invalid in 0..3 {
+            let (sources, mut p) = simple();
+            let assignment = p.functions[0].blocks[0].statements[2].assignment_mut();
+            let Rvalue::CheckedI32 {
+                op: actual,
+                operator_span,
+                ..
+            } = &mut assignment.value
+            else {
+                panic!()
+            };
+            *actual = op;
+            if invalid == 2 {
+                operator_span.end = usize::MAX;
+            } else {
+                // Neither the shared operator representation nor the new source
+                // parser may bypass the independent raw verifier's i32 gate.
+                p.functions[0].locals[if invalid == 0 { 0 } else { 2 }].ty = hir::Ty::Bool;
+            }
+            assert!(verify::verify(p, &sources).is_err());
+        }
+    }
+}

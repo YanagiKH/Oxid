@@ -1,0 +1,1086 @@
+diff --git a/src/frontend/ast.rs b/src/frontend/ast.rs
+index bfa32e2..26e7d7b 100644
+--- a/src/frontend/ast.rs
++++ b/src/frontend/ast.rs
+@@ -28,6 +28,8 @@ pub enum ArithmeticOp {
+     Add,
+     Subtract,
+     Multiply,
++    Divide,
++    Remainder,
+ }
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub enum ComparisonOp {
+diff --git a/src/frontend/format/ast_tests.rs b/src/frontend/format/ast_tests.rs
+index 938da5e..edb6ecf 100644
+--- a/src/frontend/format/ast_tests.rs
++++ b/src/frontend/format/ast_tests.rs
+@@ -363,6 +363,8 @@ impl<'a> Fingerprint<'a> {
+                     ArithmeticOp::Add => "add",
+                     ArithmeticOp::Subtract => "subtract",
+                     ArithmeticOp::Multiply => "multiply",
++                    ArithmeticOp::Divide => "div",
++                    ArithmeticOp::Remainder => "rem",
+                 });
+                 self.span(*operator_span);
+                 self.expression(*left);
+@@ -678,6 +680,7 @@ a[
+ use crate::as as crate;struct crate{as:i32}fn as(self:i32)->i32{return self;}
+ fn self()->(){let crate=crate{as:as(2)};let as=crate.as;crate::self::as();return;}
+ "#),
++    ("division-remainder", "fn f(x:i32)->i32{return x/ /* divisor */ -3%2*7+1;}fn g()->i32{let a=[17,23,35];return(a[0]/10)*100+a[0]%10;}"),
+     ("comment-boundaries", "// first\r\npub/*a*/mod/*b*/child;\r\nuse crate/*c*/::/*d*/child::f;\r\nfn f(x\u{2003}: i32)->(){\r\nlet n=-/* minus */1; /* middle\n雪 */if true{/* inside */return;}// tail\r\n}\r\n// eof"),
+ ];
+ 
+diff --git a/src/frontend/lexer.rs b/src/frontend/lexer.rs
+index 7efcb34..2cb0231 100644
+--- a/src/frontend/lexer.rs
++++ b/src/frontend/lexer.rs
+@@ -47,6 +47,8 @@ pub enum Kind {
+     Minus,
+     Plus,
+     Star,
++    Slash,
++    Percent,
+     Unsupported,
+     Invalid,
+     Eof,
+@@ -221,7 +223,9 @@ pub(super) fn lex_with_limit(
+             '-' => Kind::Minus,
+             '+' => Kind::Plus,
+             '*' => Kind::Star,
+-            '/' | '%' | '|' | '[' | ']' | '#' | '\'' => Kind::Unsupported,
++            '/' => Kind::Slash,
++            '%' => Kind::Percent,
++            '|' | '[' | ']' | '#' | '\'' => Kind::Unsupported,
+             _ => Kind::Invalid,
+         };
+         let span = source.span(start, cursor);
+diff --git a/src/frontend/oir/arithmetic_tests.rs b/src/frontend/oir/arithmetic_tests.rs
+index 95a126f..6292dc4 100644
+--- a/src/frontend/oir/arithmetic_tests.rs
++++ b/src/frontend/oir/arithmetic_tests.rs
+@@ -208,3 +208,75 @@ fn arithmetic_operator_and_both_operand_spans_are_validated() {
+         }
+     }
+ }
++
++#[test]
++fn division_remainder_exact_fuel_and_runtime_failure_boundary() {
++    for (expression, expected, zero) in [
++        ("7 / 3", Some(2), false),
++        ("-7 % 3", Some(-1), false),
++        ("7 / 0", None, true),
++        ("7 % 0", None, true),
++        ("-2147483648 / -1", None, false),
++        ("-2147483648 % -1", None, false),
++    ] {
++        let (sources, p) = raw(&format!("fn main() -> i32 {{ return {expression}; }}"));
++        let arithmetic = p.functions[0].blocks[0].statements[2].assignment();
++        let arithmetic_span = arithmetic.span;
++        let Rvalue::CheckedI32 { operator_span, .. } = arithmetic.value else {
++            panic!()
++        };
++        let end = p.functions[0].blocks[0].terminator.as_ref().unwrap().span;
++        let verified = verify::verify(p, &sources).unwrap();
++        assert_eq!(
++            execute::run_with_fuel(&verified, hir::DefId(0), 6),
++            Err(RunFailure::Fuel(arithmetic_span))
++        );
++        if let Some(value) = expected {
++            assert_eq!(
++                execute::run_with_fuel(&verified, hir::DefId(0), 7),
++                Err(RunFailure::Fuel(end))
++            );
++            assert_eq!(
++                execute::run_with_fuel(&verified, hir::DefId(0), 8),
++                Ok(Scalar::I32(value))
++            );
++        } else {
++            let failure = if zero {
++                RunFailure::DivisionByZero(operator_span)
++            } else {
++                RunFailure::Overflow(operator_span)
++            };
++            assert_eq!(
++                execute::run_with_fuel(&verified, hir::DefId(0), 7),
++                Err(failure)
++            );
++        }
++    }
++}
++
++#[test]
++fn division_and_remainder_raw_oir_keep_type_and_origin_checks() {
++    for op in [hir::ArithmeticOp::Divide, hir::ArithmeticOp::Remainder] {
++        for invalid in 0..3 {
++            let (sources, mut p) = simple();
++            let assignment = p.functions[0].blocks[0].statements[2].assignment_mut();
++            let Rvalue::CheckedI32 {
++                op: actual,
++                operator_span,
++                ..
++            } = &mut assignment.value
++            else {
++                panic!()
++            };
++            *actual = op;
++            if invalid == 2 {
++                operator_span.end = usize::MAX;
++            } else {
++                // Neither the shared operator representation nor the new source
++                // parser may bypass the independent raw verifier's i32 gate.
++                p.functions[0].locals[if invalid == 0 { 0 } else { 2 }].ty = hir::Ty::Bool;
++            }
++            assert!(verify::verify(p, &sources).is_err());
++        }
++    }
++}
+diff --git a/src/frontend/oir/execute.rs b/src/frontend/oir/execute.rs
+index a4c3c9b..c553e99 100644
+--- a/src/frontend/oir/execute.rs
++++ b/src/frontend/oir/execute.rs
+@@ -356,10 +356,17 @@ fn execute(
+                     let Scalar::I32(right_value) = read(active, right)? else {
+                         return Err(internal(FailureKind::TypeMismatch, Some(right.span)));
+                     };
++                    if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder)
++                        && right_value == 0
++                    {
++                        return Err(RunFailure::DivisionByZero(operator_span));
++                    }
+                     let result = match op {
+                         hir::ArithmeticOp::Add => left_value.checked_add(right_value),
+                         hir::ArithmeticOp::Subtract => left_value.checked_sub(right_value),
+                         hir::ArithmeticOp::Multiply => left_value.checked_mul(right_value),
++                        hir::ArithmeticOp::Divide => left_value.checked_div(right_value),
++                        hir::ArithmeticOp::Remainder => left_value.checked_rem(right_value),
+                     }
+                     .ok_or(RunFailure::Overflow(operator_span))?;
+                     Scalar::I32(result)
+diff --git a/src/frontend/oir/mod.rs b/src/frontend/oir/mod.rs
+index 2e5f3b0..a5b7d15 100644
+--- a/src/frontend/oir/mod.rs
++++ b/src/frontend/oir/mod.rs
+@@ -308,6 +308,7 @@ pub(super) enum RunFailure {
+     Frames(Span),
+     Slots(Span),
+     Overflow(Span),
++    DivisionByZero(Span),
+     Internal(OirFailure),
+ }
+ impl RunFailure {
+@@ -323,6 +324,7 @@ impl RunFailure {
+             Self::Frames(span) => ("E0602", "live call-frame limit exceeded", Some(span)),
+             Self::Slots(span) => ("E0603", "live local-slot limit exceeded", Some(span)),
+             Self::Overflow(span) => ("E0604", "checked i32 arithmetic overflow", Some(span)),
++            Self::DivisionByZero(span) => ("E0607", "checked i32 division by zero", Some(span)),
+             Self::Internal(ref error) => return error.diagnostic(sources),
+         };
+         Diagnostic::new(
+diff --git a/src/frontend/oir/native.rs b/src/frontend/oir/native.rs
+index 154ae3c..d700335 100644
+--- a/src/frontend/oir/native.rs
++++ b/src/frontend/oir/native.rs
+@@ -341,7 +341,40 @@ impl Write for LimitedCount {
+         Ok(())
+     }
+ }
+-type DiagnosticKey = (bool, usize, usize, usize);
++#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
++enum FailureKind {
++    Fuel,
++    Overflow,
++    DivisionByZero,
++}
++impl FailureKind {
++    fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
++        match self {
++            Self::Fuel => RunFailure::Fuel(span),
++            Self::Overflow => RunFailure::Overflow(span),
++            Self::DivisionByZero => RunFailure::DivisionByZero(span),
++        }
++        .diagnostic(sources)
++    }
++    fn arithmetic_symbol(self) -> &'static str {
++        match self {
++            Self::Overflow => "__oxid_error",
++            Self::DivisionByZero => "__oxid_division_error",
++            Self::Fuel => unreachable!("arithmetic failure kind"),
++        }
++    }
++}
++fn arithmetic_failures(op: hir::ArithmeticOp) -> &'static [FailureKind] {
++    match op {
++        hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
++            &[FailureKind::Overflow, FailureKind::DivisionByZero]
++        }
++        hir::ArithmeticOp::Add | hir::ArithmeticOp::Subtract | hir::ArithmeticOp::Multiply => {
++            &[FailureKind::Overflow]
++        }
++    }
++}
++type DiagnosticKey = (FailureKind, usize, usize, usize);
+ struct GuardedDiagnostics {
+     messages: Vec<String>,
+     ids: std::collections::BTreeMap<DiagnosticKey, usize>,
+@@ -358,17 +391,12 @@ impl GuardedDiagnostics {
+             ids: std::collections::BTreeMap::new(),
+         };
+         let mut count = LimitedCount { len: 0, maximum };
+-        let mut add = |overflow: bool, span: Span| -> Result<(), Box<Diagnostic>> {
+-            let key = (overflow, span.file.0, span.start, span.end);
++        let mut add = |kind: FailureKind, span: Span| -> Result<(), Box<Diagnostic>> {
++            let key = (kind, span.file.0, span.start, span.end);
+             if result.ids.contains_key(&key) {
+                 return Ok(());
+             }
+-            let diagnostic = if overflow {
+-                RunFailure::Overflow(span)
+-            } else {
+-                RunFailure::Fuel(span)
+-            }
+-            .diagnostic(sources);
++            let diagnostic = kind.diagnostic(span, sources);
+             // The renderer streams escaped paths while counting: no oversize
+             // intermediate diagnostic is allocated before this preflight.
+             diagnostic.write_human(sources, &mut count).map_err(|_| {
+@@ -381,32 +409,37 @@ impl GuardedDiagnostics {
+             result.messages.push(diagnostic.render_human(sources));
+             Ok(())
+         };
+-        add(false, program.functions[entry.0].span)?;
++        add(FailureKind::Fuel, program.functions[entry.0].span)?;
+         for function in &program.functions {
+             for block in &function.blocks {
+                 if let Some(merge) = &block.merge {
+-                    add(false, merge.span)?;
++                    add(FailureKind::Fuel, merge.span)?;
+                 }
+                 for statement in &block.statements {
+-                    add(false, statement.span())?;
++                    add(FailureKind::Fuel, statement.span())?;
+                     if let Some(Assign {
+-                        value: Rvalue::CheckedI32 { operator_span, .. },
++                        value:
++                            Rvalue::CheckedI32 {
++                                op, operator_span, ..
++                            },
+                         ..
+                     }) = statement.as_assignment()
+                     {
+-                        add(true, *operator_span)?;
++                        for &kind in arithmetic_failures(*op) {
++                            add(kind, *operator_span)?;
++                        }
+                     }
+                 }
+                 add(
+-                    false,
++                    FailureKind::Fuel,
+                     block.terminator.as_ref().expect("verified terminator").span,
+                 )?;
+             }
+         }
+         Ok(result)
+     }
+-    fn get(&self, overflow: bool, span: Span) -> (usize, &str) {
+-        let id = self.ids[&(overflow, span.file.0, span.start, span.end)];
++    fn get(&self, kind: FailureKind, span: Span) -> (usize, &str) {
++        let id = self.ids[&(kind, span.file.0, span.start, span.end)];
+         (id, &self.messages[id])
+     }
+ }
+@@ -417,7 +450,7 @@ fn emit_guard(
+     cost: usize,
+     span: Span,
+ ) {
+-    let (id, message) = diagnostics.get(false, span);
++    let (id, message) = diagnostics.get(FailureKind::Fuel, span);
+     writeln!(out, "  %{name}_remaining = load i64, ptr %fuel").unwrap();
+     writeln!(
+         out,
+@@ -440,10 +473,33 @@ fn ty(ty: hir::Ty) -> &'static str {
+         hir::Ty::I32 => "i32",
+     }
+ }
+-fn overflow_message(span: Span, sources: &SourceMap) -> String {
+-    RunFailure::Overflow(span)
+-        .diagnostic(sources)
+-        .render_human(sources)
++fn emit_arithmetic_failure(
++    out: &mut Emission,
++    guarded: Option<&GuardedDiagnostics>,
++    kind: FailureKind,
++    span: Span,
++    sources: &SourceMap,
++    function: usize,
++    destination: usize,
++) {
++    if let Some(diagnostics) = guarded {
++        let (id, message) = diagnostics.get(kind, span);
++        writeln!(
++            out,
++            "  call void @__oxid_overflow(ptr @__oxid_guard_error_{id}, i64 {})",
++            message.len()
++        )
++        .unwrap();
++    } else {
++        let symbol = kind.arithmetic_symbol();
++        let length = kind.diagnostic(span, sources).render_human(sources).len();
++        writeln!(
++            out,
++            "  call void @__oxid_overflow(ptr @{symbol}_{function}_{destination}, i64 {length})"
++        )
++        .unwrap();
++    }
++    writeln!(out, "  unreachable").unwrap();
+ }
+ fn emit(
+     program: &Program,
+@@ -473,23 +529,31 @@ fn emit(
+     for f in &program.functions {
+         for b in &f.blocks {
+             for a in b.statements.iter().filter_map(Statement::as_assignment) {
+-                if let Rvalue::CheckedI32 { operator_span, .. } = a.value {
++                if let Rvalue::CheckedI32 {
++                    op, operator_span, ..
++                } = a.value
++                {
+                     if guarded.is_some() {
+                         continue;
+                     }
+-                    let message = overflow_message(operator_span, sources);
+-                    write!(
+-                        out,
+-                        "@__oxid_error_{}_{} = private unnamed_addr constant [{} x i8] c\"",
+-                        f.id.0,
+-                        a.destination.0,
+-                        message.len()
+-                    )
+-                    .unwrap();
+-                    for byte in message.bytes() {
+-                        write!(out, "\\{byte:02X}").unwrap();
++                    for &kind in arithmetic_failures(op) {
++                        let symbol = kind.arithmetic_symbol();
++                        let message = kind
++                            .diagnostic(operator_span, sources)
++                            .render_human(sources);
++                        write!(
++                            out,
++                            "@{symbol}_{}_{} = private unnamed_addr constant [{} x i8] c\"",
++                            f.id.0,
++                            a.destination.0,
++                            message.len()
++                        )
++                        .unwrap();
++                        for byte in message.bytes() {
++                            write!(out, "\\{byte:02X}").unwrap();
++                        }
++                        out.push_str("\"\n");
+                     }
+-                    out.push_str("\"\n");
+                 }
+             }
+         }
+@@ -641,42 +705,78 @@ fn emit(
+                         right,
+                         operator_span,
+                     } => {
+-                        let intrinsic = match op {
+-                            hir::ArithmeticOp::Add => "sadd",
+-                            hir::ArithmeticOp::Subtract => "ssub",
+-                            hir::ArithmeticOp::Multiply => "smul",
+-                        };
+                         let n = a.destination.0;
+-                        // The intrinsic is defined for every pair of i32 values.
+-                        // Its wrapped component is only extracted on success;
+-                        // failure cannot execute any later OIR work or printer.
+-                        writeln!(out, "  %checked{n} = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 %v{}, i32 %v{})", left.local.0, right.local.0).unwrap();
+-                        writeln!(
+-                            out,
+-                            "  %overflow{n} = extractvalue {{ i32, i1 }} %checked{n}, 1"
+-                        )
+-                        .unwrap();
+-                        writeln!(
++                        match op {
++                            hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
++                                // LLVM signed division and remainder are undefined for
++                                // zero and MIN/-1. Neither instruction may precede these
++                                // guards, even when only the remainder is requested.
++                                writeln!(out, "  %division{n}_zero = icmp eq i32 %v{}, 0\n  br i1 %division{n}_zero, label %division{n}_error, label %division{n}_nonzero\ndivision{n}_error:", right.local.0).unwrap();
++                                emit_arithmetic_failure(
++                                    out,
++                                    guarded,
++                                    FailureKind::DivisionByZero,
++                                    operator_span,
++                                    sources,
++                                    f.id.0,
++                                    n,
++                                );
++                                writeln!(out, "division{n}_nonzero:\n  %division{n}_min = icmp eq i32 %v{}, -2147483648\n  %division{n}_negative_one = icmp eq i32 %v{}, -1\n  %overflow{n} = and i1 %division{n}_min, %division{n}_negative_one", left.local.0, right.local.0).unwrap();
++                            }
++                            hir::ArithmeticOp::Add
++                            | hir::ArithmeticOp::Subtract
++                            | hir::ArithmeticOp::Multiply => {
++                                let intrinsic = match op {
++                                    hir::ArithmeticOp::Add => "sadd",
++                                    hir::ArithmeticOp::Subtract => "ssub",
++                                    hir::ArithmeticOp::Multiply => "smul",
++                                    _ => unreachable!("overflow intrinsic"),
++                                };
++                                // The intrinsic is defined for every pair of i32 values.
++                                // Its wrapped component is only extracted on success.
++                                writeln!(out, "  %checked{n} = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 %v{}, i32 %v{})", left.local.0, right.local.0).unwrap();
++                                writeln!(
++                                    out,
++                                    "  %overflow{n} = extractvalue {{ i32, i1 }} %checked{n}, 1"
++                                )
++                                .unwrap();
++                            }
++                        }
++                        writeln!(out, "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok\noverflow{n}_error:").unwrap();
++                        emit_arithmetic_failure(
+                             out,
+-                            "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok"
+-                        )
+-                        .unwrap();
+-                        writeln!(out, "overflow{n}_error:").unwrap();
+-                        if let Some(diagnostics) = guarded {
+-                            let (id, message) = diagnostics.get(true, operator_span);
+-                            writeln!(out, "  call void @__oxid_overflow(ptr @__oxid_guard_error_{id}, i64 {})", message.len()).unwrap();
+-                        } else {
+-                            writeln!(
+-                                out,
+-                                "  call void @__oxid_overflow(ptr @__oxid_error_{}_{n}, i64 {})",
+-                                f.id.0,
+-                                overflow_message(operator_span, sources).len()
+-                            )
+-                            .unwrap();
++                            guarded,
++                            FailureKind::Overflow,
++                            operator_span,
++                            sources,
++                            f.id.0,
++                            n,
++                        );
++                        writeln!(out, "checked{n}_ok:").unwrap();
++                        match op {
++                            hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
++                                let instruction = if op == hir::ArithmeticOp::Divide {
++                                    "sdiv"
++                                } else {
++                                    "srem"
++                                };
++                                writeln!(
++                                    out,
++                                    "  %v{n} = {instruction} i32 %v{}, %v{}",
++                                    left.local.0, right.local.0
++                                )
++                                .unwrap();
++                            }
++                            hir::ArithmeticOp::Add
++                            | hir::ArithmeticOp::Subtract
++                            | hir::ArithmeticOp::Multiply => {
++                                writeln!(
++                                    out,
++                                    "  %v{n} = extractvalue {{ i32, i1 }} %checked{n}, 0"
++                                )
++                                .unwrap();
++                            }
+                         }
+-                        writeln!(out, "  unreachable\nchecked{n}_ok:").unwrap();
+-                        writeln!(out, "  %v{n} = extractvalue {{ i32, i1 }} %checked{n}, 0")
+-                            .unwrap();
+                         continue;
+                     }
+                     _ => unreachable!("native admission allowlist"),
+@@ -841,7 +941,7 @@ mod tests {
+     }
+     #[test]
+     fn checked_arithmetic_cost_is_one_including_dead_and_repeated_work() {
+-        for op in ["+", "-", "*"] {
++        for op in ["+", "-", "*", "/", "%"] {
+             let p = verified(&format!("fn main() -> i32 {{ return 1 {op} 2; }}"));
+             let bound = p.admit().unwrap()[0];
+             // Root unit + 3 slots + 3 assignments (one arithmetic) + Return.
+@@ -901,6 +1001,162 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn division_native_guards_precede_instructions_and_preserve_phi_exits() {
++        for prefix in ["", "while false {}"] {
++            let (program, sources) = verified_with_sources(&format!(
++                "fn main()->bool {{ {prefix} return (9/2==4) && (9%2==1); }}"
++            ));
++            let ir = program
++                .native_module(Some(hir::DefId(0)), &sources)
++                .unwrap();
++            let f = &program.program.functions[0];
++            for block in &f.blocks {
++                for assign in block.statements.iter().filter_map(Statement::as_assignment) {
++                    let Rvalue::CheckedI32 {
++                        op, left, right, ..
++                    } = assign.value
++                    else {
++                        continue;
++                    };
++                    let n = assign.destination.0;
++                    let instruction = if op == hir::ArithmeticOp::Divide {
++                        "sdiv"
++                    } else {
++                        "srem"
++                    };
++                    let zero = ir
++                        .find(&format!(
++                            "  %division{n}_zero = icmp eq i32 %v{}, 0",
++                            right.local.0
++                        ))
++                        .unwrap();
++                    let nonzero = ir.find(&format!("division{n}_nonzero:\n  %division{n}_min = icmp eq i32 %v{}, -2147483648", left.local.0)).unwrap();
++                    let overflow = ir
++                        .find(&format!(
++                            "  %overflow{n} = and i1 %division{n}_min, %division{n}_negative_one"
++                        ))
++                        .unwrap();
++                    let success = ir
++                        .find(&format!(
++                            "checked{n}_ok:\n  %v{n} = {instruction} i32 %v{}, %v{}",
++                            left.local.0, right.local.0
++                        ))
++                        .unwrap();
++                    assert!(zero < nonzero && nonzero < overflow && overflow < success);
++                    assert!(ir.contains(&format!("  br i1 %division{n}_zero, label %division{n}_error, label %division{n}_nonzero")));
++                    assert!(ir.contains(&format!(
++                        "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok"
++                    )));
++                }
++                if let Some(merge) = &block.merge {
++                    for input in merge.incoming {
++                        let predecessor = &f.blocks[input.predecessor.0];
++                        let label = if prefix.is_empty() {
++                            predecessor
++                                .statements
++                                .iter()
++                                .filter_map(Statement::as_assignment)
++                                .rfind(|a| matches!(a.value, Rvalue::CheckedI32 { .. }))
++                                .map_or_else(
++                                    || format!("b{}", input.predecessor.0),
++                                    |a| format!("checked{}_ok", a.destination.0),
++                                )
++                        } else {
++                            format!(
++                                "g{}_{}_ok",
++                                input.predecessor.0,
++                                predecessor.statements.len() + 1
++                            )
++                        };
++                        assert!(ir.contains(&format!("[ %v{}, %{label} ]", input.value.local.0)));
++                    }
++                }
++            }
++            assert_eq!(ir.matches(" = sdiv i32 ").count(), 1);
++            assert_eq!(ir.matches(" = srem i32 ").count(), 1);
++            assert_eq!(program.run(Some(hir::DefId(0))), Ok(Scalar::Bool(true)));
++            for forbidden in ["sdiv exact", "srem exact", "nsw", "nuw", "poison", "undef"] {
++                assert!(!ir.contains(forbidden), "{forbidden}");
++            }
++        }
++    }
++
++    #[test]
++    fn division_native_embeds_both_reference_failures_and_charges_guarded_bytes() {
++        for op in ["/", "%"] {
++            for prefix in ["", "while false {}"] {
++                let (program, sources) = verified_at(
++                    "雪\n.ox",
++                    &format!("fn main()->i32 {{ {prefix} return 1{op}0; }}"),
++                );
++                let ir = program
++                    .native_module(Some(hir::DefId(0)), &sources)
++                    .unwrap();
++                let span = program.program.functions[0]
++                    .blocks
++                    .iter()
++                    .flat_map(|b| &b.statements)
++                    .filter_map(Statement::as_assignment)
++                    .find_map(|a| match a.value {
++                        Rvalue::CheckedI32 { operator_span, .. } => Some(operator_span),
++                        _ => None,
++                    })
++                    .unwrap();
++                for kind in [FailureKind::Overflow, FailureKind::DivisionByZero] {
++                    let expected = kind.diagnostic(span, &sources).render_human(&sources);
++                    let encoded = expected
++                        .bytes()
++                        .map(|byte| format!("\\{byte:02X}"))
++                        .collect::<String>();
++                    assert!(ir.contains(&format!("[{} x i8] c\"{encoded}\"", expected.len())));
++                }
++                if !prefix.is_empty() {
++                    let diagnostics = GuardedDiagnostics::new(
++                        &program.program,
++                        hir::DefId(0),
++                        &sources,
++                        MAX_GUARDED_DIAGNOSTIC_BYTES,
++                    )
++                    .unwrap();
++                    assert_ne!(
++                        diagnostics.get(FailureKind::Overflow, span).0,
++                        diagnostics.get(FailureKind::DivisionByZero, span).0
++                    );
++                    let bytes = diagnostics.messages.iter().map(String::len).sum();
++                    assert_eq!(
++                        program
++                            .native_module_limits(
++                                Some(hir::DefId(0)),
++                                &sources,
++                                execute::MAX_FUEL,
++                                bytes,
++                                ir.len()
++                            )
++                            .unwrap(),
++                        ir
++                    );
++                    for (data, llvm, marker) in [
++                        (bytes - 1, ir.len(), "diagnostic bytes"),
++                        (bytes, ir.len() - 1, "LLVM bytes"),
++                    ] {
++                        let error = program
++                            .native_module_limits(
++                                Some(hir::DefId(0)),
++                                &sources,
++                                execute::MAX_FUEL,
++                                data,
++                                llvm,
++                            )
++                            .unwrap_err();
++                        assert_eq!(error.code, "E0700");
++                        assert!(error.message.contains(marker));
++                    }
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn embedded_overflow_diagnostic_is_reference_human_text_encoded_as_data() {
+         let path = "雪\"\\\n\t\u{1b}.ox";
+diff --git a/src/frontend/oir/owned/array_native_resource_tests.rs b/src/frontend/oir/owned/array_native_resource_tests.rs
+index 32cfd98..7af15e2 100644
+--- a/src/frontend/oir/owned/array_native_resource_tests.rs
++++ b/src/frontend/oir/owned/array_native_resource_tests.rs
+@@ -49,6 +49,7 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
+     match kind {
+         FailureKind::Fuel => RunFailure::Fuel(origin).diagnostic(sources),
+         FailureKind::Overflow => RunFailure::Overflow(origin).diagnostic(sources),
++        FailureKind::DivisionByZero => RunFailure::DivisionByZero(origin).diagnostic(sources),
+         FailureKind::Bounds => execute::OwnedRunFailure::Bounds(origin).diagnostic(sources),
+     }
+     .render_human(sources)
+diff --git a/src/frontend/oir/owned/execute.rs b/src/frontend/oir/owned/execute.rs
+index 35b1d00..bd49aa0 100644
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -886,11 +886,17 @@ impl<'p, 'w> Machine<'p, 'w> {
+                 else {
+                     return Err(bad("arithmetic type", assign.span));
+                 };
++                if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) && b == 0
++                {
++                    return Err(RunFailure::DivisionByZero(operator_span).into());
++                }
+                 Scalar::I32(
+                     match op {
+                         hir::ArithmeticOp::Add => a.checked_add(b),
+                         hir::ArithmeticOp::Subtract => a.checked_sub(b),
+                         hir::ArithmeticOp::Multiply => a.checked_mul(b),
++                        hir::ArithmeticOp::Divide => a.checked_div(b),
++                        hir::ArithmeticOp::Remainder => a.checked_rem(b),
+                     }
+                     .ok_or(RunFailure::Overflow(operator_span))?,
+                 )
+diff --git a/src/frontend/oir/owned/native.rs b/src/frontend/oir/owned/native.rs
+index f787897..22ee85a 100644
+--- a/src/frontend/oir/owned/native.rs
++++ b/src/frontend/oir/owned/native.rs
+@@ -801,6 +801,7 @@ impl Write for LimitedCount {
+ enum FailureKind {
+     Fuel,
+     Overflow,
++    DivisionByZero,
+     Bounds,
+ }
+ impl FailureKind {
+@@ -808,6 +809,7 @@ impl FailureKind {
+         match self {
+             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
+             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
++            Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
+             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
+         }
+     }
+@@ -882,9 +884,17 @@ fn diagnostic_occurrences(
+                 }
+                 match &statement.kind {
+                     OwnedInstruction::Scalar(Statement::Assign(Assign {
+-                        value: Rvalue::CheckedI32 { operator_span, .. },
++                        value:
++                            Rvalue::CheckedI32 {
++                                op, operator_span, ..
++                            },
+                         ..
+-                    })) => visit(FailureKind::Overflow, *operator_span)?,
++                    })) => {
++                        visit(FailureKind::Overflow, *operator_span)?;
++                        if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) {
++                            visit(FailureKind::DivisionByZero, *operator_span)?;
++                        }
++                    }
+                     OwnedInstruction::ReadIndex { .. } | OwnedInstruction::WriteIndex { .. } => {
+                         visit(FailureKind::Bounds, plan::instruction_span(statement))?
+                     }
+@@ -2017,21 +2027,51 @@ fn emit_scalar(
+         } => {
+             let left = load_operand(out, f, &format!("{name}_left"), left);
+             let right = load_operand(out, f, &format!("{name}_right"), right);
+-            let intrinsic = match op {
+-                hir::ArithmeticOp::Add => "sadd",
+-                hir::ArithmeticOp::Subtract => "ssub",
+-                hir::ArithmeticOp::Multiply => "smul",
+-            };
+             let suffix = continuation(&owned_statement.kind)
+                 .suffix()
+                 .expect("arithmetic continuation");
+-            writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 {left}, i32 {right})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1\n  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_{suffix}\n{name}_checked_error:").unwrap();
++            match op {
++                hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
++                    // Keep both undefined LLVM operand pairs outside the block
++                    // that evaluates sdiv/srem, including MIN%-1 overflow.
++                    writeln!(out, "  %{name}_zero = icmp eq i32 {right}, 0\n  br i1 %{name}_zero, label %{name}_division_error, label %{name}_nonzero\n{name}_division_error:").unwrap();
++                    emit_failure(out, diagnostics, FailureKind::DivisionByZero, operator_span);
++                    writeln!(out, "{name}_nonzero:\n  %{name}_min = icmp eq i32 {left}, -2147483648\n  %{name}_negative_one = icmp eq i32 {right}, -1\n  %{name}_overflow = and i1 %{name}_min, %{name}_negative_one").unwrap();
++                }
++                hir::ArithmeticOp::Add
++                | hir::ArithmeticOp::Subtract
++                | hir::ArithmeticOp::Multiply => {
++                    let intrinsic = match op {
++                        hir::ArithmeticOp::Add => "sadd",
++                        hir::ArithmeticOp::Subtract => "ssub",
++                        hir::ArithmeticOp::Multiply => "smul",
++                        _ => unreachable!("overflow intrinsic"),
++                    };
++                    writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.{intrinsic}.with.overflow.i32(i32 {left}, i32 {right})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1").unwrap();
++                }
++            }
++            writeln!(out, "  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_{suffix}\n{name}_checked_error:").unwrap();
+             emit_failure(out, diagnostics, FailureKind::Overflow, operator_span);
+-            writeln!(
+-                out,
+-                "{name}_{suffix}:\n  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0"
+-            )
+-            .unwrap();
++            writeln!(out, "{name}_{suffix}:").unwrap();
++            match op {
++                hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => {
++                    let instruction = if op == hir::ArithmeticOp::Divide {
++                        "sdiv"
++                    } else {
++                        "srem"
++                    };
++                    writeln!(out, "  %{name}_value = {instruction} i32 {left}, {right}").unwrap();
++                }
++                hir::ArithmeticOp::Add
++                | hir::ArithmeticOp::Subtract
++                | hir::ArithmeticOp::Multiply => {
++                    writeln!(
++                        out,
++                        "  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0"
++                    )
++                    .unwrap();
++                }
++            }
+             format!("%{name}_value")
+         }
+     };
+@@ -2169,3 +2209,212 @@ fn emit_terminator(
+ #[cfg(test)]
+ #[path = "native_tests.rs"]
+ mod tests;
++
++#[cfg(test)]
++mod division_tests {
++    use super::*;
++    use crate::frontend::oir::owned::source::resource_fixtures;
++
++    #[test]
++    fn division_native_owned_guards_precede_instructions_and_keep_phi_exits() {
++        for prefix in ["", "while false {}"] {
++            let case = resource_fixtures::checked(&format!(
++                "struct Number {{ value:i32 }} fn main()->bool {{ let x=Number {{ value:-7 }}; {prefix} return (x.value/3==-2) && (x.value%3==-1); }}"
++            ));
++            let module = native_module(&case.witness, Some(case.entry), &case.sources).unwrap();
++            let f = &case.witness.functions()[case.entry.0];
++            for (b, block) in f.blocks.iter().enumerate() {
++                for (i, statement) in block.statements.iter().enumerate() {
++                    let OwnedInstruction::Scalar(Statement::Assign(Assign {
++                        value: Rvalue::CheckedI32 { op, .. },
++                        ..
++                    })) = &statement.kind
++                    else {
++                        continue;
++                    };
++                    let name = format!("f{}_b{b}_i{i}", f.id.0);
++                    let instruction = if *op == hir::ArithmeticOp::Divide {
++                        "sdiv"
++                    } else {
++                        "srem"
++                    };
++                    let zero = module
++                        .find(&format!("  %{name}_zero = icmp eq i32 "))
++                        .unwrap();
++                    let nonzero = module
++                        .find(&format!("{name}_nonzero:\n  %{name}_min = icmp eq i32 "))
++                        .unwrap();
++                    let overflow = module
++                        .find(&format!(
++                            "  %{name}_overflow = and i1 %{name}_min, %{name}_negative_one"
++                        ))
++                        .unwrap();
++                    let success = module
++                        .find(&format!(
++                            "{name}_checked_ok:\n  %{name}_value = {instruction} i32 "
++                        ))
++                        .unwrap();
++                    assert!(zero < nonzero && nonzero < overflow && overflow < success);
++                    assert!(module.contains(&format!(
++                        "  br i1 %{name}_zero, label %{name}_division_error, label %{name}_nonzero"
++                    )));
++                    assert!(module.contains(&format!("  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_checked_ok")));
++                    assert!(module.contains(&format!("%{name}_right, -1")));
++                }
++                if let Some(merge) = &block.merge {
++                    for input in merge.incoming {
++                        let predecessor = &f.blocks[input.predecessor.0];
++                        let label = if prefix.is_empty() {
++                            predecessor
++                                .statements
++                                .iter()
++                                .enumerate()
++                                .rfind(|(_, s)| {
++                                    matches!(
++                                        s.kind,
++                                        OwnedInstruction::Scalar(Statement::Assign(Assign {
++                                            value: Rvalue::CheckedI32 { .. },
++                                            ..
++                                        }))
++                                    )
++                                })
++                                .map_or_else(
++                                    || format!("b{}", input.predecessor.0),
++                                    |(i, _)| {
++                                        format!(
++                                            "f{}_b{}_i{i}_checked_ok",
++                                            f.id.0, input.predecessor.0
++                                        )
++                                    },
++                                )
++                        } else {
++                            format!(
++                                "f{}_b{}_g{}_ok",
++                                f.id.0,
++                                input.predecessor.0,
++                                predecessor.statements.len() + 1
++                            )
++                        };
++                        assert!(module.lines().any(|line| line.contains(" = phi ptr ")
++                            && line.contains(&format!(", %{label} ]"))));
++                    }
++                }
++            }
++            assert_eq!(module.matches(" = sdiv i32 ").count(), 1);
++            assert_eq!(module.matches(" = srem i32 ").count(), 1);
++            assert_eq!(
++                execute::run(&case.witness, Some(case.entry)),
++                Ok(Scalar::Bool(true))
++            );
++        }
++    }
++
++    #[test]
++    fn division_native_owned_diagnostic_ledger_and_caps_include_zero_failures() {
++        for prefix in ["", "while false {}"] {
++            let case = resource_fixtures::checked(&format!(
++                "struct Number {{ value:i32 }} fn main()->i32 {{ let x=Number {{ value:7 }}; {prefix} return (x.value/3)%2; }}"
++            ));
++            let plan = ExecutionPlan::build(&case.witness).unwrap();
++            let diagnostics = Diagnostics::new(
++                &plan,
++                case.entry,
++                &case.sources,
++                !prefix.is_empty(),
++                MAX_DIAGNOSTIC_BYTES,
++            )
++            .unwrap();
++            for kind in [FailureKind::Overflow, FailureKind::DivisionByZero] {
++                assert_eq!(
++                    diagnostics
++                        .ids
++                        .iter()
++                        .filter(|(key, _)| key.0 == kind)
++                        .count(),
++                    2
++                );
++                for &(key, id) in diagnostics.ids.iter().filter(|(key, _)| key.0 == kind) {
++                    let span = Span {
++                        file: crate::frontend::source::SourceFileId(key.1),
++                        start: key.2,
++                        end: key.3,
++                    };
++                    assert_eq!(
++                        diagnostics.messages[id],
++                        kind.diagnostic(span, &case.sources)
++                            .render_human(&case.sources)
++                    );
++                }
++            }
++            let observation = run_array_observed(
++                &case.witness,
++                Some(case.entry),
++                &case.sources,
++                NativeControl::default(),
++            );
++            let module = observation.result.unwrap();
++            let metrics = observation.metrics;
++            let bytes = diagnostics.messages.iter().map(String::len).sum();
++            assert_eq!(metrics.message_bytes, bytes);
++            assert_eq!(metrics.count_bytes, module.len());
++            assert_eq!(metrics.render_bytes, module.len());
++            assert!(metrics.metadata_peak <= Limits::DEFAULT.metadata_bytes);
++            assert!(metrics.metadata_admitted_bytes <= Limits::DEFAULT.metadata_bytes);
++            assert_eq!(
++                metrics.occurrence_bytes,
++                metrics.occurrences * size_of::<DiagnosticOccurrence>()
++            );
++            assert_eq!(
++                metrics.lookup_bytes,
++                metrics.unique * size_of::<DiagnosticLookup>()
++            );
++            assert!(metrics.diagnostic_transient_peak <= DIAGNOSTIC_TRANSIENT_BYTES);
++            if prefix.is_empty() {
++                assert_eq!((metrics.occurrences, metrics.unique), (4, 4));
++            }
++            let limits = Limits {
++                diagnostic_bytes: bytes,
++                ir_bytes: module.len(),
++                ..Limits::DEFAULT
++            };
++            assert_eq!(
++                native_module_limits(
++                    &case.witness,
++                    Some(case.entry),
++                    &case.sources,
++                    plan::MAX_FUEL,
++                    limits
++                )
++                .unwrap(),
++                module
++            );
++            for (limits, marker) in [
++                (
++                    Limits {
++                        diagnostic_bytes: bytes - 1,
++                        ..limits
++                    },
++                    "diagnostic bytes",
++                ),
++                (
++                    Limits {
++                        ir_bytes: module.len() - 1,
++                        ..limits
++                    },
++                    "LLVM bytes",
++                ),
++            ] {
++                let error = native_module_limits(
++                    &case.witness,
++                    Some(case.entry),
++                    &case.sources,
++                    plan::MAX_FUEL,
++                    limits,
++                )
++                .unwrap_err();
++                assert_eq!(error.code, "E0700");
++                assert!(error.message.contains(marker));
++            }
++        }
++    }
++}
+diff --git a/src/frontend/oir/owned/source/array_pipeline_rows.rs b/src/frontend/oir/owned/source/array_pipeline_rows.rs
+index 1c3c405..c1e1e63 100644
+--- a/src/frontend/oir/owned/source/array_pipeline_rows.rs
++++ b/src/frontend/oir/owned/source/array_pipeline_rows.rs
+@@ -275,6 +275,8 @@ fn arithmetic(op: source_hir::ArithmeticOp) -> &'static str {
+         source_hir::ArithmeticOp::Add => "add",
+         source_hir::ArithmeticOp::Subtract => "sub",
+         source_hir::ArithmeticOp::Multiply => "mul",
++        source_hir::ArithmeticOp::Divide => "div",
++        source_hir::ArithmeticOp::Remainder => "rem",
+     }
+ }
+ fn comparison(op: source_hir::ComparisonOp) -> &'static str {
+diff --git a/src/frontend/oir/owned/source/reviewer_heldout.rs b/src/frontend/oir/owned/source/reviewer_heldout.rs
+index 15e4970..9e868cf 100644
+--- a/src/frontend/oir/owned/source/reviewer_heldout.rs
++++ b/src/frontend/oir/owned/source/reviewer_heldout.rs
+@@ -632,7 +632,6 @@ fn heldout_scalar_ast_and_diagnostics_match_candidate_mode_without_owned_markers
+     });
+     for text in [
+         "fn f() -> () { 1.2; return; }",
+-        "fn f() -> () { 3 / 2; return; }",
+         "fn f() -> () { -x; return; }",
+         "fn f() -> () { true < false < true; return; }",
+     ] {
+diff --git a/src/frontend/parser.rs b/src/frontend/parser.rs
+index 252ab17..cdff160 100644
+--- a/src/frontend/parser.rs
++++ b/src/frontend/parser.rs
+@@ -1062,12 +1062,18 @@ impl Parser<'_> {
+         context: LiteralContext,
+     ) -> Result<ExprId, Box<Diagnostic>> {
+         let mut left = self.unary(depth, context)?;
+-        while let Some(token) = self.take(Kind::Star) {
++        loop {
++            let op = match self.peek().kind {
++                Kind::Star => ArithmeticOp::Multiply,
++                Kind::Slash => ArithmeticOp::Divide,
++                Kind::Percent => ArithmeticOp::Remainder,
++                _ => return Ok(left),
++            };
++            let operator_span = self.bump().span;
+             self.node()?;
+             let right = self.unary(depth, context)?;
+-            left = self.binary(ArithmeticOp::Multiply, left, right, token.span)?;
++            left = self.binary(op, left, right, operator_span)?;
+         }
+-        Ok(left)
+     }
+     fn unary(&mut self, depth: usize, context: LiteralContext) -> Result<ExprId, Box<Diagnostic>> {
+         let mut prefixes = Vec::new();
+diff --git a/src/frontend/parser/arrays.rs b/src/frontend/parser/arrays.rs
+index a07124c..ece3c66 100644
+--- a/src/frontend/parser/arrays.rs
++++ b/src/frontend/parser/arrays.rs
+@@ -107,7 +107,10 @@ impl Parser<'_> {
+                 })?;
+         }
+         self.bump();
+-        if matches!(self.peek().kind, Kind::Plus | Kind::Minus | Kind::Star) {
++        if matches!(
++            self.peek().kind,
++            Kind::Plus | Kind::Minus | Kind::Star | Kind::Slash | Kind::Percent
++        ) {
+             return Err(self.array_unsupported(self.peek().span));
+         }
+         let end = self.array_close("array type requires `]`")?;

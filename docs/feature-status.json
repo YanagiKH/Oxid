@@ -533,7 +533,7 @@
       "evidence": [
         "docs/architecture/i32-arithmetic-validation.md"
       ],
-      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, division, remainder, casts, shifts, wider integers, floats or promotion. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support and scalar comparisons are tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
+      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, casts, shifts, wider integers, floats or promotion. Division and remainder are tracked in typed-checked-i32-division. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support and scalar comparisons are tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
     },
     {
       "id": "typed-preview-scalar-comparisons",
@@ -893,6 +893,35 @@
       ],
       "evidence": [],
       "limitations": "Line-preserving horizontal whitespace and delimiter indentation only. Explicit regular file, stdout or --check, text diagnostics. No in-place writes, discovery, typechecking, execution, width wrapping, stdin, recursion, JSON formatter diagnostics, stable formatter or v1.0 claim."
+    },
+    {
+      "id": "typed-checked-i32-division",
+      "summary": "Checked i32 division and remainder through scalar and owned source, reference execution and LLVM",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "verified-oir-reference-and-llvm",
+      "target_scope": "Reference on supported Rust hosts; native Linux x86_64 LLVM 19.1.7 O0; current hosted qualification pending",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0018-checked-i32-division.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/typed_division.rs",
+        "src/frontend/oir/arithmetic_tests.rs"
+      ],
+      "evidence": [],
+      "limitations": "Only i32; no unary negation extension, casts, wider types or optimization. No completed milestone or stability claim."
     }
   ]
 }

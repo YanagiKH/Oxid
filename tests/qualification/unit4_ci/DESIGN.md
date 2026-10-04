@@ -3,8 +3,8 @@
 This integration owns orchestration and evidence transport only. It does not
 change the public semantic contracts, portable parser, hosted capability
 controller, or existing CI gate responsibilities. Current compiler and observer
-identities are explicitly refreshed for the reviewed formatter and prior
-fixed-array groundwork; the lifecycle observer overlay and historical
+identities are explicitly refreshed for the reviewed checked division, formatter and
+fixed-array implementation; the lifecycle observer overlay and historical
 source/corpus authorities stay unchanged.
 
 ## Trust and command interfaces
@@ -82,13 +82,13 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its 117 reviewed compiler changes include four explicitly admitted observer
-instrumentation overlaps: ast.rs, parser.rs, project/budget.rs and source.rs.
+Its 122 reviewed source/input changes include five explicitly admitted observer
+instrumentation overlaps: ast.rs, lexer.rs, parser.rs, project/budget.rs and source.rs.
 The AST and parser also overlap control instrumentation. Each current composition
 is pinned and preserves the historical transforms; unlisted overlaps reject.
 Historical283/current348 base maps, historical286/current351 derived maps and
 historical113/current136 compiler rosters remain separate identity domains.
-The source-binding transition separately verifies 185 current inputs, 133 formatter inputs, 129
+The source-binding transition separately verifies 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
 predecessor inputs and 117 archived inputs. Sessions explicitly deny historical
 source equivalence and bind the current185 manifest, reviewed source checkpoint
 and both current build overlays. Retained
@@ -114,9 +114,10 @@ with JSON control-character escaping and escaped workflow-marker pairs, plus
 byte counts and a truncation flag. No other stage gets a new diagnostic tail;
 existing failure, timeout and stream-limit handling is unchanged.
 
-The combined successor admits only four exact observer instrumentation overlaps
-and two exact control overlaps. Array source sections reverse to pinned historical
-bodies before the unchanged preparation functions compose current hooks. The
+The division successor admits only five exact observer instrumentation overlaps
+and two exact control overlaps. Division sections first recover the pinned combined AST, lexer and parser bodies.
+Array source sections then recover historical bodies before the unchanged
+preparation functions compose current hooks; the lexer retains both token hooks. The
 observer's direct Parser initializer adds only the closed array policy; its
 historical helper remains intact. Public lifecycle instrumentation changes only
 patch context for the new policy argument, with exact inverse proof back to the

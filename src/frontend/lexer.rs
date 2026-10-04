@@ -47,6 +47,8 @@ pub enum Kind {
     Minus,
     Plus,
     Star,
+    Slash,
+    Percent,
     Unsupported,
     Invalid,
     Eof,
@@ -221,7 +223,9 @@ pub(super) fn lex_with_limit(
             '-' => Kind::Minus,
             '+' => Kind::Plus,
             '*' => Kind::Star,
-            '/' | '%' | '|' | '[' | ']' | '#' | '\'' => Kind::Unsupported,
+            '/' => Kind::Slash,
+            '%' => Kind::Percent,
+            '|' | '[' | ']' | '#' | '\'' => Kind::Unsupported,
             _ => Kind::Invalid,
         };
         let span = source.span(start, cursor);

@@ -1,0 +1,54 @@
+{
+  "schema": "oxid-owned-source-cli-amendment-v1",
+  "amendment_id": "checked-division-v1",
+  "scope": "current-production-cli-only",
+  "introduced_source_commit": "2c46521caa902b2afb88ef6b7bae58b9a1382776",
+  "introduced_source_tree": "7a74bf86edb53469dbcfd7839a8d3717a0d59a9a",
+  "full_qualification": false,
+  "cases": [
+    {
+      "id": "scalar-unsupported-division",
+      "source_sha256": "2e2022e44f2137cf2091fa36b1aa9d9b028d34af8446cafee9f7d586514bd047",
+      "old_expectation_sha256": "ed9a154413448f30056774550bd12bf365d8e1192f3d88f8ad82b43ecb60cf45",
+      "function_count": 5,
+      "old_expected": {
+        "code": "E0101",
+        "message": "unsupported scalar operator",
+        "origin": "n0018.operator",
+        "related": [],
+        "span": [264, 265],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "effective_expected": {
+        "status": "accept",
+        "result_type": "i32",
+        "result": 2,
+        "runtime_failure": null
+      }
+    },
+    {
+      "id": "scalar-unsupported-remainder",
+      "source_sha256": "86f09980b8a9ce523a40f036c5292837a607b6d3aaa6056bba9449b2753b0227",
+      "old_expectation_sha256": "f114cee5b7a8fb5a6b58e83c94df7b21ac1bb6b4119e779b4f6b5b5c52affb59",
+      "function_count": 5,
+      "old_expected": {
+        "code": "E0101",
+        "message": "unsupported scalar operator",
+        "origin": "n0018.operator",
+        "related": [],
+        "span": [264, 265],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "effective_expected": {
+        "status": "accept",
+        "result_type": "i32",
+        "result": 1,
+        "runtime_failure": null
+      }
+    }
+  ]
+}

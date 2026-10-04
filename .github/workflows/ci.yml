@@ -531,8 +531,12 @@ jobs:
         run: |
           OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-debug" cargo test --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
           OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-release" cargo test --release --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
+      - name: Verify checked division and remainder native parity in both profiles
+        run: |
+          cargo test --locked --test typed_division -- --ignored
+          cargo test --release --locked --test typed_division -- --ignored
       - name: Verify production source CLI and source-free ELF outcomes
-        run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --jobs 2
+        run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment checked-division-v1 --jobs 2
       - name: Verify owned-source native budgets, stores, guards, and artifact identities
         run: python3 scripts/verify_owned_source_native.py --llvm-bin "$OXID_LLVM_BIN" --jobs 2 --evidence target/owned-source-native-ci
       - name: Recheck native matcher rejection controls against real collected evidence

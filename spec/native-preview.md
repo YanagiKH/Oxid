@@ -50,14 +50,15 @@ No source or admission failure falls back to scalar, legacy or reference executi
 required, carried by its resolved DefId rather than reconstructed from spans.
 
 The scalar-only route supports exact bool/unit/i32 constants, immutable copies, checked
-i32 addition/subtraction/multiplication, same-type i32/bool equality and i32-only
+i32 addition/subtraction/multiplication/division/remainder, same-type i32/bool equality and i32-only
 signed ordering comparisons, bool negation and explicit short-circuit bool merges,
 initialized mutable scalar places with explicit load/store,
 explicit direct nonrecursive calls,
 Branch, Goto and Return. Native compilation rejects all other OIR operations.
 Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
-[RFC 0008](../rfcs/0008-native-checked-i32.md). Comparisons follow
+[RFC 0008](../rfcs/0008-native-checked-i32.md), extended by
+[RFC 0018](../rfcs/0018-checked-i32-division.md). Comparisons follow
 [RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
 [RFC 0010](../rfcs/0010-boolean-logical-operators.md), and mutable scalar storage
 follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports scalar-field or empty nominal structs,
@@ -236,13 +237,15 @@ The verifier establishes initialization dominance before emission. No source
 pointers, aliases or mutation of earlier copied values are exposed.
 Copies/constants use bitwise OR
 with zero, with no numeric conversion, `undef`, `poison`, `nsw`, or `nuw`.
-Checked arithmetic uses LLVM `sadd`, `ssub` and `smul` signed-overflow intrinsics.
-Each operation branches on the overflow bit, extracts its i32 result only on the
+Checked addition/subtraction/multiplication use LLVM `sadd`, `ssub` and `smul`
+signed-overflow intrinsics. Division/remainder use guarded `sdiv`/`srem` only
+after excluding zero divisors and the MIN/-1 pair.
+Each operation branches on the overflow predicate, obtains its i32 result only on the
 success path, and calls a noreturn diagnostic adapter on failure. Operand, call,
 statement and first-error order remain unchanged. Discarded arithmetic executes;
 unchosen branches do not. No hardware trap or unchecked/wrapping operation is a
-substitute for the overflow branch. Backend lowering adds two blocks per checked
-assignment; the 4,096-block ceiling measures original OIR blocks. At most 8,192
+substitute for the overflow branch. Backend lowering adds two blocks per checked addition/subtraction/multiplication
+assignment and four per division/remainder assignment; the 4,096-block ceiling measures original OIR blocks. At most 8,192
 arithmetic assignments can fit the aggregate local ceiling.
 Comparisons lower to i1 results with `icmp eq`/`ne` over i32 or i1, or signed
 `icmp slt`/`sle`/`sgt`/`sge` over i32 only. The verifier rejects unit, mixed types
@@ -309,7 +312,10 @@ the next operation, with empty stdout and exit 1. Fuel is checked before arithme
 or storage, preserving first-error order. An executed checked-i32 overflow writes exactly the reference human E0604/oir-run
 diagnostic to stderr, including the operator's source line and Unicode-scalar
 column, leaves stdout empty and exits 1. It stops at the first error, including in
-discarded expressions or arguments. The embedded source path is the argument
+discarded expressions or arguments. Division and remainder first guard zero
+(E0607/oir-run) and the MIN/-1 pair (E0604/oir-run); LLVM `sdiv`/`srem`
+execute only on the successful path. Both errors use the reference diagnostic
+and preserve the same fuel and evaluation order. The embedded source path is the argument
 supplied to `compile`, with control characters escaped by the reference renderer;
 it remains fixed if source files are moved/deleted or the executable runs elsewhere.
 Paths may be visible in executable constant data. There is no runtime source read.

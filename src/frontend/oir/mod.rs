@@ -308,6 +308,7 @@ pub(super) enum RunFailure {
     Frames(Span),
     Slots(Span),
     Overflow(Span),
+    DivisionByZero(Span),
     Internal(OirFailure),
 }
 impl RunFailure {
@@ -323,6 +324,7 @@ impl RunFailure {
             Self::Frames(span) => ("E0602", "live call-frame limit exceeded", Some(span)),
             Self::Slots(span) => ("E0603", "live local-slot limit exceeded", Some(span)),
             Self::Overflow(span) => ("E0604", "checked i32 arithmetic overflow", Some(span)),
+            Self::DivisionByZero(span) => ("E0607", "checked i32 division by zero", Some(span)),
             Self::Internal(ref error) => return error.diagnostic(sources),
         };
         Diagnostic::new(

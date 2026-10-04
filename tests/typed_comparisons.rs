@@ -385,7 +385,6 @@ fn adjacent_tokens_are_required_and_unrelated_operators_remain_unsupported() {
         ("true & false", "&"),
         ("true | false", "|"),
         ("true or false", "or"),
-        ("1 / 2 == 0", "/"),
         ("1 as bool", "as"),
     ] {
         let prefix = "// 🦀\r\nfn main() -> bool { return ";

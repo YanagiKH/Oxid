@@ -37,12 +37,15 @@ Exact decimal i32 literals and scalar copies are a separate experimental entry.
 That predecessor does not implement arithmetic, casts, wider integers or floating
 point. Checked i32 addition/subtraction/multiplication are a separate experimental
 entry, with runtime overflow errors identical in debug and release. Other numeric
-operations remain deferred.
+operations remain deferred. Checked i32 division and remainder extend that
+experimental arithmetic contract in [RFC 0018](../../rfcs/0018-checked-i32-division.md):
+truncation toward zero, dividend-signed remainder, explicit zero-divisor errors,
+and checked MIN/-1 overflow.
 
 The optional LLVM native preview is separately tracked as experimental. It accepts
 a stricter bounded nonrecursive scalar subset, emits Linux x86_64 PIE executables,
 and rejects unsupported operations before tool invocation. Its checked i32
-`+`, `-` and `*` extension preserves reference overflow and first-error behavior;
+`+`, `-`, `*`, `/` and `%` extension preserves reference overflow and first-error behavior;
 other arithmetic operations and recursive native calls remain unavailable. It does
 not complete M2/M3 or certify production safety, a stable ABI, or self-hosting.
 
