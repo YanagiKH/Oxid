@@ -1,6 +1,6 @@
 # Current-source Unit4 parser qualification
 
-This reviewed successor admits the current formatter and prior fixed-array source while keeping
+This reviewed successor admits the current checked division, formatter and fixed-array source while keeping
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` byte-identical.
 It retains the unchanged ten helper files, historical observer Rust, instrumentation
 patches, semantic comparator, effective contract amendment, toolchain and dependency recipes.
@@ -9,28 +9,31 @@ reviewed source-admission, provenance and path-routing changes. Its comparator
 derivation and all 22 semantic predicate handlers remain unchanged.
 
 The historical parser package binds 283 base inputs, 113 compiler bodies and two
-286-member derived views. The current combined source manifest binds 185 inputs;
-52 existing compiler files differ from the historical package and 65
+286-member derived views. The current checked-division source manifest binds 185 inputs;
+57 existing compiler files differ from the historical package and 65
 implementation/test inputs are added, including 42 exact published compile-time
 fixture dependencies referenced 47 times by array_types_tests.rs. Those assets
 are admitted compiler-test inputs, with unchanged bytes and expectations. The current parser therefore binds 348 base
 inputs, 136 compiler bodies and two 351-member derived views. These inventories
 remain distinct. The source checkpoint is published commit
-`a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909`, full source tree
-`b30b0628c45e4a308bbb0ae5b35122794cd7ac12`.
+`2c46521caa902b2afb88ef6b7bae58b9a1382776`, full source tree
+`7a74bf86edb53469dbcfd7839a8d3717a0d59a9a`.
 
-`authority.json` pins the historical identities, the current manifest, exact 117
-before/after identities, current maps, source-binding runner and combined inverse
-patch. Every load re-derives the explicit path and 65-addition rosters. Unknown
+`authority.json` pins the historical identities, the current manifest, exact 122
+before/after identities, current maps, source-binding runner, preserved combined
+manifest and both division/combined inverse patches. Every load re-derives the explicit path and 65-addition rosters. Unknown
 paths, compiler deletions and unlisted instrumentation overlaps remain rejected.
-Only `ast.rs`, `parser.rs`, `project/budget.rs` and `source.rs` overlap observer
+Only `ast.rs`, `lexer.rs`, `parser.rs`, `project/budget.rs` and `source.rs` overlap observer
 instrumentation; only AST and parser overlap control instrumentation.
 
-The three array-overlap bodies are reversed with their exact sections of the
-independently pinned combined transition. Each reconstructed body must equal its
+The exact division sections first restore AST, lexer and parser bodies to the
+pinned combined predecessor. The three array-overlap bodies then reverse with
+their exact sections of the independently pinned combined transition. Each reconstructed body must equal its
 historical identity. The unchanged pinned historical preparation functions then
 reproduce each historical instrumented identity and compose the same hooks onto
-current source. Current composed bodies are independently pinned in both maps.
+current source. The lexer composition similarly recovers the unchanged historical
+lexer and reproduces its two exact token hooks before composing current tokens.
+Current composed bodies are independently pinned in both maps.
 The formatter source-read composition remains unchanged: remove the seven-line
 accessor to recover historical source, and preserve the two exact source-read
 hooks. Its composed body remains 12,917 bytes with SHA-256
@@ -51,7 +54,7 @@ and all current inputs against the actual checkout HEAD before making an output
 directory. It invokes the unchanged historical preparers and verifies their exact
 286-member outputs. Each original candidate/overlay manifest is retained under
 `prepare` or `prepare-control` with a `historical-` filename. Only then are the
-117 approved current files copied or exactly composed into each build tree. Newly generated current
+122 approved current files copied or exactly composed into each build tree. Newly generated current
 candidate/overlay manifests bind the current reviewed source checkpoint, current
 source manifest and transition authority. Builds consume these current views.
 Historical metadata is provenance only; it is never a current execution receipt.

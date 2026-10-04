@@ -24,7 +24,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         self.assertEqual(len(p.compiler_map(a)), 136)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 117)
+        self.assertEqual(len(a['current']['source_delta']), 122)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['src/frontend/format.rs',
  'src/frontend/format/ast_tests.rs',
  'src/frontend/format/resource_tests.rs',
@@ -90,9 +90,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 52)
-        self.assertEqual(a['current']['reviewed_source_head'], 'a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909')
-        self.assertEqual(a['current']['source_only_tree'], 'b30b0628c45e4a308bbb0ae5b35122794cd7ac12')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 57)
+        self.assertEqual(a['current']['reviewed_source_head'], '2c46521caa902b2afb88ef6b7bae58b9a1382776')
+        self.assertEqual(a['current']['source_only_tree'], '7a74bf86edb53469dbcfd7839a8d3717a0d59a9a')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -101,7 +101,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay'})
+        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -114,6 +114,11 @@ class CurrentAuthorityControls(unittest.TestCase):
         for role in ('derived_files', 'control_derived_files'):
             self.assertNotEqual(a['current']['current_' + role], a[role])
             for path in p.CURRENT_PATHS:
+                if role == 'derived_files' and path == 'src/frontend/lexer.rs':
+                    raw = p.compose_division_lexer(a, (p.REPOSITORY / path).read_bytes())
+                    self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
+                                     {'path': path, 'bytes': len(raw), 'sha256': p.sha(raw)})
+                    continue
                 if path in p.ARRAY_INSTRUMENTATION_PATHS and (role == 'derived_files' or path != 'src/frontend/project/budget.rs'):
                     raw = p.compose_array_instrumentation(a, path, (p.REPOSITORY / path).read_bytes(), role == 'control_derived_files')
                     self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
@@ -214,7 +219,7 @@ class SourceReadCompositionControls(unittest.TestCase):
                 self.assertEqual(new, {'path': old['path'],
                                       'before_sha256': '3574d2e4598fa77b82aeee2ba3457dfdd39652d750771d4c56102aa706c0db3e',
                                       'after_sha256': '68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53'})
-            elif old['path'] in p.ARRAY_INSTRUMENTATION_PATHS:
+            elif old['path'] in (*p.ARRAY_INSTRUMENTATION_PATHS, 'src/frontend/lexer.rs'):
                 self.assertEqual(new['path'], old['path'])
                 self.assertEqual(new['before_sha256'], next(r['sha256'] for r in self.a['current']['current_base_files'] if r['path'] == old['path']))
                 self.assertEqual(new['after_sha256'], next(r['sha256'] for r in self.a['current']['current_derived_files'] if r['path'] == old['path']))
@@ -297,7 +302,9 @@ class ArrayCompositionControls(unittest.TestCase):
             a = copy.deepcopy(self.a)
             raw = (p.REPOSITORY / name).read_bytes() + b'// changed historical tail\n'
             next(row for row in a['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'array transition must recover exact historical source'):
+            message = ('division transition must recover exact combined source' if name in p.DIVISION_INSTRUMENTATION_PATHS
+                       else 'array transition must recover exact historical source')
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
                 p.compose_array_instrumentation(a, name, raw)
 
     def test_changed_inverse_patch_and_runner_reject_before_transform(self):
@@ -338,6 +345,69 @@ class ArrayCompositionControls(unittest.TestCase):
                     with self.subTest(role=role, path=name, source=source), patch.object(p, 'load', side_effect=lambda raw: active if p.sha(raw) == p.AUTHORITY_SHA else original_load(raw)):
                         with self.assertRaisesRegex(p.Rejected, 'unapproved current derived map'):
                             p.authority()
+
+
+class DivisionCompositionControls(unittest.TestCase):
+    def setUp(self):
+        self.a = p.authority()
+
+    def test_all_three_division_overlaps_restore_exact_combined_inputs(self):
+        before = p.read(p.REPOSITORY / self.a['current']['combined_source_manifest']['path'])
+        for name in p.DIVISION_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes()
+            restored = p.restore_division_source(self.a, name, raw)
+            self.assertEqual({'path': name, 'bytes': len(restored), 'sha256': p.sha(restored)},
+                             next(row for row in before['files'] if row['path'] == name))
+
+    def test_lexer_composition_preserves_exactly_two_frozen_hooks(self):
+        name = 'src/frontend/lexer.rs'
+        raw = (p.REPOSITORY / name).read_bytes()
+        composed = p.compose_division_lexer(self.a, raw)
+        token = b'        crate::frontend::parser::unit4_observer::lex_token(*tokens.last().unwrap());\n'
+        eof = b'    crate::frontend::parser::unit4_observer::lex_token(*tokens.last().unwrap());\n'
+        self.assertEqual(composed.count(token), 1)
+        without_token = composed.replace(token, b'', 1)
+        self.assertEqual(without_token.count(eof), 1)
+        self.assertEqual(without_token.replace(eof, b'', 1), raw)
+        self.assertEqual(next(row for row in self.a['current']['current_derived_files'] if row['path'] == name),
+                         {'path': name, 'bytes': len(composed), 'sha256': p.sha(composed)})
+
+    def test_changed_and_coherently_rehashed_division_source_rejects(self):
+        for name in p.DIVISION_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes() + b'// unapproved tail\n'
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'composition current division identity'):
+                p.restore_division_source(self.a, name, raw)
+            altered = copy.deepcopy(self.a)
+            next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'division transition must recover exact combined source'):
+                p.restore_division_source(altered, name, raw)
+        with self.assertRaisesRegex(p.Rejected, 'unapproved division instrumentation path'):
+            p.restore_division_source(self.a, 'src/frontend/project/budget.rs', b'')
+
+    def test_division_patch_and_combined_manifest_reject_before_transform(self):
+        fields = ('source_binding_runner', 'division_transition_patch', 'combined_source_manifest')
+        for field in fields:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for key in fields:
+                    relative = self.a['current'][key]['path']
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((p.REPOSITORY / relative).read_bytes() + (b'\n' if key == field else b''))
+                raw = (p.REPOSITORY / 'src/frontend/lexer.rs').read_bytes()
+                with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
+                    p.compose_division_lexer(self.a, raw)
+
+    def test_uninstrumented_and_historical_lexer_maps_reject(self):
+        original_load = p.load
+        name = 'src/frontend/lexer.rs'
+        for replacement in (next(row for row in self.a['current']['current_base_files'] if row['path'] == name),
+                            next(row for row in self.a['derived_files'] if row['path'] == name)):
+            active = copy.deepcopy(self.a['current'])
+            next(row for row in active['current_derived_files'] if row['path'] == name).update(replacement)
+            with patch.object(p, 'load', side_effect=lambda raw: active if p.sha(raw) == p.AUTHORITY_SHA else original_load(raw)):
+                with self.assertRaisesRegex(p.Rejected, 'unapproved current derived map'):
+                    p.authority()
 
 
 class CheckoutControls(unittest.TestCase):

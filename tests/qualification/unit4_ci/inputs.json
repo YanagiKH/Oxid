@@ -11,9 +11,9 @@
   ],
   "files": [
     {
-      "bytes": 10957,
+      "bytes": 12558,
       "path": "tests/fixtures/typed_project_source_binding/README.md",
-      "sha256": "9c0a4a33c6ecc7d3806b66b81acbe6e4bbba54a25fe350045bd6ca0407c554b9"
+      "sha256": "8a55a3ef2b2f8d12893ae1c01072d92be4e8ce3d34d4cd3006053705278a8b60"
     },
     {
       "bytes": 9916,
@@ -26,14 +26,29 @@
       "sha256": "f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670"
     },
     {
+      "bytes": 35021,
+      "path": "tests/fixtures/typed_project_source_binding/combined-source.json",
+      "sha256": "221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487"
+    },
+    {
       "bytes": 376315,
       "path": "tests/fixtures/typed_project_source_binding/combined-transition.patch",
       "sha256": "8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683"
     },
     {
-      "bytes": 35021,
+      "bytes": 35161,
       "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-      "sha256": "221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487"
+      "sha256": "d3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33"
+    },
+    {
+      "bytes": 29723,
+      "path": "tests/fixtures/typed_project_source_binding/division-authority.json",
+      "sha256": "f2a848cf361ba2907d1f1e437256a28c0996189de9228de148f041a0ce9c0164"
+    },
+    {
+      "bytes": 49895,
+      "path": "tests/fixtures/typed_project_source_binding/division-transition.patch",
+      "sha256": "65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1"
     },
     {
       "bytes": 1464,
@@ -51,9 +66,9 @@
       "sha256": "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4"
     },
     {
-      "bytes": 1744,
+      "bytes": 2220,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "605fb84e43f85b070e26506593a01c57bda5c5f20e7d8bb0a617fee429d8bbe8"
+      "sha256": "b430c6c5434e409d259c5279ea0d46f74fe02036f7f8d61687e0e51b57ae5c4e"
     },
     {
       "bytes": 22314,
@@ -61,9 +76,9 @@
       "sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8"
     },
     {
-      "bytes": 60502,
+      "bytes": 66764,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "e4d14570a9ffd2de8611a1279ad91f2818b5f11d2be5007879a9e9c7f08ebdb2"
+      "sha256": "6f3151cede16c12ea846eefce3c6aa35235195868a33b2987dffbc04972d80f2"
     },
     {
       "bytes": 605300,
@@ -751,34 +766,34 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 6071,
+      "bytes": 6401,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "035679ed47d479cede264d6730a20a00f6563698a96ac63dfafcf905e427ee14"
+      "sha256": "ad631e4e2bdfa598e1c2993f427e6cb00705c12ed1efc46b41121f45887743fa"
     },
     {
-      "bytes": 229591,
+      "bytes": 232135,
       "path": "tests/qualification/unit4_parser_current/authority.json",
-      "sha256": "fd049b7473ff96d3420f24f3924c5f30479241d7caf2cba26361982e8e9b0458"
+      "sha256": "15b27d6e81aca9a04dfcd756d98336683e85ef755a1322a927e37db2a92fd902"
     },
     {
-      "bytes": 82934,
+      "bytes": 87533,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "4c2f89f5b83e993cd919f478c02fc6a68bfb4992547b0b69bb356ed586f1135c"
+      "sha256": "efa294cec1a97b43ac9031b730145631d33c41aedbe02b1fdb56da8378c132c7"
     },
     {
-      "bytes": 28168,
+      "bytes": 32930,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "fc1f7f70f2ce72aa159b453580f94c1b6dfd6ead15758cf289cb368d6f9f4d03"
+      "sha256": "86bc88dbc9668a1fc6988913d1737adc7b4bc768fc78b05cdf8e2082e22248bf"
     },
     {
-      "bytes": 8205,
+      "bytes": 8271,
       "path": "tests/qualification/unit4_public_v3/README.md",
-      "sha256": "6811dea5146744d85de4492ecf169721fe9c65854a81b7cfbf02931cb70501ec"
+      "sha256": "e22129598ff693a47f59154d078de1f7d86a35649077ca4dd9218340a0cb4b5e"
     },
     {
       "bytes": 667,
       "path": "tests/qualification/unit4_public_v3/authority.py",
-      "sha256": "2fb20fa26038508b49aea5ff8542e35257e3081fc76e2e85259d978d3c193fcc"
+      "sha256": "851075757c2dbf9c31872f0f7d1fc7c5c18285362440549d7873c7bc5b5d9083"
     },
     {
       "bytes": 7004,

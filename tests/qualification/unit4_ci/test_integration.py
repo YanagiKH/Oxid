@@ -154,7 +154,7 @@ class ObserverPreparationControls(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
-    def current_build_capsule(self, observer_mutation=None):
+    def current_build_capsule(self, output, observer_mutation=None):
         # Actual admitted source maps, synthetic protocol envelopes only.
         current = q.read(REPO / q.SOURCE / 'current-source.json')
         observer = copy.deepcopy(self.manifest)
@@ -176,7 +176,7 @@ class ObserverPreparationControls(unittest.TestCase):
                     'binary': binaries[profile], 'argv': ['cargo', 'build', '--bin', 'oxid', '--locked', '--offline'] + (['--release'] if profile == 'release' else []),
                     'rustc': 'rustc 1.99.0 local-test\nhost: x86_64-unknown-linux-gnu\n',
                     'environment': {'CARGO_INCREMENTAL': '0', 'CARGO_BUILD_JOBS': '2'}, 'streams': {}}
-            objects['/synthetic/' + role + '-build/candidate-binding.json'] = {
+            objects[str(output / (role + '-build') / 'candidate-binding.json')] = {
                 'kind': kind, 'compiler_head': provenance['checkout_head'], 'compiler_head_tree': provenance['checkout_tree'],
                 'compiler_source_only_tree': provenance['source_only_tree'], 'source_manifest': manifest_id,
                 'binaries': binaries, 'build_receipts': receipts}
@@ -185,16 +185,29 @@ class ObserverPreparationControls(unittest.TestCase):
         return capsule, provenance
 
     def test_final_join_accepts_actual_current_ordinary_and_observer_maps(self):
-        capsule, provenance = self.current_build_capsule()
-        configs = join.build_configs(capsule, '/synthetic', provenance, 'Linux x86_64', REPO)
-        self.assertEqual(set(configs), {'ordinary', 'observer'})
+        for output in (Path('/synthetic'), PureWindowsPath('C:/synthetic')):
+            with self.subTest(output=str(output)):
+                capsule, provenance = self.current_build_capsule(output)
+                configs = join.build_configs(capsule, str(output), provenance, 'Linux x86_64', REPO)
+                self.assertEqual(set(configs), {'ordinary', 'observer'})
+
+    def test_synthetic_build_capsule_preserves_both_path_flavors(self):
+        for output in (PurePosixPath('/synthetic'), PureWindowsPath('C:/synthetic')):
+            with self.subTest(output=str(output)):
+                capsule, _ = self.current_build_capsule(output)
+                for role in ('ordinary', 'observer'):
+                    member = str(output / (role + '-build') / 'candidate-binding.json')
+                    self.assertEqual(capsule.json(capsule.named(member))['kind'],
+                                     'unit4-public-v3-candidate' if role == 'ordinary' else 'unit4-public-v3-lifecycle-observer')
 
     def test_final_join_rejects_changed_or_incomplete_current_observer_map(self):
         for mutate in (lambda rows: rows.pop(), lambda rows: rows.reverse(),
                        lambda rows: rows[-1].update(sha256='0' * 64)):
-            capsule, provenance = self.current_build_capsule(mutate)
-            with self.assertRaisesRegex(q.Reject, 'public source authority'):
-                join.build_configs(capsule, '/synthetic', provenance, 'Linux x86_64', REPO)
+            for output in (Path('/synthetic'), PureWindowsPath('C:/synthetic')):
+                with self.subTest(output=str(output)):
+                    capsule, provenance = self.current_build_capsule(output, mutate)
+                    with self.assertRaisesRegex(q.Reject, 'public source authority'):
+                        join.build_configs(capsule, str(output), provenance, 'Linux x86_64', REPO)
 
     def test_lifecycle_successor_changes_only_the_array_policy_context(self):
         current = (REPO / q.OBSERVER_PATCH).read_bytes()

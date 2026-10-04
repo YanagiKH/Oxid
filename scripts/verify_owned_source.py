@@ -26,6 +26,11 @@ import time
 import owned_source_model as model
 
 
+CLI_AMENDMENT_ID = "checked-division-v1"
+CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_checked_division_cli_v1.json")
+CLI_AMENDMENT_SHA256 = "568ec18e2869c9519ba34c3e1adde910dd52698efa9dda071bb3833ec6749ac8"
+
+
 @dataclass(frozen=True)
 class Job:
     name: str
@@ -110,6 +115,47 @@ def verify_frozen(directory):
         if digest(directory / (entry["id"] + ".json")) != entry["expectation_sha256"]:
             raise ValueError("frozen expectation changed: " + entry["id"])
     return manifest
+
+
+def load_cli_amendment(selection, directory, *, mode):
+    """Load the sealed current-CLI-only contract without rewriting the oracle.
+
+    The version pins the complete two-row data document, including historical
+    rejection facts and effective results. It cannot widen candidate/raw-IR or
+    native-budget expectations, and is never selected implicitly.
+    """
+    if selection is None: return None
+    if mode != "cli": raise ValueError("CLI amendment is only valid with explicit --mode cli")
+    if selection != CLI_AMENDMENT_ID: raise ValueError("unknown current CLI amendment")
+    encoded = CLI_AMENDMENT_PATH.read_bytes()
+    identity = hashlib.sha256(encoded).hexdigest()
+    if identity != CLI_AMENDMENT_SHA256:
+        raise ValueError("current CLI amendment data differs from its sealed version")
+    amendment = strict_json_loads(encoded)
+    directory = Path(directory)
+    for row in amendment["cases"]:
+        identifier = row["id"]
+        source, expectation = directory / (identifier + ".ox"), directory / (identifier + ".json")
+        if digest(source) != row["source_sha256"]:
+            raise ValueError("CLI amendment source identity mismatch: " + identifier)
+        if digest(expectation) != row["old_expectation_sha256"]:
+            raise ValueError("CLI amendment historical expectation identity mismatch: " + identifier)
+        apply_cli_amendment(strict_json_loads(expectation.read_text()), amendment)
+    return {**amendment, "data_sha256": identity}
+
+
+def apply_cli_amendment(item, amendment):
+    """Return only a current CLI view; all frozen source/model facts stay intact."""
+    if amendment is None: return item
+    row = next((row for row in amendment["cases"] if row["id"] == item["id"]), None)
+    if row is None: return item
+    encoded = (json.dumps(item, indent=2, sort_keys=True) + "\n").encode()
+    if (hashlib.sha256(encoded).hexdigest() != row["old_expectation_sha256"]
+            or item["source_sha256"] != row["source_sha256"]
+            or type(item["function_count"]) is not int or item["function_count"] != row["function_count"]
+            or not RawInspector.equal(item["expected"], row["old_expected"])):
+        raise ValueError("CLI amendment does not match the historical case: " + item["id"])
+    return {**item, "expected": dict(row["effective_expected"])}
 
 
 def signal_group(process, sig):
@@ -338,11 +384,12 @@ def verify_text_result(completed, item, source):
             raise ValueError("runtime failure text disagrees with the fixed scalar contract")
 
 
-def profile_worker(binary, profile, corpus_dir, evidence):
+def profile_worker(binary, profile, corpus_dir, evidence, *, cli_amendment=None, mode="production"):
     """Actual ordinary CLI only. Test-only facades are never counted here."""
     binary, corpus_dir, evidence = Path(binary).resolve(), Path(corpus_dir).resolve(), Path(evidence).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
     manifest = verify_frozen(corpus_dir)
+    amendment = load_cli_amendment(cli_amendment, corpus_dir, mode=mode)
     before = digest(binary)
     counts = {"cli_invocations": 0, "native_executions": 0, "unique_elf_artifacts": 0, "source_programs": 0}
     artifacts, diagnostic_selections = [], {}
@@ -365,6 +412,7 @@ def profile_worker(binary, profile, corpus_dir, evidence):
     for entry in manifest["files"]:
         identifier = entry["id"]
         item = strict_json_loads((corpus_dir / (identifier + ".json")).read_text())
+        item = apply_cli_amendment(item, amendment)
         case_dir = evidence / identifier
         case_dir.mkdir(exist_ok=True)
         source = case_dir / ("source 雪.ox" if identifier == "utf8-crlf-borrow-origin" else "source.ox")
@@ -445,6 +493,7 @@ def profile_worker(binary, profile, corpus_dir, evidence):
         print(f"{profile} {identifier}: PASS", flush=True)
     if digest(binary) != before: raise ValueError("compiler changed during profile qualification")
     result = {"profile": profile, "binary": str(binary), "compiler_sha256": before, "counts": counts, "elf": artifacts, "diagnostic_selections": diagnostic_selections,
+              "cli_expectation_amendment": amendment,
               "evidence_kind": "actual-production-cli-and-source-free-ELF", "llvm_text_gate": "PENDING",
               "exact_fuel_and_failure_before_store": "PENDING", "full_qualification": False}
     write_json(evidence / "profile-result.json", result)
@@ -1292,6 +1341,8 @@ def main(argv=None):
     parser.add_argument("--frozen", type=Path)
     parser.add_argument("--candidate-observations", type=Path)
     parser.add_argument("--collection-manifest", type=Path)
+    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID,),
+                        help="explicit current-CLI expectations; requires --mode cli and preserves the frozen model")
     parser.add_argument("--jobs", type=int, choices=(1, 2), default=1)
     parser.add_argument("--timeout", type=float, default=1800)
     parser.add_argument("--worker-profile", choices=("debug", "release"), help=argparse.SUPPRESS)
@@ -1299,12 +1350,16 @@ def main(argv=None):
     if args.mode is None: args.mode = "production" if args.debug_binary or args.release_binary else "model"
     if sys.flags.optimize: parser.error("Python assertions must remain enabled")
     try:
+        if args.cli_amendment and args.mode != "cli":
+            raise ValueError("CLI amendment is only valid with explicit --mode cli")
         if args.worker_profile:
-            profile_worker(args.debug_binary, args.worker_profile, args.frozen, args.evidence)
+            profile_worker(args.debug_binary, args.worker_profile, args.frozen, args.evidence,
+                           cli_amendment=args.cli_amendment, mode=args.mode)
             return 0
         args.evidence.mkdir(parents=True, exist_ok=True)
         frozen = args.frozen or args.evidence / "frozen"
         manifest = verify_frozen(frozen) if args.frozen else freeze(frozen)
+        amendment = load_cli_amendment(args.cli_amendment, frozen, mode=args.mode)
         if args.mode in ("model", "freeze"):
             print(f"owned-source model: {manifest['unique_source_programs']} independent cases; actual CLI/native runs=0; production source qualification PENDING: PASS")
             return 0
@@ -1320,18 +1375,26 @@ def main(argv=None):
         for binary in binaries:
             if not os.path.isfile(binary) or not os.access(binary, os.X_OK): raise ValueError("compiler missing or not executable: " + binary)
         before = [digest(binary) for binary in binaries]
+        amendment_args = ("--cli-amendment", args.cli_amendment) if args.cli_amendment else ()
         jobs = [Job(profile, (sys.executable, str(Path(__file__).resolve()), binary, "--worker-profile", profile,
-                      "--frozen", str(frozen.resolve()), "--evidence", str((args.evidence / profile).resolve())),
+                      "--mode", args.mode, "--frozen", str(frozen.resolve()),
+                      "--evidence", str((args.evidence / profile).resolve()), *amendment_args),
                     f"owned-source {profile}: CLI/ELF PASS") for profile, binary in zip(("debug", "release"), binaries)]
         code = run_jobs(jobs, args.evidence / "logs", jobs=args.jobs, timeout=args.timeout)
         if [digest(binary) for binary in binaries] != before: raise ValueError("compiler identities changed")
         if code: return code
         results = [strict_json_loads((args.evidence / profile / "profile-result.json").read_text()) for profile in ("debug", "release")]
+        for result in results:
+            if not RawInspector.equal(result.get("cli_expectation_amendment"), amendment):
+                raise ValueError("profile current CLI amendment identity/expectations mismatch")
+            if amendment is not None and result.get("full_qualification") is not False:
+                raise ValueError("current CLI amendment cannot establish full qualification")
         if results[0]["diagnostic_selections"] != results[1]["diagnostic_selections"]:
             raise ValueError("debug/release ownership diagnostic selection mismatch")
         if [(item["id"], item["sha256"]) for item in results[0]["elf"]] != [(item["id"], item["sha256"]) for item in results[1]["elf"]]:
             raise ValueError("debug/release ELF mismatch")
         write_json(args.evidence / "production-cli-result.json", {"status": "CLI_ELF_PASS" if args.mode == "cli" else "PARTIAL", "profiles": results,
+                   "cli_expectation_amendment": amendment,
                    "full_qualification": False, "model_sha256":digest(Path(model.__file__)), "harness_sha256":digest(Path(__file__)),
                    "frozen_manifest_sha256":digest(frozen/'manifest.json') if (frozen/'manifest.json').exists() else None,
                    "pending": ["real LLVM text and failure-before-store proof", "exact source fuel sweeps", "resource boundaries and held-out review"]})

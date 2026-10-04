@@ -129,9 +129,10 @@ fields. Base v3 identity metadata remains historical base metadata; an old v3
 receipt is rejected for an effective-contract tuple. Original on-disk authorities
 and failed first-run evidence remain byte-identical.
 
-The combined source checkpoint is `a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909`.
+The checked-division source checkpoint is `2c46521caa902b2afb88ef6b7bae58b9a1382776`.
 Current source/observer input identities include exact compile-time array fixture
-dependencies. The lifecycle patch successor changes only array-policy context and
+dependencies. The existing lifecycle patch also applies exactly to the division
+source. Its successor changes only array-policy context and
 reverses to the unchanged historical patch. Frozen cases, expected observations
 and selected runtime content stay unchanged. Preparation binds files but does not
 establish execution results.

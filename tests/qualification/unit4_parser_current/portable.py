@@ -34,7 +34,12 @@ CURRENT_PATHS = (
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
     'src/frontend/hir.rs',
+    'src/frontend/lexer.rs',
     'src/frontend/mod.rs',
+    'src/frontend/oir/arithmetic_tests.rs',
+    'src/frontend/oir/execute.rs',
+    'src/frontend/oir/mod.rs',
+    'src/frontend/oir/native.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
     'src/frontend/oir/owned/array_native_tests.rs',
     'src/frontend/oir/owned/array_observe.rs',
@@ -209,7 +214,8 @@ CURRENT_ADDED_PATHS = (
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
 )
 ARRAY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs", "src/frontend/project/budget.rs")
-AUTHORITY_SHA = "fd049b7473ff96d3420f24f3924c5f30479241d7caf2cba26361982e8e9b0458"
+DIVISION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/lexer.rs", "src/frontend/parser.rs")
+AUTHORITY_SHA = "15b27d6e81aca9a04dfcd756d98336683e85ef755a1322a927e37db2a92fd902"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -317,7 +323,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["source_binding_runner"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["source_binding_runner"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -344,7 +350,7 @@ def authority():
     same([row["path"] for row in changes], list(CURRENT_PATHS), "unexpected current transition scope")
     same(changes, active["source_delta"], "current transition before/after identities")
     same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"])),
-         [*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/source.rs"], "transition overlaps instrumentation outside exact current composition")
+         sorted([*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs"]), "transition overlaps instrumentation outside exact current composition")
     same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["control_instrumentation"])),
          ["src/frontend/ast.rs", "src/frontend/parser.rs"], "transition overlaps control instrumentation outside exact current composition")
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
@@ -367,6 +373,9 @@ def authority():
             raw = compose_array_instrumentation(result, name, (REPOSITORY / name).read_bytes(), control)
             derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         if not control:
+            name = "src/frontend/lexer.rs"
+            raw = compose_division_lexer(result, (REPOSITORY / name).read_bytes())
+            derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
             name = "src/frontend/source.rs"
             raw = compose_source_read(result, (REPOSITORY / name).read_bytes())
             derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
@@ -437,7 +446,8 @@ def compose_array_instrumentation(a, name, raw, control=False):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact combined instrumentation source section")
     patch = selected[0]
-    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    combined_raw = restore_division_source(a, name, raw) if name in DIVISION_INSTRUMENTATION_PATHS else raw
+    restored, touched = module.apply_inverse_patch({name: combined_raw}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact instrumentation inverse scope")
     historical = next(row for row in a["original_files"] if row["path"] == name)
     same(current["before"], historical, "composition historical array source identity")
@@ -462,6 +472,59 @@ def compose_array_instrumentation(a, name, raw, control=False):
     expected = next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)
     same({"path": name, "bytes": len(historical_composed), "sha256": sha(historical_composed)}, expected,
          "array composition must preserve exact historical instrumentation")
+    return transform(raw)
+
+
+def restore_division_source(a, name, raw):
+    """Recover the exact combined predecessor at three reviewed overlap paths."""
+    require(name in DIVISION_INSTRUMENTATION_PATHS, "unapproved division instrumentation path")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current division identity")
+    runner, transition, predecessor = (active[key] for key in
+        ("source_binding_runner", "division_transition_patch", "combined_source_manifest"))
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/division-transition.patch", "division transition path")
+    same(predecessor["path"], "tests/fixtures/typed_project_source_binding/combined-source.json", "combined predecessor path")
+    verify_map(REPOSITORY, [runner, transition, predecessor])
+    module = types.ModuleType("unit4_division_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact division instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact division instrumentation inverse scope")
+    expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
+         "division transition must recover exact combined source")
+    return original
+
+
+def compose_division_lexer(a, raw):
+    """Preserve both frozen token hooks while admitting checked arithmetic tokens."""
+    name = "src/frontend/lexer.rs"
+    original = restore_division_source(a, name, raw)
+    historical = next(row for row in a["original_files"] if row["path"] == name)
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
+         "division lexer must recover exact historical source")
+    helper_path = FROZEN / "frozen/helpers/prepare.py"
+    verify_map(helper_path.parent, [next(row for row in a["helper_files"] if row["path"] == "prepare.py")])
+    helper = types.ModuleType("unit4_frozen_lexer_instrumentation")
+    helper.__file__ = str(helper_path)
+    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
+    def transform(body):
+        return helper.replace(helper.replace(body.decode(),
+            '        tokens.push(Token { kind, span });',
+            '        tokens.push(Token { kind, span });\n        ' + helper.J + '::lex_token(*tokens.last().unwrap());'),
+            '    Ok(tokens)\n', '    ' + helper.J + '::lex_token(*tokens.last().unwrap());\n    Ok(tokens)\n').encode()
+    composed = transform(original)
+    historical_derived = next(row for row in a["derived_files"] if row["path"] == name)
+    same({"path": name, "bytes": len(composed), "sha256": sha(composed)}, historical_derived,
+         "division lexer must preserve exact historical instrumentation")
     return transform(raw)
 
 
@@ -653,6 +716,10 @@ def prepare(repo, checkout, output):
         for change in a["current"]["source_delta"]:
             target = source / change["path"]
             name = change["path"]
+            if not control and name == "src/frontend/lexer.rs":
+                verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
+                target.write_bytes(compose_division_lexer(a, (checkout / name).read_bytes()))
+                continue
             overlap = name in ARRAY_INSTRUMENTATION_PATHS and (not control or name != "src/frontend/project/budget.rs")
             if overlap or (not control and name == "src/frontend/source.rs"):
                 verify_map(source, [next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)])
@@ -698,7 +765,7 @@ def current_overlay(source, a, control):
     active = a["current"]
     instrumentation = [dict(row) for row in a["control_instrumentation" if control else "instrumentation"]]
     for row in instrumentation:
-        if row["path"] in (*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/source.rs"):
+        if row["path"] in (*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs"):
             row["before_sha256"] = next(item["sha256"] for item in active["current_base_files"] if item["path"] == row["path"])
             row["after_sha256"] = next(item["sha256"] for item in active["current_control_derived_files" if control else "current_derived_files"] if item["path"] == row["path"])
     return {"schema": "oxid-unit4-current-observer-overlay-v1", "historical_base_commit": a["base_commit"], "control": control,
