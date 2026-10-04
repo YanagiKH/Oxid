@@ -1,0 +1,20 @@
+{
+  "status": "SOURCE_CONTROL_PREDICATES_PASS",
+  "guard_count": 72,
+  "reservation_failures": 8,
+  "overflow_controls": 4,
+  "work_controls": 4,
+  "sentinel_calibrations": 1,
+  "pending": [
+    "independent requested-payload/layout/live-overlap receipts",
+    "exact compiler/binary/run closure review",
+    "non-control compatibility authorities"
+  ],
+  "not_claimed": [
+    "runtime",
+    "ownership",
+    "native",
+    "lowering qualification",
+    "universal OOM"
+  ]
+}

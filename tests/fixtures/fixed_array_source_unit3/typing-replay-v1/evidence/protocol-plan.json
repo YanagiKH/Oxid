@@ -1,0 +1,58 @@
+{
+  "adapter_freeze_sha256": "e73acb933f15c938f7256f8902de86ff1d0d5ac55644f3222b3420fa404d2f72",
+  "authority_source_sha256": "d46eff9703a62da2ddd9fe899f597ee8202aaed2bfaff8ea5a7f17b2ce0c6a36",
+  "controls": [
+    {
+      "bytes": 16777216,
+      "id": "zero-rows",
+      "kind": "error-artifact",
+      "rows": 0
+    },
+    {
+      "bytes": 16777216,
+      "id": "one-row",
+      "kind": "error-artifact",
+      "rows": 1
+    },
+    {
+      "bytes": 0,
+      "id": "zero-bytes",
+      "kind": "error-artifact",
+      "rows": 200000
+    },
+    {
+      "bytes": 1,
+      "id": "one-byte",
+      "kind": "error-artifact",
+      "rows": 200000
+    },
+    {
+      "id": "unknown-scope",
+      "kind": "error-artifact",
+      "scope": "unknown"
+    },
+    {
+      "id": "bad-label",
+      "kind": "process-rejection",
+      "label": "../escape"
+    },
+    {
+      "id": "duplicate-id",
+      "kind": "process-rejection"
+    },
+    {
+      "id": "over-request-count",
+      "kind": "process-rejection"
+    },
+    {
+      "id": "over-request-bytes",
+      "kind": "process-rejection"
+    },
+    {
+      "id": "existing-output",
+      "kind": "process-rejection"
+    }
+  ],
+  "schema": "oxid-array-typing-protocol-controls-v1",
+  "semantic_qualification": false
+}

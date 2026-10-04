@@ -1,0 +1,454 @@
+{
+  "status": "NORMAL_SOURCE_OBSERVATIONS_PASS",
+  "candidate_semantic_qualification": "partial; separate control coverage required",
+  "cases": [
+    {
+      "case": "read-index-internal-type-first",
+      "outcome": "diagnostic-complete",
+      "rows": 32,
+      "bytes": 4780,
+      "semantic_units": 545,
+      "sha256": "67a283b63043dfc46f8aa37d76f898d1c5ee757ea4dda78d0711694175709357"
+    },
+    {
+      "case": "read-base-kind-before-index-kind",
+      "outcome": "diagnostic-complete",
+      "rows": 30,
+      "bytes": 4895,
+      "semantic_units": 525,
+      "sha256": "f2fe24821b149e0e473f164cc0b1d87c13f98ff42b35cc5f4dfcc62d04c99031"
+    },
+    {
+      "case": "read-array-bad-index",
+      "outcome": "diagnostic-complete",
+      "rows": 33,
+      "bytes": 4894,
+      "semantic_units": 551,
+      "sha256": "073fc6bd6c4d0d6af60eba634985552492408411c69e5fe2b42947a9bc110c55"
+    },
+    {
+      "case": "read-unknown-base-first",
+      "outcome": "diagnostic-complete",
+      "rows": 20,
+      "bytes": 3207,
+      "semantic_units": 288,
+      "sha256": "f701be803ae2fcbddfaad084a98b820aa58d077984583a35536fbf942aad400f"
+    },
+    {
+      "case": "read-index-resolution-before-base-type",
+      "outcome": "diagnostic-complete",
+      "rows": 20,
+      "bytes": 3272,
+      "semantic_units": 288,
+      "sha256": "040e2e5e4b0cfc22de310c845c8cf1b5af9baf67f26aea5c06ba4435029abe6c"
+    },
+    {
+      "case": "read-index-literal-range-before-base-type",
+      "outcome": "diagnostic-complete",
+      "rows": 20,
+      "bytes": 3379,
+      "semantic_units": 288,
+      "sha256": "d74485f3921280cda828c5eee7a27d2cfb7699c3f0aeffa3e38f63f672de7e2c"
+    },
+    {
+      "case": "write-rhs-internal-type-first",
+      "outcome": "diagnostic-complete",
+      "rows": 34,
+      "bytes": 5066,
+      "semantic_units": 595,
+      "sha256": "0d5a06973189d524c80a09077d93b3f57b2998e5cf839a42f420c97f2994793a"
+    },
+    {
+      "case": "write-index-internal-type-before-base",
+      "outcome": "diagnostic-complete",
+      "rows": 34,
+      "bytes": 5082,
+      "semantic_units": 595,
+      "sha256": "b0e69021dbbb5f02a8b90d7a51fdf58810fa4df7f380efd6aa35764aa537a288"
+    },
+    {
+      "case": "write-base-kind-before-index-kind",
+      "outcome": "diagnostic-complete",
+      "rows": 32,
+      "bytes": 5185,
+      "semantic_units": 575,
+      "sha256": "309136597a0d020c7d9bd21383a8b1c33ff644419ce7a0725e31edf587bd868f"
+    },
+    {
+      "case": "write-index-kind-before-rhs-element",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5212,
+      "semantic_units": 601,
+      "sha256": "2ba1e6daaac58b9dc5e93c456e19e636a9993ebd7ec0bf4eb571d3ceeecb00c4"
+    },
+    {
+      "case": "write-element-before-mutability",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5197,
+      "semantic_units": 601,
+      "sha256": "40386246ce3ed8d0f29f227ce7bef6d5dc5575a4d1824a713090906d1bf736fa"
+    },
+    {
+      "case": "write-owner-mutability-last",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5572,
+      "semantic_units": 622,
+      "sha256": "de5006575b6007f2efaa72d5980526d7be126071740a9bd41517d2e77651f26e"
+    },
+    {
+      "case": "empty-no-context",
+      "outcome": "diagnostic-complete",
+      "rows": 31,
+      "bytes": 4744,
+      "semantic_units": 512,
+      "sha256": "eb53db9a57f08ea76dc8aa28eb1851889f71f86ac82958edeb89c13835fa4bd5"
+    },
+    {
+      "case": "empty-nonzero-annotation",
+      "outcome": "diagnostic-complete",
+      "rows": 31,
+      "bytes": 5065,
+      "semantic_units": 539,
+      "sha256": "1f8c76f2b8042e97ee5d22b1a93a45b0d685f832d0e2622241efc74a0024ebd5"
+    },
+    {
+      "case": "nested-empty-does-not-inherit-context",
+      "outcome": "diagnostic-complete",
+      "rows": 33,
+      "bytes": 5123,
+      "semantic_units": 549,
+      "sha256": "9f22711de2b8f8491c4de33ba4552c9d184dbcb36f1aa157e414dc2ebc6351b5"
+    },
+    {
+      "case": "utf8-read-primary",
+      "outcome": "diagnostic-complete",
+      "rows": 30,
+      "bytes": 4884,
+      "semantic_units": 525,
+      "sha256": "f372464578d8cea611a5455c8e5fce84be78141b964c9ed49235bcec639b7e60"
+    },
+    {
+      "case": "write-resolve-base-before-both-operands",
+      "outcome": "diagnostic-complete",
+      "rows": 20,
+      "bytes": 3254,
+      "semantic_units": 288,
+      "sha256": "0393acdbfb11b5a4eea822215c92518dfb1584f2cc969e8e53004a7e98432524"
+    },
+    {
+      "case": "write-resolve-rhs-before-index",
+      "outcome": "diagnostic-complete",
+      "rows": 22,
+      "bytes": 3545,
+      "semantic_units": 318,
+      "sha256": "527856392e0ebbe9ab42b8c93997557445744002af384fe80aae1dc117b2b5ef"
+    },
+    {
+      "case": "write-whole-resolution-before-rhs-typing",
+      "outcome": "diagnostic-complete",
+      "rows": 22,
+      "bytes": 3568,
+      "semantic_units": 318,
+      "sha256": "9ebe8957afdf23472d0df2286925de93bb426403dfd3e406f11e4d7a474e8a01"
+    },
+    {
+      "case": "write-both-subtree-errors-rhs-wins",
+      "outcome": "diagnostic-complete",
+      "rows": 36,
+      "bytes": 5315,
+      "semantic_units": 636,
+      "sha256": "30dd9f6ac8ddc6db2d67aa5120d364b6793f942a306a3f85d14423567cb56f4b"
+    },
+    {
+      "case": "whole-program-resolution-before-earlier-function-type",
+      "outcome": "diagnostic-complete",
+      "rows": 22,
+      "bytes": 3612,
+      "semantic_units": 318,
+      "sha256": "ebb4020c6bb4cfc7e47d132c2b49ed5212df7e658ed02d74450cae1c5791250c"
+    },
+    {
+      "case": "write-one-conflict-element",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5190,
+      "semantic_units": 601,
+      "sha256": "bac7eb0527ff31043772c6865f96218a4ba80e40c42a7f50bbcf0c724f619ec7"
+    },
+    {
+      "case": "write-one-conflict-index",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5184,
+      "semantic_units": 601,
+      "sha256": "9de4b46b0474c2a27a2957bcbb1ee097ab0594087006135bd59bb90bf4320607"
+    },
+    {
+      "case": "empty-scalar-context",
+      "outcome": "diagnostic-complete",
+      "rows": 31,
+      "bytes": 4784,
+      "semantic_units": 516,
+      "sha256": "6f88e3c62909fae16e864870c8711f1ec96007c28beecef1b10796de506c0a08"
+    },
+    {
+      "case": "empty-call-context-excluded",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5325,
+      "semantic_units": 605,
+      "sha256": "5bc79e6bec2e6045e99911c22b11d36c9155a25836c04f34f9ea78aa2014fbd8"
+    },
+    {
+      "case": "empty-return-context-excluded",
+      "outcome": "diagnostic-complete",
+      "rows": 32,
+      "bytes": 4927,
+      "semantic_units": 540,
+      "sha256": "642cdc9f6657eed80d277b26497077ab20e5b304315cf2cc03ac72d97f7715dd"
+    },
+    {
+      "case": "empty-reassignment-context-excluded",
+      "outcome": "diagnostic-complete",
+      "rows": 33,
+      "bytes": 5176,
+      "semantic_units": 566,
+      "sha256": "f7efff2757911bec3e6ff8a06e7f6a14b526566c66a86e36331f6b681712599d"
+    },
+    {
+      "case": "literal-first-heterogeneous-element",
+      "outcome": "diagnostic-complete",
+      "rows": 36,
+      "bytes": 5243,
+      "semantic_units": 590,
+      "sha256": "bf925f51c4d35df06ff81fc86d42535c1734899db23fa3a0d902374ed0ea5aad"
+    },
+    {
+      "case": "literal-nested-nonempty-is-nonscalar",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5202,
+      "semantic_units": 575,
+      "sha256": "4c62f9a6267cf32ffb72b8a65cd0d128adcaa402c8fdaf8b97809c316ce5493d"
+    },
+    {
+      "case": "scalar-bool-length-0",
+      "outcome": "typed-success",
+      "rows": 39,
+      "bytes": 4888,
+      "semantic_units": 610,
+      "sha256": "b45aaec0d3086b4c05ca8bedd3cb586a33441ade4b3fcf729ac2be3d973e12b4"
+    },
+    {
+      "case": "scalar-bool-length-1",
+      "outcome": "typed-success",
+      "rows": 38,
+      "bytes": 4802,
+      "semantic_units": 591,
+      "sha256": "432fba21687c8c8cf9b80b579cb0dfcebe82a21a4fb1c891129204274387483b"
+    },
+    {
+      "case": "scalar-i32-length-0",
+      "outcome": "typed-success",
+      "rows": 39,
+      "bytes": 4880,
+      "semantic_units": 610,
+      "sha256": "049fb84afef2ca706833033bf9f1ca2e2fe2c5e0b69d415c20da9de76df82c2d"
+    },
+    {
+      "case": "scalar-i32-length-1",
+      "outcome": "typed-success",
+      "rows": 38,
+      "bytes": 4788,
+      "semantic_units": 591,
+      "sha256": "e1024579d270736817cb62736c83b3b4c85c1c6f63aef2cf0607058791943b2f"
+    },
+    {
+      "case": "scalar-unit-length-0",
+      "outcome": "typed-success",
+      "rows": 39,
+      "bytes": 4886,
+      "semantic_units": 610,
+      "sha256": "83e8abc99af7b12bf271878a2ba704a801ede0043e09c39790cfe99e4d02bab1"
+    },
+    {
+      "case": "scalar-unit-length-1",
+      "outcome": "typed-success",
+      "rows": 38,
+      "bytes": 4785,
+      "semantic_units": 589,
+      "sha256": "8fb21baaad5626f754c02bb200e0dc550d72cd9ab7f112e2c285b445c02181fe"
+    },
+    {
+      "case": "literal-length-max-trailing-comma",
+      "outcome": "typed-success",
+      "rows": 3107,
+      "bytes": 356363,
+      "semantic_units": 48666,
+      "sha256": "b85653b9ceab082892fb53a6a11e9484e5faab6267e5d9f4200e3afa09bace9e"
+    },
+    {
+      "case": "grouped-complete-access-and-index",
+      "outcome": "typed-success",
+      "rows": 55,
+      "bytes": 6668,
+      "semantic_units": 883,
+      "sha256": "c8b42cf8ef1c43a185e99edeaaf05ace4b532a82e081d7a25e0e503d1c3fbf0f"
+    },
+    {
+      "case": "cross-file-array-identity",
+      "outcome": "typed-success",
+      "rows": 63,
+      "bytes": 7902,
+      "semantic_units": 1036,
+      "sha256": "66dc2a1ccfe80491518035cd50d50d70558c328827e8edd74a616107e928c922"
+    },
+    {
+      "case": "structural-identities-pairwise-distinct",
+      "outcome": "typed-success",
+      "rows": 53,
+      "bytes": 6668,
+      "semantic_units": 885,
+      "sha256": "ba8516d1c2ee9e8b99c0f0ef7b82d8a6b27e42f016cb743511480d2c33baf2a2"
+    },
+    {
+      "case": "child-route-read-only",
+      "outcome": "diagnostic-complete",
+      "rows": 36,
+      "bytes": 5650,
+      "semantic_units": 630,
+      "sha256": "2d2ce29135221c36b652713aaf34ba653fd981cf4f6b39639b92134b3cb13247"
+    },
+    {
+      "case": "child-route-write-only",
+      "outcome": "diagnostic-complete",
+      "rows": 38,
+      "bytes": 5931,
+      "semantic_units": 680,
+      "sha256": "eec727ff525e9760e7c809df2fa285c3b7c9c6fb4ecf57641d1281b6d54e055e"
+    },
+    {
+      "case": "child-route-length-only",
+      "outcome": "diagnostic-complete",
+      "rows": 35,
+      "bytes": 5565,
+      "semantic_units": 612,
+      "sha256": "64622f703409c8c5b6738e8de8adbe917914b956c147fe5ff6fbb7ad96342a48"
+    },
+    {
+      "case": "child-route-annotation",
+      "outcome": "typed-success",
+      "rows": 45,
+      "bytes": 5630,
+      "semantic_units": 701,
+      "sha256": "6e635bbbc45426744b790b023b7c8a8af0deb194cb04e62340db214980c3ba0d"
+    },
+    {
+      "case": "child-route-parameter",
+      "outcome": "typed-success",
+      "rows": 41,
+      "bytes": 5137,
+      "semantic_units": 632,
+      "sha256": "4185a6c55c30422b485e5ac503c70fee55d15c361064f1caa136aa0ff56fa283"
+    },
+    {
+      "case": "child-route-shared-parameter",
+      "outcome": "typed-success",
+      "rows": 41,
+      "bytes": 5209,
+      "semantic_units": 636,
+      "sha256": "3b3603b604b2d1d5e5aac2d97472c1b5d3273960b09f6d1c2d90a1e6a58c53bb"
+    },
+    {
+      "case": "child-route-exclusive-parameter",
+      "outcome": "typed-success",
+      "rows": 41,
+      "bytes": 5228,
+      "semantic_units": 636,
+      "sha256": "f7ce142acc718ca3f17fe714652ce94359f2df545007b5d285a5320dfeddb900"
+    },
+    {
+      "case": "record-len-field-stays-field",
+      "outcome": "typed-success",
+      "rows": 38,
+      "bytes": 4852,
+      "semantic_units": 628,
+      "sha256": "7890b99b2970be5242b448e09399422ff7671a467451c26b054df8ca7d15ad21"
+    },
+    {
+      "case": "guard-empty",
+      "outcome": "typed-success",
+      "rows": 20,
+      "bytes": 2642,
+      "semantic_units": 276,
+      "sha256": "8f2737752cd080707a2905b8e4422290c4e50de18ed8ae90c90eda104bdbd2d8"
+    },
+    {
+      "case": "guard-record-only",
+      "outcome": "typed-success",
+      "rows": 22,
+      "bytes": 2867,
+      "semantic_units": 317,
+      "sha256": "83744a3a88abc84549ef8e8e7e627d6dbd0b0c2e191b18ded5acb33d297d7c0d"
+    },
+    {
+      "case": "guard-array-free",
+      "outcome": "typed-success",
+      "rows": 28,
+      "bytes": 3538,
+      "semantic_units": 412,
+      "sha256": "b74b750524b3bd5249532e1b0316cf3bbb6a7567c4d34a5ee79530d9b4f2b431"
+    },
+    {
+      "case": "guard-project-root-eof",
+      "outcome": "typed-success",
+      "rows": 24,
+      "bytes": 3190,
+      "semantic_units": 343,
+      "sha256": "75defa0dd814abc47589bdd6e7bc0bcfa05a287aa5e5948af0e251fef00ffaed"
+    },
+    {
+      "case": "reference-access-modes",
+      "outcome": "typed-success",
+      "rows": 74,
+      "bytes": 9109,
+      "semantic_units": 1264,
+      "sha256": "7e0fed979b7ecae56e9275a139697b79c72d506de3d5f2d355f5501604e0196a"
+    },
+    {
+      "case": "reserve-across-modules",
+      "outcome": "typed-success",
+      "rows": 61,
+      "bytes": 7470,
+      "semantic_units": 967,
+      "sha256": "c03ccfe49b609718c9b50b66b44793f83ca0b6ae42377bd001b0836043fba4f7"
+    },
+    {
+      "case": "same-signature-callee",
+      "outcome": "typed-success",
+      "rows": 60,
+      "bytes": 7465,
+      "semantic_units": 960,
+      "sha256": "fdc6cb20a49d2d116919a20721a83fc5029e8c7f571033d38b69d83c847f5d51"
+    }
+  ],
+  "authority_sha256": "7cec518fdc38c02f8cfc6c3cf467239423621bf242e44c3e838be490a3060039",
+  "deferred_effect_cases": [
+    "rhs-snapshot-success",
+    "rhs-snapshot-final-bounds-failure"
+  ],
+  "not_claimed": [
+    "ownership",
+    "lowering",
+    "runtime",
+    "native",
+    "fuel",
+    "pilot",
+    "activation",
+    "CI",
+    "resource-and-fence-control-completion"
+  ]
+}

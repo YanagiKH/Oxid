@@ -1,0 +1,3151 @@
+diff --git a/src/frontend/declaration_index/resource.rs b/src/frontend/declaration_index/resource.rs
+--- a/src/frontend/declaration_index/resource.rs
++++ b/src/frontend/declaration_index/resource.rs
+@@ -65,6 +65,8 @@
+             phase: Cell::new("collection"),
+         }
+     }
++    #[cfg(test)]
++    pub fn observer_phase(&self) -> &'static str { self.phase.get() }
+     pub fn used(&self) -> u64 {
+         self.used.get()
+     }
+diff --git a/src/frontend/oir/owned/source/array_type_controls.rs b/src/frontend/oir/owned/source/array_type_controls.rs
+new file mode 100644
+--- /dev/null
++++ b/src/frontend/oir/owned/source/array_type_controls.rs
+@@ -0,0 +1,295 @@
++//! Inert receipts from the frozen, focused guard and reservation controls.
++//! This test module never provides a compiler factory or execution authority.
++use super::{budget, diagnostic, lower, resolve, typeck};
++use crate::frontend::{
++    ast,
++    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
++    diagnostic::{json_string, Diagnostic},
++    lexer, parser,
++    project::budget::Allocator,
++    source::{SourceFileId, SourceMap, SourceView},
++};
++
++const ROOT: &str = concat!(
++    env!("CARGO_MANIFEST_DIR"),
++    "/tests/fixtures/fixed_array_source_unit3"
++);
++const SCHEMA: &str = "oxid-array-types-controls-v1";
++
++fn single(case: &str, authority: &str) -> (SourceMap, ast::Program) {
++    let text =
++        std::fs::read_to_string(format!("{ROOT}/{authority}/fixtures/{case}/main.ox")).unwrap();
++    let mut sources = SourceMap::new();
++    let id = sources.add("main.ox".into(), text);
++    let file = sources.get(id);
++    let (ast, _) = parser::parse_counted_with_arrays(
++        file,
++        lexer::lex(file).unwrap(),
++        parser::SourceMode::OwnedCandidate,
++        parser::MAX_NODES,
++        &mut Allocator::default(),
++        parser::ArraySyntaxPolicy::Candidate,
++    )
++    .unwrap();
++    (sources, ast)
++}
++fn diagnostics(error: &Diagnostic, sources: &SourceMap) -> String {
++    format!(
++        "\"diagnostic\":{},\"human\":{},\"json_line\":{}",
++        error.render_json(sources),
++        json_string(&error.render_human(sources)),
++        json_string(&format!("{}\n", error.render_json(sources)))
++    )
++}
++fn guard_row(
++    case: &str,
++    entry: &str,
++    function: Option<usize>,
++    error: &Diagnostic,
++    sources: &SourceMap,
++) {
++    let c = budget::guard_counts();
++    println!("CONTROL {{\"schema\":\"{SCHEMA}\",\"kind\":\"guard\",\"case_id\":{},\"entry\":{},\"function_id\":{},\"injected_first_raw_reservation\":true,\"sentinels\":{{\"declaration_admission\":{},\"function_iteration\":{},\"count_entry\":{},\"inventory_entry\":{},\"block_allocation\":{},\"raw_reservation\":{},\"emit_step\":{}}},{}}}",
++        json_string(case), json_string(entry), function.map_or("null".into(), |id| id.to_string()),
++        c[0],c[1],c[2],c[3],c[4],c[5],c[6], diagnostics(error,sources));
++    assert_eq!(c, [0; 7]);
++    assert_eq!(
++        (error.code, error.stage, error.message.as_str()),
++        (
++            "E0500",
++            "oir-owned-lower",
++            "internal compiler error: owned invariant violation"
++        )
++    );
++    assert!(error.secondary.is_empty() && error.notes.is_empty());
++}
++fn guards(case: &str, typed: &typeck::TypedOwnedProgram<'_>, display: &SourceMap) {
++    let eof = typed.index().sources().eof();
++    for entry in ["check_typed", "budget::preflight", "lower_with_limits"] {
++        budget::reset_guard_counts();
++        let error = budget::fail_allocation_after(0, || match entry {
++            "check_typed" => {
++                let mut errors = super::program::check_typed(typed).unwrap_err();
++                assert_eq!(errors.len(), 1);
++                Box::new(errors.remove(0))
++            }
++            "budget::preflight" => diagnostic::lower(
++                &budget::preflight(typed, budget::Limits::DEFAULT).unwrap_err(),
++                display,
++            ),
++            "lower_with_limits" => diagnostic::lower(
++                &lower::lower_with_limits(typed, budget::Limits::DEFAULT).unwrap_err(),
++                display,
++            ),
++            _ => panic!("fixed control entry"),
++        });
++        assert_eq!(error.primary, Some(eof));
++        guard_row(case, entry, None, &error, display);
++    }
++    for view in typed.functions() {
++        for entry in [
++            "count_function(None)",
++            "count_function(Some(block_counts))",
++            "Walk::new emission constructor",
++        ] {
++            budget::reset_guard_counts();
++            let mut counts = [usize::MAX; 3];
++            let error = budget::fail_allocation_after(0, || match entry {
++                "count_function(None)" => lower::count_function(&view, None).unwrap_err(),
++                "count_function(Some(block_counts))" => {
++                    lower::count_function(&view, Some(&mut counts)).unwrap_err()
++                }
++                "Walk::new emission constructor" => {
++                    lower::check_array_type_emission_fence(&view).unwrap_err()
++                }
++                _ => panic!("fixed control entry"),
++            });
++            assert_eq!(counts, [usize::MAX; 3]);
++            let error = diagnostic::lower(&error, display);
++            assert_eq!(error.primary, Some(view.signature().span));
++            guard_row(case, entry, Some(view.hir().id.0), &error, display);
++        }
++    }
++}
++fn reservation_rows(case: &str, owner: SourceOwner<'_>, display: &SourceMap) {
++    let work = WorkMeter::default();
++    let mut baseline = Allocator::default();
++    let resolved =
++        resolve::resolve_array_types(owner, IndexLimits::default(), &work, &mut baseline).unwrap();
++    drop(resolved);
++    let attempts: Vec<_> = baseline
++        .trace
++        .iter()
++        .enumerate()
++        .filter(|(_, e)| e.kind == "array HIR elements")
++        .map(|(i, e)| (i + 1, e.length))
++        .collect();
++    for (ordinal, (attempt, requested)) in attempts.into_iter().enumerate() {
++        let work = WorkMeter::default();
++        let mut allocator = Allocator {
++            fail_at: Some(attempt),
++            ..Allocator::default()
++        };
++        let errors =
++            resolve::resolve_array_types(owner, IndexLimits::default(), &work, &mut allocator)
++                .unwrap_err();
++        assert_eq!(errors.len(), 1);
++        let error = &errors[0];
++        let event = &allocator.trace[attempt - 1];
++        assert_eq!(
++            (event.kind, event.length, event.success),
++            ("array HIR elements", requested, false)
++        );
++        let trace = allocator
++            .trace
++            .iter()
++            .take(attempt)
++            .map(|e| {
++                format!(
++                    "{{\"kind\":{},\"length\":{},\"element_bytes\":{},\"success\":{}}}",
++                    json_string(e.kind),
++                    e.length,
++                    e.element_bytes,
++                    e.success
++                )
++            })
++            .collect::<Vec<_>>()
++            .join(",");
++        println!("CONTROL {{\"schema\":\"{SCHEMA}\",\"kind\":\"reservation\",\"case_id\":{},\"literal_ordinal\":{},\"allocator_attempt\":{},\"requested_length\":{},\"element_bytes\":{},\"real_fallible\":true,\"trace\":[{}],{}}}", json_string(case),ordinal,attempt,requested,event.element_bytes,trace,diagnostics(error,display));
++        assert_eq!(
++            (error.code, error.stage, error.message.as_str()),
++            ("E0400", "resolve", "array HIR allocation failed")
++        );
++        assert!(error.notes.is_empty() && error.secondary.is_empty());
++        assert!(work.events.borrow().is_empty() && work.observations.borrow().is_empty());
++    }
++}
++#[test]
++fn unit3b1_frozen_single_guard_and_reservation_receipts() {
++    for (case, authority) in [
++        ("guard-empty", "typing-contracts-v1"),
++        ("guard-record-only", "typing-contracts-v1"),
++        ("guard-array-free", "typing-contracts-v1"),
++        ("structural-identities-pairwise-distinct", "contracts-v2"),
++        ("reference-access-modes", "typing-contracts-v1"),
++    ] {
++        let (sources, ast) = single(case, authority);
++        let work = WorkMeter::default();
++        let owner = SourceOwner::original(
++            sources.get(SourceFileId(0)),
++            &ast,
++            SourceView::Map(&sources),
++        )
++        .unwrap();
++        let typed = typeck::check(
++            resolve::resolve_array_types(
++                owner,
++                IndexLimits::default(),
++                &work,
++                &mut Allocator::default(),
++            )
++            .unwrap(),
++        )
++        .unwrap();
++        guards(case, &typed, &sources);
++    }
++    for case in [
++        "scalar-i32-length-0",
++        "scalar-i32-length-1",
++        "grouped-complete-access-and-index",
++        "literal-length-max-trailing-comma",
++        "literal-nested-nonempty-is-nonscalar",
++    ] {
++        let (sources, ast) = single(case, "contracts-v2");
++        let owner = SourceOwner::original(
++            sources.get(SourceFileId(0)),
++            &ast,
++            SourceView::Map(&sources),
++        )
++        .unwrap();
++        reservation_rows(case, owner, &sources);
++    }
++}
++#[cfg(target_os = "linux")]
++#[test]
++fn unit3b1_frozen_project_guard_and_reservation_receipts() {
++    use crate::frontend::project::{ProjectLimits, ProjectSources};
++    for (case, authority, is_guard) in [
++        ("guard-project-root-eof", "typing-contracts-v1", true),
++        ("child-route-parameter", "contracts-v2", true),
++        ("child-route-shared-parameter", "contracts-v2", true),
++        ("child-route-exclusive-parameter", "contracts-v2", true),
++        ("child-route-annotation", "contracts-v2", true),
++        ("reserve-across-modules", "typing-contracts-v1", false),
++    ] {
++        let directory = format!("{ROOT}/{authority}/fixtures/{case}");
++        let project = ProjectSources::load_array_candidate(
++            &format!("{directory}/main.ox"),
++            ProjectLimits::default(),
++            &mut Allocator::default(),
++        )
++        .unwrap();
++        // Inert presentation map retains original file order and bytes; only
++        // the path prefix becomes the source contract's logical fixture path.
++        let mut display = SourceMap::new();
++        for file in project.sources().files() {
++            let logical = std::path::Path::new(file.path())
++                .strip_prefix(&directory)
++                .unwrap()
++                .to_str()
++                .unwrap();
++            display.add(logical.into(), file.text().into());
++        }
++        let owner = SourceOwner::project(&project);
++        if is_guard {
++            let work = WorkMeter::default();
++            let typed = typeck::check(
++                resolve::resolve_array_types(
++                    owner,
++                    IndexLimits::default(),
++                    &work,
++                    &mut Allocator::default(),
++                )
++                .unwrap(),
++            )
++            .unwrap();
++            guards(case, &typed, &display);
++        } else {
++            let work = WorkMeter::default();
++            work.enable_observation(); // Fixed 116-byte, two-file source control.
++            let typed = typeck::check(
++                resolve::resolve_array_types(
++                    owner,
++                    IndexLimits::default(),
++                    &work,
++                    &mut Allocator::default(),
++                )
++                .unwrap(),
++            )
++            .unwrap();
++            assert_eq!(typed.functions().len(), 2);
++            let added: u64 = work
++                .events
++                .borrow()
++                .iter()
++                .filter(|e| e.operation.starts_with("array "))
++                .map(|e| e.units)
++                .sum();
++            println!("CONTROL {{\"schema\":\"{SCHEMA}\",\"kind\":\"work\",\"seam\":\"private-owned-without-selector\",\"case_id\":\"reserve-across-modules\",\"limit\":{},\"used\":{},\"added_units\":{added},\"success\":true,\"ledger_sha256\":\"b49d52901fe25cb190701cf228dd8cb6c1fd7f3375a0543a27e06fcaa156a67b\",\"diagnostic\":null,\"human\":null,\"json_line\":null}}",work.limit(),work.used());
++            assert_eq!((work.used(), added), (321, 16));
++            reservation_rows(case, owner, &display);
++        }
++    }
++}
++
++#[test]
++fn unit3b1_guard_sentinels_observe_the_existing_executable_path() {
++    let (sources, ast) = single("record-len-field-stays-field", "contracts-v2");
++    let source = sources.get(SourceFileId(0));
++    let typed = typeck::check(resolve::resolve_in_map(source, &ast, &sources).unwrap()).unwrap();
++    budget::reset_guard_counts();
++    assert!(super::program::check_typed(&typed).is_ok());
++    let c = budget::guard_counts();
++    println!("CONTROL {{\"schema\":\"{SCHEMA}\",\"kind\":\"sentinel_calibration\",\"case_id\":\"record-len-field-stays-field\",\"success\":true,\"sentinels\":{{\"declaration_admission\":{},\"function_iteration\":{},\"count_entry\":{},\"inventory_entry\":{},\"block_allocation\":{},\"raw_reservation\":{},\"emit_step\":{}}}}}",c[0],c[1],c[2],c[3],c[4],c[5],c[6]);
++    assert!(c.into_iter().all(|count| count > 0));
++}
+diff --git a/src/frontend/oir/owned/source/array_types_tests.rs b/src/frontend/oir/owned/source/array_types_tests.rs
+new file mode 100644
+--- /dev/null
++++ b/src/frontend/oir/owned/source/array_types_tests.rs
+@@ -0,0 +1,847 @@
++//! Focused private types-only controls. Sources and language diagnostics are
++//! copied from the independently frozen contracts-v2 authority, never from a
++//! candidate observation. This is not an executable array qualification.
++use super::{budget, diagnostic, hir::*, lower, program, resolve, typeck};
++use crate::frontend::{
++    ast,
++    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
++    diagnostic::Diagnostic,
++    lexer, parser,
++    project::budget::Allocator,
++    source::{SourceMap, SourceView},
++};
++
++fn parsed(text: &str) -> (SourceMap, ast::Program) {
++    let mut sources = SourceMap::new();
++    let id = sources.add("main.ox".into(), text.into());
++    let file = sources.get(id);
++    let (ast, _) = parser::parse_counted_with_arrays(
++        file,
++        lexer::lex(file).unwrap(),
++        parser::SourceMode::OwnedCandidate,
++        parser::MAX_NODES,
++        &mut Allocator::default(),
++        parser::ArraySyntaxPolicy::Candidate,
++    )
++    .unwrap();
++    (sources, ast)
++}
++fn resolve_types<'s>(
++    sources: &'s SourceMap,
++    ast: &'s ast::Program,
++    work: &'s WorkMeter,
++    allocator: &mut Allocator,
++) -> Result<resolve::ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
++    let source = sources.get(crate::frontend::source::SourceFileId(0));
++    let owner = SourceOwner::original(source, ast, SourceView::Map(sources)).unwrap();
++    resolve::resolve_array_types(owner, IndexLimits::default(), work, allocator)
++}
++
++#[test]
++fn unit3b1_frozen_language_diagnostics_keep_all_29_renderings() {
++    let cases = [
++        (
++            r#"read-index-internal-type-first"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:40
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":39,"end":43,"line":1,"column":40,"end_line":1,"end_column":44},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"read-base-kind-before-index-kind"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox")),
++            r#"error[E0305] (type): array access requires an array binding
++  --> main.ox:1:38
++  ::: main.ox:1:24: binding declared here
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0305","stage":"type","message":"array access requires an array binding","primary":{"file_id":0,"path":"main.ox","start":37,"end":44,"line":1,"column":38,"end_line":1,"end_column":45},"secondary":[{"span":{"file_id":0,"path":"main.ox","start":23,"end":24,"line":1,"column":24,"end_line":1,"end_column":25},"message":"binding declared here"}],"notes":[]}
++"#,
++        ),
++        (
++            r#"read-array-bad-index"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:42
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":41,"end":45,"line":1,"column":42,"end_line":1,"end_column":46},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"read-unknown-base-first"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox")),
++            r#"error[E0200] (resolve): unknown local `missing`
++  --> main.ox:1:27
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0200","stage":"resolve","message":"unknown local `missing`","primary":{"file_id":0,"path":"main.ox","start":26,"end":33,"line":1,"column":27,"end_line":1,"end_column":34},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"read-index-resolution-before-base-type"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox")),
++            r#"error[E0200] (resolve): unknown direct function `unknown`
++  --> main.ox:1:40
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0200","stage":"resolve","message":"unknown direct function `unknown`","primary":{"file_id":0,"path":"main.ox","start":39,"end":46,"line":1,"column":40,"end_line":1,"end_column":47},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"read-index-literal-range-before-base-type"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox")),
++            r#"error[E0203] (resolve): decimal literal is outside the i32 range [-2147483648, 2147483647]
++  --> main.ox:1:40
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0203","stage":"resolve","message":"decimal literal is outside the i32 range [-2147483648, 2147483647]","primary":{"file_id":0,"path":"main.ox","start":39,"end":49,"line":1,"column":40,"end_line":1,"end_column":50},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-rhs-internal-type-first"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:42
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":41,"end":45,"line":1,"column":42,"end_line":1,"end_column":46},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-index-internal-type-before-base"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:33
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":32,"end":36,"line":1,"column":33,"end_line":1,"end_column":37},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-base-kind-before-index-kind"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox")),
++            r#"error[E0305] (type): array access requires an array binding
++  --> main.ox:1:31
++  ::: main.ox:1:24: binding declared here
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0305","stage":"type","message":"array access requires an array binding","primary":{"file_id":0,"path":"main.ox","start":30,"end":37,"line":1,"column":31,"end_line":1,"end_column":38},"secondary":[{"span":{"file_id":0,"path":"main.ox","start":23,"end":24,"line":1,"column":24,"end_line":1,"end_column":25},"message":"binding declared here"}],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-index-kind-before-rhs-element"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:35
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":34,"end":38,"line":1,"column":35,"end_line":1,"end_column":39},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-element-before-mutability"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:40
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":39,"end":44,"line":1,"column":40,"end_line":1,"end_column":45},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-owner-mutability-last"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox")),
++            r#"error[E0304] (type): operation requires a mutable owned binding
++  --> main.ox:1:33
++  ::: main.ox:1:24: immutable binding declared here
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0304","stage":"type","message":"operation requires a mutable owned binding","primary":{"file_id":0,"path":"main.ox","start":32,"end":36,"line":1,"column":33,"end_line":1,"end_column":37},"secondary":[{"span":{"file_id":0,"path":"main.ox","start":23,"end":24,"line":1,"column":24,"end_line":1,"end_column":25},"message":"immutable binding declared here"}],"notes":[]}
++"#,
++        ),
++        (
++            r#"empty-no-context"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox")),
++            r#"error[E0300] (type): empty array literal requires an explicit array annotation on its local initializer
++  --> main.ox:1:29
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"empty array literal requires an explicit array annotation on its local initializer","primary":{"file_id":0,"path":"main.ox","start":28,"end":30,"line":1,"column":29,"end_line":1,"end_column":31},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"empty-nonzero-annotation"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected [i32; 1], found [i32; 0]
++  --> main.ox:1:38
++  ::: main.ox:1:24: binding declared here
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected [i32; 1], found [i32; 0]","primary":{"file_id":0,"path":"main.ox","start":37,"end":41,"line":1,"column":38,"end_line":1,"end_column":42},"secondary":[{"span":{"file_id":0,"path":"main.ox","start":23,"end":24,"line":1,"column":24,"end_line":1,"end_column":25},"message":"binding declared here"}],"notes":[]}
++"#,
++        ),
++        (
++            r#"nested-empty-does-not-inherit-context"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox")),
++            r#"error[E0300] (type): empty array literal requires an explicit array annotation on its local initializer
++  --> main.ox:1:39
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"empty array literal requires an explicit array annotation on its local initializer","primary":{"file_id":0,"path":"main.ox","start":38,"end":40,"line":1,"column":39,"end_line":1,"end_column":41},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"utf8-read-primary"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox")),
++            r#"error[E0305] (type): array access requires an array binding
++  --> main.ox:2:38
++  ::: main.ox:2:24: binding declared here
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0305","stage":"type","message":"array access requires an array binding","primary":{"file_id":0,"path":"main.ox","start":50,"end":57,"line":2,"column":38,"end_line":2,"end_column":45},"secondary":[{"span":{"file_id":0,"path":"main.ox","start":36,"end":37,"line":2,"column":24,"end_line":2,"end_column":25},"message":"binding declared here"}],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-resolve-base-before-both-operands"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox")),
++            r#"error[E0200] (resolve): unknown local `missing`
++  --> main.ox:1:20
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0200","stage":"resolve","message":"unknown local `missing`","primary":{"file_id":0,"path":"main.ox","start":19,"end":26,"line":1,"column":20,"end_line":1,"end_column":27},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-resolve-rhs-before-index"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox")),
++            r#"error[E0200] (resolve): unknown direct function `absent`
++  --> main.ox:1:52
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0200","stage":"resolve","message":"unknown direct function `absent`","primary":{"file_id":0,"path":"main.ox","start":51,"end":57,"line":1,"column":52,"end_line":1,"end_column":58},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-whole-resolution-before-rhs-typing"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox")),
++            r#"error[E0200] (resolve): unknown direct function `unknown`
++  --> main.ox:1:39
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0200","stage":"resolve","message":"unknown direct function `unknown`","primary":{"file_id":0,"path":"main.ox","start":38,"end":45,"line":1,"column":39,"end_line":1,"end_column":46},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-both-subtree-errors-rhs-wins"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:46
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":45,"end":49,"line":1,"column":46,"end_line":1,"end_column":50},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"whole-program-resolution-before-earlier-function-type"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox")),
++            r#"error[E0200] (resolve): unknown direct function `unknown`
++  --> main.ox:2:27
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0200","stage":"resolve","message":"unknown direct function `unknown`","primary":{"file_id":0,"path":"main.ox","start":77,"end":84,"line":2,"column":27,"end_line":2,"end_column":34},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-one-conflict-element"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:44
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":43,"end":48,"line":1,"column":44,"end_line":1,"end_column":49},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"write-one-conflict-index"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:39
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":38,"end":42,"line":1,"column":39,"end_line":1,"end_column":43},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"empty-scalar-context"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox")),
++            r#"error[E0300] (type): empty array literal requires an explicit array annotation on its local initializer
++  --> main.ox:1:34
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"empty array literal requires an explicit array annotation on its local initializer","primary":{"file_id":0,"path":"main.ox","start":33,"end":35,"line":1,"column":34,"end_line":1,"end_column":36},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"empty-call-context-excluded"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox")),
++            r#"error[E0300] (type): empty array literal requires an explicit array annotation on its local initializer
++  --> main.ox:2:32
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"empty array literal requires an explicit array annotation on its local initializer","primary":{"file_id":0,"path":"main.ox","start":73,"end":75,"line":2,"column":32,"end_line":2,"end_column":34},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"empty-return-context-excluded"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox")),
++            r#"error[E0300] (type): empty array literal requires an explicit array annotation on its local initializer
++  --> main.ox:1:33
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"empty array literal requires an explicit array annotation on its local initializer","primary":{"file_id":0,"path":"main.ox","start":32,"end":34,"line":1,"column":33,"end_line":1,"end_column":35},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"empty-reassignment-context-excluded"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox")),
++            r#"error[E0300] (type): empty array literal requires an explicit array annotation on its local initializer
++  --> main.ox:1:50
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"empty array literal requires an explicit array annotation on its local initializer","primary":{"file_id":0,"path":"main.ox","start":49,"end":51,"line":1,"column":50,"end_line":1,"end_column":52},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"literal-first-heterogeneous-element"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox")),
++            r#"error[E0300] (type): type mismatch: expected i32, found bool
++  --> main.ox:1:32
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"type mismatch: expected i32, found bool","primary":{"file_id":0,"path":"main.ox","start":31,"end":35,"line":1,"column":32,"end_line":1,"end_column":36},"secondary":[],"notes":[]}
++"#,
++        ),
++        (
++            r#"literal-nested-nonempty-is-nonscalar"#,
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox")),
++            r#"error[E0300] (type): array elements must have scalar bool, i32 or () type
++  --> main.ox:1:29
++"#,
++            r#"{"schema_version":1,"edition":"typed-preview","kind":"diagnostic","severity":"error","code":"E0300","stage":"type","message":"array elements must have scalar bool, i32 or () type","primary":{"file_id":0,"path":"main.ox","start":28,"end":31,"line":1,"column":29,"end_line":1,"end_column":32},"secondary":[],"notes":[]}
++"#,
++        ),
++    ];
++    assert_eq!(cases.len(), 29);
++    for (name, text, human, json) in cases {
++        let (sources, ast) = parsed(text);
++        let work = WorkMeter::default();
++        let mut allocator = Allocator::default();
++        let result = resolve_types(&sources, &ast, &work, &mut allocator).and_then(typeck::check);
++        let errors = result.unwrap_err();
++        assert_eq!(errors.len(), 1, "{name}");
++        assert_eq!(errors[0].render_human(&sources), human, "{name}");
++        assert_eq!(
++            format!("{}\n", errors[0].render_json(&sources)),
++            json,
++            "{name}"
++        );
++        assert!(!work.observing());
++        assert!(work.events.borrow().is_empty());
++        assert!(work.observations.borrow().is_empty());
++    }
++}
++
++const GROUPED: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox"));
++#[test]
++fn unit3b1_grouped_store_has_rhs_first_and_no_target_read() {
++    let (sources, ast) = parsed(GROUPED);
++    assert_eq!(ast.expressions.len(), 11);
++    let work = WorkMeter::default();
++    let mut allocator = Allocator::default();
++    let resolved = resolve_types(&sources, &ast, &work, &mut allocator).unwrap();
++    let f = &resolved.functions()[0];
++    assert_eq!(f.expressions.len(), 10);
++    let spellings: Vec<_> = f
++        .expressions
++        .iter()
++        .map(|e| resolved.text(e.span))
++        .collect();
++    assert_eq!(
++        spellings,
++        [
++            "5",
++            "7",
++            "[5, 7]",
++            "1",
++            "a[1]",
++            "(a[1])",
++            "0",
++            "(0)",
++            "a.len()",
++            "(a.len())"
++        ]
++    );
++    let StmtKind::IndexAssign {
++        value,
++        index,
++        base,
++        target_span,
++        base_span,
++        operator_span,
++    } = f.blocks[0].body[1].kind
++    else {
++        panic!("store");
++    };
++    assert_eq!((value, index, base), (ExprId(5), ExprId(7), BindingId(0)));
++    assert_eq!(resolved.text(target_span), "a[(0)]");
++    assert_eq!(resolved.text(base_span), "a");
++    assert_eq!(resolved.text(operator_span), "=");
++    let typed = typeck::check(resolved).unwrap();
++    let view = typed.functions().next().unwrap();
++    for id in [0, 1, 3, 4, 5, 6, 7, 8, 9] {
++        assert_eq!(view.expression_ty(ExprId(id)), ValueTy::Scalar(Ty::I32));
++    }
++    assert_eq!(
++        view.expression_ty(ExprId(2)),
++        ValueTy::Owned(AggregateTy::FixedArray(
++            FixedArrayTy::check(Ty::I32, 2).unwrap()
++        ))
++    );
++    let trace: Vec<_> = allocator
++        .trace
++        .iter()
++        .filter(|e| e.kind == "array HIR elements")
++        .collect();
++    assert_eq!(trace.len(), 1);
++    assert_eq!(
++        (trace[0].length, trace[0].element_bytes, trace[0].success),
++        (2, 8, true)
++    );
++}
++
++#[test]
++fn unit3b1_zero_and_one_scalar_types_fill_complete_group_slots() {
++    let cases = [
++        (
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox")),
++            Ty::Bool,
++            0,
++        ),
++        (
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox")),
++            Ty::Bool,
++            1,
++        ),
++        (
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox")),
++            Ty::I32,
++            0,
++        ),
++        (
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox")),
++            Ty::I32,
++            1,
++        ),
++        (
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox")),
++            Ty::Unit,
++            0,
++        ),
++        (
++            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox")),
++            Ty::Unit,
++            1,
++        ),
++    ];
++    for (text, element, length) in cases {
++        let (sources, ast) = parsed(text);
++        let work = WorkMeter::default();
++        let mut allocator = Allocator::default();
++        let typed =
++            typeck::check(resolve_types(&sources, &ast, &work, &mut allocator).unwrap()).unwrap();
++        let view = typed.functions().next().unwrap();
++        let expected = ValueTy::Owned(AggregateTy::FixedArray(
++            FixedArrayTy::check(element, length).unwrap(),
++        ));
++        assert_eq!(view.binding_ty(BindingId(0)), ParameterTy::Value(expected));
++        for (id, expr) in view.hir().expressions.iter().enumerate() {
++            if matches!(
++                expr.kind,
++                ExprKind::ArrayLiteral { .. } | ExprKind::Group(_)
++            ) {
++                assert_eq!(view.expression_ty(ExprId(id)), expected);
++            }
++        }
++        let literal = allocator
++            .trace
++            .iter()
++            .find(|e| e.kind == "array HIR elements")
++            .unwrap();
++        assert_eq!(literal.length, length);
++        assert!(literal.success);
++    }
++}
++
++#[test]
++fn unit3b1_exact_literal_reservations_fail_at_real_fallible_requests() {
++    let cases = [
++        GROUPED,
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox")),
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox")),
++    ];
++    for text in cases {
++        let (sources, ast) = parsed(text);
++        let work = WorkMeter::default();
++        let mut baseline = Allocator::default();
++        let resolved = resolve_types(&sources, &ast, &work, &mut baseline).unwrap();
++        let literal_spans: Vec<_> = ast
++            .expressions
++            .iter()
++            .filter_map(|expr| {
++                matches!(expr.kind, ast::ExprKind::ArrayLiteral { .. }).then_some(expr.span)
++            })
++            .collect();
++        // Reservation order is before children, unlike append-time HIR IDs.
++        let mut ordered_spans = literal_spans;
++        ordered_spans.sort_by_key(|span| span.start);
++        let attempts: Vec<_> = baseline
++            .trace
++            .iter()
++            .enumerate()
++            .filter(|(_, e)| e.kind == "array HIR elements")
++            .map(|(i, e)| (i + 1, e.length))
++            .collect();
++        assert_eq!(attempts.len(), ordered_spans.len());
++        drop(resolved);
++        for ((attempt, length), span) in attempts.into_iter().zip(ordered_spans) {
++            let work = WorkMeter::default();
++            let mut allocator = Allocator {
++                fail_at: Some(attempt),
++                ..Allocator::default()
++            };
++            let errors = resolve_types(&sources, &ast, &work, &mut allocator).unwrap_err();
++            let e = &errors[0];
++            assert_eq!(
++                (e.code, e.stage, e.message.as_str(), e.primary),
++                (
++                    "E0400",
++                    "resolve",
++                    "array HIR allocation failed",
++                    Some(span)
++                )
++            );
++            assert!(e.notes.is_empty() && e.secondary.is_empty());
++            let event = allocator.trace.last().unwrap();
++            assert_eq!(
++                (event.kind, event.length, event.element_bytes, event.success),
++                (
++                    "array HIR elements",
++                    length,
++                    std::mem::size_of::<ExprId>(),
++                    false
++                )
++            );
++        }
++    }
++}
++
++#[test]
++fn unit3b1_added_work_and_inclusive_limit_share_the_existing_meter() {
++    let (sources, ast) = parsed(GROUPED);
++    let measured = WorkMeter::default();
++    // Exactly this fixed 86-byte fixture bounds passive log retention.
++    measured.enable_observation();
++    let typed =
++        typeck::check(resolve_types(&sources, &ast, &measured, &mut Allocator::default()).unwrap())
++            .unwrap();
++    assert_eq!(typed.functions().len(), 1);
++    let added: u64 = measured
++        .events
++        .borrow()
++        .iter()
++        .filter(|e| e.operation.starts_with("array "))
++        .map(|e| e.units)
++        .sum();
++    assert_eq!(added, 16);
++    println!(
++        "unit3b1 grouped work total={} added={added}",
++        measured.used()
++    );
++    assert_eq!(measured.used(), 247);
++    let limited = WorkMeter::new(247);
++    let errors = resolve_types(&sources, &ast, &limited, &mut Allocator::default()).unwrap_err();
++    assert_eq!(
++        (errors[0].code, errors[0].stage, errors[0].message.as_str()),
++        (
++            "E0400",
++            "resolve-project",
++            "declaration index mandatory build work limit exceeded"
++        )
++    );
++    assert_eq!(limited.used(), 196);
++    println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"work\",\"seam\":\"private-owned-without-selector\",\"case_id\":\"grouped-complete-access-and-index\",\"limit\":247,\"used\":{},\"added_units\":0,\"success\":false,\"ledger_sha256\":\"65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592\",\"diagnostic\":{},\"human\":{},\"json_line\":{}}}", limited.used(), errors[0].render_json(&sources), crate::frontend::diagnostic::json_string(&errors[0].render_human(&sources)), crate::frontend::diagnostic::json_string(&format!("{}\n", errors[0].render_json(&sources))));
++
++    // A small source's actual total may be below the unchanged conservative
++    // index-build admission estimate. Use the frozen wide source for boundary
++    // calibration, and independently check its source-derived added total.
++    let (sources, ast) = parsed(WIDE);
++    let measured = WorkMeter::default();
++    measured.enable_observation();
++    let typed =
++        typeck::check(resolve_types(&sources, &ast, &measured, &mut Allocator::default()).unwrap())
++            .unwrap();
++    assert_eq!(typed.functions().len(), 1);
++    let added: u64 = measured
++        .events
++        .borrow()
++        .iter()
++        .filter(|e| e.operation.starts_with("array "))
++        .map(|e| e.units)
++        .sum();
++    assert_eq!(added, 2053);
++    // Independently source-derived before this boundary assertion: ledger
++    // SHA256 65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592.
++    // This helper does not invoke the separately charged whole-project selector.
++    let exact = 10_369;
++    assert_eq!(measured.used(), exact);
++    for (limit, succeeds) in [(exact, true), (exact - 1, false)] {
++        let work = WorkMeter::new(limit);
++        work.enable_observation(); // The same fixed 2,097-byte control bounds retention.
++        let result =
++            resolve_types(&sources, &ast, &work, &mut Allocator::default()).and_then(typeck::check);
++        assert_eq!(result.is_ok(), succeeds);
++        let success = result.is_ok();
++        let observed_added: u64 = work
++            .events
++            .borrow()
++            .iter()
++            .filter(|e| e.operation.starts_with("array "))
++            .map(|e| e.units)
++            .sum();
++        let rendered = match &result {
++            Ok(_) => "\"diagnostic\":null,\"human\":null,\"json_line\":null".into(),
++            Err(errors) => format!(
++                "\"diagnostic\":{},\"human\":{},\"json_line\":{}",
++                errors[0].render_json(&sources),
++                crate::frontend::diagnostic::json_string(&errors[0].render_human(&sources)),
++                crate::frontend::diagnostic::json_string(&format!(
++                    "{}\n",
++                    errors[0].render_json(&sources)
++                ))
++            ),
++        };
++        println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"work\",\"seam\":\"private-owned-without-selector\",\"case_id\":\"literal-length-max-trailing-comma\",\"limit\":{limit},\"used\":{},\"added_units\":{observed_added},\"success\":{success},\"ledger_sha256\":\"65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592\",{rendered}}}", work.used());
++        if let Err(errors) = result {
++            assert_eq!(
++                (errors[0].code, errors[0].stage),
++                ("E0400", "resolve-project")
++            );
++            assert_eq!(errors[0].message, "declaration index work limit exceeded");
++            let file = sources.get(crate::frontend::source::SourceFileId(0));
++            assert_eq!(file.text_at(errors[0].primary.unwrap()), "a.len()");
++        }
++        assert_eq!(work.used(), limit);
++    }
++    println!("unit3b1 wide work boundary calibration total={exact} added={added}");
++}
++
++fn assert_fence(error: &Diagnostic, expected: crate::frontend::source::Span) {
++    assert_eq!(
++        (
++            error.code,
++            error.stage,
++            error.message.as_str(),
++            error.primary
++        ),
++        (
++            "E0500",
++            "oir-owned-lower",
++            "internal compiler error: owned invariant violation",
++            Some(expected)
++        )
++    );
++    assert!(error.notes.is_empty() && error.secondary.is_empty());
++}
++fn guard_typed(typed: &typeck::TypedOwnedProgram<'_>, sources: &SourceMap) {
++    let eof = typed.index().sources().eof();
++    budget::reset_guard_counts();
++    budget::fail_allocation_after(0, || {
++        let errors = program::check_typed(typed).unwrap_err();
++        assert_eq!(errors.len(), 1);
++        assert_fence(&errors[0], eof);
++    });
++    assert_eq!(budget::guard_counts(), [0; 7]);
++    for preflight in [true, false] {
++        budget::reset_guard_counts();
++        let error = budget::fail_allocation_after(0, || {
++            if preflight {
++                budget::preflight(typed, budget::Limits::DEFAULT).unwrap_err()
++            } else {
++                lower::lower(typed).unwrap_err()
++            }
++        });
++        assert_fence(&diagnostic::lower(&error, sources), eof);
++        assert_eq!(budget::guard_counts(), [0; 7]);
++    }
++    for view in typed.functions() {
++        for per_block in [false, true] {
++            let mut blocks = [usize::MAX; 3];
++            budget::reset_guard_counts();
++            let error = budget::fail_allocation_after(0, || {
++                lower::count_function(&view, per_block.then_some(&mut blocks[..])).unwrap_err()
++            });
++            assert_fence(&diagnostic::lower(&error, sources), view.signature().span);
++            assert_eq!(blocks, [usize::MAX; 3]);
++            assert_eq!(budget::guard_counts(), [0; 7]);
++        }
++        budget::reset_guard_counts();
++        let error = budget::fail_allocation_after(0, || {
++            lower::check_array_type_emission_fence(&view).unwrap_err()
++        });
++        assert_fence(&diagnostic::lower(&error, sources), view.signature().span);
++        assert_eq!(budget::guard_counts(), [0; 7]);
++    }
++}
++#[test]
++fn unit3b1_admission_fences_precede_all_lower_work_even_without_arrays_or_functions() {
++    // Explicit private-owned seam; these need not select owned in production.
++    let cases = [
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox")),
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox")),
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox")),
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox")),
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox")),
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox")),
++    ];
++    for text in cases {
++        let (sources, ast) = parsed(text);
++        let work = WorkMeter::default();
++        let typed =
++            typeck::check(resolve_types(&sources, &ast, &work, &mut Allocator::default()).unwrap())
++                .unwrap();
++        guard_typed(&typed, &sources);
++        // This view forces the guard before SourceView::Map discrimination.
++        let source = sources.get(crate::frontend::source::SourceFileId(0));
++        let single = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
++        let typed = typeck::check(
++            resolve::resolve_array_types(
++                single,
++                IndexLimits::default(),
++                &work,
++                &mut Allocator::default(),
++            )
++            .unwrap(),
++        )
++        .unwrap();
++        assert_fence(
++            &program::check_typed(&typed).unwrap_err()[0],
++            typed.index().sources().eof(),
++        );
++    }
++}
++#[test]
++fn unit3b1_reference_access_retains_modes_without_ownership_qualification() {
++    let (sources, ast) = parsed(
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox")),
++    );
++    let work = WorkMeter::default();
++    let typed =
++        typeck::check(resolve_types(&sources, &ast, &work, &mut Allocator::default()).unwrap())
++            .unwrap();
++    let array = AggregateTy::FixedArray(FixedArrayTy::check(Ty::I32, 1).unwrap());
++    for (view, kind) in typed
++        .functions()
++        .take(2)
++        .zip([BorrowKind::Shared, BorrowKind::Exclusive])
++    {
++        assert_eq!(
++            view.binding_ty(BindingId(0)),
++            ParameterTy::Reference {
++                aggregate: array,
++                kind
++            }
++        );
++        for id in 0..view.hir().expressions.len() {
++            assert_eq!(view.expression_ty(ExprId(id)), ValueTy::Scalar(Ty::I32));
++        }
++    }
++    guard_typed(&typed, &sources);
++}
++#[test]
++fn unit3b1_wide_literal_retains_exact_scalar_slots_without_deep_recursion() {
++    let (sources, ast) = parsed(
++        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox")),
++    );
++    let work = WorkMeter::default();
++    let mut allocator = Allocator::default();
++    let typed =
++        typeck::check(resolve_types(&sources, &ast, &work, &mut allocator).unwrap()).unwrap();
++    let view = typed.functions().next().unwrap();
++    let (id, elements) = view
++        .hir()
++        .expressions
++        .iter()
++        .enumerate()
++        .find_map(|(id, e)| match &e.kind {
++            ExprKind::ArrayLiteral { elements } => Some((id, elements)),
++            _ => None,
++        })
++        .unwrap();
++    assert_eq!(elements.len(), 1024);
++    assert_eq!(
++        view.expression_ty(ExprId(id)),
++        ValueTy::Owned(AggregateTy::FixedArray(
++            FixedArrayTy::check(Ty::I32, 1024).unwrap()
++        ))
++    );
++    for element in elements {
++        assert_eq!(view.expression_ty(*element), ValueTy::Scalar(Ty::I32));
++    }
++    let events: Vec<_> = allocator
++        .trace
++        .iter()
++        .filter(|e| e.kind == "array HIR elements")
++        .collect();
++    assert_eq!(events.len(), 1);
++    assert_eq!(events[0].length, 1024);
++}
++
++const WIDE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox"));
++
++#[cfg(target_os = "linux")]
++#[test]
++fn unit3b1_project_root_fences_and_cumulative_literal_inventory() {
++    use crate::frontend::project::{ProjectLimits, ProjectSources};
++    for (name, expected_elements) in [
++        ("guard-project-root-eof", 0),
++        ("reserve-across-modules", 3),
++        ("cross-file-array-identity", 1),
++    ] {
++        let authority = if name == "cross-file-array-identity" {
++            "contracts-v2"
++        } else {
++            "typing-contracts-v1"
++        };
++        let path = format!(
++            "{}/tests/fixtures/fixed_array_source_unit3/{authority}/fixtures/{name}/main.ox",
++            env!("CARGO_MANIFEST_DIR")
++        );
++        let project = ProjectSources::load_array_candidate(
++            &path,
++            ProjectLimits::default(),
++            &mut Allocator::default(),
++        )
++        .unwrap();
++        let owner = SourceOwner::project(&project);
++        let work = WorkMeter::default();
++        let mut allocator = Allocator::default();
++        let resolved =
++            resolve::resolve_array_types(owner, IndexLimits::default(), &work, &mut allocator)
++                .unwrap();
++        let elements: usize = resolved
++            .functions()
++            .iter()
++            .flat_map(|f| &f.expressions)
++            .map(|e| match &e.kind {
++                ExprKind::ArrayLiteral { elements } => elements.len(),
++                _ => 0,
++            })
++            .sum();
++        assert_eq!(elements, expected_elements, "{name}");
++        let requested: usize = allocator
++            .trace
++            .iter()
++            .filter(|e| e.kind == "array HIR elements")
++            .map(|e| e.length)
++            .sum();
++        assert_eq!(requested, elements, "{name}");
++        if name == "reserve-across-modules" {
++            let lengths: Vec<_> = allocator
++                .trace
++                .iter()
++                .filter(|e| e.kind == "array HIR elements")
++                .map(|e| e.length)
++                .collect();
++            assert_eq!(lengths, [1, 2]);
++        }
++        let typed = typeck::check(resolved).unwrap();
++        assert_eq!(typed.index().sources().eof().file.0, 0);
++        guard_typed(&typed, project.sources());
++    }
++}
+diff --git a/src/frontend/oir/owned/source/array_typing_observer.rs b/src/frontend/oir/owned/source/array_typing_observer.rs
+new file mode 100644
+--- /dev/null
++++ b/src/frontend/oir/owned/source/array_typing_observer.rs
+@@ -0,0 +1,830 @@
++//! Source-only bounded observations. No count/lower/ownership/execute calls.
++use super::{hir::*, resolve, typeck};
++use crate::frontend::{ast, declaration_index as di, diagnostic, project, source};
++use std::{
++    fmt::{self, Write},
++    path::Path,
++};
++const MAX_ROWS: usize = 200_000;
++const MAX_BYTES: usize = 16 * 1024 * 1024;
++const TRACE_ROWS: usize = 200_000;
++const DESCRIPTOR_OVERLAP: usize =
++    256 * 1024 + 1 + 2 * 4096 + 128 + 16 * std::mem::size_of::<String>();
++const CATEGORIES: [&str; 20] = [
++    "header",
++    "source",
++    "phase",
++    "selector",
++    "ast_inventory",
++    "record",
++    "field",
++    "signature",
++    "parameter",
++    "function",
++    "binding",
++    "block",
++    "expression",
++    "statement",
++    "typed_expression",
++    "typed_binding",
++    "typed_block",
++    "reservation",
++    "diagnostic",
++    "summary",
++];
++#[derive(Default)]
++struct Counter {
++    bytes: usize,
++    units: usize,
++    string: bool,
++    escape: bool,
++    atom: bool,
++}
++impl Write for Counter {
++    fn write_str(&mut self, s: &str) -> fmt::Result {
++        self.bytes = self.bytes.checked_add(s.len()).ok_or(fmt::Error)?;
++        for b in s.bytes() {
++            if self.string {
++                if self.escape {
++                    self.escape = false
++                } else if b == b'\\' {
++                    self.escape = true
++                } else if b == b'"' {
++                    self.string = false
++                }
++                continue;
++            }
++            match b {
++                b'"' => {
++                    self.units = self.units.checked_add(1).ok_or(fmt::Error)?;
++                    self.string = true;
++                    self.atom = false
++                }
++                b'{' | b'[' => {
++                    self.units = self.units.checked_add(1).ok_or(fmt::Error)?;
++                    self.atom = false
++                }
++                b'}' | b']' | b',' | b':' | b' ' | b'\n' | b'\r' | b'\t' => self.atom = false,
++                _ => {
++                    if !self.atom {
++                        self.units = self.units.checked_add(1).ok_or(fmt::Error)?;
++                    }
++                    self.atom = true
++                }
++            }
++        }
++        Ok(())
++    }
++}
++struct Output {
++    text: String,
++    rows: usize,
++    units: usize,
++    rows_limit: usize,
++    bytes_limit: usize,
++    counts: [usize; 20],
++    auxiliary: usize,
++    auxiliary_peak: usize,
++    diagnostic_render_peak: usize,
++}
++impl Output {
++    fn new(rows: usize, bytes: usize) -> Self {
++        Self {
++            text: String::new(),
++            rows: 0,
++            units: 0,
++            rows_limit: rows.min(MAX_ROWS),
++            bytes_limit: bytes.min(MAX_BYTES),
++            counts: [0; 20],
++            auxiliary: 0,
++            auxiliary_peak: 0,
++            diagnostic_render_peak: 0,
++        }
++    }
++    fn row(&mut self, cat: usize, args: fmt::Arguments<'_>) -> Result<(), String> {
++        let mut c = Counter::default();
++        c.write_fmt(args).map_err(|_| "observer counter overflow")?;
++        let bytes = self
++            .text
++            .len()
++            .checked_add(c.bytes)
++            .and_then(|x| x.checked_add(1))
++            .ok_or("observer byte overflow")?;
++        let units = self
++            .units
++            .checked_add(c.units)
++            .ok_or("observer units overflow")?;
++        let rows = self.rows.checked_add(1).ok_or("observer row overflow")?;
++        if bytes > self.bytes_limit || units > self.rows_limit {
++            return Err("incomplete-observation: observer limit exceeded".into());
++        }
++        self.text
++            .try_reserve_exact(c.bytes + 1)
++            .map_err(|_| "incomplete-observation: output allocation failed")?;
++        self.text
++            .write_fmt(args)
++            .map_err(|_| "observer formatting failed")?;
++        self.text.push('\n');
++        self.rows = rows;
++        self.units = units;
++        if cat < 20 {
++            self.counts[cat] = self.counts[cat].checked_add(1).ok_or("category overflow")?;
++        }
++        Ok(())
++    }
++    fn phase(&mut self, name: &str, status: &str) -> Result<(), String> {
++        self.row(
++            2,
++            format_args!(
++                "{{\"row\":\"phase\",\"phase\":{},\"status\":{}}}",
++                J(name),
++                J(status)
++            ),
++        )
++    }
++    fn aux(&mut self, n: usize) -> Result<(), String> {
++        self.auxiliary = self.auxiliary.checked_add(n).ok_or("auxiliary overflow")?;
++        self.auxiliary_peak = self.auxiliary_peak.max(self.auxiliary);
++        if self.auxiliary > MAX_BYTES {
++            return Err("incomplete-observation: auxiliary limit".into());
++        }
++        Ok(())
++    }
++    fn render_peak(&mut self, bytes: usize) -> Result<(), String> {
++        let peak = self
++            .auxiliary
++            .checked_add(bytes)
++            .ok_or("render overlap overflow")?;
++        if peak > MAX_BYTES {
++            return Err("incomplete-observation: render overlap limit".into());
++        }
++        self.auxiliary_peak = self.auxiliary_peak.max(peak);
++        self.diagnostic_render_peak = self.diagnostic_render_peak.max(bytes);
++        Ok(())
++    }
++    fn finish(mut self, outcome: &str, ds: usize) -> Result<String, String> {
++        let rows = self.rows;
++        let bytes = self.text.len();
++        let units = self.units;
++        let counts = self.counts;
++        let aux = self.auxiliary;
++        let peak = self.auxiliary_peak;
++        let render_peak = self.diagnostic_render_peak;
++        self.row(20,format_args!("{{\"row\":\"complete\",\"complete\":true,\"outcome\":{},\"rows_before_footer\":{},\"bytes_before_footer\":{},\"semantic_units_before_footer\":{},\"category_counts\":{},\"diagnostics\":{},\"auxiliary_requested_bytes\":{},\"auxiliary_peak_requested_bytes\":{},\"diagnostic_render_bound_bytes\":{},\"descriptor_overlap_bound_bytes\":{}}}",J(outcome),rows,bytes,units,Counts(&counts),ds,aux,peak,render_peak,DESCRIPTOR_OVERLAP))?;
++        Ok(self.text)
++    }
++}
++struct Counts<'a>(&'a [usize; 20]);
++impl fmt::Display for Counts<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_char('{')?;
++        for (i, n) in self.0.iter().enumerate() {
++            if i > 0 {
++                f.write_char(',')?
++            }
++            write!(f, "{}:{}", J(CATEGORIES[i]), n)?
++        }
++        f.write_char('}')
++    }
++}
++struct J<'a>(&'a str);
++impl fmt::Display for J<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_char('"')?;
++        for c in self.0.chars() {
++            match c {
++                '"' => f.write_str("\\\"")?,
++                '\\' => f.write_str("\\\\")?,
++                '\n' => f.write_str("\\n")?,
++                '\r' => f.write_str("\\r")?,
++                '\t' => f.write_str("\\t")?,
++                c if c.is_control() => write!(f, "\\u{:04x}", c as u32)?,
++                c => f.write_char(c)?,
++            }
++        }
++        f.write_char('"')
++    }
++}
++struct S<'a>(source::Span, &'a source::SourceMap);
++impl fmt::Display for S<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        if self.1.try_text(self.0).is_none() {
++            return Err(fmt::Error);
++        }
++        write!(f, "[{}, {}, {}]", self.0.file.0, self.0.start, self.0.end)
++    }
++}
++struct OS<'a>(Option<source::Span>, &'a source::SourceMap);
++impl fmt::Display for OS<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            Some(s) => write!(f, "{}", S(s, self.1)),
++            None => f.write_str("null"),
++        }
++    }
++}
++struct OptU(Option<usize>);
++impl fmt::Display for OptU {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            Some(n) => write!(f, "{n}"),
++            None => f.write_str("null"),
++        }
++    }
++}
++fn scalar(t: Ty) -> &'static str {
++    match t {
++        Ty::Bool => "bool",
++        Ty::I32 => "i32",
++        Ty::Unit => "unit",
++    }
++}
++struct V<'a, 's>(ValueTy, &'a di::DeclarationIndex<'s>, &'a source::SourceMap);
++impl fmt::Display for V<'_, '_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            ValueTy::Scalar(t) => write!(f, "{{\"tag\":\"scalar\",\"scalar\":{}}}", J(scalar(t))),
++            ValueTy::Owned(AggregateTy::FixedArray(a)) => write!(
++                f,
++                "{{\"tag\":\"fixed_array\",\"element\":{},\"length\":{}}}",
++                J(scalar(a.element())),
++                a.length()
++            ),
++            ValueTy::Owned(AggregateTy::Record(r)) => {
++                let (k, m) = self.1.record(r).map_err(|_| fmt::Error)?;
++                let a = self.1.sources().ast(m).map_err(|_| fmt::Error)?;
++                write!(
++                    f,
++                    "{{\"tag\":\"record\",\"record_id\":{},\"declaration\":{}}}",
++                    r.0,
++                    S(a.records[k.index].name, self.2)
++                )
++            }
++        }
++    }
++}
++struct P<'a, 's>(
++    ParameterTy,
++    &'a di::DeclarationIndex<'s>,
++    &'a source::SourceMap,
++);
++impl fmt::Display for P<'_, '_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            ParameterTy::Value(v) => write!(
++                f,
++                "{{\"tag\":\"value\",\"value\":{}}}",
++                V(v, self.1, self.2)
++            ),
++            ParameterTy::Reference { aggregate, kind } => write!(
++                f,
++                "{{\"tag\":\"reference\",\"kind\":{},\"aggregate\":{}}}",
++                J(match kind {
++                    BorrowKind::Shared => "shared",
++                    BorrowKind::Exclusive => "exclusive",
++                }),
++                V(ValueTy::Owned(aggregate), self.1, self.2)
++            ),
++        }
++    }
++}
++struct OV<'a, 's>(
++    Option<ValueTy>,
++    &'a di::DeclarationIndex<'s>,
++    &'a source::SourceMap,
++);
++impl fmt::Display for OV<'_, '_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            Some(v) => write!(f, "{}", V(v, self.1, self.2)),
++            None => f.write_str("null"),
++        }
++    }
++}
++struct Ids<'a>(&'a [ExprId]);
++impl fmt::Display for Ids<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_char('[')?;
++        for (i, id) in self.0.iter().enumerate() {
++            if i > 0 {
++                f.write_char(',')?
++            }
++            write!(f, "{}", id.0)?
++        }
++        f.write_char(']')
++    }
++}
++struct E<'a, 's>(
++    &'a ExprKind,
++    &'a di::DeclarationIndex<'s>,
++    &'a source::SourceMap,
++);
++impl fmt::Display for E<'_, '_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        let map = self.2;
++        match self.0{
++ ExprKind::Bool(v)=>write!(f,"\"kind\":\"Bool\",\"value\":{v}"),ExprKind::I32(v)=>write!(f,"\"kind\":\"I32\",\"value\":{v}"),ExprKind::Unit=>f.write_str("\"kind\":\"Unit\""),ExprKind::Binding(id)=>write!(f,"\"kind\":\"Binding\",\"binding\":{}",id.0),ExprKind::Group(id)=>write!(f,"\"kind\":\"Group\",\"child\":{}",id.0),
++ ExprKind::ArrayLiteral{elements}=>write!(f,"\"kind\":\"ArrayLiteral\",\"elements\":{}",Ids(elements)),
++ ExprKind::IndexRead{base,base_span,index}=>write!(f,"\"kind\":\"IndexRead\",\"base\":{},\"base_origin\":{},\"index\":{}",base.0,S(*base_span,map),index.0),
++ ExprKind::ArrayLength{base,base_span}=>write!(f,"\"kind\":\"ArrayLength\",\"base\":{},\"base_origin\":{}",base.0,S(*base_span,map)),
++ ExprKind::FieldRead{base,base_span,field_span}=>write!(f,"\"kind\":\"FieldRead\",\"base\":{},\"base_origin\":{},\"field_origin\":{}",base.0,S(*base_span,map),S(*field_span,map)),
++ ExprKind::Not{operand,operator_span}=>write!(f,"\"kind\":\"Not\",\"operand\":{},\"operator_origin\":{}",operand.0,S(*operator_span,map)),
++ ExprKind::Logical{op,left,right,operator_span}=>write!(f,"\"kind\":\"Logical\",\"operator\":\"{op:?}\",\"left\":{},\"right\":{},\"operator_origin\":{}",left.0,right.0,S(*operator_span,map)),
++ ExprKind::Comparison{op,left,right,operator_span}=>write!(f,"\"kind\":\"Comparison\",\"operator\":\"{op:?}\",\"left\":{},\"right\":{},\"operator_origin\":{}",left.0,right.0,S(*operator_span,map)),
++ ExprKind::Arithmetic{op,left,right,operator_span}=>write!(f,"\"kind\":\"Arithmetic\",\"operator\":\"{op:?}\",\"left\":{},\"right\":{},\"operator_origin\":{}",left.0,right.0,S(*operator_span,map)),
++ ExprKind::Call{target,args}=>{let(k,m)=self.1.function(*target).map_err(|_|fmt::Error)?;let a=self.1.sources().ast(m).map_err(|_|fmt::Error)?;write!(f,"\"kind\":\"Call\",\"target\":{},\"declaration\":{},\"arguments\":[",target.0,S(a.functions[k.index].name,map))?;for(i,arg)in args.iter().enumerate(){if i>0{f.write_char(',')?}match arg{Argument::Value(id)=>write!(f,"{{\"kind\":\"value\",\"expression\":{}}}",id.0)?,Argument::Borrow{kind,place,span,name_span,star_span}=>{let(b,forwarded)=match place{BorrowPlace::Owner(b)=>(b,false),BorrowPlace::Forwarded(b)=>(b,true)};write!(f,"{{\"kind\":\"borrow\",\"permission\":{},\"binding\":{},\"forwarded\":{},\"origin\":{},\"name_origin\":{},\"star_origin\":{}}}",J(match kind{BorrowKind::Shared=>"shared",BorrowKind::Exclusive=>"exclusive"}),b.0,forwarded,S(*span,map),S(*name_span,map),OS(*star_span,map))?}}}f.write_char(']')},
++ ExprKind::StructLiteral{record,fields}=>{write!(f,"\"kind\":\"StructLiteral\",\"record\":{},\"fields\":[",record.0)?;for(i,x)in fields.iter().enumerate(){if i>0{f.write_char(',')?}write!(f,"{{\"record\":{},\"field\":{},\"value\":{},\"origin\":{}}}",x.field.record.0,x.field.index,x.value.0,S(x.span,map))?}f.write_char(']')}
++}
++    }
++}
++struct ST<'a>(&'a StmtKind, &'a source::SourceMap);
++impl fmt::Display for ST<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        let m = self.1;
++        match self.0{
++ StmtKind::Let{binding,init}=>write!(f,"\"kind\":\"Let\",\"binding\":{},\"init\":{},\"roots\":[{}]",binding.0,init.0,init.0),
++ StmtKind::Assign{binding,target_span,operator_span,value}=>write!(f,"\"kind\":\"Assign\",\"binding\":{},\"target_origin\":{},\"operator_origin\":{},\"value\":{},\"roots\":[{}]",binding.0,S(*target_span,m),S(*operator_span,m),value.0,value.0),
++ StmtKind::IndexAssign{base,base_span,target_span,operator_span,value,index}=>write!(f,"\"kind\":\"IndexAssign\",\"base\":{},\"base_origin\":{},\"target_origin\":{},\"operator_origin\":{},\"value\":{},\"index\":{},\"roots\":[{},{}]",base.0,S(*base_span,m),S(*target_span,m),S(*operator_span,m),value.0,index.0,value.0,index.0),
++ StmtKind::FieldAssign{base,base_span,field_span,target_span,operator_span,value}=>write!(f,"\"kind\":\"FieldAssign\",\"base\":{},\"base_origin\":{},\"field_origin\":{},\"target_origin\":{},\"operator_origin\":{},\"value\":{},\"roots\":[{}]",base.0,S(*base_span,m),S(*field_span,m),S(*target_span,m),S(*operator_span,m),value.0,value.0),
++ StmtKind::Expr(id)=>write!(f,"\"kind\":\"Expr\",\"value\":{},\"roots\":[{}]",id.0,id.0),StmtKind::Return(id)=>{write!(f,"\"kind\":\"Return\",\"value\":{},\"roots\":[",OptU(id.map(|x|x.0)))?;if let Some(id)=id{write!(f,"{}",id.0)?}f.write_char(']')},
++ StmtKind::Break{target}=>write!(f,"\"kind\":\"Break\",\"target\":{},\"roots\":[]",target.0),StmtKind::Continue{target}=>write!(f,"\"kind\":\"Continue\",\"target\":{},\"roots\":[]",target.0),
++ StmtKind::While{loop_id,condition,body}=>write!(f,"\"kind\":\"While\",\"loop_id\":{},\"condition\":{},\"body\":{},\"roots\":[{}]",loop_id.0,condition.0,body.0,condition.0),
++ StmtKind::If{condition,then_block,else_block}=>write!(f,"\"kind\":\"If\",\"condition\":{},\"then\":{},\"else\":{},\"roots\":[{}]",condition.0,then_block.0,OptU(else_block.map(|x|x.0)),condition.0)
++}
++    }
++}
++struct ProjectionRow(Option<Projection>);
++impl fmt::Display for ProjectionRow {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        let Some(p) = self.0 else {
++            return f.write_str("null");
++        };
++        let (b, mode) = match p.base {
++            AccessBase::Owner(b) => (b, "owner"),
++            AccessBase::Reference { binding, kind } => (
++                binding,
++                match kind {
++                    BorrowKind::Shared => "shared",
++                    BorrowKind::Exclusive => "exclusive",
++                },
++            ),
++        };
++        write!(
++            f,
++            "{{\"binding\":{},\"mode\":{},\"record\":{},\"field\":{}}}",
++            b.0,
++            J(mode),
++            p.field.record.0,
++            p.field.index
++        )
++    }
++}
++fn loader_phases(out: &mut Output, a: &project::budget::Allocator) -> Result<(), String> {
++    for (name, slot) in [("lex", 0), ("parse", 2)] {
++        let attempted = a.observer_loader_phases[slot];
++        let completed = a.observer_loader_phases[slot + 1];
++        let status = if attempted == 0 {
++            "not-attempted"
++        } else if completed == attempted {
++            "completed"
++        } else {
++            "failed"
++        };
++        out.row(2, format_args!("{{\"row\":\"phase\",\"phase\":{},\"status\":{},\"attempted_files\":{},\"completed_files\":{}}}", J(name), J(status), attempted, completed))?;
++    }
++    Ok(())
++}
++fn checked_add(a: &mut usize, n: usize) -> Result<(), String> {
++    *a = a.checked_add(n).ok_or("observer inventory overflow")?;
++    Ok(())
++}
++fn copied_string(s: &str) -> Result<String, String> {
++    let mut out = String::new();
++    out.try_reserve_exact(s.len())
++        .map_err(|_| "display allocation")?;
++    out.push_str(s);
++    Ok(out)
++}
++fn sources(
++    out: &mut Output,
++    map: &source::SourceMap,
++    root: &Path,
++) -> Result<source::SourceMap, String> {
++    let mut display = source::SourceMap::new();
++    let mut display_alloc = project::budget::Allocator::default();
++    display_alloc.observer_trace_bound(0)?;
++    for (i, f) in map.files().iter().enumerate() {
++        let relative = Path::new(f.path())
++            .strip_prefix(root)
++            .map_err(|_| "source outside fixture")?
++            .to_str()
++            .ok_or("path utf8")?;
++        out.row(1,format_args!("{{\"row\":\"source\",\"file\":{},\"identity\":{},\"role\":{},\"path\":{},\"original_path\":{},\"bytes\":{},\"text\":{}}}",i,f.identity(),J(if i==0{"root"}else{"child"}),J(relative),J(f.path()),f.text().len(),J(f.text())))?;
++        let lines = f
++            .text()
++            .bytes()
++            .filter(|b| *b == b'\n')
++            .count()
++            .checked_add(1)
++            .ok_or("line overflow")?;
++        let payload = relative
++            .len()
++            .checked_add(f.text().len())
++            .and_then(|n| n.checked_add(lines.checked_mul(std::mem::size_of::<usize>())?))
++            .and_then(|n| n.checked_add(std::mem::size_of::<source::SourceFile>()))
++            .ok_or("display overflow")?;
++        out.aux(payload)?;
++        display
++            .try_add(
++                copied_string(relative)?,
++                copied_string(f.text())?,
++                &mut display_alloc,
++            )
++            .map_err(|_| "display map reserve")?;
++    }
++    Ok(display)
++}
++fn diagnostics(
++    out: &mut Output,
++    map: &source::SourceMap,
++    display: &source::SourceMap,
++    ds: &[diagnostic::Diagnostic],
++) -> Result<(), String> {
++    for d in ds {
++        if d.secondary.len() > 2 || d.notes.len() > 2 {
++            return Err("incomplete-observation: diagnostic shape bound".into());
++        }
++        for s in d.primary.iter().chain(d.secondary.iter().map(|x| &x.0)) {
++            if map.try_text(*s).is_none() {
++                return Err("invalid diagnostic span".into());
++            }
++        }
++        let mut bound = 16_384usize;
++        for s in [d.code, d.stage, d.message.as_str()]
++            .into_iter()
++            .chain(d.notes.iter().map(String::as_str))
++            .chain(d.secondary.iter().map(|x| x.1.as_str()))
++            .chain(display.files().iter().map(|x| x.path()))
++        {
++            bound = bound
++                .checked_add(s.len().checked_mul(128).ok_or("render overflow")?)
++                .ok_or("render overflow")?;
++        }
++        if bound > out.bytes_limit.saturating_sub(out.text.len())
++            || bound > MAX_BYTES.saturating_sub(out.auxiliary)
++        {
++            return Err("incomplete-observation: diagnostic preflight".into());
++        }
++        out.render_peak(bound)?;
++        let h = d.render_human(display);
++        let mut j = d.render_json(display);
++        j.try_reserve_exact(1).map_err(|_| "json line allocation")?;
++        j.push('\n');
++        out.row(
++            18,
++            format_args!(
++                "{{\"row\":\"diagnostic\",\"human\":{},\"json_line\":{},\"diagnostic\":{}}}",
++                J(&h),
++                J(&j),
++                j.trim_end_matches('\n')
++            ),
++        )?;
++    }
++    Ok(())
++}
++fn reservations(out: &mut Output, a: &project::budget::Allocator) -> Result<(), String> {
++    if a.observer_trace_overflow {
++        return Err("incomplete-observation: trace limit".into());
++    }
++    let mut cumulative = 0usize;
++    for (ordinal, e) in a.trace.iter().enumerate() {
++        if matches!(e.kind, "array HIR elements" | "array literal elements") {
++            if e.kind == "array HIR elements" {
++                checked_add(&mut cumulative, e.length)?
++            }
++            out.row(17,format_args!("{{\"row\":\"reservation\",\"attempt\":{},\"kind\":{},\"length\":{},\"element_bytes\":{},\"success\":{},\"cumulative_hir_entries\":{}}}",ordinal+1,J(e.kind),e.length,e.element_bytes,e.success,cumulative))?;
++        }
++    }
++    Ok(())
++}
++fn resolved(
++    out: &mut Output,
++    p: &resolve::ResolvedOwnedProgram<'_>,
++    map: &source::SourceMap,
++) -> Result<(usize, usize), String> {
++    if p.functions().len() != p.signatures().len() {
++        return Err("incomplete-observation: function/signature count mismatch".into());
++    }
++    let index = p.index();
++    if p.functions().len() != index.function_count() || p.records().len() != index.record_count() {
++        return Err("incomplete-observation: declaration coverage mismatch".into());
++    }
++    let mut es = 0usize;
++    let mut elements = 0usize;
++    for r in p.records() {
++        out.row(5,format_args!("{{\"row\":\"record\",\"id\":{},\"declaration\":{},\"origin\":{},\"end\":{},\"fields\":{}}}",r.id.0,S(r.name_span,map),S(r.span,map),S(r.end,map),r.fields.len()))?;
++        for x in &r.fields {
++            out.row(6,format_args!("{{\"row\":\"field\",\"record\":{},\"id\":{},\"declaration\":{},\"origin\":{},\"scalar\":{}}}",x.id.record.0,x.id.index,S(x.name_span,map),S(x.span,map),J(scalar(x.ty))))?;
++        }
++    }
++    for (f, s) in p.functions().iter().zip(p.signatures()) {
++        let (k, m) = index.function(f.id).map_err(|_| "function identity")?;
++        let ast = index.sources().ast(m).map_err(|_| "module identity")?;
++        out.row(7,format_args!("{{\"row\":\"signature\",\"function\":{},\"module\":{},\"local\":{},\"declaration\":{},\"origin\":{},\"result\":{},\"parameters\":{}}}",f.id.0,m.0,k.index,S(ast.functions[k.index].name,map),S(s.span,map),V(s.result,index,map),s.params.len()))?;
++        for (i, t) in s.params.iter().enumerate() {
++            out.row(
++                8,
++                format_args!(
++                    "{{\"row\":\"parameter\",\"function\":{},\"position\":{},\"type\":{}}}",
++                    f.id.0,
++                    i,
++                    P(*t, index, map)
++                ),
++            )?
++        }
++        out.row(9,format_args!("{{\"row\":\"function\",\"id\":{},\"body\":{},\"end\":{},\"bindings\":{},\"expressions\":{},\"blocks\":{}}}",f.id.0,f.body.0,S(f.end,map),f.bindings.len(),f.expressions.len(),f.blocks.len()))?;
++        for (i, b) in f.bindings.iter().enumerate() {
++            out.row(10,format_args!("{{\"row\":\"binding\",\"function\":{},\"id\":{},\"origin\":{},\"annotation\":{},\"mutable\":{},\"scope\":{},\"parameter_position\":{}}}",f.id.0,i,S(b.span,map),OV(b.annotation,index,map),b.mutable,b.scope.0,OptU(b.parameter_position)))?
++        }
++        for (i, b) in f.blocks.iter().enumerate() {
++            out.row(11,format_args!("{{\"row\":\"block\",\"function\":{},\"id\":{},\"origin\":{},\"end\":{},\"statements\":{}}}",f.id.0,i,S(b.span,map),S(b.end,map),b.body.len()))?;
++            for (j, s) in b.body.iter().enumerate() {
++                out.row(13,format_args!("{{\"row\":\"statement\",\"function\":{},\"block\":{},\"position\":{},\"origin\":{}, {}}}",f.id.0,i,j,S(s.span,map),ST(&s.kind,map)))?
++            }
++        }
++        for (i, e) in f.expressions.iter().enumerate() {
++            checked_add(&mut es, 1)?;
++            if let ExprKind::ArrayLiteral { elements: e } = &e.kind {
++                checked_add(&mut elements, e.len())?
++            }
++            out.row(
++                12,
++                format_args!(
++                    "{{\"row\":\"expression\",\"function\":{},\"id\":{},\"origin\":{}, {}}}",
++                    f.id.0,
++                    i,
++                    S(e.span, map),
++                    E(&e.kind, index, map)
++                ),
++            )?;
++        }
++    }
++    Ok((es, elements))
++}
++fn typed(
++    out: &mut Output,
++    p: &typeck::TypedOwnedProgram<'_>,
++    map: &source::SourceMap,
++) -> Result<(), String> {
++    let index = p.index();
++    for t in p.functions() {
++        let f = t.hir();
++        for i in 0..f.expressions.len() {
++            out.row(14,format_args!("{{\"row\":\"typed_expression\",\"function\":{},\"id\":{},\"type\":{},\"projection\":{}}}",f.id.0,i,V(t.expression_ty(ExprId(i)),index,map),ProjectionRow(t.expression_projection(ExprId(i)))))?
++        }
++        for i in 0..f.bindings.len() {
++            out.row(
++                15,
++                format_args!(
++                    "{{\"row\":\"typed_binding\",\"function\":{},\"id\":{},\"type\":{}}}",
++                    f.id.0,
++                    i,
++                    P(t.binding_ty(BindingId(i)), index, map)
++                ),
++            )?
++        }
++        for (i, b) in f.blocks.iter().enumerate() {
++            out.row(
++                16,
++                format_args!(
++                    "{{\"row\":\"typed_block\",\"function\":{},\"id\":{},\"flow\":\"{:?}\"}}",
++                    f.id.0,
++                    i,
++                    t.block_flow(BodyBlockId(i))
++                ),
++            )?;
++            for j in 0..b.body.len() {
++                out.row(16,format_args!("{{\"row\":\"typed_statement\",\"function\":{},\"block\":{},\"position\":{},\"projection\":{}}}",f.id.0,i,j,ProjectionRow(t.statement_projection(BodyBlockId(i),j))))?
++            }
++        }
++    }
++    Ok(())
++}
++fn observe(
++    id: &str,
++    root: &Path,
++    scope: &str,
++    rows: usize,
++    bytes: usize,
++    limits: di::IndexLimits,
++) -> Result<String, String> {
++    if !matches!(scope, "single" | "project") {
++        return Err("unknown scope".into());
++    }
++    let mut out = Output::new(rows, bytes);
++    let d = di::IndexLimits::default();
++    let limits = di::IndexLimits {
++        retained: limits.retained.min(d.retained),
++        scratch: limits.scratch.min(d.scratch),
++        work: limits.work.min(d.work),
++    };
++    let (row_limit, byte_limit) = (out.rows_limit, out.bytes_limit);
++    out.row(0,format_args!("{{\"row\":\"header\",\"schema\":\"oxid-array-source-typing-observation-v1\",\"case\":{},\"base\":\"2e84c9de9d9b02b62283fff1902cf1a840254ac4\",\"core_manifest_sha256\":\"f44586df897fb27b0b47684f32108f1c6d24eede7b852730308a48939992c101\",\"scope\":{},\"path\":\"private-owned-test-seam\",\"admission\":\"ObserveArrayTypes\",\"row_limit\":{},\"byte_limit\":{},\"retained_limit\":{},\"scratch_limit\":{},\"work_limit\":{},\"semantic_metric\":\"json-values-and-keys\",\"work_observation_enabled\":false}}",J(id),J(scope),row_limit,byte_limit,limits.retained,limits.scratch,limits.work))?;
++    let mut a = project::budget::Allocator::default();
++    out.aux(DESCRIPTOR_OVERLAP)?;
++    out.aux(
++        TRACE_ROWS
++            .checked_mul(std::mem::size_of::<project::budget::ReserveEvent>())
++            .ok_or("trace payload overflow")?,
++    )?;
++    a.observer_trace_bound(TRACE_ROWS)?;
++    out.phase("load", "attempted")?;
++    let loaded = project::ProjectSources::load_array_candidate(
++        root.join("main.ox").to_str().ok_or("path utf8")?,
++        project::ProjectLimits::default(),
++        &mut a,
++    );
++    let p = match loaded {
++        Ok(p) => p,
++        Err(f) => {
++            out.phase("load", "failed")?;
++            loader_phases(&mut out, &f.allocator)?;
++            out.phase("provenance", "not-attempted")?;
++            for phase in ["select", "index", "resolve", "type"] {
++                out.phase(phase, "not-attempted")?
++            }
++            let display = sources(&mut out, &f.sources, root)?;
++            diagnostics(&mut out, &f.sources, &display, &f.diagnostics)?;
++            reservations(&mut out, &f.allocator)?;
++            return out.finish("diagnostic-complete", f.diagnostics.len());
++        }
++    };
++    if scope == "single" && p.modules().len() != 1 {
++        return Err("single scope loaded multiple files".into());
++    }
++    out.phase("load", "completed")?;
++    loader_phases(&mut out, &a)?;
++    let display = sources(&mut out, p.sources(), root)?;
++    let work = di::WorkMeter::new(limits.work);
++    let owner = di::SourceOwner::project(&p);
++    out.phase("select", "attempted")?;
++    let owned = owner.owned(&work).map_err(|_| "selector failed")?;
++    out.phase("select", "completed")?;
++    let mut ast_expressions = 0usize;
++    let mut ast_elements = 0usize;
++    let mut targets = 0usize;
++    out.phase("provenance", "attempted")?;
++    for (mi, module) in p.modules().iter().enumerate() {
++        let ast = p.try_file_ast(module.file).ok_or("missing AST")?;
++        let file = p.sources().get(module.file);
++        if !ast.belongs_to(file)
++            || !ast.validate_spans_and_ids_counted(|s| s.is_none_or(|s| file.try_text(s).is_some()))
++        {
++            return Err("invalid AST".into());
++        }
++        out.row(
++            3,
++            format_args!(
++                "{{\"row\":\"selector\",\"module\":{},\"file\":{},\"owned\":{}}}",
++                mi,
++                module.file.0,
++                ast.uses_owned_syntax(file)
++            ),
++        )?;
++        checked_add(&mut ast_expressions, ast.expressions.len())?;
++        for e in &ast.expressions {
++            if let ast::ExprKind::ArrayLiteral { elements } = &e.kind {
++                checked_add(&mut ast_elements, elements.len())?
++            }
++        }
++        for f in &ast.functions {
++            for b in &f.blocks {
++                for s in &b.body {
++                    if matches!(s.kind, ast::StmtKind::IndexAssign { .. }) {
++                        checked_add(&mut targets, 1)?
++                    }
++                }
++            }
++        }
++    }
++    out.phase("provenance", "completed")?;
++    out.row(4,format_args!("{{\"row\":\"ast_inventory\",\"ast_expression_count\":{},\"E_ast\":{},\"target_wrappers\":{},\"owned\":{},\"modules\":{}}}",ast_expressions,ast_elements,targets,owned,p.modules().len()))?;
++    out.phase("index", "attempted")?;
++    out.phase("resolve", "attempted")?;
++    let r = match resolve::resolve_array_types(owner, limits, &work, &mut a) {
++        Ok(r) => r,
++        Err(ds) => {
++            let reached = work.observer_phase();
++            out.phase(
++                "index",
++                if matches!(
++                    reached,
++                    "record-fields" | "signatures" | "exposure" | "body-resolution" | "type"
++                ) {
++                    "completed"
++                } else {
++                    "not-completed"
++                },
++            )?;
++            out.phase("resolve", "failed")?;
++            out.phase("type", "not-attempted")?;
++            diagnostics(&mut out, p.sources(), &display, &ds)?;
++            reservations(&mut out, &a)?;
++            out.row(19,format_args!("{{\"row\":\"summary\",\"work\":{},\"work_phase\":{},\"allocator_attempts\":{}}}",work.used(),J(reached),a.attempts))?;
++            return out.finish("diagnostic-complete", ds.len());
++        }
++    };
++    out.phase("index", "completed")?;
++    let declaration_counts = (r.functions().len(), r.signatures().len(), r.records().len());
++    let entry = r.entry().map(|x| x.0);
++    let resolved_executable = r.admission().executable();
++    let mut typed_executable = "null";
++    let (es, elements) = resolved(&mut out, &r, p.sources())?;
++    out.phase("resolve", "completed")?;
++    out.phase("type", "attempted")?;
++    let result = typeck::check(r);
++    let mut ds_count = 0;
++    let outcome = match result {
++        Ok(t) => {
++            typed_executable = if t.admission().executable() {
++                "true"
++            } else {
++                "false"
++            };
++            typed(&mut out, &t, p.sources())?;
++            out.phase("type", "completed")?;
++            "typed-success"
++        }
++        Err(ds) => {
++            ds_count = ds.len();
++            out.phase("type", "failed")?;
++            diagnostics(&mut out, p.sources(), &display, &ds)?;
++            "diagnostic-complete"
++        }
++    };
++    reservations(&mut out, &a)?;
++    out.row(19,format_args!("{{\"row\":\"summary\",\"entry\":{},\"hir_expression_count\":{},\"E_hir\":{},\"ast_expression_count\":{},\"E_ast\":{},\"target_wrappers\":{},\"work\":{},\"allocator_attempts\":{},\"trace_rows\":{},\"trace_row_bytes\":{},\"work_observation_rows\":{},\"resolved_executable\":{},\"typed_executable\":{},\"functions\":{},\"signatures\":{},\"records\":{}}}",OptU(entry),es,elements,ast_expressions,ast_elements,targets,work.used(),a.attempts,a.trace.len(),std::mem::size_of::<project::budget::ReserveEvent>(),work.observations.borrow().len(),resolved_executable,typed_executable,declaration_counts.0,declaration_counts.1,declaration_counts.2))?;
++    out.finish(outcome, ds_count)
++}
++#[test]
++#[ignore]
++fn array_typing_observe_requests() {
++    const REQUEST_BYTES: usize = 256 * 1024;
++    let request = std::env::var("OXID_ARRAY_TYPING_REQUEST").unwrap();
++    let output = std::env::var("OXID_ARRAY_TYPING_OUTPUT").unwrap();
++    assert!(request.len() <= 4096 && output.len() <= 4096);
++    let file = std::fs::File::open(request).unwrap();
++    let mut read = std::io::Read::take(file, (REQUEST_BYTES + 1) as u64);
++    let mut bytes = Vec::new();
++    bytes.try_reserve_exact(REQUEST_BYTES + 1).unwrap();
++    std::io::Read::read_to_end(&mut read, &mut bytes).unwrap();
++    assert!(bytes.len() <= REQUEST_BYTES);
++    let requests = String::from_utf8(bytes).unwrap();
++    assert!(requests.lines().count() <= 1024);
++    std::fs::create_dir(&output).expect("output directory must be absent");
++    for (i, line) in requests.lines().enumerate() {
++        let mut fields = line.split('\t');
++        let id = fields.next().unwrap();
++        let scope = fields.next().unwrap();
++        let path = fields.next().unwrap();
++        let rows = fields.next().unwrap().parse().unwrap();
++        let bytes = fields.next().unwrap().parse().unwrap();
++        let retained = fields.next().unwrap().parse().unwrap();
++        let scratch = fields.next().unwrap().parse().unwrap();
++        let work = fields.next().unwrap().parse().unwrap();
++        assert!(fields.next().is_none());
++        assert!(
++            !id.is_empty()
++                && id.len() <= 128
++                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
++        );
++        assert!(path.len() <= 4096);
++        assert!(!requests
++            .lines()
++            .take(i)
++            .any(|l| l.split('\t').next() == Some(id)));
++        let result = observe(
++            id,
++            Path::new(path),
++            scope,
++            rows,
++            bytes,
++            di::IndexLimits {
++                retained,
++                scratch,
++                work,
++            },
++        );
++        let (suffix, data) = match result {
++            Ok(d) => ("jsonl", d),
++            Err(e) => ("error", e),
++        };
++        let path = Path::new(&output).join(format!("{id}.{suffix}"));
++        let mut f = std::fs::OpenOptions::new()
++            .write(true)
++            .create_new(true)
++            .open(path)
++            .unwrap();
++        std::io::Write::write_all(&mut f, data.as_bytes()).unwrap();
++    }
++}
+diff --git a/src/frontend/oir/owned/source/budget.rs b/src/frontend/oir/owned/source/budget.rs
+--- a/src/frontend/oir/owned/source/budget.rs
++++ b/src/frontend/oir/owned/source/budget.rs
+@@ -40,6 +40,8 @@
+     error
+ }
+ pub(super) fn reserve<T>(count: usize) -> Result<Vec<T>, OwnedFailure> {
++    #[cfg(test)]
++    guard_event(GuardEvent::RawReservation);
+     #[cfg(test)]
+     allocation_test_point()?;
+     let mut values = Vec::new();
+@@ -106,6 +108,14 @@
+     typed: &TypedOwnedProgram<'_>,
+     limits: Limits,
+ ) -> Result<Usage, OwnedFailure> {
++    if !typed.admission().executable() {
++        return Err(OwnedFailure::malformed(
++            Malformed::CanonicalSite,
++            typed.index().sources().eof(),
++        ));
++    }
++    #[cfg(test)]
++    guard_event(GuardEvent::DeclarationAdmission);
+     let declarations = admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
+     admit_scalar_layouts(
+         typed
+@@ -123,6 +133,8 @@
+     cap(bytes, ceiling, "source raw payload")?;
+     let mut scratch = 0;
+     let mut counts = raw_budget::ProgramCounts::default();
++    #[cfg(test)]
++    guard_event(GuardEvent::FunctionIteration);
+     for view in typed.functions() {
+         let span = view.signature().span;
+         let count = lower::count_function(&view, None).map_err(|error| at(error, span))?;
+@@ -168,3 +180,35 @@
+     let _reset = Reset;
+     operation()
+ }
++
++/// Fixed-size passive sentinels for the private types-only entry fences. No
++/// source payload or unbounded observation log is retained.
++#[cfg(test)]
++#[derive(Clone, Copy)]
++pub(super) enum GuardEvent {
++    DeclarationAdmission,
++    FunctionIteration,
++    CountEntry,
++    InventoryEntry,
++    BlockAllocation,
++    RawReservation,
++    EmitStep,
++}
++#[cfg(test)]
++thread_local! { static GUARD_COUNTS: std::cell::Cell<[usize; 7]> = const { std::cell::Cell::new([0; 7]) }; }
++#[cfg(test)]
++pub(super) fn guard_event(event: GuardEvent) {
++    GUARD_COUNTS.with(|counts| {
++        let mut next = counts.get();
++        next[event as usize] = next[event as usize].saturating_add(1);
++        counts.set(next);
++    });
++}
++#[cfg(test)]
++pub(super) fn reset_guard_counts() {
++    GUARD_COUNTS.with(|counts| counts.set([0; 7]));
++}
++#[cfg(test)]
++pub(super) fn guard_counts() -> [usize; 7] {
++    GUARD_COUNTS.with(|counts| counts.get())
++}
+diff --git a/src/frontend/oir/owned/source/hir.rs b/src/frontend/oir/owned/source/hir.rs
+--- a/src/frontend/oir/owned/source/hir.rs
++++ b/src/frontend/oir/owned/source/hir.rs
+@@ -2,7 +2,7 @@
+ pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
+ pub(super) use crate::frontend::hir::{DefId, Ty};
+ pub(super) use crate::frontend::oir::owned_types::{
+-    AggregateTy, BorrowKind, FieldId, ParameterTy, RecordId, ValueTy,
++    AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+ };
+ use crate::frontend::source::Span;
+ 
+@@ -89,6 +89,18 @@
+         record: RecordId,
+         fields: Vec<FieldInit>,
+     },
++    ArrayLiteral {
++        elements: Vec<ExprId>,
++    },
++    IndexRead {
++        base: BindingId,
++        base_span: Span,
++        index: ExprId,
++    },
++    ArrayLength {
++        base: BindingId,
++        base_span: Span,
++    },
+     FieldRead {
+         base: BindingId,
+         base_span: Span,
+@@ -127,6 +139,14 @@
+         target_span: Span,
+         operator_span: Span,
+         value: ExprId,
++    },
++    IndexAssign {
++        base: BindingId,
++        base_span: Span,
++        target_span: Span,
++        operator_span: Span,
++        value: ExprId,
++        index: ExprId,
+     },
+     Expr(ExprId),
+     Return(Option<ExprId>),
+diff --git a/src/frontend/oir/owned/source/lower.rs b/src/frontend/oir/owned/source/lower.rs
+--- a/src/frontend/oir/owned/source/lower.rs
++++ b/src/frontend/oir/owned/source/lower.rs
+@@ -147,6 +147,9 @@
+         block_counts: Option<&'b mut [usize]>,
+         expected: Option<Counts>,
+     ) -> Result<Self> {
++        if !view.admission().executable() {
++            return Err(invariant(view.signature().span));
++        }
+         let output = if let Some(c) = expected {
+             let f = view.hir();
+             let signature = view.signature();
+@@ -189,6 +192,8 @@
+         Ok(this)
+     }
+     fn inventory(&mut self) -> Result<()> {
++        #[cfg(test)]
++        budget::guard_event(budget::GuardEvent::InventoryEntry);
+         let f = self.view.hir();
+         let signature = self.view.signature();
+         self.counts.parameters = signature.params.len();
+@@ -436,6 +441,8 @@
+         Ok(())
+     }
+     fn block(&mut self, span: Span) -> Result<BlockId> {
++        #[cfg(test)]
++        budget::guard_event(budget::GuardEvent::BlockAllocation);
+         let id = BlockId(self.counts.blocks);
+         self.counts.blocks = budget::add(self.counts.blocks, 1)?;
+         self.check_counts()?;
+@@ -500,6 +507,8 @@
+         }
+         let block = self.record_statements(1, span)?;
+         if let Some(out) = &mut self.output {
++            #[cfg(test)]
++            budget::guard_event(budget::GuardEvent::EmitStep);
+             let count = self.block_counts.as_ref().ok_or_else(|| invariant(span))?[block.0];
+             budget::append(
+                 &mut out.raw.blocks[block.0].statements,
+@@ -598,6 +607,11 @@
+                 ExprFrame::Visit(id) => {
+                     let expression = &self.view.hir().expressions[id.0];
+                     match &expression.kind {
++                        source::ExprKind::ArrayLiteral { .. }
++                        | source::ExprKind::IndexRead { .. }
++                        | source::ExprKind::ArrayLength { .. } => {
++                            return Err(invariant(expression.span))
++                        }
+                         source::ExprKind::Logical { left, .. } => {
+                             frames.push(ExprFrame::LogicalLeft(id), cause)?;
+                             frames.push(ExprFrame::Visit(*left), cause)?;
+@@ -868,6 +882,9 @@
+         let span = expression.span;
+         if let ValueTy::Owned(record) = self.view.expression_ty(id) {
+             match expression.kind {
++                source::ExprKind::ArrayLiteral { .. }
++                | source::ExprKind::IndexRead { .. }
++                | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
+                 source::ExprKind::Binding(binding) => {
+                     let BindingLocation::Owner(source) = self.location(binding, span)? else {
+                         return Err(invariant(span));
+@@ -902,6 +919,9 @@
+         }
+         let destination = self.operand(id)?.local;
+         let value = match expression.kind {
++            source::ExprKind::ArrayLiteral { .. }
++            | source::ExprKind::IndexRead { .. }
++            | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
+             source::ExprKind::Bool(value) => Rvalue::Bool(value),
+             source::ExprKind::I32(value) => Rvalue::I32(value),
+             source::ExprKind::Unit => Rvalue::Unit,
+@@ -1192,6 +1212,7 @@
+                 continue;
+             }
+             let root = match statement.kind {
++                source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
+                 source::StmtKind::Let { init, .. }
+                 | source::StmtKind::Assign { value: init, .. }
+                 | source::StmtKind::FieldAssign { value: init, .. }
+@@ -1204,6 +1225,7 @@
+                 self.expression(root, s)?;
+             }
+             match statement.kind {
++                source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
+                 source::StmtKind::Let { binding, init } => match self.value(init)? {
+                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
+                         BindingLocation::ScalarValue(destination) => {
+@@ -1457,6 +1479,8 @@
+     blocks: Option<&mut [usize]>,
+ ) -> Result<Counts> {
+     let mut walk = Walk::new(view, blocks, None)?;
++    #[cfg(test)]
++    budget::guard_event(budget::GuardEvent::CountEntry);
+     walk.body()?;
+     Ok(walk.counts)
+ }
+@@ -1564,3 +1588,10 @@
+     }
+     Ok(RawOwnedProgram { records, functions })
+ }
++
++/// Exercises the same emission constructor before any output work. Kept inside
++/// the source test boundary; it cannot return raw storage or executable authority.
++#[cfg(test)]
++pub(super) fn check_array_type_emission_fence(view: &TypedOwnedFunction<'_>) -> Result<()> {
++    Walk::new(view, None, Some(Counts::default())).map(|_| ())
++}
+diff --git a/src/frontend/oir/owned/source/mod.rs b/src/frontend/oir/owned/source/mod.rs
+--- a/src/frontend/oir/owned/source/mod.rs
++++ b/src/frontend/oir/owned/source/mod.rs
+@@ -27,3 +27,12 @@
+ 
+ #[cfg(test)]
+ pub(in crate::frontend::oir::owned) mod resource_fixtures;
++
++#[cfg(test)]
++mod array_types_tests;
++
++#[cfg(test)]
++mod array_type_controls;
++
++#[cfg(test)]
++mod array_typing_observer;
+diff --git a/src/frontend/oir/owned/source/program.rs b/src/frontend/oir/owned/source/program.rs
+--- a/src/frontend/oir/owned/source/program.rs
++++ b/src/frontend/oir/owned/source/program.rs
+@@ -23,6 +23,14 @@
+ pub(in crate::frontend::oir) fn check_typed(
+     typed: &typeck::TypedOwnedProgram<'_>,
+ ) -> Result<SourceProgram, Vec<Diagnostic>> {
++    if !typed.admission().executable() {
++        return Err(vec![*crate::frontend::owned_diagnostic::diagnostic(
++            "E0500",
++            "oir-owned-lower",
++            format_args!("internal compiler error: owned invariant violation"),
++            Some(typed.index().sources().eof()),
++        )]);
++    }
+     let index = typed.index();
+     let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+         return Err(vec![*crate::frontend::oir::source::association::bad()]);
+diff --git a/src/frontend/oir/owned/source/resolve.rs b/src/frontend/oir/owned/source/resolve.rs
+--- a/src/frontend/oir/owned/source/resolve.rs
++++ b/src/frontend/oir/owned/source/resolve.rs
+@@ -9,10 +9,27 @@
+     diagnostic::Diagnostic,
+     owned_diagnostic::{self, diagnostic, secondary},
+     parser::MAX_DIAGNOSTICS,
+-    project::{budget::Allocator, ItemPathRef, ModuleId},
++    project::{
++        budget::{Allocator, ReserveFailure},
++        ItemPathRef, ModuleId,
++    },
+     source::{SourceFile, SourceMap, SourceView, Span},
+ };
+ use std::collections::HashMap;
++
++/// Construction policy, retained even for array-free inputs. No executable
++/// entrypoint accepts a caller-selected admission policy.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(super) enum SourceAdmission {
++    Executable,
++    #[cfg(test)]
++    ObserveArrayTypes,
++}
++impl SourceAdmission {
++    pub(super) fn executable(self) -> bool {
++        self == Self::Executable
++    }
++}
+ 
+ #[derive(Debug)]
+ #[allow(clippy::large_enum_variant)] // Keep the checked legacy carrier allocation-free.
+@@ -28,6 +45,7 @@
+ }
+ #[derive(Debug)]
+ pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
++    admission: SourceAdmission,
+     index: IndexOwner<'src>,
+     work: MeterOwner<'src>,
+     sources: SourceView<'src>,
+@@ -37,6 +55,9 @@
+     entry: Option<DefId>,
+ }
+ impl<'src> ResolvedOwnedProgram<'src> {
++    pub(super) fn admission(&self) -> SourceAdmission {
++        self.admission
++    }
+     pub(super) fn index(&self) -> &DeclarationIndex<'src> {
+         match &self.index {
+             IndexOwner::Owned(index) => index,
+@@ -99,15 +120,21 @@
+     query: &mut QuerySession<'_, '_>,
+     requester: ModuleId,
+     ty: ast::TypeSyntax,
++    admission: SourceAdmission,
+ ) -> Result<ValueTy, Box<Diagnostic>> {
+-    source_type_enabled(ty)?;
++    source_type_enabled(ty, admission)?;
+     query.value_type(requester, ty, TypeContext::Value)
+ }
+-fn source_type_enabled(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
+-    if matches!(
+-        ty.kind,
+-        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
+-    ) {
++fn source_type_enabled(
++    ty: ast::TypeSyntax,
++    admission: SourceAdmission,
++) -> Result<(), Box<Diagnostic>> {
++    if admission.executable()
++        && matches!(
++            ty.kind,
++            ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
++        )
++    {
+         return Err(error(
+             "E0500",
+             format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
+@@ -120,8 +147,9 @@
+     query: &mut QuerySession<'_, '_>,
+     requester: ModuleId,
+     ty: ast::TypeSyntax,
++    admission: SourceAdmission,
+ ) -> Result<ParameterTy, Box<Diagnostic>> {
+-    source_type_enabled(ty)?;
++    source_type_enabled(ty, admission)?;
+     query.parameter_type(requester, ty)
+ }
+ fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diagnostic>> {
+@@ -177,10 +205,16 @@
+ ) -> Result<ResolvedOwnedProgram<'_>, Vec<Diagnostic>> {
+     let work = WorkMeter::default();
+     let mut allocator = Allocator::default();
+-    let (index, (records, signatures, functions)) =
+-        resolve_source_parts(sources, &work, &mut allocator)?;
++    let (index, (records, signatures, functions)) = resolve_source_parts(
++        sources,
++        &work,
++        &mut allocator,
++        SourceAdmission::Executable,
++        IndexLimits::default(),
++    )?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
++        admission: SourceAdmission::Executable,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+         work: MeterOwner::Owned(work),
+@@ -199,9 +233,16 @@
+ ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+     let sources =
+         SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
+-    let (index, (records, signatures, functions)) = resolve_source_parts(sources, work, allocator)?;
++    let (index, (records, signatures, functions)) = resolve_source_parts(
++        sources,
++        work,
++        allocator,
++        SourceAdmission::Executable,
++        IndexLimits::default(),
++    )?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
++        admission: SourceAdmission::Executable,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+         work: MeterOwner::Borrowed(work),
+@@ -215,19 +256,23 @@
+     sources: SourceOwner<'s>,
+     work: &WorkMeter,
+     allocator: &mut Allocator,
++    admission: SourceAdmission,
++    limits: IndexLimits,
+ ) -> Result<(DeclarationIndex<'s>, ResolvedParts), Vec<Diagnostic>> {
+-    let facts = index::collect_originals(sources, IndexLimits::default(), work, allocator)
+-        .map_err(|e| vec![*e])?;
++    let facts = index::collect_originals(sources, limits, work, allocator).map_err(|e| vec![*e])?;
+     let index = facts.finish(work, allocator)?;
+-    let parts = resolve_index(&index, work)?;
++    let parts = resolve_index(&index, work, allocator, admission)?;
+     Ok((index, parts))
+ }
+ pub(in crate::frontend) fn resolve_project<'s>(
+     index: &'s DeclarationIndex<'s>,
+     work: &'s WorkMeter,
+ ) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
+-    let (records, signatures, functions) = resolve_index(index, work)?;
++    let mut allocator = Allocator::default();
++    let (records, signatures, functions) =
++        resolve_index(index, work, &mut allocator, SourceAdmission::Executable)?;
+     Ok(ResolvedOwnedProgram {
++        admission: SourceAdmission::Executable,
+         sources: index.sources().view(),
+         index: IndexOwner::Borrowed(index),
+         work: MeterOwner::Borrowed(work),
+@@ -241,6 +286,8 @@
+ fn resolve_index(
+     index: &DeclarationIndex<'_>,
+     work: &WorkMeter,
++    allocator: &mut Allocator,
++    admission: SourceAdmission,
+ ) -> Result<ResolvedParts, Vec<Diagnostic>> {
+     let sources = index.sources();
+     let mut diagnostics = Vec::new();
+@@ -260,7 +307,8 @@
+                 if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
+                     return Err(duplicate(field.name, first));
+                 }
+-                let ValueTy::Scalar(ty) = value_type(&mut index.query(work), module, field.ty)?
++                let ValueTy::Scalar(ty) =
++                    value_type(&mut index.query(work), module, field.ty, admission)?
+                 else {
+                     return Err(error(
+                         "E0202",
+@@ -307,9 +355,9 @@
+             let params = function
+                 .params
+                 .iter()
+-                .map(|p| parameter_type(&mut index.query(work), module, p.ty))
++                .map(|p| parameter_type(&mut index.query(work), module, p.ty, admission))
+                 .collect::<Result<Vec<_>, _>>()?;
+-            let result = value_type(&mut index.query(work), module, function.result)?;
++            let result = value_type(&mut index.query(work), module, function.result, admission)?;
+             for block in &function.blocks {
+                 for statement in &block.body {
+                     if let ast::StmtKind::Let {
+@@ -317,7 +365,7 @@
+                         ..
+                     } = statement.kind
+                     {
+-                        value_type(&mut index.query(work), module, ty)?;
++                        value_type(&mut index.query(work), module, ty, admission)?;
+                     }
+                 }
+             }
+@@ -417,6 +465,7 @@
+     }
+     work.phase("body-resolution");
+     let mut functions = Vec::new();
++    let mut array_entries = 0usize;
+     for id in 0..index.function_count() {
+         if diagnostics.len() >= MAX_DIAGNOSTICS {
+             break;
+@@ -424,6 +473,9 @@
+         let (key, requester) = index.function(DefId(id)).map_err(|e| vec![*e])?;
+         let ast = sources.ast(requester).map_err(|e| vec![*e])?;
+         let mut resolver = Resolver {
++            allocator,
++            admission,
++            array_entries: &mut array_entries,
+             ast,
+             index,
+             work,
+@@ -448,6 +500,9 @@
+     }
+ }
+ struct Resolver<'i, 'a> {
++    allocator: &'i mut Allocator,
++    admission: SourceAdmission,
++    array_entries: &'i mut usize,
+     ast: &'a ast::Program,
+     index: &'i DeclarationIndex<'a>,
+     work: &'i WorkMeter,
+@@ -577,7 +632,14 @@
+                 } => {
+                     let init = self.expression(*init)?;
+                     let annotation = annotation
+-                        .map(|ty| value_type(&mut self.index.query(self.work), self.requester, ty))
++                        .map(|ty| {
++                            value_type(
++                                &mut self.index.query(self.work),
++                                self.requester,
++                                ty,
++                                self.admission,
++                            )
++                        })
+                         .transpose()?;
+                     let local =
+                         self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
+@@ -632,11 +694,38 @@
+                         value: self.expression(*value)?,
+                     }
+                 }
+-                ast::StmtKind::IndexAssign { target, .. } => {
+-                    return Err(error(
+-                        "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
+-                        self.ast.expressions[target.0].span,
+-                    ));
++                ast::StmtKind::IndexAssign {
++                    target,
++                    operator_span,
++                    value,
++                } => {
++                    let target = &self.ast.expressions[target.0];
++                    if self.admission.executable() {
++                        return Err(error(
++                            "E0500", format_args!("array source execution is unavailable in this dormant syntax checkpoint"),
++                            target.span,
++                        ));
++                    }
++                    self.work.debit(1, target.span, "array resolve store")?;
++                    let ast::ExprKind::IndexRead { base, index } = target.kind else {
++                        return Err(error(
++                            "E0500",
++                            format_args!("invalid indexed assignment target"),
++                            target.span,
++                        ));
++                    };
++                    let binding = self.lookup(base)?;
++                    // The retained AST target wrapper is syntax only, never a HIR read.
++                    let value = self.expression(*value)?;
++                    let index = self.expression(index)?;
++                    StmtKind::IndexAssign {
++                        base: binding,
++                        base_span: base,
++                        target_span: target.span,
++                        operator_span: *operator_span,
++                        value,
++                        index,
++                    }
+                 }
+                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
+                 ast::StmtKind::Return(expr) => {
+@@ -709,7 +798,9 @@
+         let kind = match &expr.kind {
+             ast::ExprKind::ArrayLiteral { .. }
+             | ast::ExprKind::IndexRead { .. }
+-            | ast::ExprKind::ArrayLength { .. } => {
++            | ast::ExprKind::ArrayLength { .. }
++                if self.admission.executable() =>
++            {
+                 return Err(error(
+                     "E0500",
+                     format_args!(
+@@ -717,6 +808,38 @@
+                     ),
+                     expr.span,
+                 ));
++            }
++            ast::ExprKind::ArrayLiteral { elements } => {
++                self.work.debit(1, expr.span, "array resolve literal")?;
++                let requested = checked_array_entries(*self.array_entries, elements.len())
++                    .map_err(|failure| array_reserve_error(failure, expr.span))?;
++                let mut resolved = Vec::new();
++                self.allocator
++                    .vector_exact(&mut resolved, elements.len(), "array HIR elements")
++                    .map_err(|failure| array_reserve_error(failure, expr.span))?;
++                *self.array_entries = requested;
++                for element in elements {
++                    self.work.debit(1, expr.span, "array resolve edge")?;
++                    resolved.push(self.expression(*element)?);
++                }
++                ExprKind::ArrayLiteral { elements: resolved }
++            }
++            ast::ExprKind::IndexRead { base, index } => {
++                self.work.debit(1, expr.span, "array resolve read")?;
++                let binding = self.lookup(*base)?;
++                let index = self.expression(*index)?;
++                ExprKind::IndexRead {
++                    base: binding,
++                    base_span: *base,
++                    index,
++                }
++            }
++            ast::ExprKind::ArrayLength { base } => {
++                self.work.debit(1, expr.span, "array resolve length")?;
++                ExprKind::ArrayLength {
++                    base: self.lookup(*base)?,
++                    base_span: *base,
++                }
+             }
+             ast::ExprKind::FieldRead { base, field } => ExprKind::FieldRead {
+                 base: self.lookup(*base)?,
+@@ -945,3 +1068,89 @@
+         assert_eq!(program.index().function(DefId(0)).unwrap().0.file, second);
+     }
+ }
++
++// Cumulative requested slots include pending outer buffers and never reset at
++// function boundaries. These are checks, not a trusted allocation inventory.
++fn checked_array_entries(current: usize, length: usize) -> Result<usize, ReserveFailure> {
++    if length > 1024 {
++        return Err(ReserveFailure::Overflow);
++    }
++    let total = current
++        .checked_add(length)
++        .ok_or(ReserveFailure::Overflow)?;
++    total
++        .checked_mul(std::mem::size_of::<ExprId>())
++        .ok_or(ReserveFailure::Overflow)?;
++    Ok(total)
++}
++fn array_reserve_error(failure: ReserveFailure, span: Span) -> Box<Diagnostic> {
++    error(
++        "E0400",
++        format_args!(
++            "{}",
++            match failure {
++                ReserveFailure::Overflow => "array HIR count overflow",
++                ReserveFailure::Allocation => "array HIR allocation failed",
++            }
++        ),
++        span,
++    )
++}
++
++/// Private observation construction only. Callers must copy inert facts before
++/// typing consumes this owner; no executable entrypoint chooses this policy.
++#[cfg(test)]
++pub(super) fn resolve_array_types<'s>(
++    sources: SourceOwner<'s>,
++    limits: IndexLimits,
++    work: &'s WorkMeter,
++    allocator: &mut Allocator,
++) -> Result<ResolvedOwnedProgram<'s>, Vec<Diagnostic>> {
++    let (index, (records, signatures, functions)) = resolve_source_parts(
++        sources,
++        work,
++        allocator,
++        SourceAdmission::ObserveArrayTypes,
++        limits,
++    )?;
++    let entry = index.root_original_main();
++    Ok(ResolvedOwnedProgram {
++        admission: SourceAdmission::ObserveArrayTypes,
++        sources: sources.view(),
++        index: IndexOwner::Owned(index),
++        work: MeterOwner::Borrowed(work),
++        records,
++        signatures,
++        functions,
++        entry,
++    })
++}
++
++#[cfg(test)]
++mod array_reservation_tests {
++    use super::*;
++    #[test]
++    fn unit3b1_checked_array_entry_arithmetic_is_cumulative() {
++        assert_eq!(checked_array_entries(0, 0), Ok(0));
++        assert_eq!(checked_array_entries(2, 3), Ok(5));
++        assert_eq!(checked_array_entries(0, 1024), Ok(1024));
++        for (control, current, length) in [
++            ("length", 0, 1025),
++            ("cumulative", usize::MAX, 1),
++            ("multiply", usize::MAX / std::mem::size_of::<ExprId>(), 1),
++        ] {
++            let result = checked_array_entries(current, length);
++            println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"overflow\",\"control\":\"{control}\",\"synthetic\":true,\"current\":{current},\"length\":{length},\"element_bytes\":{},\"result\":\"{:?}\",\"reservation_attempts\":0}}", std::mem::size_of::<ExprId>(), result);
++            assert_eq!(result, Err(ReserveFailure::Overflow));
++        }
++        let mut allocator = Allocator {
++            attempts: usize::MAX,
++            ..Allocator::default()
++        };
++        let mut values = Vec::<ExprId>::new();
++        let result = allocator.vector_exact(&mut values, 0, "array HIR elements");
++        println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"overflow\",\"control\":\"attempt\",\"synthetic\":true,\"attempt_counter\":{},\"result\":\"{:?}\",\"trace_rows\":{}}}", allocator.attempts, result, allocator.trace.len());
++        assert_eq!(result, Err(ReserveFailure::Overflow));
++        assert!(allocator.trace.is_empty() && values.is_empty() && values.capacity() == 0);
++    }
++}
+diff --git a/src/frontend/oir/owned/source/typeck.rs b/src/frontend/oir/owned/source/typeck.rs
+--- a/src/frontend/oir/owned/source/typeck.rs
++++ b/src/frontend/oir/owned/source/typeck.rs
+@@ -1,5 +1,8 @@
+ //! Complete source typing, deliberately without an ownership/loan checker.
+-use super::{hir::*, resolve::ResolvedOwnedProgram};
++use super::{
++    hir::*,
++    resolve::{ResolvedOwnedProgram, SourceAdmission},
++};
+ use crate::frontend::{
+     declaration_index::{Access, PreparedTypeName},
+     diagnostic::Diagnostic,
+@@ -76,11 +79,15 @@
+ }
+ 
+ pub(super) struct TypedOwnedFunction<'a> {
++    admission: SourceAdmission,
+     function: &'a Function,
+     signature: &'a Signature,
+     body: &'a TypedBody,
+ }
+ impl TypedOwnedProgram<'_> {
++    pub(super) fn admission(&self) -> SourceAdmission {
++        self.program.admission()
++    }
+     pub(super) fn index(&self) -> &crate::frontend::declaration_index::DeclarationIndex<'_> {
+         self.program.index()
+     }
+@@ -113,6 +120,7 @@
+                 assert!(body.block_flows[function.body.0].returns_only());
+                 assert_eq!(&body.bindings[..signature.params.len()], &signature.params);
+                 TypedOwnedFunction {
++                    admission: self.admission(),
+                     function,
+                     signature,
+                     body,
+@@ -121,6 +129,9 @@
+     }
+ }
+ impl<'a> TypedOwnedFunction<'a> {
++    pub(super) fn admission(&self) -> SourceAdmission {
++        self.admission
++    }
+     pub(super) fn hir(&self) -> &'a Function {
+         self.function
+     }
+@@ -169,12 +180,14 @@
+ #[allow(clippy::large_enum_variant)] // Both bounded formatter frames are preaccounted; no heap allocation.
+ enum TypeName<'a> {
+     Scalar(Ty),
++    Array(FixedArrayTy),
+     Record(PreparedTypeName<'a>),
+ }
+ impl std::fmt::Display for TypeName<'_> {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         match self {
+             Self::Scalar(ty) => write!(f, "{ty}"),
++            Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
+             Self::Record(name) => write!(f, "{name}"),
+         }
+     }
+@@ -189,9 +202,7 @@
+         ValueTy::Owned(AggregateTy::Record(record)) => {
+             program.prepare_name(record, span).map(TypeName::Record)
+         }
+-        ValueTy::Owned(AggregateTy::FixedArray(_)) => {
+-            Err(error("E0500", "unsupported aggregate type", span))
+-        }
++        ValueTy::Owned(AggregateTy::FixedArray(array)) => Ok(TypeName::Array(array)),
+     }
+ }
+ fn mismatch(
+@@ -289,6 +300,29 @@
+     }
+     Ok(Projection { base, field })
+ }
++fn array_access(
++    function: &Function,
++    binding: BindingId,
++    access_span: Span,
++    bindings: &[Option<ParameterTy>],
++) -> Result<(AccessBase, FixedArrayTy), Box<Diagnostic>> {
++    match bindings[binding.0].expect("resolved array base initialized") {
++        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
++            Ok((AccessBase::Owner(binding), array))
++        }
++        ParameterTy::Reference {
++            aggregate: AggregateTy::FixedArray(array),
++            kind,
++        } => Ok((AccessBase::Reference { binding, kind }, array)),
++        _ => Err(error(
++            "E0305",
++            "array access requires an array binding",
++            access_span,
++        )
++        .owned_secondary(function.bindings[binding.0].span, "binding declared here")),
++    }
++}
++
+ fn borrow_type(
+     function: &Function,
+     kind: BorrowKind,
+@@ -532,6 +566,61 @@
+             }
+             ValueTy::Owned(AggregateTy::Record(*record))
+         }
++        ExprKind::ArrayLiteral { elements } => {
++            program.work().debit(1, expr.span, "array type literal")?;
++            if elements.is_empty() {
++                return Err(error("E0300", "empty array literal requires an explicit array annotation on its local initializer", expr.span));
++            }
++            let mut element_type = None;
++            for element in elements {
++                program.work().debit(1, expr.span, "array type edge")?;
++                let actual = child(*element)?;
++                let ValueTy::Scalar(scalar_type) = actual else {
++                    return Err(error(
++                        "E0300",
++                        "array elements must have scalar bool, i32 or () type",
++                        function.expressions[element.0].span,
++                    ));
++                };
++                if let Some(expected) = element_type {
++                    if scalar_type != expected {
++                        return Err(mismatch(
++                            program,
++                            scalar(expected),
++                            actual,
++                            function.expressions[element.0].span,
++                        ));
++                    }
++                } else {
++                    element_type = Some(scalar_type);
++                }
++            }
++            let array =
++                FixedArrayTy::check(element_type.expect("nonempty literal"), elements.len())
++                    .map_err(|_| error("E0500", "invalid resolved array length", expr.span))?;
++            ValueTy::Owned(AggregateTy::FixedArray(array))
++        }
++        ExprKind::IndexRead { base, index, .. } => {
++            program.work().debit(1, expr.span, "array type read")?;
++            let actual = child(*index)?;
++            program.work().debit(1, expr.span, "array type access")?;
++            let (_, array) = array_access(function, *base, expr.span, bindings)?;
++            if actual != scalar(Ty::I32) {
++                return Err(mismatch(
++                    program,
++                    scalar(Ty::I32),
++                    actual,
++                    function.expressions[index.0].span,
++                ));
++            }
++            scalar(array.element())
++        }
++        ExprKind::ArrayLength { base, .. } => {
++            program.work().debit(1, expr.span, "array type length")?;
++            program.work().debit(1, expr.span, "array type access")?;
++            array_access(function, *base, expr.span, bindings)?;
++            scalar(Ty::I32)
++        }
+         ExprKind::FieldRead {
+             base,
+             base_span,
+@@ -556,17 +645,70 @@
+             ty
+         }
+     };
++    finish_expression_type(program, function, id, ty, expressions, projections);
++    Ok(ty)
++}
++fn finish_expression_type(
++    program: &ResolvedOwnedProgram<'_>,
++    function: &Function,
++    id: ExprId,
++    ty: ValueTy,
++    expressions: &mut [Option<ValueTy>],
++    projections: &[Option<Projection>],
++) {
++    assert!(expressions[id.0].is_none(), "type slot finalized once");
+     expressions[id.0] = Some(ty);
+     #[cfg(test)]
+     program.work().observe(
+         crate::frontend::declaration_index::Observation::Expression {
+             function: function.id,
+-            origin: expr.span,
++            origin: function.expressions[id.0].span,
+             ty,
+             field: projections[id.0].map(|p| p.field),
+         },
+     );
+-    Ok(ty)
++    #[cfg(not(test))]
++    let _ = (program, function, projections);
++}
++fn initializer_type(
++    program: &ResolvedOwnedProgram<'_>,
++    function: &Function,
++    binding: BindingId,
++    root: ExprId,
++    bindings: &[Option<ParameterTy>],
++    expressions: &mut [Option<ValueTy>],
++    projections: &mut [Option<Projection>],
++) -> Result<ValueTy, Box<Diagnostic>> {
++    if let Some(ValueTy::Owned(AggregateTy::FixedArray(annotation))) =
++        function.bindings[binding.0].annotation
++    {
++        let mut leaf = root;
++        loop {
++            let expr = &function.expressions[leaf.0];
++            program
++                .work()
++                .debit(1, expr.span, "array initializer peel")?;
++            match &expr.kind {
++                ExprKind::Group(inner) => leaf = *inner,
++                ExprKind::ArrayLiteral { elements } if elements.is_empty() => {
++                    program.work().debit(1, expr.span, "array type literal")?;
++                    let array = FixedArrayTy::check(annotation.element(), 0)
++                        .expect("zero is a checked fixed-array length");
++                    finish_expression_type(
++                        program,
++                        function,
++                        leaf,
++                        ValueTy::Owned(AggregateTy::FixedArray(array)),
++                        expressions,
++                        projections,
++                    );
++                    break;
++                }
++                _ => break,
++            }
++        }
++    }
++    expression_type(program, function, root, bindings, expressions, projections)
+ }
+ fn check_body(
+     program: &ResolvedOwnedProgram<'_>,
+@@ -684,8 +826,38 @@
+             ));
+         }
+         let root = match statement.kind {
+-            StmtKind::Let { init, .. }
+-            | StmtKind::Assign { value: init, .. }
++            StmtKind::Let { binding, init } => {
++                initializer_type(
++                    program,
++                    function,
++                    binding,
++                    init,
++                    &bindings,
++                    &mut expressions,
++                    &mut projections,
++                )?;
++                None
++            }
++            StmtKind::IndexAssign {
++                value,
++                index,
++                target_span,
++                ..
++            } => {
++                program.work().debit(1, target_span, "array type store")?;
++                for root in [value, index] {
++                    expression_type(
++                        program,
++                        function,
++                        root,
++                        &bindings,
++                        &mut expressions,
++                        &mut projections,
++                    )?;
++                }
++                None
++            }
++            StmtKind::Assign { value: init, .. }
+             | StmtKind::FieldAssign { value: init, .. }
+             | StmtKind::Expr(init) => Some(init),
+             StmtKind::Return(value) => value,
+@@ -804,6 +976,38 @@
+                     },
+                 );
+             }
++            StmtKind::IndexAssign {
++                base,
++                target_span,
++                value,
++                index,
++                ..
++            } => {
++                program.work().debit(1, target_span, "array type access")?;
++                let (access, array) = array_access(function, base, target_span, &bindings)?;
++                let index_ty = expressions[index.0].expect("typed store index");
++                if index_ty != ValueTy::Scalar(Ty::I32) {
++                    return Err(mismatch(
++                        program,
++                        ValueTy::Scalar(Ty::I32),
++                        index_ty,
++                        function.expressions[index.0].span,
++                    ));
++                }
++                let actual = expressions[value.0].expect("typed store value");
++                let expected = ValueTy::Scalar(array.element());
++                if actual != expected {
++                    return Err(mismatch(
++                        program,
++                        expected,
++                        actual,
++                        function.expressions[value.0].span,
++                    ));
++                }
++                if matches!(access, AccessBase::Owner(_)) && !function.bindings[base.0].mutable {
++                    return Err(immutable(function, base, target_span));
++                }
++            }
+             StmtKind::Expr(_) => {}
+             StmtKind::Return(value) => {
+                 let actual = value.map_or(ValueTy::Scalar(Ty::Unit), |id| {
+@@ -942,3 +1146,40 @@
+         block_flows,
+     })
+ }
++
++#[cfg(test)]
++mod array_type_layout_tests {
++    use super::*;
++    #[test]
++    fn unit3b1_owner_slot_layouts() {
++        use std::mem::size_of;
++        macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
++        sizes!(
++            ResolvedOwnedProgram<'_>,
++            TypedOwnedProgram<'_>,
++            TypedOwnedFunction<'_>,
++            TypedBody,
++            SourceAdmission,
++            Record,
++            Field,
++            BodyBlock,
++            Argument,
++            FieldInit,
++            ValueTy,
++            Option<ValueTy>,
++            ParameterTy,
++            Option<ParameterTy>,
++            Projection,
++            Option<Projection>,
++            FlowSummary,
++            Option<FlowSummary>,
++            FixedArrayTy,
++            Vec<ValueTy>,
++            crate::frontend::project::budget::Allocator,
++            crate::frontend::project::budget::ReserveEvent,
++            crate::frontend::declaration_index::WorkMeter,
++            (ParameterTy, Span),
++            std::collections::HashMap<&str, (BindingId, Span)>
++        );
++    }
++}
+diff --git a/src/frontend/project.rs b/src/frontend/project.rs
+--- a/src/frontend/project.rs
++++ b/src/frontend/project.rs
+@@ -726,7 +726,11 @@
+             .min(lexer::MAX_TOKENS)
+             .checked_sub(self.project.usage.non_eof_tokens)
+             .ok_or_else(|| one(overflow(origin)))?;
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(0);
+         let tokens = lexer::lex_with_limit(source, remaining_tokens).map_err(one)?;
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(1);
+         self.project.usage.non_eof_tokens =
+             add(self.project.usage.non_eof_tokens, tokens.len() - 1, origin).map_err(one)?;
+         let remaining_nodes = self
+@@ -735,6 +739,8 @@
+             .min(parser::MAX_NODES)
+             .checked_sub(self.project.usage.syntax_nodes)
+             .ok_or_else(|| one(overflow(origin)))?;
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(2);
+         let (program, nodes) = match self.arrays {
+             parser::ArraySyntaxPolicy::Closed => {
+                 parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?
+@@ -749,6 +755,8 @@
+                 self.arrays,
+             )?,
+         };
++        #[cfg(test)]
++        self.allocator.observer_loader_mark(3);
+         self.project.usage.syntax_nodes =
+             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
+         if program.uses_project_syntax() {
+diff --git a/src/frontend/project/budget.rs b/src/frontend/project/budget.rs
+--- a/src/frontend/project/budget.rs
++++ b/src/frontend/project/budget.rs
+@@ -11,6 +11,12 @@
+ #[derive(Debug, Default)]
+ pub(in crate::frontend) struct Allocator {
+     pub attempts: usize,
++    #[cfg(test)]
++    pub observer_trace_limit: Option<usize>,
++    #[cfg(test)]
++    pub observer_trace_overflow: bool,
++    #[cfg(test)]
++    pub observer_loader_phases: [usize; 4],
+     #[cfg(test)]
+     pub fail_at: Option<usize>,
+     /// Qualification instrumentation is not part of production storage.
+@@ -28,6 +34,24 @@
+ }
+ 
+ impl Allocator {
++    #[cfg(test)]
++    pub fn observer_loader_mark(&mut self, slot: usize) {
++        if self.observer_trace_limit.is_some() {
++            match self.observer_loader_phases[slot].checked_add(1) {
++                Some(n) => self.observer_loader_phases[slot] = n,
++                None => self.observer_trace_overflow = true,
++            }
++        }
++    }
++    #[cfg(test)]
++    pub fn observer_trace_bound(&mut self, rows: usize) -> Result<(), String> {
++        if rows > 200_000 || !self.trace.is_empty() { return Err("invalid trace bound".into()); }
++        rows.checked_mul(size_of::<ReserveEvent>()).ok_or("trace byte overflow")?;
++        self.trace.try_reserve_exact(rows).map_err(|_| "trace reserve failed")?;
++        self.observer_trace_limit = Some(rows);
++        Ok(())
++    }
++
+     fn request(&mut self, length: usize, element_bytes: usize) -> Result<bool, ReserveFailure> {
+         length
+             .checked_mul(element_bytes)
+@@ -43,6 +67,11 @@
+     }
+ 
+     fn record(&mut self, kind: &'static str, length: usize, element_bytes: usize, success: bool) {
++        #[cfg(test)]
++        if self.observer_trace_limit.is_some_and(|cap| self.trace.len() >= cap) {
++            self.observer_trace_overflow = true;
++            return;
++        }
+         #[cfg(test)]
+         self.trace.push(ReserveEvent {
+             kind,
+@@ -68,6 +97,24 @@
+         // The seam exercises a real fallible reserve error (capacity overflow),
+         // not a promise to recover a process-wide OOM.
+         let result = vector.try_reserve(if injected { usize::MAX } else { additional });
++        self.record(kind, length, size_of::<T>(), result.is_ok());
++        result.map_err(|_| ReserveFailure::Allocation)
++    }
++
++    /// Exact requested slots for a known bounded vector; the existing vector
++    /// reservation path intentionally retains its original growth behavior.
++    pub fn vector_exact<T>(
++        &mut self,
++        vector: &mut Vec<T>,
++        additional: usize,
++        kind: &'static str,
++    ) -> Result<(), ReserveFailure> {
++        let length = vector
++            .len()
++            .checked_add(additional)
++            .ok_or(ReserveFailure::Overflow)?;
++        let injected = self.request(length, size_of::<T>())?;
++        let result = vector.try_reserve_exact(if injected { usize::MAX } else { additional });
+         self.record(kind, length, size_of::<T>(), result.is_ok());
+         result.map_err(|_| ReserveFailure::Allocation)
+     }

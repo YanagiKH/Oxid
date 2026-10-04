@@ -1,0 +1,99 @@
+{
+  "status": "PROSPECTIVE_SOURCE_DERIVED_BEFORE_PROJECT_OBSERVATIONS",
+  "case": "reserve-across-modules",
+  "seam": "normal observer: SourceOwner::project.owned once -> private resolve_array_types -> typeck::check, one shared WorkMeter",
+  "base": "38922724d32d849f4f46114bde137e208602fdac",
+  "source_inputs": [
+    {
+      "path": "src/frontend/ast.rs",
+      "base": "38922724d32d849f4f46114bde137e208602fdac",
+      "sha256": "d791e53d294cfd4adfdbc7af30874c471c1b358ce164e8f9bd7ec340222ace41"
+    },
+    {
+      "path": "src/frontend/lexer.rs",
+      "base": "38922724d32d849f4f46114bde137e208602fdac",
+      "sha256": "6e75954085943e3b3018a51d91dcae1c2bf7bda1ebaff86efd10bfccde12de51"
+    },
+    {
+      "path": "src/frontend/declaration_index.rs",
+      "base": "38922724d32d849f4f46114bde137e208602fdac",
+      "sha256": "92e143b2cef61cdcc4679e6075872d616c6d44d0c2580e6e5693aa9c2e927a56"
+    },
+    {
+      "path": "src/frontend/declaration_index/sealed.rs",
+      "base": "38922724d32d849f4f46114bde137e208602fdac",
+      "sha256": "cc5cbd245f2a66122ebf8363b108423d53101d496096c6fcbf7eb41ae294c663"
+    },
+    {
+      "path": "src/frontend/declaration_index/source_owner.rs",
+      "base": "38922724d32d849f4f46114bde137e208602fdac",
+      "sha256": "e894146825b7c79d25cfbcbe92f371decad8ebcaee37dc45abbc8d3611730030"
+    },
+    {
+      "path": "src/frontend/declaration_index/resource.rs",
+      "base": "38922724d32d849f4f46114bde137e208602fdac",
+      "sha256": "5f9201347edfba22a57f0020c61ebcf8080fda0249fab0322b0dfb35c9139e9f"
+    }
+  ],
+  "files": [
+    {
+      "path": "main.ox",
+      "source_sha256": "d016693db55f98014ca6e560f096109fe63d86f63246dd704baf2216cba5f837",
+      "bytes": 61,
+      "tokens_with_eof": 40,
+      "selector_units": 14,
+      "ast_validation_fixed": 31,
+      "ast_validation": 111,
+      "collection_extra": 3
+    },
+    {
+      "path": "child.ox",
+      "source_sha256": "f2db8be747b580003dc2319c25542cfd03ad368b7393517f2296bd019e1f5650",
+      "bytes": 55,
+      "tokens_with_eof": 38,
+      "selector_units": 15,
+      "ast_validation_fixed": 31,
+      "ast_validation": 107,
+      "collection_extra": 2
+    }
+  ],
+  "index_post_admission_terms": {
+    "initialized_rows": 16,
+    "module_prefix": 2,
+    "module_ancestry": 2,
+    "module_parent_edge": 1,
+    "child_cursor_validation": 2,
+    "declaration_fill": 3,
+    "module_domain": 1,
+    "original_domain": 3,
+    "restriction_witness": 3,
+    "original_merge_sort_comparisons": 3,
+    "original_grouping": 3,
+    "adjacent_group_comparisons": 2,
+    "module_name_builtin_comparisons": 4,
+    "root_main_name_comparison": 5,
+    "conflict_replay": 3,
+    "freeze_validation": 3
+  },
+  "query_terms": {
+    "two_i32_result_queries": 14,
+    "two_local_binding_conflicts": 12
+  },
+  "added_terms": {
+    "resolve_nodes": 4,
+    "resolve_edges": 3,
+    "type_nodes": 4,
+    "type_edges": 3,
+    "accesses": 2,
+    "peel": 0
+  },
+  "selector": 29,
+  "index_preflight": 223,
+  "legacy_after_admission": 82,
+  "array_added": 16,
+  "mandatory_build_bound": 328,
+  "mandatory_limit": 580,
+  "expected_work_total": 350,
+  "without_selector_total": 321,
+  "candidate_outputs_consumed": 0
+}

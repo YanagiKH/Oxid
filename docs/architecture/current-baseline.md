@@ -181,3 +181,11 @@ profile and execution limits. The committed controller completed one local
 producer and independent debug/release recipe, full retention and relocated
 compact admission. Exact-head hosted CI remains a separate publication gate. No public array
 feature count or v1.0 milestone completion follows from this groundwork.
+
+Private source work now covers dormant parsing, structural queries, HIR
+resolution and array typing through test-only entries. The
+[frontend ledger](fixed-array-unit3a-validation.md) records the parser boundary;
+the [typing ledger](fixed-array-unit3b1-validation.md) records the 54-case
+source-only comparison, bounded guard/resource controls and independently
+verified public replay. These results do not yet qualify source-array lowering,
+ownership or execution. Production array gates remain closed.
