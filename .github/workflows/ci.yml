@@ -109,6 +109,9 @@ jobs:
             ${{ runner.temp }}/typed-project-unit2-results/*.jsonl.gz
             ${{ runner.temp }}/typed-project-unit2-results/*.stdout
             ${{ runner.temp }}/typed-project-unit2-results/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/*.stderr
             ${{ runner.temp }}/typed-project-unit2-results/unit2/*.json
             ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stdout
             ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stderr
@@ -489,6 +492,30 @@ jobs:
             --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
             --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
             --llvm-bin "$OXID_LLVM_BIN" --profile both
+      - name: Run and retain complete independent Unit2D replay (debug)
+        id: unit2e_independent_debug
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_owned_array_native.py independent \
+            --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
+            --output "$RUNNER_TEMP/fixed-array-unit2e/independent/debug" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --profile debug
+      - name: Run and retain complete independent Unit2D replay (release)
+        id: unit2e_independent_release
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_owned_array_native.py independent \
+            --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
+            --output "$RUNNER_TEMP/fixed-array-unit2e/independent/release" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --profile release
       - name: Verify held-out owned-source native execution
         run: |
           OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-debug" cargo test --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
@@ -504,19 +531,24 @@ jobs:
         run: python3 -m unittest -v test_owned_source_native_matcher test_owned_source_native_binding
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2
-      - name: Index and preserve Unit2E producer evidence on every terminal state
+      - name: Index and preserve combined Unit2E evidence on every terminal state
         if: always()
         timeout-minutes: 15
         shell: bash
         env:
           UNIT2E_PRODUCER_OUTCOME: ${{ steps.unit2e_producer.outcome }}
+          UNIT2E_INDEPENDENT_DEBUG_OUTCOME: ${{ steps.unit2e_independent_debug.outcome }}
+          UNIT2E_INDEPENDENT_RELEASE_OUTCOME: ${{ steps.unit2e_independent_release.outcome }}
         run: |
           python3 -B scripts/verify_owned_array_native.py package \
             --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
             --output "$RUNNER_TEMP/fixed-array-unit2e-upload" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --producer-step-outcome "$UNIT2E_PRODUCER_OUTCOME"
-      - name: Retain compact Unit2E producer evidence index
+            --producer-step-outcome "$UNIT2E_PRODUCER_OUTCOME" \
+            --independent-root "$RUNNER_TEMP/fixed-array-unit2e/independent" \
+            --independent-debug-outcome "$UNIT2E_INDEPENDENT_DEBUG_OUTCOME" \
+            --independent-release-outcome "$UNIT2E_INDEPENDENT_RELEASE_OUTCOME"
+      - name: Retain compact Unit2E evidence and original receipt bodies
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -527,7 +559,7 @@ jobs:
             ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-index.json
             ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-compact.tar.gz
             ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-compact.tar.gz.sha256
-      - name: Retain complete or explicitly incomplete Unit2E producer evidence
+      - name: Retain complete or explicitly incomplete combined Unit2E evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
