@@ -118,13 +118,29 @@ through explicit typed-preview check/run/compile. `[bool; N]`, `[i32; N]` and
 Named-base signed indexing is checked; indexed writes snapshot RHS before index,
 and length requires a readable owner. Empty literals require annotated
 zero-length locals. Existing linked-project and native host/resource restrictions
-remain. Nested arrays, slices, element references, heap collections and stable
+remain. Nested arrays, owned unsized values, element references, heap collections and stable
 ABI are excluded. The [public-route ledger](fixed-array-public-validation.md)
 records new CLI/source-free ELF cases without reclassifying historical staged
 results or asserting a complete milestone. Default/legacy behavior is unchanged.
 
+Call-only borrowed scalar slices extend that experimental production path under
+[RFC 0019](../../rfcs/0019-borrowed-scalar-slices.md). Shared `&[T]` and exclusive
+`&mut [T]` parameters view complete existing bool/i32/unit fixed arrays of
+length 0..1024. Named-base indexing, mutation and `len()` preserve signed bounds,
+RHS-before-index evaluation and whole-owner loan conflicts. Length erasure is
+one-way at explicit borrow arguments; forwarding uses `&*p` or `&mut *p`.
+The [three-module sample](../../fixtures/typed-slice-samples/README.md) returns 515
+using lengths 2, 3 and 0. Ranges, subslices, stored/returned references and owned
+unsized values remain excluded. Source/resource caps and Linux module-loading /
+Linux x86_64 LLVM/Clang/LLD 19.1.7 at O0 native gates are unchanged.
+[`tests/typed_slices.rs`](../../tests/typed_slices.rs) defines public acceptance
+controls, including a separately invoked native gate; registration is not proof
+of execution or green exact-head hosted CI. Existing source-bound ledgers retain
+their original identities until separate successor evidence is recorded. No
+stability, self-hosting or completed-milestone claim follows.
+
 The experimental [typed formatter](../../spec/typed-preview.md#single-file-formatting)
-is a separate syntax-only operation, including fixed-array syntax. It preserves
+is a separate syntax-only operation, including fixed-array and borrowed-slice syntax. It preserves
 token/comment spelling and
 interior line breaks while normalizing spaces and indentation. Explicit `fmt`
 writes complete source to stdout; `--check` distinguishes drift from errors.

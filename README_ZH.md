@@ -104,6 +104,8 @@ Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器
 
 實驗性的[固定長度純量陣列擴充](spec/typed-preview.md#fixed-scalar-arrays)為明確指定 typed-preview 的 `check`、`run` 與 `compile` 加入只能移動的 bool/i32/unit 陣列、邊界檢查索引、`len()`，以及呼叫期間的整體陣列借用。[三模組範例](fixtures/typed-array-samples/README.md)回傳 5325。語法、平台與更嚴格的原生限制見規格；預設與 legacy 陣列行為不變。
 
+實驗性的[僅限呼叫期間借用的純量切片](spec/typed-preview.md#call-only-borrowed-scalar-slices)讓接受共享 `&[T]` 或獨佔 `&mut [T]` 的輔助函式，透過顯式借用與再借用處理不同長度的完整 bool/i32/unit 固定長度陣列。[三模組切片範例](fixtures/typed-slice-samples/README.md)使用長度 2、3、0，回傳 515。此功能僅限明確指定 typed-preview 的 `check`、`run` 與原生 `compile`，沿用既有的 Linux 模組載入限制，以及 Linux x86_64、LLVM/Clang/LLD 19.1.7、O0 原生限制。範圍語法、子切片及擁有所有權的不定長度值仍未提供；這不代表穩定性或里程碑已完成。
+
 實驗性的[型別格式化工具](spec/typed-preview.md#single-file-formatting)支援固定長度陣列語法及 `oxid fmt --edition typed-preview input.ox`（將完整格式化原始碼寫至標準輸出）及 `--check`（需要格式化時回傳結束碼 1）。它會保留註解和既有換行，調整空白與縮排，不載入模組或寫入檔案。預設的舊版格式化行為不變。
 
 只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。

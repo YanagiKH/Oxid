@@ -129,10 +129,13 @@ fields. Base v3 identity metadata remains historical base metadata; an old v3
 receipt is rejected for an effective-contract tuple. Original on-disk authorities
 and failed first-run evidence remain byte-identical.
 
-The checked-division source checkpoint is `2c46521caa902b2afb88ef6b7bae58b9a1382776`.
+The borrowed-slice source checkpoint is `03aead9755b1dd6aaec2b4b165ee3881a7a1f7b7`.
 Current source/observer input identities include exact compile-time array fixture
-dependencies. The existing lifecycle patch also applies exactly to the division
+dependencies. The existing lifecycle patch also applies exactly to the borrowed-slice
 source. Its successor changes only array-policy context and
 reverses to the unchanged historical patch. Frozen cases, expected observations
 and selected runtime content stay unchanged. Preparation binds files but does not
 establish execution results.
+
+The current ordinary and lifecycle maps contain 188 and 189 inputs respectively.
+The added slice test modules introduce no new bin-test include dependencies.

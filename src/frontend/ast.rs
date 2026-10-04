@@ -126,6 +126,10 @@ pub enum TypeSyntaxKind {
         referent: ItemPath,
     },
     Array(FixedArraySyntax),
+    SliceReference {
+        mutable: bool,
+        element: ScalarTypeSyntax,
+    },
     ArrayReference {
         mutable: bool,
         array: FixedArraySyntax,
@@ -349,7 +353,7 @@ impl Program {
         let type_valid = |ty: TypeSyntax, valid: &mut dyn FnMut(Span) -> bool| {
             valid(ty.span)
                 && match ty.kind {
-                    TypeSyntaxKind::Unit => true,
+                    TypeSyntaxKind::Unit | TypeSyntaxKind::SliceReference { .. } => true,
                     TypeSyntaxKind::Array(array) | TypeSyntaxKind::ArrayReference { array, .. } => {
                         usize::from(array.length) <= super::parser::MAX_ARRAY_ELEMENTS
                     }
@@ -475,7 +479,9 @@ impl Program {
                     || !type_valid(field.ty, &mut valid)
                     || matches!(
                         field.ty.kind,
-                        TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. }
+                        TypeSyntaxKind::Array(_)
+                            | TypeSyntaxKind::ArrayReference { .. }
+                            | TypeSyntaxKind::SliceReference { .. }
                     )
                     || field.public.is_some_and(|span| !valid(span))
                 {
@@ -670,7 +676,9 @@ impl Program {
         let owned_type = |ty: &TypeSyntax| match ty.kind {
             TypeSyntaxKind::Unit => false,
             TypeSyntaxKind::Reference { .. } => true,
-            TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. } => true,
+            TypeSyntaxKind::Array(_)
+            | TypeSyntaxKind::ArrayReference { .. }
+            | TypeSyntaxKind::SliceReference { .. } => true,
             TypeSyntaxKind::Name(ItemPath::Unqualified(name)) => {
                 !matches!(source.text_at(name), "bool" | "i32")
             }

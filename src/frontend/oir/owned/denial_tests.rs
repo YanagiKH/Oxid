@@ -143,7 +143,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
         argument: 0,
         authority: AccessBase::Owner(source),
         kind,
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span: at(s, 7),
     });
     f.blocks[0].statements.extend([
@@ -175,7 +175,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     callee.references.push(ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind,
         position: 0,
         span: at(s, 30),
@@ -274,7 +274,7 @@ fn shared_reference_write_denial_preserves_granted_mode_without_invented_state()
     f.parameters
         .push(ParameterBinding::Reference(ReferenceParamId(0)));
     f.references.push(ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: at(s, 1),
@@ -303,7 +303,8 @@ fn shared_reference_write_denial_preserves_granted_mode_without_invented_state()
         facts.subject,
         DeniedSubject::Reference {
             id: ReferenceParamId(0),
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             granted: BorrowKind::Shared,
             declaration: at(s, 1)
         }
@@ -316,7 +317,7 @@ fn exclusive_reborrow_permission_retains_requested_and_granted_modes() {
     let mut p = borrowed(s, BorrowKind::Exclusive);
     let f = &mut p.functions[0];
     f.references.push(ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: at(s, 1),
@@ -654,7 +655,7 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
         let f = &mut p.functions[0];
         let authority = if through_reference {
             f.references.push(ReferenceDecl {
-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
                     .unwrap(),
                 kind: BorrowKind::Exclusive,
                 position: 0,
@@ -673,7 +674,8 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
             argument: 1,
             authority,
             kind: BorrowKind::Exclusive,
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             span: at(s, 8),
         });
         f.blocks[0].statements.push(ins(
@@ -689,7 +691,8 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(1)));
         callee.references.push(ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             kind: BorrowKind::Exclusive,
             position: 1,
             span: at(s, 31),

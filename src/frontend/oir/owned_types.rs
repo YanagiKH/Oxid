@@ -65,6 +65,66 @@ pub(in crate::frontend) enum AggregateTy {
     FixedArray(FixedArrayTy),
 }
 
+/// A call-only borrowed view. Unsized slices are never owned value types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) enum BorrowedTy {
+    Exact(AggregateTy),
+    ScalarSlice(hir::Ty),
+}
+impl BorrowedTy {
+    pub(in crate::frontend) fn accepts(self, authority: Self) -> bool {
+        match (authority, self) {
+            (Self::Exact(actual), Self::Exact(expected)) => actual == expected,
+            (Self::Exact(AggregateTy::FixedArray(array)), Self::ScalarSlice(element)) => {
+                array.element() == element
+            }
+            (Self::ScalarSlice(actual), Self::ScalarSlice(expected)) => actual == expected,
+            _ => false,
+        }
+    }
+    pub(in crate::frontend) fn element(self) -> Option<hir::Ty> {
+        match self {
+            Self::Exact(AggregateTy::FixedArray(array)) => Some(array.element()),
+            Self::ScalarSlice(element) => Some(element),
+            Self::Exact(AggregateTy::Record(_)) => None,
+        }
+    }
+}
+/// Compact retained borrowed identity; it cannot be used as an owner descriptor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) struct BorrowedSlot(BorrowedSlotRepr);
+#[repr(C, align(8))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BorrowedSlotRepr {
+    Record(u32),
+    FixedArray(FixedArrayTy),
+    ScalarSlice(hir::Ty),
+}
+impl BorrowedSlot {
+    pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
+        Ok(Self(match ty {
+            BorrowedTy::Exact(AggregateTy::Record(id)) => BorrowedSlotRepr::Record(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            BorrowedTy::Exact(AggregateTy::FixedArray(array)) => {
+                BorrowedSlotRepr::FixedArray(array)
+            }
+            BorrowedTy::ScalarSlice(element) => BorrowedSlotRepr::ScalarSlice(element),
+        }))
+    }
+    pub(in crate::frontend) fn referent(self) -> BorrowedTy {
+        match self.0 {
+            BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
+                usize::try_from(id).expect("qualified ordinal width"),
+            ))),
+            BorrowedSlotRepr::FixedArray(array) => {
+                BorrowedTy::Exact(AggregateTy::FixedArray(array))
+            }
+            BorrowedSlotRepr::ScalarSlice(element) => BorrowedTy::ScalarSlice(element),
+        }
+    }
+}
+
 /// Compact retained identity, never an ownership or declaration witness.
 /// The independent tag cannot reinterpret malformed nominal IDs as arrays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,7 +190,7 @@ pub(in crate::frontend) enum BorrowKind {
 pub(in crate::frontend) enum ParameterTy {
     Value(ValueTy),
     Reference {
-        aggregate: AggregateTy,
+        referent: BorrowedTy,
         kind: BorrowKind,
     },
 }
@@ -432,6 +492,38 @@ impl Declarations {
             Err(DeclarationError::TypeMismatch)
         }
     }
+    pub(super) fn check_borrowed_type(&self, ty: BorrowedTy) -> Result<(), DeclarationError> {
+        match ty {
+            BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
+            BorrowedTy::ScalarSlice(_) => Ok(()),
+        }
+    }
+    pub(super) fn same_borrowed_type(
+        &self,
+        actual: BorrowedTy,
+        expected: BorrowedTy,
+    ) -> Result<(), DeclarationError> {
+        self.check_borrowed_type(actual)?;
+        self.check_borrowed_type(expected)?;
+        if actual == expected {
+            Ok(())
+        } else {
+            Err(DeclarationError::TypeMismatch)
+        }
+    }
+    pub(super) fn check_borrowed_view(
+        &self,
+        authority: BorrowedTy,
+        target: BorrowedTy,
+    ) -> Result<(), DeclarationError> {
+        self.check_borrowed_type(authority)?;
+        self.check_borrowed_type(target)?;
+        if target.accepts(authority) {
+            Ok(())
+        } else {
+            Err(DeclarationError::TypeMismatch)
+        }
+    }
     pub(super) fn check_value_type(&self, ty: ValueTy) -> Result<(), DeclarationError> {
         match ty {
             ValueTy::Scalar(_) => Ok(()),
@@ -441,7 +533,7 @@ impl Declarations {
     pub(super) fn check_parameter_type(&self, ty: ParameterTy) -> Result<(), DeclarationError> {
         match ty {
             ParameterTy::Value(value) => self.check_value_type(value),
-            ParameterTy::Reference { aggregate, .. } => self.check_aggregate_type(aggregate),
+            ParameterTy::Reference { referent, .. } => self.check_borrowed_type(referent),
         }
     }
     pub(super) fn same_value_type(
@@ -822,11 +914,11 @@ mod tests {
             ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0)))),
             ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))),
             ParameterTy::Reference {
-                aggregate: AggregateTy::Record(RecordId(0)),
+                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                 kind: BorrowKind::Shared,
             },
             ParameterTy::Reference {
-                aggregate: AggregateTy::Record(RecordId(0)),
+                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                 kind: BorrowKind::Exclusive,
             },
         ] {
@@ -926,14 +1018,14 @@ mod tests {
         for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
             assert_eq!(
                 table.check_parameter_type(ParameterTy::Reference {
-                    aggregate: AggregateTy::Record(RecordId(0)),
+                    referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                     kind
                 }),
                 Ok(())
             );
             assert_eq!(
                 table.check_parameter_type(ParameterTy::Reference {
-                    aggregate: AggregateTy::Record(RecordId(1)),
+                    referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(1))),
                     kind
                 }),
                 Err(DeclarationError::InvalidRecordId(RecordId(1)))
@@ -961,11 +1053,11 @@ mod tests {
         }
         assert_ne!(
             ParameterTy::Reference {
-                aggregate: AggregateTy::Record(RecordId(0)),
+                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                 kind: BorrowKind::Shared
             },
             ParameterTy::Reference {
-                aggregate: AggregateTy::Record(RecordId(0)),
+                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                 kind: BorrowKind::Exclusive
             }
         );

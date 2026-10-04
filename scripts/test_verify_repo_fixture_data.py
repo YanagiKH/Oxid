@@ -21,6 +21,13 @@ SAMPLE_MEMBERS = (
     "fixtures/typed-array-samples/stats.ox",
     "fixtures/typed-array-samples/samples.ox",
 )
+SLICE_SAMPLE_MEMBERS = (
+    "fixtures/typed-slice-samples/main.ox",
+    "fixtures/typed-slice-samples/buffers.ox",
+    "fixtures/typed-slice-samples/stats.ox",
+)
+SAMPLE_PROJECTS = (SAMPLE_MEMBERS, SLICE_SAMPLE_MEMBERS)
+ALL_SAMPLE_MEMBERS = SAMPLE_MEMBERS + SLICE_SAMPLE_MEMBERS
 
 
 def discover(root):
@@ -54,19 +61,21 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
-        self.assertEqual((len(language), len(checks), len(run_inventory), typed_members), (128, 124, 70, 7))
-        # The three public sample members add exactly one typed root check/run.
+        self.assertEqual((len(language), len(checks), len(run_inventory), typed_members), (131, 125, 71, 10))
+        # Each three-member public sample adds exactly one typed root check/run.
         # Children remain language sources, never frozen data or standalone runs.
-        self.assertEqual([name for name in language if name in SAMPLE_MEMBERS], sorted(SAMPLE_MEMBERS))
-        self.assertTrue(all(root / name not in data_sources for name in SAMPLE_MEMBERS))
-        self.assertEqual([row for row in check_inventory if row[0] in SAMPLE_MEMBERS], [(SAMPLE_MEMBERS[0], True)])
-        self.assertEqual([row for row in run_inventory if row[0] in SAMPLE_MEMBERS], [(SAMPLE_MEMBERS[0], True)])
+        for members in SAMPLE_PROJECTS:
+            with self.subTest(sample=members[0]):
+                self.assertEqual([name for name in language if name in members], sorted(members))
+                self.assertTrue(all(root / name not in data_sources for name in members))
+                self.assertEqual([row for row in check_inventory if row[0] in members], [(members[0], True)])
+                self.assertEqual([row for row in run_inventory if row[0] in members], [(members[0], True)])
         # Preserve fingerprints captured at the exact predecessor of the
         # published 7b362af fixture-only commit. Subtract only the explicit
-        # sample delta, not a directory or a discovered path class.
-        predecessor_language = [name for name in language if name not in SAMPLE_MEMBERS]
-        predecessor_checks = [row for row in check_inventory if row[0] not in SAMPLE_MEMBERS]
-        predecessor_runs = [row for row in run_inventory if row[0] not in SAMPLE_MEMBERS]
+        # array and slice sample deltas, not a directory or a discovered path class.
+        predecessor_language = [name for name in language if name not in ALL_SAMPLE_MEMBERS]
+        predecessor_checks = [row for row in check_inventory if row[0] not in ALL_SAMPLE_MEMBERS]
+        predecessor_runs = [row for row in run_inventory if row[0] not in ALL_SAMPLE_MEMBERS]
         self.assertEqual(fingerprint(predecessor_language), "7bba06dbfb7fa7cbe33ed94eb0201224cb3633f0048d621de30a7630adcce1b4")
         self.assertEqual(fingerprint(predecessor_checks), "38a388157d6bef824ab927a6f06021349e4a6e4a87ada8edd6ffea61873493ed")
         self.assertEqual(fingerprint(predecessor_runs), "ff2cfd1a71b69c54062c03ea03928945ef3a00eb83c513fd96b05360897afe9e")
@@ -79,20 +88,23 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
-        self.assertEqual(len(run.call_args_list), 197)  # 124 checks, 70 runs, test/build/doctor.
+        self.assertEqual(len(run.call_args_list), 199)  # 125 checks, 71 runs, test/build/doctor.
         commands = [call.args[0] for call in run.call_args_list]
-        sample_root = str(verify_repo.ROOT / SAMPLE_MEMBERS[0])
-        sample_commands = [command for command in commands if sample_root in command]
-        self.assertEqual(len(sample_commands), 2)
-        self.assertEqual({command[1] for command in sample_commands}, {"check", "run"})
-        self.assertTrue(all("--edition=typed-preview" in command for command in sample_commands))
-        for child in SAMPLE_MEMBERS[1:]:
-            self.assertFalse(any(str(verify_repo.ROOT / child) in command for command in commands))
+        self.assertEqual(sum("--edition=typed-preview" in command for command in commands), 8)
+        for members in SAMPLE_PROJECTS:
+            with self.subTest(sample=members[0]):
+                sample_root = str(verify_repo.ROOT / members[0])
+                sample_commands = [command for command in commands if sample_root in command]
+                self.assertEqual(len(sample_commands), 2)
+                self.assertEqual({command[1] for command in sample_commands}, {"check", "run"})
+                self.assertTrue(all("--edition=typed-preview" in command for command in sample_commands))
+                for child in members[1:]:
+                    self.assertFalse(any(str(verify_repo.ROOT / child) in command for command in commands))
         self.assertFalse(any("fixed_array_source_unit3" in arg
                              for call in run.call_args_list for arg in call.args[0]))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn("128 language sources, 124 checks, 70 runnable programs", output.getvalue())
+        self.assertIn("131 language sources, 125 checks, 71 runnable programs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
     def test_git_autocrlf_preserves_frozen_bytes_and_converts_other_text(self):
@@ -144,13 +156,14 @@ class FixtureAdmissionTests(unittest.TestCase):
         return path
 
     def assert_samples_use_root(self, checks, entries):
-        sample_root = self.root / SAMPLE_MEMBERS[0]
-        self.assertIn((sample_root, True), checks)
-        self.assertIn(sample_root, entries)
         checked = [path for path, _ in checks]
-        for child in SAMPLE_MEMBERS[1:]:
-            self.assertNotIn(self.root / child, checked)
-            self.assertNotIn(self.root / child, entries)
+        for members in SAMPLE_PROJECTS:
+            sample_root = self.root / members[0]
+            self.assertIn((sample_root, True), checks)
+            self.assertIn(sample_root, entries)
+            for child in members[1:]:
+                self.assertNotIn(self.root / child, checked)
+                self.assertNotIn(self.root / child, entries)
 
     def repinned(self, raw):
         # Exercise malformed registration handling beyond the production digest
@@ -221,7 +234,7 @@ class FixtureAdmissionTests(unittest.TestCase):
     def test_unlisted_typing_source_remains_a_language_check(self):
         extra = self.write(DATA / "typing-contracts-v1/fixtures/unlisted.ox", b"invalid candidate\n")
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (4, 3, 7))
+        self.assertEqual((len(checks), len(entries), count), (5, 4, 10))
         self.assert_samples_use_root(checks, entries)
         self.assertIn((extra, False), checks)
 
@@ -244,7 +257,7 @@ class FixtureAdmissionTests(unittest.TestCase):
     def test_unlisted_lowering_source_remains_a_language_check(self):
         extra = self.write(DATA / "lowering-contracts-v1/unlisted.ox", b"invalid candidate\n")
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (4, 3, 7))
+        self.assertEqual((len(checks), len(entries), count), (5, 4, 10))
         self.assert_samples_use_root(checks, entries)
         self.assertIn((extra, False), checks)
 
@@ -256,7 +269,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         extras = [self.write(DATA / "contracts-v2/fixtures/unlisted.ox", b"invalid candidate\n"),
                   self.write("fixtures/unrelated.ox", b"unrelated\n")]
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (5, 3, 7))
+        self.assertEqual((len(checks), len(entries), count), (6, 4, 10))
         self.assert_samples_use_root(checks, entries)
         for source in extras:
             self.assertIn((source, False), checks)

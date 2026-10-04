@@ -935,7 +935,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span: s(2),
     }];
     main.blocks = vec![
@@ -983,7 +983,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     recursive.locals = vec![scalar(hir::Ty::Unit, s(5))];
     recursive.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     recursive.references = vec![ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind: BorrowKind::Shared,
         position: 0,
         span: s(5),
@@ -1000,7 +1000,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         argument: 0,
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: BorrowKind::Shared,
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span: s(7),
     }];
     recursive.blocks = vec![

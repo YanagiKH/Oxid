@@ -378,7 +378,7 @@ fn resolve_index(
                     match *ty {
                         ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
                         | ParameterTy::Reference {
-                            aggregate: AggregateTy::Record(r),
+                            referent: BorrowedTy::Exact(AggregateTy::Record(r)),
                             ..
                         } => Some(r),
                         _ => None,

@@ -13,7 +13,7 @@ use super::{
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
     oir::owned_types::{
-        AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+        AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
     },
     owned_diagnostic,
     project::{
@@ -651,22 +651,22 @@ impl<'i, 's> QuerySession<'i, 's> {
                 .array_type(requester, array, ty.span)
                 .map(|array| ValueTy::Owned(AggregateTy::FixedArray(array))),
             ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
-            ast::TypeSyntaxKind::Reference { .. } | ast::TypeSyntaxKind::ArrayReference { .. } => {
-                Err(diagnostic(
-                    if matches!(context, TypeContext::Scalar) {
-                        "E0500"
-                    } else {
-                        "E0202"
-                    },
-                    "resolve",
-                    if matches!(context, TypeContext::Scalar) {
-                        "owned syntax entered scalar resolution"
-                    } else {
-                        "reference types are restricted to parameters"
-                    },
-                    ty.span,
-                ))
-            }
+            ast::TypeSyntaxKind::Reference { .. }
+            | ast::TypeSyntaxKind::ArrayReference { .. }
+            | ast::TypeSyntaxKind::SliceReference { .. } => Err(diagnostic(
+                if matches!(context, TypeContext::Scalar) {
+                    "E0500"
+                } else {
+                    "E0202"
+                },
+                "resolve",
+                if matches!(context, TypeContext::Scalar) {
+                    "owned syntax entered scalar resolution"
+                } else {
+                    "reference types are restricted to parameters"
+                },
+                ty.span,
+            )),
             ast::TypeSyntaxKind::Name(path) => {
                 self.tables.sources.path_span(ItemPathRef {
                     file: ty.span.file,
@@ -716,7 +716,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         requester: ModuleId,
         ty: ast::TypeSyntax,
     ) -> Result<ParameterTy, Box<Diagnostic>> {
-        let (mutable, aggregate) = match ty.kind {
+        let (mutable, referent) = match ty.kind {
             ast::TypeSyntaxKind::Reference { mutable, referent } => {
                 let record = self.record_type(
                     requester,
@@ -726,12 +726,25 @@ impl<'i, 's> QuerySession<'i, 's> {
                     },
                     TypeContext::Reference,
                 )?;
-                (mutable, AggregateTy::Record(record))
+                (mutable, BorrowedTy::Exact(AggregateTy::Record(record)))
             }
             ast::TypeSyntaxKind::ArrayReference { mutable, array } => (
                 mutable,
-                AggregateTy::FixedArray(self.array_type(requester, array, ty.span)?),
+                BorrowedTy::Exact(AggregateTy::FixedArray(
+                    self.array_type(requester, array, ty.span)?,
+                )),
             ),
+            ast::TypeSyntaxKind::SliceReference { mutable, element } => {
+                self.work.debit(1, ty.span, "query slice type")?;
+                self.requester(requester, ty.span)?;
+                self.tables.sources.text(ty.span)?;
+                let element = match element {
+                    ast::ScalarTypeSyntax::Bool => Ty::Bool,
+                    ast::ScalarTypeSyntax::I32 => Ty::I32,
+                    ast::ScalarTypeSyntax::Unit => Ty::Unit,
+                };
+                (mutable, BorrowedTy::ScalarSlice(element))
+            }
             _ => {
                 return self
                     .value_type(requester, ty, TypeContext::Value)
@@ -739,7 +752,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             }
         };
         Ok(ParameterTy::Reference {
-            aggregate,
+            referent,
             kind: if mutable {
                 BorrowKind::Exclusive
             } else {

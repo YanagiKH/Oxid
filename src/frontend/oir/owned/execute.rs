@@ -503,18 +503,18 @@ impl<'p, 'w> Machine<'p, 'w> {
         let key = self.base(frame, base, access, span)?;
         let f = self.function(self.frames[frame].function);
         let expected = match base {
-            AccessBase::Owner(owner) => f.owners[owner.0].aggregate(),
+            AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
             AccessBase::Parameter(reference) => f
                 .references
                 .get(reference.0)
                 .ok_or_else(|| bad("reference declaration", span))?
-                .aggregate(),
+                .referent(),
         };
         let actual = self.aggregate(key, span)?;
         self.plan
             .witness()
             .declarations()
-            .same_aggregate_type(actual, expected)
+            .check_borrowed_view(BorrowedTy::Exact(actual), expected)
             .map_err(|_| bad("array base type", span))?;
         Ok((key, self.array_type(key, span)?))
     }
@@ -735,6 +735,14 @@ impl<'p, 'w> Machine<'p, 'w> {
             Access::Borrow(descriptor.kind),
             span,
         )?;
+        self.plan
+            .witness()
+            .declarations()
+            .check_borrowed_view(
+                BorrowedTy::Exact(self.aggregate(root, span)?),
+                descriptor.referent(),
+            )
+            .map_err(|_| bad("loan borrowed view", span))?;
         let parent = match descriptor.authority {
             AccessBase::Owner(_) => LoanKey::default(),
             AccessBase::Parameter(p) => self.frames[frame].references[p.0].permission,
@@ -1227,9 +1235,11 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .plan
                         .witness()
                         .declarations()
-                        .same_aggregate_type(
-                            root_function.owners[handle.root.owner as usize].aggregate(),
-                            declared.aggregate(),
+                        .check_borrowed_view(
+                            BorrowedTy::Exact(
+                                root_function.owners[handle.root.owner as usize].aggregate(),
+                            ),
+                            declared.referent(),
                         )
                         .is_err()
                         || self.loan_kind(handle.permission, span)? != declared.kind

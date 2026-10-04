@@ -287,7 +287,7 @@ fn retained_slot_roundtrips_without_validating_or_conflating_identities() {
             for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
                 assert_eq!(
                     declarations.check_parameter_type(ParameterTy::Reference {
-                        aggregate: ty,
+                        referent: BorrowedTy::Exact(ty),
                         kind
                     }),
                     Ok(())
@@ -314,10 +314,49 @@ fn retained_slot_rejects_unrepresentable_full_ids_before_raw_construction() {
         );
         assert_eq!(
             table().check_parameter_type(ParameterTy::Reference {
-                aggregate: AggregateTy::Record(id),
+                referent: BorrowedTy::Exact(AggregateTy::Record(id)),
                 kind: BorrowKind::Shared,
             }),
             Err(DeclarationError::InvalidRecordId(id))
         );
     }
+}
+
+#[test]
+fn borrowed_slice_identity_is_directional_and_never_an_owned_type() {
+    let declarations = table();
+    for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
+        let slice = BorrowedTy::ScalarSlice(element);
+        assert_eq!(BorrowedSlot::check(slice).unwrap().referent(), slice);
+        for length in [0, 1, 2, 3, 1024] {
+            let exact = BorrowedTy::Exact(array(element, length));
+            assert_eq!(declarations.check_borrowed_view(exact, slice), Ok(()));
+            assert_eq!(declarations.check_borrowed_view(slice, slice), Ok(()));
+            assert_eq!(
+                declarations.check_borrowed_view(slice, exact),
+                Err(DeclarationError::TypeMismatch)
+            );
+            for wrong in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
+                if wrong != element {
+                    assert_eq!(
+                        declarations.check_borrowed_view(exact, BorrowedTy::ScalarSlice(wrong)),
+                        Err(DeclarationError::TypeMismatch)
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            declarations
+                .check_borrowed_view(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))), slice),
+            Err(DeclarationError::TypeMismatch)
+        );
+    }
+    let malformed = BorrowedTy::Exact(AggregateTy::Record(RecordId(usize::MAX)));
+    assert!(declarations
+        .same_borrowed_type(malformed, malformed)
+        .is_err());
+    assert!(declarations
+        .check_borrowed_view(malformed, malformed)
+        .is_err());
+    assert!(BorrowedSlot::check(malformed).is_err());
 }

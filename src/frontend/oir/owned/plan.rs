@@ -366,6 +366,19 @@ fn usage(
         )?,
         align(u.payload_bytes, 4)?,
     )?;
+    // Slice descriptors add native-only i32 length slots. The reference consumer
+    // derives length from validated whole-owner provenance and stores no sidecar.
+    let slice_references = f
+        .references
+        .iter()
+        .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
+        .count();
+    let slice_loans = f
+        .loans
+        .iter()
+        .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
+        .count();
+    u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
     Ok(u)
 }
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {

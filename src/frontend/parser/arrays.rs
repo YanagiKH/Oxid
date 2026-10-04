@@ -62,6 +62,25 @@ impl Parser<'_> {
     }
 
     pub(super) fn array_type(&mut self) -> Result<(FixedArraySyntax, usize), Box<Diagnostic>> {
+        let element = self.array_element_type()?;
+        self.fixed_array_type_tail(element)
+    }
+
+    pub(super) fn array_parameter_type(
+        &mut self,
+        mutable: bool,
+    ) -> Result<(TypeSyntaxKind, usize), Box<Diagnostic>> {
+        let element = self.array_element_type()?;
+        if self.array_punctuation("]") {
+            let end = self.bump().span.end;
+            Ok((TypeSyntaxKind::SliceReference { mutable, element }, end))
+        } else {
+            let (array, end) = self.fixed_array_type_tail(element)?;
+            Ok((TypeSyntaxKind::ArrayReference { mutable, array }, end))
+        }
+    }
+
+    fn array_element_type(&mut self) -> Result<ScalarTypeSyntax, Box<Diagnostic>> {
         self.bump(); // The caller checked the opening bracket.
         let token = self.peek();
         let element = match token.kind {
@@ -80,6 +99,13 @@ impl Parser<'_> {
             }
             _ => return Err(self.array_unsupported(token.span)),
         };
+        Ok(element)
+    }
+
+    fn fixed_array_type_tail(
+        &mut self,
+        element: ScalarTypeSyntax,
+    ) -> Result<(FixedArraySyntax, usize), Box<Diagnostic>> {
         if self.take(Kind::Semi).is_none() {
             return Err(self.array_missing("array type requires `;` after its element type"));
         }

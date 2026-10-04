@@ -144,7 +144,8 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(i)));
         callee.references.push(ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             kind: *kind,
             position: i,
             span: s,
@@ -172,7 +173,8 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
             argument: i,
             authority: AccessBase::Owner(OwnerPlaceId(*owner)),
             kind: *kind,
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             span: t,
         });
         f.blocks[0].statements.push(ins(
@@ -706,8 +708,10 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
                 leaf.parameters
                     .push(ParameterBinding::Reference(ReferenceParamId(0)));
                 leaf.references.push(ReferenceDecl {
-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
-                        .unwrap(),
+                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
+                        RecordId(0),
+                    )))
+                    .unwrap(),
                     kind: child,
                     position: 0,
                     span: s,
@@ -728,8 +732,10 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
                     argument: 0,
                     authority: AccessBase::Parameter(ReferenceParamId(0)),
                     kind: child,
-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
-                        .unwrap(),
+                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
+                        RecordId(0),
+                    )))
+                    .unwrap(),
                     span: s,
                 });
                 f.blocks[0].statements.extend([
@@ -787,7 +793,8 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
         leaf.parameters
             .push(ParameterBinding::Reference(ReferenceParamId(i)));
         leaf.references.push(ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             kind: BorrowKind::Shared,
             position: i,
             span: s,
@@ -815,7 +822,8 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
             argument: i,
             authority: AccessBase::Parameter(ReferenceParamId(i)),
             kind: BorrowKind::Shared,
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             span: s,
         });
         f.blocks[0].statements.push(ins(

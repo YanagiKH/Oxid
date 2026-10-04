@@ -2357,3 +2357,6 @@ mod array_resources;
 
 #[path = "array_native_tests.rs"]
 mod arrays;
+
+#[path = "slice_native_tests.rs"]
+mod slices;

@@ -93,7 +93,9 @@ fn unit3a_structural_queries_are_checked_without_execution() {
     use crate::frontend::{
         declaration_index::TypeContext,
         hir::Ty,
-        oir::owned_types::{AggregateTy, BorrowKind, FixedArrayTy, ParameterTy, ValueTy},
+        oir::owned_types::{
+            AggregateTy, BorrowKind, BorrowedTy, FixedArrayTy, ParameterTy, ValueTy,
+        },
     };
     let map = source("fn f(a:[bool;0],b:[i32;0],c:[();0],d:&[i32;0])->[i32;0000]{}");
     let file = map.get(SourceFileId(0));
@@ -125,7 +127,9 @@ fn unit3a_structural_queries_are_checked_without_execution() {
     assert_eq!(
         query.parameter_type(ModuleId(0), param).unwrap(),
         ParameterTy::Reference {
-            aggregate: AggregateTy::FixedArray(FixedArrayTy::check(Ty::I32, 0).unwrap()),
+            referent: BorrowedTy::Exact(AggregateTy::FixedArray(
+                FixedArrayTy::check(Ty::I32, 0).unwrap()
+            )),
             kind: BorrowKind::Shared,
         }
     );

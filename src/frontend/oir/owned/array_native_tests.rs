@@ -1147,7 +1147,7 @@ impl Effects {
             argument: 0,
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
-            aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
             span: s(8),
         });
         caller.blocks.push(block(
@@ -1221,7 +1221,7 @@ impl Effects {
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(0)));
         helper.references.push(ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
             kind: BorrowKind::Exclusive,
             position: 0,
             span: s(29),

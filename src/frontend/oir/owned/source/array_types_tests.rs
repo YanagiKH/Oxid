@@ -733,7 +733,7 @@ fn unit3b1_reference_access_retains_modes_without_ownership_qualification() {
         assert_eq!(
             view.binding_ty(BindingId(0)),
             ParameterTy::Reference {
-                aggregate: array,
+                referent: BorrowedTy::Exact(array),
                 kind
             }
         );

@@ -839,7 +839,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
             argument: 0,
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
-            aggregate: slot,
+            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
             span: s(base, 11 + 10 * j),
         });
     }
@@ -930,7 +930,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
         g.locals = (0..4).map(|_| local(hir::Ty::I32, base)).collect();
         g.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
         g.references = vec![ReferenceDecl {
-            aggregate: slot,
+            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
             kind: BorrowKind::Exclusive,
             position: 0,
             span: base,
@@ -1112,10 +1112,10 @@ fn adapt_one_i32_record(
             o.aggregate = slot;
         }
         for r in &mut f.references {
-            r.aggregate = slot;
+            r.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
         }
         for l in &mut f.loans {
-            l.aggregate = slot;
+            l.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
         }
         for b in &mut f.blocks {
             if let Some(OwnedTerminator {
@@ -1289,7 +1289,7 @@ fn reference_fixture(
     f.calls.truncate(1);
     f.loans.truncate(1);
     f.owners[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();
-    f.loans[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();
+    f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();
     f.locals[0].ty = ty;
     f.locals.push(local(other_ty, base));
     f.owners
@@ -1340,7 +1340,7 @@ fn reference_fixture(
     ));
     raw.functions.truncate(2);
     let g = &mut raw.functions[1];
-    g.references[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();
+    g.references[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();
     g.locals[1].ty = ty;
     g.locals[3].ty = if mode == 2 { hir::Ty::I32 } else { ty };
     g.blocks[0].statements[0] =
@@ -1518,7 +1518,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
         argument: 1,
         authority: AccessBase::Owner(OwnerPlaceId(1)),
         kind: BorrowKind::Exclusive,
-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),
         span: s(base, 7),
     });
     raw.functions[0].blocks[0].statements.push(ins(
@@ -1533,7 +1533,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
         .parameters
         .push(ParameterBinding::Reference(ReferenceParamId(1)));
     raw.functions[1].references.push(ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),
         kind: BorrowKind::Exclusive,
         position: 1,
         span: base,

@@ -69,14 +69,14 @@ enum OwnerKind {
 }
 #[derive(Clone, Debug)]
 struct ReferenceDecl {
-    aggregate: AggregateSlot,
+    referent: BorrowedSlot,
     kind: BorrowKind,
     position: usize,
     span: Span,
 }
 impl ReferenceDecl {
-    fn aggregate(&self) -> AggregateTy {
-        self.aggregate.aggregate()
+    fn referent(&self) -> BorrowedTy {
+        self.referent.referent()
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,12 +90,12 @@ struct LoanDecl {
     argument: usize,
     authority: AccessBase,
     kind: BorrowKind,
-    aggregate: AggregateSlot,
+    referent: BorrowedSlot,
     span: Span,
 }
 impl LoanDecl {
-    fn aggregate(&self) -> AggregateTy {
-        self.aggregate.aggregate()
+    fn referent(&self) -> BorrowedTy {
+        self.referent.referent()
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -81,7 +81,8 @@ fn mixed_parameter_fixture(
             argument: 4,
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Shared,
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             span: s(0),
         },
         LoanDecl {
@@ -89,7 +90,8 @@ fn mixed_parameter_fixture(
             argument: 1,
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Shared,
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             span: s(0),
         },
     ];
@@ -250,13 +252,15 @@ fn mixed_parameter_fixture(
     ];
     callee.references = vec![
         ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             kind: BorrowKind::Shared,
             position: 4,
             span: s(100),
         },
         ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             kind: BorrowKind::Shared,
             position: 1,
             span: s(100),

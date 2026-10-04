@@ -558,7 +558,7 @@ fn passive_trace_records_completed_whole_value_borrow() {
             function: DefId(1),
             binding: 0,
             ty: super::super::oir::owned_types::ParameterTy::Reference {
-                aggregate: AggregateTy::Record(RecordId(0)),
+                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
                 ..
             },
             ..

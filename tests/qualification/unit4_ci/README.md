@@ -1,9 +1,9 @@
 # Mandatory current Unit4 qualification
 
-This additive CI integration admits170 exact component members plus the
-185-file current compiler authority before any component use. The current
-authority includes checked division, formatter and fixed-array implementation and tests;
-its additive lifecycle observer contains186 members. The reviewed
+This additive CI integration admits173 exact component members plus the
+188-file current compiler authority before any component use. The current
+authority includes borrowed slices, checked division, formatter and fixed-array implementation and tests;
+its additive lifecycle observer contains189 members. The reviewed
 observer overlay and all semantic/native/mutation contracts remain unchanged.
 The public15-file adapter, hosted4-file controller, portable parser, and existing
 Unit1/2/3/ordinary/native gates retain their respective qualification roles.
@@ -52,8 +52,8 @@ command, exit, snapshot ordering and comparison bytes. The closure requires ever
 consumed input and all four executable identities. Both generated current
 candidate-source manifests must remain as actual compact bodies and are resolved
 against their pinned identities and re-derived maps. The allowed omissions are
-exactly 350 derived-tree members per role plus four binaries (704 identities); the
-351-member derived maps and complete comparison closure are unchanged. The
+exactly 353 derived-tree members per role plus four binaries (710 identities); the
+354-member derived maps and complete comparison closure are unchanged. The
 final join reconstructs each normalized
 row from the unchanged raw case using the frozen normalizer and derives the
 complete case/mode/profile roster. Source/binary replay at original paths was
@@ -67,16 +67,16 @@ controls only; it never supplies a hosted execution row.
 
 The current parser successor lives in `tests/qualification/unit4_parser_current`.
 It preserves the complete original frozen v3 package and distinguishes its
-283/286 historical maps from the current 348/351 maps. The source manifest and
+283/286 historical maps from the current 351/354 maps. The source manifest and
 transition records bind actual current compiler bodies through the final join.
 Only a failed stage08 prints a bounded, JSON-escaped stderr tail; workflow marker
 pairs are escaped too. Full stderr and its exact receipt hash remain preserved,
 and the command still fails normally. No environment or general log dump is added.
 
-The checked-division checkpoint advances current source identities while retaining
-the current member counts. Its exact source.rs accessor addition is composed with the unchanged
-historical read-count instrumentation under explicit hash-bound checks. Division
-AST, lexer and parser sections first reverse to the exact combined predecessor;
+The borrowed-slice checkpoint advances current source identities and adds three
+Rust test modules to the current maps. Its exact source.rs accessor addition is composed with the unchanged
+historical read-count instrumentation under explicit hash-bound checks. Slice AST/parser sections first recover the exact division predecessor. Division
+AST, lexer and parser sections then reverse to the exact combined predecessor;
 the three array overlap bodies then use the unchanged historical transforms after
 exact inverse reconstruction. The lexer retains both frozen token hooks; all unlisted overlaps remain rejected. Frozen cases and expected observations
 are unchanged, and all current execution evidence must be freshly collected.

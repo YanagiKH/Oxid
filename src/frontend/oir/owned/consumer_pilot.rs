@@ -152,7 +152,7 @@ fn reference_function(
     let span = o.at(label);
     let mut f = function(id, ValueTy::Scalar(result), span);
     f.references = vec![ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         kind,
         position: 0,
         span,
@@ -273,7 +273,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
         argument: 0,
         authority: root,
         kind,
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span: o.at(label),
     })
     .collect();
@@ -581,7 +581,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
         argument: 0,
         authority: parameter,
         kind: BorrowKind::Exclusive,
-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
         span: o.at("dispatch.prepare_exclusive_child"),
     }];
     dispatch.blocks.push(bb(

@@ -104,6 +104,8 @@ The experimental [typed project route](spec/typed-preview.md#bounded-typed-proje
 
 The experimental [fixed scalar array extension](spec/typed-preview.md#fixed-scalar-arrays) adds move-only bool/i32/unit arrays, checked indexing, `len()` and whole-array call borrows to explicit typed-preview `check`, `run` and `compile`. The [three-module sample](fixtures/typed-array-samples/README.md) returns 5325. See the spec for grammar, platform and stricter native limits; default/legacy arrays are unchanged.
 
+Experimental [call-only borrowed scalar slices](spec/typed-preview.md#call-only-borrowed-scalar-slices) let shared `&[T]` and exclusive `&mut [T]` helpers process whole fixed bool/i32/unit arrays of different lengths through explicit borrows and reborrows. The [three-module slice sample](fixtures/typed-slice-samples/README.md) uses lengths 2, 3 and 0 and returns 515. This is limited to explicit typed-preview `check`, `run` and native `compile`, with the existing Linux module-loading and Linux x86_64 LLVM/Clang/LLD 19.1.7 at O0 native gates. Ranges, subslices and owned unsized values remain unavailable; this is not a stability or milestone-completion claim.
+
 The experimental [typed formatter](spec/typed-preview.md#single-file-formatting) supports fixed-array syntax and `oxid fmt --edition typed-preview input.ox` (complete source on stdout) and `--check` (exit 1 for drift). It preserves comments and existing line breaks while normalizing spacing and indentation, without loading modules or writing files. Default legacy formatting is unchanged.
 
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.

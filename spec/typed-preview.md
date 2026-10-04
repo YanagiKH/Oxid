@@ -21,7 +21,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0013](../rfcs/0013-loop-control.md),
 [RFC 0014](../rfcs/0014-owned-structs-call-borrows.md) and
 [RFC 0015](../rfcs/0015-bounded-typed-projects.md) and
-[RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).
+[RFC 0016](../rfcs/0016-fixed-scalar-arrays.md) and
+[RFC 0019](../rfcs/0019-borrowed-scalar-slices.md).
 
 ## Command and compatibility boundary
 
@@ -100,8 +101,10 @@ zero-length local initializer, such as `let a: [i32; 0] = ([]);`. It cannot infe
 from a call, return or replacement context. Length spellings may have leading
 zeros but not signs, separators, names or expressions. Arrays in record fields,
 nested/reference/record elements, repeated-element syntax, temporary or grouped
-index bases, element borrowing/moving, array equality/printing and slices remain
-unavailable. Existing source, ownership, runtime fuel and native admission limits
+index bases, element borrowing/moving and array equality/printing remain
+unavailable. Call-only whole-array slice views are the bounded exception described
+below; owned unsized values, ranges and subslices remain unavailable.
+Existing source, ownership, runtime fuel and native admission limits
 are unchanged; native limits can reject a source-legal large program.
 
 `check` can accept an array-returning `main`; `run` and native compile still
@@ -113,6 +116,66 @@ for exact diagnostics, costs and exclusions, and the
 [public-route validation](../docs/architecture/fixed-array-public-validation.md)
 for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
 experimental and does not complete M2 or v1.0.
+
+## Call-only borrowed scalar slices
+
+Explicit typed-preview `check`, `run` and native `compile --backend llvm` also
+accept shared `&[T]` and exclusive `&mut [T]` function parameters, where T is
+exactly bool, i32 or unit. Each view borrows one complete existing fixed array
+of length 0..1024. This lets one helper process different array lengths without
+allocating or owning a collection:
+
+```text
+fn sum(p: &[i32]) -> i32 {
+    let mut i = 0;
+    let mut total = 0;
+    while i < p.len() {
+        total = total + p[i];
+        i = i + 1;
+    }
+    return total;
+}
+```
+
+`sum(&a)` accepts an available `[i32; N]` owner at any supported length, including
+an explicitly initialized `[i32; 0]`. An exclusive helper takes `&mut a` and may
+assign `p[i]`. A named slice parameter supports only scalar indexing, exclusive
+indexed writes and `p.len()` returning i32. No owned `[T]`, slice literal, local,
+field, element, result, equality or display operation is added.
+
+Passing a reference parameter onward requires explicit `&*p` or `&mut *p`.
+An exclusive parameter can supply a shared view with `&*p`; direct `&mut a`
+does not implicitly match a shared formal. Element types and borrow modes must
+match, including for empty arrays. A fixed-array reference may explicitly
+reborrow as a slice, and a slice may reborrow as the same scalar slice type.
+A slice cannot supply a fixed-array formal, even when its runtime length matches.
+Bare reference forwarding, arbitrary dereferences, ranges, subslices, element
+borrows, stored/returned references and heap collections remain unavailable.
+
+Every loan still covers the whole backing owner. Shared views may coexist;
+exclusive loans conflict with overlapping fixed-array and slice loans alike.
+Arguments acquire loans left to right through the owning call, and nested
+reborrows suspend incompatible parent access until the child call returns.
+Length erasure does not weaken ownership or availability checks.
+
+Signed indexing requires `0 <= i < p.len()` and retains E0606/oir-owned-run,
+exactly `array index out of bounds`, at the complete access. Every index into an
+empty view fails. Writes evaluate their complete RHS before the index; access
+fuel is charged before bounds and the final read/write. Slice reads, writes and
+length retain the existing one-unit operation costs; forming a view does not
+copy the array. Source, storage, verification, fuel and native admission caps
+are unchanged.
+
+The [three-module sample](../fixtures/typed-slice-samples/README.md) uses shared
+`sum`, exclusive `bump` and explicit reborrows on lengths 2, 3 and 0, returning
+515. See [RFC 0019](../rfcs/0019-borrowed-scalar-slices.md) for the contract and
+[`tests/typed_slices.rs`](../tests/typed_slices.rs) for the public acceptance
+controls. Test definitions are not current hosted-CI receipts; historical
+source-bound ledgers keep their original qualification identities. Declared-child
+loading remains Linux-only; native scope remains Linux x86_64 with
+LLVM/Clang/LLD 19.1.7 at O0 and the existing admission gates. Default/legacy and
+OXBC behavior are unchanged. This remains experimental, with no stable slice
+ABI, general lifetime inference or milestone-completion claim.
 
 ## Single-file formatting
 
@@ -139,7 +202,7 @@ dash-prefixed filenames and `./-` for a file named `-`. There is no write-in-pla
 recursive, output-path or width option. Default/explicit legacy `fmt` retains
 its existing file-writing behavior.
 
-Formatting validates full-file syntax twice, including fixed-array syntax,
+Formatting validates full-file syntax twice, including fixed-array and borrowed-slice syntax,
 and checks token/comment and interior-newline preservation before output.
 Brackets count toward delimiter indentation; types/literals format as
 `[i32; 2]` / `[1, 2]`, with name-based indexing tight as `a[0]`. It never loads modules, resolves
@@ -218,8 +281,11 @@ item_path      := name | absolute_path
 function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
 scalar_type    := "bool" | "i32" | "(" ")"
-value_type     := scalar_type | item_path
-parameter_type := value_type | "&" item_path | "&" "mut" item_path
+fixed_array_type := "[" scalar_type ";" decimal "]"
+slice_type     := "[" scalar_type "]"
+value_type     := scalar_type | item_path | fixed_array_type
+referent_type  := item_path | fixed_array_type | slice_type
+parameter_type := value_type | "&" referent_type | "&" "mut" referent_type
 struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
 field_decl     := "pub"? name ":" scalar_type
 field_decls    := field_decl ("," field_decl)* ","?
@@ -543,7 +609,7 @@ the predecessor's unsupported-keyword E0101 for those newly enabled keywords.
 The owned parser also recognizes struct/field/borrow syntax. Previously
 unsupported forms may therefore receive more precise errors: an `&bool`
 parameter changes from E0101/parse at `&` to E0202/resolve at `bool` because only
-record and fixed-scalar-array referents are supported. This does not enable scalar borrowing. Accepted
+record, fixed-scalar-array and scalar-slice referents are supported. This does not enable scalar borrowing. Accepted
 scalar-only programs retain their behavior; byte-identical diagnostics are not
 promised for every formerly unsupported ownership token sequence.
 
@@ -729,7 +795,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0302 | Missing explicit terminal return |
 | E0303 | Statement after terminal return or loop control transfer |
 | E0304 | Mutation or exclusive borrowing of an immutable binding |
-| E0305 | Unknown field, field projection on a non-record, or indexing/length on a non-array binding (type stage) |
+| E0305 | Unknown field, field projection on a non-record, or indexing/length on a binding that is neither an array nor a slice reference (type stage) |
 | E0310 | Owned value unavailable on a reaching path (ownership stage) |
 | E0311 | Access conflicts with an active loan (ownership stage) |
 | E0312 | Unsupported reference value use or forwarding form (type stage) |
@@ -743,7 +809,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0604 | Checked i32 arithmetic overflow at its operator |
 | E0607 | Checked i32 division or remainder by zero at its operator |
 | E0605 | Owned execution-plan, expanded-cell, requested-byte or allocation limit (oir-owned-run stage) |
-| E0606 | Signed array index out of bounds at the complete access or store target (oir-owned-run stage) |
+| E0606 | Signed array/slice index out of bounds at the complete access or store target (oir-owned-run stage) |
 
 For check, exit 0 means successful type checking, lowering and OIR verification of this
 subset; for run it additionally means a bool/i32/unit result (including false, zero and negatives); ordinary source/CLI/resource failures still exit 1. Scalar lowering budget errors use E0400 with stage `oir-lower`; owned source
@@ -885,8 +951,8 @@ call's number of borrowed arguments:
 | Root activation | `1 + X(root)` |
 | Scalar statement/merge, Branch/Goto, StorageLive, field read/write, scalar/borrow preparation | `1` |
 | Complete record/array construction, move-initialize, discard, StorageEnd, owned preparation | `1 + w` |
-| Array index read/write, after all operands | `1` before bounds and load/store |
-| Array length | `1` before consumer validation and result |
+| Array/slice index read/write, after all operands | `1` before bounds and load/store |
+| Array/slice length | `1` before consumer validation and result |
 | Whole replacement | `1 + 2w` |
 | OpenCall | `1 + owned_argument_count` |
 | Invoke | `1 + argc + X(callee) + sum(owned_argument_widths) + r(r-1)/2` |
@@ -897,7 +963,8 @@ Array literal operands retain their own left-to-right evaluation costs before
 construction. Indexed writes evaluate the complete RHS before the index;
 operand failure skips the final access charge. Insufficient access fuel wins
 before bounds failure and performs no final access. Length still requires a
-statically available/readable base even though N is constant.
+statically available/readable base. A fixed array has constant N; a borrowed
+slice gets its length from the checked backing owner without copying elements.
 
 Return's R term accounts for normal-edge loan release. Explicit lexical storage
 ends and frame teardown are distinct charged events, even for moved owners.

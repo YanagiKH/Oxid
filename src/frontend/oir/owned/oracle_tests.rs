@@ -655,7 +655,8 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
             argument: position,
             authority: AccessBase::Owner(OwnerPlaceId(root)),
             kind,
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             span: acquisition,
         });
         statements.push(instruction(
@@ -670,7 +671,8 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
             .parameters
             .push(ParameterBinding::Reference(ReferenceParamId(position)));
         target.references.push(ReferenceDecl {
-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                .unwrap(),
             kind,
             position,
             span: at(span, 1_100 + position),
@@ -1104,7 +1106,7 @@ fn region_raw(graph: &model::Graph, case: RegionCase, span: Span) -> RawOwnedPro
                 .parameters
                 .push(ParameterBinding::Reference(ReferenceParamId(0)));
             caller.references.push(ReferenceDecl {
-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
                     .unwrap(),
                 kind: if matches!(case.authority, RegionAuthority::SharedParameter) {
                     BorrowKind::Shared
@@ -1962,9 +1964,9 @@ impl NestedRawBuilder<'_> {
                         argument,
                         authority,
                         kind,
-                        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(
+                        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
                             RecordId(0),
-                        ))
+                        )))
                         .unwrap(),
                         span,
                     });
@@ -2042,7 +2044,7 @@ fn nested_raw(model: &nested_model::Program, span: Span) -> RawOwnedProgram {
             raw.parameters
                 .push(ParameterBinding::Reference(ReferenceParamId(position)));
             raw.references.push(ReferenceDecl {
-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
                     .unwrap(),
                 kind: if *mode == nested_model::Mode::Shared {
                     BorrowKind::Shared
@@ -2245,10 +2247,10 @@ fn array_raw(mut raw: RawOwnedProgram, probe: ArrayProbe, length: usize) -> RawO
             owner.aggregate = slot;
         }
         for reference in &mut f.references {
-            reference.aggregate = slot;
+            reference.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
         }
         for loan in &mut f.loans {
-            loan.aggregate = slot;
+            loan.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
         }
         let index = f.locals.len();
         f.locals.push(local(hir::Ty::I32, f.span));
@@ -2878,8 +2880,10 @@ fn array_model_staged_access_and_reference_permissions_match_class_table() {
                 f.parameters
                     .push(ParameterBinding::Reference(ReferenceParamId(0)));
                 f.references.push(ReferenceDecl {
-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
-                        .unwrap(),
+                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
+                        RecordId(0),
+                    )))
+                    .unwrap(),
                     kind,
                     position: 0,
                     span,

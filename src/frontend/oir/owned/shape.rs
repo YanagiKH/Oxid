@@ -114,11 +114,20 @@ fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> 
         AggregateTy::Record(_) => Err(bad(Malformed::Type, s)),
     }
 }
+fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
+    match ty {
+        BorrowedTy::Exact(aggregate) => record(aggregate, s),
+        BorrowedTy::ScalarSlice(_) => Err(bad(Malformed::Type, s)),
+    }
+}
+fn array_element(ty: BorrowedTy, s: Span) -> Result<hir::Ty, OwnedFailure> {
+    ty.element().ok_or_else(|| bad(Malformed::Type, s))
+}
 pub(super) fn base(
     f: &RawOwnedFunction,
     b: AccessBase,
     s: Span,
-) -> Result<(AggregateTy, bool), OwnedFailure> {
+) -> Result<(BorrowedTy, bool), OwnedFailure> {
     match b {
         AccessBase::Owner(id) => {
             let o = owner(f, id, s)?;
@@ -126,13 +135,13 @@ pub(super) fn base(
                 return Err(bad(Malformed::OwnerClass, s));
             }
             Ok((
-                o.aggregate(),
+                BorrowedTy::Exact(o.aggregate()),
                 matches!(o.kind, OwnerKind::Local { mutable: true }),
             ))
         }
         AccessBase::Parameter(id) => {
             let r = reference(f, id, s)?;
-            Ok((r.aggregate(), r.kind == BorrowKind::Exclusive))
+            Ok((r.referent(), r.kind == BorrowKind::Exclusive))
         }
     }
 }
@@ -165,7 +174,7 @@ pub(super) fn parameter(
         ParameterBinding::Reference(id) => {
             let r = reference(f, id, s)?;
             ParameterTy::Reference {
-                aggregate: r.aggregate(),
+                referent: r.referent(),
                 kind: r.kind,
             }
         }
@@ -252,7 +261,7 @@ pub(super) fn signatures(
         }
         for (id, r) in f.references.iter().enumerate() {
             span(sources, r.span)?;
-            d.check_aggregate_type(r.aggregate())?;
+            d.check_borrowed_type(r.referent())?;
             if !matches!(f.parameters.get(r.position),Some(ParameterBinding::Reference(p)) if p.0==id)
             {
                 return Err(bad(Malformed::Binding, r.span));
@@ -323,7 +332,7 @@ pub(super) fn check(
                 (
                     ArgumentSlot::Borrow(l),
                     ParameterTy::Reference {
-                        aggregate: record,
+                        referent: record,
                         kind,
                     },
                 ) => {
@@ -331,7 +340,8 @@ pub(super) fn check(
                     if loan.call != CallSiteId(id) || loan.argument != arg {
                         return Err(bad(Malformed::Binding, c.span));
                     }
-                    same_aggregate(d, loan.aggregate(), record, Malformed::Binding, c.span)?;
+                    d.same_borrowed_type(loan.referent(), record)
+                        .map_err(|_| bad(Malformed::Binding, c.span))?;
                     if loan.kind != kind {
                         return Err(bad(Malformed::Binding, c.span));
                     }
@@ -362,7 +372,8 @@ pub(super) fn check(
             return Err(bad(Malformed::Binding, l.span));
         }
         let (record, _) = base(f, l.authority, l.span)?;
-        same_aggregate(d, record, l.aggregate(), Malformed::Type, l.span)?;
+        d.check_borrowed_view(record, l.referent())
+            .map_err(|_| bad(Malformed::Type, l.span))?;
         if let AccessBase::Owner(o) = l.authority {
             if !matches!(
                 owner(f, o, l.span)?.kind,
@@ -499,7 +510,7 @@ pub(super) fn check(
                     let (r, _) = base(f, *b, s)?;
                     equal(
                         local(f, *destination, s)?,
-                        d.field(record(r, s)?, *field)?.ty(),
+                        d.field(borrowed_record(r, s)?, *field)?.ty(),
                         s,
                     )?;
                 }
@@ -511,7 +522,7 @@ pub(super) fn check(
                     let (r, _) = base(f, *b, s)?;
                     equal(
                         operand(f, *value, sources)?,
-                        d.field(record(r, s)?, *field)?.ty(),
+                        d.field(borrowed_record(r, s)?, *field)?.ty(),
                         value.span,
                     )?;
                 }
@@ -521,9 +532,9 @@ pub(super) fn check(
                     index,
                 } => {
                     let (aggregate, _) = base(f, *b, s)?;
-                    let declared = array(aggregate, s)?;
+                    let element = array_element(aggregate, s)?;
                     equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
-                    equal(local(f, *destination, s)?, declared.element(), s)?;
+                    equal(local(f, *destination, s)?, element, s)?;
                 }
                 OwnedInstruction::WriteIndex {
                     base: b,
@@ -531,8 +542,8 @@ pub(super) fn check(
                     value,
                 } => {
                     let (aggregate, _) = base(f, *b, s)?;
-                    let declared = array(aggregate, s)?;
-                    equal(operand(f, *value, sources)?, declared.element(), value.span)?;
+                    let element = array_element(aggregate, s)?;
+                    equal(operand(f, *value, sources)?, element, value.span)?;
                     equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
                 }
                 OwnedInstruction::ArrayLength {
@@ -540,7 +551,7 @@ pub(super) fn check(
                     base: b,
                 } => {
                     let (aggregate, _) = base(f, *b, s)?;
-                    array(aggregate, s)?;
+                    array_element(aggregate, s)?;
                     equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
                 }
                 OwnedInstruction::OpenCall(c) => {

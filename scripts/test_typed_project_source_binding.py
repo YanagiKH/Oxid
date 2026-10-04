@@ -47,7 +47,7 @@ class SourceBindingTests(unittest.TestCase):
         binding.write_json(self.package / "package-manifest.json", manifest)
 
     def rejects_before_materialization(self, text):
-        output = self.root / "rejected"
+        output = self.root / ("rejected-" + binding.uuid.uuid4().hex)
         sentinel = self.root / "tool-ran"
         tool = self.root / "cargo"
         tool.write_text("#!/bin/sh\ntouch '" + str(sentinel) + "'\nexit 0\n")
@@ -67,7 +67,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 185)
+        self.assertEqual(len(captured["inputs"]), 188)
+        self.assertEqual(len(captured["division_inputs"]), 185)
         self.assertEqual(len(captured["combined_inputs"]), 185)
         self.assertEqual(len(captured["formatter_inputs"]), 133)
         self.assertEqual(len(captured["predecessor_inputs"]), 129)
@@ -81,26 +82,29 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(receipt["division_inverse_touched"], list(binding.DIVISION_PATHS))
         self.assertEqual(receipt["division_inverse_patch_sha256"], binding.DIVISION_PATCH_SHA)
         self.assertEqual(receipt["combined_source_sha256"], binding.COMBINED_SOURCE_SHA)
+        self.assertEqual(receipt["slices_inverse_touched"], list(binding.SLICES_PATHS))
+        self.assertEqual(receipt["slices_inverse_patch_sha256"], binding.SLICES_PATCH_SHA)
+        self.assertEqual(receipt["division_source_sha256"], binding.DIVISION_SOURCE_SHA)
         binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
 
     def test_division_successor_restores_every_combined_input_before_older_stages(self):
         captured = self.captured
         restored, touched = binding.inverse_division_patch(
-            captured["inputs"], captured["package_bytes"]["division-transition.patch"])
+            captured["division_inputs"], captured["package_bytes"]["division-transition.patch"])
         self.assertEqual(touched, list(binding.DIVISION_PATHS))
         self.assertEqual(len(touched), 14)
         self.assertEqual(len(set(touched)), 14)
         self.assertEqual(len(restored), 185)
-        self.assertEqual(set(restored), set(captured["inputs"]))
+        self.assertEqual(set(restored), set(captured["division_inputs"]))
         self.assertEqual(restored, captured["combined_inputs"])
         binding.check_bytes(restored, captured["combined_source"]["files"])
-        self.assertEqual([name for name in restored if restored[name] != captured["inputs"][name]],
+        self.assertEqual([name for name in restored if restored[name] != captured["division_inputs"][name]],
                          list(binding.DIVISION_PATHS))
-        self.assertEqual(captured["current"]["reviewed_source_head"],
+        self.assertEqual(captured["division_source"]["reviewed_source_head"],
                          "2c46521caa902b2afb88ef6b7bae58b9a1382776")
-        self.assertEqual(captured["current"]["source_only_tree"],
+        self.assertEqual(captured["division_source"]["source_only_tree"],
                          "7a74bf86edb53469dbcfd7839a8d3717a0d59a9a")
-        self.assertEqual(captured["current"]["division_base_head"],
+        self.assertEqual(captured["division_source"]["division_base_head"],
                          "8a3b8683d911bdabfcdc7ca7d3ba867f6235ded3")
         self.assertEqual(binding.digest(captured["package_bytes"]["combined-source.json"]),
                          "221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487")
@@ -112,11 +116,11 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(captured["package_bytes"]["division-transition.patch"]), 49895)
         self.assertEqual(captured["division_authority"]["added_source_paths"], [])
         self.assertEqual(captured["division_authority"]["removed_source_paths"], [])
-        compiler = [name for name in captured["inputs"] if name.startswith(("src/", "native/"))]
+        compiler = [name for name in captured["division_inputs"] if name.startswith(("src/", "native/"))]
         self.assertEqual(len(compiler), 133)
         self.assertEqual(len(compiler) + 3, 136)
         self.assertEqual(captured["division_authority"]["current_input_git_modes"],
-                         [{"path": name, "mode": "100644"} for name in captured["inputs"]])
+                         [{"path": name, "mode": "100644"} for name in captured["division_inputs"]])
         formatter, _ = binding.inverse_combined_patch(restored, captured["package_bytes"]["combined-transition.patch"])
         predecessor, _ = binding.inverse_formatter_patch(formatter, captured["package_bytes"]["formatter-transition.patch"])
         archive, _ = binding.inverse_patch(predecessor, captured["package_bytes"]["source-transition.patch"])
@@ -131,12 +135,198 @@ class SourceBindingTests(unittest.TestCase):
                 calls.append(name)
                 return original(*args)
             return wrapper
-        names = ("inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
+        names = ("inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
         with ExitStack() as stack:
             for name in names:
                 stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
             binding.preflight(self.repo, self.package)
         self.assertEqual(calls, list(names))
+
+    def test_slices_successor_restores_exact_division_before_older_stages(self):
+        captured = self.captured
+        restored, touched = binding.inverse_slices_patch(
+            captured["inputs"], captured["package_bytes"]["slices-transition.patch"])
+        self.assertEqual(touched, list(binding.SLICES_PATHS))
+        self.assertEqual(len(touched), 47)
+        self.assertEqual(len(set(touched)), 47)
+        self.assertEqual(restored, captured["division_inputs"])
+        self.assertEqual(set(captured["inputs"]) - set(restored), set(binding.SLICES_ADDITIONS))
+        self.assertEqual(len(binding.SLICES_ADDITIONS), 3)
+        self.assertEqual(len(restored), 185)
+        binding.check_bytes(restored, captured["division_source"]["files"])
+        self.assertEqual([name for name in captured["inputs"]
+                          if captured["inputs"][name] != restored.get(name)], list(binding.SLICES_PATHS))
+        self.assertEqual(captured["current"]["reviewed_source_head"],
+                         "03aead9755b1dd6aaec2b4b165ee3881a7a1f7b7")
+        self.assertEqual(captured["current"]["source_only_tree"],
+                         "450f016ed57bc3d960e0857bb8253e71a8aa718a")
+        self.assertEqual(captured["current"]["slices_base_head"],
+                         "c5798a232ebdacaf720d580007ee8d760957a081")
+        self.assertEqual(binding.entry("division-source.json", captured["package_bytes"]["division-source.json"]),
+                         {"path": "division-source.json", "bytes": 35161,
+                          "sha256": "d3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33"})
+        compiler = [name for name in captured["inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler), 136)
+        self.assertEqual(len(compiler) + 3, 139)
+        self.assertEqual(captured["slices_authority"]["current_input_git_modes"],
+                         [{"path": name, "mode": "100644"} for name in captured["inputs"]])
+        for row in captured["slices_authority"]["transition_inputs"]:
+            self.assertEqual(row["before"] is None, row["path"] in binding.SLICES_ADDITIONS)
+            self.assertEqual(row["after"]["mode"], "100644")
+
+    def test_each_slices_source_is_required_and_byte_bound(self):
+        for path in binding.SLICES_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed slices source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_each_slices_addition_omission_rejects_before_materialization(self):
+        for path in binding.SLICES_ADDITIONS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects_before_materialization("missing regular input")
+                source.write_bytes(original)
+
+    def test_slices_changed_source_and_mode_reject_before_materialization(self):
+        source = self.repo / binding.SLICES_ADDITIONS[0]
+        original = source.read_bytes()
+        source.write_bytes(original + b"// changed slices native tests\n")
+        self.rejects_before_materialization("changed input")
+        source.write_bytes(original)
+        source.chmod(0o755)
+        self.rejects_before_materialization("changed input mode")
+
+    def test_coherently_rehashed_slices_source_rejects_before_reconstruction(self):
+        name = "src/frontend/oir/owned_types.rs"
+        source = self.repo / name
+        source.write_bytes(source.read_bytes() + b"// coherent borrowed type change\n")
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = [binding.entry(name, source.read_bytes()) if row["path"] == name else row
+                            for row in current["files"]]
+        binding.write_json(self.package / "current-source.json", current)
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved current source manifest")
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_slices_source_cannot_relax_membership(self):
+        name = binding.SLICES_ADDITIONS[0]
+        (self.repo / name).unlink()
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = [row for row in current["files"] if row["path"] != name]
+        binding.write_json(self.package / "current-source.json", current)
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        authority["added_source_paths"].remove(name)
+        authority["current_source_members"] -= 1
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_division_manifest_rejects_before_reconstruction(self):
+        source = self.package / "division-source.json"
+        source.write_bytes(source.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["division_source_sha256"] = binding.digest(source.read_bytes())
+        authority["division_source_bytes"] = source.stat().st_size
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved division source manifest")
+        self.rejects_before_materialization("unapproved division source manifest")
+
+    def test_missing_slices_patch_rejects_before_materialization(self):
+        (self.package / "slices-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_rehashed_slices_patch_rejects_before_reconstruction(self):
+        source = self.package / "slices-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("wrong slices transition patch")
+        self.rejects_before_materialization("wrong slices transition patch")
+
+    def test_coherently_rehashed_slices_patch_rejects_before_materialization(self):
+        source = self.package / "slices-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(source.read_bytes())
+        authority["transition_patch_bytes"] = source.stat().st_size
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale slices authority")
+
+    def test_slices_checkpoint_scope_modes_and_recipe_are_pinned(self):
+        original = (self.package / "slices-authority.json").read_bytes()
+        for field, value in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                              ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                              ("transition_touched_paths", list(reversed(binding.SLICES_PATHS))),
+                              ("transition_touched_paths", list(binding.SLICES_PATHS[:-1])),
+                              ("added_source_paths", []), ("removed_source_paths", [binding.SLICES_PATHS[0]]),
+                              ("compiler_bodies", 140), ("current_source_members", 189),
+                              ("division_source_members", 184), ("current_input_git_modes", []),
+                              ("transition_inputs", []), ("unit2_observer_adapter", {}),
+                              ("compile_time_fixture_derivation", {})):
+            with self.subTest(field=field, value=value):
+                authority = binding.json.loads(original)
+                authority[field] = value
+                binding.write_json(self.package / "slices-authority.json", authority)
+                self.rehash_package()
+                with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+                    self.rejects("stale slices authority")
+
+    def test_slices_inverse_requires_exact_patch_and_each_current_context(self):
+        original = self.captured["package_bytes"]["slices-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_slices_patch(self.captured["inputs"], original + b"\n")
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 47)
+        for path, section in zip(binding.SLICES_PATHS, sections):
+            with self.subTest(path=path):
+                inputs = dict(self.captured["inputs"])
+                first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[path].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[path] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_slices_patch(inputs, original)
+
+    def test_slices_inverse_rejects_reordered_missing_and_duplicate_paths(self):
+        original = self.captured["package_bytes"]["slices-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.SLICES_PATHS)
+
+    def test_compile_time_fixture_predecessor_and_current_pins_remain_distinct(self):
+        before = self.captured["combined_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        current = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        self.assertEqual(binding.digest(before),
+                         "10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc")
+        self.assertEqual(len(before), 44176)
+        self.assertEqual(binding.compile_fixture_paths(before, combined=True), binding.compile_fixture_paths(current))
+        self.assertEqual(binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, before),
+                         binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, current))
+        for source, combined in ((before, False), (current, True)):
+            with self.assertRaisesRegex(binding.BindingError, "wrong compile-time fixture includer"):
+                binding.compile_fixture_paths(source, combined=combined)
 
     def test_each_division_source_is_required_and_byte_bound(self):
         for path in binding.DIVISION_PATHS:
@@ -244,12 +434,12 @@ class SourceBindingTests(unittest.TestCase):
     def test_division_inverse_requires_exact_patch_and_each_current_context(self):
         original = self.captured["package_bytes"]["division-transition.patch"]
         with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
-            binding.inverse_division_patch(self.captured["inputs"], original + b"\n")
+            binding.inverse_division_patch(self.captured["division_inputs"], original + b"\n")
         sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
         self.assertEqual(len(sections), 14)
         for path, section in zip(binding.DIVISION_PATHS, sections):
             with self.subTest(path=path):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["division_inputs"])
                 first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[path].splitlines(keepends=True)
@@ -265,7 +455,7 @@ class SourceBindingTests(unittest.TestCase):
                                   (b"".join(sections[:-1]), "wrong transition scope"),
                                   (original + sections[0], "duplicate transition member")):
             with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["division_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.DIVISION_PATHS)
 
     def test_cumulative_array_transition_restores_the_published_archive(self):
@@ -550,9 +740,9 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(set(references)), 42)
         self.assertEqual(paths, list(binding.COMBINED_FIXTURE_ADDITIONS))
         self.assertEqual(binding.digest(source),
-                         "10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc")
-        self.assertEqual(len(source), 44176)
-        self.assertEqual(self.captured["combined_authority"]["compile_time_fixture_derivation"]["source"],
+                         "93dd962176ccf43c4bfd67b5fd1d138b651f4e06e3a3c7ffd25691c09f3a5dab")
+        self.assertEqual(len(source), 44194)
+        self.assertEqual(self.captured["slices_authority"]["compile_time_fixture_derivation"]["source"],
                          binding.entry(binding.COMPILE_FIXTURE_SOURCE, source))
         self.assertEqual(self.captured["combined_authority"]["added_fixture_paths"], paths)
         self.assertEqual(self.captured["combined_authority"]["added_input_paths"], list(binding.COMBINED_ADDITIONS))
@@ -894,7 +1084,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(sorted(changes), sorted([binding.RESOURCE, binding.OBSERVER]))
         self.assertEqual(seam["resource_package_changes"],
                          [binding.RESOURCE, binding.OBSERVER, "package-inputs.json"])
-        self.assertEqual(seam["observer_adapter"], self.captured["authority"]["unit2_observer_adapter"])
+        self.assertEqual(seam["observer_adapter"], self.captured["slices_authority"]["unit2_observer_adapter"])
         self.assertEqual((root / binding.OBSERVER).read_bytes(), self.captured["observer"])
         modified = (root / binding.RESOURCE).read_bytes()
         self.assertEqual(modified.replace(binding.NEW_SEAM, binding.OLD_SEAM),
@@ -924,6 +1114,84 @@ class SourceBindingTests(unittest.TestCase):
         for data in (original + b"\n", original[:-1], original.replace(b"record.0", b"record.1", 1)):
             with self.subTest(sha=binding.digest(data)), self.assertRaisesRegex(binding.BindingError, "wrong original Unit2 observer"):
                 binding.adapt_unit2_observer(data)
+
+    def test_borrowed_observer_successor_is_exact_and_reversible(self):
+        original = self.captured["historical_bytes"][binding.OBSERVER]
+        aggregate = binding.adapt_unit2_observer(original)
+        borrowed = binding.adapt_borrowed_unit2_observer(aggregate)
+        self.assertEqual(aggregate, self.captured["aggregate_observer"])
+        self.assertEqual(borrowed, self.captured["observer"])
+        self.assertEqual(len(binding.BORROWED_OBSERVER_SEAMS), 7)
+        self.assertEqual(len(borrowed), 17039)
+        self.assertEqual(binding.digest(borrowed),
+                         "abe639a07549c67db03df2e1d549173c327056f42e49c87795032a5266c2883b")
+        restored = borrowed
+        for old, new in reversed(binding.BORROWED_OBSERVER_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, aggregate)
+        for old, new in reversed(binding.OBSERVER_SEAMS):
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        self.assertNotIn(b"ParameterTy::Reference { aggregate", borrowed)
+        self.assertIn(b"BorrowedTy::Exact(AggregateTy::Record(record)) => record.0", borrowed)
+        self.assertIn(b'BorrowedTy::Exact(AggregateTy::FixedArray(_)) => panic!("current Unit2 observer excludes fixed-array projection")', borrowed)
+        self.assertIn(b'BorrowedTy::ScalarSlice(_) => panic!("current Unit2 observer excludes scalar-slice projection")', borrowed)
+        # The owner helper and projection are retained exactly, without borrowed wrapping.
+        self.assertIn(binding.OBSERVER_SEAMS[2][1], borrowed)
+        owner_helper = aggregate.split(b"fn current_unit2_record_ordinal", 1)[1].split(b"\n#[test]", 1)[0]
+        self.assertIn(b"fn current_unit2_record_ordinal" + owner_helper, borrowed)
+        self.assertEqual(borrowed.count(b"fn current_unit2_aggregate_adapter_"), 6)
+        self.assertEqual(borrowed.count(b'#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]'), 3)
+        self.assertEqual(borrowed.count(b'#[should_panic(expected = "current Unit2 observer excludes scalar-slice projection")]'), 2)
+        for name in binding.OBSERVER_CONTROL_NAMES:
+            self.assertIn(("fn " + name.rsplit("::", 1)[1] + "()").encode(), borrowed)
+
+    def test_predecessor_observer_is_verified_before_borrowed_derivation(self):
+        calls = []
+        def record(name, original):
+            def wrapper(*args):
+                calls.append(name)
+                return original(*args)
+            return wrapper
+        names = ("adapt_unit2_observer", "adapt_borrowed_unit2_observer")
+        with ExitStack() as stack:
+            for name in names:
+                stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
+            binding.preflight(self.repo, self.package)
+        self.assertEqual(calls, list(names))
+        authority = binding.read_json(self.package / "authority.json")
+        authority["unit2_observer_adapter"]["derived"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "adapt_borrowed_unit2_observer", side_effect=AssertionError("borrowed derivation started")):
+            self.rejects("stale Unit2 observer adapter authority")
+
+    def test_borrowed_observer_requires_exact_predecessor_and_seven_seams(self):
+        aggregate = self.captured["aggregate_observer"]
+        for changed in (aggregate + b"\n", aggregate[:-1], self.captured["historical_bytes"][binding.OBSERVER]):
+            with self.assertRaisesRegex(binding.BindingError, "wrong predecessor Unit2 observer"):
+                binding.adapt_borrowed_unit2_observer(changed)
+        seams = binding.BORROWED_OBSERVER_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with patch.object(binding, "BORROWED_OBSERVER_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong borrowed Unit2 observer substitution count"):
+                    binding.adapt_borrowed_unit2_observer(aggregate)
+
+    def test_borrowed_observer_projection_changes_are_rejected(self):
+        seams = binding.BORROWED_OBSERVER_SEAMS
+        for at, (old, new) in enumerate(seams):
+            for changed in ((b"missing borrowed seam", new), (old, new + b"// altered")):
+                with self.subTest(at=at), patch.object(binding, "BORROWED_OBSERVER_SEAMS", seams[:at] + (changed,) + seams[at + 1:]):
+                    with self.assertRaisesRegex(binding.BindingError, "borrowed Unit2 observer seam drift|wrong derived borrowed Unit2 observer"):
+                        binding.adapt_borrowed_unit2_observer(self.captured["aggregate_observer"])
+
+    def test_coherently_rehashed_borrowed_observer_authority_is_rejected(self):
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["unit2_observer_adapter"]["derived"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale slices authority")
 
     def test_missing_or_extra_observer_substitution_is_rejected(self):
         seams = binding.OBSERVER_SEAMS
@@ -955,25 +1223,35 @@ class SourceBindingTests(unittest.TestCase):
 
     def observer_control_streams(self):
         names = binding.OBSERVER_CONTROL_NAMES
-        listing = "\n".join(name + ": test" for name in names) + "\n\n4 tests, 0 benchmarks\n"
+        listing = "\n".join(name + ": test" for name in names) + "\n\n6 tests, 0 benchmarks\n"
         results = [name + (" - should panic" if "_denies_" in name else "") for name in names]
-        execution = "running 4 tests\n" + "\n".join("test " + name + " ... ok" for name in results)
-        execution += "\n\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.00s\n"
+        execution = "running 6 tests\n" + "\n".join("test " + name + " ... ok" for name in results)
+        execution += "\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.00s\n"
         return listing, execution
 
     def test_observer_control_protocol_rejects_incomplete_results(self):
         listing, execution = self.observer_control_streams()
         protocol = self.observer_protocol()
-        self.assertEqual(binding.verify_observer_control_output(protocol, listing, execution)["passed"], 4)
+        self.assertEqual(binding.verify_observer_control_output(protocol, listing, execution)["passed"], 6)
         for changed_listing, changed_execution in (
                 (listing.replace(binding.OBSERVER_CONTROL_NAMES[0] + ": test\n", ""), execution),
                 (listing + "unexpected: test\n", execution),
                 (listing, execution.replace(" ... ok", " ... ignored", 1)),
                 (listing, execution.replace(" ... ok", " ... FAILED", 1)),
-                (listing, execution.replace("4 passed", "0 passed")),
+                (listing, execution.replace("6 passed", "0 passed")),
                 (listing, execution.replace(" - should panic", "", 1))):
             with self.subTest(listing=changed_listing, execution=changed_execution), self.assertRaises(ValueError):
                 binding.verify_observer_control_output(protocol, changed_listing, changed_execution)
+
+    def test_observer_control_protocol_rejects_complete_old_four_test_roster(self):
+        listing, execution = self.observer_control_streams()
+        for name in binding.OBSERVER_CONTROL_NAMES[-2:]:
+            listing = listing.replace(name + ": test\n", "")
+            execution = execution.replace("test " + name + " - should panic ... ok\n", "")
+        listing = listing.replace("6 tests", "4 tests")
+        execution = execution.replace("6 tests", "4 tests").replace("6 passed", "4 passed")
+        with self.assertRaises(ValueError):
+            binding.verify_observer_control_output(self.observer_protocol(), listing, execution)
 
     def synthetic_observer_controls(self, fail=False):
         """Exercise orchestration with synthetic stream producers; no Rust execution claim."""
@@ -1000,8 +1278,8 @@ class SourceBindingTests(unittest.TestCase):
     def test_observer_controls_bind_both_profiles_and_keep_streams(self):
         output, seam = self.synthetic_observer_controls()
         receipt = binding.run_unit2_observer_controls(self.repo, output, self.captured, seam)
-        self.assertEqual(receipt["observer_control_tests_per_profile"], 4)
-        self.assertEqual(receipt["test_function_executions"], 52)
+        self.assertEqual(receipt["observer_control_tests_per_profile"], 6)
+        self.assertEqual(receipt["test_function_executions"], 56)
         self.assertEqual(len(receipt["observer_control_receipts"]), 2)
         for row in receipt["observer_control_receipts"]:
             report = binding.read_json(output / row["path"])
@@ -1038,11 +1316,14 @@ class SourceBindingTests(unittest.TestCase):
         self.assertFalse((output / "result.json").exists())
         self.assertEqual(prepared["plan_sha256"], binding.digest((output / "plan.json").read_bytes()))
         plan = binding.read_json(output / "plan.json")
-        self.assertEqual((plan["current_source_members"], plan["combined_source_members"],
+        self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (185, 185, 133, 129, 117))
+                         (188, 185, 185, 133, 129, 117))
         self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
+        self.assertEqual(plan["unit2_current_observer_controls_per_profile"], 6)
+        self.assertEqual(prepared["slices_authority_sha256"], binding.SLICES_AUTHORITY_SHA)
+        self.assertEqual(prepared["division_source_sha256"], binding.DIVISION_SOURCE_SHA)
         self.assertEqual(prepared["division_authority_sha256"], binding.DIVISION_AUTHORITY_SHA)
         self.assertEqual(prepared["combined_source_sha256"], binding.COMBINED_SOURCE_SHA)
         self.assertEqual(prepared["combined_authority_sha256"], binding.COMBINED_AUTHORITY_SHA)

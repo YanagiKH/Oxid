@@ -81,7 +81,7 @@ impl FlowSummary {
 pub(super) struct TypedOwnedFunction<'a> {
     admission: SourceAdmission,
     function: &'a Function,
-    signature: &'a Signature,
+    signatures: &'a [Signature],
     body: &'a TypedBody,
 }
 impl TypedOwnedProgram<'_> {
@@ -122,7 +122,7 @@ impl TypedOwnedProgram<'_> {
                 TypedOwnedFunction {
                     admission: self.admission(),
                     function,
-                    signature,
+                    signatures: self.signatures(),
                     body,
                 }
             })
@@ -136,7 +136,10 @@ impl<'a> TypedOwnedFunction<'a> {
         self.function
     }
     pub(super) fn signature(&self) -> &'a Signature {
-        self.signature
+        &self.signatures[self.function.id.0]
+    }
+    pub(super) fn call_parameter_ty(&self, target: DefId, position: usize) -> ParameterTy {
+        self.signatures[target.0].params[position]
     }
     pub(super) fn expression_ty(&self, id: ExprId) -> ValueTy {
         self.body.expressions[id.0]
@@ -269,7 +272,7 @@ fn projection(
             (record, AccessBase::Owner(binding))
         }
         ParameterTy::Reference {
-            aggregate: AggregateTy::Record(record),
+            referent: BorrowedTy::Exact(AggregateTy::Record(record)),
             kind,
         } => (record, AccessBase::Reference { binding, kind }),
         _ => {
@@ -305,15 +308,15 @@ fn array_access(
     binding: BindingId,
     access_span: Span,
     bindings: &[Option<ParameterTy>],
-) -> Result<(AccessBase, FixedArrayTy), Box<Diagnostic>> {
+) -> Result<(AccessBase, Ty), Box<Diagnostic>> {
     match bindings[binding.0].expect("resolved array base initialized") {
         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
-            Ok((AccessBase::Owner(binding), array))
+            Ok((AccessBase::Owner(binding), array.element()))
         }
-        ParameterTy::Reference {
-            aggregate: AggregateTy::FixedArray(array),
-            kind,
-        } => Ok((AccessBase::Reference { binding, kind }, array)),
+        ParameterTy::Reference { referent, kind } if referent.element().is_some() => Ok((
+            AccessBase::Reference { binding, kind },
+            referent.element().expect("array or slice"),
+        )),
         _ => Err(error(
             "E0305",
             "array access requires an array binding",
@@ -337,7 +340,7 @@ fn borrow_type(
                     if kind == BorrowKind::Exclusive && !function.bindings[binding.0].mutable {
                         return Err(immutable(function, binding, span));
                     }
-                    record
+                    BorrowedTy::Exact(record)
                 }
                 ParameterTy::Value(ValueTy::Scalar(_)) => {
                     return Err(error(
@@ -358,7 +361,7 @@ fn borrow_type(
         BorrowPlace::Forwarded(binding) => {
             match bindings[binding.0].expect("borrow binding initialized") {
                 ParameterTy::Reference {
-                    aggregate: record, ..
+                    referent: record, ..
                 } => record,
                 ParameterTy::Value(_) => {
                     return Err(error(
@@ -373,7 +376,7 @@ fn borrow_type(
     // Requested permission is retained even if the parent grants only shared.
     // The authoritative raw verifier diagnoses that ownership permission error.
     Ok(ParameterTy::Reference {
-        aggregate: record,
+        referent: record,
         kind,
     })
 }
@@ -511,7 +514,20 @@ fn expression_type(
             for (_position, ((actual, span), expected)) in
                 actuals.into_iter().zip(&called.params).enumerate()
             {
-                if actual != *expected {
+                let matches = match (actual, *expected) {
+                    (
+                        ParameterTy::Reference {
+                            referent: authority,
+                            kind: actual_kind,
+                        },
+                        ParameterTy::Reference {
+                            referent: target,
+                            kind: expected_kind,
+                        },
+                    ) => actual_kind == expected_kind && target.accepts(authority),
+                    _ => actual == *expected,
+                };
+                if !matches {
                     return Err(error(
                         "E0300",
                         "call argument type or borrow mode does not match parameter",
@@ -529,7 +545,7 @@ fn expression_type(
                             function: function.id,
                             origin: span,
                             binding: binding.0,
-                            ty: actual,
+                            ty: *expected,
                         },
                     );
                 }
@@ -604,7 +620,7 @@ fn expression_type(
             program.work().debit(1, expr.span, "array type read")?;
             let actual = child(*index)?;
             program.work().debit(1, expr.span, "array type access")?;
-            let (_, array) = array_access(function, *base, expr.span, bindings)?;
+            let (_, element) = array_access(function, *base, expr.span, bindings)?;
             if actual != scalar(Ty::I32) {
                 return Err(mismatch(
                     program,
@@ -613,7 +629,7 @@ fn expression_type(
                     function.expressions[index.0].span,
                 ));
             }
-            scalar(array.element())
+            scalar(element)
         }
         ExprKind::ArrayLength { base, .. } => {
             program.work().debit(1, expr.span, "array type length")?;
@@ -984,7 +1000,7 @@ fn check_body(
                 ..
             } => {
                 program.work().debit(1, target_span, "array type access")?;
-                let (access, array) = array_access(function, base, target_span, &bindings)?;
+                let (access, element) = array_access(function, base, target_span, &bindings)?;
                 let index_ty = expressions[index.0].expect("typed store index");
                 if index_ty != ValueTy::Scalar(Ty::I32) {
                     return Err(mismatch(
@@ -995,7 +1011,7 @@ fn check_body(
                     ));
                 }
                 let actual = expressions[value.0].expect("typed store value");
-                let expected = ValueTy::Scalar(array.element());
+                let expected = ValueTy::Scalar(element);
                 if actual != expected {
                     return Err(mismatch(
                         program,

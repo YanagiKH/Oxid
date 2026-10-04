@@ -35,6 +35,13 @@ ROSTER = ('frontend::oir::owned::native::tests::arrays::native_array_continuatio
  'frontend::oir::owned::native::tests::native_owned_merge_and_depth_boundaries_use_real_llvm',
  'frontend::oir::owned::native::tests::native_owned_tiny_fixtures_use_real_llvm',
  'frontend::oir::owned::native::tests::source_resources::source_native_actual_slot_and_cell_boundaries_use_real_llvm')
+# These current tests share the historical module prefix but have dedicated CI
+# gates. Discovery remains closed; producer execution retains its original roster.
+SLICE_ROSTER = (
+    PREFIX + "slices::native_slices_acyclic_phi_and_rhs_failure_use_source_free_llvm",
+    PREFIX + "slices::native_slices_checkpoint_and_mutation_use_source_free_llvm",
+    PREFIX + "slices::native_slices_signed_bounds_and_fuel_use_source_free_llvm",
+)
 FAMILIES = ({'additional_guarded_modules': 195,
   'compiled_elfs': 390,
   'distinct_inputs': 195,
@@ -189,6 +196,23 @@ def exact_inventory(actual, expected, label):
     require(bool(expected) and len(expected) == len(set(expected)), label + ": invalid expected inventory")
     require(len(actual) == len(set(actual)) and set(actual) == set(expected),
             label + ": missing, extra, or duplicate members")
+
+
+def admit_discovery(data):
+    """Reject drift in the broad current prefix before selecting the frozen 16."""
+    names = []
+    footer = False
+    for line in data.decode("utf-8").splitlines():
+        if not line:
+            continue
+        if line == "19 tests, 0 benchmarks" and not footer:
+            footer = True
+        else:
+            require(not footer and line.endswith(": test"), "unknown or misplaced discovery line")
+            names.append(line[:-6])
+    require(footer, "missing discovery footer")
+    exact_inventory(names, (*ROSTER, *SLICE_ROSTER), "current ignored prefix roster")
+    return names
 
 
 def admit_list(data):
@@ -813,12 +837,16 @@ def execute_run(args):
                     for row in stdlib:
                         require(file_record(row["path"]) == {k: row[k] for k in ("bytes", "mode", "sha256")}, "selected standard library drift")
                 run_child([str(copied), PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"],
+                          root / "discovery", cwd=repo, environment=child_env, selection=selection,
+                          check=profile_boundary, timeout=60)
+                admit_discovery((root / "discovery/stdout").read_bytes())
+                run_child([str(copied), *ROSTER, "--exact", "--list", "--ignored", "--format", "pretty", "--color", "never"],
                           root / "list", cwd=repo, environment=child_env, selection=selection,
                           check=profile_boundary, timeout=60)
                 roster = admit_list((root / "list/stdout").read_bytes())
                 write_json(root / "roster.json", {"profile": profile, "binding": binding, "names": roster,
                                                  "test_binary": binary_record})
-                run_child([str(copied), PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"],
+                run_child([str(copied), *ROSTER, "--exact", "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"],
                           root / "run", cwd=repo, environment=child_env, selection=selection,
                           check=profile_boundary, timeout=3600)
                 outcomes = admit_stdout((root / "run/stdout").read_bytes())
@@ -831,7 +859,7 @@ def execute_run(args):
                           "outcomes": outcomes, "families": families, "array_artifact_files": 1307,
                           "elf_executions_asserted": 7058, "reference_comparisons_derived": 6793,
                           "artifact_manifest_sha256": file_record(root / "artifact-manifest.json")["sha256"],
-                          "command_receipts": {name: file_record(root / name / "command.json") for name in ("build", "list", "run")}}
+                          "command_receipts": {name: file_record(root / name / "command.json") for name in ("build", "discovery", "list", "run")}}
                 write_json(root / "result.json", result)
                 terminal["profiles"][profile] = {"status": "PASS", "result": file_record(root / "result.json")}
                 active_profile = None
@@ -960,7 +988,7 @@ def verify_producer(root, ci, upstream_outcome):
         require(binary == result["test_binary"], "copied test binary drift")
         elf_proof(*stable_bytes(directory / "bin/oxid-test"))
         expected_environment = {**environment, "OXID_OWNED_NATIVE_EVIDENCE": str(directory / "artifacts")}
-        commands = {name: command_admission(directory / name, toolchains, expected_environment, expected_cwd=repository) for name in ("build", "list", "run")}
+        commands = {name: command_admission(directory / name, toolchains, expected_environment, expected_cwd=repository) for name in ("build", "discovery", "list", "run")}
         for name in commands:
             require(file_record(directory / name / "command.json") == result["command_receipts"][name], "profile command receipt drift")
         expected_build = [toolchains["all_tools"]["cargo"]["path"], "test", "--locked", "--offline", "--bin", "oxid", "--no-run", "--message-format=json", "--jobs", "2"]
@@ -976,8 +1004,10 @@ def verify_producer(root, ci, upstream_outcome):
         require(Path(environment["CARGO_TARGET_DIR"]) / profile in Path(built_paths[0]).parents,
                 "Cargo artifact outside selected profile target")
         copied = str(directory / "bin/oxid-test")
-        require(commands["list"]["argv"] == [copied, PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"], "roster invocation differs")
-        require(commands["run"]["argv"] == [copied, PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"], "broad-prefix invocation differs")
+        require(commands["discovery"]["argv"] == [copied, PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"], "discovery invocation differs")
+        admit_discovery((directory / "discovery/stdout").read_bytes())
+        require(commands["list"]["argv"] == [copied, *ROSTER, "--exact", "--list", "--ignored", "--format", "pretty", "--color", "never"], "roster invocation differs")
+        require(commands["run"]["argv"] == [copied, *ROSTER, "--exact", "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"], "exact-roster invocation differs")
         roster = read_json(directory / "roster.json")
         require(roster == {"profile": profile, "binding": binding, "names": admit_list((directory / "list/stdout").read_bytes()), "test_binary": binary}, "stale roster receipt")
         require(result["outcomes"] == admit_stdout((directory / "run/stdout").read_bytes()), "attributed stdout outcome drift")
@@ -1111,7 +1141,7 @@ def compact_member(name):
     if parts[0] in PROFILES:
         if len(parts) == 2:
             return parts[1] in ("result.json", "failure.json", "roster.json", "artifact-manifest.json")
-        if len(parts) == 3 and parts[1] in ("build", "list", "run"):
+        if len(parts) == 3 and parts[1] in ("build", "discovery", "list", "run"):
             return parts[2] in ("command.json", "stdout", "stderr")
         return False
     return False
@@ -1274,7 +1304,7 @@ import importlib.util
 INDEPENDENT_TOOLS = ("llvm-as", "opt", "clang", "ld.lld")
 INDEPENDENT_PHASES = ("prepare", "build", "ordinary", "native", "physical", "verify")
 INDEPENDENT_SEALS = tuple("phase-" + phase + "-artifacts.json" for phase in INDEPENDENT_PHASES[1:])
-INDEPENDENT_RUNNER_SHA = "41cecd16ff19ffbce56c97b5315bf95f5af6c7e6f7cea13cf15d053dc35c4f04"
+INDEPENDENT_RUNNER_SHA = "0a17c96d54bffd5488e9ba17dfb58ca58c26afded254acd085b4616955f0cb61"
 INDEPENDENT_INPUT_SHA = "3a904929eb7572bad6430f7ab0ea81c3f68625856621041fa2673e4629e1e290"
 INDEPENDENT_FIXTURE = "tests/fixtures/fixed_array_unit2d_independent"
 
@@ -2042,7 +2072,7 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
         require(terminal["profiles"][profile]["status"] == "PASS"
                 and terminal["profiles"][profile]["result"]["sha256"] == sha256(bodies[prefix + "/result.json"]), "producer terminal profile result differs")
         commands = {}
-        for name in ("build", "list", "run"):
+        for name in ("build", "discovery", "list", "run"):
             commands[name] = command(prefix + "/" + name, tools["llvm_directory"])
             require(result["command_receipts"][name]["sha256"] == sha256(bodies[prefix + "/" + name + "/command.json"]), "producer command receipt binding differs")
         original_root = Path(invocation["output_root"]) / profile
@@ -2051,8 +2081,9 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
         if profile == "release":
             expected_build.append("--release")
         require(commands["build"]["argv"] == expected_build
-                and commands["list"]["argv"] == [copied_path, PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"]
-                and commands["run"]["argv"] == [copied_path, PREFIX, "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"],
+                and commands["discovery"]["argv"] == [copied_path, PREFIX, "--list", "--ignored", "--format", "pretty", "--color", "never"]
+                and commands["list"]["argv"] == [copied_path, *ROSTER, "--exact", "--list", "--ignored", "--format", "pretty", "--color", "never"]
+                and commands["run"]["argv"] == [copied_path, *ROSTER, "--exact", "--ignored", "--nocapture", "--test-threads=1", "--format", "pretty", "--color", "never"],
                 "producer compact original profile invocations differ")
         for row in commands.values():
             require(row["cwd"] == invocation["repository_path"]
@@ -2066,6 +2097,7 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
                 "producer compact Cargo/copied-binary provenance differs")
         require(result["outcomes"] == admit_stdout(bodies[prefix + "/run/stdout"])
                 and result["families"] == admit_stderr(bodies[prefix + "/run/stderr"]), "producer compact named results differ")
+        admit_discovery(bodies[prefix + "/discovery/stdout"])
         require(document(prefix + "/roster.json")["names"] == admit_list(bodies[prefix + "/list/stdout"]), "producer compact roster differs")
         require(full["members"][prefix + "/bin/oxid-test"] == result["test_binary"], "producer full-only binary commitment differs")
         manifest = document(prefix + "/artifact-manifest.json")

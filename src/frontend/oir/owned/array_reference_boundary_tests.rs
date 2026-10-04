@@ -172,10 +172,10 @@ fn unit2c_closed_provenance_faults_precede_bounds_and_zero_length_permission() {
             owner.aggregate = zero;
         }
         for reference in &mut function.references {
-            reference.aggregate = zero;
+            reference.referent = BorrowedSlot::check(BorrowedTy::Exact(zero.aggregate())).unwrap();
         }
         for loan in &mut function.loans {
-            loan.aggregate = zero;
+            loan.referent = BorrowedSlot::check(BorrowedTy::Exact(zero.aggregate())).unwrap();
         }
         for block in &mut function.blocks {
             for statement in &mut block.statements {
@@ -638,10 +638,11 @@ fn nested_arrays(exclusive: bool) -> (SourceMap, RawOwnedProgram, Vec<(Span, usi
             owner.aggregate = aggregate;
         }
         for reference in &mut function.references {
-            reference.aggregate = aggregate;
+            reference.referent =
+                BorrowedSlot::check(BorrowedTy::Exact(aggregate.aggregate())).unwrap();
         }
         for loan in &mut function.loans {
-            loan.aggregate = aggregate;
+            loan.referent = BorrowedSlot::check(BorrowedTy::Exact(aggregate.aggregate())).unwrap();
         }
         let index = function.locals.len();
         function

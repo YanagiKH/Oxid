@@ -219,7 +219,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 186)
+        self.assertEqual(len(self.manifest['files']), 189)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -961,7 +961,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 704)
+        self.assertEqual(report['full_archive_only'], 710)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1176,7 +1176,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 136)
+        self.assertEqual(len(compiler), 139)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,

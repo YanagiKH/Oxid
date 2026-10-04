@@ -926,7 +926,7 @@ enum HelperCase {
 
 fn reference(kind: BorrowKind, position: usize, span: Span) -> ReferenceDecl {
     ReferenceDecl {
-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
         kind,
         position,
         span,
@@ -972,7 +972,7 @@ fn helper_raw(case: HelperCase, s: &impl Fn(usize) -> Span) -> RawOwnedProgram {
         argument,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind,
-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
+        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
         span: s(span),
     })
     .collect();

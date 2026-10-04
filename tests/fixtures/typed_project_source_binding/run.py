@@ -36,8 +36,71 @@ RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
-CURRENT_SOURCE_SHA = 'd3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33'
-CURRENT_SOURCE_BYTES = 35161
+CURRENT_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
+CURRENT_SOURCE_BYTES = 35876
+DIVISION_SOURCE_SHA = 'd3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33'
+DIVISION_SOURCE_BYTES = 35161
+SLICES_AUTHORITY_SHA = '2e8dc2ab5506e179ffe5628e8a46eb6ec362ddb2e26a8a007800eb7029f3069f'
+SLICES_AUTHORITY_BYTES = 55961
+SLICES_PATCH_SHA = '7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20'
+SLICES_PATCH_BYTES = 134654
+SLICES_BASE = 'c5798a232ebdacaf720d580007ee8d760957a081'
+SLICES_HEAD = '03aead9755b1dd6aaec2b4b165ee3881a7a1f7b7'
+SLICES_TREE = '450f016ed57bc3d960e0857bb8253e71a8aa718a'
+SLICES_PATHS = (
+    'src/frontend/ast.rs',
+    'src/frontend/declaration_index.rs',
+    'src/frontend/declaration_index/source_owner.rs',
+    'src/frontend/declaration_index/tests.rs',
+    'src/frontend/format/ast_tests.rs',
+    'src/frontend/hir.rs',
+    'src/frontend/oir/owned/array_native_tests.rs',
+    'src/frontend/oir/owned/array_reference_boundary_tests.rs',
+    'src/frontend/oir/owned/array_reference_tests.rs',
+    'src/frontend/oir/owned/array_tests.rs',
+    'src/frontend/oir/owned/consumer_fixtures.rs',
+    'src/frontend/oir/owned/consumer_pilot.rs',
+    'src/frontend/oir/owned/denial_tests.rs',
+    'src/frontend/oir/owned/execute.rs',
+    'src/frontend/oir/owned/execute_tests.rs',
+    'src/frontend/oir/owned/flow.rs',
+    'src/frontend/oir/owned/mod.rs',
+    'src/frontend/oir/owned/native.rs',
+    'src/frontend/oir/owned/native_heldout_review.rs',
+    'src/frontend/oir/owned/native_tests.rs',
+    'src/frontend/oir/owned/oracle_tests.rs',
+    'src/frontend/oir/owned/plan.rs',
+    'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+    'src/frontend/oir/owned/reviewer_heldout.rs',
+    'src/frontend/oir/owned/reviewer_reference_tests.rs',
+    'src/frontend/oir/owned/shape.rs',
+    'src/frontend/oir/owned/slice_native_tests.rs',
+    'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+    'src/frontend/oir/owned/source/array_types_tests.rs',
+    'src/frontend/oir/owned/source/candidate_adapter.rs',
+    'src/frontend/oir/owned/source/diagnostic.rs',
+    'src/frontend/oir/owned/source/hir.rs',
+    'src/frontend/oir/owned/source/lower.rs',
+    'src/frontend/oir/owned/source/mod.rs',
+    'src/frontend/oir/owned/source/resolve.rs',
+    'src/frontend/oir/owned/source/resource_fixtures.rs',
+    'src/frontend/oir/owned/source/reviewer_heldout.rs',
+    'src/frontend/oir/owned/source/slice_raw_tests.rs',
+    'src/frontend/oir/owned/source/slice_tests.rs',
+    'src/frontend/oir/owned/source/tests.rs',
+    'src/frontend/oir/owned/source/typeck.rs',
+    'src/frontend/oir/owned/tests.rs',
+    'src/frontend/oir/owned_types.rs',
+    'src/frontend/oir/owned_types/array_tests.rs',
+    'src/frontend/parser.rs',
+    'src/frontend/parser/array_syntax_tests.rs',
+    'src/frontend/parser/arrays.rs',
+)
+SLICES_ADDITIONS = (
+    'src/frontend/oir/owned/slice_native_tests.rs',
+    'src/frontend/oir/owned/source/slice_raw_tests.rs',
+    'src/frontend/oir/owned/source/slice_tests.rs',
+)
 COMBINED_SOURCE_SHA = '221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487'
 COMBINED_SOURCE_BYTES = 35021
 DIVISION_AUTHORITY_SHA = 'f2a848cf361ba2907d1f1e437256a28c0996189de9228de148f041a0ce9c0164'
@@ -212,8 +275,10 @@ COMBINED_FIXTURE_ADDITIONS = (
 )
 COMBINED_ADDITIONS = COMBINED_SOURCE_ADDITIONS + COMBINED_FIXTURE_ADDITIONS
 COMPILE_FIXTURE_SOURCE = 'src/frontend/oir/owned/source/array_types_tests.rs'
-COMPILE_FIXTURE_SOURCE_SHA = '10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc'
-COMPILE_FIXTURE_SOURCE_BYTES = 44176
+COMBINED_COMPILE_FIXTURE_SOURCE_SHA = '10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc'
+COMBINED_COMPILE_FIXTURE_SOURCE_BYTES = 44176
+COMPILE_FIXTURE_SOURCE_SHA = '93dd962176ccf43c4bfd67b5fd1d138b651f4e06e3a3c7ffd25691c09f3a5dab'
+COMPILE_FIXTURE_SOURCE_BYTES = 44194
 COMPILE_FIXTURE_PATTERN = b'include_str!\\(concat!\\(env!\\("CARGO_MANIFEST_DIR"\\), "/(tests/fixtures/fixed_array_source_unit3/(?:contracts-v2|typing-contracts-v1)/fixtures/[a-z0-9-]+/main\\.ox)"\\)\\)'
 COMPILE_FIXTURE_REFERENCES_SHA = 'c93538ccae1080771921a761412b3d5380a584b663d6dcc719cfc50b98380732'
 
@@ -312,6 +377,21 @@ OBSERVER_SEAMS = (
 )
 
 
+BORROWED_OBSERVER_ADAPTER_VERSION = 'unit2-record-borrowed-observer-v2'
+BORROWED_OBSERVER_DERIVED_SHA = 'abe639a07549c67db03df2e1d549173c327056f42e49c87795032a5266c2883b'
+BORROWED_OBSERVER_DERIVED_BYTES = 17039
+BORROWED_OBSERVER_SCOPE = 'Seven exact substitutions after validating the unchanged four-seam aggregate adapter: BorrowedTy import, four exact reference constructors, borrowed Reference projection, and explicit fail-closed borrowed-record projection with shared/exclusive ScalarSlice controls. Owner ValueTy remains aggregate-based. Scalar/record JSON and frozen expectations remain unchanged; Exact(FixedArray) and ScalarSlice projection panic.'
+BORROWED_OBSERVER_SEAMS = (
+    (b'use oir::owned_types::{AggregateTy, BorrowKind, FieldId, ParameterTy, ValueTy};', b'use oir::owned_types::{AggregateTy, BorrowedTy, BorrowKind, FieldId, ParameterTy, ValueTy};'),
+    (b'ParameterTy::Reference { aggregate: AggregateTy::Record(RecordId(7)), kind: BorrowKind::Shared }', b'ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(7))), kind: BorrowKind::Shared }'),
+    (b'ParameterTy::Reference { aggregate: AggregateTy::Record(RecordId(7)), kind: BorrowKind::Exclusive }', b'ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(7))), kind: BorrowKind::Exclusive }'),
+    (b'ParameterTy::Reference { aggregate: AggregateTy::FixedArray(array), kind: BorrowKind::Shared }', b'ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::FixedArray(array)), kind: BorrowKind::Shared }'),
+    (b'ParameterTy::Reference { aggregate: AggregateTy::FixedArray(array), kind: BorrowKind::Exclusive }', b'ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::FixedArray(array)), kind: BorrowKind::Exclusive }'),
+    (b'ParameterTy::Reference { aggregate, kind } => object(vec![("kind",q(match kind { BorrowKind::Shared=>"shared",BorrowKind::Exclusive=>"exclusive"})),("record",number(current_unit2_record_ordinal(aggregate)))]),', b'ParameterTy::Reference { referent, kind } => object(vec![("kind",q(match kind { BorrowKind::Shared=>"shared",BorrowKind::Exclusive=>"exclusive"})),("record",number(current_unit2_borrowed_record_ordinal(referent)))]),'),
+    (b'fn value_type(value: ValueTy) -> String {', b'fn current_unit2_borrowed_record_ordinal(referent: BorrowedTy) -> usize {\n    match referent {\n        BorrowedTy::Exact(AggregateTy::Record(record)) => record.0,\n        BorrowedTy::Exact(AggregateTy::FixedArray(_)) => panic!("current Unit2 observer excludes fixed-array projection"),\n        BorrowedTy::ScalarSlice(_) => panic!("current Unit2 observer excludes scalar-slice projection"),\n    }\n}\n\n#[test]\n#[should_panic(expected = "current Unit2 observer excludes scalar-slice projection")]\nfn current_unit2_aggregate_adapter_denies_shared_slice() {\n    parameter_type(ParameterTy::Reference { referent: BorrowedTy::ScalarSlice(hir::Ty::I32), kind: BorrowKind::Shared });\n}\n#[test]\n#[should_panic(expected = "current Unit2 observer excludes scalar-slice projection")]\nfn current_unit2_aggregate_adapter_denies_exclusive_slice() {\n    parameter_type(ParameterTy::Reference { referent: BorrowedTy::ScalarSlice(hir::Ty::Unit), kind: BorrowKind::Exclusive });\n}\n\nfn value_type(value: ValueTy) -> String {'),
+)
+
+
 class BindingError(ValueError):
     pass
 
@@ -394,6 +474,11 @@ def check_bytes(inputs, entries):
 def inverse_patch(inputs, patch):
     """Apply the pinned git patch backwards with exact offsets and byte context."""
     return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
+
+
+def inverse_slices_patch(inputs, patch):
+    """Remove the pinned borrowed-slices delta before division reconstruction."""
+    return apply_inverse_patch(inputs, patch, SLICES_PATCH_SHA, SLICES_PATCH_BYTES, SLICES_PATHS)
 
 
 def inverse_division_patch(inputs, patch):
@@ -489,9 +574,30 @@ def adapt_unit2_observer(original):
     return result
 
 
-def compile_fixture_paths(source):
+def adapt_borrowed_unit2_observer(aggregate):
+    """Derive the current borrowed-reference projection from the exact prior adapter."""
+    require(digest(aggregate) == OBSERVER_DERIVED_SHA and len(aggregate) == 15986,
+            "wrong predecessor Unit2 observer")
+    require(len(BORROWED_OBSERVER_SEAMS) == 7, "wrong borrowed Unit2 observer substitution count")
+    result = aggregate
+    for old, new in BORROWED_OBSERVER_SEAMS:
+        require(result.count(old) == 1 and new not in result, "borrowed Unit2 observer seam drift")
+        result = result.replace(old, new)
+    require(digest(result) == BORROWED_OBSERVER_DERIVED_SHA
+            and len(result) == BORROWED_OBSERVER_DERIVED_BYTES, "wrong derived borrowed Unit2 observer")
+    restored = result
+    for old, new in reversed(BORROWED_OBSERVER_SEAMS):
+        require(restored.count(new) == 1, "borrowed Unit2 observer reverse seam drift")
+        restored = restored.replace(new, old)
+    require(restored == aggregate, "borrowed Unit2 observer reverse identity differs")
+    return result
+
+
+def compile_fixture_paths(source, *, combined=False):
     """Verify the exact published includer and its literal compile-time dependencies."""
-    require(digest(source) == COMPILE_FIXTURE_SOURCE_SHA and len(source) == COMPILE_FIXTURE_SOURCE_BYTES,
+    expected_sha = COMBINED_COMPILE_FIXTURE_SOURCE_SHA if combined else COMPILE_FIXTURE_SOURCE_SHA
+    expected_bytes = COMBINED_COMPILE_FIXTURE_SOURCE_BYTES if combined else COMPILE_FIXTURE_SOURCE_BYTES
+    require(digest(source) == expected_sha and len(source) == expected_bytes,
             "wrong compile-time fixture includer")
     references = [name.decode("ascii") for name in re.findall(COMPILE_FIXTURE_PATTERN, source)]
     require(source.count(b"include_str!") == len(references) == 47
@@ -519,10 +625,38 @@ def preflight(repo, package=PACKAGE):
     require(digest(package_bytes["division-authority.json"]) == DIVISION_AUTHORITY_SHA
             and len(package_bytes["division-authority.json"]) == DIVISION_AUTHORITY_BYTES,
             "stale division authority")
+    require(digest(package_bytes["division-source.json"]) == DIVISION_SOURCE_SHA
+            and len(package_bytes["division-source.json"]) == DIVISION_SOURCE_BYTES,
+            "unapproved division source manifest")
+    require(digest(package_bytes["slices-authority.json"]) == SLICES_AUTHORITY_SHA
+            and len(package_bytes["slices-authority.json"]) == SLICES_AUTHORITY_BYTES,
+            "stale slices authority")
+    slices = json.loads(package_bytes["slices-authority.json"])
+    require(slices["schema"] == "oxid-borrowed-slices-source-transition-v1"
+            and slices["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and slices["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and slices["division_source_sha256"] == DIVISION_SOURCE_SHA
+            and slices["division_source_bytes"] == DIVISION_SOURCE_BYTES
+            and slices["division_authority_sha256"] == DIVISION_AUTHORITY_SHA
+            and slices["transition_patch_sha256"] == SLICES_PATCH_SHA
+            and slices["transition_patch_bytes"] == SLICES_PATCH_BYTES
+            and slices["transition_touched_paths"] == list(SLICES_PATHS)
+            and slices["added_source_paths"] == list(SLICES_ADDITIONS)
+            and slices["removed_source_paths"] == []
+            and slices["base_head"] == SLICES_BASE
+            and slices["reviewed_source_head"] == SLICES_HEAD
+            and slices["source_only_tree"] == SLICES_TREE
+            and slices["recipe"] == SOURCE_DELTA_RECIPE
+            and (slices["current_source_members"], slices["division_source_members"],
+                 slices["compiler_source_members"], slices["compiler_bodies"]) == (188, 185, 136, 139),
+            "stale slices transition authority")
+    require(digest(package_bytes["slices-transition.patch"]) == SLICES_PATCH_SHA
+            and len(package_bytes["slices-transition.patch"]) == SLICES_PATCH_BYTES,
+            "wrong slices transition patch")
     division = json.loads(package_bytes["division-authority.json"])
     require(division["schema"] == "oxid-checked-division-source-transition-v1"
-            and division["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and division["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and division["current_source_sha256"] == DIVISION_SOURCE_SHA
+            and division["current_source_bytes"] == DIVISION_SOURCE_BYTES
             and division["combined_source_sha256"] == COMBINED_SOURCE_SHA
             and division["combined_source_bytes"] == COMBINED_SOURCE_BYTES
             and division["combined_authority_sha256"] == COMBINED_AUTHORITY_SHA
@@ -567,8 +701,8 @@ def preflight(repo, package=PACKAGE):
                  combined["compiler_source_members"], combined["compiler_bodies"]) == (185, 133, 133, 136),
             "stale combined transition authority")
     require(combined["compile_time_fixture_derivation"] == {
-        "source": {"path": COMPILE_FIXTURE_SOURCE, "bytes": COMPILE_FIXTURE_SOURCE_BYTES,
-                   "sha256": COMPILE_FIXTURE_SOURCE_SHA},
+        "source": {"path": COMPILE_FIXTURE_SOURCE, "bytes": COMBINED_COMPILE_FIXTURE_SOURCE_BYTES,
+                   "sha256": COMBINED_COMPILE_FIXTURE_SOURCE_SHA},
         "include_str_references": 47, "unique_fixture_inputs": 42,
         "literal_pattern": COMPILE_FIXTURE_PATTERN.decode("ascii"),
         "ordered_references_sha256": COMPILE_FIXTURE_REFERENCES_SHA,
@@ -607,11 +741,13 @@ def preflight(repo, package=PACKAGE):
     require(members(repo / U2) == sorted([x["path"] for x in historical["files"]] + ["package-inputs.json"]),
             "missing or extra historical Unit2 member")
     current = json.loads(package_bytes["current-source.json"])
+    division_source = json.loads(package_bytes["division-source.json"])
     combined_source = json.loads(package_bytes["combined-source.json"])
     formatter_source = json.loads(package_bytes["formatter-source.json"])
     predecessor = json.loads(package_bytes["predecessor-source.json"])
     selected = json.loads(references[U3 + "/manifests/selected-current.json"])
-    require(len(current["files"]) == 185 and len(combined_source["files"]) == 185
+    require(len(current["files"]) == 188 and len(division_source["files"]) == 185
+            and len(combined_source["files"]) == 185
             and len(formatter_source["files"]) == 133
             and len(predecessor["files"]) == 129 and len(selected["files"]) == 117,
             "wrong source count")
@@ -630,16 +766,26 @@ def preflight(repo, package=PACKAGE):
             and combined_source["compile_time_fixture_references"] == 47
             and combined_source["compile_time_fixture_members"] == 42,
             "stale combined checkpoint provenance")
-    require(current["reviewed_source_head"] == DIVISION_HEAD
-            and current["source_only_tree"] == DIVISION_TREE
-            and current["division_base_head"] == DIVISION_BASE
-            and current["combined_source_sha256"] == COMBINED_SOURCE_SHA
-            and current["combined_base_head"] == COMBINED_BASE
-            and current["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
-            and current["compile_time_fixture_source"] == COMPILE_FIXTURE_SOURCE
-            and current["compile_time_fixture_references"] == 47
-            and current["compile_time_fixture_members"] == 42,
+    require(division_source["reviewed_source_head"] == DIVISION_HEAD
+            and division_source["source_only_tree"] == DIVISION_TREE
+            and division_source["division_base_head"] == DIVISION_BASE
+            and division_source["combined_source_sha256"] == COMBINED_SOURCE_SHA
+            and division_source["combined_base_head"] == COMBINED_BASE
+            and division_source["formatter_source_sha256"] == FORMATTER_SOURCE_SHA
+            and division_source["compile_time_fixture_source"] == COMPILE_FIXTURE_SOURCE
+            and division_source["compile_time_fixture_references"] == 47
+            and division_source["compile_time_fixture_members"] == 42,
             "stale division checkpoint provenance")
+    require(current["reviewed_source_head"] == SLICES_HEAD
+            and current["source_only_tree"] == SLICES_TREE
+            and current["slices_base_head"] == SLICES_BASE
+            and current["division_source_sha256"] == DIVISION_SOURCE_SHA
+            and {key: value for key, value in current.items()
+                 if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree",
+                                "slices_base_head", "division_source_sha256")}
+                == {key: value for key, value in division_source.items()
+                    if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
+            "stale slices checkpoint provenance")
     require({x["path"] for x in predecessor["files"]} == {x["path"] for x in selected["files"]} | EXTRA,
             "unexpected predecessor source membership")
     require({x["path"] for x in formatter_source["files"]}
@@ -648,13 +794,21 @@ def preflight(repo, package=PACKAGE):
     require({x["path"] for x in combined_source["files"]}
             == {x["path"] for x in formatter_source["files"]} | set(COMBINED_ADDITIONS),
             "unexpected combined source membership")
-    require([x["path"] for x in current["files"]] == [x["path"] for x in combined_source["files"]],
+    require([x["path"] for x in division_source["files"]] == [x["path"] for x in combined_source["files"]],
+            "unexpected division source membership")
+    require({x["path"] for x in current["files"]}
+            == {x["path"] for x in division_source["files"]} | set(SLICES_ADDITIONS),
             "unexpected current source membership")
     current_rows = {x["path"]: x for x in current["files"]}
+    division_rows = {x["path"]: x for x in division_source["files"]}
     combined_rows = {x["path"]: x for x in combined_source["files"]}
-    require([name for name in current_rows if current_rows[name] != combined_rows[name]] == list(DIVISION_PATHS),
+    require([name for name in division_rows if division_rows[name] != combined_rows[name]] == list(DIVISION_PATHS),
             "unexpected division source delta")
-    require(division["current_input_git_modes"] == [{"path": name, "mode": "100644"} for name in current_rows],
+    require([name for name in current_rows if current_rows[name] != division_rows.get(name)] == list(SLICES_PATHS),
+            "unexpected slices source delta")
+    require(division["current_input_git_modes"] == [{"path": name, "mode": "100644"} for name in division_rows],
+            "unexpected division source modes")
+    require(slices["current_input_git_modes"] == [{"path": name, "mode": "100644"} for name in current_rows],
             "unexpected current source modes")
     retained = [x for x in current["files"] if not x["path"].startswith(("src/", "native/"))
                 and x["path"] not in COMBINED_FIXTURE_ADDITIONS]
@@ -663,7 +817,7 @@ def preflight(repo, package=PACKAGE):
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
     inputs = check_entries(repo, current["files"])
-    for item in division["current_input_git_modes"]:
+    for item in slices["current_input_git_modes"]:
         require(regular(repo, item["path"]).stat().st_mode & 0o111 == 0,
                 "changed input mode: " + item["path"])
     fixture_paths = compile_fixture_paths(inputs[COMPILE_FIXTURE_SOURCE])
@@ -672,12 +826,32 @@ def preflight(repo, package=PACKAGE):
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
-    combined_inputs, division_touched = inverse_division_patch(inputs, package_bytes["division-transition.patch"])
+    require(slices["compile_time_fixture_derivation"] == {
+        **combined["compile_time_fixture_derivation"],
+        "source": entry(COMPILE_FIXTURE_SOURCE, inputs[COMPILE_FIXTURE_SOURCE]),
+    }, "stale slices compile-time fixture authority")
+    division_inputs, slices_touched = inverse_slices_patch(inputs, package_bytes["slices-transition.patch"])
+    check_bytes(division_inputs, division_source["files"])
+    slices_transition_inputs = []
+    for name in SLICES_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", division_inputs), ("after", inputs)):
+            if name not in source_inputs:
+                identities[label] = None
+                continue
+            data = source_inputs[name]
+            blob = hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+            identities[label] = {**entry(name, data), "mode": "100644", "git_blob": blob}
+        slices_transition_inputs.append(identities)
+    require(slices["transition_inputs"] == slices_transition_inputs, "stale slices input identities")
+    require(compile_fixture_paths(division_inputs[COMPILE_FIXTURE_SOURCE], combined=True) == fixture_paths,
+            "changed predecessor compile-time fixture roster")
+    combined_inputs, division_touched = inverse_division_patch(division_inputs, package_bytes["division-transition.patch"])
     check_bytes(combined_inputs, combined_source["files"])
     transition_inputs = []
     for name in DIVISION_PATHS:
         identities = {"path": name}
-        for label, source_inputs in (("before", combined_inputs), ("after", inputs)):
+        for label, source_inputs in (("before", combined_inputs), ("after", division_inputs)):
             data = source_inputs[name]
             blob = hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
             identities[label] = {**entry(name, data), "mode": "100644", "git_blob": blob}
@@ -719,12 +893,24 @@ def preflight(repo, package=PACKAGE):
                           for old, new in OBSERVER_SEAMS],
         "scope": "Four exact substitutions in an isolated current Unit2 copy: AggregateTy import, fail-closed record projection and four compiled adapter controls, Owned projection, Reference aggregate projection. Scalar/record JSON and frozen expectations remain unchanged; FixedArray projection panics.",
     }, "stale Unit2 observer adapter authority")
+    borrowed_observer = adapt_borrowed_unit2_observer(adapted_observer)
+    require(slices["unit2_observer_adapter"] == {
+        "version": BORROWED_OBSERVER_ADAPTER_VERSION,
+        "predecessor_version": OBSERVER_ADAPTER_VERSION,
+        "original": entry(OBSERVER, historical_bytes[OBSERVER]),
+        "predecessor_derived": entry(OBSERVER, adapted_observer),
+        "derived": entry(OBSERVER, borrowed_observer),
+        "substitutions": [{"old_sha256": digest(old), "new_sha256": digest(new), "count": 1}
+                          for old, new in BORROWED_OBSERVER_SEAMS],
+        "control_tests": list(OBSERVER_CONTROL_NAMES), "control_tests_per_profile": 6,
+        "scope": BORROWED_OBSERVER_SCOPE,
+    }, "stale borrowed Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
     return {"current": current, "selected": selected, "historical": historical,
             "inputs": inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": adapted_resource,
-            "observer": adapted_observer,
+            "observer": borrowed_observer, "aggregate_observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
             "touched": touched, "authority": authority,
             "predecessor_inputs": predecessor_inputs, "formatter_touched": formatter_touched,
@@ -732,7 +918,9 @@ def preflight(repo, package=PACKAGE):
             "formatter_inputs": formatter_inputs, "combined_touched": combined_touched,
             "combined_authority": combined, "predecessor_resource": predecessor_resource,
             "combined_source": combined_source, "combined_inputs": combined_inputs,
-            "division_authority": division, "division_touched": division_touched}
+            "division_authority": division, "division_touched": division_touched,
+            "division_source": division_source, "division_inputs": division_inputs,
+            "slices_authority": slices, "slices_touched": slices_touched}
 
 
 def materialize(root, inputs):
@@ -767,7 +955,10 @@ def prepare_archived(output, captured):
             "formatter_source_sha256": FORMATTER_SOURCE_SHA,
             "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
             "division_inverse_touched": captured["division_touched"],
-            "combined_source_sha256": COMBINED_SOURCE_SHA}
+            "combined_source_sha256": COMBINED_SOURCE_SHA,
+            "slices_inverse_patch_sha256": SLICES_PATCH_SHA,
+            "slices_inverse_touched": captured["slices_touched"],
+            "division_source_sha256": DIVISION_SOURCE_SHA}
 
 
 def prepare_unit2(output, captured):
@@ -784,7 +975,7 @@ def prepare_unit2(output, captured):
     materialize(compat, {"run.py": captured["references"][COMPAT]})
     return {"resource_package_root": str(root), "resource_package_inputs_sha256": digest(inputs["package-inputs.json"]),
             "resource_package_changes": [RESOURCE, OBSERVER, "package-inputs.json"],
-            "observer_adapter": captured["authority"]["unit2_observer_adapter"],
+            "observer_adapter": captured["slices_authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_predecessor": captured["authority"]["derived_resource"],
             "resource_after": captured["combined_authority"]["derived_resource"],
@@ -860,7 +1051,8 @@ def verify_unit2_result(output, captured, seam, prepare_only):
 
 OBSERVER_CONTROL_FILTER = "current_unit2_aggregate_adapter_"
 OBSERVER_CONTROL_NAMES = tuple("frontend::oir::unit2_observer::" + OBSERVER_CONTROL_FILTER + name for name in (
-    "preserves_scalar_and_record_json", "denies_owned_array", "denies_shared_array", "denies_exclusive_array"))
+    "preserves_scalar_and_record_json", "denies_owned_array", "denies_shared_array", "denies_exclusive_array",
+    "denies_shared_slice", "denies_exclusive_slice"))
 
 
 def verify_observer_control_output(protocol, listing, execution):
@@ -918,7 +1110,7 @@ def run_unit2_observer_controls(repo, output, captured, seam):
         result = verify_observer_control_output(protocol, streams["list"], streams["run"])
         check_entries(source, assembly["files"], exact=True)
         assert_unchanged(repo, captured)
-        record = {"schema": "oxid-current-unit2-observer-controls-v1", "profile": profile,
+        record = {"schema": "oxid-current-unit2-observer-controls-v2", "profile": profile,
                   "status": "passed", "tests": list(OBSERVER_CONTROL_NAMES), "result": result,
                   "source_inputs_sha256": CURRENT_SOURCE_SHA, "observer_adapter": seam["observer_adapter"],
                   "original_unit2_receipt": entry(profile + "-receipt.json", (run / (profile + "-receipt.json")).read_bytes()),
@@ -928,9 +1120,9 @@ def run_unit2_observer_controls(repo, output, captured, seam):
         path = controls / (profile + "-receipt.json")
         write_json(path, record)
         receipts.append(entry(str(path.relative_to(output)), path.read_bytes()))
-    return {"observer_adapter_version": OBSERVER_ADAPTER_VERSION,
-            "observer_control_tests_per_profile": 4, "observer_control_receipts": receipts,
-            "test_function_executions": 2 * (1 + 21 + 4)}
+    return {"observer_adapter_version": BORROWED_OBSERVER_ADAPTER_VERSION,
+            "observer_control_tests_per_profile": 6, "observer_control_receipts": receipts,
+            "test_function_executions": 2 * (1 + 21 + 6)}
 
 
 def main():
@@ -961,15 +1153,17 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      slices_authority_sha256=SLICES_AUTHORITY_SHA,
+                      division_source_sha256=DIVISION_SOURCE_SHA,
                       division_authority_sha256=DIVISION_AUTHORITY_SHA,
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 185, "combined_source_members": 185,
+                "current_source_members": 188, "division_source_members": 185, "combined_source_members": 185,
                 "formatter_source_members": 133,
                 "compile_time_fixture_members": 42, "compile_time_fixture_references": 47,
                 "predecessor_source_members": 129, "archive_members": 117,
                 "unit2_semantic_cases_per_profile": 3603, "unit2_resource_tests_per_profile": 21,
-                "unit2_current_observer_controls_per_profile": 4}
+                "unit2_current_observer_controls_per_profile": 6}
         write_json(output / "plan.json", plan)
         result["plan_sha256"] = digest((output / "plan.json").read_bytes())
         if args.action == "preflight":

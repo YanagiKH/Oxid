@@ -4,6 +4,7 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,24 @@ import unittest
 from unittest import mock
 
 import replay_fixed_array_unit2d as replay
+
+
+# Literal compiler-error seams, independently specified from the six archived
+# use sites. Line numbers refer to the unchanged public-array successor.
+BORROWED_SLOT_LINE_CHANGES = {
+    460: (b"            aggregate: slot,",
+          b"            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),"),
+    551: (b"            aggregate: slot,",
+          b"            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),"),
+    625: (b"    f.loans[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();",
+          b"    f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();"),
+    676: (b"    g.references[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();",
+          b"    g.references[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();"),
+    1879: (b"        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),",
+           b"        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),"),
+    1893: (b"        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),",
+           b"        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),"),
+}
 
 
 class ReplayTests(unittest.TestCase):
@@ -100,12 +119,112 @@ class ReplayTests(unittest.TestCase):
 
     def test_public_successor_binding_rejects_historical_and_changed_identities(self):
         binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
-                   "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["current_module_sha256"]}
+                   "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
+                   "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]}
         replay.assert_current_module_binding(binding)
         for changed in ({}, {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_sha256"]},
+                        {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["current_module_sha256"]},
                         {**binding, "public_array_activation": {**binding["public_array_activation"],
                           "native_wrong_identity_rejections": 80}}):
             with self.assertRaisesRegex(RuntimeError, "current public-array module binding"):
+                replay.assert_current_module_binding(changed)
+
+    def public_reviewer(self):
+        frozen = (Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+                  / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
+        return replay.public_array_reviewer(frozen)
+
+    def test_borrowed_slot_successor_changes_only_six_exact_borrowed_sites(self):
+        public = self.public_reviewer()
+        current = replay.borrowed_slot_reviewer(public)
+        old_lines, new_lines = public.splitlines(), current.splitlines()
+        self.assertEqual(len(old_lines), len(new_lines))
+        self.assertEqual({number: (old, new) for number, (old, new) in
+                          enumerate(zip(old_lines, new_lines), 1) if old != new},
+                         BORROWED_SLOT_LINE_CHANGES)
+        self.assertEqual(replay.sha(current),
+                         "234a2bf5cd68e01b0f4252ffe68a3700cdf9e9f8087f51c29e68daba6269adac")
+        self.assertEqual(current.count(b"BorrowedSlot::check(BorrowedTy::Exact("), 6)
+        self.assertNotIn(b"ScalarSlice", current)
+        self.assertEqual(re.findall(rb"\bassert(?:_eq|_ne)?!\([\s\S]*?;\n", public),
+                         re.findall(rb"\bassert(?:_eq|_ne)?!\([\s\S]*?;\n", current))
+        owner = b"fn own(aggregate: AggregateTy, kind: OwnerKind, span: Span) -> OwnerDecl {"
+        self.assertEqual(public.split(owner, 1)[1].split(b"\n}", 1)[0],
+                         current.split(owner, 1)[1].split(b"\n}", 1)[0])
+        self.assertIn(b"f.owners[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();", current)
+
+    def test_borrowed_slot_successor_is_exactly_reversible(self):
+        public = self.public_reviewer()
+        current = replay.borrowed_slot_reviewer(public)
+        self.assertEqual(replay.borrowed_slot_reviewer(current, reverse=True), public)
+        # Independently undo only the six literal line changes; this must recover
+        # every assertion, ownership slot, and resource fact byte for byte.
+        lines = current.splitlines(keepends=True)
+        for number, (old, new) in BORROWED_SLOT_LINE_CHANGES.items():
+            self.assertEqual(lines[number - 1], new + b"\n")
+            lines[number - 1] = old + b"\n"
+        self.assertEqual(b"".join(lines), public)
+        self.assertEqual(replay.sha(public),
+                         "611b66ce4628654d16c146462e147a08968a4d4b122ed07b2cb4bea908894f68")
+
+    def test_borrowed_slot_successor_rejects_drift_and_double_application(self):
+        public = self.public_reviewer()
+        current = replay.borrowed_slot_reviewer(public)
+        for data, reverse in ((public + b"\n", False),
+                              (public.replace(b"denied += 1", b"denied += 0"), False),
+                              (current, False), (current + b"\n", True), (public, True)):
+            with self.subTest(reverse=reverse, digest=replay.sha(data)):
+                with self.assertRaisesRegex(RuntimeError, "borrowed-slot adapter input identity differs"):
+                    replay.borrowed_slot_reviewer(data, reverse=reverse)
+
+    def test_borrowed_slot_successor_rejects_missing_and_duplicate_sites(self):
+        public = self.public_reviewer()
+        current = replay.borrowed_slot_reviewer(public)
+        for data, reverse, hash_key, side in ((public, False, "input_module_sha256", 0),
+                                             (current, True, "current_module_sha256", 1)):
+            lines = data.splitlines(keepends=True)
+            for number, pair in BORROWED_SLOT_LINE_CHANGES.items():
+                for count in (0, 2):
+                    changed_lines = lines[:]
+                    self.assertEqual(lines[number - 1], pair[side] + b"\n")
+                    changed_lines[number - 1] = (b"" if count == 0 else
+                        lines[number - 1] + lines[number - 2] + lines[number - 1])
+                    changed = b"".join(changed_lines)
+                    with self.subTest(reverse=reverse, line=number, count=count):
+                        # The real input hash rejects any such drift first. This
+                        # override isolates the count-one guard behind that gate.
+                        with self.assertRaisesRegex(RuntimeError, "input identity differs"):
+                            replay.borrowed_slot_reviewer(changed, reverse=reverse)
+                        with mock.patch.dict(replay.BORROWED_SLOT_COMPATIBILITY,
+                                             {hash_key: replay.sha(changed)}):
+                            with self.assertRaisesRegex(RuntimeError, "borrowed-slot adapter use site differs"):
+                                replay.borrowed_slot_reviewer(changed, reverse=reverse)
+
+    def test_borrowed_slot_successor_rejects_changed_output_identity(self):
+        public = self.public_reviewer()
+        current = replay.borrowed_slot_reviewer(public)
+        for data, reverse, output_key in ((public, False, "current_module_sha256"),
+                                          (current, True, "input_module_sha256")):
+            with mock.patch.dict(replay.BORROWED_SLOT_COMPATIBILITY, {output_key: "0" * 64}):
+                with self.assertRaisesRegex(RuntimeError, "borrowed-slot adapter output identity differs"):
+                    replay.borrowed_slot_reviewer(data, reverse=reverse)
+
+    def test_borrowed_slot_binding_requires_both_successor_metadata(self):
+        binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
+                   "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
+                   "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]}
+        replay.assert_current_module_binding(binding)
+        for field in ("public_array_activation", "borrowed_slot_compatibility"):
+            missing = dict(binding)
+            del missing[field]
+            with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
+                replay.assert_current_module_binding(missing)
+        for field, value in (("input_module_sha256", "0" * 64),
+                             ("current_module_sha256", "0" * 64),
+                             ("replacement_count", 5), ("borrowed_identity", "BorrowedTy::ScalarSlice")):
+            changed = {**binding, "borrowed_slot_compatibility": {
+                **binding["borrowed_slot_compatibility"], field: value}}
+            with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
                 replay.assert_current_module_binding(changed)
 
     def test_clean_archive_preserves_git_bytes_and_exact_append_prefix(self):
@@ -123,6 +242,24 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(len(originals), 3)
         self.assertEqual({r["git_blob"] for r in originals}, {
             self.git(runner.args.repo, "rev-parse", "HEAD:" + r["path"]) for r in originals})
+
+    def test_prepare_binds_separate_borrowed_successor_without_changing_frozen_input(self):
+        runner = self.prepared()
+        current = (runner.source / replay.MODULE_REL).read_bytes()
+        frozen = (runner.inputs / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
+        self.assertEqual(replay.sha(frozen),
+                         "b6b8f0a012c4d3b7dc1fa0140769174ee868af04db7e5ae3f34c8d1baa478c21")
+        self.assertEqual(replay.borrowed_slot_reviewer(current, reverse=True),
+                         replay.public_array_reviewer(frozen))
+        self.assertEqual(runner.binding["module_sha256"], replay.sha(current))
+        self.assertEqual(runner.binding["public_array_activation"], replay.PUBLIC_ARRAY_ACTIVATION)
+        self.assertEqual(runner.binding["borrowed_slot_compatibility"], replay.BORROWED_SLOT_COMPATIBILITY)
+        provenance = replay.load(runner.evidence / "expectation-provenance.json")
+        self.assertEqual(provenance["semantic_fuel_and_diagnostics"]["public_array_activation"],
+                         replay.PUBLIC_ARRAY_ACTIVATION)
+        self.assertEqual(provenance["borrowed_slot_compatibility"]["borrowed_slot_compatibility"],
+                         replay.BORROWED_SLOT_COMPATIBILITY)
+        runner.check_source()
 
     def test_real_git_owned_and_simulated_foreign_checkout_share_exact_scope(self):
         owned = self.prepared()
