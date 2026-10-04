@@ -1274,7 +1274,7 @@ import importlib.util
 INDEPENDENT_TOOLS = ("llvm-as", "opt", "clang", "ld.lld")
 INDEPENDENT_PHASES = ("prepare", "build", "ordinary", "native", "physical", "verify")
 INDEPENDENT_SEALS = tuple("phase-" + phase + "-artifacts.json" for phase in INDEPENDENT_PHASES[1:])
-INDEPENDENT_RUNNER_SHA = "cbb58eef5dac89938f4c8bdd53118545cbbb098e80a8ef1e313d05226eba1886"
+INDEPENDENT_RUNNER_SHA = "7fc66c993ae6c0915daf352e8a461f4112fb6130b10619c223600b7f64457d4b"
 INDEPENDENT_INPUT_SHA = "3a904929eb7572bad6430f7ab0ea81c3f68625856621041fa2673e4629e1e290"
 INDEPENDENT_FIXTURE = "tests/fixtures/fixed_array_unit2d_independent"
 
@@ -1479,7 +1479,19 @@ def independent_admission_identity(state_sha, state, binary_row, verified, outco
             "named_test_outcomes": outcomes, "phase_seals": state["seals"]}
 
 
-def independent_body(root, *, head, tree, profile, tools, schema):
+def admit_independent_git_commands(commands, checkout, head, root, schema):
+    arguments = [("rev-parse", "--show-toplevel"), ("status", "--porcelain=v1", "--untracked-files=all"),
+        ("rev-parse", "HEAD"), ("rev-parse", head + "^{commit}"), ("rev-parse", head + "^{tree}"),
+        ("ls-tree", "-r", "-z", head), ("archive", "--format=tar", "--output=" + str(root / "evidence/source.tar"), head),
+        ("status", "--porcelain=v1", "--untracked-files=all"), ("rev-parse", "HEAD")]
+    selected = [row for row in commands if row["label"].startswith("git-") or row["argv"][0] == "git"]
+    require(len(selected) == len(arguments), "independent Git command roster differs")
+    for row, args in zip(selected, arguments):
+        require(row["label"] == "git-" + args[0] and row["argv"] == schema.git_argv(checkout, *args)
+                and row["cwd"] == str(root), "independent exact-checkout Git invocation differs")
+
+
+def independent_body(root, *, head, tree, profile, tools, schema, checkout):
     """Read actual terminal bodies and their sealed closure; no corpus execution."""
     root = no_symlink_path(root)
     evidence = root / "evidence"
@@ -1512,6 +1524,7 @@ def independent_body(root, *, head, tree, profile, tools, schema):
     require(digest("source-binding.json") == state["source_binding_sha256"], "independent source-binding drift")
     require(binding["schema"] == 1 and binding["commit"] == binding["checkout_head"] == head
             and binding["tree"] == tree and binding["profile"] == profile and binding["run_root"] == str(root)
+            and binding["input_checkout"] == str(checkout)
             and binding["checkout_clean"] is True and binding["runner_sha256"] == INDEPENDENT_RUNNER_SHA,
             "independent source/head/profile/run identity differs")
     content = {key: value for key, value in binding.items() if key not in ("content_id", "marker", "prepared")}
@@ -1600,6 +1613,7 @@ def independent_body(root, *, head, tree, profile, tools, schema):
     expected_labels += [name.rsplit("::", 1)[-1] for name in schema.ORDINARY + schema.NATIVE]
     expected_labels += ["storage-text-tests", "prepare-physical", "verify-physical", schema.PHYSICAL.rsplit("::", 1)[-1]]
     require(command_labels == expected_labels, "independent original command roster/order differs")
+    admit_independent_git_commands([document(name) for name in commands], checkout, head, root, schema)
     exact_inventory(outcomes, expected_names, "independent executed named tests")
     for label in ("cargo-build", "test-inventory", "ignored-inventory", "prepare-physical", "verify-physical", "storage-text-tests"):
         require(command_labels.count(label) == 1, "independent required original command missing or duplicated")
@@ -1731,7 +1745,7 @@ def execute_independent(args):
             run_child(independent_command(repo, output, args.profile, tools, producer), capture / "command",
                       cwd=repo, environment=environment, selection=tools, check=boundary, timeout=5400)
             observed = independent_body(output, head=args.expected_head, tree=admitted["binding"]["tree"],
-                                        profile=args.profile, tools=tools, schema=schema)
+                                        profile=args.profile, tools=tools, schema=schema, checkout=repo)
         write_json(capture / "closure-manifest.json", observed.pop("closure"))
         result.update(status="PASS", exit_code=0, admission=observed,
                       closure_manifest_sha256=file_record(capture / "closure-manifest.json")["sha256"],
@@ -1780,7 +1794,7 @@ def verify_independent_invocation(root, producer, profile, ci, outcome, producer
     require(file_record(capture / "command/command.json")["sha256"] == result["command_sha256"], "independent original command receipt changed")
     require(file_record(capture / "closure-manifest.json")["sha256"] == result["closure_manifest_sha256"], "independent captured final seal changed")
     observed = independent_body(root, head=ci["expected_head"], tree=producer_admission["binding"]["tree"],
-                                profile=profile, tools=tools, schema=independent_schema(repo))
+                                profile=profile, tools=tools, schema=independent_schema(repo), checkout=repo)
     require(read_json(capture / "closure-manifest.json") == observed.pop("closure"), "independent closure differs from original launcher admission")
     require(observed == result["admission"], "independent terminal bodies changed after original admission")
     evidence = regular_inventory(capture)
@@ -2075,6 +2089,7 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
                     "independent compact phase completion differs")
             require(source_binding["commit"] == source_binding["checkout_head"] == verified["source_commit"] == expected_head
                     and source_binding["tree"] == verified["source_tree"] == binding["tree"]
+                    and source_binding["input_checkout"] == invocation["repository_path"]
                     and source_binding["profile"] == verified["profile"] == profile and verified["status"] == "passed",
                     "independent compact source/profile binding differs")
             source_digest = sha256(bodies[prefix + "evidence/source-binding.json"])
@@ -2118,6 +2133,9 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
                     schema.assert_one_pass(bodies[prefix + "evidence/commands/" + row["stdout"]].decode(), test)
                     outcomes.append(test)
             exact_inventory(outcomes, expected_names, "independent compact executed tests")
+            admit_independent_git_commands([document(name) for name in sorted(bodies)
+                if name.startswith(prefix + "evidence/commands/") and name.endswith(".json")],
+                source_binding["input_checkout"], expected_head, Path(source_binding["run_root"]), schema)
             observed = independent_admission_identity(sha256(bodies[prefix + "state.json"]), state,
                 {key: full_binary[key] for key in ("bytes", "mode", "sha256")}, verified, outcomes)
             require(observed == result["admission"], "independent compact terminal bodies differ from original launcher admission")

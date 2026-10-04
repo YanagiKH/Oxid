@@ -80,6 +80,70 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual({r["git_blob"] for r in originals}, {
             self.git(runner.args.repo, "rev-parse", "HEAD:" + r["path"]) for r in originals})
 
+    def test_real_git_owned_and_simulated_foreign_checkout_share_exact_scope(self):
+        owned = self.prepared()
+        args = argparse.Namespace(**vars(owned.args))
+        args.output = self.root / "simulated foreign replay"
+        runner = replay.Replay(args)
+        original_run = subprocess.run
+        environment = dict(os.environ, GIT_TEST_ASSUME_DIFFERENT_OWNER="1",
+                           GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        raw = original_run(["git", "--no-optional-locks", "-C", str(args.repo), "rev-parse", "--show-toplevel"],
+                           env=environment, capture_output=True)
+        self.assertEqual(raw.returncode, 128)
+        self.assertIn(b"dubious ownership", raw.stderr)
+        observations = []
+        def foreign_child(argv, **kwargs):
+            # Git's official child-only ownership test switch needs no chown,
+            # privilege, permission or persistent Git configuration mutation.
+            kwargs['env'] = dict(kwargs['env'], GIT_TEST_ASSUME_DIFFERENT_OWNER="1")
+            observations.append((argv, dict(kwargs['env'])))
+            return original_run(argv, **kwargs)
+        runner.environment.update(GIT_DIR="/unwanted/repository", GIT_WORK_TREE="/unwanted/worktree",
+            GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0="*")
+        with mock.patch.object(replay.subprocess, "run", side_effect=foreign_child):
+            runner.run()
+            runner.args.resume = True
+            runner.run()
+        self.assertEqual(runner.state['completed'], ['prepare'])
+        self.assertEqual(len(observations), 11)
+        for argv, env in observations:
+            self.assertEqual(argv[:8], replay.git_argv(args.repo))
+            self.assertEqual({key for key in env if key.startswith('GIT_')},
+                             {'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_TEST_ASSUME_DIFFERENT_OWNER'})
+        labels = [replay.load(path)['label'] for path in next(runner.root.glob('resume-checks-*')).glob('*.json')]
+        self.assertCountEqual(labels, ['original-head', 'original-status'])
+
+    def test_real_git_exact_trust_rejects_other_repo_despite_inherited_wildcard(self):
+        selected = self.repo()
+        other = self.root / 'other checkout'
+        other.mkdir()
+        self.git(other, 'init', '-q')
+        environment = dict(os.environ, GIT_TEST_ASSUME_DIFFERENT_OWNER='1', GIT_CONFIG_NOSYSTEM='1',
+            GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='safe.directory', GIT_CONFIG_VALUE_0='*')
+        argv = replay.git_argv(selected, 'rev-parse', '--show-toplevel')
+        admitted = subprocess.run(argv, env=environment, capture_output=True)
+        self.assertEqual(admitted.returncode, 0)
+        argv[argv.index('-C') + 1] = str(other)
+        denied = subprocess.run(argv, env=environment, capture_output=True)
+        self.assertEqual(denied.returncode, 128)
+        self.assertIn(b'dubious ownership', denied.stderr)
+
+    def test_checkout_scope_rejects_subdirectory_parent_discovery_and_rebinding(self):
+        runner = self.prepared()
+        nested = runner.args.repo / 'nested'
+        nested.mkdir()
+        with self.assertRaisesRegex(RuntimeError, 'checkout root'):
+            runner.bind_git_checkout(nested)
+        other = self.root / 'other checkout'
+        other.mkdir()
+        self.git(other, 'init', '-q')
+        with self.assertRaisesRegex(RuntimeError, 'scope changed'):
+            runner.bind_git_checkout(other)
+        for bad in ('relative', '/safe/../wrong', '/safe/*', '/safe\nwrong'):
+            with self.subTest(path=bad), self.assertRaisesRegex(RuntimeError, 'canonical absolute path'):
+                replay.git_argv(bad, 'rev-parse', 'HEAD')
+
     def test_dirty_checkout_is_rejected_without_copying_uncommitted_bytes(self):
         repo = self.repo()
         (repo / "kept.txt").write_text("dirty edits\n")

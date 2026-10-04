@@ -532,6 +532,7 @@ jobs:
       - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
         run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2
       - name: Index and preserve combined Unit2E evidence on every terminal state
+        id: unit2e_preservation
         if: always()
         timeout-minutes: 15
         shell: bash
@@ -540,6 +541,7 @@ jobs:
           UNIT2E_INDEPENDENT_DEBUG_OUTCOME: ${{ steps.unit2e_independent_debug.outcome }}
           UNIT2E_INDEPENDENT_RELEASE_OUTCOME: ${{ steps.unit2e_independent_release.outcome }}
         run: |
+          printf 'upload-root=%s\n' "$RUNNER_TEMP/fixed-array-unit2e-upload" >> "$GITHUB_OUTPUT"
           python3 -B scripts/verify_owned_array_native.py package \
             --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
             --output "$RUNNER_TEMP/fixed-array-unit2e-upload" \
@@ -556,9 +558,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-index.json
-            ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-compact.tar.gz
-            ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-compact.tar.gz.sha256
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-index.json
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-compact.tar.gz
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-compact.tar.gz.sha256
       - name: Retain complete or explicitly incomplete combined Unit2E evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -567,8 +569,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-evidence.tar.gz
-            ${{ runner.temp }}/fixed-array-unit2e-upload/fixed-array-unit2e-evidence.tar.gz.sha256
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-evidence.tar.gz
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-evidence.tar.gz.sha256
 
   unit4-linux:
     name: Unit4 current typed-project qualification (Linux x86_64)
