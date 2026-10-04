@@ -1,6 +1,9 @@
 //! Source-free observer controls and a separately ignored source-only transport.
 use super::*;
 
+#[path = "array_pipeline_transport.rs"]
+mod transport;
+
 #[test]
 fn unit3b2_observer_bytes_admission_checks_modules_and_copy_lengths() {
     let limits = ProjectLimits {
@@ -216,8 +219,17 @@ fn downward<T: std::str::FromStr>(name: &str, default: T) -> T {
 #[test]
 #[ignore = "requires independently admitted source, observer implementation and wire contract"]
 fn unit3b2_source_only_transport() {
-    let root = std::env::var("OXID_ARRAY_PIPELINE_ROOT").expect("fixed source root");
-    assert!(root.len() <= 4096, "bounded transport root path");
+    let input_kind =
+        transport::InputKind::from_environment(std::env::var("OXID_ARRAY_PIPELINE_INPUT_KIND"))
+            .expect("closed source transport input kind");
+    let root = match input_kind {
+        transport::InputKind::Root => {
+            let root = std::env::var("OXID_ARRAY_PIPELINE_ROOT").expect("fixed source root");
+            assert!(root.len() <= 4096, "bounded transport root path");
+            Some(root)
+        }
+        transport::InputKind::Bytes => None,
+    };
     let control = match std::env::var("OXID_ARRAY_PIPELINE_CONTROL").as_deref() {
         Ok("complete") | Err(_) => Control::Complete,
         Ok("literal-capacity-failure") => Control::FailLiteralOperand {
@@ -261,14 +273,23 @@ fn unit3b2_source_only_transport() {
         "OXID_ARRAY_PIPELINE_VERIFY_METADATA",
         limits.verification.metadata,
     );
-    let receipt = observe(
-        SourceInput::Root {
-            path: Path::new(&root),
-        },
-        Mode::Validate,
-        limits,
-        control,
-    );
+    let receipt = match input_kind {
+        transport::InputKind::Root => observe(
+            SourceInput::Root {
+                path: Path::new(root.as_deref().expect("selected Root input")),
+            },
+            Mode::Validate,
+            limits,
+            control,
+        ),
+        transport::InputKind::Bytes => {
+            let frame = transport::read_bytes_frame(&mut std::io::stdin().lock())
+                .expect("bounded original Bytes input frame");
+            let receipt = observe(frame.input(), Mode::Validate, limits, control);
+            drop(frame);
+            receipt
+        }
+    };
     println!("\nOXID_ARRAY_PIPELINE_ROWS_BEGIN");
     print!("{}", receipt.transcript);
     println!("OXID_ARRAY_PIPELINE_ROWS_END");
