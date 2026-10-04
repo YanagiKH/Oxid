@@ -214,8 +214,6 @@ fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
         ("--1", "-"),
         ("-x", "-"),
         ("-id()", "-"),
-        ("1 / 2", "/"),
-        ("1 % 2", "%"),
         ("true & false", "&"),
         ("true | false", "|"),
         ("1 as i32", "as"),

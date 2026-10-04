@@ -275,6 +275,8 @@ fn arithmetic(op: source_hir::ArithmeticOp) -> &'static str {
         source_hir::ArithmeticOp::Add => "add",
         source_hir::ArithmeticOp::Subtract => "sub",
         source_hir::ArithmeticOp::Multiply => "mul",
+        source_hir::ArithmeticOp::Divide => "div",
+        source_hir::ArithmeticOp::Remainder => "rem",
     }
 }
 fn comparison(op: source_hir::ComparisonOp) -> &'static str {

@@ -54,11 +54,13 @@ walks, the null-origin malformed-source diagnostic change, retained compatibilit
 identities and the test-only host-selection successor. These counts do not imply
 native execution of every composition case or qualification of all programs.
 
-A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
+A narrower explicit [LLVM native preview](../../spec/native-preview.md) compiles bounded, nonrecursive scalar programs, including checked i32 `+`, `-`, `*`, `/`, `%`, explicit i32/bool comparisons short-circuit boolean logic, mutable scalar locals and guarded while loops, to Linux x86_64 ELF PIE. See
 [RFC 0004](../../rfcs/0004-bounded-reference-execution.md) for exact execution limits
 and [RFC 0005](../../rfcs/0005-exact-i32-literals.md) for exact i32 literals.
 [RFC 0006](../../rfcs/0006-checked-i32-arithmetic.md) adds ordinary checked i32
 addition, subtraction and multiplication, with profile-independent runtime overflow.
+[RFC 0018](../../rfcs/0018-checked-i32-division.md) extends this with checked
+division and remainder, truncation toward zero and explicit zero-divisor errors.
 [RFC 0011](../../rfcs/0011-mutable-scalar-locals.md) adds initialized typed scalar
 places and ordered statement assignment through both reference and native execution.
 The linked C/C++ helpers accelerate selected host operations; their existence

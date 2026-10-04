@@ -28,6 +28,8 @@ pub enum ArithmeticOp {
     Add,
     Subtract,
     Multiply,
+    Divide,
+    Remainder,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComparisonOp {

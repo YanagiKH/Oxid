@@ -408,7 +408,7 @@ def negative_cases():
         ("true ^ false", "^", "E0100"), ("~true", "~", "E0100"),
         ("true ! false", "!", "E0100"), ("true && || false", "||", "E0100"),
         ("true || && false", "&&", "E0100"), ("-(1)", "-", "E0101"),
-        ("true ! = false", "!", "E0100"), ("1 / 2 == 0", "/", "E0101"),
+        ("true ! = false", "!", "E0100"),
     ]:
         yield "invalid_token", prefix + expression + "; }", code, "parse", len(prefix) + expression.index(marker), len(marker)
     for expression in ("true &&", "false ||", "!", "true && !"):

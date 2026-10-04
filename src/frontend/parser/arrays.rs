@@ -107,7 +107,10 @@ impl Parser<'_> {
                 })?;
         }
         self.bump();
-        if matches!(self.peek().kind, Kind::Plus | Kind::Minus | Kind::Star) {
+        if matches!(
+            self.peek().kind,
+            Kind::Plus | Kind::Minus | Kind::Star | Kind::Slash | Kind::Percent
+        ) {
             return Err(self.array_unsupported(self.peek().span));
         }
         let end = self.array_close("array type requires `]`")?;

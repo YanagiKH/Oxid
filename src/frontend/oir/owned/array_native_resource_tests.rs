@@ -49,6 +49,7 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
     match kind {
         FailureKind::Fuel => RunFailure::Fuel(origin).diagnostic(sources),
         FailureKind::Overflow => RunFailure::Overflow(origin).diagnostic(sources),
+        FailureKind::DivisionByZero => RunFailure::DivisionByZero(origin).diagnostic(sources),
         FailureKind::Bounds => execute::OwnedRunFailure::Bounds(origin).diagnostic(sources),
     }
     .render_human(sources)

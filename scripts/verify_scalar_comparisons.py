@@ -245,7 +245,7 @@ def negative_cases():
         ("1 > /* 雪 */ = 2", "="), ("1 =/* 雪 */=2", "="),
         ("1 !/* 雪 */=2", "!"), ("true and false", "and"),
         ("true & false", "&"), ("true | false", "|"),
-        ("1 / 2 == 0", "/"), ("1 as bool", "as"),
+        ("1 as bool", "as"),
     ]:
         yield "token", prefix + expr + "; }", ("E0100" if marker in ("!", "=") else "E0101"), "parse", len(prefix) + expr.index(marker), len(marker)
     for expr, marker in [("(1 < 2) + 3", "(1 < 2)"), ("(1 < 2) < 3", "(1 < 2)"), ("1 < (2 < 3)", "(2 < 3)")]:

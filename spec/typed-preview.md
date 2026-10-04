@@ -340,13 +340,16 @@ branches. Exact integer conversion never uses f64 or a bigint.
 
 ### Checked i32 arithmetic
 
-Binary `+`, `-` and `*` require i32 operands and return i32. `*` binds more tightly
+Binary `+`, `-`, `*`, `/` and `%` require i32 operands and return i32. `*`, `/` and `%` bind more tightly
 than `+`/`-`; each level associates left. Parentheses override precedence. The
 left operand is fully evaluated before the right, then the operation executes.
 Calls execute exactly once in that order, and the first error stops execution.
 `1--2` subtracts the signed literal -2; general unary negation is still unavailable.
 
-Every operation checks its exact result against the i32 range. Overflow is
+Division truncates toward zero; remainder has the dividend's sign (or is zero).
+A zero divisor in either operation is E0607/oir-run at its operator. Both
+`-2147483648 / -1` and `-2147483648 % -1` are checked overflow.
+Every operation checks its result against the i32 range. Overflow is
 E0604/oir-run at the operator's one-byte source span, with exit 1 and no partial
 result. Host debug and release builds behave identically. No folding, wrapping,
 saturation, widening or reassociation occurs: `2147483647 + 1 - 1` and
@@ -354,11 +357,11 @@ saturation, widening or reassociation occurs: `2147483647 + 1 - 1` and
 execution; out-of-range literals still fail E0203 before running. Unchosen arms
 do not execute, but every arm is name/type checked. Wrong arithmetic operands
 produce E0300 at the first wrongly typed operand. Discarded arithmetic still runs.
-The bounded [native preview](native-preview.md) supports these same three checked
+The bounded [native preview](native-preview.md) supports these same five checked
 operations, with the reference human overflow diagnostic and exit 1. Its stricter
 whole-file admission bounds and native I/O failure status 74 still apply.
 
-Division, remainder, casts, shifts, explicit wrapping,
+Casts, shifts, explicit wrapping,
 other numeric types and their overflow rules remain unavailable. Literal range
 validity remains a separate compile-time rule.
 
@@ -738,6 +741,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0602 | Live call-frame limit exceeded |
 | E0603 | Live local-slot limit exceeded |
 | E0604 | Checked i32 arithmetic overflow at its operator |
+| E0607 | Checked i32 division or remainder by zero at its operator |
 | E0605 | Owned execution-plan, expanded-cell, requested-byte or allocation limit (oir-owned-run stage) |
 | E0606 | Signed array index out of bounds at the complete access or store target (oir-owned-run stage) |
 

@@ -1062,12 +1062,18 @@ impl Parser<'_> {
         context: LiteralContext,
     ) -> Result<ExprId, Box<Diagnostic>> {
         let mut left = self.unary(depth, context)?;
-        while let Some(token) = self.take(Kind::Star) {
+        loop {
+            let op = match self.peek().kind {
+                Kind::Star => ArithmeticOp::Multiply,
+                Kind::Slash => ArithmeticOp::Divide,
+                Kind::Percent => ArithmeticOp::Remainder,
+                _ => return Ok(left),
+            };
+            let operator_span = self.bump().span;
             self.node()?;
             let right = self.unary(depth, context)?;
-            left = self.binary(ArithmeticOp::Multiply, left, right, token.span)?;
+            left = self.binary(op, left, right, operator_span)?;
         }
-        Ok(left)
     }
     fn unary(&mut self, depth: usize, context: LiteralContext) -> Result<ExprId, Box<Diagnostic>> {
         let mut prefixes = Vec::new();
