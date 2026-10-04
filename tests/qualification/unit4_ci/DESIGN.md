@@ -3,7 +3,7 @@
 This integration owns orchestration and evidence transport only. It does not
 change the public semantic contracts, portable parser, hosted capability
 controller, or existing CI gate responsibilities. Current compiler and observer
-identities are explicitly refreshed for the reviewed checked division, formatter and
+identities are explicitly refreshed for the reviewed borrowed slices, checked division, formatter and
 fixed-array implementation; the lifecycle observer overlay and historical
 source/corpus authorities stay unchanged.
 
@@ -11,7 +11,7 @@ source/corpus authorities stay unchanged.
 
 `gate.py host --repo REPO --output FRESH --expected-head SHA --event-sha SHA
 --host HOST [--historical-repo REPO --toolchain ROOT --cargo-cache CACHE]` is the
-mandatory actual-host route. All admitted component files, membership, source185,
+mandatory actual-host route. All admitted component files, membership, source188,
 Git head/full tree, contract transport and amendments are checked before importing
 component code, writing materialized inputs, or executing a compiler. Inputs are
 rechecked before every stage and before completion. HOST is an expectation checked
@@ -82,22 +82,22 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its 122 reviewed source/input changes include five explicitly admitted observer
+Its 126 reviewed source/input changes include five explicitly admitted observer
 instrumentation overlaps: ast.rs, lexer.rs, parser.rs, project/budget.rs and source.rs.
 The AST and parser also overlap control instrumentation. Each current composition
 is pinned and preserves the historical transforms; unlisted overlaps reject.
-Historical283/current348 base maps, historical286/current351 derived maps and
-historical113/current136 compiler rosters remain separate identity domains.
-The source-binding transition separately verifies 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
+Historical283/current348 base maps, historical286/current354 derived maps and
+historical113/current139 compiler rosters remain separate identity domains.
+The source-binding transition separately verifies 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
 predecessor inputs and 117 archived inputs. Sessions explicitly deny historical
-source equivalence and bind the current185 manifest, reviewed source checkpoint
+source equivalence and bind the current188 manifest, reviewed source checkpoint
 and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 351-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 348-member base map. Compact omission is limited to the
-other 350 derived-tree members per role and four binaries, for 704 omitted identities.
+belong to the 354-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 351-member base map. Compact omission is limited to the
+other 353 derived-tree members per role and four binaries, for 710 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.
@@ -114,8 +114,9 @@ with JSON control-character escaping and escaped workflow-marker pairs, plus
 byte counts and a truncation flag. No other stage gets a new diagnostic tail;
 existing failure, timeout and stream-limit handling is unchanged.
 
-The division successor admits only five exact observer instrumentation overlaps
-and two exact control overlaps. Division sections first recover the pinned combined AST, lexer and parser bodies.
+The slice successor admits only five exact observer instrumentation overlaps
+and two exact control overlaps. Slice sections first recover the pinned division AST and parser bodies.
+Division sections then recover the pinned combined AST, lexer and parser bodies.
 Array source sections then recover historical bodies before the unchanged
 preparation functions compose current hooks; the lexer retains both token hooks. The
 observer's direct Parser initializer adds only the closed array policy; its
