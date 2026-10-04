@@ -39,6 +39,11 @@ TYPED_PROJECTS = {
         "fixtures/typed-project-batch/jobs.ox",
         "fixtures/typed-project-batch/state.ox",
     ),
+    "fixtures/typed-slice-samples/main.ox": (
+        "fixtures/typed-slice-samples/main.ox",
+        "fixtures/typed-slice-samples/buffers.ox",
+        "fixtures/typed-slice-samples/stats.ox",
+    ),
 }
 READMES = ("README.md", "README_ZH.md", "README_JP.md")
 IMAGES = (

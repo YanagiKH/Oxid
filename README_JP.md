@@ -104,6 +104,8 @@ Oxid 0.9 は実験や小さなツール向けです。`.oxb` にはシリアラ�
 
 実験的な[固定長スカラー配列拡張](spec/typed-preview.md#fixed-scalar-arrays)は、typed-preview を明示した `check`、`run`、`compile` に、ムーブ専用 bool/i32/unit 配列、境界検査付き添字、`len()`、呼び出し中の配列全体の借用を追加します。[3 モジュールのサンプル](fixtures/typed-array-samples/README.md)は 5325 を返します。構文、対象プラットフォーム、より厳しいネイティブ制限は仕様を参照してください。既定および legacy の配列動作は変わりません。
 
+実験的な[呼び出し限定の借用スカラースライス](spec/typed-preview.md#call-only-borrowed-scalar-slices)では、共有 `&[T]` と排他的 `&mut [T]` の補助関数が、明示的な借用・再借用を通じて長さの異なる bool/i32/unit 固定長配列全体を処理できます。[3 モジュールのスライスサンプル](fixtures/typed-slice-samples/README.md)は長さ 2、3、0 を使い、515 を返します。対象は typed-preview を明示した `check`、`run`、ネイティブ `compile` に限られ、既存の Linux 限定モジュール読み込みと、Linux x86_64・LLVM/Clang/LLD 19.1.7・O0 のネイティブ制限を維持します。範囲指定、部分スライス、所有されるサイズ不定値は未対応であり、安定性やマイルストーンの完成を意味しません。
+
 実験的な[型付きフォーマッター](spec/typed-preview.md#single-file-formatting)は固定長配列の構文と `oxid fmt --edition typed-preview input.ox`（整形済みソース全体を標準出力へ）と `--check`（整形が必要なら終了コード 1）をサポートします。コメントと既存の改行を保持して空白とインデントを整え、モジュールの読み込みやファイルへの書き込みは行いません。既定の従来フォーマット動作は変更されません。
 
 信頼できるプログラムだけを実行し、依存関係を確認してください。生成された C/C++ プロセスアダプターには、信頼できるパスだけを渡してください。脆弱性の非公開報告については[セキュリティポリシー](SECURITY.md)を参照してください。

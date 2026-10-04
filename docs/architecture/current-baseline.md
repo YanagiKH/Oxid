@@ -193,5 +193,25 @@ Private observation and ArrayConsumer admissions still cannot be promoted into
 public SourceProgram authority. Declared-child loading remains Linux-only, and
 native remains Linux x86_64 with LLVM 19.1.7 at O0 under stricter whole-program
 resource limits. Source-legal large arrays are not guaranteed native admission.
-Exact-head hosted CI remains separate. Nested arrays, slices, heap collections,
+Exact-head hosted CI remains separate. Nested arrays, owned unsized values, heap collections,
 element references and a v1.0 stability claim are outside this capability.
+
+The experimental [call-only borrowed scalar slice extension](../../spec/typed-preview.md#call-only-borrowed-scalar-slices)
+adds `&[T]` and `&mut [T]` parameters to explicit typed-preview check/run/native
+compile. One helper can read or mutate complete existing fixed arrays of
+different lengths, including zero, with exact bool/i32/unit elements. Explicit
+`&*p` and `&mut *p` reborrows retain the backing owner's permissions and runtime
+length. Indexed access and `len()` retain bounds, evaluation-order, fuel and
+whole-owner conflict rules; no new collection allocation is introduced. The
+[three-module slice sample](../../fixtures/typed-slice-samples/README.md) returns
+515 using lengths 2, 3 and 0.
+
+[RFC 0019](../../rfcs/0019-borrowed-scalar-slices.md) bounds this extension to
+whole-array call views. Ranges, subslices, owned unsized locals/fields/results,
+element borrows and escaping references remain excluded. The existing source
+and native admission caps, Linux-only declared-child loading and Linux x86_64
+LLVM/Clang/LLD 19.1.7 at O0 native qualification boundary are unchanged. The
+[public slice controls](../../tests/typed_slices.rs) specify acceptance cases;
+their presence does not establish current exact-head hosted CI. Older
+source-bound validation ledgers qualify their recorded compiler identities,
+not this successor. No stable ABI, self-hosting or completed milestone is claimed.

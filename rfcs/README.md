@@ -29,8 +29,17 @@ record and call-only borrowing contract. [RFC 0015](0015-bounded-typed-projects.
 extends it to bounded typed projects. Both have production source paths;
 their validation ledgers distinguish actual activation from earlier groundwork.
 
-[RFC 0016](0016-fixed-scalar-arrays.md) proposes fixed scalar arrays and checked
-indexing. Its preparatory units implement private identity/layout, raw verification
-and gated reference/native consumers. Public array syntax and production raw
-array admission remain disabled; the validation ledgers distinguish local
-consumer execution and combined controller admission from hosted qualification.
+[RFC 0016](0016-fixed-scalar-arrays.md) records the experimental fixed scalar
+array contract, now exposed through explicit typed-preview check/run/native
+compile. The [public-route ledger](../docs/architecture/fixed-array-public-validation.md)
+distinguishes its source qualification from earlier private identity/layout,
+raw-verifier and gated-consumer evidence.
+
+[RFC 0019](0019-borrowed-scalar-slices.md) extends that path with call-only
+`&[T]` / `&mut [T]` views of complete fixed scalar arrays, checked indexing,
+runtime length and explicit reborrows. Owned unsized values, ranges, subslices,
+element borrows and escaping references remain excluded. Existing source,
+resource and native host gates remain in force. Its acceptance controls and
+[three-module sample](../fixtures/typed-slice-samples/README.md) do not establish
+green exact-head hosted CI or a completed milestone; historical ledgers retain
+their original source and compiler qualification identities.

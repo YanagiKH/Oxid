@@ -20,15 +20,25 @@ class ProjectRegistrationTests(unittest.TestCase):
     def test_children_use_real_entry_and_unrelated_sources_stay_legacy(self):
         extra = self.root / 'fixtures/typed-project-batch/unregistered.ox'
         checks, entries, count = verify_repo.source_plan(sorted(self.members + self.data_sources + [extra]), self.root)
-        self.assertEqual(count, 7)
-        self.assertEqual(len(entries), 3)
+        self.assertEqual(count, 10)
+        self.assertEqual(len(entries), 4)
         self.assertIn((extra, False), checks)
         self.assertIn((self.root / 'fixtures/typed-project-batch/main.ox', True), checks)
         self.assertNotIn(self.root / 'fixtures/typed-project-batch/jobs.ox', [p for p, _ in checks])
         self.assertIn((self.root / 'fixtures/typed-array-samples/main.ox', True), checks)
         for name in ('stats.ox', 'samples.ox'):
             self.assertNotIn(self.root / 'fixtures/typed-array-samples' / name, [p for p, _ in checks])
-        self.assertEqual(len(checks), 4)
+        self.assertIn((self.root / 'fixtures/typed-slice-samples/main.ox', True), checks)
+        for name in ('buffers.ox', 'stats.ox'):
+            self.assertNotIn(self.root / 'fixtures/typed-slice-samples' / name, [p for p, _ in checks])
+        self.assertEqual(len(checks), 5)
+
+    def test_unregistered_slice_sample_member_stays_legacy(self):
+        extra = self.root / 'fixtures/typed-slice-samples/unregistered.ox'
+        checks, entries, count = verify_repo.source_plan(sorted(self.members + self.data_sources + [extra]), self.root)
+        self.assertIn((extra, False), checks)
+        self.assertNotIn(extra, entries)
+        self.assertEqual((len(checks), len(entries), count), (5, 4, 10))
 
     def test_missing_member_fails_before_commands(self):
         for member in self.members:

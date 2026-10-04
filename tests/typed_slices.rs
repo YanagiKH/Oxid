@@ -211,6 +211,28 @@ fn public_slice_linked_module_relay_produces_515() {
     assert_success(&module_project(), "515\n");
 }
 
+#[cfg(target_os = "linux")]
+fn documented_sample() -> Project {
+    let project = Project::new(include_str!("../fixtures/typed-slice-samples/main.ox"));
+    fs::write(
+        project.0.join("buffers.ox"),
+        include_str!("../fixtures/typed-slice-samples/buffers.ox"),
+    )
+    .unwrap();
+    fs::write(
+        project.0.join("stats.ox"),
+        include_str!("../fixtures/typed-slice-samples/stats.ox"),
+    )
+    .unwrap();
+    project
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn public_slice_documented_three_module_sample_produces_515() {
+    assert_success(&documented_sample(), "515\n");
+}
+
 fn bounds_cases() -> Vec<(&'static str, &'static str)> {
     vec![
         ("fn read(p:&[i32])->i32{return p[-1];} fn main()->i32{let a=[7];return read(&a);}", "p[-1]"),
@@ -383,8 +405,10 @@ fn public_slice_source_free_native_parity() {
             bounds_message(source, "main.ox", origin).as_bytes()
         );
     }
-    let native = module_project().native_without_sources();
-    assert!(native.status.success(), "{native:?}");
-    assert_eq!(native.stdout, b"515\n");
-    assert!(native.stderr.is_empty());
+    for project in [module_project(), documented_sample()] {
+        let native = project.native_without_sources();
+        assert!(native.status.success(), "{native:?}");
+        assert_eq!(native.stdout, b"515\n");
+        assert!(native.stderr.is_empty());
+    }
 }
