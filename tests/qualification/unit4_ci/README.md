@@ -1,8 +1,9 @@
 # Mandatory current Unit4 qualification
 
 This additive CI integration admits163 exact component members plus the
-133-file current compiler authority before any component use. The current authority includes the private fixed-array implementation and tests; its additive lifecycle observer
-contains134 members. The reviewed
+133-file current compiler authority before any component use. The current
+authority includes the formatter and prior fixed-array implementation and tests;
+its additive lifecycle observer contains134 members. The reviewed
 observer overlay and all semantic/native/mutation contracts remain unchanged.
 The public14-file adapter, hosted4-file controller, portable parser, and existing
 Unit1/2/3/ordinary/native gates retain their respective qualification roles.
