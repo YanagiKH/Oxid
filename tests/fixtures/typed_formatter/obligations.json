@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "17ed3de243785006ab888d87af4428d06117b21d",
+  "status": "declarative_acceptance_obligations_not_executed",
+  "construction_language": "Prose and concatenation/repetition recipes only. No generator or runner is supplied. Materialize in isolated temporary directories when implementation is authorized.",
+  "cli": [
+    {
+      "id": "stdout_exact",
+      "argv": [
+        "fmt",
+        "--edition",
+        "typed-preview",
+        "input.ox"
+      ],
+      "require": "For every positive case, stdout equals expected UTF-8 bytes, stderr is empty, exit is 0, and the input snapshot is unchanged."
+    },
+    {
+      "id": "check_changed",
+      "argv": [
+        "--edition=typed-preview",
+        "fmt",
+        "--check",
+        "input.ox"
+      ],
+      "require": "For every positive case whose input differs, stdout is empty, stderr is exactly 'typed-preview fmt: formatting required\\n', and exit is 1."
+    },
+    {
+      "id": "check_clean",
+      "argv": [
+        "fmt",
+        "input.ox",
+        "--edition=typed-preview",
+        "--check"
+      ],
+      "require": "For every positive expected output, both streams are empty and exit is 0."
+    },
+    {
+      "id": "text_selection",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "--message-format=text",
+        "input.ox"
+      ],
+      "require": "Same exact source output as default text diagnostics."
+    },
+    {
+      "id": "reject_json_after_selection",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "--message-format=json",
+        "input.ox"
+      ],
+      "require": "Exit 2, empty stdout, text CLI diagnostic on stderr, and no source open."
+    },
+    {
+      "id": "missing_operand",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview"
+      ],
+      "require": "Exit 2, E0001/cli on stderr, empty stdout, no directory traversal or default source."
+    },
+    {
+      "id": "multiple_operands",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "one.ox",
+        "two.ox"
+      ],
+      "require": "Exit 2 before either file is opened."
+    },
+    {
+      "id": "duplicate_check",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "--check",
+        "--check",
+        "input.ox"
+      ],
+      "require": "Exit 2 before opening input."
+    },
+    {
+      "id": "valued_check",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "--check=true",
+        "input.ox"
+      ],
+      "require": "Exit 2 before opening input."
+    },
+    {
+      "id": "unsupported_write",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "--write",
+        "input.ox"
+      ],
+      "require": "Exit 2; no write, no legacy fallback."
+    },
+    {
+      "id": "dash_filename",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "--",
+        "--check"
+      ],
+      "require": "Format the regular file literally named --check; do not set check mode."
+    },
+    {
+      "id": "reject_stdin",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "-"
+      ],
+      "require": "Exit 2 and do not read stdin."
+    },
+    {
+      "id": "literal_hyphen",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "./-"
+      ],
+      "require": "Format a regular file literally named -; no stdin mode."
+    },
+    {
+      "id": "reject_directory",
+      "argv": [
+        "fmt",
+        "--edition=typed-preview",
+        "folder"
+      ],
+      "require": "E0002/read, exit 2, empty stdout; folder children and manifest are not read."
+    },
+    {
+      "id": "reject_missing_or_unreadable",
+      "require": "E0002/read, exit 2, empty stdout; no fallback or candidate source."
+    },
+    {
+      "id": "reject_nonregular_file",
+      "require": "Reject FIFO/device sources with E0002/read before reading source bytes; test with platform-appropriate facilities and do not claim metadata/open race immunity."
+    },
+    {
+      "id": "regular_symlink",
+      "require": "Symlink to a regular file succeeds when host permits; exact target bytes unchanged. Broken/directory-target symlinks fail read admission."
+    },
+    {
+      "id": "invalid_utf8",
+      "bytes_hex": "ff",
+      "require": "E0003/read, exit 2, empty stdout in format and check modes."
+    },
+    {
+      "id": "no_discovery",
+      "require": "Use module_import_and_qualified_names with missing module files. Place unreadable/trap sibling sources, oxid.toml and cache markers nearby; only input is read, no discovery occurs, and no writes happen."
+    },
+    {
+      "id": "no_execution",
+      "require": "Use syntactically valid infinite recursion and while true source. Formatting terminates by syntax/format work, without interpreter/native/process invocation. A test harness should fail if any such seam is called."
+    },
+    {
+      "id": "no_writes",
+      "require": "Run from a read-only working directory with input readonly. Compare source and directory snapshots, excluding platform access-time effects. No .oxid, target, output or temporary source artifacts are created."
+    },
+    {
+      "id": "pipe_failure",
+      "require": "Inject bounded writer failures after zero bytes and after a short prefix, plus flush failure. Exit 2; never claim a complete atomic stream after partial write. Input unchanged; check mode never calls source stdout writer."
+    },
+    {
+      "id": "legacy_compatibility",
+      "require": "Default and explicit legacy fmt argv remain legacy routes. Use a disposable legacy fixture to preserve prior mutation behavior; typed errors must not reach that route. Preserve script payload edition/format words and -- separator handling."
+    },
+    {
+      "id": "existing_operation_compatibility",
+      "require": "Published check/run/compile option and diagnostic behavior is unchanged. Formatter JSON rejection is scoped to a successfully selected typed fmt route; preselection global routing errors keep existing behavior."
+    },
+    {
+      "id": "check_is_not_global",
+      "argv": [
+        "--check",
+        "fmt",
+        "--edition=typed-preview",
+        "input.ox"
+      ],
+      "require": "Reject as command/argument routing error; --check must follow fmt. No source read or legacy fallback."
+    }
+  ],
+  "resources": [
+    {
+      "id": "source_limit_exact_and_candidate_exact",
+      "recipe": "Let C(n) = '/*' + n ASCII x bytes + '*/'. Join 16 copies of C(65531) with one ASCII space and append LF.",
+      "arithmetic": "16*65535 + 15 + 1 = 1048576 bytes; each comment is 65535 bytes; 32 non-EOF tokens.",
+      "expect": "Input at exact source cap is unchanged and accepted; check returns 0."
+    },
+    {
+      "id": "source_limit_one_over",
+      "recipe": "Append one ASCII space to source_limit_exact_and_candidate_exact.",
+      "expect": "Input read rejects E0400 before lex/parse; max+1 bounded read; no stdout."
+    },
+    {
+      "id": "candidate_limit_exact",
+      "recipe": "Concatenate 16 copies of C(65531) without gaps.",
+      "arithmetic": "Input 1048560 bytes; output inserts 15 spaces and LF, reaching exactly 1048576.",
+      "expect": "Accept; second format identical and check on candidate returns 0."
+    },
+    {
+      "id": "candidate_limit_one_over",
+      "recipe": "Concatenate one C(65532) and fifteen C(65531) without gaps.",
+      "arithmetic": "Input 1048561 bytes fits; each token fits; canonical output 1048577 bytes exceeds cap.",
+      "expect": "E0400/format before stdout in format and check modes."
+    },
+    {
+      "id": "comment_token_exact",
+      "recipe": "C(65532), one complete 65536-byte block-comment token.",
+      "expect": "Accept and append one LF, preserving exact comment."
+    },
+    {
+      "id": "comment_token_one_over",
+      "recipe": "C(65533), one complete 65537-byte block-comment token.",
+      "expect": "E0400/lex before stdout."
+    },
+    {
+      "id": "whitespace_token_exact",
+      "recipe": "65536 ASCII spaces.",
+      "expect": "Lex admission succeeds; output empty."
+    },
+    {
+      "id": "whitespace_token_one_over",
+      "recipe": "65537 ASCII spaces.",
+      "expect": "E0400/lex even though a successful formatter would otherwise discard boundary whitespace."
+    },
+    {
+      "id": "output_token_exact",
+      "recipe": "Concatenate 50000 copies of '/**/' without gaps.",
+      "arithmetic": "50000 input comment tokens become 50000 comment tokens + 49999 one-space tokens + one final LF token = 100000 output tokens.",
+      "expect": "Accept; output is comments joined by one space plus LF. Idempotence and check pass."
+    },
+    {
+      "id": "output_token_one_over_pair",
+      "recipe": "Concatenate 50001 copies of '/**/' without gaps.",
+      "arithmetic": "50001 input tokens fit; candidate would have 100002 non-EOF tokens.",
+      "expect": "E0400/format, empty stdout, no drift result from check."
+    },
+    {
+      "id": "input_token_exact",
+      "recipe": "The expected output from output_token_exact: 50000 '/**/' comments separated by spaces, then LF.",
+      "expect": "Exactly 100000 non-EOF tokens; accept unchanged."
+    },
+    {
+      "id": "input_token_one_over",
+      "recipe": "Append '/**/' to input_token_exact.",
+      "expect": "Exactly 100001 non-EOF tokens: E0400/lex before formatting, despite a lexically complete input."
+    },
+    {
+      "id": "expression_height",
+      "recipe": "Wrap true in 63 grouping pairs within 'fn f()->bool{return ...;}', then repeat with 64 pairs.",
+      "expect": "First fits 64 expression frames/height; second fails E0400/parse."
+    },
+    {
+      "id": "flat_expression_height",
+      "recipe": "Return a sum of 64 decimal 1 terms, then 65 terms, in a function.",
+      "expect": "64 terms accepted, 65 fails E0400/parse; flat text must not evade AST-height bound."
+    },
+    {
+      "id": "statement_block_frames",
+      "recipe": "Function body plus 63 nested 'if true{' blocks, with return; innermost and matching closers; then use 64 nested if blocks.",
+      "expect": "64 total active blocks accepted; 65 fails E0400/parse. No typechecking is needed."
+    },
+    {
+      "id": "parameter_and_argument_count",
+      "recipe": "Function with 256 uniquely named i32 parameters / a direct call with 256 true arguments; then 257 each in separate sources.",
+      "expect": "256 each admitted; 257 fails E0400/parse."
+    },
+    {
+      "id": "path_segments",
+      "recipe": "A use path containing crate and 33 ordinary segments; then crate and 34.",
+      "expect": "34 total admitted; 35 fails E0400/parse. No referenced modules exist or are read."
+    },
+    {
+      "id": "node_count_isolation",
+      "recipe": "At the production parse_counted seam use 'fn f()->(){true;return;}' with node_limit 4, then 3.",
+      "arithmetic": "Function 1 + true statement 1 + true expression 1 + return statement 1 = 4 nodes.",
+      "expect": "4 succeeds, 3 fails E0400/parse. Also verify public configured limit stays 100000. Do not fabricate a natural 100001-node corpus that first violates another bound."
+    },
+    {
+      "id": "diagnostic_limit",
+      "recipe": "More than 100 independently recoverable malformed top-level function declarations.",
+      "expect": "At most 100 diagnostics and empty source stdout; no suffix formatting."
+    },
+    {
+      "id": "delimiter_and_scratch_isolation",
+      "recipe": "Use reduced injected limits at the same formatter admission code: a valid source whose independently counted delimiter/work-table requirement equals the limit, then lower that limit by one.",
+      "expect": "Exact boundary accepted, one-over rejected E0400/format before reserve/write. Production maxima remain stack 128 and logical scratch 8 MiB."
+    },
+    {
+      "id": "allocation_failure",
+      "recipe": "Inject each formatter-owned fallible reserve failure, including output reserve, role table, comment anchors and candidate source owner.",
+      "expect": "E0400/format or existing source/parser resource diagnostic; no candidate stdout, no panic from the new formatter-owned failure path."
+    },
+    {
+      "id": "checked_overflow",
+      "recipe": "Exercise checked count/add/multiply seams with synthetic length values that overflow usize without constructing huge source.",
+      "expect": "Reject before reserve or emission; no wraparound and no false small buffer admission."
+    }
+  ],
+  "invariants": [
+    {
+      "id": "protected_projection",
+      "require": "Compare the single interleaved sequence of nontrivia (kind, raw bytes) atoms and (comment, raw bytes) atoms. Also compare comment token-neighbor ordinals and LF counts of interior gaps; apply RFC BOF/EOF normalization exceptions. Whitespace atoms and EOF are excluded from the protected sequence."
+    },
+    {
+      "id": "ast_equivalence",
+      "require": "Parse input and expected/candidate independently in ProjectCandidate mode and compare all semantic fields/arena edges after location rebasing. Keep Group nodes, exact digit bytes/sign, visibility, item order and path segmentation."
+    },
+    {
+      "id": "fixed_point",
+      "require": "For each positive case, format its expected bytes, require exact equality, then check with exit 0. Do not rewrite the golden from the actual result."
+    },
+    {
+      "id": "projection_mutation_controls",
+      "require": "Deliberately alter one decimal digit, operator, grouping delimiter, trailing comma, comment byte or comment anchor in comparison inputs. Each comparator must reject its relevant mismatch."
+    },
+    {
+      "id": "ast_mutation_controls",
+      "require": "Alter a normalized AST operator, literal sign, Group node, visibility, item order, path segment or borrow mutability while preserving unrelated fields. AST comparator must reject every mutation."
+    },
+    {
+      "id": "gap_only_variants",
+      "require": "Generate legal whitespace-only perturbations of fixed independent goldens without splitting :: or changing line-comment reach; test fixed point and invariants. Do not assume different original LF patterns must converge to one output, because this slice preserves lines."
+    },
+    {
+      "id": "no_circular_oracle",
+      "require": "Goldens remain hand-authored. Resource counts come from formulas above. AST normalization and projection comparators must not call the formatter or reuse its token-role/spacing decision helpers."
+    }
+  ]
+}
