@@ -9,11 +9,12 @@
 
 use super::{
     hir::*,
-    hir_budget::{Capacity, MAX_HIR_BYTES},
+    hir_budget::{Capacity, HirPlan, MAX_HIR_BYTES},
     typeck::{BorrowProjection, FlowSummary, TypeFrame, TypedBody},
 };
 use crate::frontend::{
-    diagnostic::Diagnostic, owned_diagnostic, project::budget::Allocator, source::Span,
+    declaration_index::WorkMeter, diagnostic::Diagnostic, owned_diagnostic,
+    parser::MAX_BLOCK_NESTING, project::budget::Allocator, source::Span,
 };
 use std::{cell::Cell, mem::size_of};
 
@@ -74,8 +75,7 @@ pub(super) const WIDTHS: [usize; KINDS] = [
     size_of::<ValueTy>(),
 ];
 
-/// Scalar input to the synthetic helper checkpoint. Deriving/reconciling these
-/// counts from immutable HIR is a later disconnected slice, not implemented yet.
+/// Scalar resource counts, never a source-association or typing witness.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct TypeCounts {
     pub(super) functions: usize,
@@ -299,6 +299,375 @@ pub(super) fn projection_fields(
     ticket.reserve(allocator, Vec::new(), at, "paid typed projection fields")
 }
 
+fn add(left: usize, right: usize, at: Span) -> Result<usize, Box<Diagnostic>> {
+    left.checked_add(right)
+        .ok_or_else(|| failure("typed storage count overflow", at))
+}
+fn visit(work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
+    work.debit(1, at, "typed storage preparation")
+}
+fn ordinary_value(value: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
+    if matches!(value, ValueTy::Owned(AggregateTy::Enum(_))) {
+        Err(invalid(at))
+    } else {
+        Ok(())
+    }
+}
+fn ordinary_parameter(value: &ParameterTy, at: Span) -> Result<(), Box<Diagnostic>> {
+    match value {
+        ParameterTy::Value(value) => ordinary_value(value, at),
+        ParameterTy::Reference {
+            referent: BorrowedTy::Exact(AggregateTy::Enum(_)),
+            ..
+        } => Err(invalid(at)),
+        ParameterTy::Reference { .. } => Ok(()),
+    }
+}
+impl TypeCounts {
+    fn combined(&self, other: &Self, at: Span) -> Result<Self, Box<Diagnostic>> {
+        // Build a complete candidate before replacing the caller's accumulator.
+        Ok(Self {
+            functions: add(self.functions, other.functions, at)?,
+            bindings: add(self.bindings, other.bindings, at)?,
+            expressions: add(self.expressions, other.expressions, at)?,
+            blocks: add(self.blocks, other.blocks, at)?,
+            statements: add(self.statements, other.statements, at)?,
+            borrow_arguments: add(self.borrow_arguments, other.borrow_arguments, at)?,
+            type_frames: add(self.type_frames, other.type_frames, at)?,
+            call_arguments: add(self.call_arguments, other.call_arguments, at)?,
+            calls: add(self.calls, other.calls, at)?,
+            presence_slots: add(self.presence_slots, other.presence_slots, at)?,
+            record_literals: add(self.record_literals, other.record_literals, at)?,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BlockCursor {
+    id: BodyBlockId,
+    statement: usize,
+    child: usize,
+}
+/// Exact ordinary HIR tree certificate, with no bitmap, recursion or heap.
+fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), Box<Diagnostic>> {
+    let at = function.end;
+    if function.body.0 != 0 || function.blocks.is_empty() {
+        return Err(invalid(at));
+    }
+    let mut frames = [None; MAX_BLOCK_NESTING];
+    let mut depth = 1usize;
+    let mut maximum = 1usize;
+    let mut next_block = 1usize;
+    let mut statements = 0usize;
+    visit(work, at)?;
+    frames[0] = Some(BlockCursor {
+        id: function.body,
+        statement: 0,
+        child: 0,
+    });
+    while depth != 0 {
+        let cursor = frames[depth - 1].as_mut().ok_or_else(|| invalid(at))?;
+        let block = function
+            .blocks
+            .get(cursor.id.0)
+            .ok_or_else(|| invalid(at))?;
+        let Some(statement) = block.body.get(cursor.statement) else {
+            frames[depth - 1] = None;
+            depth -= 1;
+            continue;
+        };
+        if cursor.child == 0 {
+            visit(work, statement.span)?;
+            statements = add(statements, 1, statement.span)?;
+            if matches!(statement.kind, StmtKind::Match { .. }) {
+                return Err(invalid(statement.span));
+            }
+        }
+        let child = match &statement.kind {
+            StmtKind::While { body, .. } if cursor.child == 0 => Some(*body),
+            StmtKind::If {
+                then_block,
+                else_block,
+                ..
+            } => match cursor.child {
+                0 => Some(*then_block),
+                1 => *else_block,
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(child) = child {
+            cursor.child = add(cursor.child, 1, statement.span)?;
+            visit(work, statement.span)?;
+            // Exact preorder rules out shared, cyclic, skipped and detached
+            // child blocks. Merely checking a forward edge would be weaker.
+            if child.0 != next_block || child.0 >= function.blocks.len() {
+                return Err(invalid(statement.span));
+            }
+            if depth == MAX_BLOCK_NESTING {
+                return Err(failure(
+                    "typed storage block depth limit exceeded",
+                    statement.span,
+                ));
+            }
+            next_block = add(next_block, 1, statement.span)?;
+            frames[depth] = Some(BlockCursor {
+                id: child,
+                statement: 0,
+                child: 0,
+            });
+            depth = add(depth, 1, statement.span)?;
+            maximum = maximum.max(depth);
+        } else {
+            cursor.statement = add(cursor.statement, 1, statement.span)?;
+            cursor.child = 0;
+        }
+    }
+    if next_block != function.blocks.len() {
+        return Err(invalid(at));
+    }
+    Ok((statements, maximum))
+}
+
+fn count_function(
+    records: &[Record],
+    function: &Function,
+    work: &WorkMeter,
+) -> Result<TypeCounts, Box<Diagnostic>> {
+    let at = function.end;
+    visit(work, at)?;
+    let mut counts = TypeCounts {
+        functions: 1,
+        bindings: function.bindings.len(),
+        expressions: function.expressions.len(),
+        blocks: function.blocks.len(),
+        ..TypeCounts::default()
+    };
+    for binding in &function.bindings {
+        visit(work, binding.span)?;
+        if let Some(value) = &binding.annotation {
+            ordinary_value(value, binding.span)?;
+        }
+    }
+    for expression in &function.expressions {
+        visit(work, expression.span)?;
+        match &expression.kind {
+            ExprKind::ConstructEnum { .. } => return Err(invalid(expression.span)),
+            ExprKind::Call { args, .. } => {
+                counts.calls = add(counts.calls, 1, expression.span)?;
+                counts.call_arguments = add(counts.call_arguments, args.len(), expression.span)?;
+                for argument in args {
+                    visit(work, expression.span)?;
+                    if matches!(argument, Argument::Borrow { .. }) {
+                        counts.borrow_arguments = add(counts.borrow_arguments, 1, expression.span)?;
+                    }
+                }
+            }
+            ExprKind::StructLiteral { record, .. } => {
+                let selected = records
+                    .get(record.0)
+                    .ok_or_else(|| invalid(expression.span))?;
+                if selected.id != *record {
+                    return Err(invalid(expression.span));
+                }
+                counts.record_literals = add(counts.record_literals, 1, expression.span)?;
+                // The complete declaration, not the supplied initializers. A
+                // missing-field diagnostic cannot shrink pending presence data.
+                counts.presence_slots = add(
+                    counts.presence_slots,
+                    selected.fields.len(),
+                    expression.span,
+                )?;
+            }
+            _ => {}
+        }
+    }
+    let (statements, maximum) = body_counts(function, work)?;
+    counts.statements = statements;
+    // Current TypeFrame schedule: at most join+pending else per ancestor and
+    // one active block, <=2*H-1. While and ordinary continuations are smaller.
+    // The already-agreed 3*H+8 allowance dominates, without pricing any Match.
+    counts.type_frames = maximum
+        .checked_mul(3)
+        .and_then(|frames| frames.checked_add(8))
+        .ok_or_else(|| failure("typed storage frame count overflow", at))?;
+    Ok(counts)
+}
+
+fn reconcile(
+    counts: &TypeCounts,
+    source: &HirPlan,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<(), Box<Diagnostic>> {
+    visit(work, at)?;
+    let limits = TypeCounts {
+        functions: source.counts.functions,
+        bindings: source.counts.bindings,
+        expressions: source.counts.expressions,
+        blocks: source.counts.blocks,
+        statements: source.counts.statements,
+        borrow_arguments: source.counts.borrow_arguments,
+        type_frames: source.counts.type_frames,
+        call_arguments: source.counts.call_arguments,
+        calls: source.counts.calls,
+        presence_slots: source
+            .counts
+            .record_literals
+            .checked_mul(source.counts.max_record_fields)
+            .ok_or_else(|| failure("typed storage count overflow", at))?,
+        record_literals: source.counts.record_literals,
+    };
+    let actual_slots = counts.slots();
+    let source_slots = limits.slots();
+    let actual_requests = counts.requests();
+    let source_requests = limits.requests();
+    for k in 0..KINDS {
+        visit(work, at)?;
+        if actual_slots[k] > source_slots[k] || actual_requests[k] > source_requests[k] {
+            return Err(failure("typed storage exceeds source prepaid bounds", at));
+        }
+    }
+    Ok(())
+}
+
+/// A local resource preparation over exact immutable HIR slices. It neither
+/// proves source association nor permits typing. No program retains this plan.
+#[derive(Debug)]
+pub(super) struct TypePlan<'hir> {
+    counts: TypeCounts,
+    storage: PaidStorage,
+    records: &'hir [Record],
+    functions: &'hir [Function],
+    next_function: usize,
+}
+#[derive(Debug)]
+pub(super) struct FunctionQuota {
+    pub(super) ordinal: usize,
+    pub(super) counts: TypeCounts,
+    pub(super) storage: PaidStorage,
+}
+
+pub(super) fn prepare<'hir>(
+    records: &'hir [Record],
+    signatures: &[Signature],
+    functions: &'hir [Function],
+    source: &HirPlan,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<TypePlan<'hir>, Box<Diagnostic>> {
+    visit(work, at)?;
+    if functions.len() != signatures.len()
+        || functions.len() != source.counts.functions
+        || records.len() != source.counts.records
+    {
+        return Err(invalid(at));
+    }
+    if source.total > MAX_HIR_BYTES {
+        return Err(failure(
+            "affected HIR and projection payload limit exceeded",
+            at,
+        ));
+    }
+    let mut record_fields = 0usize;
+    for (ordinal, record) in records.iter().enumerate() {
+        visit(work, record.span)?;
+        if record.id != RecordId(ordinal) {
+            return Err(invalid(record.span));
+        }
+        record_fields = add(record_fields, record.fields.len(), record.span)?;
+        for field in &record.fields {
+            visit(work, field.span)?;
+            ordinary_value(&field.ty, field.span)?;
+        }
+    }
+    if record_fields > source.counts.record_fields {
+        return Err(failure("typed storage exceeds source prepaid bounds", at));
+    }
+    for signature in signatures {
+        visit(work, signature.span)?;
+        ordinary_value(&signature.result, signature.span)?;
+        for parameter in &signature.params {
+            visit(work, signature.span)?;
+            ordinary_parameter(parameter, signature.span)?;
+        }
+    }
+    let mut counts = TypeCounts::default();
+    for (ordinal, function) in functions.iter().enumerate() {
+        visit(work, function.end)?;
+        if function.id != DefId(ordinal) {
+            return Err(invalid(function.end));
+        }
+        let current = count_function(records, function, work)?;
+        counts = counts.combined(&current, function.end)?;
+    }
+    reconcile(&counts, source, work, at)?;
+    Ok(TypePlan {
+        storage: PaidStorage::new(&counts),
+        counts,
+        records,
+        functions,
+        next_function: 0,
+    })
+}
+impl TypePlan<'_> {
+    pub(super) fn reserve_bodies(
+        &mut self,
+        allocator: &mut Allocator,
+        at: Span,
+    ) -> Result<Vec<TypedBody>, Box<Diagnostic>> {
+        self.storage.reserve(
+            allocator,
+            Kind::Bodies,
+            self.counts.functions,
+            self.counts.functions,
+            at,
+        )
+    }
+
+    pub(super) fn partition_next(
+        &mut self,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<FunctionQuota, Box<Diagnostic>> {
+        visit(work, at)?;
+        let function = self
+            .functions
+            .get(self.next_function)
+            .ok_or_else(|| invalid(at))?;
+        if function.id != DefId(self.next_function) {
+            return Err(invalid(at));
+        }
+        let counts = count_function(self.records, function, work)?;
+        let mut storage = PaidStorage::new(&counts);
+        // A function can never allocate a fresh top-level bodies collection.
+        storage.slots[Kind::Bodies as usize] = 0;
+        storage.requests[Kind::Bodies as usize] = 0;
+        let mut slots = [0; KINDS];
+        let mut requests = [0; KINDS];
+        for k in 0..KINDS {
+            visit(work, at)?;
+            slots[k] = self.storage.slots[k]
+                .checked_sub(storage.slots[k])
+                .ok_or_else(|| failure("typed storage function slot quota exhausted", at))?;
+            requests[k] = self.storage.requests[k]
+                .checked_sub(storage.requests[k])
+                .ok_or_else(|| failure("typed storage function request quota exhausted", at))?;
+        }
+        let next = add(self.next_function, 1, at)?;
+        let ordinal = self.next_function;
+        // Commit only after every count, work, subtraction and ordinal check.
+        self.storage.slots = slots;
+        self.storage.requests = requests;
+        self.next_function = next;
+        Ok(FunctionQuota {
+            ordinal,
+            counts,
+            storage,
+        })
+    }
+}
+
 // Complete NEW type_storage named controls, plus explicitly selected existing
 // Capacity transports. Unchanged Capacity/Allocator internals are not modeled as
 // a complete all-call-chain envelope. These are not instantiated compiler frames
@@ -454,6 +823,183 @@ pub(super) const fn finalize_carrier_bytes() -> usize {
 }
 pub(super) const fn projection_carrier_bytes() -> usize {
     size_of::<ProjectionCarriers>()
+}
+
+// The count/partition phase is still disconnected and NOT included in active
+// HirPlan admission. These models enumerate its new named inputs, cursors and
+// complete returns without claiming inherited WorkMeter internals or all stack.
+struct SliceLoop<T: 'static> {
+    cursor: std::slice::Iter<'static, T>,
+    next: Option<&'static T>,
+    current: &'static T,
+}
+struct EnumeratedLoop<T: 'static> {
+    cursor: std::iter::Enumerate<std::slice::Iter<'static, T>>,
+    next: Option<(usize, &'static T)>,
+    current: (usize, &'static T),
+    ordinal: usize,
+    row: &'static T,
+}
+struct CountReturnCarriers {
+    // Default constructor/return/accumulator, per-function initializer/local,
+    // caller's current row, and combined candidate/caller assignment value.
+    counts: [TypeCounts; 8],
+    function_return: Result<TypeCounts, Box<Diagnostic>>,
+    combined_return: Result<TypeCounts, Box<Diagnostic>>,
+    combined_inputs: [&'static TypeCounts; 2],
+    combined_origin: Span,
+    addition_inputs: [usize; 2],
+    addition_origin: Span,
+    addition_option: Option<usize>,
+    addition_return: Result<usize, Box<Diagnostic>>,
+}
+struct CountGuardCarriers {
+    parameter: &'static ParameterTy,
+    // The Value pattern binding precedes the distinct ordinary_value input.
+    parameter_value: &'static ValueTy,
+    value: &'static ValueTy,
+    // ordinary_parameter forwards a distinct by-value origin to ordinary_value.
+    origins: [Span; 2],
+    returns: [Result<(), Box<Diagnostic>>; 2],
+    visit_work: &'static WorkMeter,
+    visit_origin: Span,
+    visit_return: Result<(), Box<Diagnostic>>,
+}
+struct BodyCountCarriers {
+    function: &'static Function,
+    work: &'static WorkMeter,
+    origin: Span,
+    frames: [Option<BlockCursor>; MAX_BLOCK_NESTING],
+    inserted: BlockCursor,
+    inserted_option: Option<BlockCursor>,
+    cursor: &'static mut BlockCursor,
+    cursor_option: Option<&'static mut BlockCursor>,
+    cursor_result: Result<&'static mut BlockCursor, Box<Diagnostic>>,
+    block: &'static BodyBlock,
+    block_option: Option<&'static BodyBlock>,
+    block_result: Result<&'static BodyBlock, Box<Diagnostic>>,
+    statement: &'static Stmt,
+    statement_option: Option<&'static Stmt>,
+    child_option: Option<BodyBlockId>,
+    child: BodyBlockId,
+    depth: usize,
+    maximum: usize,
+    next_block: usize,
+    statements: usize,
+    returned_pair: (usize, usize),
+    returned: Result<(usize, usize), Box<Diagnostic>>,
+    caller_return: Result<(usize, usize), Box<Diagnostic>>,
+    increment_returns: [Result<usize, Box<Diagnostic>>; 4],
+    visit_returns: [Result<(), Box<Diagnostic>>; 3],
+}
+struct FunctionCountCarriers {
+    records: &'static [Record],
+    function: &'static Function,
+    work: &'static WorkMeter,
+    origin: Span,
+    bindings: SliceLoop<Binding>,
+    annotation: &'static Option<ValueTy>,
+    annotation_value: &'static ValueTy,
+    expressions: SliceLoop<Expr>,
+    arguments: SliceLoop<Argument>,
+    // Borrowed Call/StructLiteral pattern bindings and selected full record.
+    call_arguments: &'static Vec<Argument>,
+    record_id: &'static RecordId,
+    record_option: Option<&'static Record>,
+    record_result: Result<&'static Record, Box<Diagnostic>>,
+    selected: &'static Record,
+    statements: usize,
+    maximum: usize,
+    frame_product: Option<usize>,
+    frame_sum: Option<usize>,
+    frame_closure_input: usize,
+    frame_result: Result<usize, Box<Diagnostic>>,
+    addition_returns: [Result<usize, Box<Diagnostic>>; 5],
+    visit_returns: [Result<(), Box<Diagnostic>>; 4],
+}
+struct ReconcileCarriers {
+    counts: &'static TypeCounts,
+    source: &'static HirPlan,
+    work: &'static WorkMeter,
+    origin: Span,
+    limits: TypeCounts,
+    // Four retained arrays plus constructor and returned arrays at each of the
+    // four slots()/requests() call sites. No caller/return elision is assumed.
+    arrays: [[usize; KINDS]; 12],
+    array_inputs: [&'static TypeCounts; 4],
+    cursor: std::ops::Range<usize>,
+    next: Option<usize>,
+    current: usize,
+    presence_product: Option<usize>,
+    presence_result: Result<usize, Box<Diagnostic>>,
+    returns: [Result<(), Box<Diagnostic>>; 3],
+}
+struct PreparationCarriers {
+    records: &'static [Record],
+    signatures: &'static [Signature],
+    functions: &'static [Function],
+    source: &'static HirPlan,
+    work: &'static WorkMeter,
+    origin: Span,
+    record_fields: usize,
+    records_loop: EnumeratedLoop<Record>,
+    fields_loop: SliceLoop<Field>,
+    signatures_loop: SliceLoop<Signature>,
+    parameters_loop: SliceLoop<ParameterTy>,
+    functions_loop: EnumeratedLoop<Function>,
+    // Constructed plan, return payload and separately retained caller plan.
+    plans: [TypePlan<'static>; 2],
+    returned: Result<TypePlan<'static>, Box<Diagnostic>>,
+    // PaidStorage::new's constructor/return/caller are separately modeled by
+    // AccountCarriers; this is the new field-expression result before move.
+    constructed_storage: PaidStorage,
+    record_field_addition: Result<usize, Box<Diagnostic>>,
+    guard_returns: [Result<(), Box<Diagnostic>>; 5],
+}
+struct PartitionCarriers {
+    plan: &'static mut TypePlan<'static>,
+    work: &'static WorkMeter,
+    origin: Span,
+    function_option: Option<&'static Function>,
+    function_result: Result<&'static Function, Box<Diagnostic>>,
+    function: &'static Function,
+    counts: TypeCounts,
+    counts_return: Result<TypeCounts, Box<Diagnostic>>,
+    storage: PaidStorage,
+    // Explicit candidate array construction and independently named locals.
+    arrays: [[usize; KINDS]; 4],
+    cursor: std::ops::Range<usize>,
+    iteration_next: Option<usize>,
+    current: usize,
+    slot_subtraction: Option<usize>,
+    request_subtraction: Option<usize>,
+    subtraction_returns: [Result<usize, Box<Diagnostic>>; 2],
+    next: usize,
+    next_return: Result<usize, Box<Diagnostic>>,
+    ordinal: usize,
+    quota: FunctionQuota,
+    returned: Result<FunctionQuota, Box<Diagnostic>>,
+    caller: FunctionQuota,
+    visit_returns: [Result<(), Box<Diagnostic>>; 2],
+}
+struct BodiesReserveCarriers {
+    plan: &'static mut TypePlan<'static>,
+    allocator: &'static mut Allocator,
+    origin: Span,
+    returned: Result<Vec<TypedBody>, Box<Diagnostic>>,
+    caller: Vec<TypedBody>,
+}
+pub(super) const fn count_carrier_bytes() -> usize {
+    size_of::<CountReturnCarriers>()
+        + size_of::<CountGuardCarriers>()
+        + size_of::<BodyCountCarriers>()
+        + size_of::<FunctionCountCarriers>()
+}
+pub(super) const fn preparation_carrier_bytes() -> usize {
+    size_of::<PreparationCarriers>() + size_of::<ReconcileCarriers>()
+}
+pub(super) const fn partition_carrier_bytes() -> usize {
+    size_of::<PartitionCarriers>() + size_of::<BodiesReserveCarriers>()
 }
 
 #[cfg(test)]

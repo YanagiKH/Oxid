@@ -604,3 +604,456 @@ fn c3_t0_actual_helper_carriers_are_measured_without_changing_active_hir_plan() 
         projection_carrier_bytes()
     );
 }
+
+fn plain_function(ordinal: usize) -> Function {
+    let at = origin();
+    Function {
+        id: DefId(ordinal),
+        bindings: Vec::new(),
+        expressions: vec![Expr {
+            kind: ExprKind::Unit,
+            span: at,
+        }],
+        body: BodyBlockId(0),
+        blocks: vec![BodyBlock {
+            body: vec![Stmt {
+                kind: StmtKind::Return(Some(ExprId(0))),
+                span: at,
+            }],
+            span: at,
+            end: at,
+        }],
+        end: at,
+    }
+}
+fn plain_signature() -> Signature {
+    Signature {
+        params: Vec::new(),
+        result: ValueTy::Scalar(Ty::Unit),
+        span: origin(),
+    }
+}
+/// Synthetic counter allowance only, not an admitted real source plan.
+fn source_bounds(counts: TypeCounts) -> HirPlan {
+    HirPlan {
+        counts: super::super::hir_budget::HirCounts {
+            functions: counts.functions,
+            bindings: counts.bindings,
+            expressions: counts.expressions,
+            blocks: counts.blocks,
+            statements: counts.statements,
+            calls: counts.calls,
+            call_arguments: counts.call_arguments,
+            borrow_arguments: counts.borrow_arguments,
+            record_literals: counts.record_literals,
+            max_record_fields: counts.presence_slots,
+            type_frames: counts.type_frames,
+            ..Default::default()
+        },
+        resolved: 0,
+        typed: 0,
+        staging: 0,
+        resolver_scratch: 0,
+        typeck_scratch: 0,
+        fixed: 0,
+        lower_fixed: 0,
+        total: 0,
+    }
+}
+fn plain_counts(functions: usize) -> TypeCounts {
+    TypeCounts {
+        functions,
+        expressions: functions,
+        blocks: functions,
+        statements: functions,
+        type_frames: 11 * functions,
+        ..TypeCounts::default()
+    }
+}
+
+#[test]
+fn c3_t0_hir_preparation_is_metered_heap_free_and_partitions_bodies_only_once() {
+    let at = origin();
+    let records = [];
+    let signatures = [plain_signature(), plain_signature()];
+    let functions = [plain_function(0), plain_function(1)];
+    let source = source_bounds(plain_counts(2));
+    let work = WorkMeter::default();
+    let (result, stats) = super::super::reviewer_source::integration_measured(|| {
+        prepare(&records, &signatures, &functions, &source, &work, at)
+    });
+    let mut plan = result.unwrap();
+    assert_eq!(stats, (0, 0, 0));
+    assert_eq!(plan.counts, plain_counts(2));
+    // Setup1 + signatures2 + functions*(outer1 + local1 + E1+B1+S1)
+    // + reconciliation header1 + fourteen kind checks = 28.
+    assert_eq!(work.used(), 28);
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(3).unwrap();
+    let bodies = plan.reserve_bodies(&mut allocator, at).unwrap();
+    assert_eq!(bodies.capacity(), 2);
+    for ordinal in 0..2 {
+        let (result, stats) =
+            super::super::reviewer_source::integration_measured(|| plan.partition_next(&work, at));
+        let mut local = result.unwrap();
+        assert_eq!(stats, (0, 0, 0));
+        assert_eq!(local.ordinal, ordinal);
+        assert_eq!(local.counts, plain_counts(1));
+        assert_eq!(
+            (
+                local.storage.slots[Kind::Bodies as usize],
+                local.storage.requests[Kind::Bodies as usize]
+            ),
+            (0, 0)
+        );
+        assert!(local
+            .storage
+            .reserve::<TypedBody>(&mut allocator, Kind::Bodies, 0, 0, at)
+            .is_err());
+        let expressions = local
+            .storage
+            .none::<ValueTy>(&mut allocator, Kind::ExpressionStage, 1, at)
+            .unwrap();
+        assert_eq!(expressions.len(), 1);
+        assert!(local
+            .storage
+            .none::<ValueTy>(&mut allocator, Kind::ExpressionStage, 0, at)
+            .is_err());
+    }
+    assert_eq!(plan.storage.slots, [0; KINDS]);
+    assert_eq!(plan.storage.requests, [0; KINDS]);
+    assert_eq!(plan.next_function, 2);
+    assert!(plan.partition_next(&work, at).is_err());
+    assert!(plan.reserve_bodies(&mut allocator, at).is_err());
+    assert_eq!(allocator.attempts, 3);
+}
+
+#[test]
+fn c3_t0_empty_program_keeps_one_empty_bodies_request_and_no_function_rights() {
+    let at = origin();
+    let source = source_bounds(TypeCounts::default());
+    let work = WorkMeter::default();
+    let mut plan = prepare(&[], &[], &[], &source, &work, at).unwrap();
+    assert_eq!(work.used(), 16);
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(1).unwrap();
+    assert!(plan.reserve_bodies(&mut allocator, at).unwrap().is_empty());
+    assert!(plan.reserve_bodies(&mut allocator, at).is_err());
+    assert!(plan.partition_next(&work, at).is_err());
+    assert_eq!(allocator.attempts, 1);
+    assert_eq!(plan.storage.slots, [0; KINDS]);
+    assert_eq!(plan.storage.requests, [0; KINDS]);
+}
+
+#[test]
+fn c3_t0_hir_counts_full_presence_borrow_arguments_and_canonical_depth() {
+    let at = origin();
+    let records = [Record {
+        id: RecordId(0),
+        name_span: at,
+        span: at,
+        fields: (0..3)
+            .map(|index| Field {
+                id: FieldId {
+                    record: RecordId(0),
+                    index,
+                },
+                ty: ValueTy::Scalar(Ty::I32),
+                name_span: at,
+                span: at,
+            })
+            .collect(),
+        end: at,
+    }];
+    let mut function = plain_function(0);
+    function.expressions.push(Expr {
+        kind: ExprKind::StructLiteral {
+            record: RecordId(0),
+            fields: Vec::new(),
+        },
+        span: at,
+    });
+    function.expressions.push(Expr {
+        kind: ExprKind::Call {
+            target: DefId(0),
+            args: vec![
+                Argument::Value(ExprId(0)),
+                Argument::Borrow {
+                    kind: BorrowKind::Shared,
+                    place: BorrowPlace::Owner(BindingId(0)),
+                    span: at,
+                    name_span: at,
+                    star_span: None,
+                },
+            ],
+        },
+        span: at,
+    });
+    function.expressions.push(Expr {
+        kind: ExprKind::Call {
+            target: DefId(0),
+            args: Vec::new(),
+        },
+        span: at,
+    });
+    function.blocks[0].body.insert(
+        0,
+        Stmt {
+            kind: StmtKind::If {
+                condition: ExprId(0),
+                then_block: BodyBlockId(1),
+                else_block: Some(BodyBlockId(3)),
+            },
+            span: at,
+        },
+    );
+    function.blocks.extend([
+        BodyBlock {
+            body: vec![Stmt {
+                kind: StmtKind::While {
+                    loop_id: LoopId(2),
+                    condition: ExprId(0),
+                    body: BodyBlockId(2),
+                },
+                span: at,
+            }],
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+    ]);
+    let work = WorkMeter::default();
+    let (result, stats) = super::super::reviewer_source::integration_measured(|| {
+        count_function(&records, &function, &work)
+    });
+    assert_eq!(stats, (0, 0, 0));
+    assert_eq!(
+        result.unwrap(),
+        TypeCounts {
+            functions: 1,
+            expressions: 4,
+            blocks: 4,
+            statements: 3,
+            calls: 2,
+            call_arguments: 2,
+            borrow_arguments: 1,
+            record_literals: 1,
+            presence_slots: 3,
+            type_frames: 17,
+            ..TypeCounts::default()
+        }
+    );
+    assert_eq!(work.used(), 14); // function1 + E4 + A2 + B4 + S3
+}
+
+#[test]
+fn c3_t0_hir_depth_certificate_rejects_shared_cyclic_reordered_and_detached_blocks() {
+    let at = origin();
+    for mutant in 0..4 {
+        let mut function = plain_function(0);
+        function.blocks.extend([
+            BodyBlock {
+                body: Vec::new(),
+                span: at,
+                end: at,
+            },
+            BodyBlock {
+                body: Vec::new(),
+                span: at,
+                end: at,
+            },
+        ]);
+        function.blocks[0].body.insert(
+            0,
+            Stmt {
+                kind: StmtKind::If {
+                    condition: ExprId(0),
+                    then_block: BodyBlockId(1),
+                    else_block: Some(BodyBlockId(2)),
+                },
+                span: at,
+            },
+        );
+        match mutant {
+            0 => {
+                if let StmtKind::If { else_block, .. } = &mut function.blocks[0].body[0].kind {
+                    *else_block = Some(BodyBlockId(1));
+                }
+            }
+            1 => {
+                if let StmtKind::If { then_block, .. } = &mut function.blocks[0].body[0].kind {
+                    *then_block = BodyBlockId(0);
+                }
+            }
+            2 => {
+                if let StmtKind::If {
+                    then_block,
+                    else_block,
+                    ..
+                } = &mut function.blocks[0].body[0].kind
+                {
+                    *then_block = BodyBlockId(2);
+                    *else_block = Some(BodyBlockId(1));
+                }
+            }
+            3 => {
+                function.blocks[0].body.remove(0);
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            count_function(&[], &function, &WorkMeter::default())
+                .err()
+                .unwrap()
+                .code,
+            "E0500"
+        );
+    }
+}
+
+#[test]
+fn c3_t0_hir_source_reconciliation_and_count_arithmetic_fail_closed() {
+    let at = origin();
+    let functions = [plain_function(0)];
+    let signatures = [plain_signature()];
+    let mut source = source_bounds(plain_counts(1));
+    source.counts.expressions = 0;
+    assert_eq!(
+        prepare(
+            &[],
+            &signatures,
+            &functions,
+            &source,
+            &WorkMeter::default(),
+            at
+        )
+        .err()
+        .unwrap()
+        .code,
+        "E0400"
+    );
+    source.counts.expressions = 1;
+    source.counts.record_literals = usize::MAX;
+    source.counts.max_record_fields = 2;
+    assert_eq!(
+        prepare(
+            &[],
+            &signatures,
+            &functions,
+            &source,
+            &WorkMeter::default(),
+            at
+        )
+        .err()
+        .unwrap()
+        .code,
+        "E0400"
+    );
+    let counts = TypeCounts {
+        functions: usize::MAX,
+        ..TypeCounts::default()
+    };
+    assert!(counts.combined(&plain_counts(1), at).is_err());
+    assert_eq!(counts.functions, usize::MAX);
+    let source = source_bounds(plain_counts(1));
+    assert_eq!(
+        prepare(&[], &[], &functions, &source, &WorkMeter::default(), at)
+            .err()
+            .unwrap()
+            .code,
+        "E0500"
+    );
+}
+
+#[test]
+fn c3_t0_partition_work_and_late_quota_failures_preserve_all_global_rights() {
+    let at = origin();
+    let signatures = [plain_signature()];
+    let functions = [plain_function(0)];
+    let source = source_bounds(plain_counts(1));
+    let mut plan = prepare(
+        &[],
+        &signatures,
+        &functions,
+        &source,
+        &WorkMeter::default(),
+        at,
+    )
+    .unwrap();
+    let before = (
+        plan.storage.slots,
+        plan.storage.requests,
+        plan.next_function,
+    );
+    // Partition is header1 + local(function1+E1+B1+S1) + fourteen kinds.
+    assert!(plan.partition_next(&WorkMeter::new(18), at).is_err());
+    assert_eq!(
+        (
+            plan.storage.slots,
+            plan.storage.requests,
+            plan.next_function
+        ),
+        before
+    );
+    // Last kind subtraction fails after all earlier candidate values exist.
+    plan.storage.requests[Kind::ExpressionFinal as usize] = 0;
+    let before = (
+        plan.storage.slots,
+        plan.storage.requests,
+        plan.next_function,
+    );
+    assert!(plan.partition_next(&WorkMeter::default(), at).is_err());
+    assert_eq!(
+        (
+            plan.storage.slots,
+            plan.storage.requests,
+            plan.next_function
+        ),
+        before
+    );
+    plan.storage.requests[Kind::ExpressionFinal as usize] = 1;
+    assert_eq!(
+        plan.partition_next(&WorkMeter::new(19), at)
+            .unwrap()
+            .ordinal,
+        0
+    );
+}
+
+#[test]
+fn c3_t0_hir_count_and_partition_carriers_are_measured_before_integration() {
+    macro_rules! layout {
+        ($($ty:ty),* $(,)?) => { $(println!("T0_COUNT_LAYOUT {} size={} align={}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());)* };
+    }
+    layout!(TypePlan<'static>, FunctionQuota, Result<TypePlan<'static>, Box<Diagnostic>>, Result<FunctionQuota, Box<Diagnostic>>,
+        CountReturnCarriers, CountGuardCarriers, BodyCountCarriers, FunctionCountCarriers,
+        ReconcileCarriers, PreparationCarriers, PartitionCarriers, BodiesReserveCarriers,
+        BlockCursor, Option<BlockCursor>, [Option<BlockCursor>; MAX_BLOCK_NESTING],
+        EnumeratedLoop<Record>, SliceLoop<Field>, SliceLoop<Signature>, SliceLoop<ParameterTy>,
+        EnumeratedLoop<Function>, SliceLoop<Binding>, SliceLoop<Expr>, SliceLoop<Argument>);
+    assert!(
+        size_of::<BodyCountCarriers>()
+            >= size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
+                + size_of::<BlockCursor>()
+                + size_of::<Option<BlockCursor>>()
+    );
+    assert!(
+        size_of::<PartitionCarriers>()
+            >= 2 * size_of::<FunctionQuota>() + size_of::<Result<FunctionQuota, Box<Diagnostic>>>()
+    );
+    println!(
+        "T0_COUNT_ENVELOPES count={} preparation={} partition={}",
+        count_carrier_bytes(),
+        preparation_carrier_bytes(),
+        partition_carrier_bytes()
+    );
+}
