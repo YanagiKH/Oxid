@@ -8,6 +8,8 @@ mod sealed;
 mod source_owner;
 pub(super) use source_owner::SourceOwner;
 #[cfg(test)]
+mod enum_query_tests;
+#[cfg(test)]
 mod enum_tests;
 #[cfg(test)]
 mod tests;
@@ -22,8 +24,8 @@ use super::{
     owned_diagnostic,
     project::{
         budget::{Allocator, ReserveFailure},
-        EnumAstKey, FunctionAstKey, ItemPathRef, ModuleId, ProjectSources, RecordAstKey,
-        SyntaxFlavor,
+        EnumAstKey, FunctionAstKey, ItemPathRef, ModuleId, ProjectSources, QualifiedPathRef,
+        RecordAstKey, SyntaxFlavor,
     },
     source::{SourceFile, SourceFileId, SourceView, Span},
 };
@@ -297,8 +299,20 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<ImportRow>()
     + size_of::<AliasCell>()
     + size_of::<SeenCell>()
-    + size_of::<[Span; 4]>();
+    + size_of::<[Span; 4]>()
+    // Classified prefix/return and nominal exposure may coexist with legacy wrappers.
+    + size_of::<AbsolutePrefix>()
+    + size_of::<QualifiedValueEndpoint>()
+    + size_of::<NominalExposure>()
+    // The nominal request and reverse-map validation result can coexist.
+    + size_of::<NominalId>();
 const _: () = assert!(FIXED_SCRATCH <= 4096);
+
+#[derive(Clone, Copy, Debug)]
+enum AbsolutePrefix {
+    Module(ModuleId),
+    Enumeration(u32), // The visible enum original, not a module/record ordinal.
+}
 
 impl Tables<'_> {
     fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
@@ -337,6 +351,17 @@ impl Tables<'_> {
             }
             _ => Err(bad(original.name.span())),
         }
+    }
+    fn original_for_nominal(&self, nominal: NominalId, at: Span) -> Result<u32, Box<Diagnostic>> {
+        let original = match nominal {
+            NominalId::Record(id) => self.records.get(id.0).map(|row| row.original),
+            NominalId::Enum(id) => self.enums.get(id.0).map(|row| row.original),
+        }
+        .ok_or_else(|| bad(at))?;
+        if self.nominal_original(original)? != nominal {
+            return Err(bad(at));
+        }
+        Ok(original)
     }
     fn original(&self, id: u32) -> Result<&OriginalRow, Box<Diagnostic>> {
         self.originals
@@ -560,19 +585,20 @@ impl Tables<'_> {
         }
         Ok(())
     }
-    fn absolute_endpoint(
+    fn absolute_prefix(
         &self,
         requester: ModuleId,
-        path: ItemPathRef,
+        segments: &[Span],
         work: &WorkMeter,
-        importing: bool,
-    ) -> Result<(Option<u32>, Option<u32>), Box<Diagnostic>> {
-        let segments = self.sources.segments(path)?;
+        allow_enum_member: bool,
+    ) -> Result<AbsolutePrefix, Box<Diagnostic>> {
+        if !(2..=super::parser::MAX_PATH_SEGMENTS).contains(&segments.len()) {
+            return Err(bad(self.sources.eof()));
+        }
         let mut owner = ModuleId(0);
-        for &segment in &segments[1..segments.len() - 1] {
+        for (position, &segment) in segments[1..segments.len() - 1].iter().enumerate() {
             work.debit(1, segment, "absolute path segment")?;
-            let found = self.lookup_original(owner, true, segment, work)?;
-            let Some(id) = found else {
+            let Some(id) = self.lookup_original(owner, true, segment, work)? else {
                 let mut error =
                     diagnostic("E0205", "resolve", "invalid absolute item path", segment);
                 if let Some(alias) = self.lookup_alias(owner, segment, work)? {
@@ -585,17 +611,88 @@ impl Tables<'_> {
                 return Err(error);
             };
             let row = self.original(id)?;
-            if row.flags & KIND_MASK != MODULE {
-                return Err(diagnostic(
-                    "E0205",
-                    "resolve",
-                    "invalid absolute item path",
-                    segment,
-                ));
+            match row.flags & KIND_MASK {
+                MODULE => {
+                    self.access_original(id, requester, work, segment)?;
+                    owner = ModuleId(row.target as usize);
+                }
+                ENUM if allow_enum_member && position + 3 == segments.len() => {
+                    self.access_original(id, requester, work, segment)?;
+                    return Ok(AbsolutePrefix::Enumeration(id));
+                }
+                _ => {
+                    return Err(diagnostic(
+                        "E0205",
+                        "resolve",
+                        "invalid absolute item path",
+                        segment,
+                    ))
+                }
             }
-            self.access_original(id, requester, work, segment)?;
-            owner = ModuleId(row.target as usize);
         }
+        Ok(AbsolutePrefix::Module(owner))
+    }
+    fn lookup_variant(
+        &self,
+        enumeration: EnumId,
+        member: Span,
+        work: &WorkMeter,
+    ) -> Result<VariantId, Box<Diagnostic>> {
+        let row = self.enums.get(enumeration.0).ok_or_else(|| bad(member))?;
+        let end = (row.variant_start as usize)
+            .checked_add(row.variant_len as usize)
+            .ok_or_else(|| bad(member))?;
+        let variants = self
+            .variants
+            .get(row.variant_start as usize..end)
+            .ok_or_else(|| bad(member))?;
+        if !(1..=256).contains(&variants.len()) {
+            return Err(bad(member));
+        }
+        let spelling = self.sources.text(member)?;
+        for (index, variant) in variants.iter().enumerate() {
+            work.debit(1, member, "variant lookup probe")?;
+            if compare_bytes(
+                self.sources.text(variant.name.span())?,
+                spelling,
+                work,
+                member,
+            )? == Ordering::Equal
+            {
+                return Ok(VariantId { enumeration, index });
+            }
+        }
+        let declaration = self
+            .sources
+            .text(self.original(row.original)?.name.span())?;
+        work.debit(
+            (spelling.len().min(64) + declaration.len().min(64)) as u64,
+            member,
+            "variant diagnostic name bytes",
+        )?;
+        Err(owned_diagnostic::diagnostic(
+            "E0202",
+            "resolve",
+            format_args!(
+                "unknown variant `{}` of enum `{}`",
+                owned_diagnostic::name(spelling),
+                owned_diagnostic::name(declaration)
+            ),
+            Some(member),
+        ))
+    }
+    fn absolute_endpoint(
+        &self,
+        requester: ModuleId,
+        path: ItemPathRef,
+        work: &WorkMeter,
+        importing: bool,
+    ) -> Result<(Option<u32>, Option<u32>), Box<Diagnostic>> {
+        let segments = self.sources.segments(path)?;
+        let owner = match self.absolute_prefix(requester, segments, work, false)? {
+            AbsolutePrefix::Module(owner) => owner,
+            AbsolutePrefix::Enumeration(_) => return Err(bad(self.sources.eof())),
+        };
         let endpoint = *segments.last().ok_or_else(|| bad(self.sources.eof()))?;
         work.debit(1, endpoint, "absolute path segment")?;
         let original_type = self.lookup_original(owner, true, endpoint, work)?;
@@ -651,6 +748,20 @@ pub(super) enum Exposure {
     Allowed,
     Denied {
         record: Span,
+        restrictor: Option<Span>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum QualifiedValueEndpoint {
+    Function(DefId),
+    Variant(VariantId),
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum NominalExposure {
+    Allowed,
+    Denied {
+        declaration: Span,
         restrictor: Option<Span>,
     },
 }
@@ -778,15 +889,21 @@ impl<'i, 's> QuerySession<'i, 's> {
                         return Ok(ValueTy::Scalar(Ty::I32));
                     }
                 }
-                self.record_type(
+                self.lookup_nominal_type(
                     requester,
                     ItemPathRef {
                         file: ty.span.file,
                         path,
                     },
                     context,
+                    false,
                 )
-                .map(|record| ValueTy::Owned(AggregateTy::Record(record)))
+                .map(|nominal| {
+                    ValueTy::Owned(match nominal {
+                        NominalId::Record(record) => AggregateTy::Record(record),
+                        NominalId::Enum(enumeration) => AggregateTy::Enum(enumeration),
+                    })
+                })
             }
         }
     }
@@ -863,11 +980,39 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<RecordId, Box<Diagnostic>> {
+        match self.lookup_nominal_type(requester, path, context, true)? {
+            NominalId::Record(record) => Ok(record),
+            NominalId::Enum(_) => Err(bad(self.tables.sources.eof())),
+        }
+    }
+    pub fn nominal_type(
+        &mut self,
+        requester: ModuleId,
+        path: ItemPathRef,
+        context: TypeContext,
+    ) -> Result<NominalId, Box<Diagnostic>> {
+        self.lookup_nominal_type(requester, path, context, false)
+    }
+    fn lookup_nominal_type(
+        &mut self,
+        requester: ModuleId,
+        path: ItemPathRef,
+        context: TypeContext,
+        records_only: bool,
+    ) -> Result<NominalId, Box<Diagnostic>> {
         let at = self.tables.sources.path_span(path)?;
-        self.work.debit(1, at, "query record type")?;
+        self.work.debit(
+            1,
+            at,
+            if records_only || self.tables.enums.is_empty() {
+                "query record type"
+            } else {
+                "query nominal type"
+            },
+        )?;
         if let Some(id) = self.select(requester, path, true)? {
             let row = self.tables.original(id)?;
-            if row.flags & KIND_MASK == RECORD {
+            if row.flags & KIND_MASK == RECORD || (!records_only && row.flags & KIND_MASK == ENUM) {
                 #[cfg(test)]
                 self.work.observe(Observation::Target {
                     operation: match context {
@@ -876,10 +1021,14 @@ impl<'i, 's> QuerySession<'i, 's> {
                         _ => "value-type",
                     },
                     origin: at,
-                    kind: "record",
+                    kind: if row.flags & KIND_MASK == RECORD {
+                        "record"
+                    } else {
+                        "enum"
+                    },
                     id: row.target as usize,
                 });
-                return Ok(RecordId(row.target as usize));
+                return self.tables.nominal_original(id);
             }
         }
         let at = match path.path {
@@ -960,6 +1109,118 @@ impl<'i, 's> QuerySession<'i, 's> {
             ),
             Some(at),
         ))
+    }
+    pub fn qualified_value_endpoint(
+        &mut self,
+        requester: ModuleId,
+        path: QualifiedPathRef,
+    ) -> Result<QualifiedValueEndpoint, Box<Diagnostic>> {
+        let view = self.tables.sources.qualified_path(path)?;
+        let at = view.span();
+        self.requester(requester, at)?;
+        self.work.debit(1, at, "query qualified value")?;
+        let segments = view.segments();
+        let member = *segments.last().ok_or_else(|| bad(at))?;
+        let enumeration = match view.root() {
+            ast::PathRoot::LocalType => {
+                let prefix = segments[0];
+                self.work.debit(1, prefix, "qualified path segment")?;
+                let selected = self.select(
+                    requester,
+                    ItemPathRef {
+                        file: path.file,
+                        path: ast::ItemPath::Unqualified(prefix),
+                    },
+                    true,
+                )?;
+                let Some(original) = selected else {
+                    return Err(owned_diagnostic::diagnostic(
+                        "E0202",
+                        "resolve",
+                        format_args!(
+                            "unknown enum type `{}`",
+                            owned_diagnostic::name(self.tables.sources.text(prefix)?)
+                        ),
+                        Some(prefix),
+                    ));
+                };
+                if self.tables.original(original)?.flags & KIND_MASK != ENUM {
+                    return Err(diagnostic(
+                        "E0202",
+                        "resolve",
+                        "variant qualification requires an enum type",
+                        prefix,
+                    ));
+                }
+                match self.tables.nominal_original(original)? {
+                    NominalId::Enum(enumeration) => enumeration,
+                    NominalId::Record(_) => return Err(bad(prefix)),
+                }
+            }
+            ast::PathRoot::Crate => match self
+                .tables
+                .absolute_prefix(requester, segments, self.work, true)?
+            {
+                AbsolutePrefix::Enumeration(original) => {
+                    match self.tables.nominal_original(original)? {
+                        NominalId::Enum(enumeration) => enumeration,
+                        NominalId::Record(_) => return Err(bad(member)),
+                    }
+                }
+                AbsolutePrefix::Module(owner) => {
+                    self.work.debit(1, member, "absolute path segment")?;
+                    let Some(original) = self
+                        .tables
+                        .lookup_original(owner, false, member, self.work)?
+                    else {
+                        return Err(owned_diagnostic::diagnostic(
+                            "E0200",
+                            "resolve",
+                            format_args!(
+                                "unknown direct function `{}`",
+                                owned_diagnostic::name(self.tables.sources.text(member)?)
+                            ),
+                            Some(member),
+                        ));
+                    };
+                    self.tables
+                        .access_original(original, requester, self.work, member)?;
+                    let target = DefId(self.tables.original(original)?.target as usize);
+                    #[cfg(test)]
+                    self.work.observe(Observation::Target {
+                        operation: "callee",
+                        origin: at,
+                        kind: "function",
+                        id: target.0,
+                    });
+                    return Ok(QualifiedValueEndpoint::Function(target));
+                }
+            },
+        };
+        self.work.debit(1, member, "qualified path segment")?;
+        let variant = self.tables.lookup_variant(enumeration, member, self.work)?;
+        #[cfg(test)]
+        self.work.observe(Observation::VariantTarget {
+            operation: "qualified-value",
+            origin: at,
+            variant,
+        });
+        Ok(QualifiedValueEndpoint::Variant(variant))
+    }
+    pub fn variant(
+        &mut self,
+        requester: ModuleId,
+        path: QualifiedPathRef,
+    ) -> Result<VariantId, Box<Diagnostic>> {
+        match self.qualified_value_endpoint(requester, path)? {
+            QualifiedValueEndpoint::Variant(variant) => Ok(variant),
+            QualifiedValueEndpoint::Function(_) => Err(diagnostic(
+                "E0202",
+                "resolve",
+                "qualified pattern requires an enum variant",
+                self.tables.sources.qualified_path(path)?.span(),
+            )),
+        }
     }
     pub fn value_binding_for_local_conflict(
         &mut self,
@@ -1101,30 +1362,49 @@ impl<'i, 's> QuerySession<'i, 's> {
         record: RecordId,
         at: Span,
     ) -> Result<Exposure, Box<Diagnostic>> {
+        Ok(
+            match self.nominal_signature_exposure(function, NominalId::Record(record), at)? {
+                NominalExposure::Allowed => Exposure::Allowed,
+                NominalExposure::Denied {
+                    declaration,
+                    restrictor,
+                } => Exposure::Denied {
+                    record: declaration,
+                    restrictor,
+                },
+            },
+        )
+    }
+    pub fn nominal_signature_exposure(
+        &mut self,
+        function: DefId,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<NominalExposure, Box<Diagnostic>> {
         self.work.debit(1, at, "signature exposure")?;
         let function = self
             .tables
             .functions
             .get(function.0)
             .ok_or_else(|| bad(at))?;
-        let record = self.tables.records.get(record.0).ok_or_else(|| bad(at))?;
+        let original = self.tables.original_for_nominal(nominal, at)?;
         let (f, r) = (
             self.tables.original(function.original)?,
-            self.tables.original(record.original)?,
+            self.tables.original(original)?,
         );
         self.requester(ModuleId(f.owner as usize), at)?;
         let allowed =
             r.domain == NONE || (f.domain != NONE && self.tables.ancestor(r.domain, f.domain)?);
         if allowed {
-            return Ok(Exposure::Allowed);
+            return Ok(NominalExposure::Allowed);
         }
-        let restrictor = if r.restrictor != NONE && r.restrictor != record.original {
+        let restrictor = if r.restrictor != NONE && r.restrictor != original {
             Some(self.tables.original(r.restrictor)?.name.span())
         } else {
             None
         };
-        Ok(Exposure::Denied {
-            record: r.name.span(),
+        Ok(NominalExposure::Denied {
+            declaration: r.name.span(),
             restrictor,
         })
     }
@@ -1133,10 +1413,17 @@ impl<'i, 's> QuerySession<'i, 's> {
         record: RecordId,
         at: Span,
     ) -> Result<PreparedTypeName<'s>, Box<Diagnostic>> {
+        self.prepare_nominal_type_name(NominalId::Record(record), at)
+    }
+    pub fn prepare_nominal_type_name(
+        &mut self,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<PreparedTypeName<'s>, Box<Diagnostic>> {
         self.tables.sources.text(at)?;
         self.work.debit(1, at, "nominal format preparation")?;
-        let row = self.tables.records.get(record.0).ok_or_else(|| bad(at))?;
-        let original = self.tables.original(row.original)?;
+        let id = self.tables.original_for_nominal(nominal, at)?;
+        let original = self.tables.original(id)?;
         let terminal = self.tables.sources.text(original.name.span())?;
         let mut names = [""; 33];
         let mut count = 0;
@@ -1181,9 +1468,13 @@ impl<'i, 's> QuerySession<'i, 's> {
             names,
             count,
             terminal,
-            record: record.0,
+            ordinal: match nominal {
+                NominalId::Record(id) => id.0,
+                NominalId::Enum(id) => id.0,
+            },
             total,
             original,
+            is_enum: matches!(nominal, NominalId::Enum(_)),
         })
     }
 }
@@ -1193,9 +1484,10 @@ pub(super) struct PreparedTypeName<'s> {
     names: [&'s str; 33],
     count: usize,
     terminal: &'s str,
-    record: usize,
+    ordinal: usize,
     total: usize,
     original: bool,
+    is_enum: bool,
 }
 impl fmt::Display for PreparedTypeName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1210,12 +1502,13 @@ impl fmt::Display for PreparedTypeName<'_> {
             return write!(f, "::{}", self.terminal);
         }
         let terminal_len = self.terminal.len().min(64);
-        let digits = if self.record == 0 {
+        let digits = if self.ordinal == 0 {
             1
         } else {
-            self.record.ilog10() as usize + 1
+            self.ordinal.ilog10() as usize + 1
         };
-        let suffix_len = 11 + digits;
+        let kind = if self.is_enum { "enum" } else { "record" };
+        let suffix_len = 5 + kind.len() + digits;
         let allowance = 160 - terminal_len - suffix_len - 2;
         let module_len = self.total - self.terminal.len() - 2;
         let truncated = module_len > allowance;
@@ -1239,9 +1532,9 @@ impl fmt::Display for PreparedTypeName<'_> {
         }
         write!(
             f,
-            "::{} [record #{}]",
+            "::{} [{kind} #{}]",
             owned_diagnostic::name(self.terminal),
-            self.record
+            self.ordinal
         )
     }
 }

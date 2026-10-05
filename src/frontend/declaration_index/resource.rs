@@ -220,6 +220,11 @@ pub(in crate::frontend) enum Observation {
         kind: &'static str,
         id: usize,
     },
+    VariantTarget {
+        operation: &'static str,
+        origin: Span,
+        variant: VariantId,
+    },
     Expression {
         function: DefId,
         origin: Span,
