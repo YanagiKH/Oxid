@@ -25,6 +25,64 @@ impl Limits {
     };
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FormatSyntax {
+    Closed,
+    #[cfg(test)]
+    EnumCandidate,
+}
+impl FormatSyntax {
+    fn candidate(self) -> bool {
+        match self {
+            Self::Closed => false,
+            #[cfg(test)]
+            Self::EnumCandidate => true,
+        }
+    }
+}
+
+/// Stack-only qualification facts; never a source or executable witness.
+#[derive(Debug, Default)]
+pub(super) struct EnumFormatMetrics {
+    #[cfg(test)]
+    pub input_source_heap: usize,
+    #[cfg(test)]
+    pub first_ast_heap: usize,
+    #[cfg(test)]
+    pub first_token_heap: usize,
+    #[cfg(test)]
+    pub first_parse_peak_bound: usize,
+    #[cfg(test)]
+    pub roles_heap: usize,
+    #[cfg(test)]
+    pub output_heap: usize,
+    #[cfg(test)]
+    pub source_owner_heap: usize,
+    #[cfg(test)]
+    pub second_ast_heap: usize,
+    #[cfg(test)]
+    pub second_token_heap: usize,
+    #[cfg(test)]
+    pub second_parse_peak_bound: usize,
+    #[cfg(test)]
+    pub emit_live_heap: usize,
+    #[cfg(test)]
+    pub reparse_live_heap: usize,
+    #[cfg(test)]
+    pub phase_peak_heap_bound: usize,
+    #[cfg(test)]
+    pub parse_calls: usize,
+}
+#[derive(Default)]
+struct ParseMetrics {
+    #[cfg(test)]
+    ast_heap: usize,
+    #[cfg(test)]
+    tokens: usize,
+    #[cfg(test)]
+    peak_bound: usize,
+}
+
 /// No file access, project discovery, type checking or execution. Diagnostics
 /// refer only to `source`; candidate validation failures have no source span.
 pub(super) fn format_source(source: &SourceFile) -> Result<String, Vec<Diagnostic>> {
@@ -43,21 +101,106 @@ fn format_with_limits(
     allocator: &mut Allocator,
     limits: Limits,
 ) -> Result<String, Vec<Diagnostic>> {
+    format_with_syntax(source, allocator, limits, FormatSyntax::Closed).0
+}
+
+#[cfg(test)]
+pub(super) fn format_enum_candidate_observed(
+    source: &SourceFile,
+    allocator: &mut Allocator,
+) -> (Result<String, Vec<Diagnostic>>, EnumFormatMetrics) {
+    format_with_syntax(
+        source,
+        allocator,
+        Limits::DEFAULT,
+        FormatSyntax::EnumCandidate,
+    )
+}
+
+fn format_with_syntax(
+    source: &SourceFile,
+    allocator: &mut Allocator,
+    limits: Limits,
+    syntax: FormatSyntax,
+) -> (Result<String, Vec<Diagnostic>>, EnumFormatMetrics) {
+    let mut metrics = EnumFormatMetrics::default();
+    let result = format_with_syntax_inner(source, allocator, limits, syntax, &mut metrics);
+    (result, metrics)
+}
+
+fn format_with_syntax_inner(
+    source: &SourceFile,
+    allocator: &mut Allocator,
+    limits: Limits,
+    syntax: FormatSyntax,
+    metrics: &mut EnumFormatMetrics,
+) -> Result<String, Vec<Diagnostic>> {
+    #[cfg(not(test))]
+    let _ = &metrics;
     if source.text().len() > MAX_SOURCE_BYTES {
         return Err(resource("source byte limit exceeded"));
     }
-    let program = parse(source, allocator)?;
-    let roles = roles(source, &program, allocator, limits.work_bytes)?;
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics.input_source_heap = source
+            .heap_capacity_bytes()
+            .ok_or_else(|| resource("formatter capacity count overflow"))?;
+        metrics.parse_calls += 1;
+    }
+    let (program, first_parse) = parse_with_syntax(source, allocator, syntax)?;
+    #[cfg(not(test))]
+    let _ = first_parse;
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics.first_ast_heap = first_parse.ast_heap;
+        metrics.first_token_heap = first_parse.tokens;
+        metrics.first_parse_peak_bound = first_parse.peak_bound;
+        metrics.phase_peak_heap_bound = first_parse.peak_bound;
+    }
+    let roles = roles_with_syntax(source, &program, allocator, limits.work_bytes, syntax)?;
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics.roles_heap = roles.capacity();
+        metrics
+            .first_ast_heap
+            .checked_add(metrics.roles_heap)
+            .ok_or_else(|| resource("formatter capacity count overflow"))?;
+    }
     let mut length = 0usize;
     layout(source, &program, &roles, limits.delimiters, |part| {
         length = output_length(length, part.len())?;
         Ok(())
     })?;
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics
+            .first_ast_heap
+            .checked_add(metrics.roles_heap)
+            .and_then(|n| n.checked_add(length))
+            .ok_or_else(|| resource("formatter capacity count overflow"))?;
+    }
     let mut output = String::new();
     allocator
         .string(&mut output, length, "formatted source")
         .map_err(|_| resource("formatted source allocation failed"))?;
+    if syntax.candidate() && output.capacity() != length {
+        return Err(resource("formatted source capacity exceeded admission"));
+    }
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics.output_heap = output.capacity();
+        metrics.emit_live_heap = metrics.first_ast_heap + metrics.roles_heap + metrics.output_heap;
+        metrics.phase_peak_heap_bound = metrics.phase_peak_heap_bound.max(metrics.emit_live_heap);
+    }
     layout(source, &program, &roles, limits.delimiters, |part| {
+        if syntax.candidate()
+            && output
+                .len()
+                .checked_add(part.len())
+                .is_none_or(|next| next > length || next > output.capacity())
+        {
+            return Err(invariant("formatter output exceeded its counted capacity"));
+        }
         output.push_str(part);
         Ok(())
     })?;
@@ -66,17 +209,71 @@ fn format_with_limits(
 
     // Move, rather than clone, the candidate into its immutable source owner.
     let mut candidates = SourceMap::new();
-    let id = candidates
-        .try_add(String::new(), output, allocator)
-        .map_err(|_| resource("formatted source allocation failed"))?;
-    let candidate = candidates.get(id);
-    let parsed = parse(candidate, allocator).map_err(|errors| {
-        if errors.iter().any(|error| error.code == "E0400") {
-            resource("formatted source exceeds lexer or parser resource limits")
-        } else {
-            invariant("formatted source no longer parses")
+    let id = match syntax {
+        FormatSyntax::Closed => candidates.try_add(String::new(), output, allocator),
+        #[cfg(test)]
+        FormatSyntax::EnumCandidate => {
+            let lines = output
+                .bytes()
+                .filter(|&byte| byte == b'\n')
+                .count()
+                .checked_add(1)
+                .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            let owner_target = lines
+                .checked_mul(std::mem::size_of::<usize>())
+                .and_then(|n| n.checked_add(std::mem::size_of::<SourceFile>()))
+                .and_then(|n| n.checked_add(output.capacity()))
+                .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            metrics
+                .first_ast_heap
+                .checked_add(owner_target)
+                .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            let id = candidates.try_add_format_candidate(output, allocator);
+            if id.is_ok() && candidates.heap_capacity_bytes() != Some(owner_target) {
+                return Err(resource(
+                    "formatted source owner capacity exceeded admission",
+                ));
+            }
+            id
         }
-    })?;
+    }
+    .map_err(|_| resource("formatted source allocation failed"))?;
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics.source_owner_heap = candidates
+            .heap_capacity_bytes()
+            .ok_or_else(|| resource("formatter capacity count overflow"))?;
+        metrics.parse_calls += 1;
+    }
+    let candidate = candidates.get(id);
+    let (parsed, second_parse) =
+        parse_with_syntax(candidate, allocator, syntax).map_err(|errors| {
+            if errors.iter().any(|error| error.code == "E0400") {
+                resource("formatted source exceeds lexer or parser resource limits")
+            } else {
+                invariant("formatted source no longer parses")
+            }
+        })?;
+    #[cfg(not(test))]
+    let _ = second_parse;
+    #[cfg(test)]
+    if syntax.candidate() {
+        metrics.second_ast_heap = second_parse.ast_heap;
+        metrics.second_token_heap = second_parse.tokens;
+        metrics.second_parse_peak_bound = second_parse.peak_bound;
+        let before = metrics
+            .first_ast_heap
+            .checked_add(metrics.source_owner_heap)
+            .ok_or_else(|| resource("formatter capacity count overflow"))?;
+        metrics.reparse_live_heap = before
+            .checked_add(second_parse.ast_heap)
+            .ok_or_else(|| resource("formatter capacity count overflow"))?;
+        metrics.phase_peak_heap_bound = metrics.phase_peak_heap_bound.max(
+            before
+                .checked_add(second_parse.peak_bound)
+                .ok_or_else(|| resource("formatter capacity count overflow"))?,
+        );
+    }
     if !same_projection(source, &program.tokens, candidate, &parsed.tokens) {
         return Err(invariant(
             "formatted source changed tokens, comments or line breaks",
@@ -98,6 +295,52 @@ fn parse(source: &SourceFile, allocator: &mut Allocator) -> Result<Program, Vec<
     .map(|(program, _)| program)
 }
 
+fn parse_with_syntax(
+    source: &SourceFile,
+    allocator: &mut Allocator,
+    syntax: FormatSyntax,
+) -> Result<(Program, ParseMetrics), Vec<Diagnostic>> {
+    match syntax {
+        FormatSyntax::Closed => {
+            parse(source, allocator).map(|program| (program, ParseMetrics::default()))
+        }
+        #[cfg(test)]
+        FormatSyntax::EnumCandidate => {
+            let tokens =
+                lexer::lex_with_limit(source, lexer::MAX_TOKENS).map_err(|error| vec![*error])?;
+            let token_bytes = tokens
+                .capacity()
+                .checked_mul(std::mem::size_of::<Token>())
+                .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            let mut storage = Default::default();
+            let (program, _) = parser::parse_enum_candidate_counted(
+                source,
+                tokens,
+                SourceMode::ProjectCandidate,
+                parser::MAX_NODES,
+                allocator,
+                &mut storage,
+            )?;
+            let ast_heap = storage
+                .retained_capacity
+                .checked_add(token_bytes)
+                .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            let peak_bound = storage
+                .peak_capacity_bound
+                .checked_add(token_bytes)
+                .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            Ok((
+                program,
+                ParseMetrics {
+                    ast_heap,
+                    tokens: token_bytes,
+                    peak_bound,
+                },
+            ))
+        }
+    }
+}
+
 fn output_length(current: usize, additional: usize) -> Result<usize, Vec<Diagnostic>> {
     current
         .checked_add(additional)
@@ -117,11 +360,12 @@ fn invariant(message: &str) -> Vec<Diagnostic> {
 /// below the 8 MiB work budget). AST-origin byte indices avoid per-node searches
 /// of the token tape. Paths are disjoint syntactic occurrences, so all marked
 /// path ranges together require at most one source-length scan.
-fn roles(
+fn roles_with_syntax(
     source: &SourceFile,
     program: &Program,
     allocator: &mut Allocator,
     work_limit: usize,
+    syntax: FormatSyntax,
 ) -> Result<Vec<u8>, Vec<Diagnostic>> {
     if !program.belongs_to(source) {
         return Err(invariant("formatter source association mismatch"));
@@ -131,10 +375,27 @@ fn roles(
         return Err(resource("formatter work table limit exceeded"));
     }
     let mut roles = Vec::new();
-    allocator
-        .vector(&mut roles, length, "formatter token roles")
-        .map_err(|_| resource("formatter work table allocation failed"))?;
+    let reservation = if syntax.candidate() {
+        allocator.vector_exact(&mut roles, length, "formatter token roles")
+    } else {
+        allocator.vector(&mut roles, length, "formatter token roles")
+    };
+    reservation.map_err(|_| resource("formatter work table allocation failed"))?;
+    if syntax.candidate() && roles.capacity() != length {
+        return Err(resource("formatter work table capacity exceeded admission"));
+    }
     roles.resize(length, 0);
+    if syntax.candidate() {
+        // Preserve the unchanged two-token arrow; do not skip raw trivia.
+        for pair in program.tokens.windows(2) {
+            if pair[0].kind == Kind::Equal
+                && pair[1].kind == Kind::Greater
+                && pair[0].span.end == pair[1].span.start
+            {
+                roles[pair[0].span.start] |= TIGHT_AFTER;
+            }
+        }
+    }
     for expression in &program.expressions {
         match &expression.kind {
             ExprKind::Negate { .. } | ExprKind::Number { negative: true, .. } => {
@@ -151,7 +412,10 @@ fn roles(
                     .ok_or_else(|| invariant("missing indexed receiver"))?;
                 roles[receiver.span.start] |= TIGHT_AFTER;
             }
-            ExprKind::Call { args, .. } => {
+            ExprKind::Call { args, .. }
+            | ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } => {
                 for argument in args {
                     if let Argument::Borrow {
                         place: BorrowPlace::ForwardedParameter { star_span, .. },
@@ -428,3 +692,7 @@ mod resource_tests;
 #[cfg(test)]
 #[path = "format/ast_tests.rs"]
 mod ast_tests;
+
+#[cfg(test)]
+#[path = "format/enum_candidate_tests.rs"]
+mod enum_candidate_tests;

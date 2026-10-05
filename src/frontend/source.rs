@@ -113,6 +113,77 @@ impl SourceMap {
         Ok(id)
     }
 
+    /// Exact, singleton source owner for private formatter qualification only.
+    /// The text buffer is moved, never cloned; ordinary loader behavior is unchanged.
+    #[cfg(test)]
+    pub(super) fn try_add_format_candidate(
+        &mut self,
+        text: String,
+        allocator: &mut super::project::budget::Allocator,
+    ) -> Result<SourceFileId, super::project::budget::ReserveFailure> {
+        use super::project::budget::ReserveFailure;
+        if !self.files.is_empty()
+            || self.files.capacity() != 0
+            || text.len() > MAX_SOURCE_BYTES
+            || text.capacity() != text.len()
+        {
+            return Err(ReserveFailure::Overflow);
+        }
+        let count = text
+            .bytes()
+            .filter(|&byte| byte == b'\n')
+            .count()
+            .checked_add(1)
+            .ok_or(ReserveFailure::Overflow)?;
+        let line_bytes = count
+            .checked_mul(size_of::<usize>())
+            .ok_or(ReserveFailure::Overflow)?;
+        size_of::<SourceFile>()
+            .checked_add(line_bytes)
+            .and_then(|n| n.checked_add(text.capacity()))
+            .ok_or(ReserveFailure::Overflow)?;
+        let identity = next_source_identity().ok_or(ReserveFailure::Overflow)?;
+        let mut line_starts = Vec::new();
+        allocator.vector_exact(&mut line_starts, count, "formatted source line starts")?;
+        if line_starts.capacity() != count {
+            return Err(ReserveFailure::Overflow);
+        }
+        allocator.vector_exact(&mut self.files, 1, "formatted source files")?;
+        if self.files.capacity() != 1 {
+            return Err(ReserveFailure::Overflow);
+        }
+        line_starts.push(0);
+        for (offset, byte) in text.bytes().enumerate() {
+            if byte == b'\n' {
+                if line_starts.len() == line_starts.capacity() {
+                    return Err(ReserveFailure::Overflow);
+                }
+                line_starts.push(offset + 1);
+            }
+        }
+        if line_starts.len() != count {
+            return Err(ReserveFailure::Overflow);
+        }
+        let id = SourceFileId(0);
+        self.files.push(SourceFile {
+            identity,
+            id,
+            path: String::new(),
+            text,
+            line_starts,
+        });
+        Ok(id)
+    }
+
+    /// Actual owned heap payload, including unused Vec slots; excludes this stack header.
+    #[cfg(test)]
+    pub(super) fn heap_capacity_bytes(&self) -> Option<usize> {
+        self.files.iter().try_fold(
+            self.files.capacity().checked_mul(size_of::<SourceFile>())?,
+            |bytes, file| bytes.checked_add(file.heap_capacity_bytes()?),
+        )
+    }
+
     pub(super) fn try_text(&self, span: Span) -> Option<&str> {
         self.files.get(span.file.0)?.try_text(span)
     }
@@ -153,6 +224,18 @@ impl SourceFile {
     pub(super) fn identity(&self) -> u64 {
         self.identity
     }
+    #[cfg(test)]
+    pub(super) fn heap_capacity_bytes(&self) -> Option<usize> {
+        self.path
+            .capacity()
+            .checked_add(self.text.capacity())?
+            .checked_add(
+                self.line_starts
+                    .capacity()
+                    .checked_mul(size_of::<usize>())?,
+            )
+    }
+
     pub(super) fn try_text(&self, span: Span) -> Option<&str> {
         if span.file != self.id || span.start > span.end {
             return None;
