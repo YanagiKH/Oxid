@@ -41,6 +41,10 @@ pub struct BodyBlockId(pub usize);
 pub struct LoopId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
+    Negate {
+        operand: ExprId,
+        operator_span: Span,
+    },
     Not {
         operand: ExprId,
         operator_span: Span,
@@ -674,6 +678,13 @@ impl<'a> Resolver<'_, 'a> {
                 ExprKind::Call { target, args }
             }
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+            ast::ExprKind::Negate {
+                operand,
+                operator_span,
+            } => ExprKind::Negate {
+                operand: self.expression(*operand)?,
+                operator_span: *operator_span,
+            },
             ast::ExprKind::Not {
                 operand,
                 operator_span,

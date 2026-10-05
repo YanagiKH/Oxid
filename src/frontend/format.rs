@@ -137,7 +137,7 @@ fn roles(
     roles.resize(length, 0);
     for expression in &program.expressions {
         match &expression.kind {
-            ExprKind::Number { negative: true, .. } => {
+            ExprKind::Negate { .. } | ExprKind::Number { negative: true, .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
             ExprKind::IndexRead { base, .. } => {

@@ -315,6 +315,19 @@ fn execute(
                     };
                     Scalar::Bool(!value)
                 }
+                Rvalue::CheckedNegateI32 {
+                    operand,
+                    operator_span,
+                } => {
+                    let Scalar::I32(value) = read(active, operand)? else {
+                        return Err(internal(FailureKind::TypeMismatch, Some(operand.span)));
+                    };
+                    Scalar::I32(
+                        value
+                            .checked_neg()
+                            .ok_or(RunFailure::Overflow(operator_span))?,
+                    )
+                }
                 Rvalue::Bool(value) => Scalar::Bool(value),
                 Rvalue::I32(value) => Scalar::I32(value),
                 Rvalue::Unit => Scalar::Unit,

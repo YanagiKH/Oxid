@@ -99,7 +99,11 @@ impl<'s> Visitor<'s> {
                 self.span(*span)?;
                 match value {
                     Rvalue::Load(place) => self.span(place.span)?,
-                    Rvalue::NotBool {
+                    Rvalue::CheckedNegateI32 {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::NotBool {
                         operand,
                         operator_span,
                     } => {

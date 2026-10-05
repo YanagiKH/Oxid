@@ -48,3 +48,6 @@ their original source and compiler qualification identities.
 composition, complete owned constructor initializers and named-root scalar
 leaf/contained-array access. Ownership and call borrowing remain whole-root;
 aggregate extraction/replacement and projected borrowing remain excluded.
+
+[RFC 0021](0021-checked-i32-unary-negation.md) extends checked i32 arithmetic
+with general prefix negation while preserving signed decimal literal behavior.

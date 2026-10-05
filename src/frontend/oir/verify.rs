@@ -106,6 +106,18 @@ pub(super) fn scalar_statement_shape(
             )?;
             hir::Ty::Bool
         }
+        Rvalue::CheckedNegateI32 {
+            operand: value,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            same_type(
+                operand_in(locals, value, sources)?,
+                hir::Ty::I32,
+                value.span,
+            )?;
+            hir::Ty::I32
+        }
         Rvalue::Bool(_) => hir::Ty::Bool,
         Rvalue::I32(_) => hir::Ty::I32,
         Rvalue::Unit => hir::Ty::Unit,
@@ -394,9 +406,9 @@ pub(super) fn scalar_statement_uses(
         }
         Statement::Assign(assign) => match assign.value {
             Rvalue::Load(place) => visit(ScalarUse::Place(place)),
-            Rvalue::Copy(value) | Rvalue::NotBool { operand: value, .. } => {
-                visit(ScalarUse::Operand(value))
-            }
+            Rvalue::Copy(value)
+            | Rvalue::NotBool { operand: value, .. }
+            | Rvalue::CheckedNegateI32 { operand: value, .. } => visit(ScalarUse::Operand(value)),
             Rvalue::CheckedI32 { left, right, .. } | Rvalue::CompareScalar { left, right, .. } => {
                 visit(ScalarUse::Operand(left))?;
                 visit(ScalarUse::Operand(right))

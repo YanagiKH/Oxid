@@ -362,8 +362,8 @@ logical_and    := comparison ("&&" comparison)*
 comparison     := sum (comparison_op sum)?
 comparison_op  := "==" | "!=" | "<" | "<=" | ">" | ">="
 sum            := product (("+" | "-") product)*
-product        := unary ("*" unary)*
-unary          := "!" unary | primary
+product        := unary (("*" | "/" | "%") unary)*
+unary          := ("!" | "-") unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
                 | item_path "(" arguments? ")" | decimal | "-" decimal
                 | field_path | item_path "{" field_inits? "}"
@@ -455,8 +455,11 @@ an unconstrained literal (`let x = 1`) both produce i32; bool/unit contexts give
 E0300, with no coercion or truthiness. Other widths are E0202 unknown types.
 This provisional single-width default establishes no promotion algorithm.
 
-The sign is literal-only: `(-2147483648)` works, while `-(1)`, `-x`, `-f()`,
-`--1` and `+1` remain E0101 unsupported. Suffixes, separators, radices, floats,
+A minus immediately followed by a decimal token (ignoring trivia) is part of
+that signed literal, before the general unary rule is considered. Thus
+`-2147483648` and `(-2147483648)` retain exact literal conversion and costs.
+General `-(1)`, `-x`, `-f()` and `--1` are checked unary negation; unary `+1`
+remains E0101 unsupported. Suffixes, separators, radices, floats,
 exponents and non-ASCII digits (`1i32`, `1_000`, `0xff`, `0o7`, `0b1`, `1.0`,
 `1e9`, `１`) are E0101/parse. The parser validates the complete numeric token
 before conversion; a long invalid suffix is not misreported as a range error.
@@ -471,7 +474,16 @@ Binary `+`, `-`, `*`, `/` and `%` require i32 operands and return i32. `*`, `/` 
 than `+`/`-`; each level associates left. Parentheses override precedence. The
 left operand is fully evaluated before the right, then the operation executes.
 Calls execute exactly once in that order, and the first error stops execution.
-`1--2` subtracts the signed literal -2; general unary negation is still unavailable.
+`1--2` subtracts the signed literal -2. Prefix `-` takes an i32 expression and
+returns i32, at the same precedence as `!`, above multiplication, with prefixes
+applied right to left. The decimal-token preference above takes priority:
+`--1` negates literal -1, while `-(2147483648)` is E0203 at the positive literal.
+The operand is evaluated exactly once; then one arithmetic assignment charge
+occurs before checked negation. Negating MIN is E0604 at the outer minus;
+`--2147483648` therefore checks successfully and overflows when executed.
+Wrong bool/unit/owned operand types are E0300 at the operand. Unchosen branches
+retain ordinary short-circuit behavior. No constant folding erases a charge or
+an error. Signed literals gain no new node, local, instruction or fuel charge.
 
 Division truncates toward zero; remainder has the dividend's sign (or is zero).
 A zero divisor in either operation is E0607/oir-run at its operator. Both

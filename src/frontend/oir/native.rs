@@ -171,6 +171,7 @@ impl VerifiedProgram {
                         | Rvalue::Load(_)
                         | Rvalue::NotBool { .. }
                         | Rvalue::CheckedI32 { .. }
+                        | Rvalue::CheckedNegateI32 { .. }
                         | Rvalue::CompareScalar { .. } => {}
                         _ => {
                             return Err(reject(
@@ -374,6 +375,17 @@ fn arithmetic_failures(op: hir::ArithmeticOp) -> &'static [FailureKind] {
         }
     }
 }
+fn checked_failures(value: &Rvalue) -> Option<(&'static [FailureKind], Span)> {
+    match *value {
+        Rvalue::CheckedI32 {
+            op, operator_span, ..
+        } => Some((arithmetic_failures(op), operator_span)),
+        Rvalue::CheckedNegateI32 { operator_span, .. } => {
+            Some((&[FailureKind::Overflow], operator_span))
+        }
+        _ => None,
+    }
+}
 type DiagnosticKey = (FailureKind, usize, usize, usize);
 struct GuardedDiagnostics {
     messages: Vec<String>,
@@ -417,16 +429,12 @@ impl GuardedDiagnostics {
                 }
                 for statement in &block.statements {
                     add(FailureKind::Fuel, statement.span())?;
-                    if let Some(Assign {
-                        value:
-                            Rvalue::CheckedI32 {
-                                op, operator_span, ..
-                            },
-                        ..
-                    }) = statement.as_assignment()
+                    if let Some((failures, operator_span)) = statement
+                        .as_assignment()
+                        .and_then(|assign| checked_failures(&assign.value))
                     {
-                        for &kind in arithmetic_failures(*op) {
-                            add(kind, *operator_span)?;
+                        for &kind in failures {
+                            add(kind, operator_span)?;
                         }
                     }
                 }
@@ -529,14 +537,11 @@ fn emit(
     for f in &program.functions {
         for b in &f.blocks {
             for a in b.statements.iter().filter_map(Statement::as_assignment) {
-                if let Rvalue::CheckedI32 {
-                    op, operator_span, ..
-                } = a.value
-                {
+                if let Some((failures, operator_span)) = checked_failures(&a.value) {
                     if guarded.is_some() {
                         continue;
                     }
-                    for &kind in arithmetic_failures(op) {
+                    for &kind in failures {
                         let symbol = kind.arithmetic_symbol();
                         let message = kind
                             .diagnostic(operator_span, sources)
@@ -596,7 +601,7 @@ fn emit(
                     .iter()
                     .rev()
                     .filter_map(Statement::as_assignment)
-                    .find(|a| matches!(a.value, Rvalue::CheckedI32 { .. }))
+                    .find(|a| checked_failures(&a.value).is_some())
                     .map_or_else(
                         || format!("b{i}"),
                         |a| format!("checked{}_ok", a.destination.0),
@@ -695,6 +700,36 @@ fn emit(
                             out,
                             "  %v{} = icmp {predicate} {operand_type} %v{}, %v{}",
                             a.destination.0, left.local.0, right.local.0
+                        )
+                        .unwrap();
+                        continue;
+                    }
+                    Rvalue::CheckedNegateI32 {
+                        operand,
+                        operator_span,
+                    } => {
+                        let n = a.destination.0;
+                        // Checked subtraction is defined even for MIN; expose the
+                        // negated value only after the overflow branch succeeds.
+                        writeln!(out, "  %checked{n} = call {{ i32, i1 }} @llvm.ssub.with.overflow.i32(i32 0, i32 %v{})", operand.local.0).unwrap();
+                        writeln!(
+                            out,
+                            "  %overflow{n} = extractvalue {{ i32, i1 }} %checked{n}, 1"
+                        )
+                        .unwrap();
+                        writeln!(out, "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok\noverflow{n}_error:").unwrap();
+                        emit_arithmetic_failure(
+                            out,
+                            guarded,
+                            FailureKind::Overflow,
+                            operator_span,
+                            sources,
+                            f.id.0,
+                            n,
+                        );
+                        writeln!(
+                            out,
+                            "checked{n}_ok:\n  %v{n} = extractvalue {{ i32, i1 }} %checked{n}, 0"
                         )
                         .unwrap();
                         continue;

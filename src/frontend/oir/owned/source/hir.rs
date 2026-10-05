@@ -59,6 +59,10 @@ pub(super) enum ExprKind {
     Unit,
     Binding(BindingId),
     Group(ExprId),
+    Negate {
+        operand: ExprId,
+        operator_span: Span,
+    },
     Not {
         operand: ExprId,
         operator_span: Span,

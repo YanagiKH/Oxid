@@ -146,6 +146,10 @@ enum Rvalue {
         operand: Operand,
         operator_span: Span,
     },
+    CheckedNegateI32 {
+        operand: Operand,
+        operator_span: Span,
+    },
     Bool(bool),
     I32(i32),
     Unit,
@@ -392,3 +396,9 @@ mod mutable_tests;
 
 #[cfg(test)]
 mod loop_control_tests;
+
+#[cfg(test)]
+mod negation_raw_tests;
+
+#[cfg(test)]
+mod unary_source_tests;

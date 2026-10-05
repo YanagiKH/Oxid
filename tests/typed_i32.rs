@@ -210,10 +210,6 @@ fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
     }
     for (expr, origin) in [
         ("+1", "+"),
-        ("-(1)", "-"),
-        ("--1", "-"),
-        ("-x", "-"),
-        ("-id()", "-"),
         ("true & false", "&"),
         ("true | false", "|"),
         ("1 as i32", "as"),
