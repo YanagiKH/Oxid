@@ -949,9 +949,11 @@ fn c3_t1_denied_probe_selects_enum_free_before_work_or_storage() {
                 attempts: 7,
                 ..Allocator::default()
             };
-            let (result, measured) = super::super::reviewer_source::integration_measured(|| {
-                probe_enum_type_storage(index, &work, &mut allocator)
-            });
+            let (result, measured) = super::super::reviewer_source::integration_measured(
+                || -> Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>> {
+                    probe_enum_type_storage(index, &work, &mut allocator)
+                },
+            );
             if index.enum_count() == 0 {
                 assert!(result.unwrap().is_none());
                 assert_eq!(measured, (0, 0, 0));
@@ -1051,4 +1053,70 @@ fn c3_t1_enum_admission_downstream_fences_precede_inventory_and_allocation() {
         assert!(work.events.borrow().is_empty());
         assert!(work.observations.borrow().is_empty());
     }
+}
+
+#[test]
+fn c3_t1_inhabited_denied_selector_prices_its_complete_return_representation() {
+    use std::mem::{align_of, size_of};
+    type Returned = Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>;
+    macro_rules! role {
+        ($field:ident : $ty:ty) => {{
+            let _: for<'a> fn(&'a DeniedTypeProbeCarriers) -> &'a $ty = |model| &model.$field;
+            (
+                std::mem::offset_of!(DeniedTypeProbeCarriers, $field),
+                size_of::<$ty>(),
+                align_of::<$ty>(),
+            )
+        }};
+    }
+    let roles = [
+        role!(index: &'static DeclarationIndex<'static>),
+        role!(work: &'static WorkMeter),
+        role!(allocator: &'static mut Allocator),
+        role!(enum_count: usize),
+        role!(source: SourceOwner<'static>),
+        role!(origin: Span),
+        role!(returned: Returned),
+    ];
+    assert_eq!(roles.len(), 7);
+    let mut occupied = 0;
+    for (i, (offset, bytes, alignment)) in roles.iter().copied().enumerate() {
+        assert_eq!(offset % alignment, 0);
+        assert!(offset + bytes <= size_of::<DeniedTypeProbeCarriers>());
+        occupied += bytes;
+        for (j, (other, width, _)) in roles.iter().copied().enumerate() {
+            if i != j {
+                assert!(offset + bytes <= other || other + width <= offset);
+            }
+        }
+    }
+    assert_eq!(occupied, size_of::<DeniedTypeProbeCarriers>());
+    let unchanged = size_of::<&DeclarationIndex<'_>>()
+        + size_of::<&WorkMeter>()
+        + size_of::<&mut Allocator>()
+        + size_of::<usize>()
+        + size_of::<SourceOwner<'_>>()
+        + size_of::<Span>();
+    // Historical standard Result type only; no fake previous owner/model value.
+    let old_return = size_of::<Result<Option<std::convert::Infallible>, Vec<Diagnostic>>>();
+    assert_eq!(
+        denied_type_probe_carrier_bytes(),
+        unchanged + size_of::<Returned>()
+    );
+    assert_eq!(enum_type_observation_return_bytes(), size_of::<Returned>());
+    let old_carrier = unchanged + old_return;
+    let delta = denied_type_probe_carrier_bytes() - old_carrier;
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(
+        (
+            old_carrier,
+            old_return,
+            size_of::<Returned>(),
+            denied_type_probe_carrier_bytes(),
+            delta
+        ),
+        (112, 24, 896, 984, 872)
+    );
+    println!("C3_T1_DENIED_SELECTOR_LAYOUT fields={} typed_bytes={} carrier={} return={} old_carrier={} fixed_delta={}",
+        roles.len(), occupied, denied_type_probe_carrier_bytes(), size_of::<Returned>(), old_carrier, delta);
 }

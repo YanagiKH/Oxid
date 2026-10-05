@@ -444,16 +444,16 @@ pub(super) fn probe_enum_resolver_storage(
     }
 }
 
-/// The first T1 checkpoint deliberately has no inhabited success payload.
+/// The result layout is inhabited and prepaid, but the selector stays denied.
 /// Enum-free selection is inert; enum-bearing input is denied before preflight,
-/// owner assembly, phase events or affected storage. Enabling fixed statistics
-/// requires the complete checker carrier and allocation-route review first.
+/// owner assembly, phase events or affected storage. A positive call requires
+/// separately reviewed source-entry authority; no fresh helper is called here.
 #[cfg(test)]
 pub(super) fn probe_enum_type_storage(
     index: &DeclarationIndex<'_>,
     _work: &WorkMeter,
     _allocator: &mut Allocator,
-) -> Result<Option<std::convert::Infallible>, Vec<Diagnostic>> {
+) -> Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>> {
     if index.enum_count() == 0 {
         return Ok(None);
     }
@@ -473,7 +473,7 @@ pub(super) struct EnumTypeStorageObservation {
 }
 
 /// Deliberately uncalled until every new carrier and this closed call graph is
-/// prepaid and reviewed. The selectable probe above remains uninhabited.
+/// prepaid and reviewed. The selectable probe above remains hard-denied.
 #[cfg(test)]
 #[allow(dead_code)]
 fn fresh_enum_type_storage<'s>(
@@ -642,9 +642,9 @@ pub(super) const fn enum_type_observation_return_bytes() -> usize {
     std::mem::size_of::<Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>>()
 }
 
-// This complete model describes only the denied probe above, not the future
-// fresh owner/seed or successful observation. Keep it present in both builds so
-// non-test layout measurement and passive source pricing use actual Rust types.
+// This complete model describes the hard-denied selector, including its actual
+// inhabited return representation. The fresh helper has a separate full return
+// role. Layout/payment does not authorize a positive call or successful Some.
 #[allow(dead_code)]
 struct DeniedTypeProbeCarriers {
     index: &'static DeclarationIndex<'static>,
@@ -653,7 +653,7 @@ struct DeniedTypeProbeCarriers {
     enum_count: usize,
     source: SourceOwner<'static>,
     origin: Span,
-    returned: Result<Option<std::convert::Infallible>, Vec<Diagnostic>>,
+    returned: Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>,
 }
 pub(super) const fn denied_type_probe_carrier_bytes() -> usize {
     std::mem::size_of::<DeniedTypeProbeCarriers>()

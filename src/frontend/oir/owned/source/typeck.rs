@@ -591,7 +591,7 @@ pub(super) const fn borrowed_type_observation_return_bytes() -> usize {
 }
 
 /// One borrowed semantic checker. Paid branches remain disconnected behind the
-/// uninhabited observer result. Matching policy/context alone will never prove
+/// hard-denied observer entry. Matching policy/context alone will never prove
 /// fresh owner/plan/Cell provenance; the later entrypoint must establish that.
 fn check_bodies(
     program: &ResolvedOwnedProgram<'_>,

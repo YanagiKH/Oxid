@@ -1137,3 +1137,58 @@ fn c3_t1_observation_price_products_aggregation_and_shared_cap_are_checked() {
     );
     assert_eq!((allocator.attempts, work.used()), (1, 0));
 }
+
+#[test]
+fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let plan = HirPlan::calculate(HirCounts::default(), at).unwrap();
+    let old_return = size_of::<Result<Option<std::convert::Infallible>, Vec<Diagnostic>>>();
+    let inputs = size_of::<&DeclarationIndex<'_>>()
+        + size_of::<&WorkMeter>()
+        + size_of::<&mut Allocator>()
+        + size_of::<usize>()
+        + size_of::<SourceOwner<'_>>()
+        + size_of::<Span>();
+    let old_fixed = size_of::<typeck::TypedOwnedProgram<'_>>()
+        + size_of::<PlanReturnEnvelope>()
+        + size_of::<CapacityReturnEnvelope>()
+        + size_of::<CursorTemporaries>()
+        + size_of::<ScalarReturnEnvelope>()
+        + resolver_storage::fixed_carrier_bytes()
+        + VECTOR_RETURN_ENVELOPE_BYTES
+        + type_storage::fixed_control_carrier_bytes()
+        + typeck::borrowed_check_carrier_bytes()
+        + inputs
+        + old_return
+        + checker_only_components().0
+        + observation_components().0
+        + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
+        + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
+    let delta = resolve::enum_type_observation_return_bytes() - old_return;
+    assert_eq!(plan.fixed - old_fixed, delta);
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(delta, 872);
+        assert_eq!(observation_components(), (11792, 320, 24, 24));
+        assert_eq!(checker_only_components(), (33448, 1928, 24, 784, 88));
+    }
+    let remaining = MAX_HIR_BYTES - plan.total;
+    assert_eq!(
+        plan.with_dynamic(remaining - 1, at).unwrap(),
+        MAX_HIR_BYTES - 1
+    );
+    assert_eq!(plan.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+    assert_eq!(
+        plan.with_dynamic(remaining + 1, at).unwrap_err().code,
+        "E0400"
+    );
+    let mut bytes = usize::MAX - resolve::denied_type_probe_carrier_bytes() + 1;
+    let before = bytes;
+    assert_eq!(
+        increment(&mut bytes, resolve::denied_type_probe_carrier_bytes(), at)
+            .unwrap_err()
+            .code,
+        "E0400"
+    );
+    assert_eq!(bytes, before);
+}
