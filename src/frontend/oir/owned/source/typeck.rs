@@ -1638,3 +1638,118 @@ fn c3_t1_borrowed_checker_actual_carrier_components() {
         align_of::<TypedOwnedFunction<'_>>()
     );
 }
+
+/// Assertion-only synthetic admission control. This helper never runs a paid
+/// checker, establishes source provenance, or returns any owner/view/witness.
+#[cfg(test)]
+pub(super) fn assert_enum_observation_downstream_fences(program: ResolvedOwnedProgram<'_>) {
+    use super::{budget, diagnostic as source_diagnostic, lower};
+    use crate::frontend::source::SourceView;
+
+    assert_eq!(program.admission(), SourceAdmission::ObserveEnumTypes);
+    assert!(!program.admission().executable());
+    assert!(!program.admission().allows_lowering());
+    let SourceView::Map(sources) = program.index().sources().view() else {
+        panic!("synthetic fence fixture must retain its own source map");
+    };
+    let eof = program.index().sources().eof();
+    let bodies = if let Some(function) = program.functions().first() {
+        assert_eq!(program.functions().len(), 1);
+        assert_eq!(function.id, DefId(0));
+        assert!(function.bindings.is_empty());
+        assert!(function.expressions.is_empty());
+        assert_eq!(function.body, BodyBlockId(0));
+        assert_eq!(function.blocks.len(), 1);
+        assert_eq!(function.blocks[0].body.len(), 1);
+        assert!(matches!(
+            function.blocks[0].body[0].kind,
+            StmtKind::Return(None)
+        ));
+        let signature = &program.signatures()[0];
+        assert!(signature.params.is_empty());
+        assert_eq!(signature.result, ValueTy::Scalar(Ty::Unit));
+        vec![TypedBody {
+            expressions: Vec::new(),
+            bindings: Vec::new(),
+            block_flows: vec![FlowSummary::RETURN],
+            projections: Vec::new(),
+            statement_projections: vec![vec![None]],
+            borrow_projections: Vec::new(),
+        }]
+    } else {
+        assert!(program.signatures().is_empty());
+        Vec::new()
+    };
+    let typed = TypedOwnedProgram { program, bodies };
+    fn assert_fence(error: &Diagnostic, expected: Span) {
+        assert_eq!(
+            (
+                error.code,
+                error.stage,
+                error.message.as_str(),
+                error.primary
+            ),
+            (
+                "E0500",
+                "oir-owned-lower",
+                "internal compiler error: owned invariant violation",
+                Some(expected)
+            ),
+        );
+        assert!(error.notes.is_empty());
+        assert!(error.secondary.is_empty());
+    }
+    budget::reset_guard_counts();
+    budget::fail_allocation_after(0, || {
+        let errors = super::program::check_typed(&typed).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_fence(&errors[0], eof);
+    });
+    assert_eq!(budget::guard_counts(), [0; 7]);
+    for preflight in [true, false] {
+        budget::reset_guard_counts();
+        let failure = budget::fail_allocation_after(0, || {
+            if preflight {
+                budget::preflight(&typed, budget::Limits::DEFAULT).unwrap_err()
+            } else {
+                lower::lower(&typed).unwrap_err()
+            }
+        });
+        assert_fence(&source_diagnostic::lower(&failure, sources), eof);
+        assert_eq!(budget::guard_counts(), [0; 7]);
+    }
+    for view in typed.functions() {
+        budget::reset_guard_counts();
+        let failure = budget::fail_allocation_after(0, || {
+            lower::count_preflight_function(&view).unwrap_err()
+        });
+        assert_fence(
+            &source_diagnostic::lower(&failure, sources),
+            view.signature().span,
+        );
+        assert_eq!(budget::guard_counts(), [0; 7]);
+        for per_block in [false, true] {
+            let mut blocks = [usize::MAX; 1];
+            budget::reset_guard_counts();
+            let failure = budget::fail_allocation_after(0, || {
+                lower::count_function(&view, per_block.then_some(&mut blocks[..])).unwrap_err()
+            });
+            assert_fence(
+                &source_diagnostic::lower(&failure, sources),
+                view.signature().span,
+            );
+            assert_eq!(blocks, [usize::MAX; 1]);
+            assert_eq!(budget::guard_counts(), [0; 7]);
+        }
+        budget::reset_guard_counts();
+        let failure = budget::fail_allocation_after(0, || {
+            lower::check_array_type_emission_fence(&view).unwrap_err()
+        });
+        assert_fence(
+            &source_diagnostic::lower(&failure, sources),
+            view.signature().span,
+        );
+        assert_eq!(budget::guard_counts(), [0; 7]);
+    }
+    drop(typed);
+}

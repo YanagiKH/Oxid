@@ -1027,3 +1027,28 @@ fn c3_t1_denied_probe_and_admission_actual_layouts() {
         std::mem::size_of::<DeniedTypeProbeCarriers>()
     );
 }
+
+#[test]
+fn c3_t1_enum_admission_downstream_fences_precede_inventory_and_allocation() {
+    for text in ["", "fn main()->(){return;}"] {
+        let mut sources = SourceMap::new();
+        let file = sources.add("enum-downstream-fence.ox".into(), text.into());
+        let source = sources.get(file);
+        let ast = parser::parse_with_mode(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let work = WorkMeter::new(0);
+        work.enable_observation();
+        let mut resolved = resolve_in_map(source, &ast, &sources).unwrap();
+        // Negative admission fixture only: never a paid owner or checker seed.
+        resolved.admission = SourceAdmission::ObserveEnumTypes;
+        resolved.work = MeterOwner::Borrowed(&work);
+        super::super::typeck::assert_enum_observation_downstream_fences(resolved);
+        assert_eq!(work.used(), 0);
+        assert!(work.events.borrow().is_empty());
+        assert!(work.observations.borrow().is_empty());
+    }
+}
