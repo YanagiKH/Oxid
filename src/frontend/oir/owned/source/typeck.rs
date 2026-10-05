@@ -7,6 +7,7 @@ use super::{
 use crate::frontend::{
     declaration_index::{Access, PreparedTypeName},
     diagnostic::Diagnostic,
+    lexer::Token,
     owned_diagnostic,
     parser::MAX_DIAGNOSTICS,
     project::budget::Allocator,
@@ -470,6 +471,124 @@ pub(super) const fn borrowed_body_return_carrier_bytes() -> usize {
     std::mem::size_of::<BorrowedBodyReturnCarriers>()
 }
 
+// Shared semantic factories make their exact opaque output types available to
+// the non-invoking layout witness below. No source owner is made for sizing.
+fn projection_start(bound: usize) -> impl FnMut(&Token) -> bool {
+    move |token| token.span.end <= bound
+}
+fn projection_end(end: usize) -> impl FnMut(&&Token) -> bool + Clone {
+    move |token| token.span.start < end
+}
+fn projection_window(tokens: &[Token], end: usize) -> impl Iterator<Item = &Token> + Clone {
+    tokens.iter().take_while(projection_end(end))
+}
+fn projection_identifier() -> impl FnMut(&&Token) -> bool + Clone {
+    |token| token.kind == crate::frontend::lexer::Kind::Ident
+}
+fn projection_identifiers<'a>(
+    tokens: impl Iterator<Item = &'a Token> + Clone,
+) -> impl Iterator<Item = &'a Token> + Clone {
+    tokens.filter(projection_identifier())
+}
+fn projection_field_predicate<'borrow, 'src: 'borrow>(
+    program: &'borrow ResolvedOwnedProgram<'src>,
+    spelling: &'borrow str,
+) -> impl FnMut(&&Field) -> bool + 'borrow + use<'borrow, 'src> {
+    move |field| program.text(field.name_span) == spelling
+}
+fn borrow_projection_key() -> impl FnMut(&BorrowProjection) -> (usize, usize) {
+    |entry| (entry.expression.0, entry.argument)
+}
+
+// Measurement-only complete generic carriers. These exact W/I/P/S/Z/K/V types
+// come from the semantic factories, never from equal-size stand-ins. No new
+// model in this section is currently added to HirPlan or confers admission.
+#[allow(dead_code)]
+struct ProjectionIteratorCarriers<W: 'static, I, P, S, Z, K, E, V> {
+    // Two window calls (projection and its enclosing array helper): each has
+    // a complete factory construction and return, in addition to receivers.
+    window_constructions_and_returns: [W; 4],
+    window_receiver: W,
+    cloned_window_return: W,
+    clone_input: &'static W,
+    // Filter's by-value input is distinct from its enclosing output payload.
+    filter_inputs: [W; 2],
+    filter_constructions_and_returns: [I; 4],
+    count_input: I,
+    identifiers_receiver: I,
+    // Captured partition_point predicates for the two actual start searches.
+    start_constructions_returns_and_inputs: [S; 6],
+    end_constructions_returns_and_inputs: [E; 6],
+    window_slice_iterator_inputs: [std::slice::Iter<'static, Token>; 2],
+    end_factory_inputs: [usize; 2],
+    identifier_constructions_returns_and_inputs: [Z; 6],
+    field_construction_return_and_find_input: [P; 3],
+    sort_construction_return_and_input: [K; 3],
+    scalar_function_item: V,
+    token_factory_inputs: [(&'static [Token], usize); 2],
+    partition_inputs: [(&'static [Token], usize); 2],
+    field_factory_inputs: (&'static ResolvedOwnedProgram<'static>, &'static str),
+    token_next: Option<&'static Token>,
+    token_current: &'static Token,
+    identifier_next: [Option<&'static Token>; 2],
+    identifier_current: &'static Token,
+    fields: std::slice::Iter<'static, Field>,
+    field_found: Option<&'static Field>,
+    field_returned: Result<&'static Field, Box<Diagnostic>>,
+    field_current: &'static Field,
+}
+#[allow(dead_code)]
+#[allow(clippy::type_complexity)] // The complete actual factory tuple, without erased items.
+struct IteratorWitnessCarriers<FW, FI, FP, FS, FZ, FK, FE, V> {
+    // Function-item arguments are actual generic types, including their call
+    // construction/parameter transfers. None of these factories is invoked.
+    factory_items: [(FW, FI, FP, FS, FZ, FK, FE, V); 2],
+    // Fixed layout tuple construction, witness return and outer return/caller.
+    layout_transports: [[usize; 11]; 4],
+}
+fn iterator_layout_witness<W, I, P, S, Z, K, E, V, FW, FI, FP, FS, FZ, FK, FE>(
+    _factories: (FW, FI, FP, FS, FZ, FK, FE, V),
+) -> [usize; 11]
+where
+    W: Iterator<Item = &'static Token> + Clone + 'static,
+    FW: FnOnce(&'static [Token], usize) -> W,
+    FI: FnOnce(W) -> I,
+    FP: FnOnce(&'static ResolvedOwnedProgram<'static>, &'static str) -> P,
+    FS: FnOnce(usize) -> S,
+    FZ: FnOnce() -> Z,
+    FK: FnOnce() -> K,
+    FE: FnOnce(usize) -> E,
+    V: FnOnce(Ty) -> ValueTy,
+{
+    use std::mem::{align_of, size_of};
+    [
+        size_of::<ProjectionIteratorCarriers<W, I, P, S, Z, K, E, V>>(),
+        align_of::<ProjectionIteratorCarriers<W, I, P, S, Z, K, E, V>>(),
+        size_of::<IteratorWitnessCarriers<FW, FI, FP, FS, FZ, FK, FE, V>>(),
+        size_of::<W>(),
+        size_of::<I>(),
+        size_of::<P>(),
+        size_of::<S>(),
+        size_of::<Z>(),
+        size_of::<K>(),
+        size_of::<V>(),
+        size_of::<E>(),
+    ]
+}
+#[allow(dead_code)] // Unpaid measurement surface, not yet used by source admission.
+fn semantic_iterator_layout() -> [usize; 11] {
+    iterator_layout_witness((
+        projection_window,
+        projection_identifiers,
+        projection_field_predicate,
+        projection_start,
+        projection_identifier,
+        borrow_projection_key,
+        projection_end,
+        ValueTy::Scalar,
+    ))
+}
+
 fn projection(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -498,14 +617,9 @@ fn projection(
     let ast = program.index().sources().ast(requester)?;
     let start = ast
         .tokens
-        .partition_point(|token| token.span.end <= field_span.start);
-    let tokens = ast.tokens[start..]
-        .iter()
-        .take_while(|token| token.span.start < field_span.end);
-    let length = tokens
-        .clone()
-        .filter(|token| token.kind == crate::frontend::lexer::Kind::Ident)
-        .count();
+        .partition_point(projection_start(field_span.start));
+    let tokens = projection_window(&ast.tokens[start..], field_span.end);
+    let length = projection_identifiers(tokens.clone()).count();
     let mut path = match paid.as_deref_mut() {
         Some(paid) => storage::projection_fields_metered(
             paid.projection_bytes,
@@ -545,7 +659,7 @@ fn projection(
         let field = program.records()[record.0]
             .fields
             .iter()
-            .find(|field| program.text(field.name_span) == spelling)
+            .find(projection_field_predicate(program, spelling))
             .ok_or_else(|| {
                 error(
                     "E0305",
@@ -587,11 +701,9 @@ fn projected_array_access(
     let ast = program.index().sources().ast(requester)?;
     let start = ast
         .tokens
-        .partition_point(|token| token.span.end <= base_span.start);
-    let mut identifiers = ast.tokens[start..]
-        .iter()
-        .take_while(|token| token.span.start < base_span.end)
-        .filter(|token| token.kind == crate::frontend::lexer::Kind::Ident);
+        .partition_point(projection_start(base_span.start));
+    let mut identifiers =
+        projection_identifiers(projection_window(&ast.tokens[start..], base_span.end));
     let root = identifiers
         .next()
         .ok_or_else(|| error("E0500", "missing projection root", base_span))?
@@ -1837,7 +1949,7 @@ fn check_body(
             function.end,
             "projected borrow lookup ordering",
         )?;
-        borrow_projections.sort_unstable_by_key(|entry| (entry.expression.0, entry.argument));
+        borrow_projections.sort_unstable_by_key(borrow_projection_key());
     }
     let final_expressions = match paid {
         Some(paid) => paid.quota.storage.finalize(
@@ -2161,4 +2273,15 @@ fn c3_t1_disconnected_paid_context_actual_layouts() {
         size_of::<PaidRowReceiver>(),
         size_of::<Vec<Option<Projection>>>()
     );
+}
+
+#[test]
+fn c3_t1_exact_semantic_iterator_factories_are_sized_without_invocation_or_heap() {
+    let (layout, measured) = super::reviewer_source::integration_measured(semantic_iterator_layout);
+    assert_eq!(measured, (0, 0, 0));
+    assert!(layout[0] > layout[3] + layout[4] + layout[5] + layout[6]);
+    assert_eq!((layout[7], layout[8], layout[9]), (0, 0, 0));
+    assert_eq!(layout[2], 4 * std::mem::size_of::<[usize; 11]>());
+    println!("C3_T1_SEMANTIC_ITERATOR_LAYOUT bank={} align={} witness={} window={} identifiers={} field_predicate={} start_predicate={} identifier_predicate={} sort_key={} scalar_item={} end_predicate={}",
+        layout[0], layout[1], layout[2], layout[3], layout[4], layout[5], layout[6], layout[7], layout[8], layout[9], layout[10]);
 }

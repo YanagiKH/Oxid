@@ -1823,3 +1823,150 @@ fn c3_t0_fixed_control_formula_is_an_independent_sum_of_actual_components() {
         function_output_carrier_bytes()
     );
 }
+
+// These are isolated storage-helper controls. No resolved owner or paid checker
+// context is constructed, and the source observer remains hard denied.
+#[test]
+fn c3_t1_metered_projection_rejects_before_changing_seed_work_or_allocator() {
+    let at = origin();
+    let width = size_of::<FieldId>();
+    for (seed, slots) in [
+        (0, 0),
+        (0, 65),
+        (0, usize::MAX),
+        (usize::MAX, 1),
+        (MAX_HIR_BYTES - width + 1, 1),
+    ] {
+        let total = Cell::new(seed);
+        let work = WorkMeter::new(0);
+        work.enable_observation();
+        let mut allocator = Allocator {
+            attempts: 7,
+            ..Allocator::default()
+        };
+        let error =
+            projection_fields_metered(&total, &mut allocator, slots, &work, at).unwrap_err();
+        assert_eq!(error.code, "E0400");
+        assert_eq!(total.get(), seed);
+        assert_eq!(work.used(), 0);
+        assert!(work.events.borrow().is_empty());
+        assert_eq!(allocator.attempts, 7);
+    }
+}
+
+#[test]
+fn c3_t1_metered_projection_precharge_precedes_work_failure_and_reserve() {
+    let at = origin();
+    let width = size_of::<FieldId>();
+    let total = Cell::new(MAX_HIR_BYTES - 2 * width);
+    let work = WorkMeter::new(1);
+    work.enable_observation();
+    let mut allocator = Allocator {
+        attempts: 7,
+        ..Allocator::default()
+    };
+    allocator.observer_trace_bound(1).unwrap();
+    let (_, stats) = super::super::reviewer_source::integration_measured(|| {
+        let error = projection_fields_metered(&total, &mut allocator, 2, &work, at).unwrap_err();
+        assert_eq!(error.code, "E0400");
+        assert_eq!(error.message, "declaration index work limit exceeded");
+        assert_eq!(error.primary, Some(at));
+        drop(error);
+    });
+    assert_eq!(stats.1, 0);
+    assert_eq!(total.get(), MAX_HIR_BYTES);
+    assert_eq!(work.used(), 0);
+    assert!(work.events.borrow().is_empty());
+    assert_eq!(allocator.attempts, 7);
+    assert!(allocator.trace.is_empty());
+}
+
+#[test]
+fn c3_t1_metered_projection_exact_old_debit_schedule_and_cap_boundary() {
+    let at = origin();
+    let width = size_of::<FieldId>();
+    for slots in [1, 2, 64] {
+        for below in [0, 1] {
+            let total = Cell::new(MAX_HIR_BYTES - slots * width - below);
+            let work = WorkMeter::new(if slots == 1 { 0 } else { slots as u64 });
+            work.enable_observation();
+            let mut allocator = Allocator {
+                attempts: 7,
+                ..Allocator::default()
+            };
+            allocator.observer_trace_bound(1).unwrap();
+            let path = projection_fields_metered(&total, &mut allocator, slots, &work, at).unwrap();
+            assert_eq!((path.len(), path.capacity()), (0, slots));
+            assert_eq!(total.get(), MAX_HIR_BYTES - below);
+            assert_eq!(work.used(), if slots == 1 { 0 } else { slots as u64 });
+            let events = work.events.borrow();
+            if slots == 1 {
+                assert!(events.is_empty());
+            } else {
+                assert_eq!(events.len(), 1);
+                assert_eq!(
+                    (events[0].operation, events[0].units, events[0].origin),
+                    ("record projection path", slots as u64, at)
+                );
+            }
+            assert_eq!(allocator.attempts, 8);
+            assert_eq!(allocator.trace.len(), 1);
+            let reserve = &allocator.trace[0];
+            assert_eq!(
+                (
+                    reserve.kind,
+                    reserve.length,
+                    reserve.element_bytes,
+                    reserve.success
+                ),
+                ("paid typed projection fields", slots, width, true)
+            );
+            drop(path);
+        }
+    }
+}
+
+#[test]
+fn c3_t1_metered_projection_reserve_failure_keeps_spent_work_and_cleans_buffers() {
+    let at = origin();
+    let width = size_of::<FieldId>();
+    for fail_at in [None, Some(8), Some(9)] {
+        let total = Cell::new(MAX_HIR_BYTES - 3 * width);
+        let work = WorkMeter::new(2);
+        let mut allocator = Allocator {
+            attempts: 7,
+            fail_at,
+            ..Allocator::default()
+        };
+        allocator.observer_trace_bound(2).unwrap();
+        let (_, stats) = super::super::reviewer_source::integration_measured(|| {
+            let result = (|| {
+                let first = projection_fields_metered(&total, &mut allocator, 1, &work, at)?;
+                let second = projection_fields_metered(&total, &mut allocator, 2, &work, at)?;
+                assert_eq!((first.capacity(), second.capacity()), (1, 2));
+                Ok::<_, Box<Diagnostic>>(())
+            })();
+            assert_eq!(result.is_ok(), fail_at.is_none());
+            drop(result);
+        });
+        assert_eq!(stats.1, 0);
+        assert_eq!(
+            allocator.attempts - 7,
+            if fail_at == Some(8) { 1 } else { 2 }
+        );
+        assert_eq!(
+            total.get(),
+            if fail_at == Some(8) {
+                MAX_HIR_BYTES - 2 * width
+            } else {
+                MAX_HIR_BYTES
+            }
+        );
+        assert_eq!(work.used(), if fail_at == Some(8) { 0 } else { 2 });
+        if fail_at.is_none() {
+            assert_eq!(stats, (2, 0, (3 * width) as isize));
+        } else {
+            assert!(!allocator.trace.last().unwrap().success);
+        }
+    }
+}
