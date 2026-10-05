@@ -212,3 +212,113 @@ fn c3a_paid_resolver_type_guard_is_a_no_allocation_scalar_check() {
     result.unwrap();
     assert_eq!(stats, (0, 0, 0));
 }
+
+#[test]
+fn c3a_paid_resolver_declaration_duplicate_keeps_first_origin_and_beats_its_bad_type() {
+    with_index(
+        "enum E{V} struct R{same:i32,other:bool,same:Missing}",
+        |index| {
+            let sources = index.sources();
+            let (key, module) = index.record(RecordId(0)).unwrap();
+            let record = &sources.ast(module).unwrap().records[key.index];
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(16).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, "E0201");
+            assert_eq!(errors[0].primary, Some(record.fields[2].name));
+            assert_eq!(errors[0].secondary.len(), 1);
+            assert_eq!(errors[0].secondary[0].0, record.fields[0].name);
+            assert_eq!(errors[0].secondary[0].1, "first declared here");
+            assert!(!errors[0].message.contains("Missing"));
+            prefix_only(&allocator);
+        },
+    );
+}
+
+#[test]
+fn c3a_paid_resolver_earlier_field_query_failure_precedes_later_duplicate() {
+    with_index("enum E{V} struct R{same:Missing,same:i32}", |index| {
+        let sources = index.sources();
+        let (key, module) = index.record(RecordId(0)).unwrap();
+        let record = &sources.ast(module).unwrap().records[key.index];
+        let expected = value_type(
+            &mut index.query(&WorkMeter::default()),
+            module,
+            record.fields[0].ty,
+        )
+        .unwrap_err();
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(16).unwrap();
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let errors = closed_attempt(index, &work, &mut allocator);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            (
+                errors[0].code,
+                errors[0].primary,
+                errors[0].message.as_str()
+            ),
+            (expected.code, expected.primary, expected.message.as_str())
+        );
+        assert!(errors[0].secondary.is_empty());
+        assert!(!work
+            .events
+            .borrow()
+            .iter()
+            .any(|event| event.operation == "paid resolver name byte"));
+        prefix_only(&allocator);
+    });
+}
+
+#[test]
+fn c3a_paid_resolver_declaration_long_prefix_scan_work_boundaries_drop_storage() {
+    with_index("enum E{V} struct R{aaaaaaaa:(),aaaaaaab:()}", |index| {
+        let sources = index.sources();
+        let (key, module) = index.record(RecordId(0)).unwrap();
+        let record = &sources.ast(module).unwrap().records[key.index];
+        // Independently: preflight visits 1 record + 2 fields; the first Unit
+        // query costs 1; the duplicate scan compares 8 bytes; the second Unit
+        // query costs 1. Limit 8 stops four bytes into the only comparison.
+        for limit in [4, 8, 11, 12, 13, 14] {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(16).unwrap();
+            let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+                let work = WorkMeter::new(limit);
+                work.enable_observation();
+                let errors = closed_attempt(index, &work, &mut allocator);
+                assert_eq!(errors.len(), 1);
+                assert_eq!(work.used(), limit.min(13));
+                let compared = work
+                    .events
+                    .borrow()
+                    .iter()
+                    .filter(|event| event.operation == "paid resolver name byte")
+                    .count();
+                assert_eq!(compared as u64, limit.saturating_sub(4).min(8));
+                if limit < 13 {
+                    assert_eq!(errors[0].code, "E0400");
+                    assert_eq!(
+                        errors[0].primary,
+                        Some(if limit < 12 {
+                            record.fields[1].name
+                        } else {
+                            record.fields[1].ty.span
+                        })
+                    );
+                } else {
+                    assert_eq!(
+                        errors[0].message,
+                        "paid resolver body storage is not connected"
+                    );
+                }
+                drop(errors);
+            });
+            assert_eq!(live, 0, "declaration scan leaked at work limit {limit}");
+            assert!(peak > 0);
+            assert_eq!(allocator.attempts, 3);
+            prefix_only(&allocator);
+        }
+    });
+}
