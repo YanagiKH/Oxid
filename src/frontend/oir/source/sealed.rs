@@ -12,6 +12,9 @@ use crate::frontend::{
     source::{SourceFile, SourceView},
 };
 
+// Keep the witness inline: its enum growth is the already-admitted raw vector
+// header and checked declaration facade. Boxing would add an unbudgeted allocation.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum CheckedBody {
     Scalar(VerifiedProgram),
@@ -69,6 +72,8 @@ enum CheckDepth {
     Types,
     Executable,
 }
+// This allocation-free result contains the same already-accounted inline witness.
+#[allow(clippy::large_enum_variant)]
 enum Checked<'s> {
     Types(CheckedProjectTypes),
     Executable(CheckedSourceProgram<'s>),
@@ -200,5 +205,39 @@ impl CheckedSourceProgram<'_> {
     #[cfg(test)]
     pub(in crate::frontend) fn entry(&self) -> Option<hir::DefId> {
         self.entry
+    }
+}
+
+#[test]
+fn bounded_enum_sealed_source_carrier_measurements() {
+    use crate::frontend::oir::owned_types::{EnumDeclarations, RawEnumDecl};
+    use std::mem::{align_of, size_of};
+
+    // Baseline carriers contain the old inline record-only witness. The only
+    // new stored data is its raw enum Vec header plus checked enum facade;
+    // enclosing wrappers neither duplicate it nor introduce a heap allocation.
+    let growth = size_of::<Vec<RawEnumDecl>>() + size_of::<EnumDeclarations>();
+    macro_rules! measured {
+        ($($ty:ty => $baseline:expr),+ $(,)?) => { $(
+            println!(
+                "enum-sealed-layout {} bytes={} align={} admitted-growth={}",
+                stringify!($ty), size_of::<$ty>(), align_of::<$ty>(), growth,
+            );
+            #[cfg(target_pointer_width = "64")]
+            assert_eq!(size_of::<$ty>(), $baseline + growth);
+        )+ };
+    }
+    measured!(
+        owned::SourceProgram => 184,
+        CheckedBody => 184,
+        CheckedSourceProgram<'_> => 208,
+        Checked<'_> => 208,
+    );
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(size_of::<Vec<RawEnumDecl>>(), 24);
+        assert_eq!(size_of::<EnumDeclarations>(), 80);
+        assert_eq!(size_of::<VerifiedProgram>(), 24);
+        assert_eq!(size_of::<CheckedProjectTypes>(), 40);
     }
 }

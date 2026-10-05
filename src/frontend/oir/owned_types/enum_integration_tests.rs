@@ -174,8 +174,10 @@ fn bounded_enum_combined_preflight_precedes_all_retained_reservations() {
             "declaration layout bytes",
         ),
     ] {
-        let mut allocator = Allocator::default();
-        allocator.fail_at = Some(1);
+        let mut allocator = Allocator {
+            fail_at: Some(1),
+            ..Allocator::default()
+        };
         let error = Declarations::check_combined_with_limits(
             &records,
             &enums,
@@ -188,8 +190,10 @@ fn bounded_enum_combined_preflight_precedes_all_retained_reservations() {
         assert_eq!(allocator.attempts, 0);
     }
     for ordinal in 1..=5 {
-        let mut allocator = Allocator::default();
-        allocator.fail_at = Some(ordinal);
+        let mut allocator = Allocator {
+            fail_at: Some(ordinal),
+            ..Allocator::default()
+        };
         let result = Declarations::check_combined_with_limits(
             &records,
             &enums,
@@ -227,8 +231,10 @@ fn bounded_enum_combined_malformed_inputs_reject_before_output() {
                     ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0))))
             }
         }
-        let mut allocator = Allocator::default();
-        allocator.fail_at = Some(1);
+        let mut allocator = Allocator {
+            fail_at: Some(1),
+            ..Allocator::default()
+        };
         let error = Declarations::check_combined_with_limits(
             &records,
             &enums,

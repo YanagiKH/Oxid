@@ -19,6 +19,7 @@ fn bounded_enum_enclosing_layout_measurements() {
         ast::Function,
         ast::TypeSyntax,
         RawOwnedProgram,
+        verified::VerifiedOwnedProgram,
         RawEnumDecl,
         RawVariantDecl,
         Declarations,
