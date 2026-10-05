@@ -33,7 +33,7 @@ fn raw(span: Span) -> RawOwnedProgram {
 }
 
 #[test]
-fn bounded_enum_raw_declarations_cannot_acquire_any_executable_witness() {
+fn bounded_enum_declarations_and_consumers_require_the_complete_raw_proof() {
     let (sources, span) = f::context();
     let span = span(0);
     let make = || {
@@ -41,30 +41,87 @@ fn bounded_enum_raw_declarations_cannot_acquire_any_executable_witness() {
         p.enums.push(enumeration(span));
         p
     };
-    assert!(verify_owned(raw(span), &sources).is_ok());
+    let witness = verify_owned(make(), &sources).unwrap();
     assert_eq!(
-        verify_owned(make(), &sources).unwrap_err().kind,
-        OwnedFailureKind::Malformed(Malformed::Type)
+        execute::run(&witness, Some(hir::DefId(0))),
+        Ok(Scalar::Unit)
     );
-    assert!(verified::probe_array_validation(&make(), &sources, budget::Limits::DEFAULT).is_err());
-    assert!(verified::probe_array_reference(
-        make(),
-        &sources,
-        budget::Limits::DEFAULT,
-        Some(hir::DefId(0)),
-        execute::Limits::default(),
-        execute::ObservationControl::default()
-    )
-    .is_err());
+    assert!(verified::probe_array_validation(&make(), &sources, budget::Limits::DEFAULT).is_ok());
+    assert_eq!(
+        verified::probe_array_reference(
+            make(),
+            &sources,
+            budget::Limits::DEFAULT,
+            Some(hir::DefId(0)),
+            execute::Limits::default(),
+            execute::ObservationControl::default(),
+        )
+        .unwrap()
+        .result,
+        Ok(Scalar::Unit)
+    );
     assert!(verified::probe_array_native(
         make(),
         &sources,
         budget::Limits::DEFAULT,
         Some(hir::DefId(0)),
         &sources,
-        native::NativeControl::default()
+        native::NativeControl::default(),
+    )
+    .unwrap()
+    .result
+    .is_ok());
+    // Declaration presence is not authority: all witness paths still reject
+    // forged nominal members before either consumer can run.
+    let malformed = || {
+        let mut p = make();
+        p.enums[0].variants[0].id.index = 1;
+        p
+    };
+    assert!(verify_owned(malformed(), &sources).is_err());
+    assert!(verified::probe_array_reference(
+        malformed(),
+        &sources,
+        budget::Limits::DEFAULT,
+        Some(hir::DefId(0)),
+        execute::Limits::default(),
+        execute::ObservationControl::default(),
     )
     .is_err());
+    assert!(verified::probe_array_native(
+        malformed(),
+        &sources,
+        budget::Limits::DEFAULT,
+        Some(hir::DefId(0)),
+        &sources,
+        native::NativeControl::default(),
+    )
+    .is_err());
+}
+
+#[test]
+fn bounded_enum_consumers_do_not_open_source_declaration_or_match_syntax() {
+    use crate::frontend::{lexer, parser};
+    for text in [
+        "enum Token { End } fn main()->(){return;}",
+        "pub enum Token { Integer(i32), End } fn main()->(){return;}",
+        "fn main()->(){match token { Token::End => {return;} }}",
+    ] {
+        let mut sources = SourceMap::new();
+        let file = sources.add("enum-source-closed.ox".into(), text.into());
+        let file = sources.get(file);
+        for mode in [
+            parser::SourceMode::ScalarOnly,
+            parser::SourceMode::OwnedCandidate,
+            parser::SourceMode::ModuleCandidate,
+            parser::SourceMode::ProjectCandidate,
+        ] {
+            assert!(
+                parser::parse_with_mode(file, lexer::lex(file).unwrap(), mode).is_err(),
+                "{text}"
+            );
+        }
+    }
 }
 
 #[test]

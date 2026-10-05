@@ -324,6 +324,9 @@ pub(in super::super) enum FaultKind {
     EnumConsumeEpoch {
         arm: usize,
     },
+    EnumConsumeMissingSlot {
+        arm: usize,
+    },
     EnumOwnerTag {
         owner: OwnerPlaceId,
         tag: u32,
@@ -355,6 +358,7 @@ impl Machine<'_, '_> {
             FaultKind::EnumDispatchTag { .. }
                 | FaultKind::EnumConsumeTag { .. }
                 | FaultKind::EnumConsumeEpoch { .. }
+                | FaultKind::EnumConsumeMissingSlot { .. }
         ) {
             return None;
         }
@@ -612,7 +616,9 @@ impl Machine<'_, '_> {
             return;
         };
         let selected = match fault.kind {
-            FaultKind::EnumConsumeTag { arm, .. } | FaultKind::EnumConsumeEpoch { arm } => arm,
+            FaultKind::EnumConsumeTag { arm, .. }
+            | FaultKind::EnumConsumeEpoch { arm }
+            | FaultKind::EnumConsumeMissingSlot { arm } => arm,
             _ => return,
         };
         if selected != arm {
@@ -625,6 +631,35 @@ impl Machine<'_, '_> {
         else {
             return;
         };
+        if matches!(fault.kind, FaultKind::EnumConsumeMissingSlot { .. }) {
+            let function = self.function(self.frames[frame].function);
+            let Some(entry) = descriptor
+                .arms
+                .get(arm)
+                .and_then(|selected| function.blocks.get(selected.entry.0))
+            else {
+                return;
+            };
+            let Some(OwnedStatement {
+                kind:
+                    OwnedInstruction::ConsumeVariant {
+                        destination: Some(destination),
+                        ..
+                    },
+                ..
+            }) = entry.statements.first()
+            else {
+                return;
+            };
+            self.observer.fault_attempted = true;
+            if destination.0 < self.frames[frame].slots.len() {
+                // Test-only corruption of the existing scalar storage extent;
+                // no allocation, declaration mutation, or new runtime sidecar.
+                self.frames[frame].slots.truncate(destination.0);
+                self.observer.fault_applied = true;
+            }
+            return;
+        }
         let owner = descriptor.source;
         let kind = match fault.kind {
             FaultKind::EnumConsumeTag { tag, .. } => FaultKind::EnumOwnerTag { owner, tag },

@@ -744,3 +744,103 @@ fn enum_reference_maximum_written_arm_chain_uses_all_256_checked_tests() {
         assert_eq!(payload_reads(&observed), 0);
     }
 }
+
+#[test]
+fn enum_reference_binding_storage_preflight_precedes_owner_transition() {
+    let (sources, s) = f::context();
+    for ty in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
+        let (raw, _) = e::mixed_case(&[Some(ty)], &[0], 0, ty, s(0));
+        let witness = verify_owned(raw, &sources).unwrap();
+        let span = e::at(s(0), 5);
+        let observed = fault(&witness, span, FaultKind::EnumConsumeMissingSlot { arm: 0 });
+        assert_eq!(
+            observed.result,
+            Err(OwnedRunFailure::Invariant("scalar storage", Some(span)))
+        );
+        assert_eq!(bindings(&observed), 0);
+        assert_eq!(payload_reads(&observed), 1);
+        let source = failure_owner(&observed, 0, 0);
+        assert_eq!((source.state, source.key.generation), (2, 2));
+        assert_eq!(&source.bytes[..4], &[0; 4]);
+    }
+}
+
+#[test]
+fn enum_reference_replacement_restores_moved_destination_every_fuel() {
+    let (sources, s) = f::context();
+    for (constructed, payload) in e::MIXED.iter().enumerate() {
+        let (mut raw, mut schedule) =
+            e::relay_case(constructed, payload.unwrap_or(hir::Ty::Unit), s(0));
+        let statements = &mut raw.functions[0].blocks[0].statements;
+        let before = statements
+            .iter()
+            .position(|statement| matches!(statement.kind, OwnedInstruction::Replace { .. }))
+            .unwrap();
+        statements.insert(
+            before,
+            f::instruction(OwnedInstruction::Discard(OwnerPlaceId(1)), e::at(s(0), 19)),
+        );
+        let before = schedule
+            .events
+            .iter()
+            .position(|event| *event == (e::at(s(0), 12), 5))
+            .unwrap();
+        schedule.events.insert(before, (e::at(s(0), 19), 3));
+        let witness = verify_owned(raw, &sources).unwrap();
+        for fuel in 0..=schedule.fuel() {
+            assert_oracle(
+                &observe(&witness, fuel, ObservationControl::default()),
+                &schedule,
+                fuel,
+            );
+        }
+        let observed = observe(&witness, schedule.fuel(), ObservationControl::default());
+        let replacements: Vec<_> = observed
+            .storage
+            .iter()
+            .filter(|row| row.kind == StorageKind::Transfer && row.key.owner == 1)
+            .collect();
+        assert_eq!(replacements.len(), 2);
+        assert_eq!(
+            (replacements[1].state, replacements[1].key.generation),
+            (3, 3)
+        );
+        assert_eq!(transfer_count(&observed), 6);
+    }
+}
+
+#[test]
+fn enum_reference_available_lifetime_end_and_frame_teardown_ignore_poison() {
+    let (sources, s) = f::context();
+    for payload in e::MIXED {
+        for frame_teardown in [false, true] {
+            let (mut raw, mut schedule) = e::discard_case(payload, s(0));
+            raw.functions[0].blocks[0].statements.retain(|statement| {
+                !matches!(statement.kind, OwnedInstruction::Discard(OwnerPlaceId(0)))
+                    && !(frame_teardown
+                        && matches!(
+                            statement.kind,
+                            OwnedInstruction::StorageEnd(OwnerPlaceId(0))
+                        ))
+            });
+            schedule.events.retain(|(span, _)| {
+                *span != e::at(s(0), 5) && !(frame_teardown && *span == e::at(s(0), 6))
+            });
+            let witness = verify_owned(raw, &sources).unwrap();
+            let span = e::at(s(0), if frame_teardown { 7 } else { 6 });
+            let observed = fault(
+                &witness,
+                span,
+                FaultKind::EnumOwnerPoison {
+                    owner: OwnerPlaceId(0),
+                },
+            );
+            assert_eq!(observed.result, Ok(schedule.result));
+            assert_eq!(payload_reads(&observed), 0);
+            assert!(!observed
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::EnumTagRead(..))));
+        }
+    }
+}

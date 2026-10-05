@@ -1117,33 +1117,36 @@ fn scalar_program(span: Span) -> RawOwnedProgram {
     }
 }
 #[test]
-fn enum_raw_proof_never_unlocks_production_or_executable_probes() {
+fn enum_raw_proof_is_required_by_production_and_executable_probes() {
     let (sources, s) = f::context();
     let make = || pair(s(0));
-    assert!(probe(&make(), &sources).is_ok());
-    assert_eq!(
-        verify_owned(make(), &sources).unwrap_err().kind,
-        OwnedFailureKind::Malformed(Malformed::Type)
-    );
-    assert!(verified::probe_array_validation(&make(), &sources, budget::Limits::DEFAULT).is_err());
+    let usage = probe(&make(), &sources).unwrap();
+    assert_eq!(verify_owned(make(), &sources).unwrap().usage(), usage);
+    assert!(verified::probe_array_validation(&make(), &sources, budget::Limits::DEFAULT).is_ok());
     assert!(verified::probe_array_reference(
         make(),
         &sources,
         budget::Limits::DEFAULT,
         Some(hir::DefId(0)),
         execute::Limits::default(),
-        execute::ObservationControl::default()
+        execute::ObservationControl::default(),
     )
-    .is_err());
+    .unwrap()
+    .result
+    .is_ok());
     assert!(verified::probe_array_native(
         make(),
         &sources,
         budget::Limits::DEFAULT,
         Some(hir::DefId(0)),
         &sources,
-        native::NativeControl::default()
+        native::NativeControl::default(),
     )
-    .is_err());
+    .unwrap()
+    .result
+    .is_ok());
+    // Forging an operation or descriptor without the required declaration,
+    // canonical sites and ownership proof still cannot mint a witness.
     for case in 0..4 {
         let mut raw = scalar_program(s(0));
         match case {
@@ -1181,7 +1184,7 @@ fn enum_raw_proof_never_unlocks_production_or_executable_probes() {
         }
         assert!(
             verify_owned(raw, &sources).is_err(),
-            "carrier-only gate {case}"
+            "unproved carrier {case}"
         );
     }
 }
