@@ -11,7 +11,7 @@
 //! stack/allocator metadata are separate. This is not a global HIR or RSS cap.
 #![allow(dead_code)] // Count-only qualification precedes any source activation.
 
-use super::{hir::*, lower, resolve, typeck};
+use super::{hir::*, lower, resolve, resolver_storage, typeck};
 use crate::frontend::{
     ast,
     declaration_index::{DeclarationIndex, WorkMeter},
@@ -29,18 +29,13 @@ pub(super) const MAX_HIR_BYTES: usize = super::budget::MAX_RAW_BYTES;
 
 /// Future sorted borrowed-name row. An active binding's diagnostic origin is
 /// already in Binding::span; retaining another active Span would be redundant.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ScopeName {
-    name: Span,
-    active: Option<BindingId>,
+    pub(super) name: Span,
+    pub(super) active: Option<BindingId>,
 }
-/// Only passive storage shapes. No new name lookup implementation is enabled.
-#[derive(Debug)]
-struct ScopeStorage {
-    names: Vec<ScopeName>,
-    exits: Vec<usize>,
-    marks: Vec<usize>,
-}
+/// Measured helper shape; the resolver consumer remains disconnected.
+type ScopeStorage = resolver_storage::PaidScope;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct HirCounts {
@@ -130,7 +125,7 @@ struct VectorReturnEnvelope<T> {
 // The primitive currently has only test callers. Measure every row type in the
 // passive plan (plus its actual u64 test instantiation) instead of assuming all
 // generic Result<Vec<T>, _> layouts are identical. New uses must extend this set.
-const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
+pub(super) const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
     let mut largest = 0;
     macro_rules! include {
         ($($ty:ty),* $(,)?) => { $(
@@ -253,7 +248,13 @@ impl HirPlan {
         charge::<Vec<Option<typeck::FlowSummary>>>(&mut staging, c.functions, at)?;
 
         let mut resolver_scratch = 0;
-        charge::<ScopeStorage>(&mut resolver_scratch, c.functions, at)?;
+        // PaidScope is embedded in the complete Resolver policy below. Its
+        // backing rows are separate; do not charge that embedded header twice.
+        increment(
+            &mut resolver_scratch,
+            mul(c.functions, resolver_storage::function_carrier_bytes(), at)?,
+            at,
+        )?;
         charge::<ScopeName>(&mut resolver_scratch, c.bindings, at)?;
         charge::<usize>(&mut resolver_scratch, c.bindings, at)?;
         charge::<usize>(&mut resolver_scratch, c.scope_marks, at)?;
@@ -304,6 +305,7 @@ impl HirPlan {
         charge::<CapacityReturnEnvelope>(&mut fixed, 1, at)?;
         charge::<CursorTemporaries>(&mut fixed, 1, at)?;
         charge::<ScalarReturnEnvelope>(&mut fixed, 1, at)?;
+        increment(&mut fixed, resolver_storage::fixed_carrier_bytes(), at)?;
         increment(&mut fixed, VECTOR_RETURN_ENVELOPE_BYTES, at)?;
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;
         charge::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>(&mut fixed, 1, at)?;
@@ -384,7 +386,7 @@ pub(super) fn preflight_enum_hir(
     HirPlan::calculate(counts, at).map(Some)
 }
 
-fn count_function(
+pub(super) fn count_function(
     ast: &ast::Program,
     function: &ast::Function,
     work: &WorkMeter,
@@ -619,13 +621,13 @@ fn count_expression(
 /// Capacity arithmetic primitive, not a semantic/admission witness. The caller
 /// must derive this exact request from a prepaid immutable plan before reserve.
 #[derive(Clone, Copy, Debug)]
-struct Capacity {
+pub(super) struct Capacity {
     slots: usize,
     bytes: usize,
     width: usize,
 }
 impl Capacity {
-    fn new<T>(slots: usize, prepaid: usize, at: Span) -> Result<Self, Box<Diagnostic>> {
+    pub(super) fn new<T>(slots: usize, prepaid: usize, at: Span) -> Result<Self, Box<Diagnostic>> {
         let bytes = mul(slots, size_of::<T>(), at)?;
         admit(0, bytes, prepaid, at)?;
         Ok(Self {
@@ -641,7 +643,7 @@ impl Capacity {
     ) -> Result<usize, Box<Diagnostic>> {
         mul(add(old_capacity, new_capacity, at)?, size_of::<T>(), at)
     }
-    fn reserve<T>(
+    pub(super) fn reserve<T>(
         self,
         allocator: &mut Allocator,
         mut values: Vec<T>,
@@ -673,7 +675,7 @@ impl Capacity {
         self.check_observed(values.capacity(), at)?;
         Ok(values)
     }
-    fn check_observed(self, capacity: usize, at: Span) -> Result<(), Box<Diagnostic>> {
+    pub(super) fn check_observed(self, capacity: usize, at: Span) -> Result<(), Box<Diagnostic>> {
         if capacity > self.slots {
             Err(failure("affected HIR capacity exceeds prepaid request", at))
         } else {

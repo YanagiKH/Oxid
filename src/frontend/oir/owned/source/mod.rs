@@ -6,6 +6,7 @@ mod hir_budget;
 pub(super) mod lower;
 mod program;
 pub(in crate::frontend::oir) mod resolve;
+mod resolver_storage;
 #[cfg(test)]
 mod tests;
 pub(in crate::frontend::oir) mod typeck;

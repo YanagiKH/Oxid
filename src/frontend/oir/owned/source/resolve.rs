@@ -581,6 +581,7 @@ fn resolve_index(
             requester,
             records: &records,
             scope: HashMap::new(),
+            storage: super::resolver_storage::ResolverStorage::legacy(),
             bindings: Vec::new(),
             expressions: Vec::new(),
         };
@@ -613,6 +614,9 @@ struct Resolver<'i, 'a> {
     requester: ModuleId,
     records: &'i [Record],
     scope: HashMap<&'a str, (BindingId, Span)>,
+    // Measured before activation; ordinary resolution retains the legacy branch.
+    #[allow(dead_code)]
+    storage: super::resolver_storage::ResolverStorage<'i>,
     bindings: Vec<Binding>,
     expressions: Vec<Expr>,
 }

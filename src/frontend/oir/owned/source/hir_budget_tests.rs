@@ -519,6 +519,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
             + size_of::<CapacityReturnEnvelope>()
             + size_of::<CursorTemporaries>()
             + size_of::<ScalarReturnEnvelope>()
+            + resolver_storage::fixed_carrier_bytes()
             + VECTOR_RETURN_ENVELOPE_BYTES
             + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
             + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
