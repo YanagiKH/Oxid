@@ -51,7 +51,7 @@ fn prepare(
     limits: budget::Limits,
 ) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
     let usage = budget::preflight(raw, limits)?;
-    let declarations = Declarations::check(&raw.records, sources)?;
+    let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
     Ok((
         usage,
         declarations,
@@ -71,6 +71,11 @@ fn validate(
     usage: &mut OwnershipUsage,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
+    // Declaration identity/layout does not authorize executable enum values.
+    // This fence is shared by production and all qualification probes.
+    if let Some(enumeration) = raw.enums.first() {
+        return Err(OwnedFailure::malformed(Malformed::Type, enumeration.span));
+    }
     shape::signatures(raw, declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
@@ -182,6 +187,12 @@ fn inventory_carriers(
     raw: &RawOwnedProgram,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
+    for enumeration in &raw.enums {
+        meter.visit()?;
+        for _ in &enumeration.variants {
+            meter.visit()?;
+        }
+    }
     for f in &raw.functions {
         for _ in &f.owners {
             meter.visit()?;

@@ -247,6 +247,7 @@ fn core_raw(
         s(1106),
     )];
     RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![f],
     }
@@ -692,6 +693,7 @@ fn relay_raw(ty: hir::Ty, n: usize, s: &impl Fn(usize) -> Span) -> RawOwnedProgr
         s(117),
     )];
     RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![f, callee],
     }
@@ -1139,6 +1141,7 @@ fn helper_raw(case: HelperCase, s: &impl Fn(usize) -> Span) -> RawOwnedProgram {
         s(24),
     )];
     RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![f, rhs, index],
     }

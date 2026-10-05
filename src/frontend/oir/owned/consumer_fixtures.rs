@@ -147,6 +147,7 @@ pub(super) fn empty_record() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[], s(0))],
             functions: vec![f],
         },
@@ -248,6 +249,7 @@ pub(super) fn owned_relay() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[hir::Ty::I32], s(0))],
             functions: vec![f, callee],
         },
@@ -347,6 +349,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[hir::Ty::I32], s(0))],
             functions: vec![f, callee],
         },
@@ -783,6 +786,7 @@ pub(super) fn owner_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[hir::Ty::I32], s(0))],
             functions: vec![f],
         },
@@ -871,6 +875,7 @@ pub(super) fn replacement(moved: bool) -> (SourceMap, RawOwnedProgram, Schedule)
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[hir::Ty::I32], s(0))],
             functions: vec![f],
         },
@@ -1027,6 +1032,7 @@ pub(super) fn forbidden_snapshot_redefinition() -> (SourceMap, RawOwnedProgram) 
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f, callee],
         },
@@ -1513,6 +1519,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[I32], s(0))],
             functions: vec![main, increment, combine],
         },

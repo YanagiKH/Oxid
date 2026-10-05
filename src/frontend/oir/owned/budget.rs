@@ -108,6 +108,41 @@ impl ProgramCounts {
         self.usage
     }
 }
+/// Additional raw declaration storage, independently inventoried from actual
+/// nested lengths. The enum vector header is retained even for old programs.
+/// Checked enum tables (including their headers) have their own 8 MiB gate.
+pub(super) fn account_enum_declarations(
+    enums: EnumUsage,
+    limits: Limits,
+    program: &mut ProgramCounts,
+) -> Result<(), OwnedFailure> {
+    let limits = limits.bounded();
+    let events = add(enums.enums, enums.variants)?;
+    let bytes = add(
+        std::mem::size_of::<Vec<RawEnumDecl>>(),
+        add(
+            mul(enums.enums, size_of::<RawEnumDecl>())?,
+            mul(enums.variants, size_of::<RawVariantDecl>())?,
+        )?,
+    )?;
+    program.usage.expanded_events = cap(
+        add(program.usage.expanded_events, events)?,
+        limits.events,
+        "expanded ownership events",
+    )?;
+    program.usage.metadata_bytes = cap(
+        add(program.usage.metadata_bytes, bytes)?,
+        limits.metadata,
+        "ownership metadata",
+    )?;
+    program.usage.work = cap(
+        add(program.usage.work, mul(4, events)?)?,
+        limits.work,
+        "ownership work",
+    )?;
+    Ok(())
+}
+
 /// Shared checked counts only: no ownership state, witness, or allocations.
 pub(super) fn account_function(
     c: FunctionCounts,
@@ -228,6 +263,15 @@ pub(super) fn preflight(
 ) -> Result<OwnershipUsage, OwnedFailure> {
     cap(raw.functions.len(), MAX_BLOCKS, "functions")?;
     let mut program = ProgramCounts::default();
+    let records = admit_declaration_counts(raw.records.iter().map(|record| record.fields.len()))?;
+    let enums = admit_enum_counts(
+        raw.enums
+            .iter()
+            .map(|enumeration| enumeration.variants.len()),
+        records,
+    )
+    .map_err(DeclarationError::from)?;
+    account_enum_declarations(enums, limits, &mut program)?;
     for f in &raw.functions {
         // Preserve the original early general-cap ordering before nested scans.
         cap(

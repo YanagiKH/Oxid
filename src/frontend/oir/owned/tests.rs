@@ -13,6 +13,7 @@ fn context() -> (SourceMap, Span) {
 }
 fn subject(span: Span) -> RawOwnedProgram {
     RawOwnedProgram {
+        enums: vec![],
         records: vec![RawRecordDecl {
             id: RecordId(0),
             span,
@@ -424,6 +425,7 @@ fn nested(span: Span) -> RawOwnedProgram {
     target.locals[0].kind = LocalKind::Parameter;
     target.blocks[0].statements.clear();
     RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![f, target, unit_function(2, span)],
     }
@@ -634,6 +636,7 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
         }
         assert!(verify_with_limits(
             RawOwnedProgram {
+                enums: vec![],
                 records: vec![],
                 functions: vec![f]
             },
@@ -643,7 +646,7 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
                 events: 0,
                 work: 0,
                 scratch: 0,
-                metadata: 0
+                metadata: std::mem::size_of::<Vec<RawEnumDecl>>()
             }
         )
         .is_ok());
@@ -664,6 +667,7 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
             .collect();
         assert!(verify_owned(
             RawOwnedProgram {
+                enums: vec![],
                 records: vec![RawRecordDecl {
                     id: RecordId(0),
                     span: s,
@@ -994,6 +998,7 @@ fn maximum_block_shape_uses_linear_scratch_and_oversize_product_is_preflighted()
     let failure = budget::fail_allocation_after(0, || {
         verify_with_limits(
             RawOwnedProgram {
+                enums: vec![],
                 records: vec![],
                 functions: vec![raw.functions[0].clone()],
             },
@@ -1267,6 +1272,7 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
                 function.blocks[0].statements.clear();
                 function.blocks[0].terminator = end(OwnedTerminatorKind::Goto(BlockId(0)), s);
                 let raw = |function| RawOwnedProgram {
+                    enums: vec![],
                     records: vec![],
                     functions: vec![function],
                 };

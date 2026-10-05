@@ -1,6 +1,6 @@
 //! Authoritative private ownership OIR and bounded verified consumers.
 //! Production record source lowering and both consumers require the sealed witness.
-//! Fixed-array carriers are rejected before an executable witness can be built.
+//! Enum carriers are rejected before an executable witness can be built.
 #![allow(dead_code)]
 // Denials retain exact verifier-derived facts on the stack. Boxing this fixed
 // transport would add an allocation on ownership/resource failure paths.
@@ -24,6 +24,7 @@ use verified::{verify_owned, verify_with_limits};
 struct ReferenceParamId(usize);
 #[derive(Debug)]
 struct RawOwnedProgram {
+    enums: Vec<RawEnumDecl>,
     records: Vec<RawRecordDecl>,
     functions: Vec<RawOwnedFunction>,
 }
@@ -429,3 +430,6 @@ mod negation_raw_tests;
 
 #[cfg(test)]
 mod enum_layout_tests;
+
+#[cfg(test)]
+mod enum_admission_tests;

@@ -177,6 +177,13 @@ pub(super) fn preflight(
     cap(bytes, ceiling, "source raw payload")?;
     let mut scratch = 0;
     let mut counts = raw_budget::ProgramCounts::default();
+    // Source enum syntax remains closed; nevertheless the enclosing raw enum
+    // vector header is real retained storage and must match raw inventory.
+    raw_budget::account_enum_declarations(
+        EnumUsage::default(),
+        raw_budget::Limits::DEFAULT,
+        &mut counts,
+    )?;
     #[cfg(test)]
     guard_event(GuardEvent::FunctionIteration);
     for view in typed.functions() {

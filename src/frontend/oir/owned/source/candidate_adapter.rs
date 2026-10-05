@@ -1085,7 +1085,7 @@ mod candidate_native;
 fn record_id(aggregate: AggregateTy) -> RecordId {
     match aggregate {
         AggregateTy::Record(record) => record,
-        AggregateTy::FixedArray(_) => panic!("source array gate"),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => panic!("source aggregate gate"),
     }
 }
 

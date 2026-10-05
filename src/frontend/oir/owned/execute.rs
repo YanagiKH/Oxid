@@ -492,7 +492,7 @@ impl<'p, 'w> Machine<'p, 'w> {
     fn array_type(&self, key: OwnerKey, span: Span) -> Result<FixedArrayTy> {
         match self.aggregate(key, span)? {
             AggregateTy::FixedArray(array) => Ok(array),
-            AggregateTy::Record(_) => Err(bad("array aggregate type", span)),
+            AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -2217,6 +2217,8 @@ mod tests;
 fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) => Err(bad("unsupported aggregate carrier", span)),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => {
+            Err(bad("unsupported aggregate carrier", span))
+        }
     }
 }

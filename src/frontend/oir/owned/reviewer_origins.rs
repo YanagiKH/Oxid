@@ -103,6 +103,7 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
     (
         sm,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![RawRecordDecl {
                 id: RecordId(0),
                 span: s,
@@ -341,7 +342,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
             u.metadata_bytes,
             u.scratch_bytes
         ),
-        (1, 1, 262, 288, 33)
+        (1, 1, 262, 312, 33)
     );
     let d = Declarations::check(&p.records, &sm).unwrap();
     let mut meter = budget::Meter {
@@ -361,7 +362,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         owners: 1,
         events: 1,
         work: 262,
-        metadata: 288,
+        metadata: 288 + std::mem::size_of::<Vec<RawEnumDecl>>(),
         scratch: 33,
     };
     assert!(verify_with_limits(clone_raw(&p), &sm, exact).is_ok());
@@ -374,7 +375,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         (budget::Limits { work: 261, ..exact }, "ownership work"),
         (
             budget::Limits {
-                metadata: 287,
+                metadata: 287 + std::mem::size_of::<Vec<RawEnumDecl>>(),
                 ..exact
             },
             "ownership metadata",
@@ -495,6 +496,7 @@ fn heldout_origins_preserve_all_frozen_reference_fuel_and_native_modules() {
 
 fn clone_raw(p: &RawOwnedProgram) -> RawOwnedProgram {
     RawOwnedProgram {
+        enums: p.enums.clone(),
         records: p
             .records
             .iter()

@@ -1280,7 +1280,9 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
             .unwrap();
             format!("%{name}_length")
         }
-        BorrowedTy::Exact(AggregateTy::Record(_)) => unreachable!("verified indexed base"),
+        BorrowedTy::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => {
+            unreachable!("verified indexed base")
+        }
     }
 }
 fn element_stride(element: hir::Ty) -> usize {
@@ -1437,6 +1439,7 @@ fn transfer(
     out.ordinary_visits += 1;
     let record = match aggregate {
         AggregateTy::Record(record) => record,
+        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
         AggregateTy::FixedArray(array) => {
             if array.length() == 0 {
                 if !out.expand(Expansion::Transfer) {

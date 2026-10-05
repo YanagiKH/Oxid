@@ -105,13 +105,13 @@ fn same_aggregate(
 fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
     }
 }
 fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
     match aggregate {
         AggregateTy::FixedArray(array) => Ok(array),
-        AggregateTy::Record(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
     }
 }
 fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {

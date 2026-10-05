@@ -56,6 +56,7 @@ impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
+            AggregateTy::Enum(_) => unreachable!("enum source gate"),
             AggregateTy::FixedArray(array) => write!(
                 f,
                 "[\"fixed-array\",{},{}]",

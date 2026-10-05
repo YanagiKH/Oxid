@@ -1931,7 +1931,11 @@ pub(super) fn lower_with_limits(
         error.kind = OwnedFailureKind::Malformed(Malformed::CanonicalSite);
         return Err(error);
     }
-    Ok(RawOwnedProgram { records, functions })
+    Ok(RawOwnedProgram {
+        enums: vec![],
+        records,
+        functions,
+    })
 }
 
 /// Exercises the same emission constructor before any output work. Kept inside

@@ -350,6 +350,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![
                 declaration(0, &[ValueTy::Scalar(hir::Ty::I32)], s(300)),
                 declaration(1, &[ValueTy::Owned(meta), ValueTy::Owned(array)], s(301)),
@@ -528,6 +529,7 @@ pub(super) fn empty_composition() -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![
                 declaration(0, &[], s(40)),
                 declaration(

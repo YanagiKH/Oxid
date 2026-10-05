@@ -1,7 +1,7 @@
-//! Isolated checked sum declarations. This seam does not admit enums through
-//! AggregateTy, stored fields, borrows, source lowering or executable consumers.
-//! Record/enum integration must obtain `existing` from independently checked
-//! record inventory, then complete both preflights before retained allocation.
+//! Checked sum declarations, integrated by the combined declaration facade.
+//! Nominal types do not admit stored enum fields, borrows, source lowering or
+//! executable consumers. The facade independently recomputes record inventory
+//! and completes both preflights before retained allocation.
 
 use super::{
     hir, DeclarationError, DeclarationUsage, Layout, ParameterTy, SourceMap, Span, ValueTy,
@@ -21,6 +21,7 @@ pub(in crate::frontend) struct VariantId {
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 pub(in crate::frontend::oir) struct RawEnumDecl {
     pub(in crate::frontend::oir) id: EnumId,
     pub(in crate::frontend::oir) span: Span,

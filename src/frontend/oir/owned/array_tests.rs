@@ -485,7 +485,8 @@ fn unit2b_raw_q_limits_and_payload_are_independent_and_allocation_free() {
     assert_eq!(u.expanded_events, 11);
     assert_eq!(u.work, 36 * (1 + 2 + 9 + 2 + 1 + 5));
     assert_eq!(u.scratch_bytes, 33);
-    let expected_metadata = 10 * std::mem::size_of::<Option<DiagnosticOrigins>>()
+    let expected_metadata = std::mem::size_of::<Vec<RawEnumDecl>>()
+        + 10 * std::mem::size_of::<Option<DiagnosticOrigins>>()
         + std::mem::size_of::<shape::OwnerSites>()
         + 2 * std::mem::size_of::<Operand>();
     assert_eq!(u.metadata_bytes, expected_metadata);
@@ -746,6 +747,7 @@ fn unit2b_index_dominance_uses_real_branch_edges() {
 fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
     let (sources, s) = context();
     let raw = RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![unit_function(0, s)],
     };
@@ -754,17 +756,24 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         events: 0,
         work: 0,
         scratch: 0,
-        metadata: 0,
+        metadata: std::mem::size_of::<Vec<RawEnumDecl>>(),
     };
     assert_eq!(
         verified::probe_array_validation(&raw, &sources, zero).unwrap(),
-        OwnershipUsage::default()
+        OwnershipUsage {
+            metadata_bytes: std::mem::size_of::<Vec<RawEnumDecl>>(),
+            ..OwnershipUsage::default()
+        }
     );
     assert_eq!(
         verify_with_limits(raw, &sources, zero).unwrap().usage(),
-        OwnershipUsage::default()
+        OwnershipUsage {
+            metadata_bytes: std::mem::size_of::<Vec<RawEnumDecl>>(),
+            ..OwnershipUsage::default()
+        }
     );
     let mut raw = RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![unit_function(0, s)],
     };
@@ -805,6 +814,7 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
 fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
     let (sources, s) = context();
     let mut raw = RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![unit_function(0, s)],
     };
@@ -825,7 +835,8 @@ fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
     assert_eq!(admitted.work, 32 * (1 + 2 + 99 + 99_901 + 1));
     assert_eq!(
         admitted.metadata_bytes,
-        100 * std::mem::size_of::<Option<DiagnosticOrigins>>()
+        std::mem::size_of::<Vec<RawEnumDecl>>()
+            + 100 * std::mem::size_of::<Option<DiagnosticOrigins>>()
             + 99_901 * std::mem::size_of::<Operand>()
     );
     if let OwnedInstruction::ConstructArray { elements, .. } = &mut raw.functions[0].blocks[0]
@@ -873,6 +884,7 @@ fn unit2b_valid_arrays_reach_expanded_event_ceiling_inclusively() {
         ]);
     }
     let mut raw = RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![function],
     };

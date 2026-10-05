@@ -226,6 +226,9 @@ fn type_name<'a>(
             program.prepare_name(record, span).map(TypeName::Record)
         }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => Ok(TypeName::Array(array)),
+        ValueTy::Owned(AggregateTy::Enum(_)) => {
+            Err(error("E0300", "enum source types are unavailable", span))
+        }
     }
 }
 fn mismatch(
@@ -444,6 +447,9 @@ fn borrow_type(
     let record = match place {
         BorrowPlace::Owner(binding) => {
             match bindings[binding.0].expect("borrow binding initialized") {
+                ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_))) => {
+                    return Err(error("E0300", "enum owners cannot be borrowed", span));
+                }
                 ParameterTy::Value(ValueTy::Owned(record)) => {
                     if kind == BorrowKind::Exclusive && !function.bindings[binding.0].mutable {
                         return Err(immutable(function, binding, span));
@@ -481,6 +487,9 @@ fn borrow_type(
             }
         }
     };
+    if matches!(record, BorrowedTy::Exact(AggregateTy::Enum(_))) {
+        return Err(error("E0300", "enum owners cannot be borrowed", span));
+    }
     // Requested permission is retained even if the parent grants only shared.
     // The authoritative raw verifier diagnoses that ownership permission error.
     Ok(ParameterTy::Reference {
@@ -1472,5 +1481,53 @@ mod array_type_layout_tests {
             (ParameterTy, Span),
             std::collections::HashMap<&str, (BindingId, Span)>
         );
+    }
+}
+
+#[cfg(test)]
+mod enum_source_gate_tests {
+    use super::*;
+    use crate::frontend::oir::owned_types::EnumId;
+    use crate::frontend::{lexer, parser, source::SourceMap};
+
+    #[test]
+    fn bounded_enum_source_borrow_fence_rejects_owned_and_forwarded_types() {
+        let mut sources = SourceMap::new();
+        let file = sources.add(
+            "enum-borrow-gate.ox".into(),
+            "fn f(x:i32)->(){return;}".into(),
+        );
+        let source = sources.get(file);
+        let ast = parser::parse_with_mode(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let resolved = super::super::resolve::resolve(source, &ast).unwrap();
+        let function = &resolved.functions()[0];
+        for id in [0, usize::MAX] {
+            let ty = AggregateTy::Enum(EnumId(id));
+            for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
+                for (place, binding) in [
+                    (
+                        BorrowPlace::Owner(BindingId(0)),
+                        ParameterTy::Value(ValueTy::Owned(ty)),
+                    ),
+                    (
+                        BorrowPlace::Forwarded(BindingId(0)),
+                        ParameterTy::Reference {
+                            referent: BorrowedTy::Exact(ty),
+                            kind,
+                        },
+                    ),
+                ] {
+                    let error = borrow_type(function, kind, place, function.end, &[Some(binding)])
+                        .unwrap_err();
+                    assert_eq!(error.code, "E0300");
+                    assert_eq!(error.primary, Some(function.end));
+                }
+            }
+        }
     }
 }

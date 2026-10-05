@@ -191,6 +191,36 @@ fn value_type(
 ) -> Result<ValueTy, Box<Diagnostic>> {
     query.value_type(requester, ty, TypeContext::Value)
 }
+// Generic value-type resolution must never silently authorize enum containment.
+fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>> {
+    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
+        Err(error(
+            "E0300",
+            format_args!("enum values cannot be record fields"),
+            span,
+        ))
+    } else {
+        Ok(ty)
+    }
+}
+#[test]
+fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
+    let mut sources = SourceMap::new();
+    let id = sources.add("enum-field-gate.ox".into(), "field".into());
+    let span = sources.get(id).span(0, 5);
+    for id in [0, usize::MAX] {
+        let error = record_field_type(
+            ValueTy::Owned(AggregateTy::Enum(
+                crate::frontend::oir::owned_types::EnumId(id),
+            )),
+            span,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "E0300");
+        assert_eq!(error.primary, Some(span));
+    }
+}
+
 fn parameter_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
@@ -343,7 +373,10 @@ fn resolve_index(
                 if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ty = value_type(&mut index.query(work), module, field.ty)?;
+                let ty = record_field_type(
+                    value_type(&mut index.query(work), module, field.ty)?,
+                    field.span,
+                )?;
                 fields.push(Field {
                     id: FieldId {
                         record: RecordId(id),
