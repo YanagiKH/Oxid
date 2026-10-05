@@ -210,7 +210,7 @@ impl PaidStorage {
         }
         let mut values = self.reserve(allocator, kind, expected, expected, at)?;
         while values.len() < expected {
-            room(&values, values.capacity(), expected, at)?;
+            room(&values, expected, at)?;
             values.push(None);
         }
         Ok(values)
@@ -224,7 +224,7 @@ impl PaidStorage {
     ) -> Result<Vec<bool>, Box<Diagnostic>> {
         let mut values = self.reserve(allocator, Kind::RecordPresence, expected, expected, at)?;
         while values.len() < expected {
-            room(&values, values.capacity(), expected, at)?;
+            room(&values, expected, at)?;
             values.push(false);
         }
         Ok(values)
@@ -249,7 +249,7 @@ impl PaidStorage {
         let mut values = self.reserve(allocator, kind, stage.len(), stage.len(), at)?;
         for slot in stage {
             let value = slot.ok_or_else(|| invalid(at))?;
-            room(&values, values.capacity(), stage.len(), at)?;
+            room(&values, stage.len(), at)?;
             values.push(value);
         }
         Ok(values)
@@ -259,12 +259,8 @@ impl PaidStorage {
 /// No row value is accepted before checking capacity. The actual capacity must
 /// equal the exact admitted request, including for empty vectors. Pop/push frame
 /// reuse is allowed; implicit growth and oversize observations are not.
-pub(super) fn room<T>(
-    values: &[T],
-    capacity: usize,
-    admitted: usize,
-    at: Span,
-) -> Result<(), Box<Diagnostic>> {
+pub(super) fn room<T>(values: &Vec<T>, admitted: usize, at: Span) -> Result<(), Box<Diagnostic>> {
+    let capacity = values.capacity();
     if capacity != admitted || values.len() >= admitted {
         Err(failure("typed storage append exceeds exact capacity", at))
     } else {
@@ -303,12 +299,15 @@ pub(super) fn projection_fields(
     ticket.reserve(allocator, Vec::new(), at, "paid typed projection fields")
 }
 
-// Complete named-carrier models for this disconnected helper surface. They are
-// not instantiated compiler frames or a stack/RSS bound. Count independent local,
-// return and caller storage without assuming elision; embedded payloads appear
+// Complete NEW type_storage named controls, plus explicitly selected existing
+// Capacity transports. Unchanged Capacity/Allocator internals are not modeled as
+// a complete all-call-chain envelope. These are not instantiated compiler frames
+// or a stack/RSS bound. Count independent local, return and caller storage
+// without assuming elision; embedded payloads appear
 // only inside their complete enclosing Option/Result. These are standalone full
-// models: later passive integration must reconcile existing Capacity envelopes,
-// not blindly add already-accounted primitive carriers a second time.
+// models of this stated surface: passive integration must reconcile the selected
+// existing Capacity envelopes rather than blindly adding already-accounted
+// primitive carriers a second time.
 struct AccountCarriers {
     counts: TypeCounts,
     count_borrows: [&'static TypeCounts; 3],
@@ -341,6 +340,15 @@ struct ReserveCarriers<T: 'static> {
     caller: Vec<T>,
     scalar_returns: [Result<(), Box<Diagnostic>>; 3],
 }
+// The room helper has its own by-value inputs and actual-capacity local. Its
+// origin copy and Vec borrow do not reuse an outer fill/finalize input slot.
+struct RoomCarriers<T: 'static> {
+    values: &'static Vec<T>,
+    admitted: usize,
+    origin: Span,
+    capacity: usize,
+    returned: Result<(), Box<Diagnostic>>,
+}
 struct FillCarriers<T: 'static> {
     storage: &'static mut PaidStorage,
     allocator: &'static mut Allocator,
@@ -352,8 +360,7 @@ struct FillCarriers<T: 'static> {
     returned: Result<Vec<T>, Box<Diagnostic>>,
     caller: Vec<T>,
     pending_row: T,
-    room_slice: &'static [T],
-    capacity: usize,
+    room: RoomCarriers<T>,
     room_return: Result<(), Box<Diagnostic>>,
 }
 struct FinalizeCarriers<T: 'static> {
@@ -372,8 +379,7 @@ struct FinalizeCarriers<T: 'static> {
     copied_option: Option<T>,
     selected: Result<T, Box<Diagnostic>>,
     value: T,
-    room_slice: &'static [T],
-    capacity: usize,
+    room: RoomCarriers<T>,
     room_return: Result<(), Box<Diagnostic>>,
 }
 struct ProjectionCarriers {

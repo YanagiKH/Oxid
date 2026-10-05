@@ -317,23 +317,38 @@ fn c3_t0_append_checks_exact_capacity_before_push_and_allows_pop_reuse() {
         .unwrap();
     let value = ValueTy::Scalar(Ty::I32);
     for _ in 0..2 {
-        room(&values, values.capacity(), 2, at).unwrap();
+        room(&values, 2, at).unwrap();
         values.push(value);
     }
-    assert!(room(&values, values.capacity(), 2, at).is_err());
+    assert!(room(&values, 2, at).is_err());
     assert_eq!(values.pop(), Some(value));
-    room(&values, values.capacity(), 2, at).unwrap();
+    room(&values, 2, at).unwrap();
     values.push(value);
     assert_eq!(
         (values.len(), values.capacity(), allocator.attempts),
         (2, 2, 1)
     );
-    assert!(room::<ValueTy>(&[], 3, 2, at).is_err());
-    assert!(room::<ValueTy>(&[], 1, 2, at).is_err());
-    assert!(room::<ValueTy>(&[], 0, 0, at).is_err());
+    assert!(room(&Vec::<ValueTy>::with_capacity(3), 2, at).is_err());
+    assert!(room(&Vec::<ValueTy>::with_capacity(1), 2, at).is_err());
+    assert!(room(&Vec::<ValueTy>::new(), 0, at).is_err());
     let ticket = Capacity::new::<ValueTy>(2, 2 * size_of::<ValueTy>(), at).unwrap();
     ticket.check_observed(2, at).unwrap();
     assert!(ticket.check_observed(3, at).is_err());
+}
+
+#[test]
+fn c3_t0_append_reads_real_capacity_and_rejects_empty_vector_with_nonzero_claim() {
+    let at = origin();
+    let values = Vec::<ValueTy>::new();
+    assert_eq!(values.capacity(), 0);
+    // The old slice-plus-capacity signature accepted (empty, 1, 1), after which
+    // a push could allocate. The helper now owns the actual capacity read.
+    assert_eq!(room(&values, 1, at).unwrap_err().code, "E0400");
+    assert_eq!((values.len(), values.capacity()), (0, 0));
+    let exact = Vec::<ValueTy>::with_capacity(1);
+    room(&exact, 1, at).unwrap();
+    assert!(room(&exact, 0, at).is_err());
+    assert!(room(&exact, 2, at).is_err());
 }
 
 #[test]
@@ -545,6 +560,9 @@ fn c3_t0_actual_helper_carriers_are_measured_without_changing_active_hir_plan() 
         Kind, TypeCounts, PaidStorage, Option<PaidStorage>, Result<PaidStorage, Box<Diagnostic>>,
         TypedBody, Projection, Option<Projection>, BorrowProjection, TypeFrame,
         AccountCarriers, ProjectionCarriers,
+        RoomCarriers<Option<ParameterTy>>, RoomCarriers<Option<ValueTy>>, RoomCarriers<Option<FlowSummary>>,
+        RoomCarriers<Option<Projection>>, RoomCarriers<bool>, RoomCarriers<ParameterTy>,
+        RoomCarriers<FlowSummary>, RoomCarriers<ValueTy>,
         ReserveCarriers<TypedBody>, ReserveCarriers<Option<ParameterTy>>, ReserveCarriers<Option<ValueTy>>,
         ReserveCarriers<Option<FlowSummary>>, ReserveCarriers<Option<Projection>>,
         ReserveCarriers<Vec<Option<Projection>>>, ReserveCarriers<BorrowProjection>, ReserveCarriers<TypeFrame>,
@@ -555,6 +573,13 @@ fn c3_t0_actual_helper_carriers_are_measured_without_changing_active_hir_plan() 
         FinalizeCarriers<ParameterTy>, FinalizeCarriers<FlowSummary>, FinalizeCarriers<ValueTy>,
         std::slice::Iter<'static, Option<ParameterTy>>, Option<&'static Option<ParameterTy>>,
         Result<ParameterTy, Box<Diagnostic>>, Result<Vec<FieldId>, Box<Diagnostic>>,
+    );
+    assert!(
+        size_of::<RoomCarriers<ValueTy>>()
+            >= size_of::<&Vec<ValueTy>>()
+                + 2 * size_of::<usize>()
+                + size_of::<Span>()
+                + size_of::<Result<(), Box<Diagnostic>>>()
     );
     assert_eq!(size_of::<TypeCounts>(), 11 * size_of::<usize>());
     assert_eq!(size_of::<PaidStorage>(), 2 * KINDS * size_of::<usize>());
