@@ -320,6 +320,11 @@ impl HirPlan {
             at,
         )?;
 
+        // Each non-invoking opaque-type witness runs once. These are the
+        // existing four-transport envelopes' sole caller array roles; do not
+        // create a separate pricing table, retained plan or duplicate result.
+        let checker_iterators = typeck::semantic_iterator_layout();
+        let checker_map_or = typeck::semantic_map_or_layout();
         let mut typeck_scratch = 0;
         charge::<typeck::TypeFrame>(&mut typeck_scratch, c.type_frames, at)?;
         charge::<Vec<typeck::TypeFrame>>(&mut typeck_scratch, c.functions, at)?;
@@ -350,6 +355,43 @@ impl HirPlan {
             at,
         )?;
 
+        // Checked per-function, block, call and literal semantic controls.
+        // Existing stage/frame/actuals/presence/quota/TypedBody roles above stay
+        // paid exactly once. Statement patterns are a separate component here.
+        charge::<typeck::PaidBodyControls>(&mut typeck_scratch, c.functions, at)?;
+        charge::<typeck::PaidBodyReceivers>(&mut typeck_scratch, c.functions, at)?;
+        charge::<typeck::semantic_carriers::StatementPatternCarriers>(
+            &mut typeck_scratch,
+            c.functions,
+            at,
+        )?;
+        charge::<typeck::semantic_carriers::BodyFrameSemanticCarriers>(
+            &mut typeck_scratch,
+            c.functions,
+            at,
+        )?;
+        charge::<typeck::semantic_carriers::InitializerSemanticCarriers>(
+            &mut typeck_scratch,
+            c.functions,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(c.functions, checker_map_or[0], at)?,
+            at,
+        )?;
+        charge::<typeck::PaidRowReceiver>(&mut typeck_scratch, c.blocks, at)?;
+        charge::<typeck::semantic_carriers::CallSemanticCarriers>(
+            &mut typeck_scratch,
+            c.calls,
+            at,
+        )?;
+        charge::<typeck::semantic_carriers::LiteralSemanticCarriers>(
+            &mut typeck_scratch,
+            c.record_literals,
+            at,
+        )?;
+
         let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
         // owner, source view and all top-level Vec headers. Do not add them again.
@@ -362,13 +404,37 @@ impl HirPlan {
         charge::<ScalarReturnEnvelope>(&mut fixed, 1, at)?;
         increment(&mut fixed, resolver_storage::fixed_carrier_bytes(), at)?;
         increment(&mut fixed, VECTOR_RETURN_ENVELOPE_BYTES, at)?;
-        // The explicit T0 core excludes the selected Capacity/Vec transports
-        // above. Future T1 checker/admission/receiver carriers remain unpriced.
+        // The T0 core excludes the selected Capacity/Vec transports above.
+        // Metered projection reuses that same nonrecursive core/primitive role;
+        // only its separately modeled work surface is newly charged below.
         increment(&mut fixed, type_storage::fixed_control_carrier_bytes(), at)?;
         // Actual new borrowed checker and denied entrypoint carriers only.
         // This does not yet admit a successful paid checker or fresh owner.
         increment(&mut fixed, typeck::borrowed_check_carrier_bytes(), at)?;
         increment(&mut fixed, resolve::denied_type_probe_carrier_bytes(), at)?;
+        // Passive checker-only fixed bank. Future ProgramPaid construction,
+        // owner/seed and statistics carriers remain a separate denied stage.
+        charge::<typeck::PaidProgramControls>(&mut fixed, 1, at)?;
+        charge::<typeck::semantic_carriers::ProjectionSemanticCarriers>(&mut fixed, 1, at)?;
+        charge::<typeck::semantic_carriers::PredicateInvocationCarriers>(&mut fixed, 1, at)?;
+        increment(&mut fixed, checker_iterators[0], at)?;
+        increment(&mut fixed, checker_iterators[2], at)?;
+        increment(&mut fixed, checker_map_or[2], at)?;
+        charge::<type_storage::MeteredProjectionWorkControls>(&mut fixed, 1, at)?;
+        // Current fresh resolver adds one HIR node per supported source
+        // expression and only source-child edges. Indexed assignment may omit
+        // a target wrapper, never add depth. Typing never enters callee bodies.
+        // Thus HIR recursion <= admitted source depth <= MAX_NESTING, not
+        // equality and not a claim for forged HIR or future desugarings/enums.
+        // Initializer controls are F-paid; projection does not type children.
+        charge::<typeck::semantic_carriers::ExpressionSemanticCarriers>(
+            &mut fixed,
+            MAX_NESTING,
+            at,
+        )?;
+        charge::<typeck::PaidExpressionReborrows>(&mut fixed, MAX_NESTING, at)?;
+        // The witnessed ValueTy::Scalar function-item local is zero-sized;
+        // there is no function pointer or additional receiver to invent.
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;
         charge::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>(&mut fixed, 1, at)?;
         let mut lower_fixed = 0;

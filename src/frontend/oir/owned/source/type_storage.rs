@@ -809,14 +809,17 @@ struct ProjectionControls {
     returned: Result<Vec<FieldId>, Box<Diagnostic>>,
     scalar_returns: [Result<(), Box<Diagnostic>>; 3],
 }
-// Complete metered sibling's control/primitive surface. This is a measurement
-// target, not a new HirPlan charge. T0 overlap must be independently attributed
-// before this bank can join complete T1 pricing; the checker remains denied.
-struct MeteredProjectionCarriers {
-    controls: ProjectionControls,
+// Only this additional work surface joins checker-only passive pricing. The
+// metered/nonmetered helpers share the existing nonrecursive ProjectionControls
+// and Capacity/Vec transport roles; their complete banks are never summed twice.
+pub(super) struct MeteredProjectionWorkControls {
     work: &'static WorkMeter,
     work_units: u64,
     debit: Result<(), Box<Diagnostic>>,
+}
+struct MeteredProjectionCarriers {
+    controls: ProjectionControls,
+    work: MeteredProjectionWorkControls,
     primitive: PrimitiveTransports<FieldId>,
 }
 pub(super) const fn metered_projection_carrier_bytes() -> usize {
@@ -829,13 +832,20 @@ fn c3_t1_metered_projection_actual_layout() {
         size_of::<MeteredProjectionCarriers>(),
         std::mem::align_of::<MeteredProjectionCarriers>()
     );
-    assert!(
-        size_of::<MeteredProjectionCarriers>()
-            >= size_of::<ProjectionControls>()
-                + size_of::<&WorkMeter>()
-                + size_of::<u64>()
-                + size_of::<Result<(), Box<Diagnostic>>>()
-                + size_of::<PrimitiveTransports<FieldId>>()
+    assert_eq!(
+        size_of::<MeteredProjectionWorkControls>(),
+        size_of::<&WorkMeter>() + size_of::<u64>() + size_of::<Result<(), Box<Diagnostic>>>()
+    );
+    assert_eq!(
+        size_of::<MeteredProjectionCarriers>(),
+        size_of::<ProjectionControls>()
+            + size_of::<MeteredProjectionWorkControls>()
+            + size_of::<PrimitiveTransports<FieldId>>()
+    );
+    println!(
+        "C3_T1_PAID_CONTEXT_LAYOUT MeteredProjectionWorkControls {} {}",
+        size_of::<MeteredProjectionWorkControls>(),
+        std::mem::align_of::<MeteredProjectionWorkControls>()
     );
 }
 

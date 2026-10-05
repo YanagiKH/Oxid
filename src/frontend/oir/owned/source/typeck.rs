@@ -293,14 +293,14 @@ struct BodyPaid<'borrow> {
     allocator: &'borrow mut Allocator,
     projection_bytes: &'borrow std::cell::Cell<usize>,
 }
-// Actual newly authored context/receiver surfaces, measured separately while
-// unreachable. These partial models are NOT yet a complete T1 price and are NOT
-// added to HirPlan: semantic iterators/projection frames, the eventual program
-// context construction, fresh owner and observations still require full review.
+// Explicit checker-only context/receiver surfaces. HirPlan passively prices
+// these once after source selection. The actual ProgramPaid caller construction,
+// fresh owner/seed and observation transports remain unimplemented/unpriced;
+// no paid checker caller or source observation is enabled by this accounting.
 // Existing T0 stage/frame/actuals/presence/quota/Bodies receivers stay assigned
 // there; retained cache headers cannot pay these independent local receivers.
 #[allow(dead_code)]
-struct PaidProgramControls {
+pub(super) struct PaidProgramControls {
     argument: Option<&'static mut ProgramPaid<'static, 'static>>,
     reborrow: Option<&'static mut ProgramPaid<'static, 'static>>,
     selected: &'static mut ProgramPaid<'static, 'static>,
@@ -308,7 +308,7 @@ struct PaidProgramControls {
     bodies_room: Result<(), Box<Diagnostic>>,
 }
 #[allow(dead_code)]
-struct PaidBodyControls {
+pub(super) struct PaidBodyControls {
     constructed: BodyPaid<'static>,
     constructor_borrow: &'static mut BodyPaid<'static>,
     constructor_option: Option<&'static mut BodyPaid<'static>>,
@@ -328,7 +328,7 @@ struct PaidBodyControls {
     initializer_transfer: Option<&'static mut BodyPaid<'static>>,
 }
 #[allow(dead_code)]
-struct PaidBodyReceivers {
+pub(super) struct PaidBodyReceivers {
     expression_projections: Vec<Option<Projection>>,
     statement_projections: Vec<Vec<Option<Projection>>>,
     paid_statement_rows: Vec<Vec<Option<Projection>>>,
@@ -338,11 +338,11 @@ struct PaidBodyReceivers {
     final_expressions: Vec<ValueTy>,
 }
 #[allow(dead_code)]
-struct PaidRowReceiver {
+pub(super) struct PaidRowReceiver {
     row: Vec<Option<Projection>>,
 }
 #[allow(dead_code)]
-struct PaidExpressionReborrows {
+pub(super) struct PaidExpressionReborrows {
     argument: Option<&'static mut BodyPaid<'static>>,
     child_reborrow: Option<&'static mut BodyPaid<'static>>,
     selected: &'static mut BodyPaid<'static>,
@@ -500,9 +500,9 @@ fn borrow_projection_key() -> impl FnMut(&BorrowProjection) -> (usize, usize) {
     |entry| (entry.expression.0, entry.argument)
 }
 
-// Measurement-only complete generic carriers. These exact W/I/P/S/Z/K/V types
-// come from the semantic factories, never from equal-size stand-ins. No new
-// model in this section is currently added to HirPlan or confers admission.
+// Exact generic carriers for passive pricing. These W/I/P/S/Z/K/V types
+// come from the semantic factories, never from equal-size stand-ins. HirPlan
+// pays these checker-only roles passively; none confers typing/source admission.
 #[allow(dead_code)]
 struct ProjectionIteratorCarriers<W: 'static, I, P, S, Z, K, E, V> {
     // Two window calls (projection and its enclosing array helper): each has
@@ -575,8 +575,7 @@ where
         size_of::<E>(),
     ]
 }
-#[allow(dead_code)] // Unpaid measurement surface, not yet used by source admission.
-fn semantic_iterator_layout() -> [usize; 11] {
+pub(super) fn semantic_iterator_layout() -> [usize; 11] {
     iterator_layout_witness((
         projection_window,
         projection_identifiers,
@@ -589,11 +588,11 @@ fn semantic_iterator_layout() -> [usize; 11] {
     ))
 }
 
-// Explicit checker banks only. No source admission uses these measurement-only
-// models yet. They are named construction/return/caller envelopes, not machine
-// stack/RSS bounds or recursive accounting of inherited helper internals.
+// Explicit checker-only banks, passively priced by the enum-selected HirPlan.
+// These named construction/return/caller envelopes grant no consumer authority
+// and are not machine-stack/RSS or universal inherited-helper accounting.
 #[allow(dead_code)]
-mod semantic_carriers {
+pub(super) mod semantic_carriers {
     use super::*;
     use crate::frontend::oir::owned_types::DeclarationError;
     use crate::frontend::{ast, declaration_index::SourceOwner, project::ModuleId};
@@ -612,7 +611,7 @@ mod semantic_carriers {
 
     // One nonrecursive bank: array projection can enclose field projection, but
     // neither helper types a child, and each path is cached before a later child.
-    pub(super) struct ProjectionSemanticCarriers {
+    pub(in crate::frontend::oir::owned::source) struct ProjectionSemanticCarriers {
         programs: [&'static ResolvedOwnedProgram<'static>; 2],
         functions: [&'static Function; 2],
         binding_inputs: [BindingId; 2],
@@ -687,7 +686,7 @@ mod semantic_carriers {
     }
     // Closure invocation values are separate from their opaque object captures.
     // Sort's argument/key result belongs only to BodyFrameSemanticCarriers.
-    pub(super) struct PredicateInvocationCarriers {
+    pub(in crate::frontend::oir::owned::source) struct PredicateInvocationCarriers {
         start_inputs: [&'static Token; 2],
         start_returns: [bool; 2],
         end_inputs: [&'static &'static Token; 2],
@@ -697,7 +696,7 @@ mod semantic_carriers {
         field_input: &'static &'static Field,
         field_return: bool,
     }
-    pub(super) struct CallSemanticCarriers {
+    pub(in crate::frontend::oir::owned::source) struct CallSemanticCarriers {
         called: &'static Signature,
         target: &'static DefId,
         arguments: &'static Vec<Argument>,
@@ -743,7 +742,7 @@ mod semantic_carriers {
         borrow_constructed: ParameterTy,
         borrow_returned: Result<ParameterTy, Box<Diagnostic>>,
     }
-    pub(super) struct LiteralSemanticCarriers {
+    pub(in crate::frontend::oir::owned::source) struct LiteralSemanticCarriers {
         record: &'static RecordId,
         fields: &'static Vec<FieldInit>,
         declared: &'static Record,
@@ -755,7 +754,7 @@ mod semantic_carriers {
         actual: ValueTy,
         expected: ValueTy,
     }
-    pub(super) struct StatementPatternCarriers {
+    pub(in crate::frontend::oir::owned::source) struct StatementPatternCarriers {
         // Root-selection match and later semantic match have distinct patterns.
         root_binding: BindingId,
         root_init: ExprId,
@@ -783,7 +782,7 @@ mod semantic_carriers {
         local_index: ExprId,
         otherwise: BodyBlockId,
     }
-    pub(super) struct BodyFrameSemanticCarriers {
+    pub(in crate::frontend::oir::owned::source) struct BodyFrameSemanticCarriers {
         program: &'static ResolvedOwnedProgram<'static>,
         function: &'static Function,
         signature: &'static Signature,
@@ -838,7 +837,7 @@ mod semantic_carriers {
         sort_argument: &'static BorrowProjection,
         sort_key_return: (usize, usize),
     }
-    pub(super) struct InitializerSemanticCarriers {
+    pub(in crate::frontend::oir::owned::source) struct InitializerSemanticCarriers {
         program: &'static ResolvedOwnedProgram<'static>,
         function: &'static Function,
         initializer: (BindingId, ExprId),
@@ -857,7 +856,7 @@ mod semantic_carriers {
         array_elements: &'static Vec<ExprId>,
         returned: Result<ValueTy, Box<Diagnostic>>,
     }
-    pub(super) struct ExpressionSemanticCarriers {
+    pub(in crate::frontend::oir::owned::source) struct ExpressionSemanticCarriers {
         program: &'static ResolvedOwnedProgram<'static>,
         function: &'static Function,
         id: ExprId,
@@ -900,7 +899,7 @@ mod semantic_carriers {
         mapped_array: Result<FixedArrayTy, Box<Diagnostic>>,
         array: FixedArrayTy,
     }
-    pub(super) struct MapOrSemanticCarriers<E, R> {
+    pub(in crate::frontend::oir::owned::source) struct MapOrSemanticCarriers<E, R> {
         // Object construction, factory return and actual map_or input.
         else_closures: [E; 3],
         return_closures: [R; 3],
@@ -918,7 +917,7 @@ mod semantic_carriers {
         value_map_return: ValueTy,
         // Outer else_flow and actual receivers live in BodyFrameSemanticCarriers.
     }
-    pub(super) struct MapOrWitnessCarriers<FE, FR> {
+    pub(in crate::frontend::oir::owned::source) struct MapOrWitnessCarriers<FE, FR> {
         factories: [(FE, FR); 2],
         layouts: [[usize; 5]; 4],
     }
@@ -1276,8 +1275,7 @@ where
         size_of::<R>(),
     ]
 }
-#[allow(dead_code)] // Measurement only; no source pricing or observer activation.
-fn semantic_map_or_layout() -> [usize; 5] {
+pub(super) fn semantic_map_or_layout() -> [usize; 5] {
     map_or_layout_witness((else_flow_lookup, returned_value_lookup))
 }
 

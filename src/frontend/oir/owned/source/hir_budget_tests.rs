@@ -42,6 +42,37 @@ fn with_index<T>(text: &str, action: impl FnOnce(&DeclarationIndex<'_>) -> T) ->
         .unwrap();
     action(&index)
 }
+// Independent test-side composition, with a separate frozen measured tuple
+// checked below. This tuple is test machinery, never a production pricing table.
+fn checker_only_components() -> (usize, usize, usize, usize, usize) {
+    use typeck::semantic_carriers::*;
+    let iterators = typeck::semantic_iterator_layout();
+    let map_or = typeck::semantic_map_or_layout();
+    let fixed = size_of::<typeck::PaidProgramControls>()
+        + size_of::<ProjectionSemanticCarriers>()
+        + size_of::<PredicateInvocationCarriers>()
+        + iterators[0]
+        + iterators[2]
+        + map_or[2]
+        + size_of::<type_storage::MeteredProjectionWorkControls>()
+        + MAX_NESTING
+            * (size_of::<ExpressionSemanticCarriers>()
+                + size_of::<typeck::PaidExpressionReborrows>());
+    let function = size_of::<typeck::PaidBodyControls>()
+        + size_of::<typeck::PaidBodyReceivers>()
+        + size_of::<StatementPatternCarriers>()
+        + size_of::<BodyFrameSemanticCarriers>()
+        + size_of::<InitializerSemanticCarriers>()
+        + map_or[0];
+    (
+        fixed,
+        function,
+        size_of::<typeck::PaidRowReceiver>(),
+        size_of::<CallSemanticCarriers>(),
+        size_of::<LiteralSemanticCarriers>(),
+    )
+}
+
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";
 
 #[test]
@@ -525,6 +556,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
             + type_storage::fixed_control_carrier_bytes()
             + typeck::borrowed_check_carrier_bytes()
             + resolve::denied_type_probe_carrier_bytes()
+            + checker_only_components().0
             + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
             + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
     );
@@ -638,7 +670,8 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         base.fixed
             - legacy_fixed
             - typeck::borrowed_check_carrier_bytes()
-            - resolve::denied_type_probe_carrier_bytes(),
+            - resolve::denied_type_probe_carrier_bytes()
+            - checker_only_components().0,
         type_storage::fixed_control_carrier_bytes()
     );
     for functions in [0, 1, 2] {
@@ -656,7 +689,8 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
             functions
                 * (size_of::<Vec<typeck::TypeFrame>>()
                     + size_of::<type_storage::FunctionQuota>()
-                    + typeck::borrowed_body_return_carrier_bytes())
+                    + typeck::borrowed_body_return_carrier_bytes()
+                    + checker_only_components().1)
         );
     }
     for count in [0, 1, 2] {
@@ -671,7 +705,7 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         assert_eq!(calls.fixed, base.fixed);
         assert_eq!(
             calls.typeck_scratch,
-            count * size_of::<Vec<(ParameterTy, Span)>>()
+            count * (size_of::<Vec<(ParameterTy, Span)>>() + checker_only_components().3)
         );
         let literals = HirPlan::calculate(
             HirCounts {
@@ -685,7 +719,7 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         assert_eq!(literals.fixed, base.fixed);
         assert_eq!(
             literals.typeck_scratch,
-            count * (3 * size_of::<bool>() + size_of::<Vec<bool>>())
+            count * (3 * size_of::<bool>() + size_of::<Vec<bool>>() + checker_only_components().4)
         );
         let other = HirPlan::calculate(
             HirCounts {
@@ -749,5 +783,180 @@ fn c3_t0_real_enum_free_index_does_not_enter_the_new_control_admission() {
         assert!(result.unwrap().is_none());
         assert_eq!(work.used(), 0);
         assert_eq!(stats, (0, 0, 0));
+    });
+}
+
+#[test]
+fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let components = checker_only_components();
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(components, (33448, 1920, 24, 784, 88));
+    assert_eq!(MAX_NESTING, 64);
+    let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
+    for count in [0, 1, 2] {
+        for which in 0..4 {
+            let mut c = HirCounts::default();
+            match which {
+                0 => c.functions = count,
+                1 => c.blocks = count,
+                2 => c.calls = count,
+                _ => c.record_literals = count,
+            }
+            let plan = HirPlan::calculate(c, at).unwrap();
+            assert_eq!(plan.fixed, base.fixed);
+            let old = c.functions
+                * (size_of::<Vec<typeck::TypeFrame>>()
+                    + size_of::<type_storage::FunctionQuota>()
+                    + typeck::borrowed_body_return_carrier_bytes())
+                + c.calls * size_of::<Vec<(ParameterTy, Span)>>()
+                + c.record_literals * size_of::<Vec<bool>>();
+            assert_eq!(
+                plan.typeck_scratch - old,
+                c.functions * components.1
+                    + c.blocks * components.2
+                    + c.calls * components.3
+                    + c.record_literals * components.4
+            );
+        }
+        // The depth bank is one fixed64 bound, not F times depth, and does not
+        // silently trust a supplied synthetic max_expression_depth as proof.
+        let plan = HirPlan::calculate(
+            HirCounts {
+                max_expression_depth: count,
+                expressions: count,
+                statements: count,
+                borrow_arguments: count,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(plan.fixed, base.fixed);
+        assert_eq!(plan.typeck_scratch, 0);
+    }
+    println!(
+        "C3_T1_CHECKER_ONLY_FORMULA fixed={} function={} block={} call={} literal={}",
+        components.0, components.1, components.2, components.3, components.4
+    );
+}
+
+#[test]
+fn c3_t1_passive_checker_products_and_aggregate_cap_remain_checked() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let components = checker_only_components();
+    for width in [
+        components.1,
+        components.2,
+        components.3,
+        components.4,
+        size_of::<typeck::semantic_carriers::ExpressionSemanticCarriers>()
+            + size_of::<typeck::PaidExpressionReborrows>(),
+    ] {
+        let overflow = usize::MAX / width + 1;
+        assert_eq!(mul(overflow, width, at).unwrap_err().code, "E0400");
+    }
+    macro_rules! unchanged {
+        ($($ty:ty),* $(,)?) => { $(
+            let mut bytes = 7;
+            assert_eq!(charge::<$ty>(&mut bytes, usize::MAX, at).unwrap_err().code, "E0400");
+            assert_eq!(bytes, 7);
+        )* };
+    }
+    unchanged!(
+        typeck::PaidBodyControls,
+        typeck::PaidBodyReceivers,
+        typeck::PaidRowReceiver,
+        typeck::semantic_carriers::CallSemanticCarriers,
+        typeck::semantic_carriers::LiteralSemanticCarriers,
+        typeck::semantic_carriers::ExpressionSemanticCarriers
+    );
+    let mut bytes = usize::MAX;
+    assert!(increment(&mut bytes, components.0, at).is_err());
+    assert_eq!(bytes, usize::MAX);
+    let plan = HirPlan::calculate(
+        HirCounts {
+            functions: 2,
+            blocks: 3,
+            calls: 4,
+            record_literals: 5,
+            max_record_fields: 7,
+            ..HirCounts::default()
+        },
+        at,
+    )
+    .unwrap();
+    let remainder = MAX_HIR_BYTES - plan.total;
+    assert_eq!(
+        plan.with_dynamic(remainder - 1, at).unwrap(),
+        MAX_HIR_BYTES - 1
+    );
+    assert_eq!(plan.with_dynamic(remainder, at).unwrap(), MAX_HIR_BYTES);
+    assert_eq!(
+        plan.with_dynamic(remainder + 1, at).unwrap_err().code,
+        "E0400"
+    );
+    for c in [
+        HirCounts {
+            functions: usize::MAX,
+            ..HirCounts::default()
+        },
+        HirCounts {
+            blocks: usize::MAX,
+            ..HirCounts::default()
+        },
+        HirCounts {
+            calls: usize::MAX,
+            ..HirCounts::default()
+        },
+        HirCounts {
+            record_literals: usize::MAX,
+            ..HirCounts::default()
+        },
+    ] {
+        assert_eq!(HirPlan::calculate(c, at).unwrap_err().code, "E0400");
+    }
+}
+
+#[test]
+fn c3_t1_passive_checker_price_does_not_change_enum_free_selection_or_denial() {
+    for text in [
+        "fn main()->(){return;}",
+        "struct R{x:i32} fn helper(a:i32)->i32{return a;} fn main()->i32{R{x:helper(1)};return 0;}",
+        "fn main()->(){match missing{E::V=>{return;}}}",
+    ] {
+        with_index(text, |index| {
+            let work = WorkMeter::new(0);
+            work.enable_observation();
+            let mut allocator = Allocator {
+                attempts: 7,
+                ..Allocator::default()
+            };
+            let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+                let plan = preflight_enum_hir(index, &work).unwrap();
+                let denied_probe =
+                    resolve::probe_enum_type_storage(index, &work, &mut allocator).unwrap();
+                (plan, denied_probe)
+            });
+            assert!(result.0.is_none() && result.1.is_none());
+            assert_eq!(measured, (0, 0, 0));
+            assert_eq!((work.used(), allocator.attempts), (0, 7));
+            assert!(work.events.borrow().is_empty());
+            assert!(work.observations.borrow().is_empty());
+        });
+    }
+    with_index("enum Unused{V} fn main()->(){return;}", |index| {
+        let work = WorkMeter::new(0);
+        let mut allocator = Allocator {
+            attempts: 7,
+            ..Allocator::default()
+        };
+        let errors = resolve::probe_enum_type_storage(index, &work, &mut allocator).unwrap_err();
+        assert_eq!((errors.len(), errors[0].code), (1, "E0500"));
+        assert_eq!((work.used(), allocator.attempts), (0, 7));
+        assert_eq!(
+            resolve::resolve_project(index, &work).unwrap_err()[0].code,
+            "E0101"
+        );
     });
 }
