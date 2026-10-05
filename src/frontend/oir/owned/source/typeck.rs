@@ -17,7 +17,7 @@ pub(in crate::frontend::oir) struct TypedOwnedProgram<'src> {
     bodies: Vec<TypedBody>,
 }
 #[derive(Debug)]
-struct TypedBody {
+pub(super) struct TypedBody {
     expressions: Vec<ValueTy>,
     bindings: Vec<ParameterTy>,
     block_flows: Vec<FlowSummary>,
@@ -26,7 +26,7 @@ struct TypedBody {
     borrow_projections: Vec<BorrowProjection>,
 }
 #[derive(Debug)]
-struct BorrowProjection {
+pub(super) struct BorrowProjection {
     expression: ExprId,
     argument: usize,
     projection: Projection,
@@ -523,6 +523,13 @@ fn expression_type(
         )
     };
     let ty = match &expr.kind {
+        ExprKind::ConstructEnum { .. } => {
+            return Err(error(
+                "E0300",
+                "enum source constructors are unavailable",
+                expr.span,
+            ));
+        }
         ExprKind::Bool(_) => scalar(Ty::Bool),
         ExprKind::I32(_) => scalar(Ty::I32),
         ExprKind::Unit => scalar(Ty::Unit),
@@ -951,6 +958,29 @@ fn initializer_type(
         borrow_projections,
     )
 }
+pub(super) enum TypeFrame {
+    Block {
+        block: BodyBlockId,
+        index: usize,
+        flow: FlowSummary,
+        active_loop: Option<LoopId>,
+    },
+    IfJoin {
+        block: BodyBlockId,
+        index: usize,
+        before: FlowSummary,
+        active_loop: Option<LoopId>,
+        then_block: BodyBlockId,
+        else_block: Option<BodyBlockId>,
+    },
+    WhileJoin {
+        block: BodyBlockId,
+        index: usize,
+        before: FlowSummary,
+        active_loop: Option<LoopId>,
+        body: BodyBlockId,
+    },
+}
 fn check_body(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -982,31 +1012,8 @@ fn check_body(
         .collect();
     // A continuation frame records each statement-list result without Rust
     // recursion. Both children complete before their parent's flow is resumed.
-    enum Frame {
-        Block {
-            block: BodyBlockId,
-            index: usize,
-            flow: FlowSummary,
-            active_loop: Option<LoopId>,
-        },
-        IfJoin {
-            block: BodyBlockId,
-            index: usize,
-            before: FlowSummary,
-            active_loop: Option<LoopId>,
-            then_block: BodyBlockId,
-            else_block: Option<BodyBlockId>,
-        },
-        WhileJoin {
-            block: BodyBlockId,
-            index: usize,
-            before: FlowSummary,
-            active_loop: Option<LoopId>,
-            body: BodyBlockId,
-        },
-    }
     let mut block_flows: Vec<Option<FlowSummary>> = vec![None; function.blocks.len()];
-    let mut frames = vec![Frame::Block {
+    let mut frames = vec![TypeFrame::Block {
         block: function.body,
         index: 0,
         flow: FlowSummary::FALLTHROUGH,
@@ -1014,13 +1021,13 @@ fn check_body(
     }];
     while let Some(frame) = frames.pop() {
         let (block, index, mut flow, active_loop) = match frame {
-            Frame::Block {
+            TypeFrame::Block {
                 block,
                 index,
                 flow,
                 active_loop,
             } => (block, index, flow, active_loop),
-            Frame::IfJoin {
+            TypeFrame::IfJoin {
                 block,
                 index,
                 before,
@@ -1039,7 +1046,7 @@ fn check_body(
                     active_loop,
                 )
             }
-            Frame::WhileJoin {
+            TypeFrame::WhileJoin {
                 block,
                 index,
                 before,
@@ -1072,6 +1079,13 @@ fn check_body(
             ));
         }
         let root = match statement.kind {
+            StmtKind::Match { .. } => {
+                return Err(error(
+                    "E0300",
+                    "enum source matches are unavailable",
+                    statement.span,
+                ));
+            }
             StmtKind::Let { binding, init } => {
                 initializer_type(
                     program,
@@ -1123,6 +1137,13 @@ fn check_body(
             )?;
         }
         match statement.kind {
+            StmtKind::Match { .. } => {
+                return Err(error(
+                    "E0300",
+                    "enum source matches are unavailable",
+                    statement.span,
+                ));
+            }
             StmtKind::Let { binding, init } => {
                 let actual = expressions[init.0].expect("typed initializer");
                 if let Some(expected) = function.bindings[binding.0].annotation {
@@ -1320,14 +1341,14 @@ fn check_body(
                     loop_id.0, body.0,
                     "resolved loop ID is its unique body block"
                 );
-                frames.push(Frame::WhileJoin {
+                frames.push(TypeFrame::WhileJoin {
                     block,
                     index: index + 1,
                     before: flow,
                     active_loop,
                     body,
                 });
-                frames.push(Frame::Block {
+                frames.push(TypeFrame::Block {
                     block: body,
                     index: 0,
                     flow: FlowSummary::FALLTHROUGH,
@@ -1349,7 +1370,7 @@ fn check_body(
                         function.expressions[condition.0].span,
                     ));
                 }
-                frames.push(Frame::IfJoin {
+                frames.push(TypeFrame::IfJoin {
                     block,
                     index: index + 1,
                     before: flow,
@@ -1358,14 +1379,14 @@ fn check_body(
                     else_block,
                 });
                 if let Some(otherwise) = else_block {
-                    frames.push(Frame::Block {
+                    frames.push(TypeFrame::Block {
                         block: otherwise,
                         index: 0,
                         flow: FlowSummary::FALLTHROUGH,
                         active_loop,
                     });
                 }
-                frames.push(Frame::Block {
+                frames.push(TypeFrame::Block {
                     block: then_block,
                     index: 0,
                     flow: FlowSummary::FALLTHROUGH,
@@ -1374,7 +1395,7 @@ fn check_body(
                 continue;
             }
         }
-        frames.push(Frame::Block {
+        frames.push(TypeFrame::Block {
             block,
             index: index + 1,
             flow,

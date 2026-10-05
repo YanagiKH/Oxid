@@ -598,6 +598,12 @@ fn resolve_index(
         Err(diagnostics)
     }
 }
+pub(super) enum ResolveFrame {
+    Enter(ast::BodyBlockId),
+    Next(ast::BodyBlockId, usize),
+    Leave,
+    LeaveLoop,
+}
 struct Resolver<'i, 'a> {
     allocator: &'i mut Allocator,
     array_entries: &'i mut usize,
@@ -691,12 +697,6 @@ impl<'a> Resolver<'_, 'a> {
         // Keep block IDs stable while resolving statements depth first. Only
         // currently active names stay in the lookup table; each scope removes
         // its own names on exit, so neither cloning nor ancestor scans are needed.
-        enum Frame {
-            Enter(ast::BodyBlockId),
-            Next(ast::BodyBlockId, usize),
-            Leave,
-            LeaveLoop,
-        }
         let mut blocks: Vec<_> = function
             .blocks
             .iter()
@@ -708,31 +708,31 @@ impl<'a> Resolver<'_, 'a> {
             .collect();
         let mut scopes: Vec<Vec<&'a str>> = Vec::new();
         let mut loops = Vec::new();
-        let mut frames = vec![Frame::Enter(function.body)];
+        let mut frames = vec![ResolveFrame::Enter(function.body)];
         while let Some(frame) = frames.pop() {
             let (block, index) = match frame {
-                Frame::Enter(block) => {
+                ResolveFrame::Enter(block) => {
                     scopes.push(Vec::new());
-                    frames.push(Frame::Leave);
-                    frames.push(Frame::Next(block, 0));
+                    frames.push(ResolveFrame::Leave);
+                    frames.push(ResolveFrame::Next(block, 0));
                     continue;
                 }
-                Frame::Leave => {
+                ResolveFrame::Leave => {
                     for name in scopes.pop().expect("entered scope") {
                         self.scope.remove(name);
                     }
                     continue;
                 }
-                Frame::LeaveLoop => {
+                ResolveFrame::LeaveLoop => {
                     loops.pop().expect("entered loop context");
                     continue;
                 }
-                Frame::Next(block, index) => (block, index),
+                ResolveFrame::Next(block, index) => (block, index),
             };
             let Some(statement) = function.blocks[block.0].body.get(index) else {
                 continue;
             };
-            frames.push(Frame::Next(block, index + 1));
+            frames.push(ResolveFrame::Next(block, index + 1));
             let kind = match &statement.kind {
                 ast::StmtKind::Let {
                     mutable,
@@ -858,8 +858,8 @@ impl<'a> Resolver<'_, 'a> {
                     let condition = self.expression(*condition)?;
                     let loop_id = LoopId(body.0);
                     loops.push(loop_id);
-                    frames.push(Frame::LeaveLoop);
-                    frames.push(Frame::Enter(*body));
+                    frames.push(ResolveFrame::LeaveLoop);
+                    frames.push(ResolveFrame::Enter(*body));
                     StmtKind::While {
                         loop_id,
                         condition,
@@ -873,9 +873,9 @@ impl<'a> Resolver<'_, 'a> {
                 } => {
                     let condition = self.expression(*condition)?;
                     if let Some(otherwise) = else_block {
-                        frames.push(Frame::Enter(*otherwise));
+                        frames.push(ResolveFrame::Enter(*otherwise));
                     }
-                    frames.push(Frame::Enter(*then_block));
+                    frames.push(ResolveFrame::Enter(*then_block));
                     StmtKind::If {
                         condition,
                         then_block: BodyBlockId(then_block.0),
@@ -1402,4 +1402,10 @@ mod enum_index_layout_tests {
             std::mem::size_of::<super::super::typeck::TypedOwnedProgram<'_>>()
         );
     }
+}
+
+/// Complete resolver header; its inherited HashMap payload is not admitted by C3a.
+#[allow(dead_code)]
+pub(super) const fn resolver_carrier_bytes() -> usize {
+    std::mem::size_of::<Resolver<'_, '_>>()
 }

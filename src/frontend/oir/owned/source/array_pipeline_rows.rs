@@ -312,6 +312,7 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            E::ConstructEnum { .. } => unreachable!("enum source gate"),
             E::Bool(value) => write!(f, "[\"bool\",{value}]"),
             E::I32(value) => write!(f, "[\"i32\",{value}]"),
             E::Unit => f.write_str("[\"unit\"]"),
@@ -435,6 +436,7 @@ impl fmt::Display for HirStatement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::StmtKind as S;
         match self.0 {
+            S::Match { .. } => unreachable!("enum source gate"),
             S::Let { binding, init } => write!(f, "[\"let\",{},{}]", binding.0, init.0),
             S::Assign {
                 binding,

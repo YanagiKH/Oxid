@@ -2,6 +2,7 @@
 mod association;
 mod budget;
 pub(super) mod hir;
+mod hir_budget;
 pub(super) mod lower;
 mod program;
 pub(in crate::frontend::oir) mod resolve;

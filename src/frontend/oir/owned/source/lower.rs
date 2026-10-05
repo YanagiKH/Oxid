@@ -645,6 +645,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
+                        source::ExprKind::ConstructEnum { .. } => {
+                            return Err(invariant(expression.span))
+                        }
                         source::ExprKind::ArrayLiteral { .. } => frames.push(
                             ExprFrame::ArrayLiteral {
                                 expression: id,
@@ -1080,6 +1083,7 @@ impl<'a, 'b> Walk<'a, 'b> {
         let span = expression.span;
         if let ValueTy::Owned(record) = self.view.expression_ty(id) {
             match expression.kind {
+                source::ExprKind::ConstructEnum { .. } => return Err(invariant(span)),
                 source::ExprKind::ArrayLiteral { .. }
                 | source::ExprKind::IndexRead { .. }
                 | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
@@ -1117,6 +1121,7 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         let destination = self.operand(id)?.local;
         let value = match expression.kind {
+            source::ExprKind::ConstructEnum { .. } => return Err(invariant(span)),
             source::ExprKind::ArrayLiteral { .. } => return Err(invariant(span)),
             source::ExprKind::IndexRead { base, index, .. } => {
                 let kind = if let Some(projection) = self.view.expression_projection(id) {
@@ -1504,6 +1509,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 self.expression(root, s)?;
             }
             match statement.kind {
+                source::StmtKind::Match { .. } => return Err(invariant(s)),
                 source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
@@ -2001,4 +2007,17 @@ fn unit3b2_lowering_layout_without_source_observation() {
         "ReserveEvent",
         crate::frontend::project::budget::ReserveEvent
     );
+}
+
+/// Invocation-local fixed storage only. Dynamic producer caches are admitted
+/// separately after typed count mode; Output is already inline in Walk.
+#[allow(dead_code)]
+pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
+    [
+        size_of::<Walk<'_, '_>>(),
+        size_of::<Stack<ExprFrame, EXPR_FRAMES>>(),
+        size_of::<Stack<BodyFrame, BODY_FRAMES>>(),
+        size_of::<Stack<LoopTargets, LOOP_FRAMES>>(),
+        size_of::<TypedOwnedFunction<'_>>(),
+    ]
 }
