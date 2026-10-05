@@ -280,7 +280,15 @@ impl HirPlan {
             )?,
             at,
         )?;
-        charge::<Option<&Field>>(&mut resolver_scratch, c.record_literals, at)?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.record_literals,
+                resolver_storage::literal_lookup_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
         charge::<Vec<FieldInit>>(&mut resolver_scratch, c.record_literals, at)?;
         charge::<Vec<ExprId>>(&mut resolver_scratch, c.array_literals, at)?;
         charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;

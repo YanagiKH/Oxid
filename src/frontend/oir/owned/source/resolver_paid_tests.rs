@@ -375,13 +375,28 @@ fn c3a_paid_resolver_closed_mixed_body_pays_every_kind_and_every_failure_drops()
     with_index(MIXED_BODY, |index| {
         let mut successful = Allocator::default();
         successful.observer_trace_bound(256).unwrap();
-        let errors = closed_attempt(index, &WorkMeter::default(), &mut successful);
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors[0].message,
-            "paid resolver observations are not connected"
-        );
+        let (_, (_, baseline_live, baseline_peak)) =
+            super::super::reviewer_source::integration_measured(|| {
+                let errors = closed_attempt(index, &WorkMeter::default(), &mut successful);
+                assert_eq!(errors.len(), 1);
+                assert_eq!(
+                    errors[0].message,
+                    "paid resolver observations are not connected"
+                );
+                drop(errors);
+            });
+        assert_eq!(baseline_live, 0);
+        assert!(baseline_peak > 0);
         let attempts = successful.attempts;
+        // Independent syntax sites: 3 + 2 records + 9*4 functions + 7 blocks
+        // + 5 calls + 2 record literals + 2 arrays. Only main's params is empty.
+        assert_eq!(attempts, 57);
+        let zero_requests = successful
+            .trace
+            .iter()
+            .filter(|event| event.length == 0)
+            .count();
+        assert_eq!(zero_requests, 1);
         let labels = [
             "paid HIR records",
             "paid HIR record fields",
@@ -431,5 +446,284 @@ fn c3a_paid_resolver_closed_mixed_body_pays_every_kind_and_every_failure_drops()
             assert!(!allocator.trace[fail_at - 1].success);
             assert!(!allocator.observer_trace_overflow);
         }
+        println!("C3A_PAID_CLOSED_MIXED logical_reserve_positions={attempts} zero_slot_requests={zero_requests} swept_positions={attempts} baseline_live={baseline_live} baseline_peak={baseline_peak}");
     });
+}
+
+#[test]
+fn c3a_paid_resolver_active_shadow_and_function_conflict_keep_origins() {
+    for text in [
+        "enum E{V} fn take(same:i32)->(){if true{let same=1;}}",
+        "enum E{V} fn same()->i32{return 0;} fn main()->i32{let same=1;return 0;}",
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, "E0201");
+            let primary = errors[0].primary.unwrap();
+            assert_eq!(primary.start, text.rfind("same").unwrap());
+            assert_eq!(errors[0].secondary.len(), 1);
+            assert_eq!(errors[0].secondary[0].0.start, text.find("same").unwrap());
+            assert_eq!(index.sources().text(primary).unwrap(), "same");
+        });
+    }
+}
+
+#[test]
+fn c3a_paid_resolver_sorted_inventory_does_not_preactivate_or_leak_names() {
+    for (text, unknown) in [
+        (
+            "enum E{V} fn main()->i32{let self_name=self_name;return 0;}",
+            "self_name",
+        ),
+        (
+            "enum E{V} fn main()->i32{let first=later;let later=1;return 0;}",
+            "later",
+        ),
+        (
+            "enum E{V} fn take(same:i32)->i32{let same=bad_init;return 0;}",
+            "bad_init",
+        ),
+        (
+            "enum E{V} fn main()->i32{if true{let sibling=1;}else{let sibling=2;}return sibling;}",
+            "sibling",
+        ),
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, "E0200");
+            assert_eq!(
+                index.sources().text(errors[0].primary.unwrap()).unwrap(),
+                unknown
+            );
+            assert!(errors[0].secondary.is_empty());
+        });
+    }
+    with_index(
+        "enum E{V} fn main()->i32{if true{let sibling=1;}else{let sibling=2;}return 0;}",
+        |index| {
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut Allocator::default());
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                errors[0].message,
+                "paid resolver observations are not connected"
+            );
+        },
+    );
+}
+
+#[test]
+fn c3a_paid_resolver_target_child_and_loop_diagnostic_order_is_preserved() {
+    for (text, code, origin) in [
+        (
+            "enum E{V} fn main()->i32{missing_target=bad_rhs;return 0;}",
+            "E0200",
+            "missing_target",
+        ),
+        (
+            "enum E{V} fn main()->i32{let mut n=0;n=bad_rhs;return 0;}",
+            "E0200",
+            "bad_rhs",
+        ),
+        (
+            "enum E{V} fn main()->i32{missing_root.x=bad_rhs;return 0;}",
+            "E0200",
+            "missing_root",
+        ),
+        (
+            "enum E{V} fn main()->i32{let mut a=[1];a[bad_index]=bad_rhs;return 0;}",
+            "E0200",
+            "bad_rhs",
+        ),
+        (
+            "enum E{V} fn main()->i32{if true{return then_error;}else{return else_error;}}",
+            "E0200",
+            "then_error",
+        ),
+        (
+            "enum E{V} fn main()->i32{while true{while true{break;}continue;}break;return 0;}",
+            "E0204",
+            "break;",
+        ),
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, code);
+            assert_eq!(
+                index.sources().text(errors[0].primary.unwrap()).unwrap(),
+                origin
+            );
+            if code == "E0204" {
+                assert_eq!(
+                    errors[0].primary.unwrap().start,
+                    text.rfind("break;").unwrap()
+                );
+            }
+        });
+    }
+}
+
+#[test]
+fn c3a_paid_resolver_callee_then_argument_error_order_and_reserve_boundary() {
+    for (text, expected, arguments_reserved) in [
+        ("enum E{V} fn main()->i32{return missing_callee(first_bad,second_bad);}", "missing_callee", false),
+        ("enum E{V} fn pair(a:i32,b:i32)->i32{return 0;} fn main()->i32{return pair(first_bad,second_bad);}", "first_bad", true),
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, "E0200");
+            assert_eq!(index.sources().text(errors[0].primary.unwrap()).unwrap(), expected);
+            assert_eq!(allocator.trace.iter().any(|event| event.kind == "paid HIR arguments"), arguments_reserved);
+        });
+    }
+    // Arity and ownership checks belong to later stages, so even this mismatch
+    // reaches only the inert final fence. It never becomes a typed witness.
+    with_index(
+        "enum E{V} fn zero()->i32{return 0;} fn main()->i32{return zero(1);}",
+        |index| {
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut Allocator::default());
+            assert_eq!(
+                errors[0].message,
+                "paid resolver observations are not connected"
+            );
+        },
+    );
+}
+
+#[test]
+fn c3a_paid_resolver_literal_selection_duplicate_and_value_order() {
+    for (text, code, origin, reserves) in [
+        (
+            "enum E{V} fn main()->i32{let r=Missing{x:bad_value};return 0;}",
+            "E0202",
+            "Missing",
+            false,
+        ),
+        (
+            "enum E{V} struct R{x:i32} fn main()->i32{let r=R{unknown:bad_value};return 0;}",
+            "E0200",
+            "unknown",
+            true,
+        ),
+        (
+            "enum E{V} struct R{x:i32} fn main()->i32{let r=R{x:1,x:bad_value};return 0;}",
+            "E0201",
+            "x",
+            true,
+        ),
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, code);
+            assert_eq!(
+                index.sources().text(errors[0].primary.unwrap()).unwrap(),
+                origin
+            );
+            assert_eq!(
+                allocator
+                    .trace
+                    .iter()
+                    .any(|event| event.kind == "paid HIR field initializers"),
+                reserves
+            );
+            if code == "E0201" {
+                assert_eq!(
+                    errors[0].primary.unwrap().start,
+                    text.find("x:bad_value").unwrap()
+                );
+                assert_eq!(errors[0].secondary.len(), 1);
+                assert_eq!(errors[0].secondary[0].0.start, text.find("x:1").unwrap());
+            }
+        });
+    }
+}
+
+#[test]
+fn c3a_paid_resolver_constructor_match_and_qualified_calls_stay_closed() {
+    for text in [
+        "enum E{V,P(i32)} fn main()->i32{let value=E::P(bad_payload);return 0;}",
+        "enum E{V} fn main()->i32{match bad_scrutinee{E::V=>{return bad_arm;}}}",
+        "enum E{V} fn helper()->i32{return 0;} fn main()->i32{return crate::helper();}",
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, "E0101");
+            assert_eq!(errors[0].message, "enum source syntax is unavailable");
+            assert!(!allocator
+                .trace
+                .iter()
+                .any(|event| event.kind == "paid HIR arguments"));
+        });
+    }
+}
+
+#[test]
+fn c3a_paid_resolver_imported_enum_and_constructor_privacy_precede_payload_storage() {
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    struct Files(std::path::PathBuf);
+    impl Drop for Files {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let files =
+        Files(std::env::temp_dir().join(format!("oxid-c3a-paid-private-{}", std::process::id())));
+    std::fs::create_dir(&files.0).unwrap();
+    std::fs::write(files.0.join("main.ox"),
+        "mod m;use crate::m::Unused as Marker;use crate::m::R as R;fn main()->i32{let r=R{y:0,x:bad_value};return 0;}").unwrap();
+    std::fs::write(
+        files.0.join("m.ox"),
+        "pub enum Unused{V} pub struct R{x:i32,pub y:i32}",
+    )
+    .unwrap();
+    let project = ProjectSources::load_enum_index_candidate(
+        files.0.join("main.ox").to_str().unwrap(),
+        ProjectLimits::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    let mut allocator = Allocator::default();
+    let work = WorkMeter::default();
+    let index = index::collect_enum_candidate(
+        SourceOwner::project(&project),
+        IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap()
+    .finish(&work, &mut allocator)
+    .unwrap();
+    assert_eq!(index.enum_count(), 1);
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(128).unwrap();
+    let errors = closed_attempt(&index, &WorkMeter::default(), &mut allocator);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, "E0206");
+    assert_eq!(
+        index.sources().text(errors[0].primary.unwrap()).unwrap(),
+        "x"
+    );
+    assert_eq!(errors[0].secondary.len(), 1);
+    assert_eq!(index.sources().text(errors[0].secondary[0].0).unwrap(), "x");
+    assert!(!allocator
+        .trace
+        .iter()
+        .any(|event| event.kind == "paid HIR field initializers"));
 }

@@ -449,6 +449,17 @@ struct ArgumentCarriers {
 pub(super) const fn argument_carrier_bytes() -> usize {
     size_of::<ArgumentCarriers>()
 }
+// The selected identity remains live while recursively resolving its value.
+// Retain both the candidate and complete fallible lookup return; do not infer
+// return-slot reuse or price only the reference that the old resolver held.
+struct LiteralLookupCarriers {
+    candidate: Option<&'static Field>,
+    selected: FieldId,
+    returned: Result<&'static Field, Box<Diagnostic>>,
+}
+pub(super) const fn literal_lookup_carrier_bytes() -> usize {
+    size_of::<LiteralLookupCarriers>()
+}
 pub(super) const fn fixed_carrier_bytes() -> usize {
     size_of::<FixedCarriers>()
 }

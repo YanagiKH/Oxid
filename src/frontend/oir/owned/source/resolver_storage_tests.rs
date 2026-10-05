@@ -333,7 +333,8 @@ fn c3a_paid_helper_complete_carriers_are_measured_before_consumer_activation() {
         HirCounts, Option<HirCounts>, Result<HirCounts, Box<Diagnostic>>,
         Result<PaidScope, Box<Diagnostic>>, Option<PaidScope>, ScopeName,
         Result<Ordering, Box<Diagnostic>>, Result<Option<usize>, Box<Diagnostic>>,
-        Result<Option<BindingId>, Box<Diagnostic>>, FixedCarriers, FunctionCarriers, ArgumentCarriers);
+        Result<Option<BindingId>, Box<Diagnostic>>, FixedCarriers, FunctionCarriers, ArgumentCarriers, LiteralLookupCarriers,
+        Option<&Field>, FieldId, Result<&Field, Box<Diagnostic>>);
     assert!(
         fixed_carrier_bytes()
             >= 2 * size_of::<PaidStorage>()
@@ -569,4 +570,19 @@ fn c3a_paid_helper_mid_lookup_failure_preserves_activation_and_releases_storage(
             assert_eq!(allocator.attempts, 3);
         }
     });
+}
+
+#[test]
+fn c3a_paid_helper_literal_lookup_keeps_selected_and_fallible_carriers_paid() {
+    let members = size_of::<Option<&Field>>()
+        + size_of::<FieldId>()
+        + size_of::<Result<&Field, Box<Diagnostic>>>();
+    assert!(literal_lookup_carrier_bytes() >= members);
+    println!(
+        "C3A_PAID_LITERAL_LOOKUP candidate={} selected={} returned={} envelope={}",
+        size_of::<Option<&Field>>(),
+        size_of::<FieldId>(),
+        size_of::<Result<&Field, Box<Diagnostic>>>(),
+        literal_lookup_carrier_bytes()
+    );
 }
