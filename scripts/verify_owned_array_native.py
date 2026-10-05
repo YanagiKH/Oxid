@@ -1316,7 +1316,7 @@ import importlib.util
 INDEPENDENT_TOOLS = ("llvm-as", "opt", "clang", "ld.lld")
 INDEPENDENT_PHASES = ("prepare", "build", "ordinary", "native", "physical", "verify")
 INDEPENDENT_SEALS = tuple("phase-" + phase + "-artifacts.json" for phase in INDEPENDENT_PHASES[1:])
-INDEPENDENT_RUNNER_SHA = "6bec8bccf2320d653c20afd1b5f62746cf4e41421235756fa14e76033be60dff"
+INDEPENDENT_RUNNER_SHA = "f76aa8a1b418adfc25487a240a9a2d9e9e76c893e04a27bfd7aaa73a48777d9b"
 INDEPENDENT_INPUT_SHA = "3a904929eb7572bad6430f7ab0ea81c3f68625856621041fa2673e4629e1e290"
 INDEPENDENT_FIXTURE = "tests/fixtures/fixed_array_unit2d_independent"
 
@@ -2262,7 +2262,13 @@ def audit_compact(index_path, archive_path, expected_head, event_sha):
             old = document(prefix + "evidence/old-ir-comparison.json")
             require(old == {"files": len(old_manifest), "modules": sum(row["path"].endswith(".ll") for row in old_manifest),
                             "unique_modules": len({row["sha256"] for row in old_manifest if row["path"].endswith(".ll")}),
-                            "inventory_sha256": sha256(bodies[prefix + "inputs/expectations/old-ir-inventory.tsv"])}, "independent old-IR comparison body differs")
+                            "inventory_sha256": sha256(bodies[prefix + "inputs/expectations/old-ir-inventory.tsv"]),
+                            "current_inventory_sha256": sha256(schema.old_ir_resource_inventory(bodies[prefix + "inputs/expectations/old-ir-inventory.tsv"])),
+                            "resource_successor": schema.OLD_IR_RESOURCE_SUCCESSOR}, "independent old-IR comparison body differs")
+            current_inventory = schema.old_ir_resource_inventory(bodies[prefix + "inputs/expectations/old-ir-inventory.tsv"])
+            current_commitment = full["members"][prefix + "evidence/old-ir/inventory.tsv"]
+            require(current_commitment["bytes"] == len(current_inventory) and current_commitment["sha256"] == sha256(current_inventory),
+                    "independent current physical TSV commitment differs")
             supplement = document(prefix + "inputs/expectations/supplement-v1.json")
             cases = [{**supplement["positive_shared_alias"], "name": "shared-array-aliases"}, *supplement["extreme_cases"]]
             for case in cases:

@@ -1351,7 +1351,7 @@ class CombinedReceiptTests(unittest.TestCase):
             'qualification-v2.json': admission.json_bytes({'synthetic_only': True, 'elf_artifacts': 1,
                 'source_free_executions': 30, 'official_llvm_command_receipts': 1}),
             'expectations/old-ir-manifest.json': admission.json_bytes(old_manifest),
-            'expectations/old-ir-inventory.tsv': b'synthetic\tnever-executed\n',
+            'expectations/old-ir-inventory.tsv': (Path(cls.schema.__file__).resolve().parent.parent / cls.schema.FIXTURE_REL / 'expectations/old-ir-inventory.tsv').read_bytes(),
             'expectations/physical-harness.tsv': harness.encode(),
             'expectations/supplement-v1.json': admission.json_bytes({'synthetic_only': True,
                 'positive_shared_alias': {'status': 0, 'stdout_hex': '', 'stderr_hex': ''}, 'extreme_cases': []}),
@@ -1383,6 +1383,7 @@ class CombinedReceiptTests(unittest.TestCase):
             'public_array_activation': cls.schema.PUBLIC_ARRAY_ACTIVATION,
             'borrowed_slot_compatibility': cls.schema.BORROWED_SLOT_COMPATIBILITY,
             'projected_loan_compatibility': cls.schema.PROJECTED_LOAN_COMPATIBILITY,
+            'old_ir_resource_successor': cls.schema.OLD_IR_RESOURCE_SUCCESSOR,
             'module_sha256': cls.schema.PROJECTED_LOAN_COMPATIBILITY['current_module_sha256'],
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
@@ -1472,7 +1473,7 @@ class CombinedReceiptTests(unittest.TestCase):
         put('tool-captures/000/stdout', b'')
         put('tool-captures/000/stderr', b'')
         put('old-ir/synthetic.ll', b'; SYNTHETIC old IR, never compiled\n')
-        put('old-ir/inventory.tsv', cls.inputs['expectations/old-ir-inventory.tsv'])
+        put('old-ir/inventory.tsv', cls.schema.old_ir_resource_inventory(cls.inputs['expectations/old-ir-inventory.tsv']))
         old = cls.schema.compare_old_ir(evidence / 'old-ir', json.loads(cls.inputs['expectations/old-ir-manifest.json']), cls.inputs['expectations/old-ir-inventory.tsv'])
         put('old-ir-comparison.json', old)
         for name in ('harness.tsv', 'manifest.tsv'):
@@ -2023,6 +2024,40 @@ class CombinedReceiptTests(unittest.TestCase):
                 with self.changed(path, admission.json_bytes(receipt)), self.resealed(root):
                     with self.assertRaises(admission.AdmissionError):
                         self.read_body(root)
+
+    def test_resealed_physical_old_ir_tsv_and_successor_receipt_drift_rejected(self):
+        root = self.independent['debug']['root']
+        path = root / 'evidence/old-ir/inventory.tsv'
+        current = path.read_bytes()
+        for data in (self.inputs['expectations/old-ir-inventory.tsv'], current + b'\n'):
+            with self.changed(path, data), self.resealed(root), self.assertRaisesRegex(RuntimeError, 'old IR TSV'):
+                self.read_body(root)
+        path = root / 'evidence/old-ir-comparison.json'
+        for key in ('inventory_sha256', 'current_inventory_sha256', 'resource_successor'):
+            receipt = admission.read_json(path)
+            receipt[key] = 'unrecognized-successor'
+            with self.changed(path, admission.json_bytes(receipt)), self.resealed(root), self.assertRaisesRegex(admission.AdmissionError, 'old-IR comparison body differs'):
+                self.read_body(root)
+
+    def test_compact_physical_old_ir_tsv_commitment_and_receipt_drift_rejected(self):
+        # Rehash archive membership; the independently sealed source closure
+        # must still reject both physical-output and comparison-receipt drift.
+        target = 'independent/debug/evidence/old-ir/inventory.tsv'
+        for key, value in (('bytes', 0), ('sha256', '0' * 64)):
+            def mutate(bodies, full, changes):
+                full['members'][target][key] = value
+            output = self.coherent_download('physical-tsv-commitment', mutate)
+            with self.subTest(key=key), self.assertRaisesRegex(admission.AdmissionError, 'independent full/seal file identity differs'):
+                self.audit(output)
+        receipt_name = 'independent/debug/evidence/old-ir-comparison.json'
+        for key in ('inventory_sha256', 'current_inventory_sha256', 'resource_successor'):
+            def mutate(bodies, full, changes):
+                receipt = json.loads(bodies[receipt_name])
+                receipt[key] = 'unrecognized-successor'
+                changes[receipt_name] = admission.json_bytes(receipt)
+            output = self.coherent_download('physical-tsv-receipt', mutate)
+            with self.subTest(key=key), self.assertRaisesRegex(admission.AdmissionError, 'independent full/seal file identity differs'):
+                self.audit(output)
 
     def test_full_only_binary_commitment_mismatch_is_rejected(self):
         target = 'independent/debug/evidence/bin/oxid-unit2d-tests'

@@ -199,10 +199,60 @@ def projected_loan_reviewer(previous, *, reverse=False):
     return current
 
 
+# Explicit resource successor; archived exporter, TSV and LLVM remain frozen.
+OLD_IR_RESOURCE_SUCCESSOR = {
+    "adapter": "projected-sidecar-old-ir-resources-v1",
+    "frozen_exporter_sha256": '7564dbee4ef89663523e019c68e1e5ffadff285771ccecc5174ad167beeb49d2',
+    "current_exporter_sha256": '7c18f7264596a08f2ee6cf365933243301e00cc838e1d80e60f436ae340b59b5',
+    "frozen_inventory_sha256": '18d247ad407dbdcbdac0d493fd9463a1e43481d967ea26f9fee8e250a872db30',
+    "current_inventory_sha256": 'e9cc4e50499f5121d79935730c447f796b60c95c7eb6853402f4f82de0f01d33',
+    "changed_rows": 10,
+    "shared_root": {"references": 0, "loans": 1, "historical_cells": 22, "physical_cells": 24},
+    "other_roots": {"references": 0, "loans": 0},
+    "extra_cells_per_reference_or_loan": 2,
+}
+OLD_IR_EXPORTER_REPLACEMENT = ('            let usage=plan.function(hir::DefId(0)).usage();', '            let usage=plan.function(hir::DefId(0)).usage();\n            // Current physical sidecars are two cells per reference/loan. Keep\n            // the physical export unchanged and check the historical relation.\n            let historical_cells = match name {\n                "empty" => 6, "relay" | "empty-call" => 20, "shared" => 22,\n                "adjacent" => 55, "overflow" | "no-overflow" => 10,\n                "merge-forward" | "merge-reverse" => 17, _ => unreachable!(),\n            };\n            let expected_loans = usize::from(name == "shared");\n            assert_eq!((usage.references, usage.loans), (0, expected_loans));\n            assert_eq!(usage.expanded_cells, historical_cells + 2 * expected_loans);\n            assert_eq!(usage.activation_fuel_cells(), historical_cells);\n            eprintln!("Unit2D current resource: {name} guard={add_guard} historical={historical_cells} physical={} references=0 loans={expected_loans}", usage.expanded_cells);')
+
+
+def old_ir_resource_exporter(data, *, reverse=False):
+    old, new = OLD_IR_EXPORTER_REPLACEMENT
+    before, after = "frozen_exporter_sha256", "current_exporter_sha256"
+    if reverse:
+        old, new, before, after = new, old, after, before
+    require(sha(data) == OLD_IR_RESOURCE_SUCCESSOR[before], "old IR exporter input identity differs")
+    old, new = old.encode(), new.encode()
+    require(data.count(old) == 1, "old IR exporter use site differs")
+    result = data.replace(old, new, 1)
+    require(sha(result) == OLD_IR_RESOURCE_SUCCESSOR[after], "old IR exporter output identity differs")
+    return result
+
+
+def old_ir_resource_inventory(data, *, reverse=False):
+    before, after = "frozen_inventory_sha256", "current_inventory_sha256"
+    old, new = "22", "24"
+    if reverse:
+        before, after, old, new = after, before, new, old
+    require(sha(data) == OLD_IR_RESOURCE_SUCCESSOR[before], "old IR inventory input identity differs")
+    rows = data.decode().splitlines(keepends=True)
+    changed = 0
+    for index, row in enumerate(rows):
+        fields = row.rstrip("\n").split("\t")
+        if fields[0] == "shared":
+            require(len(fields) == 7 and fields[5] == old, "old IR resource row differs")
+            fields[5] = new
+            rows[index] = "\t".join(fields) + "\n"
+            changed += 1
+    require(changed == OLD_IR_RESOURCE_SUCCESSOR["changed_rows"], "old IR resource row count differs")
+    result = "".join(rows).encode()
+    require(sha(result) == OLD_IR_RESOURCE_SUCCESSOR[after], "old IR inventory output identity differs")
+    return result
+
+
 def assert_current_module_binding(binding):
     require(binding.get("public_array_activation") == PUBLIC_ARRAY_ACTIVATION
             and binding.get("borrowed_slot_compatibility") == BORROWED_SLOT_COMPATIBILITY
             and binding.get("projected_loan_compatibility") == PROJECTED_LOAN_COMPATIBILITY
+            and binding.get("old_ir_resource_successor") == OLD_IR_RESOURCE_SUCCESSOR
             and binding.get("module_sha256") == PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"],
             "independent current public-array module binding differs")
 
@@ -245,10 +295,11 @@ PROVENANCE = {
         "kind": "frozen Rust test declarations plus explicit public-array successor and replay marker",
         "counts": {"ordinary": 8, "ignored_native": 9, "total": 17},
         "role": "registration inventory, not a semantic oracle"},
+    "old_ir_resource_successor": OLD_IR_RESOURCE_SUCCESSOR,
     "old_ir": {
         "kind": "independently built historical PR28 baseline",
         "sources": ["expectations/old-ir-manifest.json", "expectations/old-ir-inventory.tsv"],
-        "role": "exact no-regression byte comparison, not independently derived semantic expectations",
+        "role": "exact LLVM byte comparison; physical TSV uses explicit two-cell sidecar successor, not independently derived semantic expectations",
         "counts": {"modules": 90, "unique_modules": 59},
         "count_origin": "90 is also 9 source exporter builders x 2 guard choices x 5 source maps; 59 unique hashes is observed"},
     "native_execution_totals": {
@@ -407,10 +458,12 @@ def compare_old_ir(root, manifest, inventory):
         require(path.is_file() and path.stat().st_size == row["length"]
                 and file_sha(path) == row["sha256"], "old IR hash/length mismatch: " + filename)
     require({p.name for p in root.iterdir()} == expected_paths | {"inventory.tsv"}, "old IR output inventory mismatch")
-    require((root / "inventory.tsv").read_bytes() == inventory, "old IR TSV bytes differ")
+    current_inventory = old_ir_resource_inventory(inventory)
+    require((root / "inventory.tsv").read_bytes() == current_inventory, "old IR TSV bytes differ")
     return dict(files=len(manifest), modules=sum(p.endswith(".ll") for p in expected_paths),
                 unique_modules=len({row["sha256"] for row in manifest if row["path"].endswith(".ll")}),
-                inventory_sha256=sha(inventory))
+                inventory_sha256=sha(inventory), current_inventory_sha256=sha(current_inventory),
+                resource_successor=OLD_IR_RESOURCE_SUCCESSOR)
 
 
 def assert_binary(binding, source_binding, root):
@@ -576,7 +629,10 @@ class Replay:
         (self.source / MODULE_REL).write_bytes(current)
         appendix = b"\n\n// Ephemeral independent Unit2D replay controls.\n"
         for name in CONTROL_FILES:
-            appendix += (self.inputs / "sources" / name).read_bytes() + b"\n"
+            control = (self.inputs / "sources" / name).read_bytes()
+            if name == "old-ir-export-v1.rs":
+                control = old_ir_resource_exporter(control)
+            appendix += control + b"\n"
         appendix += b'\n#[cfg(test)]\n#[path = "unit2d_independent.rs"]\nmod unit2d_independent;\n'
         binding = dict(schema=1, commit=commit, tree=tree, checkout_head=head, run_root=str(self.root),
                        input_checkout=str(repo), profile=self.args.profile or "debug",
@@ -591,6 +647,7 @@ class Replay:
                        module_sha256=sha(current), public_array_activation=PUBLIC_ARRAY_ACTIVATION,
                        borrowed_slot_compatibility=BORROWED_SLOT_COMPATIBILITY,
                        projected_loan_compatibility=PROJECTED_LOAN_COMPATIBILITY,
+                       old_ir_resource_successor=OLD_IR_RESOURCE_SUCCESSOR,
                        nonce=uuid.uuid4().hex,
                        runner_sha256=file_sha(Path(__file__)),
                        capture_runner_sha256=file_sha(Path(__file__).with_name("replay_unit2d_tool_capture.py")))
