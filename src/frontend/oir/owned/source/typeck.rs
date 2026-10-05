@@ -323,7 +323,8 @@ struct PaidBodyControls {
     row_room: Result<(), Box<Diagnostic>>,
     // The initializer frame encloses (rather than replaces) expression frames.
     initializer_argument: Option<&'static mut BodyPaid<'static>>,
-    initializer_reborrow: Option<&'static mut BodyPaid<'static>>,
+    // The final call moves this Option into expression_type, without reborrow.
+    initializer_transfer: Option<&'static mut BodyPaid<'static>>,
 }
 #[allow(dead_code)]
 struct PaidBodyReceivers {
@@ -580,7 +581,7 @@ fn projected_array_access(
     access_span: Span,
     bindings: &[Option<ParameterTy>],
     borrow: bool,
-    mut paid: Option<&mut BodyPaid<'_>>,
+    paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
@@ -601,15 +602,7 @@ fn projected_array_access(
     };
     let mut field_span = first.span;
     field_span.end = base_span.end;
-    let projection = projection(
-        program,
-        function,
-        binding,
-        root,
-        field_span,
-        bindings,
-        paid.as_deref_mut(),
-    )?;
+    let projection = projection(program, function, binding, root, field_span, bindings, paid)?;
     let ValueTy::Owned(AggregateTy::FixedArray(array)) =
         program.records()[projection.field.record.0].fields[projection.field.index].ty
     else {
@@ -1133,7 +1126,7 @@ fn expression_type(
                 *base_span,
                 *field_span,
                 bindings,
-                paid.as_deref_mut(),
+                paid,
             )?;
             let ty = program.records()[projection.field.record.0].fields[projection.field.index].ty;
             if !matches!(ty, ValueTy::Scalar(_)) {
@@ -1191,7 +1184,7 @@ fn initializer_type(
     expressions: &mut [Option<ValueTy>],
     projections: &mut [Option<Projection>],
     borrow_projections: &mut Vec<BorrowProjection>,
-    mut paid: Option<&mut BodyPaid<'_>>,
+    paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<ValueTy, Box<Diagnostic>> {
     let (binding, root) = initializer;
     if let Some(ValueTy::Owned(AggregateTy::FixedArray(annotation))) =
@@ -1231,7 +1224,7 @@ fn initializer_type(
         expressions,
         projections,
         borrow_projections,
-        paid.as_deref_mut(),
+        paid,
     )
 }
 pub(super) enum TypeFrame {
@@ -1846,7 +1839,7 @@ fn check_body(
         )?;
         borrow_projections.sort_unstable_by_key(|entry| (entry.expression.0, entry.argument));
     }
-    let final_expressions = match paid.as_deref_mut() {
+    let final_expressions = match paid {
         Some(paid) => paid.quota.storage.finalize(
             paid.allocator,
             Kind::ExpressionFinal,
