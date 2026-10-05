@@ -1,4 +1,4 @@
-//! Closed paid resolver controls. No successful observation or owner can escape.
+//! Fixed resolver observations only. No resolved owner or typed witness escapes.
 use super::*;
 use crate::frontend::{lexer, parser, source::SourceFileId};
 
@@ -25,16 +25,12 @@ fn with_index<T>(text: &str, action: impl FnOnce(&DeclarationIndex<'_>) -> T) ->
         .unwrap();
     action(&index)
 }
-fn closed_attempt(
+fn attempt_error(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Vec<Diagnostic> {
-    let plan = super::super::hir_budget::preflight_enum_hir(index, work)
-        .unwrap()
-        .unwrap();
-    let mut paid = PaidStorage::new(plan.counts);
-    resolve_index_impl(index, work, allocator, Some(&mut paid)).unwrap_err()
+    probe_enum_resolver_storage(index, work, allocator).unwrap_err()
 }
 fn prefix_only(allocator: &Allocator) {
     assert!(allocator.trace.iter().all(|event| matches!(
@@ -59,7 +55,7 @@ fn c3a_paid_resolver_enum_value_type_guards_run_before_any_body_storage() {
             allocator.observer_trace_bound(32).unwrap();
             let work = WorkMeter::default();
             work.enable_observation();
-            let errors = closed_attempt(index, &work, &mut allocator);
+            let errors = attempt_error(index, &work, &mut allocator);
             assert_eq!(errors.len(), 1);
             let error = &errors[0];
             assert_eq!((error.code, error.stage), ("E0101", "resolve"));
@@ -96,7 +92,7 @@ fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative
             .unwrap_err();
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(32).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(
                 (
@@ -114,7 +110,7 @@ fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative
         |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(32).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors[0].code, "E0300");
             assert_eq!(errors[0].message, "enum values cannot be record fields");
             assert_eq!(
@@ -129,18 +125,15 @@ fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative
 const PREFIX: &str =
     "enum E{V} struct R{x:i32,y:bool} fn take(value:R)->R{return value;} fn main()->i32{return 0;}";
 #[test]
-fn c3a_paid_resolver_prefix_order_is_preserved_behind_final_observation_fence() {
+fn c3a_paid_resolver_prefix_order_is_preserved_in_fixed_observation() {
     with_index(PREFIX, |index| {
         let mut allocator = Allocator::default();
         allocator.observer_trace_bound(32).unwrap();
         let work = WorkMeter::default();
-        let errors = closed_attempt(index, &work, &mut allocator);
-        assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].code, "E0101");
-        assert_eq!(
-            errors[0].message,
-            "paid resolver observations are not connected"
-        );
+        let observation = probe_enum_resolver_storage(index, &work, &mut allocator)
+            .unwrap()
+            .unwrap();
+        assert_eq!(observation.reservation_attempts, 24);
         assert_eq!(
             allocator
                 .trace
@@ -181,16 +174,18 @@ fn c3a_paid_resolver_prefix_each_reserve_failure_drops_private_parts() {
             };
             allocator.observer_trace_bound(32).unwrap();
             let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
-                let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+                let result =
+                    probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator);
                 if fail_at.is_some() {
-                    assert!(errors.iter().any(|error| error.code == "E0400"));
+                    assert!(result
+                        .as_ref()
+                        .unwrap_err()
+                        .iter()
+                        .any(|error| error.code == "E0400"));
                 } else {
-                    assert_eq!(
-                        errors[0].message,
-                        "paid resolver observations are not connected"
-                    );
+                    assert!(result.as_ref().unwrap().is_some());
                 }
-                drop(errors);
+                drop(result);
             });
             assert_eq!(live, 0, "prefix leak after reserve failure {fail_at:?}");
             assert!(peak > 0);
@@ -226,7 +221,7 @@ fn c3a_paid_resolver_declaration_duplicate_keeps_first_origin_and_beats_its_bad_
             let record = &sources.ast(module).unwrap().records[key.index];
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(16).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, "E0201");
             assert_eq!(errors[0].primary, Some(record.fields[2].name));
@@ -255,7 +250,7 @@ fn c3a_paid_resolver_earlier_field_query_failure_precedes_later_duplicate() {
         allocator.observer_trace_bound(16).unwrap();
         let work = WorkMeter::default();
         work.enable_observation();
-        let errors = closed_attempt(index, &work, &mut allocator);
+        let errors = attempt_error(index, &work, &mut allocator);
         assert_eq!(errors.len(), 1);
         assert_eq!(
             (
@@ -290,9 +285,9 @@ fn c3a_paid_resolver_declaration_long_prefix_scan_work_boundaries_drop_storage()
             let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
                 let work = WorkMeter::new(limit);
                 work.enable_observation();
-                let errors = closed_attempt(index, &work, &mut allocator);
+                let errors = attempt_error(index, &work, &mut allocator);
                 assert_eq!(errors.len(), 1);
-                assert_eq!(work.used(), limit.min(13));
+                assert_eq!(work.used(), limit);
                 let compared = work
                     .events
                     .borrow()
@@ -311,10 +306,10 @@ fn c3a_paid_resolver_declaration_long_prefix_scan_work_boundaries_drop_storage()
                         })
                     );
                 } else {
-                    assert_eq!(
-                        errors[0].message,
-                        "paid resolver observations are not connected"
-                    );
+                    // Resolution used 13 units; final inventory now runs
+                    // before an inert observation can escape.
+                    assert_eq!(errors[0].code, "E0400");
+                    assert_eq!(errors[0].primary, Some(sources.eof()));
                 }
                 drop(errors);
             });
@@ -331,7 +326,7 @@ fn c3a_paid_resolver_declaration_long_prefix_scan_work_boundaries_drop_storage()
 }
 
 #[test]
-fn c3a_paid_resolver_closed_body_matches_independent_small_request_oracles() {
+fn c3a_paid_resolver_fixed_observations_match_independent_small_oracles() {
     // Fixed before integration in independent-small-oracles.md. These are
     // logical exact reserve requests, including all zero-capacity requests.
     for (text, expected_attempts, expected_slots) in [
@@ -344,14 +339,16 @@ fn c3a_paid_resolver_closed_body_matches_independent_small_request_oracles() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(64).unwrap();
-            let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
-                let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
-                assert_eq!(errors.len(), 1);
-                assert_eq!(errors[0].message, "paid resolver observations are not connected");
-                drop(errors);
+            let (observation, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator).unwrap().unwrap()
             });
             assert_eq!(live, 0);
             assert_eq!(allocator.attempts, expected_attempts);
+            assert_eq!(observation.reservation_attempts, expected_attempts);
+            assert_eq!(observation.retained_counts.as_slice(), &expected_slots[..12]);
+            assert_eq!(observation.capacities, expected_slots);
+            let payloads = match expected_attempts { 3 => (0, 0), 13 => (480, 304), 24 => (1552, 704), _ => unreachable!() };
+            assert_eq!((observation.retained_bytes, observation.scratch_capacity_bytes), payloads);
             let labels = ["paid HIR records", "paid HIR record fields", "paid HIR signatures",
                 "paid HIR parameters", "paid HIR functions", "paid HIR bindings", "paid HIR expressions",
                 "paid HIR blocks", "paid HIR statements", "paid HIR arguments", "paid HIR field initializers",
@@ -371,20 +368,22 @@ fn c3a_paid_resolver_closed_body_matches_independent_small_request_oracles() {
 
 const MIXED_BODY: &str = "enum Unused{V} struct R{x:i32} struct O{r:R,a:[i32;2]} fn read(p:&R)->i32{return p.x;} fn relay(p:&R)->i32{return read(&*p);} fn id(x:i32)->i32{return x;} fn main()->i32{let r=R{x:id(id(1))};let o=O{r:r,a:[1,2]};let mut a=[3,4];let mut n=0;while n<2{if n==0{let same=relay(&o.r);n=n+1;continue;}else{let same=id(n);a[n]=same;}break;}return a[0]+o.r.x;}";
 #[test]
-fn c3a_paid_resolver_closed_mixed_body_pays_every_kind_and_every_failure_drops() {
+fn c3a_paid_resolver_mixed_observation_pays_every_kind_and_every_failure_drops() {
     with_index(MIXED_BODY, |index| {
         let mut successful = Allocator::default();
         successful.observer_trace_bound(256).unwrap();
-        let (_, (_, baseline_live, baseline_peak)) =
+        let (observation, (_, baseline_live, baseline_peak)) =
             super::super::reviewer_source::integration_measured(|| {
-                let errors = closed_attempt(index, &WorkMeter::default(), &mut successful);
-                assert_eq!(errors.len(), 1);
-                assert_eq!(
-                    errors[0].message,
-                    "paid resolver observations are not connected"
-                );
-                drop(errors);
+                probe_enum_resolver_storage(index, &WorkMeter::default(), &mut successful)
+                    .unwrap()
+                    .unwrap()
             });
+        // The syntax-only indexed-store wrapper is conservatively reserved but
+        // never retained as a resolved expression; lengths and capacity differ.
+        assert_eq!(
+            observation.retained_counts[6] + 1,
+            observation.capacities[6]
+        );
         assert_eq!(baseline_live, 0);
         assert!(baseline_peak > 0);
         let attempts = successful.attempts;
@@ -437,16 +436,16 @@ fn c3a_paid_resolver_closed_mixed_body_pays_every_kind_and_every_failure_drops()
             };
             allocator.observer_trace_bound(256).unwrap();
             let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
-                let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+                let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
                 assert!(errors.iter().any(|error| error.code == "E0400"));
                 drop(errors);
             });
-            assert_eq!(live, 0, "closed body leaked at request {fail_at}");
+            assert_eq!(live, 0, "resolver probe leaked at request {fail_at}");
             assert!(peak > 0);
             assert!(!allocator.trace[fail_at - 1].success);
             assert!(!allocator.observer_trace_overflow);
         }
-        println!("C3A_PAID_CLOSED_MIXED logical_reserve_positions={attempts} zero_slot_requests={zero_requests} swept_positions={attempts} baseline_live={baseline_live} baseline_peak={baseline_peak}");
+        println!("C3A_PAID_RESOLVER_MIXED logical_reserve_positions={attempts} zero_slot_requests={zero_requests} swept_positions={attempts} baseline_live={baseline_live} baseline_peak={baseline_peak}");
     });
 }
 
@@ -459,7 +458,7 @@ fn c3a_paid_resolver_active_shadow_and_function_conflict_keep_origins() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, "E0201");
             let primary = errors[0].primary.unwrap();
@@ -494,7 +493,7 @@ fn c3a_paid_resolver_sorted_inventory_does_not_preactivate_or_leak_names() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, "E0200");
             assert_eq!(
@@ -507,12 +506,13 @@ fn c3a_paid_resolver_sorted_inventory_does_not_preactivate_or_leak_names() {
     with_index(
         "enum E{V} fn main()->i32{if true{let sibling=1;}else{let sibling=2;}return 0;}",
         |index| {
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut Allocator::default());
-            assert_eq!(errors.len(), 1);
-            assert_eq!(
-                errors[0].message,
-                "paid resolver observations are not connected"
-            );
+            assert!(probe_enum_resolver_storage(
+                index,
+                &WorkMeter::default(),
+                &mut Allocator::default()
+            )
+            .unwrap()
+            .is_some());
         },
     );
 }
@@ -554,7 +554,7 @@ fn c3a_paid_resolver_target_child_and_loop_diagnostic_order_is_preserved() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, code);
             assert_eq!(
@@ -580,7 +580,7 @@ fn c3a_paid_resolver_callee_then_argument_error_order_and_reserve_boundary() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, "E0200");
             assert_eq!(index.sources().text(errors[0].primary.unwrap()).unwrap(), expected);
@@ -588,15 +588,17 @@ fn c3a_paid_resolver_callee_then_argument_error_order_and_reserve_boundary() {
         });
     }
     // Arity and ownership checks belong to later stages, so even this mismatch
-    // reaches only the inert final fence. It never becomes a typed witness.
+    // yields only fixed name-resolution statistics, never a typed witness.
     with_index(
         "enum E{V} fn zero()->i32{return 0;} fn main()->i32{return zero(1);}",
         |index| {
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut Allocator::default());
-            assert_eq!(
-                errors[0].message,
-                "paid resolver observations are not connected"
-            );
+            assert!(probe_enum_resolver_storage(
+                index,
+                &WorkMeter::default(),
+                &mut Allocator::default()
+            )
+            .unwrap()
+            .is_some());
         },
     );
 }
@@ -626,7 +628,7 @@ fn c3a_paid_resolver_literal_selection_duplicate_and_value_order() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, code);
             assert_eq!(
@@ -662,7 +664,7 @@ fn c3a_paid_resolver_constructor_match_and_qualified_calls_stay_closed() {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
-            let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
             assert_eq!(errors[0].code, "E0101");
             assert_eq!(errors[0].message, "enum source syntax is unavailable");
@@ -713,7 +715,7 @@ fn c3a_paid_resolver_imported_enum_and_constructor_privacy_precede_payload_stora
     assert_eq!(index.enum_count(), 1);
     let mut allocator = Allocator::default();
     allocator.observer_trace_bound(128).unwrap();
-    let errors = closed_attempt(&index, &WorkMeter::default(), &mut allocator);
+    let errors = attempt_error(&index, &WorkMeter::default(), &mut allocator);
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, "E0206");
     assert_eq!(
@@ -726,4 +728,165 @@ fn c3a_paid_resolver_imported_enum_and_constructor_privacy_precede_payload_stora
         .trace
         .iter()
         .any(|event| event.kind == "paid HIR field initializers"));
+}
+
+#[test]
+fn c3a_paid_resolver_zero_enum_is_exact_noop_with_preused_counters_and_logs() {
+    for text in [
+        "fn main()->i32{return 0;}",
+        "fn main()->(){match missing{E::V=>{return;}}}",
+    ] {
+        with_index(text, |index| {
+            assert_eq!(index.enum_count(), 0);
+            for starting_work in [0, 7] {
+                let work = WorkMeter::new(if starting_work == 0 { 0 } else { 100 });
+                work.enable_observation();
+                work.debit(starting_work, index.sources().eof(), "before probe")
+                    .unwrap();
+                work.phase("before probe");
+                let events = format!("{:?}", work.events.borrow());
+                let observations = format!("{:?}", work.observations.borrow());
+                let mut allocator = Allocator::default();
+                allocator.observer_trace_bound(8).unwrap();
+                let mut prior = Vec::<u8>::new();
+                allocator
+                    .vector_exact(&mut prior, 1, "before probe")
+                    .unwrap();
+                let trace = format!("{:?}", allocator.trace);
+                let (result, stats) = super::super::reviewer_source::integration_measured(|| {
+                    probe_enum_resolver_storage(index, &work, &mut allocator)
+                });
+                assert!(result.unwrap().is_none());
+                assert_eq!(stats, (0, 0, 0));
+                assert_eq!(work.used(), starting_work);
+                assert_eq!(format!("{:?}", work.events.borrow()), events);
+                assert_eq!(format!("{:?}", work.observations.borrow()), observations);
+                assert_eq!(allocator.attempts, 1);
+                assert_eq!(format!("{:?}", allocator.trace), trace);
+            }
+        });
+    }
+}
+
+#[test]
+fn c3a_paid_resolver_reports_checked_attempt_delta_without_resetting_allocator() {
+    with_index("enum Unused{V} fn main()->i32{return 0;}", |index| {
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(32).unwrap();
+        let mut prior = Vec::<u8>::new();
+        allocator
+            .vector_exact(&mut prior, 1, "before probe")
+            .unwrap();
+        let observation = probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator)
+            .unwrap()
+            .unwrap();
+        assert_eq!(observation.reservation_attempts, 13);
+        assert_eq!(allocator.attempts, 14);
+        assert_eq!(allocator.trace.len(), 14);
+        assert_eq!(allocator.trace[0].kind, "before probe");
+        assert!(!allocator.observer_trace_overflow);
+    });
+}
+
+#[test]
+fn c3a_paid_resolver_final_work_failures_drop_parts_constructed_inside_heap_window() {
+    with_index("enum Unused{V} fn main()->i32{return 0;}", |index| {
+        // Independently: preflight4 + i32 result query7 + local recount3 +
+        // name inventory1 =15; completed-HIR inventory13 + reconcile17 =45.
+        // Every chosen failure occurs after all 13 exact reserves succeeded.
+        for limit in [15, 20, 28, 44, 45, 46] {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(13).unwrap();
+            let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+                let work = WorkMeter::new(limit);
+                let result = probe_enum_resolver_storage(index, &work, &mut allocator);
+                assert_eq!(result.is_ok(), limit >= 45);
+                assert_eq!(work.used(), limit.min(45));
+                if limit < 45 {
+                    assert_eq!(result.as_ref().unwrap_err()[0].code, "E0400");
+                } else {
+                    assert_eq!(
+                        result.as_ref().unwrap().as_ref().unwrap().retained_bytes,
+                        480
+                    );
+                }
+                drop(result);
+            });
+            assert_eq!(
+                live, 0,
+                "probe retained parts after final work limit {limit}"
+            );
+            assert!(peak > 0);
+            assert_eq!(allocator.attempts, 13);
+            assert_eq!(allocator.trace.len(), 13);
+            assert!(allocator.trace.iter().all(|event| event.success));
+            assert!(!allocator.observer_trace_overflow);
+            println!("C3A_RESOLVER_FINAL_WORK limit={limit} resolver_reserves=13 live={live} peak={peak}");
+        }
+    });
+}
+
+#[test]
+fn c3a_paid_resolver_imported_unused_enum_selects_inert_project_observation() {
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    struct Files(std::path::PathBuf);
+    impl Drop for Files {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let files =
+        Files(std::env::temp_dir().join(format!("oxid-c3a-paid-imported-{}", std::process::id())));
+    std::fs::create_dir(&files.0).unwrap();
+    std::fs::write(
+        files.0.join("main.ox"),
+        "mod child;use crate::child::Unused as Alias;fn main()->i32{return 0;}",
+    )
+    .unwrap();
+    std::fs::write(files.0.join("child.ox"), "pub enum Unused{V}").unwrap();
+    let project = ProjectSources::load_enum_index_candidate(
+        files.0.join("main.ox").to_str().unwrap(),
+        ProjectLimits::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    let mut allocator = Allocator::default();
+    // Index and resolver requests share this separately prepaid observer log.
+    allocator.observer_trace_bound(256).unwrap();
+    let work = WorkMeter::default();
+    let index = index::collect_enum_candidate(
+        SourceOwner::project(&project),
+        IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap()
+    .finish(&work, &mut allocator)
+    .unwrap();
+    let before = allocator.attempts;
+    let (observation, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+        probe_enum_resolver_storage(&index, &WorkMeter::default(), &mut allocator)
+            .unwrap()
+            .unwrap()
+    });
+    assert_eq!(live, 0);
+    assert_eq!(index.enum_count(), 1);
+    assert_eq!(observation.reservation_attempts, 13);
+    assert_eq!(allocator.attempts - before, 13);
+    assert!(!allocator.observer_trace_overflow);
+    assert_eq!(
+        (
+            observation.retained_bytes,
+            observation.scratch_capacity_bytes
+        ),
+        (480, 304)
+    );
+    assert_eq!(
+        observation.capacities,
+        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 12]
+    );
+    assert_eq!(
+        resolve_project(&index, &WorkMeter::default()).unwrap_err()[0].code,
+        "E0101"
+    );
 }

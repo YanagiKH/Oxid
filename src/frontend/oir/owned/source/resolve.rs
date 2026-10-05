@@ -373,8 +373,67 @@ fn resolve_index(
         .map_err(|e| vec![*e])?;
     resolve_index_impl(index, work, allocator, None)
 }
-// The ordinary wrapper above retains its source gate. A paid caller is not yet
-// connected; the explicit final fence below prevents paid success.
+/// Test-only fixed statistics, never a source/typing/ownership witness. All
+/// private parts and construction-local storage end before the result returns.
+#[cfg(test)]
+pub(super) fn probe_enum_resolver_storage(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Option<storage::ResolverStorageObservation>, Vec<Diagnostic>> {
+    // The selector must precede every new query, phase, work debit or reserve.
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    let attempts_before = allocator.attempts;
+    // Existing allocation-free index query state remains a separate ledger.
+    // Retain only the Span, never a new SourceOwner/owner wrapper.
+    let at = index.sources().eof();
+    let plan = match super::hir_budget::preflight_enum_hir(index, work) {
+        Ok(Some(plan)) => plan,
+        Ok(None) => {
+            return Err(vec![*error(
+                "E0500",
+                format_args!("missing enum HIR preflight for resolver observation"),
+                at,
+            )])
+        }
+        Err(error) => return Err(vec![*error]),
+    };
+    let observation = {
+        let mut paid = PaidStorage::new(plan.counts);
+        let parts = resolve_index_impl(index, work, allocator, Some(&mut paid))?;
+        let inventory = match storage::inventory_parts(&parts, work, at) {
+            Ok(inventory) => inventory,
+            Err(error) => return Err(vec![*error]),
+        };
+        let attempts_after = allocator.attempts;
+        let delta_option = attempts_after.checked_sub(attempts_before);
+        let delta = match delta_option {
+            Some(delta) => delta,
+            None => {
+                return Err(vec![*error(
+                    "E0400",
+                    format_args!("resolver allocation attempt counter regressed"),
+                    at,
+                )])
+            }
+        };
+        match paid.reconcile(&plan, inventory, delta, work, at) {
+            Ok(observation) => {
+                drop(parts);
+                // The scalar-only quota account leaves this enclosing scope
+                // too. Only the pattern and outer observation slots are held.
+                observation
+            }
+            Err(error) => return Err(vec![*error]),
+        }
+    };
+    Ok(Some(observation))
+}
+
+// The ordinary wrapper retains its source gate and absent paid policy. Only the
+// cfg(test) observation entry above supplies a preflighted local paid account.
 fn resolve_index_impl(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
@@ -710,15 +769,6 @@ fn resolve_index_impl(
         }
     }
     if diagnostics.is_empty() {
-        // Closed body checkpoint: observation/reconciliation is not connected.
-        // This fence also dominates the zero-function path and drops all parts.
-        if paid.is_some() {
-            return Err(vec![*error(
-                "E0101",
-                format_args!("paid resolver observations are not connected"),
-                sources.eof(),
-            )]);
-        }
         Ok((records, signatures, functions))
     } else {
         Err(diagnostics)

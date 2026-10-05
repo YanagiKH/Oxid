@@ -1,7 +1,7 @@
-//! Construction-local storage helpers for the closed resolver-only probe.
+//! Construction-local storage for the test-only resolver statistics probe.
 //!
-//! Nothing here grants source admission. The ordinary resolver installs only
-//! `legacy`; the paid consumer is deliberately not connected in this checkpoint.
+//! Nothing here grants source admission. Ordinary resolution keeps its absent
+//! paid policy; private observations retain no resolved owner or typed witness.
 #![allow(dead_code)]
 
 use super::{
@@ -316,7 +316,7 @@ pub(super) fn inventory_parts(
 }
 impl PaidStorage {
     /// Reconcile facts read from real vectors, never manufacture them from the
-    /// plan or remaining quotas. This helper is disconnected from source entry.
+    /// plan or remaining quotas. This helper grants no source/consumer admission.
     pub(super) fn reconcile(
         &self,
         plan: &HirPlan,
@@ -706,7 +706,7 @@ struct InventoryCarriers {
 pub(super) const fn inventory_carrier_bytes() -> usize {
     size_of::<InventoryCarriers>()
 }
-// Inputs and checked counter state of the upcoming test-only observation
+// Inputs and checked counter state of the test-only observation
 // entry. Plan/parts/inventory/reconcile/final Result carriers are charged in
 // their existing complete envelopes; direct matching avoids new map_err slots.
 struct ProbeCarriers {

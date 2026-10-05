@@ -1,15 +1,15 @@
-//! Passive C3a affected-HIR sizing. This is not source admission authority.
+//! C3a affected-HIR sizing. This is not source admission authority.
 //!
-//! No resolver/typechecker consumes this plan yet. It accounts complete known
-//! carriers, cumulative scratch and Option-to-final coexistence. Match cursor
-//! frames and the future observed allocation paths MUST be measured and priced
+//! Only a cfg(test) resolver-storage observation consumes this plan. It accounts
+//! complete known carriers, cumulative scratch and Option-to-final coexistence.
+//! Typechecking, match cursor frames and later allocation paths must be priced
 //! before they become reachable; the current frame types are not placeholders
 //! for those later types. There is deliberately no retained enum table or ledger.
 //!
 //! AST/text, immutable index payload/query scratch, unchanged record-layout
 //! graph scratch, diagnostics, observation logs, raw/consumer plans and machine
 //! stack/allocator metadata are separate. This is not a global HIR or RSS cap.
-#![allow(dead_code)] // Count-only qualification precedes any source activation.
+#![allow(dead_code)] // Production source/consumer activation remains closed.
 
 use super::{hir::*, lower, resolve, resolver_storage, typeck};
 use crate::frontend::{
@@ -27,14 +27,14 @@ use std::mem::size_of;
 // projection capacities spend the remainder of this allowance, not a second cap.
 pub(super) const MAX_HIR_BYTES: usize = super::budget::MAX_RAW_BYTES;
 
-/// Future sorted borrowed-name row. An active binding's diagnostic origin is
+/// Sorted borrowed-name row. An active binding's diagnostic origin is
 /// already in Binding::span; retaining another active Span would be redundant.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ScopeName {
     pub(super) name: Span,
     pub(super) active: Option<BindingId>,
 }
-/// Measured helper shape; the resolver consumer remains disconnected.
+/// Measured scope shape for the private resolver-only observation.
 type ScopeStorage = resolver_storage::PaidScope;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
