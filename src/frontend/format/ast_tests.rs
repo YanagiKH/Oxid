@@ -1430,3 +1430,171 @@ fn enum_formatter_independent_fingerprint_detects_same_tape_mutations() {
         assert_ne!(expected, fingerprint(source, &changed), "mutation {index}");
     }
 }
+
+fn enum_fingerprint_qualified_borrow(program: &mut Program, index: usize) -> &mut BorrowPlace {
+    program
+        .expressions
+        .iter_mut()
+        .filter_map(|expression| match &mut expression.kind {
+            ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } => Some(args),
+            _ => None,
+        })
+        .flat_map(|args| args.iter_mut())
+        .filter_map(|argument| match argument {
+            Argument::Borrow { place, .. } => Some(place),
+            _ => None,
+        })
+        .nth(index)
+        .unwrap()
+}
+
+#[test]
+fn enum_formatter_independent_fingerprint_covers_qualified_values_and_match_origins() {
+    let text = "enum E{I(i32),Z}fn f(e:E,r:&R,s:&R)->(){crate::m::f(true,&*r);crate::m::g(&*r);crate::m::h(&*s);match e{E::I(v)=>{v;},E::Z=>{},}}";
+    let mut sources = SourceMap::new();
+    let id = sources.add("enum-origin-mutations.ox".into(), text.into());
+    let source = sources.get(id);
+    let mut original = parse_enum_fingerprint(source);
+    let expected = fingerprint(source, &original);
+    let tape: Vec<_> = original
+        .tokens
+        .iter()
+        .map(|token| (token.kind, token.span))
+        .collect();
+    let BorrowPlace::ForwardedParameter {
+        name: first_name,
+        star_span: first_star,
+    } = *enum_fingerprint_qualified_borrow(&mut original, 0)
+    else {
+        panic!("first forwarded borrow")
+    };
+    let BorrowPlace::ForwardedParameter {
+        name: second_name,
+        star_span: second_star,
+    } = *enum_fingerprint_qualified_borrow(&mut original, 1)
+    else {
+        panic!("second forwarded borrow")
+    };
+    assert_eq!(source.text_at(first_name), source.text_at(second_name));
+    assert_ne!(
+        first_name, second_name,
+        "identical names must retain distinct source origins"
+    );
+    assert_eq!(source.text_at(first_star), source.text_at(second_star));
+    assert_ne!(
+        first_star, second_star,
+        "identical stars must retain distinct source origins"
+    );
+
+    let mutations: &[(&str, fn(&mut Program))] = &[
+        ("match arm variant paths", |program| {
+            // Swap only path edges, keeping written arm/body/binding order and
+            // every arena occurrence reachable for the unchanged completeness oracle.
+            let arms = enum_fingerprint_arms(program);
+            let first = arms[0].variant;
+            arms[0].variant = arms[1].variant;
+            arms[1].variant = first;
+        }),
+        ("match statement origin", |program| {
+            let statement = program.functions[0].blocks[0]
+                .body
+                .iter_mut()
+                .find(|statement| matches!(statement.kind, StmtKind::Match { .. }))
+                .unwrap();
+            let StmtKind::Match { arms, .. } = &statement.kind else {
+                unreachable!()
+            };
+            statement.span = arms[0].span;
+        }),
+        ("qualified call argument value", |program| {
+            let expression = program
+                .expressions
+                .iter()
+                .find(|expression| {
+                    matches!(&expression.kind, ExprKind::QualifiedValue { args: Some(args), .. }
+                    if matches!(args.first(), Some(Argument::Value(_))))
+                })
+                .unwrap();
+            let ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } = &expression.kind
+            else {
+                unreachable!()
+            };
+            let Argument::Value(value) = args[0] else {
+                unreachable!()
+            };
+            let ExprKind::Bool(value) = &mut program.expressions[value.0].kind else {
+                panic!("boolean call argument")
+            };
+            *value = !*value;
+        }),
+        ("qualified borrow place", |program| {
+            let place = enum_fingerprint_qualified_borrow(program, 0);
+            let BorrowPlace::ForwardedParameter { name, .. } = *place else {
+                unreachable!()
+            };
+            *place = BorrowPlace::OwnerName(name);
+        }),
+        ("qualified borrow name", |program| {
+            let BorrowPlace::ForwardedParameter { name: other, .. } =
+                *enum_fingerprint_qualified_borrow(program, 2)
+            else {
+                unreachable!()
+            };
+            let BorrowPlace::ForwardedParameter { name, .. } =
+                enum_fingerprint_qualified_borrow(program, 0)
+            else {
+                unreachable!()
+            };
+            *name = other;
+        }),
+        ("qualified borrow identical-name origin", |program| {
+            let BorrowPlace::ForwardedParameter { name: other, .. } =
+                *enum_fingerprint_qualified_borrow(program, 1)
+            else {
+                unreachable!()
+            };
+            let BorrowPlace::ForwardedParameter { name, .. } =
+                enum_fingerprint_qualified_borrow(program, 0)
+            else {
+                unreachable!()
+            };
+            *name = other;
+        }),
+        ("forwarded-star origin", |program| {
+            let BorrowPlace::ForwardedParameter {
+                star_span: other, ..
+            } = *enum_fingerprint_qualified_borrow(program, 1)
+            else {
+                unreachable!()
+            };
+            let BorrowPlace::ForwardedParameter { star_span, .. } =
+                enum_fingerprint_qualified_borrow(program, 0)
+            else {
+                unreachable!()
+            };
+            *star_span = other;
+        }),
+    ];
+    for &(name, mutate) in mutations {
+        let mut changed = parse_enum_fingerprint(source);
+        mutate(&mut changed);
+        assert_eq!(
+            tape,
+            changed
+                .tokens
+                .iter()
+                .map(|token| (token.kind, token.span))
+                .collect::<Vec<_>>(),
+            "{name}"
+        );
+        assert_ne!(
+            expected,
+            fingerprint(source, &changed),
+            "missing mutation control: {name}"
+        );
+    }
+}
