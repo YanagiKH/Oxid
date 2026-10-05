@@ -94,12 +94,16 @@ never acquire a pass.
 
 The producer builds and copies one test executable per profile from original
 Cargo JSON. It first lists the broad owned-native prefix and admits exactly the
-original 16 names plus the three borrowed-slice native names. Unknown, missing or
+original 16 names plus the three borrowed-slice and five composition native names
+(exactly24). Unknown, missing or
 duplicate discovery names fail. It then lists and runs the original 16 names with
 Rust libtest's multiple full-name filters and `--exact`, once per operation. The
 selected roster, completion predicates and six array families remain unchanged.
 The three slice names execute in the workflow's separate debug/release
-`native_slices -- --ignored` gates. Discovery, selected-list and selected-run
+`native_slices -- --ignored` gates. The five composition names execute in separate
+debug/release `native_composition -- --include-ignored --test-threads=1` gates.
+The closed19 slice predecessor remains explicitly preserved in migration controls.
+Discovery, selected-list and selected-run
 commands and original streams are bound in hosted and downloaded admission.
 Every stdout completion is attributed by name and original byte/line span. Only the named source-resource test admits its
 exact three-line stdout payload. All six full family summaries must occur once

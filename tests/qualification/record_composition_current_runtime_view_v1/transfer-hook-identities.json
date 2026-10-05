@@ -1,0 +1,15 @@
+{
+  "derived": {
+    "bytes": 85328,
+    "sha256": "d81814d49827d7dc37e52d14b82a76e7f507cf9407954253b10bae2e2813335d"
+  },
+  "input_stage": "exact derived record_composition_current/runtime_overlay.py execute file before controls",
+  "original": {
+    "bytes": 82904,
+    "sha256": "d11c5328054fcb6f967420f1c69aae142d3129dc34629bed77c139715d891abc"
+  },
+  "path": "src/frontend/oir/owned/execute.rs",
+  "schema": "oxid-record-current-transfer-hook-v1",
+  "scope": "successful transfer_payload store_leaf site only; scalar fields in original order; empty sentinel and Invoke excluded; no postprocessed traces",
+  "substitutions": 1
+}

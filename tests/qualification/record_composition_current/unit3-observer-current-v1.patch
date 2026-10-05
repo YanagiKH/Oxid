@@ -1,0 +1,1084 @@
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -1,4 +1,23 @@
+ //! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
++
++// Passive Unit3 field-address hooks. Original checks remain the only return value.
++macro_rules! unit3_span {
++    ($visitor:expr, $value:expr, $stored:expr) => {{
++        let result = $visitor.span($value);
++        #[cfg(test)]
++        crate::frontend::unit3_observer::visit("span", $stored, Some($value), $visitor.unit3_validate(), result.is_ok());
++        result
++    }};
++}
++macro_rules! unit3_declaration {
++    ($visitor:expr, $stored:expr) => {{
++        let result = $visitor.declaration();
++        #[cfg(test)]
++        crate::frontend::unit3_observer::visit("declaration", $stored, None, $visitor.unit3_validate(), result.is_ok());
++        result
++    }};
++}
++
+ mod ast;
+ mod declaration_index;
+ mod diagnostic;
+@@ -18,3 +37,6 @@
+ pub use driver::dispatch;
+ #[cfg(test)]
+ mod owned_syntax_tests;
++
++#[cfg(test)]
++mod unit3_observer;
+--- a/src/frontend/oir/mod.rs
++++ b/src/frontend/oir/mod.rs
+@@ -392,3 +392,6 @@
+ 
+ #[cfg(test)]
+ mod loop_control_tests;
++
++#[cfg(test)]
++mod unit3_raw_scalar;
+--- a/src/frontend/oir/owned/mod.rs
++++ b/src/frontend/oir/owned/mod.rs
+@@ -422,3 +422,6 @@
+ mod composition_reference_tests;
+ #[cfg(test)]
+ mod composition_verifier_tests;
++
++#[cfg(test)]
++mod unit3_raw_owned;
+--- a/src/frontend/oir/source/association.rs
++++ b/src/frontend/oir/source/association.rs
+@@ -48,6 +48,8 @@
+     dimensions: usize,
+ }
+ impl<'s> Visitor<'s> {
++#[cfg(test)]
++pub fn unit3_validate(&self)->bool {self.sources.is_some()}
+     pub fn count() -> Self {
+         Self {
+             sources: None,
+@@ -86,27 +88,27 @@
+         Ok(())
+     }
+     pub fn merge(&mut self, merge: &BoolMerge) -> Result<(), Box<Diagnostic>> {
+-        self.span(merge.span)?;
+-        self.span(merge.operator_span)?;
++        unit3_span!(self, merge.span, &merge.span)?;
++        unit3_span!(self, merge.operator_span, &merge.operator_span)?;
+         for input in &merge.incoming {
+-            self.span(input.value.span)?;
++            unit3_span!(self, input.value.span, &input.value.span)?;
+         }
+         Ok(())
+     }
+     pub fn statement(&mut self, statement: &Statement) -> Result<(), Box<Diagnostic>> {
+         match statement {
+             Statement::Assign(Assign { span, value, .. }) => {
+-                self.span(*span)?;
++                unit3_span!(self, *span, span)?;
+                 match value {
+-                    Rvalue::Load(place) => self.span(place.span)?,
++                    Rvalue::Load(place) => unit3_span!(self, place.span, &place.span)?,
+                     Rvalue::NotBool {
+                         operand,
+                         operator_span,
+                     } => {
+-                        self.span(operand.span)?;
+-                        self.span(*operator_span)?;
+-                    }
+-                    Rvalue::Copy(operand) => self.span(operand.span)?,
++                        unit3_span!(self, operand.span, &operand.span)?;
++                        unit3_span!(self, *operator_span, operator_span)?;
++                    }
++                    Rvalue::Copy(operand) => unit3_span!(self, operand.span, &operand.span)?,
+                     Rvalue::CompareScalar {
+                         left,
+                         right,
+@@ -119,17 +121,17 @@
+                         operator_span,
+                         ..
+                     } => {
+-                        self.span(left.span)?;
+-                        self.span(right.span)?;
+-                        self.span(*operator_span)?;
++                        unit3_span!(self, left.span, &left.span)?;
++                        unit3_span!(self, right.span, &right.span)?;
++                        unit3_span!(self, *operator_span, operator_span)?;
+                     }
+                     Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => (),
+                 }
+             }
+             Statement::Initialize { place, value, span } => {
+-                self.span(*span)?;
+-                self.span(place.span)?;
+-                self.span(value.span)?;
++                unit3_span!(self, *span, span)?;
++                unit3_span!(self, place.span, &place.span)?;
++                unit3_span!(self, value.span, &value.span)?;
+             }
+             Statement::Store {
+                 place,
+@@ -137,10 +139,10 @@
+                 operator_span,
+                 span,
+             } => {
+-                self.span(*span)?;
+-                self.span(*operator_span)?;
+-                self.span(place.span)?;
+-                self.span(value.span)?;
++                unit3_span!(self, *span, span)?;
++                unit3_span!(self, *operator_span, operator_span)?;
++                unit3_span!(self, place.span, &place.span)?;
++                unit3_span!(self, value.span, &value.span)?;
+             }
+         }
+         Ok(())
+@@ -159,6 +161,8 @@
+         };
+         #[cfg(test)]
+         LAST_USAGE.set(Some(usage));
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("audit-usage", &usage);
+         Ok(usage)
+     }
+ }
+@@ -192,16 +196,16 @@
+     }
+ }
+ fn scalar_function(function: &Function, visitor: &mut Visitor<'_>) -> Result<(), Box<Diagnostic>> {
+-    visitor.declaration()?;
+-    visitor.span(function.span)?;
++    unit3_declaration!(visitor, function)?;
++    unit3_span!(visitor, function.span, &function.span)?;
+     for local in &function.locals {
+-        visitor.span(local.span)?;
++        unit3_span!(visitor, local.span, &local.span)?;
+     }
+     for place in &function.places {
+-        visitor.span(place.span)?;
++        unit3_span!(visitor, place.span, &place.span)?;
+     }
+     for block in &function.blocks {
+-        visitor.span(block.span)?;
++        unit3_span!(visitor, block.span, &block.span)?;
+         if let Some(merge) = &block.merge {
+             visitor.merge(merge)?;
+         }
+@@ -209,15 +213,15 @@
+             visitor.statement(statement)?;
+         }
+         if let Some(terminator) = &block.terminator {
+-            visitor.span(terminator.span)?;
++            unit3_span!(visitor, terminator.span, &terminator.span)?;
+             match &terminator.kind {
+-                TerminatorKind::Branch { condition, .. } => visitor.span(condition.span)?,
++                TerminatorKind::Branch { condition, .. } => unit3_span!(visitor, condition.span, &condition.span)?,
+                 TerminatorKind::Call { args, .. } => {
+                     for arg in args {
+-                        visitor.span(arg.span)?;
++                        unit3_span!(visitor, arg.span, &arg.span)?;
+                     }
+                 }
+-                TerminatorKind::Return(operand) => visitor.span(operand.span)?,
++                TerminatorKind::Return(operand) => unit3_span!(visitor, operand.span, &operand.span)?,
+                 TerminatorKind::Goto { .. } => (),
+             }
+         }
+@@ -229,6 +233,8 @@
+     sources: &SourceMap,
+     declarations: Declarations<'_, '_>,
+ ) -> Result<BindUsage, Box<Diagnostic>> {
++#[cfg(test)]
++super::super::unit3_raw_scalar::register(raw);
+     let mut count = Visitor::count();
+     for function in &raw.functions {
+         scalar_function(function, &mut count)?;
+--- a/src/frontend/oir/owned/source/association.rs
++++ b/src/frontend/oir/owned/source/association.rs
+@@ -6,91 +6,92 @@
+ };
+ 
+ fn record(record: &RawRecordDecl, visitor: &mut Visitor<'_>) -> Result<(), Box<Diagnostic>> {
+-    visitor.declaration()?;
+-    visitor.span(record.span)?;
++    unit3_declaration!(visitor, record)?;
++    unit3_span!(visitor, record.span, &record.span)?;
+     for field in &record.fields {
+-        visitor.declaration()?;
+-        visitor.span(field.span)?;
++        unit3_declaration!(visitor, field)?;
++        unit3_span!(visitor, field.span, &field.span)?;
+     }
+     Ok(())
+ }
+ fn origins(
+     origins: Option<DiagnosticOrigins>,
+     visitor: &mut Visitor<'_>,
++    #[cfg(test)] stored: &Option<DiagnosticOrigins>,
+ ) -> Result<(), Box<Diagnostic>> {
+     if let Some(origins) = origins {
+-        visitor.span(origins.primary)?;
+-        visitor.span(origins.cause)?;
++        unit3_span!(visitor, origins.primary, &stored.as_ref().expect("same actual origin option").primary)?;
++        unit3_span!(visitor, origins.cause, &stored.as_ref().expect("same actual origin option").cause)?;
+     }
+     Ok(())
+ }
+ fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<(), Box<Diagnostic>> {
+-    visitor.declaration()?;
+-    visitor.span(function.span)?;
++    unit3_declaration!(visitor, function)?;
++    unit3_span!(visitor, function.span, &function.span)?;
+     for local in &function.locals {
+-        visitor.span(local.span)?;
++        unit3_span!(visitor, local.span, &local.span)?;
+     }
+     for place in &function.places {
+-        visitor.span(place.span)?;
++        unit3_span!(visitor, place.span, &place.span)?;
+     }
+     for owner in &function.owners {
+-        visitor.span(owner.span)?;
++        unit3_span!(visitor, owner.span, &owner.span)?;
+     }
+     for reference in &function.references {
+-        visitor.span(reference.span)?;
++        unit3_span!(visitor, reference.span, &reference.span)?;
+     }
+     for call in &function.calls {
+-        visitor.span(call.span)?;
++        unit3_span!(visitor, call.span, &call.span)?;
+     }
+     for loan in &function.loans {
+-        visitor.span(loan.span)?;
++        unit3_span!(visitor, loan.span, &loan.span)?;
+     }
+     for block in &function.blocks {
+-        visitor.span(block.span)?;
++        unit3_span!(visitor, block.span, &block.span)?;
+         if let Some(merge) = &block.merge {
+             visitor.merge(merge)?;
+         }
+         for statement in &block.statements {
+-            visitor.span(statement.span)?;
+-            origins(statement.diagnostic_origins, visitor)?;
++            unit3_span!(visitor, statement.span, &statement.span)?;
++            origins(statement.diagnostic_origins, visitor, #[cfg(test)] &statement.diagnostic_origins)?;
+             match &statement.kind {
+                 OwnedInstruction::Scalar(statement) => visitor.statement(statement)?,
+                 OwnedInstruction::Construct { fields, .. } => {
+                     for (_, operand) in fields {
+-                        visitor.span(operand.span)?;
++                        unit3_span!(visitor, operand.span, &operand.span)?;
+                     }
+                 }
+                 OwnedInstruction::ConstructComposite { fields, .. } => {
+                     for (_, value) in fields {
+                         if let FieldInitializer::Scalar(operand) = value {
+-                            visitor.span(operand.span)?;
++                            unit3_span!(visitor, operand.span, &operand.span)?;
+                         }
+                     }
+                 }
+                 OwnedInstruction::ReadProjection { index, .. } => {
+                     if let Some(index) = index {
+-                        visitor.span(index.span)?;
++                        unit3_span!(visitor, index.span, &index.span)?;
+                     }
+                 }
+                 OwnedInstruction::WriteProjection { index, value, .. } => {
+                     if let Some(index) = index {
+-                        visitor.span(index.span)?;
+-                    }
+-                    visitor.span(value.span)?;
++                        unit3_span!(visitor, index.span, &index.span)?;
++                    }
++                    unit3_span!(visitor, value.span, &value.span)?;
+                 }
+                 OwnedInstruction::ProjectionLength { .. } => (),
+                 OwnedInstruction::ConstructArray { elements, .. } => {
+                     for operand in elements {
+-                        visitor.span(operand.span)?;
+-                    }
+-                }
+-                OwnedInstruction::ReadIndex { index, .. } => visitor.span(index.span)?,
++                        unit3_span!(visitor, operand.span, &operand.span)?;
++                    }
++                }
++                OwnedInstruction::ReadIndex { index, .. } => unit3_span!(visitor, index.span, &index.span)?,
+                 OwnedInstruction::WriteIndex { value, index, .. } => {
+-                    visitor.span(value.span)?;
+-                    visitor.span(index.span)?;
++                    unit3_span!(visitor, value.span, &value.span)?;
++                    unit3_span!(visitor, index.span, &index.span)?;
+                 }
+                 OwnedInstruction::WriteField { value, .. }
+-                | OwnedInstruction::PrepareScalar { value, .. } => visitor.span(value.span)?,
++                | OwnedInstruction::PrepareScalar { value, .. } => unit3_span!(visitor, value.span, &value.span)?,
+                 OwnedInstruction::StorageLive(_)
+                 | OwnedInstruction::StorageEnd(_)
+                 | OwnedInstruction::MoveInitialize { .. }
+@@ -104,11 +105,11 @@
+             }
+         }
+         if let Some(terminator) = &block.terminator {
+-            visitor.span(terminator.span)?;
+-            origins(terminator.diagnostic_origins, visitor)?;
++            unit3_span!(visitor, terminator.span, &terminator.span)?;
++            origins(terminator.diagnostic_origins, visitor, #[cfg(test)] &terminator.diagnostic_origins)?;
+             match &terminator.kind {
+-                OwnedTerminatorKind::Branch { condition, .. } => visitor.span(condition.span)?,
+-                OwnedTerminatorKind::ReturnScalar(operand) => visitor.span(operand.span)?,
++                OwnedTerminatorKind::Branch { condition, .. } => unit3_span!(visitor, condition.span, &condition.span)?,
++                OwnedTerminatorKind::ReturnScalar(operand) => unit3_span!(visitor, operand.span, &operand.span)?,
+                 OwnedTerminatorKind::Goto(_)
+                 | OwnedTerminatorKind::Invoke { .. }
+                 | OwnedTerminatorKind::ReturnOwned(_) => (),
+@@ -122,6 +123,8 @@
+     index: &DeclarationIndex<'_>,
+     sources: &SourceMap,
+ ) -> Result<BindUsage, Box<Diagnostic>> {
++#[cfg(test)]
++super::super::unit3_raw_owned::register(raw);
+     let mut count = Visitor::count();
+     for declaration in &raw.records {
+         record(declaration, &mut count)?;
+--- a/src/frontend/oir/source/sealed.rs
++++ b/src/frontend/oir/source/sealed.rs
+@@ -124,6 +124,8 @@
+             None
+         };
+     let frozen = facts.finish(work, allocator)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::capture("index", &frozen);
+     let entry = frozen.root_original_main();
+     let summary =
+         || CheckedProjectTypes::new(route, frozen.function_count(), frozen.record_count(), entry);
+--- a/src/frontend/oir/execute.rs
++++ b/src/frontend/oir/execute.rs
+@@ -92,7 +92,11 @@
+     if !initialize && slot.is_none() {
+         return Err(internal(FailureKind::Uninitialized, Some(place.span)));
+     }
++#[cfg(test)]
++let unit3_before = *slot;
+     *slot = Some(value);
++#[cfg(test)]
++crate::frontend::unit3_observer::event("scalar_place_write",&(frame.function,place.id,unit3_before,*slot,place.span,initialize));
+     Ok(())
+ }
+ fn write(
+@@ -159,6 +163,8 @@
+     Ok(frame)
+ }
+ fn charge(fuel: &mut usize, cost: usize, origin: Span) -> Result<(), RunFailure> {
++#[cfg(test)]
++crate::frontend::unit3_observer::charge(cost,*fuel,origin);
+     *fuel = fuel.checked_sub(cost).ok_or(RunFailure::Fuel(origin))?;
+     Ok(())
+ }
+@@ -217,7 +223,7 @@
+         args,
+         limits,
+         #[cfg(test)]
+-        &mut |_| {},
++        &mut |event| crate::frontend::unit3_observer::event("existing_scalar_event", &event),
+     )
+ }
+ // The observation seam and event types are compiled only into unit tests. They
+@@ -239,6 +245,9 @@
+     #[cfg(test)] observe: &mut dyn FnMut(Event),
+ ) -> Result<Scalar, RunFailure> {
+     let limits = Limits {
++        #[cfg(test)]
++        fuel: crate::frontend::unit3_observer::fuel(limits.fuel).min(MAX_FUEL),
++        #[cfg(not(test))]
+         fuel: limits.fuel.min(MAX_FUEL),
+         frames: limits.frames.min(MAX_FRAMES),
+         slots: limits.slots.min(MAX_LIVE_SLOTS),
+@@ -246,6 +255,8 @@
+     let entry = function(program, entry, None)?;
+     arguments(entry, args, entry.span)?;
+     let mut fuel = limits.fuel;
++#[cfg(test)]
++crate::frontend::unit3_observer::context("scalar", entry.id.0,None,None,"entry",&entry.id);
+     let mut live_slots = preflight(
+         &mut fuel,
+         add(1, entry.slot_count(), entry.span)?,
+@@ -260,6 +271,8 @@
+     frames.push(frame(entry, args, None)?);
+     #[cfg(test)]
+     observe(Event::Enter(entry.id));
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+     loop {
+         let active = frames
+             .last_mut()
+@@ -271,6 +284,8 @@
+             .ok_or_else(|| internal(FailureKind::InvalidBlock, Some(current.span)))?;
+         if active.merge_pending {
+             if let Some(merge) = &block.merge {
++#[cfg(test)]
++crate::frontend::unit3_observer::context("scalar",current.id.0,None,Some(active.block.0),"merge",merge);
+                 charge(&mut fuel, 1, merge.span)?;
+                 let incoming = merge
+                     .incoming
+@@ -285,10 +300,14 @@
+                     ));
+                 }
+                 write(active, current, merge.destination, value, merge.span)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+             }
+             active.merge_pending = false;
+         }
+         if let Some(statement) = block.statements.get(active.next) {
++#[cfg(test)]
++crate::frontend::unit3_observer::context("scalar",current.id.0,None,Some(active.block.0),format!("statement[{}]",active.next),statement);
+             charge(&mut fuel, 1, statement.span())?;
+             let assign = match statement {
+                 Statement::Assign(assign) => assign,
+@@ -303,6 +322,8 @@
+                     } else {
+                         Event::Store(current.id, place.id, value)
+                     });
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+                     active.next = add(active.next, 1, statement.span())?;
+                     continue;
+                 }
+@@ -373,6 +394,8 @@
+                 }
+             };
+             write(active, current, assign.destination, value, assign.span)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+             active.next = add(active.next, 1, assign.span)?;
+             continue;
+         }
+@@ -383,6 +406,8 @@
+             .terminator
+             .as_ref()
+             .ok_or_else(|| internal(FailureKind::MissingTerminator, Some(block.span)))?;
++#[cfg(test)]
++crate::frontend::unit3_observer::context("scalar",current.id.0,None,Some(active.block.0),"terminator",end);
+         match &end.kind {
+             TerminatorKind::Call {
+                 target,
+@@ -423,6 +448,8 @@
+                 #[cfg(test)]
+                 observe(Event::Enter(callee.id));
+                 live_slots = next_slots;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+             }
+             TerminatorKind::Branch {
+                 condition,
+@@ -439,6 +466,8 @@
+                 active.merge_pending = true;
+                 active.block = if value { *then_block } else { *else_block };
+                 active.next = 0;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+             }
+             TerminatorKind::Goto { target } => {
+                 charge(&mut fuel, 1, end.span)?;
+@@ -446,6 +475,8 @@
+                 active.merge_pending = true;
+                 active.block = *target;
+                 active.next = 0;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+             }
+             TerminatorKind::Return(operand) => {
+                 charge(&mut fuel, 1, end.span)?;
+@@ -473,8 +504,14 @@
+                         caller.merge_pending = true;
+                         caller.block = resume.continuation;
+                         caller.next = 0;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+                     }
+-                    (None, None) if live_slots == 0 => return Ok(value),
++                    (None, None) if live_slots == 0 => {
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
++return Ok(value);
++},
+                     _ => return Err(internal(FailureKind::CallFrame, Some(end.span))),
+                 }
+             }
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -206,6 +206,8 @@
+         &self.plan.witness().functions()[id.0]
+     }
+     fn charge(&mut self, cost: usize, span: Span) -> Result<()> {
++#[cfg(test)]
++crate::frontend::unit3_observer::charge(cost,self.fuel,span);
+         self.fuel = self.fuel.checked_sub(cost).ok_or(RunFailure::Fuel(span))?;
+         #[cfg(test)]
+         self.record_event(Event::Charge(span, cost));
+@@ -453,12 +455,26 @@
+         if ty != value.ty() {
+             return Err(bad("field value type", span));
+         }
++        #[cfg(test)]
++        let unit3_width = match value {
++            Scalar::I32(_) => 4,
++            Scalar::Bool(_) | Scalar::Unit => 1,
++        };
++        #[cfg(test)]
++        let unit3_before = self.frames[key.frame as usize].payload
++            .get(offset..offset + unit3_width).map(|bytes| bytes.to_vec());
+         encode(
+             &mut self.frames[key.frame as usize].payload,
+             offset,
+             value,
+             span,
+-        )
++        )?;
++        #[cfg(test)]
++        crate::frontend::unit3_observer::event("payload_write", &(
++            key, field, value, span, unit3_before,
++            self.frames[key.frame as usize].payload.get(offset..offset + unit3_width),
++        ));
++        Ok(())
+     }
+     fn aggregate(&self, key: OwnerKey, span: Span) -> Result<AggregateTy> {
+         let frame = self
+@@ -785,6 +801,8 @@
+             .ok_or_else(|| bad("owner transition", span))?;
+         o.generation = epoch(o.generation, span)?;
+         o.state = state;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("owner_transition",&(frame,self.frames[frame].function,self.raw_key(frame,owner),state,span));
+         Ok(())
+     }
+     fn expect_owner(
+@@ -960,7 +978,11 @@
+                 {
+                     return Err(bad("uninitialized scalar place", *span));
+                 }
++#[cfg(test)]
++let unit3_before=self.frames[frame].slots[index];
+                 self.frames[frame].slots[index] = Some(value);
++#[cfg(test)]
++crate::frontend::unit3_observer::event("owned_scalar_place_write",&(frame,self.frames[frame].activation,f.id,place.id,unit3_before,self.frames[frame].slots[index],*span,matches!(statement,Statement::Initialize{..})));
+                 return Ok(());
+             }
+         };
+@@ -1727,6 +1749,8 @@
+                 .ok_or_else(|| bad("dynamic block identity", f.span))?;
+             if self.frames[frame].merge_pending {
+                 if let Some(merge) = &b.merge {
++#[cfg(test)]
++crate::frontend::unit3_observer::context("owned",f.id.0,Some(self.frames[frame].activation),Some(self.frames[frame].block.0),"merge",merge);
+                     self.charge(1, merge.span)?;
+                     let input = merge
+                         .incoming
+@@ -1735,15 +1759,21 @@
+                         .ok_or_else(|| bad("merge predecessor", merge.span))?;
+                     let value = self.read(frame, input.value)?;
+                     self.write(frame, merge.destination, value, merge.span)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+                 }
+                 self.frames[frame].merge_pending = false;
+             }
+             if let Some(statement) = b.statements.get(self.frames[frame].next) {
++#[cfg(test)]
++crate::frontend::unit3_observer::context("owned",f.id.0,Some(self.frames[frame].activation),Some(self.frames[frame].block.0),format!("statement[{}]",self.frames[frame].next),statement);
+                 let span = plan::instruction_span(statement);
+                 self.charge(self.plan.statement_cost(f.id, &statement.kind), span)?;
+                 #[cfg(test)]
+                 self.inject_statement(frame, &statement.kind, span);
+                 self.statement(frame, &statement.kind, span)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+                 self.frames[frame].next += 1;
+                 continue;
+             }
+@@ -1754,12 +1784,16 @@
+                 .terminator
+                 .as_ref()
+                 .ok_or_else(|| bad("missing terminator", b.span))?;
++#[cfg(test)]
++crate::frontend::unit3_observer::context("owned",f.id.0,Some(self.frames[frame].activation),Some(self.frames[frame].block.0),"terminator",end);
+             let cost = self.plan.terminator_cost(f.id, &end.kind);
+             if let OwnedTerminatorKind::Invoke { call, continuation } = end.kind {
+                 self.activation_preflight(f.calls[call.0].target, cost, end.span)?;
+                 #[cfg(test)]
+                 self.inject_invoke(frame, call, end.span);
+                 self.dispatch(frame, call, continuation, end.span)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+                 continue;
+             }
+             self.charge(cost, end.span)?;
+@@ -1773,10 +1807,18 @@
+                         return Err(bad("branch bool", condition.span));
+                     };
+                     self.branch(frame, if value { then_block } else { else_block });
+-                }
+-                OwnedTerminatorKind::Goto(target) => self.branch(frame, target),
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
++                }
++                OwnedTerminatorKind::Goto(target) => {self.branch(frame, target);
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
++},
+                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_) => {
+-                    if let Some(value) = self.return_value(frame, &end.kind, end.span)? {
++                    let unit3_return = self.return_value(frame, &end.kind, end.span)?;
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
++                    if let Some(value) = unit3_return {
+                         return Ok(value);
+                     }
+                 }
+@@ -1927,6 +1969,8 @@
+     #[cfg(test)] remaining_fuel: Option<&mut usize>,
+ ) -> Result<Scalar> {
+     let limits = limits.bounded();
++#[cfg(test)]
++let limits = Limits { fuel: crate::frontend::unit3_observer::fuel(limits.fuel), ..limits };
+     let f = &plan.witness().functions()[entry.0];
+     let mut machine = Machine {
+         plan,
+@@ -1947,6 +1991,8 @@
+             .unwrap_or_default(),
+     };
+     let result = (|| {
++#[cfg(test)]
++crate::frontend::unit3_observer::context("owned",entry.0,Some(machine.next_activation),None,"entry",&entry);
+         machine.activation_preflight(
+             entry,
+             plan::add(1, plan.function(entry).usage().expanded_cells)?,
+@@ -1957,6 +2003,8 @@
+         let root = Frame::allocate(plan, entry, machine.next_activation, None)
+             .map_err(|error| error.at_runtime(f.span))?;
+         machine.install(root);
++#[cfg(test)]
++crate::frontend::unit3_observer::event("operation_commit",&());
+         machine.execute()
+     })();
+     #[cfg(test)]
+--- a/src/frontend/oir/native.rs
++++ b/src/frontend/oir/native.rs
+@@ -38,7 +38,10 @@
+         entry: Option<hir::DefId>,
+         sources: &SourceMap,
+     ) -> Result<String, Box<Diagnostic>> {
+-        self.native_module_fuel(entry, sources, execute::MAX_FUEL)
++        let fuel = execute::MAX_FUEL;
++#[cfg(test)]
++let fuel = crate::frontend::unit3_observer::fuel(fuel);
++        self.native_module_fuel(entry, sources, fuel)
+     }
+ 
+     #[cfg(test)]
+--- a/src/frontend/oir/owned/native.rs
++++ b/src/frontend/oir/owned/native.rs
+@@ -262,7 +262,10 @@
+     entry: Option<hir::DefId>,
+     sources: &SourceMap,
+ ) -> Result<String, Box<Diagnostic>> {
+-    native_module_limits(witness, entry, sources, plan::MAX_FUEL, Limits::DEFAULT)
++    let fuel = plan::MAX_FUEL;
++#[cfg(test)]
++let fuel = crate::frontend::unit3_observer::fuel(fuel);
++    native_module_limits(witness, entry, sources, fuel, Limits::DEFAULT)
+ }
+ #[cfg(test)]
+ pub(super) fn native_module_with_fuel(
+--- /dev/null
++++ b/src/frontend/unit3_observer.rs
+@@ -0,0 +1,196 @@
++//! Independent test-only passive journal. No expected-data input exists.
++use super::{declaration_index, oir, project};
++use super::source::Span;
++use std::{cell::RefCell, collections::BTreeMap, fmt::{Debug, Write}, path::PathBuf};
++const MAX_ROWS: usize = 250_000;
++const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
++const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
++const MAX_OUTPUT_BYTES: usize = 256 * 1024 * 1024;
++struct Capped { text:String, limit:usize }
++impl Write for Capped {
++    fn write_str(&mut self,s:&str)->std::fmt::Result {
++        if self.text.len().checked_add(s.len()).is_none_or(|n|n>self.limit){return Err(std::fmt::Error);}
++        self.text.push_str(s);Ok(())
++    }
++}
++fn debug(value:&impl Debug,pretty:bool)->String {
++    let mut out=Capped{text:String::new(),limit:MAX_ARTIFACT_BYTES};
++    let result=if pretty {write!(&mut out,"{value:#?}")}else{write!(&mut out,"{value:?}")};
++    assert!(result.is_ok(),"OBSERVATION_LIMIT: debug artifact bytes");out.text
++}
++
++#[derive(Debug)]
++pub(super) struct Visit {
++    pass: &'static str,
++    kind: &'static str,
++    path: Option<String>,
++    span: Option<Span>,
++    succeeded: bool,
++}
++#[derive(Debug, Clone)]
++pub(super) struct Context {
++    route: &'static str,
++    function: usize,
++    activation: Option<u64>,
++    block: Option<usize>,
++    position: String,
++    operation: String,
++}
++#[derive(Debug)]
++pub(super) struct Row { kind: &'static str, context: Option<Context>, payload: String }
++#[derive(Default)]
++struct Journal {
++    enabled: bool,
++    output: PathBuf,
++    addresses: BTreeMap<(&'static str, usize), String>,
++    visits: Vec<Visit>,
++    rows: Vec<Row>,
++    context: Option<Context>,
++    fuel: Option<usize>,
++    journal_bytes: usize,
++    output_bytes: usize,
++}
++thread_local! { static JOURNAL: RefCell<Journal> = RefCell::new(Journal::default()); }
++pub(super) fn capture(name: &str, value: &impl Debug) {
++    if JOURNAL.with_borrow(|j|j.enabled) { output(&format!("{name}.debug"),&debug(value,true)); }
++}
++fn output(name:&str,text:&str) {
++    JOURNAL.with_borrow_mut(|j| {
++        assert!(text.len()<=MAX_ARTIFACT_BYTES,"OBSERVATION_LIMIT: artifact bytes");
++        j.output_bytes=j.output_bytes.checked_add(text.len()).expect("OBSERVATION_LIMIT: output arithmetic");
++        assert!(j.output_bytes<=MAX_OUTPUT_BYTES,"OBSERVATION_LIMIT: aggregate output bytes");
++        std::fs::write(j.output.join(name),text).unwrap();
++    });
++}
++fn reserve(j:&mut Journal,bytes:usize,rows:usize) {
++    assert!(rows<MAX_ROWS,"OBSERVATION_LIMIT: journal rows");
++    j.journal_bytes=j.journal_bytes.checked_add(bytes).expect("OBSERVATION_LIMIT: journal arithmetic");
++    assert!(j.journal_bytes<=MAX_JOURNAL_BYTES,"OBSERVATION_LIMIT: journal bytes");
++}
++pub(super) fn register<T>(kind: &'static str, value: &T, path: String) {
++    JOURNAL.with_borrow_mut(|j| if j.enabled {
++        let key=(kind,std::ptr::from_ref(value) as usize);
++        reserve(j,path.len()+64,j.addresses.len());
++        assert!(j.addresses.insert(key,path).is_none(),"duplicate observer address");
++    });
++}
++pub(super) fn enabled() -> bool {
++    JOURNAL.with_borrow(|journal| journal.enabled)
++}
++pub(super) fn registry_begin() {
++    JOURNAL.with_borrow_mut(|j| { j.addresses.clear(); });
++}
++pub(super) fn visit<T>(kind: &'static str, value: &T, span: Option<Span>, validate: bool, succeeded: bool) {
++    JOURNAL.with_borrow_mut(|j| if j.enabled {
++        let path=j.addresses.get(&(kind,std::ptr::from_ref(value) as usize)).cloned();
++        reserve(j,path.as_ref().map_or(0,String::len)+128,j.visits.len());
++        j.visits.push(Visit{pass:if validate {"validate"} else {"count"},kind,path,span,succeeded});
++    });
++}
++pub(super) fn context(route: &'static str,function:usize,activation:Option<u64>,block:Option<usize>,position:impl Into<String>, operation:&impl Debug) {
++    JOURNAL.with_borrow_mut(|j| if j.enabled {
++        let position=position.into();let operation=debug(operation,false);
++        reserve(j,position.len()+operation.len()+128,j.rows.len());
++        j.context=Some(Context{route,function,activation,block,position,operation});
++        j.rows.push(Row{kind:"operation_start",context:j.context.clone(),payload:"()".into()});
++    });
++}
++pub(super) fn event(kind: &'static str, value: &impl Debug) {
++    JOURNAL.with_borrow_mut(|j| if j.enabled {
++        let payload=debug(value,false);
++        let context_bytes=j.context.as_ref().map_or(0,|c|c.operation.len()+c.position.len()+128);
++        reserve(j,payload.len()+context_bytes+128,j.rows.len());
++        j.rows.push(Row{kind,context:j.context.clone(),payload});
++    });
++}
++pub(super) fn fuel(default:usize)->usize { JOURNAL.with_borrow(|j| if j.enabled {j.fuel.unwrap_or(default).min(default)}else{default}) }
++pub(super) fn charge(cost:usize,available:usize,origin:Span) {
++    event("charge_attempt",&(cost,available,origin,available.checked_sub(cost).is_some()));
++}
++fn begin_run(fuel:Option<usize>) {
++    JOURNAL.with_borrow_mut(|j| {j.rows.clear();j.context=None;j.fuel=fuel;j.journal_bytes=0;j.addresses.clear();j.visits.clear();});
++}
++fn write_trace(name:&str) {
++    let text=JOURNAL.with_borrow(|j|debug(&j.rows,true));output(&format!("{name}.trace.debug"),&text);
++}
++fn marker(name:&str,nonce:&str,request:&str,stage:&str) {
++    output(name,&format!("{{\"nonce\":\"{nonce}\",\"source_request_sha256\":\"{request}\",\"stage\":\"{stage}\"}}"));
++}
++#[test]
++#[ignore = "source-only observer request via explicit environment"]
++fn observe_request() {
++    let entry=std::env::var("OXID_UNIT3_ENTRY").expect("source entry");
++    let output_dir=PathBuf::from(std::env::var("OXID_UNIT3_OUTPUT").expect("output directory"));
++    assert!(output_dir.is_dir());
++    JOURNAL.with_borrow_mut(|j| *j=Journal{enabled:true,output:output_dir.clone(),..Journal::default()});
++    let nonce=std::env::var("OXID_UNIT3_NONCE").expect("request nonce");
++    let request=std::env::var("OXID_UNIT3_REQUEST_SHA256").expect("source request identity");
++    assert!([&nonce,&request].iter().all(|s|s.len()==64 && s.bytes().all(|b|b.is_ascii_hexdigit())),"request identity encoding");
++    marker("started.json",&nonce,&request,"started");
++    let mode=std::env::var("OXID_UNIT3_MODE").expect("source mode");
++    let operations=std::env::var("OXID_UNIT3_OPERATIONS").expect("operation subset");
++    let operations:Vec<_>=operations.split(',').collect();
++    assert!(!operations.is_empty() && operations.iter().all(|v|matches!(*v,"check"|"run"|"native")),"unknown operation");
++    let loaded=match mode.as_str() {
++        "private-project-candidate" => project::ProjectSources::load_project_candidate(&entry,project::ProjectLimits::default()),
++        "original-single-file" => project::ProjectSources::load_original(&entry,project::ProjectLimits::default()),
++        _=>panic!("unknown source mode"),
++    };
++    let loaded=match loaded {
++        Ok(loaded)=>loaded,
++        Err(failure)=>{
++            capture("load-failure",&failure);
++            output("diagnostics.jsonl",&failure.diagnostics.iter().map(|d|d.render_json(&failure.sources)).collect::<Vec<_>>().join("\n"));
++            marker("completion.json",&nonce,&request,"load-denied");
++            return;
++        }
++    };
++    capture("loaded",&loaded);
++    let checked={
++        let work=declaration_index::WorkMeter::default();
++        let mut allocator=project::budget::Allocator::default();
++        let result=oir::project::check_project_executable_candidate(&loaded,declaration_index::IndexLimits::default(),&work,&mut allocator);
++        capture("namespace-work",&work);
++        result
++    };
++    let visits=JOURNAL.with_borrow(|j|debug(&j.visits,true));output("audit-visits.debug",&visits);
++    let checked=match checked {
++        Ok(checked)=>checked,
++        Err(errors)=>{
++            capture("check-failure",&errors);
++            output("diagnostics.jsonl",&errors.iter().map(|d|d.render_json(loaded.sources())).collect::<Vec<_>>().join("\n"));
++            marker("completion.json",&nonce,&request,"check-denied");
++            return;
++        }
++    };
++    capture("checked",&checked);
++    let budgets=std::env::var("OXID_UNIT3_FUEL").unwrap_or_default();
++    let mut runs=vec![None];
++    runs.extend(budgets.split(',').filter(|v|!v.is_empty()).map(|v|Some(v.parse::<usize>().expect("fuel integer"))));
++    for fuel in runs.iter().copied().filter(|_|operations.contains(&"run")) {
++        begin_run(fuel);
++        let name=fuel.map_or_else(||"reference-default".to_string(),|n|format!("reference-fuel-{n}"));
++        // Always enter the original wrapper and preserve entry-before-plan order.
++        let result=checked.run();
++        capture(&name,&result);
++        let outcome=match result {
++            Ok(value)=>format!("{{\"result\":{}}}",value.json()),
++            Err(diagnostic)=>diagnostic.render_json(loaded.sources()),
++        };
++        output(&format!("{name}.json"),&outcome);
++        write_trace(&name);
++    }
++    if operations.contains(&"native") {
++      for fuel in runs {
++        begin_run(fuel);
++        let name=fuel.map_or_else(||"native-default".to_string(),|n|format!("native-fuel-{n}"));
++        match checked.native_module() {
++            Ok(module)=>output(&format!("{name}.ll"),&module),
++            Err(diagnostic)=>output(&format!("{name}.diagnostic.json"),&diagnostic.render_json(loaded.sources())),
++        }
++      }
++    }
++    capture("checked-after-consumers",&checked);
++    marker("completion.json",&nonce,&request,"checked");
++    JOURNAL.with_borrow_mut(|j| {j.enabled=false;j.fuel=None;});
++}
+--- /dev/null
++++ b/src/frontend/oir/unit3_raw_scalar.rs
+@@ -0,0 +1,56 @@
++//! Independent raw-field address registry, deliberately separate from audit walk.
++use super::*;
++use crate::frontend::unit3_observer as journal;
++pub(super) fn span(value:&Span,path:String) {journal::register("span",value,path);}
++pub(super) fn declaration<T>(value:&T,path:String) {journal::register("declaration",value,path);}
++pub(super) fn merge(value:&BoolMerge,p:&str) {
++    span(&value.span,format!("{p}.span"));span(&value.operator_span,format!("{p}.operator_span"));
++    for (i,v) in value.incoming.iter().enumerate(){span(&v.value.span,format!("{p}.incoming[{i}].value.span"));}
++}
++pub(super) fn statement(value:&Statement,p:&str) {
++    match value {
++        Statement::Assign(v)=>{
++            span(&v.span,format!("{p}.span"));let p=format!("{p}.value");
++            match &v.value {
++                Rvalue::Load(v)=>span(&v.span,format!("{p}.place.span")),
++                Rvalue::Copy(v)=>span(&v.span,format!("{p}.operand.span")),
++                Rvalue::NotBool{operand,operator_span}=>{
++                    span(&operand.span,format!("{p}.operand.span"));span(operator_span,format!("{p}.operator_span"));
++                }
++                Rvalue::CompareScalar{left,right,operator_span,..}|Rvalue::CheckedI32{left,right,operator_span,..}=>{
++                    span(&left.span,format!("{p}.left.span"));span(&right.span,format!("{p}.right.span"));span(operator_span,format!("{p}.operator_span"));
++                }
++                Rvalue::Bool(_)|Rvalue::I32(_)|Rvalue::Unit=>(),
++            }
++        }
++        Statement::Initialize{span:s,place,value}=>{
++            span(s,format!("{p}.span"));span(&place.span,format!("{p}.place.span"));span(&value.span,format!("{p}.value.span"));
++        }
++        Statement::Store{span:s,operator_span,place,value}=>{
++            span(s,format!("{p}.span"));span(operator_span,format!("{p}.operator_span"));span(&place.span,format!("{p}.place.span"));span(&value.span,format!("{p}.value.span"));
++        }
++    }
++}
++pub(super) fn register(raw:&Program) {
++    journal::registry_begin();
++    journal::capture("raw-before-audit",raw);
++    for (fi,f) in raw.functions.iter().enumerate(){
++        let p=format!("functions[{fi}]");declaration(f,p.clone());span(&f.span,format!("{p}.span"));
++        for (i,v) in f.locals.iter().enumerate(){span(&v.span,format!("{p}.locals[{i}].span"));}
++        for (i,v) in f.places.iter().enumerate(){span(&v.span,format!("{p}.places[{i}].span"));}
++        for (bi,b) in f.blocks.iter().enumerate(){
++            let p=format!("{p}.blocks[{bi}]");span(&b.span,format!("{p}.span"));
++            if let Some(m)=&b.merge {merge(m,&format!("{p}.merge"));}
++            for (si,s) in b.statements.iter().enumerate(){statement(s,&format!("{p}.statements[{si}]"));}
++            if let Some(t)=&b.terminator {
++                let p=format!("{p}.terminator");span(&t.span,format!("{p}.span"));
++                match &t.kind {
++                    TerminatorKind::Branch{condition,..}=>span(&condition.span,format!("{p}.kind.condition.span")),
++                    TerminatorKind::Call{args,..}=>for (i,a) in args.iter().enumerate(){span(&a.span,format!("{p}.kind.args[{i}].span"));},
++                    TerminatorKind::Return(v)=>span(&v.span,format!("{p}.kind.value.span")),
++                    TerminatorKind::Goto{..}=>(),
++                }
++            }
++        }
++    }
++}
+--- /dev/null
++++ b/src/frontend/oir/owned/unit3_raw_owned.rs
+@@ -0,0 +1,107 @@
++//! Independent exhaustive raw owned span-address registry.
++use super::*;
++use super::super::unit3_raw_scalar::{declaration,merge,span,statement};
++use crate::frontend::unit3_observer as journal;
++fn origins(v:&Option<DiagnosticOrigins>,p:&str) {
++    if let Some(v)=v {span(&v.primary,format!("{p}.diagnostic_origins.primary"));span(&v.cause,format!("{p}.diagnostic_origins.cause"));}
++}
++// This historical registry has no array, slice or composed-record schema.
++// Reject the complete raw input before capturing output or registering addresses.
++fn historical_instruction(value: &OwnedInstruction) -> bool {
++    match value {
++        OwnedInstruction::ConstructComposite { .. }
++        | OwnedInstruction::ReadProjection { .. }
++        | OwnedInstruction::WriteProjection { .. }
++        | OwnedInstruction::ProjectionLength { .. }
++        | OwnedInstruction::ConstructArray { .. }
++        | OwnedInstruction::ReadIndex { .. }
++        | OwnedInstruction::WriteIndex { .. }
++        | OwnedInstruction::ArrayLength { .. } => false,
++        OwnedInstruction::Scalar(_)
++        | OwnedInstruction::StorageLive(_)
++        | OwnedInstruction::StorageEnd(_)
++        | OwnedInstruction::Construct { .. }
++        | OwnedInstruction::MoveInitialize { .. }
++        | OwnedInstruction::Replace { .. }
++        | OwnedInstruction::Discard(_)
++        | OwnedInstruction::ReadField { .. }
++        | OwnedInstruction::WriteField { .. }
++        | OwnedInstruction::OpenCall(_)
++        | OwnedInstruction::PrepareScalar { .. }
++        | OwnedInstruction::PrepareOwned { .. }
++        | OwnedInstruction::PrepareBorrow { .. } => true,
++    }
++}
++fn historical_domain(raw: &RawOwnedProgram) {
++    const ERROR: &str = "OBSERVATION_UNSUPPORTED: historical scalar-record domain";
++    for record in &raw.records {
++        for field in &record.fields {
++            assert!(matches!(field.ty, ParameterTy::Value(ValueTy::Scalar(_))), "{ERROR}");
++        }
++    }
++    for function in &raw.functions {
++        assert!(matches!(function.result, ValueTy::Scalar(_) | ValueTy::Owned(AggregateTy::Record(_))), "{ERROR}");
++        for owner in &function.owners {
++            assert!(matches!(owner.aggregate(), AggregateTy::Record(_)), "{ERROR}");
++        }
++        for reference in &function.references {
++            assert!(matches!(reference.referent(), BorrowedTy::Exact(AggregateTy::Record(_))), "{ERROR}");
++        }
++        for loan in &function.loans {
++            assert!(matches!(loan.referent(), BorrowedTy::Exact(AggregateTy::Record(_))), "{ERROR}");
++        }
++        for block in &function.blocks {
++            for statement in &block.statements {
++                assert!(historical_instruction(&statement.kind), "{ERROR}");
++            }
++        }
++    }
++}
++pub(super) fn register(raw:&RawOwnedProgram) {
++    if !journal::enabled() { return; }
++    historical_domain(raw);
++    journal::registry_begin();
++    journal::capture("raw-before-audit",raw);
++    for (ri,r) in raw.records.iter().enumerate(){
++        let p=format!("records[{ri}]");declaration(r,p.clone());span(&r.span,format!("{p}.span"));
++        for (fi,f) in r.fields.iter().enumerate(){let p=format!("{p}.fields[{fi}]");declaration(f,p.clone());span(&f.span,format!("{p}.span"));}
++    }
++    for (fi,f) in raw.functions.iter().enumerate(){
++        let p=format!("functions[{fi}]");declaration(f,p.clone());span(&f.span,format!("{p}.span"));
++        for (i,v) in f.locals.iter().enumerate(){span(&v.span,format!("{p}.locals[{i}].span"));}
++        for (i,v) in f.places.iter().enumerate(){span(&v.span,format!("{p}.places[{i}].span"));}
++        for (i,v) in f.owners.iter().enumerate(){span(&v.span,format!("{p}.owners[{i}].span"));}
++        for (i,v) in f.references.iter().enumerate(){span(&v.span,format!("{p}.references[{i}].span"));}
++        for (i,v) in f.calls.iter().enumerate(){span(&v.span,format!("{p}.calls[{i}].span"));}
++        for (i,v) in f.loans.iter().enumerate(){span(&v.span,format!("{p}.loans[{i}].span"));}
++        for (bi,b) in f.blocks.iter().enumerate(){
++            let p=format!("{p}.blocks[{bi}]");span(&b.span,format!("{p}.span"));
++            if let Some(m)=&b.merge {merge(m,&format!("{p}.merge"));}
++            for (si,s) in b.statements.iter().enumerate(){
++                let p=format!("{p}.statements[{si}]");span(&s.span,format!("{p}.span"));origins(&s.diagnostic_origins,&p);
++                match &s.kind {
++                    OwnedInstruction::ConstructComposite { .. }
++                    | OwnedInstruction::ReadProjection { .. }
++                    | OwnedInstruction::WriteProjection { .. }
++                    | OwnedInstruction::ProjectionLength { .. }
++                    | OwnedInstruction::ConstructArray { .. }
++                    | OwnedInstruction::ReadIndex { .. }
++                    | OwnedInstruction::WriteIndex { .. }
++                    | OwnedInstruction::ArrayLength { .. } => panic!("OBSERVATION_UNSUPPORTED: historical scalar-record domain"),
++                    OwnedInstruction::Scalar(v)=>statement(v,&format!("{p}.kind.scalar")),
++                    OwnedInstruction::Construct{fields,..}=>for (i,(_,v)) in fields.iter().enumerate(){span(&v.span,format!("{p}.kind.fields[{i}].value.span"));},
++                    OwnedInstruction::WriteField{value,..}|OwnedInstruction::PrepareScalar{value,..}=>span(&value.span,format!("{p}.kind.value.span")),
++                    OwnedInstruction::StorageLive(_)|OwnedInstruction::StorageEnd(_)|OwnedInstruction::MoveInitialize{..}|OwnedInstruction::Replace{..}|OwnedInstruction::Discard(_)|OwnedInstruction::ReadField{..}|OwnedInstruction::OpenCall(_)|OwnedInstruction::PrepareOwned{..}|OwnedInstruction::PrepareBorrow{..}=>(),
++                }
++            }
++            if let Some(t)=&b.terminator {
++                let p=format!("{p}.terminator");span(&t.span,format!("{p}.span"));origins(&t.diagnostic_origins,&p);
++                match &t.kind {
++                    OwnedTerminatorKind::Branch{condition,..}=>span(&condition.span,format!("{p}.kind.condition.span")),
++                    OwnedTerminatorKind::ReturnScalar(v)=>span(&v.span,format!("{p}.kind.value.span")),
++                    OwnedTerminatorKind::Goto(_)|OwnedTerminatorKind::Invoke{..}|OwnedTerminatorKind::ReturnOwned(_)=>(),
++                }
++            }
++        }
++    }
++}
+--- a/src/frontend/oir/owned/array_observe.rs
++++ b/src/frontend/oir/owned/array_observe.rs
+@@ -186,6 +186,7 @@
+     pub(super) fn record_event(&mut self, event: Event) {
+         if !self.observer.enabled {
+             self.events.push(event);
++            crate::frontend::unit3_observer::event("existing_owned_event", self.events.last().expect("just appended event"));
+             return;
+         }
+         if !self.observer.collecting() {
+@@ -207,6 +208,7 @@
+             return;
+         }
+         self.events.push(event);
++        crate::frontend::unit3_observer::event("existing_owned_event", self.events.last().expect("just appended event"));
+     }
+     pub(super) fn observe_begin(
+         &mut self,

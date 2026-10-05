@@ -1,0 +1,84 @@
+--- a/tests/fixtures/fixed_array_source_unit3/typing-replay-v1/components/observer.rs
++++ b/tests/fixtures/fixed_array_source_unit3/typing-replay-v1/components/observer.rs
+@@ -239,6 +239,18 @@
+         Ty::Unit => "unit",
+     }
+ }
++fn historical_field_scalar(ty: ValueTy) -> Result<&'static str, String> {
++    match ty {
++        ValueTy::Scalar(ty) => Ok(scalar(ty)),
++        ValueTy::Owned(_) => Err("incomplete-observation: historical scalar record field required".into()),
++    }
++}
++fn historical_referent(referent: BorrowedTy) -> Result<AggregateTy, fmt::Error> {
++    match referent {
++        BorrowedTy::Exact(aggregate) => Ok(aggregate),
++        BorrowedTy::ScalarSlice(_) => Err(fmt::Error),
++    }
++}
+ struct V<'a, 's>(ValueTy, &'a di::DeclarationIndex<'s>, &'a source::SourceMap);
+ impl fmt::Display for V<'_, '_> {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+@@ -276,14 +288,14 @@
+                 "{{\"tag\":\"value\",\"value\":{}}}",
+                 V(v, self.1, self.2)
+             ),
+-            ParameterTy::Reference { aggregate, kind } => write!(
++            ParameterTy::Reference { referent, kind } => write!(
+                 f,
+                 "{{\"tag\":\"reference\",\"kind\":{},\"aggregate\":{}}}",
+                 J(match kind {
+                     BorrowKind::Shared => "shared",
+                     BorrowKind::Exclusive => "exclusive",
+                 }),
+-                V(ValueTy::Owned(aggregate), self.1, self.2)
++                V(ValueTy::Owned(historical_referent(referent)?), self.1, self.2)
+             ),
+         }
+     }
+@@ -353,12 +365,16 @@
+ }
+     }
+ }
+-struct ProjectionRow(Option<Projection>);
+-impl fmt::Display for ProjectionRow {
++struct ProjectionRow<'a>(Option<&'a Projection>);
++impl fmt::Display for ProjectionRow<'_> {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         let Some(p) = self.0 else {
+             return f.write_str("null");
+         };
++        // The frozen row has exactly one field slot; never flatten a path.
++        if p.path.as_slice() != [p.field] {
++            return Err(fmt::Error);
++        }
+         let (b, mode) = match p.base {
+             AccessBase::Owner(b) => (b, "owner"),
+             AccessBase::Reference { binding, kind } => (
+@@ -412,7 +428,7 @@
+ ) -> Result<source::SourceMap, String> {
+     let mut display = source::SourceMap::new();
+     let mut display_alloc = project::budget::Allocator::default();
+-    display_alloc.observer_trace_bound(0)?;
++    display_alloc.observer_trace_bound(0).map_err(|_| "trace reserve failed")?;
+     for (i, f) in map.files().iter().enumerate() {
+         let relative = Path::new(f.path())
+             .strip_prefix(root)
+@@ -524,7 +540,7 @@
+     for r in p.records() {
+         out.row(5,format_args!("{{\"row\":\"record\",\"id\":{},\"declaration\":{},\"origin\":{},\"end\":{},\"fields\":{}}}",r.id.0,S(r.name_span,map),S(r.span,map),S(r.end,map),r.fields.len()))?;
+         for x in &r.fields {
+-            out.row(6,format_args!("{{\"row\":\"field\",\"record\":{},\"id\":{},\"declaration\":{},\"origin\":{},\"scalar\":{}}}",x.id.record.0,x.id.index,S(x.name_span,map),S(x.span,map),J(scalar(x.ty))))?;
++            out.row(6,format_args!("{{\"row\":\"field\",\"record\":{},\"id\":{},\"declaration\":{},\"origin\":{},\"scalar\":{}}}",x.id.record.0,x.id.index,S(x.name_span,map),S(x.span,map),J(historical_field_scalar(x.ty)?)))?;
+         }
+     }
+     for (f, s) in p.functions().iter().zip(p.signatures()) {
+@@ -637,7 +653,7 @@
+             .checked_mul(std::mem::size_of::<project::budget::ReserveEvent>())
+             .ok_or("trace payload overflow")?,
+     )?;
+-    a.observer_trace_bound(TRACE_ROWS)?;
++    a.observer_trace_bound(TRACE_ROWS).map_err(|_| "trace reserve failed")?;
+     out.phase("load", "attempted")?;
+     let loaded = project::ProjectSources::load_array_candidate(
+         root.join("main.ox").to_str().ok_or("path utf8")?,

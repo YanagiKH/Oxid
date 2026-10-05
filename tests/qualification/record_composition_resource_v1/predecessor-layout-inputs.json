@@ -1,0 +1,183 @@
+{
+  "tree": "f8e2d39d8081b992969597649bad7fd9f28e7d04",
+  "method": "Exact type declarations only; visibility removed and hir::Ty path shortened. No implementation methods or candidate outputs used. Selected types have no repr attributes. Derive attributes intentionally absent because they do not affect representation. The depth64 constant is RFC0020 contract.",
+  "files": [
+    {
+      "path": "src/frontend/source.rs",
+      "sha256": "3574d2e4598fa77b82aeee2ba3457dfdd39652d750771d4c56102aa706c0db3e",
+      "declarations": [
+        {
+          "name": "SourceFileId",
+          "line": 24,
+          "exact_sha256": "911d93943284a219d1a452e5dd447ca1dacdfa094a6256b46e431932cd8ae799"
+        },
+        {
+          "name": "Span",
+          "line": 27,
+          "exact_sha256": "cd335649f4ea912218605fa422582de42c8a0ee2381f7d5e90fff4e3bd3fc95a"
+        }
+      ]
+    },
+    {
+      "path": "src/frontend/hir.rs",
+      "sha256": "df264caebb528d3d7c9034dc396c2c9ec1ab0f9791b25eb092c79476fda4cdf5",
+      "declarations": [
+        {
+          "name": "Ty",
+          "line": 17,
+          "exact_sha256": "8cbd8d7ca3a2b5b477f3ef52b640d4fb83bb5b17f70d47e3fab9a3b1a846a826"
+        }
+      ]
+    },
+    {
+      "path": "src/frontend/oir/owned_types.rs",
+      "sha256": "ce0a52fd990e60fbd12cb89ffb88a7415b0b5e4767b6b0d1474aca6ee9a39e73",
+      "declarations": [
+        {
+          "name": "RecordId",
+          "line": 14,
+          "exact_sha256": "f6b15453ce23465066bf0a59475662d6dc0f57b1705752d87d5fca526e6a938b"
+        },
+        {
+          "name": "FixedArrayTy",
+          "line": 19,
+          "exact_sha256": "b3c6e57ab680bc3f21167016d7ffecb261ed4927672b287027e07644c52e0144"
+        },
+        {
+          "name": "AggregateTy",
+          "line": 63,
+          "exact_sha256": "bd4a7a58c78091dc56f57eb8678670f99afe25ab0f8693cc7d44d8e980a0243d"
+        },
+        {
+          "name": "BorrowedTy",
+          "line": 70,
+          "exact_sha256": "52a12b4b0a8d9ca222a9a18deb486c3bffd85e43451ede7935e0e59e88175f7f"
+        },
+        {
+          "name": "FieldId",
+          "line": 162,
+          "exact_sha256": "335e42d540c7531b8531eca1bffa84cbaa3a2f8af6f2c48c913e3b98263ecbd5"
+        },
+        {
+          "name": "OwnerPlaceId",
+          "line": 170,
+          "exact_sha256": "84c2a36431532e69e3e524c406738bbdd6787cba275303c0af744906813cf7c1"
+        },
+        {
+          "name": "ValueTy",
+          "line": 177,
+          "exact_sha256": "8838b7dfc32f91e8c8bab5f61d8af13213b8940d54b43b6d7418d7268093dd9f"
+        },
+        {
+          "name": "BorrowKind",
+          "line": 183,
+          "exact_sha256": "cfb23137241ccb5746e134238e645af0ea2a2337004795794d5d07eb6bb3b266"
+        },
+        {
+          "name": "ParameterTy",
+          "line": 190,
+          "exact_sha256": "9ec8599460a3efa45c3734618f9ac848f07ddf79ad41d46e730039e7177c57ad"
+        },
+        {
+          "name": "RawRecordDecl",
+          "line": 199,
+          "exact_sha256": "da3fda96102f003f977b23a2dd5067189705690c2d0ebf49a3c5b76d44120e5e"
+        },
+        {
+          "name": "RawFieldDecl",
+          "line": 206,
+          "exact_sha256": "57932ef928fb81232bec16b24d01dba692d37918ec9b5e75eb5064085c440f41"
+        },
+        {
+          "name": "Layout",
+          "line": 229,
+          "exact_sha256": "153facaad5def17c3dd35dfef43301c86495d599f1a670e86286b96058299dc3"
+        },
+        {
+          "name": "FieldDecl",
+          "line": 249,
+          "exact_sha256": "bb1e592d785a6f24c3de25694a3e6ec3e5c1c9cf22e826379fd74c9dbef8e062"
+        },
+        {
+          "name": "RecordDecl",
+          "line": 271,
+          "exact_sha256": "f7119c811bb6e76c2c5fa3b600c4c3d033b8cdfbe7a89c65067ff7ea5bcf4f86"
+        },
+        {
+          "name": "DeclarationUsage",
+          "line": 294,
+          "exact_sha256": "79a238667999f2d0b72c89f4438019a88e697997bd9bedcc62eaf12b9d482555"
+        },
+        {
+          "name": "Declarations",
+          "line": 343,
+          "exact_sha256": "5fbab7bac7ca7f52b9c2741cee89309f7ed4227e80a91a37ffeceed931b1a739"
+        }
+      ]
+    },
+    {
+      "path": "src/frontend/oir/mod.rs",
+      "sha256": "6f8d3dc57cd22142850c4f22427481062b3fa36ec127120464684bc187940211",
+      "declarations": [
+        {
+          "name": "LocalId",
+          "line": 25,
+          "exact_sha256": "6300102a5f6f694b3275101337fcb026444fddad612629a74913274d2001c425"
+        },
+        {
+          "name": "Operand",
+          "line": 87,
+          "exact_sha256": "ad3688777fe89d9e325bb1989ce95653d24a0a006d252228f865b3a32ea9dd47"
+        }
+      ]
+    },
+    {
+      "path": "src/frontend/oir/owned/mod.rs",
+      "sha256": "eae123ec2fe38c4e6e8d5254ea28fd910bd22aecf22d5c40a04dd87ef14a79d2",
+      "declarations": []
+    },
+    {
+      "path": "src/frontend/oir/owned/budget.rs",
+      "sha256": "ec9f13f9228c96cdfeabb102c7fff2ab1de0ca1b02dcad48a77399acef59c762",
+      "declarations": [
+        {
+          "name": "FunctionCounts",
+          "line": 76,
+          "exact_sha256": "758b7c1aa3114d7aafba824583766d1d77c112233c325e7a18f52f7978325773"
+        }
+      ]
+    },
+    {
+      "path": "src/frontend/oir/owned/source/hir.rs",
+      "sha256": "8337fea22556f46f6da0d8c24b4ef1b71a080de9819ce75f6739bcaf5c037e77",
+      "declarations": [
+        {
+          "name": "BindingId",
+          "line": 10,
+          "exact_sha256": "66f4dc53024b3520436fa32514775049025274b29cac1e128f4c2e2029b50a29"
+        },
+        {
+          "name": "Record",
+          "line": 19,
+          "exact_sha256": "1c52e070c1a1c4c66ee7dd2b350b5b4ccf2f2b67a8533f686a476a24fb656a83"
+        },
+        {
+          "name": "Field",
+          "line": 27,
+          "exact_sha256": "899df4b2e5e466fbeb36f560c6943e91f2ed6c55841b9195b97122c61117d1b7"
+        },
+        {
+          "name": "AccessBase",
+          "line": 198,
+          "exact_sha256": "4dd89bbcfa814e51b939d233c6e9ad65563c3cff2a2081a6218ac16db032269f"
+        },
+        {
+          "name": "Projection",
+          "line": 206,
+          "exact_sha256": "6e9047046336c4584de7d2193ee06f7fe7fa28338b4aaf3f8257a3078aebbe24"
+        }
+      ]
+    }
+  ],
+  "probe_sha256": "2d1f74fa83b4639743a94c4b59436ffb3e42a01438f30cbfef772b8c14d5dee4"
+}

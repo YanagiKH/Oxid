@@ -109,6 +109,8 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.statements, size_of::<OwnedStatement>()),
         (c.constructed_fields, size_of::<(FieldId, Operand)>()),
         (c.constructed_elements, size_of::<Operand>()),
+        (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+        (c.projection_fields, size_of::<FieldId>()),
     ] {
         bytes = add(bytes, mul(n, width)?)?;
     }
@@ -129,7 +131,7 @@ fn unit2b_q_adds_only_actual_operand_payload_to_source_inventory() {
         );
     }
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 144);
+    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 160);
 }
 pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
@@ -144,12 +146,27 @@ pub(super) fn preflight(
     #[cfg(test)]
     guard_event(GuardEvent::DeclarationAdmission);
     let declarations = admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
-    admit_scalar_layouts(
-        typed
-            .records()
-            .iter()
-            .map(|r| r.fields.iter().map(|f| f.ty)),
-    )?;
+    if typed
+        .records()
+        .iter()
+        .all(|r| r.fields.iter().all(|f| matches!(f.ty, ValueTy::Scalar(_))))
+    {
+        admit_scalar_layouts(typed.records().iter().map(|r| {
+            r.fields.iter().map(|f| {
+                let ValueTy::Scalar(ty) = f.ty else {
+                    unreachable!("scalar-only declaration inventory")
+                };
+                ty
+            })
+        }))?;
+    } else {
+        admit_value_layouts(
+            typed
+                .records()
+                .iter()
+                .map(|r| r.fields.iter().map(|f| f.ty)),
+        )?;
+    }
     let ceiling = limits.raw_bytes.min(MAX_RAW_BYTES);
     let mut bytes = size_of::<RawOwnedProgram>();
     bytes = add(

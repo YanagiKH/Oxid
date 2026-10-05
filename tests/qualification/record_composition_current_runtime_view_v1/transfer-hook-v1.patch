@@ -1,0 +1,60 @@
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -766,12 +766,57 @@
+         } else {
+             None
+         };
++        // Test-only historical scalar-record transfer observation. Pair actual
++        // root fields with actual leaves; never infer writes from a later trace.
++        #[cfg(test)]
++        let mut unit3_fields = if crate::frontend::unit3_observer::enabled() {
++            let AggregateTy::Record(record_id) = record else {
++                panic!("OBSERVATION_UNSUPPORTED: historical record transfer");
++            };
++            let fields = declarations.fields(record_id).expect("verified record fields");
++            assert!(fields.iter().all(|field| matches!(field.value_ty(), ValueTy::Scalar(_))),
++                "OBSERVATION_UNSUPPORTED: historical scalar record transfer");
++            Some(fields.iter())
++        } else {
++            None
++        };
++        #[cfg(test)]
++        let unit3_expected_leaves = unit3_fields.as_ref().map(|fields| fields.len().max(1));
++        #[cfg(test)]
++        let mut unit3_leaf_count = 0usize;
+         for leaf in declarations
+             .leaves(record)
+             .map_err(|_| bad("transfer leaves", span))?
+         {
+             let value = self.load_leaf(from, leaf, span)?;
++            #[cfg(test)]
++            let unit3_write = if let Some(fields) = unit3_fields.as_mut() {
++                unit3_leaf_count += 1;
++                fields.next().map(|field| {
++                    assert_eq!(field.offset(), leaf.offset, "historical field/leaf offset");
++                    assert_eq!(field.value_ty(), ValueTy::Scalar(leaf.ty), "historical field/leaf type");
++                    let offset = destination.start.checked_add(leaf.offset).expect("preflighted leaf offset");
++                    let end = offset.checked_add(scalar_size(leaf.ty)).expect("preflighted leaf range");
++                    let before = self.frames[to.frame as usize].payload.get(offset..end).map(|bytes| bytes.to_vec());
++                    (field.id(), offset, end, before)
++                })
++            } else {
++                None
++            };
+             self.store_leaf(to, leaf, value, span)?;
++            #[cfg(test)]
++            if let Some((field, offset, end, before)) = unit3_write {
++                crate::frontend::unit3_observer::event("payload_write", &(
++                    to, field, value, span, before,
++                    self.frames[to.frame as usize].payload.get(offset..end),
++                ));
++            }
++        }
++        #[cfg(test)]
++        if let Some(expected) = unit3_expected_leaves {
++            assert_eq!(unit3_leaf_count, expected, "historical transfer leaf count");
++            assert_eq!(unit3_fields.expect("enabled field iterator").len(), 0,
++                "historical transfer omitted field");
+         }
+         #[cfg(test)]
+         {

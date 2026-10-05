@@ -134,9 +134,14 @@ impl DenialContext {
             (OwnedInstruction::StorageEnd(o), Storage) if base == AccessBase::Owner(*o) => {
                 DeniedOperation::StorageEnd
             }
-            (OwnedInstruction::Construct { destination, .. }, InitializationDestination)
+            (OwnedInstruction::Construct { destination, .. } | OwnedInstruction::ConstructComposite { destination, .. }, InitializationDestination)
                 if base == AccessBase::Owner(*destination) =>
             {
+                DeniedOperation::Construct
+            }
+            (OwnedInstruction::ConstructComposite { destination, fields }, SourceConsume)
+                if fields.iter().any(|(_, value)| matches!(value, FieldInitializer::Owned(source) if base == AccessBase::Owner(*source))) => {
+                counterpart = Some(Self::owner(f, *destination)?);
                 DeniedOperation::Construct
             }
             (OwnedInstruction::ConstructArray { destination, .. }, InitializationDestination)
@@ -187,10 +192,10 @@ impl DenialContext {
             (OwnedInstruction::Discard(o), SourceConsume) if base == AccessBase::Owner(*o) => {
                 DeniedOperation::Discard
             }
-            (OwnedInstruction::ReadField { base: actual, .. }, FieldBase) if base == *actual => {
+            (OwnedInstruction::ReadField { base: actual, .. } | OwnedInstruction::ReadProjection { base: actual, .. } | OwnedInstruction::ProjectionLength { base: actual, .. }, FieldBase) if base == *actual => {
                 DeniedOperation::ReadField
             }
-            (OwnedInstruction::WriteField { base: actual, .. }, FieldBase) if base == *actual => {
+            (OwnedInstruction::WriteField { base: actual, .. } | OwnedInstruction::WriteProjection { base: actual, .. }, FieldBase) if base == *actual => {
                 DeniedOperation::WriteField
             }
             (OwnedInstruction::ReadIndex { base: actual, .. }, ArrayBase) if base == *actual => {
@@ -357,6 +362,7 @@ fn step(
         }
         OwnedInstruction::Construct { destination, .. }
         | OwnedInstruction::ConstructArray { destination, .. }
+        | OwnedInstruction::ConstructComposite { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
         {
@@ -365,6 +371,16 @@ fn step(
             next = Available;
             failure = Violation::Initialization;
             role = DeniedRole::InitializationDestination;
+        }
+        OwnedInstruction::ConstructComposite { fields, .. }
+            if fields.iter().any(
+                |(_, value)| matches!(value, FieldInitializer::Owned(source) if *source == owner),
+            ) =>
+        {
+            event = true;
+            legal = &[Available];
+            next = Moved;
+            role = DeniedRole::SourceConsume;
         }
         OwnedInstruction::Replace { destination, .. } if *destination == owner => {
             event = true;
@@ -384,7 +400,19 @@ fn step(
             next = Moved;
             role = DeniedRole::SourceConsume;
         }
-        OwnedInstruction::ReadField {
+        OwnedInstruction::ReadProjection {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::WriteProjection {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::ProjectionLength {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::ReadField {
             base: AccessBase::Owner(o),
             ..
         }
@@ -749,10 +777,13 @@ fn accesses(
     mut visit: impl FnMut(AccessBase, Access, DeniedRole) -> Result<(), OwnedFailure>,
 ) -> Result<(), OwnedFailure> {
     match i {
-        OwnedInstruction::ReadField { base, .. } => {
+        OwnedInstruction::ReadField { base, .. }
+        | OwnedInstruction::ReadProjection { base, .. }
+        | OwnedInstruction::ProjectionLength { base, .. } => {
             visit(*base, Access::Read, DeniedRole::FieldBase)?
         }
-        OwnedInstruction::WriteField { base, .. } => {
+        OwnedInstruction::WriteField { base, .. }
+        | OwnedInstruction::WriteProjection { base, .. } => {
             visit(*base, Access::Write, DeniedRole::FieldBase)?
         }
         OwnedInstruction::ReadIndex { base, .. } | OwnedInstruction::ArrayLength { base, .. } => {
@@ -782,6 +813,25 @@ fn accesses(
                 } else {
                     DeniedRole::InitializationDestination
                 },
+            )?;
+        }
+        OwnedInstruction::ConstructComposite {
+            destination,
+            fields,
+        } => {
+            for (_, value) in fields {
+                if let FieldInitializer::Owned(source) = value {
+                    visit(
+                        AccessBase::Owner(*source),
+                        Access::Consume,
+                        DeniedRole::SourceConsume,
+                    )?;
+                }
+            }
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
             )?;
         }
         OwnedInstruction::Construct { destination, .. }
@@ -829,7 +879,10 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                         Some(f.owners[destination.0].span),
                     ))
                 }
-                OwnedInstruction::WriteField { base, .. } if !shape::base(f, base, i.span)?.1 => {
+                OwnedInstruction::WriteField { base, .. }
+                | OwnedInstruction::WriteProjection { base, .. }
+                    if !shape::base(f, base, i.span)?.1 =>
+                {
                     Some((base, DeniedRole::FieldBase, None))
                 }
                 OwnedInstruction::WriteIndex { base, .. } if !shape::base(f, base, i.span)?.1 => {

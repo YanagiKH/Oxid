@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/workspace/scratch/8266abf56995/rust/rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "--edition=2021",
+    "--target=x86_64-unknown-linux-gnu",
+    "/workspace/scratch/8266abf56995/oxid-record-resource-appendix-v1/declaration-layout-probe.rs",
+    "-o",
+    "/workspace/scratch/8266abf56995/oxid-record-resource-appendix-v1/declaration-layout-probe"
+  ],
+  "exit_status": 0,
+  "rustc_verbose": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "run_exit_status": 0,
+  "binary_sha256": "122c92d1596ab040390d30caa55507faaf3029691c6292a192358fc30656a41a"
+}

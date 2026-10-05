@@ -1,0 +1,18 @@
+--- a/src/frontend/oir/owned/array_observe.rs
++++ b/src/frontend/oir/owned/array_observe.rs
+@@ -186,6 +186,7 @@
+     pub(super) fn record_event(&mut self, event: Event) {
+         if !self.observer.enabled {
+             self.events.push(event);
++            crate::frontend::unit3_observer::event("existing_owned_event", self.events.last().expect("just appended event"));
+             return;
+         }
+         if !self.observer.collecting() {
+@@ -207,6 +208,7 @@
+             return;
+         }
+         self.events.push(event);
++        crate::frontend::unit3_observer::event("existing_owned_event", self.events.last().expect("just appended event"));
+     }
+     pub(super) fn observe_begin(
+         &mut self,

@@ -238,3 +238,22 @@ for bounded adapter controls. These are admission/protocol tests, not compiler
 qualification. No regenerated manifest or preparation receipt replaces an actual
 semantic/native/mutation run. Independent implementation review and fresh gate
 execution are required before integration claims.
+
+## Bounded record composition successor
+
+The current manifest now binds reviewed source `8ae66ef5543bcb1251868b84ea38a82c2649a3a4`
+/tree `f6b7dee8bac4ebcc27ad020db9940344c5e4ae41`:196 inputs, including140 compiler
+source members and143 compiler bodies with Cargo/build inputs. The preceding
+188-input slice manifest is retained unchanged as `slices-source.json`.
+`composition-authority.json` and `composition-transition.patch` bind40 paths:
+32 changed existing sources, four new compiler test modules, and a separate
+public test includer with exactly three sample sources. The array includer's
+47 references and42 unique sources remain unchanged. Composition inversion is
+required before all five older inverse stages. Whole-input hashes, exact path
+order/membership, Git modes/blobs and per-hunk byte context are checked before
+materialization; omitted/changed/reordered/duplicated inputs are rejected.
+
+This admission is neither a semantic waiver nor a resource measurement. See
+`docs/architecture/record-composition-current-qualification.md` for the explicit
+case-level amendments and independent resource appendix. Older counts and
+receipts above identify their historical checkpoints, not current execution.

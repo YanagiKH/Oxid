@@ -1,0 +1,110 @@
+{
+  "files": [
+    {
+      "bytes": 6860,
+      "path": "README.md",
+      "sha256": "753277e8773252b2182554844258c6f77ca9aa6e177d185d3bca9cb6cf999c3f"
+    },
+    {
+      "bytes": 717,
+      "path": "current-event-hooks-v1.patch",
+      "sha256": "ef50bd94dc453cbac7e1eed79507e8c27ce46295713f793fe5ac3aff24746daf"
+    },
+    {
+      "bytes": 2162,
+      "path": "current-hook-identities.json",
+      "sha256": "3ccaee3ac39021a81604f546480457e9089336d6d4416fd52d8c59eb3aa00f6b"
+    },
+    {
+      "bytes": 2890,
+      "path": "current-typing-hooks-v1.patch",
+      "sha256": "8cceafa1a2ae520f0121510c36c78462c3269a4ef6b6e2af60858658ee7035f0"
+    },
+    {
+      "bytes": 7437,
+      "path": "current_hooks.py",
+      "sha256": "1a2c5de818e2ecb681640af889862784dca8a31d5c50937bc3055f5ec419d8ca"
+    },
+    {
+      "bytes": 428,
+      "path": "journal-v1.patch",
+      "sha256": "6629524dd6585f49e07f06da23f3c5083b17f5578006f58ab7e2d2f646060355"
+    },
+    {
+      "bytes": 3005,
+      "path": "observer-adapter-identities.json",
+      "sha256": "4e83250c2489aa8cb388688e6f70dd13406b2b5a396a2d25c8f0c37bfa033d1c"
+    },
+    {
+      "bytes": 3204,
+      "path": "observer-prepare-v1.patch",
+      "sha256": "918877c793c959a864fbb2177b8327b23ecafcbd9762463d251144e1fa6583e4"
+    },
+    {
+      "bytes": 15396,
+      "path": "observer_adapters.py",
+      "sha256": "d0aa2bc88ec30db0ca3e690060008ee23847c321e0fe484dabb31ea54100d311"
+    },
+    {
+      "bytes": 4935,
+      "path": "raw-walker-controls.rs",
+      "sha256": "7340d52dd2ab2b0707116b218313800ff64dc3347270381eea5dcfe8030c7a0c"
+    },
+    {
+      "bytes": 4161,
+      "path": "raw-walker-v1.patch",
+      "sha256": "507652aacc3997f0efc12913340d491c14917d5c77e1211519a349cf4e0dc17e"
+    },
+    {
+      "bytes": 2647,
+      "path": "runtime-controls.rs",
+      "sha256": "33da2fe95b6b530f5062058ad4e98fe9d14dcd4307ef81a2530bf700519271a3"
+    },
+    {
+      "bytes": 4761,
+      "path": "runtime-overlay-identities.json",
+      "sha256": "ac5179c15ebb1bf3bca51a15d0fbaa22cafc480abad2590ef0c4f03fb7784aea"
+    },
+    {
+      "bytes": 6264,
+      "path": "runtime_overlay.py",
+      "sha256": "aadbf99c9b11221e6921855f7c7460dfeedaea91d05c243d1d504b8e58590b23"
+    },
+    {
+      "bytes": 1055,
+      "path": "scalar-store-v1.patch",
+      "sha256": "6e822dcea7366caed358511fb5498b43025e4d8dab40c376c62639ba3e848489"
+    },
+    {
+      "bytes": 7687,
+      "path": "test_observer_adapters.py",
+      "sha256": "b173051f5ec507a7521c9c6193117bd56472fd6ec68e8c2776f86e5cf181b648"
+    },
+    {
+      "bytes": 2116,
+      "path": "typing-controls.rs",
+      "sha256": "1314e90a852da3efce03670ea2d34f193f3ce3e39aecaea79dd15149e0088965"
+    },
+    {
+      "bytes": 473,
+      "path": "typing-helpers.rs",
+      "sha256": "c079e73b919c953b1c6a1f903b0737ac52130f0d1b3d9526b65240414d806807"
+    },
+    {
+      "bytes": 3949,
+      "path": "typing-observer-v1.patch",
+      "sha256": "eb917102f97429f2ed5efc33f0201b266af0175c28bb1f1163e0814dc4663769"
+    },
+    {
+      "bytes": 48853,
+      "path": "unit3-observer-current-v1.patch",
+      "sha256": "3a9010833513d30756d8a81c8a4cee974bbb81fd4584b18f8542906013f56308"
+    },
+    {
+      "bytes": 2243,
+      "path": "validation.json",
+      "sha256": "7b06fe1fa7e65fedcc196de5db41cf61d7089cab8447f498fc199818ddd960c5"
+    }
+  ],
+  "schema": "oxid-record-observer-adapter-package-v1"
+}

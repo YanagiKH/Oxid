@@ -1,0 +1,30 @@
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -453,12 +453,26 @@
+         if ty != value.ty() {
+             return Err(bad("field value type", span));
+         }
++        #[cfg(test)]
++        let unit3_width = match value {
++            Scalar::I32(_) => 4,
++            Scalar::Bool(_) | Scalar::Unit => 1,
++        };
++        #[cfg(test)]
++        let unit3_before = self.frames[key.frame as usize].payload
++            .get(offset..offset + unit3_width).map(|bytes| bytes.to_vec());
+         encode(
+             &mut self.frames[key.frame as usize].payload,
+             offset,
+             value,
+             span,
+-        )
++        )?;
++        #[cfg(test)]
++        crate::frontend::unit3_observer::event("payload_write", &(
++            key, field, value, span, unit3_before,
++            self.frames[key.frame as usize].payload.get(offset..offset + unit3_width),
++        ));
++        Ok(())
+     }
+     fn aggregate(&self, key: OwnerKey, span: Span) -> Result<AggregateTy> {
+         let frame = self

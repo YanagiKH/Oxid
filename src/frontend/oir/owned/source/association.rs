@@ -60,6 +60,25 @@ fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<()
                         visitor.span(operand.span)?;
                     }
                 }
+                OwnedInstruction::ConstructComposite { fields, .. } => {
+                    for (_, value) in fields {
+                        if let FieldInitializer::Scalar(operand) = value {
+                            visitor.span(operand.span)?;
+                        }
+                    }
+                }
+                OwnedInstruction::ReadProjection { index, .. } => {
+                    if let Some(index) = index {
+                        visitor.span(index.span)?;
+                    }
+                }
+                OwnedInstruction::WriteProjection { index, value, .. } => {
+                    if let Some(index) = index {
+                        visitor.span(index.span)?;
+                    }
+                    visitor.span(value.span)?;
+                }
+                OwnedInstruction::ProjectionLength { .. } => (),
                 OwnedInstruction::ConstructArray { elements, .. } => {
                     for operand in elements {
                         visitor.span(operand.span)?;

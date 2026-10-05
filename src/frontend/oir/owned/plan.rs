@@ -142,7 +142,8 @@ impl<'a> ExecutionPlan<'a> {
                 1 + self.owner_width(f, *o)
             }
             OwnedInstruction::Construct { destination, .. }
-            | OwnedInstruction::ConstructArray { destination, .. } => {
+            | OwnedInstruction::ConstructArray { destination, .. }
+            | OwnedInstruction::ConstructComposite { destination, .. } => {
                 1 + self.owner_width(f, *destination)
             }
             OwnedInstruction::MoveInitialize { source, .. }

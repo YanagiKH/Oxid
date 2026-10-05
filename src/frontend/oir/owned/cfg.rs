@@ -61,7 +61,11 @@ impl CfgView for RawOwnedFunction {
             OwnedInstruction::Scalar(Statement::Assign(a)) => Some((a.destination, a.span)),
             OwnedInstruction::ReadField { destination, .. }
             | OwnedInstruction::ReadIndex { destination, .. }
-            | OwnedInstruction::ArrayLength { destination, .. } => Some((*destination, i.span)),
+            | OwnedInstruction::ArrayLength { destination, .. }
+            | OwnedInstruction::ReadProjection { destination, .. }
+            | OwnedInstruction::ProjectionLength { destination, .. } => {
+                Some((*destination, i.span))
+            }
             _ => None,
         })
     }
@@ -88,6 +92,22 @@ impl CfgView for RawOwnedFunction {
             OwnedInstruction::Construct { fields, .. } => {
                 for (_, v) in fields {
                     visit(ScalarUse::Operand(*v))?;
+                }
+            }
+            OwnedInstruction::ConstructComposite { fields, .. } => {
+                for (_, value) in fields {
+                    if let FieldInitializer::Scalar(value) = value {
+                        visit(ScalarUse::Operand(*value))?;
+                    }
+                }
+            }
+            OwnedInstruction::ReadProjection {
+                index: Some(index), ..
+            } => visit(ScalarUse::Operand(*index))?,
+            OwnedInstruction::WriteProjection { index, value, .. } => {
+                visit(ScalarUse::Operand(*value))?;
+                if let Some(index) = index {
+                    visit(ScalarUse::Operand(*index))?;
                 }
             }
             OwnedInstruction::ConstructArray { elements, .. } => {

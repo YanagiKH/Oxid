@@ -245,5 +245,72 @@ class CheckedDivisionCliAmendmentTests(unittest.TestCase):
                     self.assertEqual(profile["cli_expectation_amendment"], amendment)
 
 
+
+
+class RecordCompositionCliAmendmentTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.frozen = Path(cls.temporary.name) / 'frozen'
+        cls.manifest = h.freeze(cls.frozen)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def test_exact_two_composition_changes_extend_unchanged_division_predecessor(self):
+        before = {path.name: h.digest(path) for path in self.frozen.iterdir()}
+        old = h.load_cli_amendment('checked-division-v1', self.frozen, mode='cli')
+        new = h.load_cli_amendment('owned-record-composition-v1', self.frozen, mode='cli')
+        self.assertEqual(new['cases'][:2], old['cases'])
+        self.assertEqual(new['predecessor_amendment_sha256'], old['data_sha256'])
+        self.assertEqual([r['id'] for r in new['cases'][2:]], ['excluded-chained-projection', 'nested-record-field'])
+        changed = []
+        for row in self.manifest['files']:
+            item = h.strict_json_loads((self.frozen / (row['id'] + '.json')).read_text())
+            if h.apply_cli_amendment(item, old) != h.apply_cli_amendment(item, new):
+                changed.append(item['id'])
+        self.assertEqual(changed, ['excluded-chained-projection', 'nested-record-field'])
+        chained = new['cases'][2]
+        self.assertEqual(chained['effective_expected'], {
+            'status': 'reject', 'stage': 'type', 'code': 'E0305',
+            'message': 'intermediate field access requires a record',
+            'span': [75, 80], 'span_match': 'exact', 'related': [],
+        })
+        source = (self.frozen / 'excluded-chained-projection.ox').read_bytes()
+        self.assertEqual(source[75:80], b'other')
+        self.assertEqual(chained['old_expected']['span'], [74, 75])
+        self.assertEqual(new['cases'][3]['effective_expected'], {
+            'status': 'accept', 'result_type': 'i32', 'result': 0, 'runtime_failure': None})
+        self.assertEqual(before, {path.name: h.digest(path) for path in self.frozen.iterdir()})
+        self.assertIs(new['full_qualification'], False)
+
+    def test_composition_amendment_pin_and_explicit_mode_cannot_be_relaxed(self):
+        for mode in ('model', 'freeze', 'candidate', 'production'):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                h.load_cli_amendment('owned-record-composition-v1', self.frozen, mode=mode)
+        original = h.strict_json_loads(h.COMPOSITION_CLI_AMENDMENT_PATH.read_text())
+        for mutate in (lambda a: a['cases'].pop(),
+                       lambda a: a['cases'][2]['effective_expected'].update(status='accept'),
+                       lambda a: a['cases'][2]['effective_expected'].update(span=[74, 75]),
+                       lambda a: a['cases'][3]['effective_expected'].update(result=1),
+                       lambda a: a.update(full_qualification=True)):
+            value = copy.deepcopy(original); mutate(value)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'amendment.json'; path.write_text(json.dumps(value))
+                with mock.patch.object(h, 'COMPOSITION_CLI_AMENDMENT_PATH', path), self.assertRaises(ValueError):
+                    h.load_cli_amendment('owned-record-composition-v1', self.frozen, mode='cli')
+
+    def test_changed_historical_composition_cases_reject(self):
+        amendment = h.load_cli_amendment('owned-record-composition-v1', self.frozen, mode='cli')
+        for identifier in ('excluded-chained-projection', 'nested-record-field'):
+            item = h.strict_json_loads((self.frozen / (identifier + '.json')).read_text())
+            for key, value in (('source_sha256', '0' * 64), ('function_count', 2),
+                               ('expected', {'status': 'accept'})):
+                changed = {**item, key: value}
+                with self.subTest(identifier=identifier, key=key), self.assertRaises(ValueError):
+                    h.apply_cli_amendment(changed, amendment)
+
+
 if __name__ == "__main__":
     unittest.main()

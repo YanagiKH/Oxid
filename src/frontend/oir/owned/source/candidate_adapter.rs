@@ -261,11 +261,16 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
-        OwnedInstruction::ConstructArray { .. }
+        // This frozen scalar-record observer is not the composition qualification path.
+        OwnedInstruction::ConstructComposite { .. }
+        | OwnedInstruction::ReadProjection { .. }
+        | OwnedInstruction::WriteProjection { .. }
+        | OwnedInstruction::ProjectionLength { .. }
+        | OwnedInstruction::ConstructArray { .. }
         | OwnedInstruction::ReadIndex { .. }
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ArrayLength { .. } => {
-            unreachable!("source array production and executable witnesses remain gated")
+            unreachable!("operation is outside this historical scalar-record observer")
         }
         OwnedInstruction::Scalar(value) => object([
             ("operation", json_string("Scalar")),

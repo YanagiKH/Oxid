@@ -1,0 +1,1 @@
+declaration fixture: RecordDecl=72 FieldDecl=64 RawRecordDecl=56 RawFieldDecl=64 usage=DeclarationUsage { records: 4096, fields: 65536, table_bytes: 4489216, layout_bytes: 266176 }, capacities=(4096, 65536)

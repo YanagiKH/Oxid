@@ -36,8 +36,62 @@ RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
-CURRENT_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
-CURRENT_SOURCE_BYTES = 35876
+SLICES_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
+SLICES_SOURCE_BYTES = 35876
+CURRENT_SOURCE_SHA = 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16'
+CURRENT_SOURCE_BYTES = 37404
+COMPOSITION_AUTHORITY_SHA = 'f387deb3d73643cf51109e1aee7a59717c12cfe1ac70cd3a6e14f1aafa01ee8a'
+COMPOSITION_AUTHORITY_BYTES = 47077
+COMPOSITION_PATCH_SHA = '5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6'
+COMPOSITION_PATCH_BYTES = 238025
+COMPOSITION_PATHS = ('fixtures/typed-record-composition-samples/main.ox',
+ 'fixtures/typed-record-composition-samples/model.ox',
+ 'fixtures/typed-record-composition-samples/ops.ox',
+ 'src/frontend/ast.rs',
+ 'src/frontend/format.rs',
+ 'src/frontend/format/ast_tests.rs',
+ 'src/frontend/oir/owned/array_observe.rs',
+ 'src/frontend/oir/owned/budget.rs',
+ 'src/frontend/oir/owned/cfg.rs',
+ 'src/frontend/oir/owned/composition_native_tests.rs',
+ 'src/frontend/oir/owned/composition_reference_tests.rs',
+ 'src/frontend/oir/owned/composition_verifier_tests.rs',
+ 'src/frontend/oir/owned/execute.rs',
+ 'src/frontend/oir/owned/flow.rs',
+ 'src/frontend/oir/owned/mod.rs',
+ 'src/frontend/oir/owned/native.rs',
+ 'src/frontend/oir/owned/native_tests.rs',
+ 'src/frontend/oir/owned/plan.rs',
+ 'src/frontend/oir/owned/shape.rs',
+ 'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+ 'src/frontend/oir/owned/source/association.rs',
+ 'src/frontend/oir/owned/source/budget.rs',
+ 'src/frontend/oir/owned/source/candidate_adapter.rs',
+ 'src/frontend/oir/owned/source/candidate_native.rs',
+ 'src/frontend/oir/owned/source/hir.rs',
+ 'src/frontend/oir/owned/source/lower.rs',
+ 'src/frontend/oir/owned/source/resolve.rs',
+ 'src/frontend/oir/owned/source/reviewer_heldout.rs',
+ 'src/frontend/oir/owned/source/tests.rs',
+ 'src/frontend/oir/owned/source/typeck.rs',
+ 'src/frontend/oir/owned/tests.rs',
+ 'src/frontend/oir/owned_types.rs',
+ 'src/frontend/oir/owned_types/array_tests.rs',
+ 'src/frontend/oir/owned_types/composition_tests.rs',
+ 'src/frontend/owned_syntax_tests.rs',
+ 'src/frontend/parser.rs',
+ 'src/frontend/parser/activation_tests.rs',
+ 'src/frontend/parser/project_tests.rs',
+ 'src/frontend/project/unit2_tests.rs',
+ 'tests/typed_record_composition.rs')
+COMPOSITION_ADDITIONS = ('src/frontend/oir/owned/composition_native_tests.rs',
+ 'src/frontend/oir/owned/composition_reference_tests.rs',
+ 'src/frontend/oir/owned/composition_verifier_tests.rs',
+ 'src/frontend/oir/owned_types/composition_tests.rs',
+ 'fixtures/typed-record-composition-samples/main.ox',
+ 'fixtures/typed-record-composition-samples/model.ox',
+ 'fixtures/typed-record-composition-samples/ops.ox',
+ 'tests/typed_record_composition.rs')
 DIVISION_SOURCE_SHA = 'd3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33'
 DIVISION_SOURCE_BYTES = 35161
 SLICES_AUTHORITY_SHA = '2e8dc2ab5506e179ffe5628e8a46eb6ec362ddb2e26a8a007800eb7029f3069f'
@@ -476,6 +530,11 @@ def inverse_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
 
 
+def inverse_composition_patch(inputs, patch):
+    """Remove only the bounded composition delta, restoring exact slice inputs."""
+    return apply_inverse_patch(inputs, patch, COMPOSITION_PATCH_SHA, COMPOSITION_PATCH_BYTES, COMPOSITION_PATHS)
+
+
 def inverse_slices_patch(inputs, patch):
     """Remove the pinned borrowed-slices delta before division reconstruction."""
     return apply_inverse_patch(inputs, patch, SLICES_PATCH_SHA, SLICES_PATCH_BYTES, SLICES_PATHS)
@@ -633,8 +692,8 @@ def preflight(repo, package=PACKAGE):
             "stale slices authority")
     slices = json.loads(package_bytes["slices-authority.json"])
     require(slices["schema"] == "oxid-borrowed-slices-source-transition-v1"
-            and slices["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and slices["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and slices["current_source_sha256"] == SLICES_SOURCE_SHA
+            and slices["current_source_bytes"] == SLICES_SOURCE_BYTES
             and slices["division_source_sha256"] == DIVISION_SOURCE_SHA
             and slices["division_source_bytes"] == DIVISION_SOURCE_BYTES
             and slices["division_authority_sha256"] == DIVISION_AUTHORITY_SHA
@@ -740,7 +799,7 @@ def preflight(repo, package=PACKAGE):
     historical_bytes = check_entries(repo / U2, historical["files"])
     require(members(repo / U2) == sorted([x["path"] for x in historical["files"]] + ["package-inputs.json"]),
             "missing or extra historical Unit2 member")
-    current = json.loads(package_bytes["current-source.json"])
+    current = json.loads(package_bytes["slices-source.json"])
     division_source = json.loads(package_bytes["division-source.json"])
     combined_source = json.loads(package_bytes["combined-source.json"])
     formatter_source = json.loads(package_bytes["formatter-source.json"])
@@ -816,15 +875,52 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    inputs = check_entries(repo, current["files"])
-    for item in slices["current_input_git_modes"]:
+    composition_current = json.loads(package_bytes["current-source.json"])
+    require(digest(package_bytes["slices-source.json"]) == SLICES_SOURCE_SHA
+            and len(package_bytes["slices-source.json"]) == SLICES_SOURCE_BYTES,
+            "unapproved slices source manifest")
+    require(digest(package_bytes["composition-authority.json"]) == COMPOSITION_AUTHORITY_SHA
+            and len(package_bytes["composition-authority.json"]) == COMPOSITION_AUTHORITY_BYTES,
+            "stale composition authority")
+    composition = json.loads(package_bytes["composition-authority.json"])
+    composition_inputs = check_entries(repo, composition_current["files"])
+    require(set(composition_inputs) == set(current_rows) | set(COMPOSITION_ADDITIONS),
+            "unexpected composition source membership")
+    require([r["path"] for r in composition_current["files"] if r != current_rows.get(r["path"])]
+            == list(COMPOSITION_PATHS), "unexpected composition source delta")
+    require(composition["current_input_git_modes"] == [
+        {"path": r["path"], "mode": "100644"} for r in composition_current["files"]],
+        "unexpected composition input modes")
+    inputs, composition_touched = inverse_composition_patch(
+        composition_inputs, package_bytes["composition-transition.patch"])
+    check_bytes(inputs, current["files"])
+    transition = []
+    for name in COMPOSITION_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", inputs), ("after", composition_inputs)):
+            data = source_inputs.get(name)
+            identities[label] = None if data is None else {
+                **entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        transition.append(identities)
+    require(composition["transition_inputs"] == transition, "stale composition input identities")
+    closure = composition["public_sample_closure"]
+    includer = composition_inputs[closure["includer"]["path"]]
+    sample_references = [x.decode("ascii") for x in re.findall(
+        rb'include_str!\(\s*"\.\./(fixtures/typed-record-composition-samples/[a-z]+\.ox)"\s*\)', includer)]
+    require(entry(closure["includer"]["path"], includer) == closure["includer"]
+            and sample_references == closure["ordered_references"] and len(sample_references) == 3
+            and len(set(sample_references)) == 3
+            and set(sample_references) == {n for n in COMPOSITION_ADDITIONS if n.startswith("fixtures/")},
+            "changed public composition sample closure")
+    for item in composition["current_input_git_modes"]:
         require(regular(repo, item["path"]).stat().st_mode & 0o111 == 0,
                 "changed input mode: " + item["path"])
     fixture_paths = compile_fixture_paths(inputs[COMPILE_FIXTURE_SOURCE])
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [x for x in inputs if x.startswith(("src/", "native/"))]
+    expected = [x for x in composition_inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
@@ -907,8 +1003,10 @@ def preflight(repo, package=PACKAGE):
     }, "stale borrowed Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": current, "selected": selected, "historical": historical,
-            "inputs": inputs, "archived": reconstructed, "references": references,
+    return {"current": composition_current, "slices_source": current,
+            "composition_authority": composition, "composition_touched": composition_touched,
+            "slices_inputs": inputs, "selected": selected, "historical": historical,
+            "inputs": composition_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": adapted_resource,
             "observer": borrowed_observer, "aggregate_observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
@@ -956,6 +1054,8 @@ def prepare_archived(output, captured):
             "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
+            "composition_inverse_patch_sha256": COMPOSITION_PATCH_SHA,
+            "composition_inverse_touched": captured["composition_touched"],
             "slices_inverse_patch_sha256": SLICES_PATCH_SHA,
             "slices_inverse_touched": captured["slices_touched"],
             "division_source_sha256": DIVISION_SOURCE_SHA}
@@ -1153,12 +1253,17 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      composition_authority_sha256=COMPOSITION_AUTHORITY_SHA,
+                      slices_source_sha256=SLICES_SOURCE_SHA,
                       slices_authority_sha256=SLICES_AUTHORITY_SHA,
                       division_source_sha256=DIVISION_SOURCE_SHA,
                       division_authority_sha256=DIVISION_AUTHORITY_SHA,
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
-                "current_source_members": 188, "division_source_members": 185, "combined_source_members": 185,
+                "current_source_members": len(captured["inputs"]),
+                "slices_source_members": len(captured["slices_inputs"]),
+                "division_source_members": len(captured["division_inputs"]),
+                "combined_source_members": len(captured["combined_inputs"]),
                 "formatter_source_members": 133,
                 "compile_time_fixture_members": 42, "compile_time_fixture_references": 47,
                 "predecessor_source_members": 129, "archive_members": 117,

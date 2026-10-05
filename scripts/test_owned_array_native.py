@@ -24,6 +24,14 @@ SLICE_NAMES = (
 )
 
 
+COMPOSITION_NAMES = (
+    "frontend::oir::owned::native::tests::composition::native_composition_projected_array_bounds_fuel_and_rhs_precedence",
+    "frontend::oir::owned::native::tests::composition::native_composition_raw_empty_sentinels_source_free",
+    "frontend::oir::owned::native::tests::composition::native_composition_raw_pilot_source_free_every_fuel",
+    "frontend::oir::owned::native::tests::composition::native_composition_source_free_depth_sixty_four",
+    "frontend::oir::owned::native::tests::composition::native_composition_source_free_pilot_sentinels_effects_and_phi",
+)
+
 def listing_fixture(names, count=None):
     count = len(names) if count is None else count
     return ("\n".join(name + ": test" for name in names)
@@ -31,7 +39,7 @@ def listing_fixture(names, count=None):
 
 
 def discovery_fixture():
-    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES)))
+    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES)))
 
 
 def selection_mutations(argv):
@@ -43,6 +51,7 @@ def selection_mutations(argv):
         "duplicate-name": [argv[0], argv[1], *argv[1:]],
         "filter-drift": [argv[0], argv[1] + "_drift", *argv[2:]],
         "slice-substitution": [argv[0], SLICE_NAMES[0], *argv[2:]],
+        "composition-substitution": [argv[0], COMPOSITION_NAMES[0], *argv[2:]],
         "missing-ignored": [argument for argument in argv if argument != "--ignored"],
     }
 
@@ -98,16 +107,20 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "missing listing footer"):
             admission.admit_list(terse)
 
-    def test_broad_discovery_separates_nineteen_names_from_sixteen_selected(self):
+    def test_broad_discovery_separates_twenty_four_names_from_sixteen_selected(self):
         self.assertEqual(tuple(admission.SLICE_ROSTER), SLICE_NAMES)
         self.assertEqual(len(admission.ROSTER), 16)
         self.assertTrue(set(admission.ROSTER).isdisjoint(SLICE_NAMES))
-        names = sorted((*admission.ROSTER, *SLICE_NAMES))
-        self.assertEqual(len(names), 19)
-        # SHA-256 of the original PR #33 hosted debug/list/stdout: the same
-        # sixteen historical names plus these three ignored slice names.
-        self.assertEqual(admission.sha256(discovery_fixture()),
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
+        self.assertEqual(len(names), 24)
+        # The immutable nineteen-name predecessor remains independently identified.
+        predecessor = listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES)))
+        self.assertEqual(admission.sha256(predecessor),
                          "cb886c3662c245bedfe4eb4ee8789f1a3acaf252d7406a31545357bce01f1ada")
+        self.assertEqual(tuple(admission.COMPOSITION_ROSTER), COMPOSITION_NAMES)
+        self.assertTrue(set(admission.ROSTER).isdisjoint(COMPOSITION_NAMES))
+        with self.assertRaises(admission.AdmissionError):
+            admission.admit_discovery(predecessor)
         self.assertEqual(admission.admit_discovery(discovery_fixture()), names)
         self.assertEqual(admission.admit_list(listing_fixture(admission.ROSTER)), list(admission.ROSTER))
         with self.assertRaises(admission.AdmissionError):
@@ -116,17 +129,18 @@ class AdmissionTests(unittest.TestCase):
             admission.admit_discovery(listing_fixture(admission.ROSTER))
 
     def test_broad_discovery_rejects_unknown_missing_duplicate_and_footer_drift(self):
-        names = sorted((*admission.ROSTER, *SLICE_NAMES))
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
         changed_names = ([], names[:-1], names[1:], names + [names[0]],
                          names + [admission.PREFIX + "slices::native_slices_unreviewed"],
                          [name for name in names if name != SLICE_NAMES[0]],
+                         *[[name for name in names if name != omitted] for omitted in COMPOSITION_NAMES],
                          ["unexpected", *names[1:]])
         for values in changed_names:
             with self.subTest(values=values), self.assertRaises(admission.AdmissionError):
-                admission.admit_discovery(listing_fixture(values, 19))
+                admission.admit_discovery(listing_fixture(values, 24))
         for changed in (b"", listing_fixture(names, 16), listing_fixture(names, 20),
-                        discovery_fixture().replace(b"19 tests, 0 benchmarks\n", b""),
-                        discovery_fixture() + b"19 tests, 0 benchmarks\n",
+                        discovery_fixture().replace(b"24 tests, 0 benchmarks\n", b""),
+                        discovery_fixture() + b"24 tests, 0 benchmarks\n",
                         discovery_fixture() + b"unexpected: test\n"):
             with self.subTest(data=changed), self.assertRaises(admission.AdmissionError):
                 admission.admit_discovery(changed)
@@ -149,6 +163,21 @@ class AdmissionTests(unittest.TestCase):
         for command in commands:
             selected = command[command.index("oxid") + 1]
             self.assertEqual({name for name in SLICE_NAMES if selected in name}, set(SLICE_NAMES))
+
+    def test_explicit_composition_gate_covers_five_names_in_both_profiles(self):
+        repo = Path(__file__).resolve().parents[1]
+        workflow = (repo / ".github/workflows/ci.yml").read_text()
+        block = workflow.split("      - name: Verify owned record composition native parity in both profiles\n", 1)[1].split("      - name:", 1)[0]
+        commands = [shlex.split(line.strip()) for line in block.splitlines()
+                    if line.strip().startswith("cargo ") and "--bin oxid" in line]
+        self.assertEqual(commands, [
+            ["cargo", "test", "--locked", "--bin", "oxid", "native_composition", "--", "--include-ignored", "--test-threads=1"],
+            ["cargo", "test", "--release", "--locked", "--bin", "oxid", "native_composition", "--", "--include-ignored", "--test-threads=1"],
+        ])
+        source = (repo / "src/frontend/oir/owned/composition_native_tests.rs").read_text()
+        ignored = re.findall(r'#\[test\]\s*#\[ignore[^\n]*\]\s*fn (native_composition_\w+)\(', source)
+        self.assertEqual(set(ignored), {name.rsplit("::", 1)[1] for name in COMPOSITION_NAMES})
+        self.assertEqual(len(ignored), 5)
 
     def test_container_upload_paths_cover_all_members_after_early_failure(self):
         # Observed on runner 2.337.0, runs 37169581641 and 37169578747.
@@ -754,10 +783,10 @@ class PackageTests(unittest.TestCase):
 
     def test_resealed_broad_discovery_names_and_invocation_are_required(self):
         self.fixture()
-        names = sorted((*admission.ROSTER, *SLICE_NAMES))
-        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 19),
-                     "duplicate": listing_fixture([*names, names[0]], 19),
-                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 19),
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
+        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 24),
+                     "duplicate": listing_fixture([*names, names[0]], 24),
+                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 24),
                      "historical-only": listing_fixture(admission.ROSTER)}
         for profile in admission.PROFILES:
             for label, data in mutations.items():
@@ -1763,10 +1792,10 @@ class CombinedReceiptTests(unittest.TestCase):
                             shutil.rmtree(output)
 
     def test_offline_resealed_discovery_admits_only_current_nineteen_and_broad_argv(self):
-        names = sorted((*admission.ROSTER, *SLICE_NAMES))
-        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 19),
-                     "duplicate": listing_fixture([*names, names[0]], 19),
-                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 19),
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
+        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 24),
+                     "duplicate": listing_fixture([*names, names[0]], 24),
+                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 24),
                      "historical-only": listing_fixture(admission.ROSTER)}
         for profile in admission.PROFILES:
             for label, data in mutations.items():

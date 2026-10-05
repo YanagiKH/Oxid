@@ -734,8 +734,8 @@ impl Parser<'_> {
                 None
             };
             let name = self.expect(Kind::Ident, "expected field name")?.span;
-            self.expect(Kind::Colon, "field requires an explicit scalar type")?;
-            let ty = self.ty_with_paths(false)?;
+            self.expect(Kind::Colon, "field requires an explicit value type")?;
+            let ty = self.ty_with_paths(true)?;
             fields.push(StructField {
                 public,
                 name,
@@ -880,17 +880,29 @@ impl Parser<'_> {
             })
         } else if self.mode.owned()
             && self.peek().kind == Kind::Ident
-            && self.tokens[self.cursor + 1..]
-                .iter()
-                .filter(|token| token.kind != Kind::Trivia)
-                .take(3)
-                .map(|token| token.kind)
-                .eq([Kind::Dot, Kind::Ident, Kind::Equal])
+            && self.field_assignment_ahead()
         {
             let base = self.bump().span;
             self.bump();
-            let field = self.bump().span;
-            let operator_span = self.bump().span;
+            let first = self.bump().span;
+            let mut field = first;
+            let mut hops = 1;
+            while self.take(Kind::Dot).is_some() {
+                if hops >= 64 {
+                    return Err(self.diagnostic(
+                        "E0400",
+                        "parse",
+                        "record access path depth limit exceeded",
+                        Some(self.peek().span),
+                    ));
+                }
+                field.end = self
+                    .expect(Kind::Ident, "expected field name after `.`")?
+                    .span
+                    .end;
+                hops += 1;
+            }
+            let operator_span = self.expect(Kind::Equal, "expected assignment `=`")?.span;
             StmtKind::FieldAssign {
                 base,
                 field,
@@ -943,6 +955,24 @@ impl Parser<'_> {
             kind,
             span: self.source.span(start, end),
         })
+    }
+    fn field_assignment_ahead(&self) -> bool {
+        let mut tokens = self.tokens[self.cursor + 1..]
+            .iter()
+            .filter(|token| token.kind != Kind::Trivia);
+        let mut hops = 0;
+        loop {
+            match tokens.next().map(|token| token.kind) {
+                Some(Kind::Dot) if hops <= 64 => {
+                    if tokens.next().map(|token| token.kind) != Some(Kind::Ident) {
+                        return false;
+                    }
+                    hops += 1;
+                }
+                Some(Kind::Equal) => return hops != 0,
+                _ => return false,
+            }
+        }
     }
     fn comparison_op(&self) -> Option<ComparisonOp> {
         Some(match self.peek().kind {
@@ -1265,18 +1295,49 @@ impl Parser<'_> {
                     && matches!(path, ItemPath::Unqualified(_))
                     && self.take(Kind::Dot).is_some()
                 {
-                    let field = self
+                    let first = self
                         .expect(Kind::Ident, "expected field name after `.`")?
                         .span;
-                    // A qualified field assignment also reaches this branch:
-                    // assignment lookahead requires `.` + Ident + `=`.
-                    if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
-                        self.project_recovery = true;
+                    let mut field = first;
+                    let mut receiver_end = token.span.end;
+                    let mut hops = 1usize;
+                    loop {
+                        if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
+                            self.project_recovery = true;
+                            return Err(self.diagnostic(
+                                "E0101",
+                                "parse",
+                                "qualified field names are unavailable in typed-preview",
+                                Some(self.peek().span),
+                            ));
+                        }
+                        if self.peek().kind != Kind::Dot {
+                            break;
+                        }
+                        if hops >= 65 {
+                            return Err(self.diagnostic(
+                                "E0400",
+                                "parse",
+                                "record access path depth limit exceeded",
+                                Some(self.peek().span),
+                            ));
+                        }
+                        receiver_end = field.end;
+                        self.bump();
+                        field = self
+                            .expect(Kind::Ident, "expected field name after `.`")?
+                            .span;
+                        hops += 1;
+                    }
+                    let is_length = self.arrays_enabled()
+                        && self.peek().kind == Kind::LParen
+                        && self.source.text_at(field) == "len";
+                    if hops - usize::from(is_length) > 64 {
                         return Err(self.diagnostic(
-                            "E0101",
+                            "E0400",
                             "parse",
-                            "qualified field names are unavailable in typed-preview",
-                            Some(self.peek().span),
+                            "record access path depth limit exceeded",
+                            Some(field),
                         ));
                     }
                     if self.arrays_enabled() && self.peek().kind == Kind::LParen {
@@ -1285,12 +1346,25 @@ impl Parser<'_> {
                         }
                         self.bump();
                         end = self.array_length_close()?;
-                        ExprKind::ArrayLength { base: token.span }
+                        ExprKind::ArrayLength {
+                            base: self.source.span(token.span.start, receiver_end),
+                        }
+                    } else if self.arrays_enabled() && self.array_punctuation("[") {
+                        self.bump();
+                        if self.array_punctuation("]") {
+                            return Err(self.array_missing("array index requires an expression"));
+                        }
+                        let index = self.expression(depth + 1, LiteralContext::Allowed)?;
+                        end = self.array_close("array index requires `]`")?;
+                        ExprKind::IndexRead {
+                            base: self.source.span(token.span.start, field.end),
+                            index,
+                        }
                     } else {
                         end = field.end;
                         ExprKind::FieldRead {
                             base: token.span,
-                            field,
+                            field: self.source.span(first.start, field.end),
                         }
                     }
                 } else if self.mode.owned()

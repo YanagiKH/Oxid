@@ -233,7 +233,15 @@ def parser_records(capsule, repo, contract_root, plan, seal):
     comparator, proof = adapter.comparator()
     contract = comparator.load_contract(contract_root)
     effective, receipt = comparator.admit_contract_amendment(contract, contract_root, adapter.effective_authority(authority))
+    predecessor_receipt = receipt
+    effective, receipt = adapter.current_parser_contract(authority, effective, receipt)
     q.need(result['derivation'] == proof and all(result.get(key) == value for key, value in receipt.items()), 'parser comparator/effective contract identity')
+    frozen = result['frozen_comparison']
+    q.need(q.sha(comparator.canonical(frozen)) == result['frozen_comparison_canonical_sha256'] and
+           all(frozen.get(key) == value for key, value in predecessor_receipt.items()) and
+           frozen['session'] == result['session'] and frozen['derivation'] == proof and
+           frozen['observations'] == frozen['expected_observations'] == 638 and
+           frozen['ordinary_passivity'] == result['ordinary_passivity'], 'retained frozen parser comparison differs')
     sys.path.insert(0, str(Path(repo) / q.PARSER_FROZEN / 'frozen/helpers'))
     normalizer = q.module('_unit4_frozen_collector', Path(repo) / q.PARSER_FROZEN / 'frozen/helpers/run.py')
     expected_case_ids = [case['id'] for case in contract['cases']]

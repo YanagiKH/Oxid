@@ -85,6 +85,15 @@ impl fmt::Display for ValueType {
         }
     }
 }
+struct FieldValueType(ValueTy);
+impl fmt::Display for FieldValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            ValueTy::Scalar(ty) => ScalarType(ty).fmt(f),
+            ValueTy::Owned(ty) => Aggregate(ty).fmt(f),
+        }
+    }
+}
 struct Borrow(BorrowKind);
 impl fmt::Display for Borrow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -523,7 +532,7 @@ pub(super) fn resolved(
                 format_args!(
                     "{},{},{},{},{}",
                     Field(field.id),
-                    ScalarType(field.ty),
+                    FieldValueType(field.ty),
                     SpanRow(field.name_span),
                     SpanRow(field.span),
                     record.id.0
@@ -657,8 +666,8 @@ pub(super) fn resolved(
         ),
     )
 }
-struct Projection(source_hir::Projection);
-impl fmt::Display for Projection {
+struct Projection<'a>(&'a source_hir::Projection);
+impl fmt::Display for Projection<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0.base {
             source_hir::AccessBase::Owner(binding) => {
@@ -890,11 +899,70 @@ impl fmt::Display for ScalarStatement<'_> {
         }
     }
 }
+struct PathFields<'a>(&'a [FieldId]);
+impl fmt::Display for PathFields<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[")?;
+        for (index, field) in self.0.iter().enumerate() {
+            if index != 0 {
+                f.write_str(",")?;
+            }
+            Field(*field).fmt(f)?;
+        }
+        f.write_str("]")
+    }
+}
 struct Instruction<'a>(&'a OwnedInstruction);
 impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
+            I::ConstructComposite {
+                destination,
+                fields,
+            } => write!(
+                f,
+                "[\"construct-composite\",{},{}]",
+                destination.0,
+                fields.len()
+            ),
+            I::ReadProjection {
+                destination,
+                base,
+                path,
+                index,
+            } => write!(
+                f,
+                "[\"read-projection\",{},{},{},{}]",
+                destination.0,
+                Base(*base),
+                PathFields(path),
+                Optional(index.map(OperandRow))
+            ),
+            I::WriteProjection {
+                base,
+                path,
+                index,
+                value,
+            } => write!(
+                f,
+                "[\"write-projection\",{},{},{},{}]",
+                Base(*base),
+                PathFields(path),
+                Optional(index.map(OperandRow)),
+                OperandRow(*value)
+            ),
+            I::ProjectionLength {
+                destination,
+                base,
+                path,
+            } => write!(
+                f,
+                "[\"projection-length\",{},{},{}]",
+                destination.0,
+                Base(*base),
+                PathFields(path)
+            ),
             I::Scalar(value) => write!(f, "[\"scalar\",{}]", ScalarStatement(value)),
             I::StorageLive(id) => write!(f, "[\"storage-live\",{}]", id.0),
             I::StorageEnd(id) => write!(f, "[\"storage-end\",{}]", id.0),

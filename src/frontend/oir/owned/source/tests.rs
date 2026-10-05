@@ -173,7 +173,7 @@ fn names_fields_types_and_scope_errors_have_stable_families() {
         ("struct bool {}", "E0202"),
         ("struct i32 {}", "E0202"),
         ("struct C { a: i32, a: bool }", "E0201"),
-        ("struct C { a: D } struct D {}", "E0202"),
+        ("struct C { a: D } struct D { c: C }", "E0202"),
         ("struct C { a: Unknown }", "E0202"),
         ("fn f(x: &bool) -> () { return; }", "E0202"),
         ("fn f(x: Unknown) -> () { return; }", "E0202"),
@@ -416,7 +416,7 @@ fn typed_views_retain_identity_order_modes_projections_and_exact_origins() {
         .unwrap();
     assert_eq!(
         view.expression_projection(ExprId(projected.0)),
-        Some(Projection {
+        Some(&Projection {
             base: AccessBase::Reference {
                 binding: BindingId(1),
                 kind: BorrowKind::Exclusive
@@ -424,17 +424,25 @@ fn typed_views_retain_identity_order_modes_projections_and_exact_origins() {
             field: FieldId {
                 record: RecordId(0),
                 index: 0
-            }
+            },
+            path: vec![FieldId {
+                record: RecordId(0),
+                index: 0
+            }],
         })
     );
     assert_eq!(
         view.statement_projection(f.body, 1),
-        Some(Projection {
+        Some(&Projection {
             base: AccessBase::Owner(BindingId(4)),
             field: FieldId {
                 record: RecordId(0),
                 index: 0
-            }
+            },
+            path: vec![FieldId {
+                record: RecordId(0),
+                index: 0
+            }],
         })
     );
     assert!(view.block_flow(f.body).returns_only());

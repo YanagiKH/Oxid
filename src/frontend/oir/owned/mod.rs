@@ -143,8 +143,37 @@ impl OwnedStatement {
         self.diagnostic_origins.map_or(self.span, |o| o.cause)
     }
 }
+#[derive(Clone, Copy, Debug)]
+enum FieldInitializer {
+    Scalar(Operand),
+    // Must name a complete ordinary Temporary; producer stages at evaluation
+    // time using MoveInitialize. The verifier independently enforces consumption.
+    Owned(OwnerPlaceId),
+}
+
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    ConstructComposite {
+        destination: OwnerPlaceId,
+        fields: Vec<(FieldId, FieldInitializer)>,
+    },
+    ReadProjection {
+        destination: LocalId,
+        base: AccessBase,
+        path: Vec<FieldId>,
+        index: Option<Operand>,
+    },
+    WriteProjection {
+        base: AccessBase,
+        path: Vec<FieldId>,
+        index: Option<Operand>,
+        value: Operand,
+    },
+    ProjectionLength {
+        destination: LocalId,
+        base: AccessBase,
+        path: Vec<FieldId>,
+    },
     Scalar(Statement),
     StorageLive(OwnerPlaceId),
     StorageEnd(OwnerPlaceId),
@@ -388,3 +417,8 @@ mod array_reference_tests;
 
 #[cfg(test)]
 mod reviewer_array_reference_tests;
+
+#[cfg(test)]
+mod composition_reference_tests;
+#[cfg(test)]
+mod composition_verifier_tests;

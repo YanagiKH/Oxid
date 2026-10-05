@@ -350,10 +350,20 @@ impl Machine<'_, '_> {
             return;
         };
         if kind == FaultKind::ConstructorLastScalarType {
-            let OwnedInstruction::ConstructArray { elements, .. } = instruction else {
-                return;
+            let last = match instruction {
+                OwnedInstruction::ConstructArray { elements, .. } => elements.last(),
+                OwnedInstruction::ConstructComposite { fields, .. } => {
+                    fields.iter().rev().find_map(|(_, value)| {
+                        if let FieldInitializer::Scalar(operand) = value {
+                            Some(operand)
+                        } else {
+                            None
+                        }
+                    })
+                }
+                _ => None,
             };
-            let Some(last) = elements.last() else {
+            let Some(last) = last else {
                 return;
             };
             let Some(Some(value)) = self.frames[frame].slots.get_mut(last.local.0) else {
@@ -370,7 +380,10 @@ impl Machine<'_, '_> {
         let base = match instruction {
             OwnedInstruction::ReadIndex { base, .. }
             | OwnedInstruction::WriteIndex { base, .. }
-            | OwnedInstruction::ArrayLength { base, .. } => *base,
+            | OwnedInstruction::ArrayLength { base, .. }
+            | OwnedInstruction::ReadProjection { base, .. }
+            | OwnedInstruction::WriteProjection { base, .. }
+            | OwnedInstruction::ProjectionLength { base, .. } => *base,
             _ => return,
         };
         let AccessBase::Parameter(reference) = base else {

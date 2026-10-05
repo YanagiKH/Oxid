@@ -294,6 +294,7 @@ pub(super) fn check(
         .flat_map(|b| &b.statements)
         .filter_map(|i| match &i.kind {
             OwnedInstruction::Construct { fields, .. } => Some(fields.len().min(1024)),
+            OwnedInstruction::ConstructComposite { fields, .. } => Some(fields.len().min(1024)),
             _ => None,
         })
         .max()
@@ -446,8 +447,100 @@ pub(super) fn check(
                             return Err(bad(Malformed::Type, s));
                         }
                         field_seen[id.index] = 1;
-                        equal(operand(f, *value, sources)?, field.ty(), value.span)?;
+                        equal(
+                            ValueTy::Scalar(operand(f, *value, sources)?),
+                            field.value_ty(),
+                            value.span,
+                        )?;
                     }
+                }
+                OwnedInstruction::ConstructComposite {
+                    destination,
+                    fields,
+                } => {
+                    let target = ordinary(f, *destination, s)?;
+                    if !matches!(target.kind, OwnerKind::Local { .. } | OwnerKind::Temporary) {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    let prev = &mut owners[destination.0].initialize;
+                    if prev.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *prev = Some(site);
+                    let record = record(target.aggregate(), s)?;
+                    let declared = d.fields(record)?;
+                    equal(fields.len(), declared.len(), s)?;
+                    field_seen[..declared.len()].fill(0);
+                    for (position, (id, value)) in fields.iter().enumerate() {
+                        meter.visit()?;
+                        let field = d.field(record, *id)?;
+                        if field_seen[id.index] != 0 {
+                            return Err(bad(Malformed::Type, s));
+                        }
+                        field_seen[id.index] = 1;
+                        match value {
+                            FieldInitializer::Scalar(value) => equal(
+                                field.value_ty(),
+                                ValueTy::Scalar(operand(f, *value, sources)?),
+                                value.span,
+                            )?,
+                            FieldInitializer::Owned(source) => {
+                                let source_decl = ordinary(f, *source, s)?;
+                                if source == destination || source_decl.kind != OwnerKind::Temporary
+                                {
+                                    return Err(bad(Malformed::OwnerClass, s));
+                                }
+                                d.same_value_type(
+                                    field.value_ty(),
+                                    ValueTy::Owned(source_decl.aggregate()),
+                                )?;
+                                for (_, earlier) in &fields[..position] {
+                                    meter.visit()?;
+                                    if matches!(earlier, FieldInitializer::Owned(other) if other == source)
+                                    {
+                                        return Err(bad(Malformed::Binding, s));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                OwnedInstruction::ReadProjection {
+                    destination,
+                    base: b,
+                    path,
+                    index,
+                } => {
+                    let ty = projection_type(f, d, *b, path, *index, sources, meter, s)?;
+                    equal(local(f, *destination, s)?, ty, s)?;
+                }
+                OwnedInstruction::WriteProjection {
+                    base: b,
+                    path,
+                    index,
+                    value,
+                } => {
+                    let ty = projection_type(f, d, *b, path, *index, sources, meter, s)?;
+                    equal(operand(f, *value, sources)?, ty, value.span)?;
+                }
+                OwnedInstruction::ProjectionLength {
+                    destination,
+                    base: b,
+                    path,
+                } => {
+                    let (referent, _) = base(f, *b, s)?;
+                    let BorrowedTy::Exact(root) = referent else {
+                        return Err(bad(Malformed::Type, s));
+                    };
+                    for _ in path {
+                        meter.visit()?;
+                    }
+                    let (ValueTy::Owned(AggregateTy::FixedArray(_)), _) =
+                        d.projection(root, path)?
+                    else {
+                        return Err(bad(Malformed::Type, s));
+                    };
+                    equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
                 }
                 OwnedInstruction::ConstructArray {
                     destination,
@@ -509,8 +602,8 @@ pub(super) fn check(
                 } => {
                     let (r, _) = base(f, *b, s)?;
                     equal(
-                        local(f, *destination, s)?,
-                        d.field(borrowed_record(r, s)?, *field)?.ty(),
+                        ValueTy::Scalar(local(f, *destination, s)?),
+                        d.field(borrowed_record(r, s)?, *field)?.value_ty(),
                         s,
                     )?;
                 }
@@ -521,8 +614,8 @@ pub(super) fn check(
                 } => {
                     let (r, _) = base(f, *b, s)?;
                     equal(
-                        operand(f, *value, sources)?,
-                        d.field(borrowed_record(r, s)?, *field)?.ty(),
+                        ValueTy::Scalar(operand(f, *value, sources)?),
+                        d.field(borrowed_record(r, s)?, *field)?.value_ty(),
                         value.span,
                     )?;
                 }
@@ -752,4 +845,33 @@ fn diagnostic_origins(
         span(sources, origins.cause)?;
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)] // Same independently checked source/type/work context as instruction shape.
+fn projection_type(
+    f: &RawOwnedFunction,
+    d: &Declarations,
+    b: AccessBase,
+    path: &[FieldId],
+    index: Option<Operand>,
+    sources: &SourceMap,
+    meter: &mut budget::Meter,
+    s: Span,
+) -> Result<hir::Ty, OwnedFailure> {
+    let (referent, _) = base(f, b, s)?;
+    let BorrowedTy::Exact(root) = referent else {
+        return Err(bad(Malformed::Type, s));
+    };
+    for _ in path {
+        meter.visit()?;
+    }
+    let (ty, _) = d.projection(root, path)?;
+    match (ty, index) {
+        (ValueTy::Scalar(ty), None) => Ok(ty),
+        (ValueTy::Owned(AggregateTy::FixedArray(array)), Some(index)) => {
+            equal(operand(f, index, sources)?, hir::Ty::I32, index.span)?;
+            Ok(array.element())
+        }
+        _ => Err(bad(Malformed::Type, s)),
+    }
 }

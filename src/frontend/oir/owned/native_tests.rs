@@ -2360,3 +2360,6 @@ mod arrays;
 
 #[path = "slice_native_tests.rs"]
 mod slices;
+
+#[path = "composition_native_tests.rs"]
+mod composition;

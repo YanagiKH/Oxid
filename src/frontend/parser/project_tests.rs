@@ -177,7 +177,7 @@ fn unsupported_project_shapes_stay_closed() {
         "use crate::{f};",
         "use {crate::f};",
         "use *;",
-        "struct R {n:crate::R}",
+        "struct R {n:self::R}",
         "fn f()->(){mod child;return;}",
         "fn f()->(){use crate::f;return;}",
         "fn f()->(){crate::f;return;}",
@@ -195,7 +195,7 @@ fn unsupported_project_shapes_stay_closed() {
         "fn f()->(){g(&crate::state);return;}",
         "fn f()->(){crate::state=1;return;}",
         "fn f()->(){crate::state.n;return;}",
-        "struct R {n:crate::R}",
+        "struct R {n:super::R}",
         "fn f()->(){if crate::R {} { return; } return;}",
     ] {
         let _ = error(text, SourceMode::ProjectCandidate);

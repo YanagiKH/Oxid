@@ -43,3 +43,8 @@ resource and native host gates remain in force. Its acceptance controls and
 [three-module sample](../fixtures/typed-slice-samples/README.md) do not establish
 green exact-head hosted CI or a completed milestone; historical ledgers retain
 their original source and compiler qualification identities.
+
+[RFC 0020](0020-owned-record-composition.md) adds bounded by-value record
+composition, complete owned constructor initializers and named-root scalar
+leaf/contained-array access. Ownership and call borrowing remain whole-root;
+aggregate extraction/replacement and projected borrowing remain excluded.

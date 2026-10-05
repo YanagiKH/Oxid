@@ -140,6 +140,20 @@ impl<'a> Fingerprint<'a> {
             .push(Part::Text(self.source.text_at(span).to_owned()));
     }
 
+    fn access_path(&mut self, span: Span) {
+        self.span(span);
+        // Unlike one-token names, retained named-root/field paths contain
+        // formatter-owned gaps. Preserve each covered lexical token and the
+        // token-relative origin, not trivia spelling inside the path.
+        let spelling = self
+            .tokens
+            .iter()
+            .filter(|token| token.span.start >= span.start && token.span.end <= span.end)
+            .map(|token| self.source.text_at(token.span))
+            .collect::<String>();
+        self.parts.push(Part::Text(spelling));
+    }
+
     fn optional_span(&mut self, span: Option<Span>) {
         self.flag(span.is_some());
         if let Some(span) = span {
@@ -340,7 +354,7 @@ impl<'a> Fingerprint<'a> {
             ExprKind::FieldRead { base, field } => {
                 self.tag("field-read");
                 self.spelling(*base);
-                self.spelling(*field);
+                self.access_path(*field);
             }
             ExprKind::ArrayLiteral { elements } => {
                 self.tag("array-literal");
@@ -351,12 +365,12 @@ impl<'a> Fingerprint<'a> {
             }
             ExprKind::IndexRead { base, index } => {
                 self.tag("index-read");
-                self.spelling(*base);
+                self.access_path(*base);
                 self.expression(*index);
             }
             ExprKind::ArrayLength { base } => {
                 self.tag("array-length");
-                self.spelling(*base);
+                self.access_path(*base);
             }
             ExprKind::Group(inner) => {
                 self.tag("group");
@@ -420,7 +434,7 @@ impl<'a> Fingerprint<'a> {
             } => {
                 self.tag("field-assign");
                 self.spelling(*base);
-                self.spelling(*field);
+                self.access_path(*field);
                 self.span(*target_span);
                 self.span(*operator_span);
                 self.expression(*value);
@@ -657,6 +671,13 @@ struct Empty{}struct Pair{left:i32,right:bool,}
 fn inspect(p:&Pair,q:&mut Pair)->(){let mut x:Pair=Pair{left:1,right:true,};
 let z=Empty{};x.left=(x.left+2);consume(x,Pair{left:-9,right:false});
 inspect(&x,&mut x);inspect(&*p,&mut *q);inspect(&mut *q,&*p);return;}
+"#),
+    ("record-composition", r#"
+struct Batch { meta: crate::state::Meta, samples: [i32; 3], }
+fn work(b: &mut Batch)->i32 {
+b /* root */ . meta /* hop */ . completed = b.meta.completed + 1;
+b.samples /* index */ [0] = b.meta.completed;
+return b.samples.len() + b.samples[0];}
 "#),
     ("project-items", r#"
 /* header */ pub mod child;mod private_child;

@@ -1,0 +1,42 @@
+{
+  "checkpoint_head": "e5872ea9322fc1f0cfb3f6142a4683caeacbadec",
+  "checkpoint_tree": "73d3a5d426179a0f4993e0fd2a3cf259f6f098ef",
+  "files": [
+    {
+      "bytes": 64383,
+      "path": "src/frontend/oir/owned_types.rs",
+      "sha256": "36d01e2b32ed451a13a994c2153e3215dd32bd4faafd4d72979e7b5f99cb16f8"
+    },
+    {
+      "bytes": 10521,
+      "path": "src/frontend/oir/owned/mod.rs",
+      "sha256": "9098ba8f33bb40408becb35f48079dcdeffe013ffcc93493bbdfb8c37f2493d7"
+    },
+    {
+      "bytes": 80482,
+      "path": "src/frontend/oir/owned/execute.rs",
+      "sha256": "6e5fbf2687161543f1b5d0b640dd182df30bd2b5c65e6dd7b12a54428ed976fe"
+    },
+    {
+      "bytes": 9473,
+      "path": "tests/fixtures/typed_project_unit3_independent/components/observer/parse_debug.py",
+      "sha256": "638fb39b814f637bf21902738edb35bbe775956d2c00a0e307957668e38c4264"
+    },
+    {
+      "bytes": 6698,
+      "path": "tests/fixtures/typed_project_unit3_independent/components/oracles/comparison-v1/actual_raw.py",
+      "sha256": "b6a4c4fac95be7271e38bc45f7c3049ff7d37a5ce846b3e6ceeb2c4f6dffe532"
+    },
+    {
+      "bytes": 27361,
+      "path": "tests/fixtures/typed_project_unit3_independent/components/oracles/comparison-v1/actual_trace.py",
+      "sha256": "103cc041fdb1a1c3caeb9e20092f8298a0a6f8758ce1a34758ff2a117fc35512"
+    },
+    {
+      "bytes": 8449,
+      "path": "tests/fixtures/typed_project_unit3_independent/components/oracles/comparison-v1/compare.py",
+      "sha256": "65f4b2b8369a4d84933ab3fac183682746d496f9e2513ac109a86968d5807b2a"
+    }
+  ],
+  "schema": "oxid-record-runtime-schema-anchors-v1"
+}

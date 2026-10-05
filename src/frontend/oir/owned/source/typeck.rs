@@ -150,15 +150,15 @@ impl<'a> TypedOwnedFunction<'a> {
     pub(super) fn block_flow(&self, id: BodyBlockId) -> FlowSummary {
         self.body.block_flows[id.0]
     }
-    pub(super) fn expression_projection(&self, id: ExprId) -> Option<Projection> {
-        self.body.projections[id.0]
+    pub(super) fn expression_projection(&self, id: ExprId) -> Option<&'a Projection> {
+        self.body.projections[id.0].as_ref()
     }
     pub(super) fn statement_projection(
         &self,
         block: BodyBlockId,
         index: usize,
-    ) -> Option<Projection> {
-        self.body.statement_projections[block.0][index]
+    ) -> Option<&'a Projection> {
+        self.body.statement_projections[block.0][index].as_ref()
     }
 }
 fn diagnostic(
@@ -282,27 +282,110 @@ fn projection(
             )
         }
     };
-    let spelling = program.text(field_span);
-    let field = program.records()[record.0]
-        .fields
-        .iter()
-        .find(|field| program.text(field.name_span) == spelling)
-        .ok_or_else(|| {
-            error(
-                "E0305",
-                format_args!("unknown field `{}`", owned_diagnostic::name(spelling)),
-                field_span,
-            )
-        })?
-        .id;
     let requester = program.requester(function.id)?;
-    if let Access::Denied(field) = program.query().field_access(requester, field, field_span)? {
-        return Err(program
+    let ast = program.index().sources().ast(requester)?;
+    let start = ast
+        .tokens
+        .partition_point(|token| token.span.end <= field_span.start);
+    let tokens = ast.tokens[start..]
+        .iter()
+        .take_while(|token| token.span.start < field_span.end);
+    let length = tokens
+        .clone()
+        .filter(|token| token.kind == crate::frontend::lexer::Kind::Ident)
+        .count();
+    program.admit_projection(length, field_span)?;
+    let mut path = Vec::new();
+    path.try_reserve_exact(length)
+        .map_err(|_| error("E0400", "record projection allocation failed", field_span))?;
+    let mut current = ValueTy::Owned(AggregateTy::Record(record));
+    for token in tokens {
+        if token.kind != crate::frontend::lexer::Kind::Ident {
+            continue;
+        }
+        if path.len() >= 64 {
+            return Err(error(
+                "E0400",
+                "record access path depth limit exceeded",
+                token.span,
+            ));
+        }
+        let ValueTy::Owned(AggregateTy::Record(record)) = current else {
+            return Err(error(
+                "E0305",
+                "intermediate field access requires a record",
+                token.span,
+            ));
+        };
+        let spelling = program.text(token.span);
+        let field = program.records()[record.0]
+            .fields
+            .iter()
+            .find(|field| program.text(field.name_span) == spelling)
+            .ok_or_else(|| {
+                error(
+                    "E0305",
+                    format_args!("unknown field `{}`", owned_diagnostic::name(spelling)),
+                    token.span,
+                )
+            })?;
+        if let Access::Denied(field) = program
             .query()
-            .private_field_diagnostic(field, field_span, "type")?);
+            .field_access(requester, field.id, token.span)?
+        {
+            return Err(program
+                .query()
+                .private_field_diagnostic(field, token.span, "type")?);
+        }
+        current = field.ty;
+        path.push(field.id);
     }
-    Ok(Projection { base, field })
+    let field = *path
+        .last()
+        .ok_or_else(|| error("E0500", "empty resolved field path", field_span))?;
+    Ok(Projection { base, field, path })
 }
+fn projected_array_access(
+    program: &ResolvedOwnedProgram<'_>,
+    function: &Function,
+    binding: BindingId,
+    base_span: Span,
+    access_span: Span,
+    bindings: &[Option<ParameterTy>],
+) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
+    let requester = program.requester(function.id)?;
+    let ast = program.index().sources().ast(requester)?;
+    let start = ast
+        .tokens
+        .partition_point(|token| token.span.end <= base_span.start);
+    let mut identifiers = ast.tokens[start..]
+        .iter()
+        .take_while(|token| token.span.start < base_span.end)
+        .filter(|token| token.kind == crate::frontend::lexer::Kind::Ident);
+    let root = identifiers
+        .next()
+        .ok_or_else(|| error("E0500", "missing projection root", base_span))?
+        .span;
+    let Some(first) = identifiers.next() else {
+        let (base, ty) = array_access(function, binding, access_span, bindings)?;
+        return Ok((None, base, ty));
+    };
+    let mut field_span = first.span;
+    field_span.end = base_span.end;
+    let projection = projection(program, function, binding, root, field_span, bindings)?;
+    let ValueTy::Owned(AggregateTy::FixedArray(array)) =
+        program.records()[projection.field.record.0].fields[projection.field.index].ty
+    else {
+        return Err(error(
+            "E0305",
+            "indexed access requires a fixed scalar array field",
+            base_span,
+        ));
+    };
+    let base = projection.base;
+    Ok((Some(projection), base, array.element()))
+}
+
 fn array_access(
     function: &Function,
     binding: BindingId,
@@ -558,7 +641,7 @@ fn expression_type(
             for field in fields {
                 present[field.field.index] = true;
                 let actual = child(field.value)?;
-                let expected = scalar(declared.fields[field.field.index].ty);
+                let expected = declared.fields[field.field.index].ty;
                 if actual != expected {
                     return Err(mismatch(
                         program,
@@ -616,11 +699,17 @@ fn expression_type(
                     .map_err(|_| error("E0500", "invalid resolved array length", expr.span))?;
             ValueTy::Owned(AggregateTy::FixedArray(array))
         }
-        ExprKind::IndexRead { base, index, .. } => {
+        ExprKind::IndexRead {
+            base,
+            base_span,
+            index,
+        } => {
             program.work().debit(1, expr.span, "array type read")?;
             let actual = child(*index)?;
             program.work().debit(1, expr.span, "array type access")?;
-            let (_, element) = array_access(function, *base, expr.span, bindings)?;
+            let (projection, _, element) =
+                projected_array_access(program, function, *base, *base_span, expr.span, bindings)?;
+            projections[id.0] = projection;
             if actual != scalar(Ty::I32) {
                 return Err(mismatch(
                     program,
@@ -631,10 +720,12 @@ fn expression_type(
             }
             scalar(element)
         }
-        ExprKind::ArrayLength { base, .. } => {
+        ExprKind::ArrayLength { base, base_span } => {
             program.work().debit(1, expr.span, "array type length")?;
             program.work().debit(1, expr.span, "array type access")?;
-            array_access(function, *base, expr.span, bindings)?;
+            let (projection, _, _) =
+                projected_array_access(program, function, *base, *base_span, expr.span, bindings)?;
+            projections[id.0] = projection;
             scalar(Ty::I32)
         }
         ExprKind::FieldRead {
@@ -644,10 +735,14 @@ fn expression_type(
         } => {
             let projection =
                 projection(program, function, *base, *base_span, *field_span, bindings)?;
-            projections[id.0] = Some(projection);
-            let ty = scalar(
-                program.records()[projection.field.record.0].fields[projection.field.index].ty,
-            );
+            let ty = program.records()[projection.field.record.0].fields[projection.field.index].ty;
+            if !matches!(ty, ValueTy::Scalar(_)) {
+                return Err(error(
+                    "E0305",
+                    "aggregate field extraction is unavailable; move or borrow the whole root",
+                    *field_span,
+                ));
+            }
             #[cfg(test)]
             program.work().observe(
                 crate::frontend::declaration_index::Observation::Projection {
@@ -658,6 +753,7 @@ fn expression_type(
                     ty,
                 },
             );
+            projections[id.0] = Some(projection);
             ty
         }
     };
@@ -680,7 +776,7 @@ fn finish_expression_type(
             function: function.id,
             origin: function.expressions[id.0].span,
             ty,
-            field: projections[id.0].map(|p| p.field),
+            field: projections[id.0].as_ref().map(|p| p.field),
         },
     );
     #[cfg(not(test))]
@@ -968,9 +1064,15 @@ fn check_body(
                 {
                     return Err(immutable(function, base, target_span));
                 }
-                let expected = ValueTy::Scalar(
-                    program.records()[projection.field.record.0].fields[projection.field.index].ty,
-                );
+                let expected =
+                    program.records()[projection.field.record.0].fields[projection.field.index].ty;
+                if !matches!(expected, ValueTy::Scalar(_)) {
+                    return Err(error(
+                        "E0305",
+                        "aggregate field replacement is unavailable; replace the whole root",
+                        target_span,
+                    ));
+                }
                 let actual = expressions[value.0].expect("typed field assignment");
                 if expected != actual {
                     return Err(mismatch(
@@ -980,7 +1082,6 @@ fn check_body(
                         function.expressions[value.0].span,
                     ));
                 }
-                statement_projections[block.0][index] = Some(projection);
                 #[cfg(test)]
                 program.work().observe(
                     crate::frontend::declaration_index::Observation::Projection {
@@ -991,16 +1092,27 @@ fn check_body(
                         ty: expected,
                     },
                 );
+                statement_projections[block.0][index] = Some(projection);
             }
             StmtKind::IndexAssign {
                 base,
+                base_span,
                 target_span,
                 value,
-                index,
+                index: element_index,
                 ..
             } => {
                 program.work().debit(1, target_span, "array type access")?;
-                let (access, element) = array_access(function, base, target_span, &bindings)?;
+                let (projection, access, element) = projected_array_access(
+                    program,
+                    function,
+                    base,
+                    base_span,
+                    target_span,
+                    &bindings,
+                )?;
+                statement_projections[block.0][index] = projection;
+                let index = element_index;
                 let index_ty = expressions[index.0].expect("typed store index");
                 if index_ty != ValueTy::Scalar(Ty::I32) {
                     return Err(mismatch(
