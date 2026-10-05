@@ -945,8 +945,10 @@ fn c3_t1_denied_probe_selects_enum_free_before_work_or_storage() {
         with_index(text, |index| {
             let work = WorkMeter::new(0);
             work.enable_observation();
-            let mut allocator = Allocator::default();
-            allocator.attempts = 7;
+            let mut allocator = Allocator {
+                attempts: 7,
+                ..Allocator::default()
+            };
             let (result, measured) = super::super::reviewer_source::integration_measured(|| {
                 probe_enum_type_storage(index, &work, &mut allocator)
             });
