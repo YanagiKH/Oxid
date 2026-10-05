@@ -474,3 +474,6 @@ mod enum_reference_tests;
 
 #[cfg(test)]
 mod enum_parser_allocation_tests;
+
+#[cfg(test)]
+mod enum_formatter_allocation_tests;
