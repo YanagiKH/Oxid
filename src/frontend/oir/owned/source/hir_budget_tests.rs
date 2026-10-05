@@ -590,6 +590,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
             + typeck::borrowed_check_carrier_bytes()
             + resolve::denied_type_probe_carrier_bytes()
             + checker_only_components().0
+            + observation_components().0
             + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
             + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
     );
