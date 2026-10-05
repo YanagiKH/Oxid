@@ -2,12 +2,14 @@
 use super::{
     hir::*,
     resolve::{ResolvedOwnedProgram, SourceAdmission},
+    type_storage::{self as storage, Kind},
 };
 use crate::frontend::{
     declaration_index::{Access, PreparedTypeName},
     diagnostic::Diagnostic,
     owned_diagnostic,
     parser::MAX_DIAGNOSTICS,
+    project::budget::Allocator,
     source::Span,
 };
 
@@ -272,26 +274,160 @@ pub(in crate::frontend::oir) fn check(
             None,
         )]);
     }
-    match check_bodies(&program) {
+    match check_bodies(&program, None) {
         Ok(bodies) => Ok(TypedOwnedProgram { program, bodies }),
         Err(diagnostics) => Err(diagnostics),
     }
 }
 
-/// One borrowed semantic checker, shared with the future private paid observer.
-/// This checkpoint has only its historical ordinary storage branch. No paid
-/// caller or successful enum observation can reach it yet.
-fn check_bodies(program: &ResolvedOwnedProgram<'_>) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
+/// Construction-local borrows only. No paid caller constructs this context in
+/// this checkpoint; the only real checker call still supplies None.
+struct ProgramPaid<'borrow, 'hir> {
+    plan: &'borrow mut storage::TypePlan<'hir>,
+    allocator: &'borrow mut Allocator,
+    projection_bytes: &'borrow std::cell::Cell<usize>,
+}
+struct BodyPaid<'borrow> {
+    quota: &'borrow mut storage::FunctionQuota,
+    allocator: &'borrow mut Allocator,
+    projection_bytes: &'borrow std::cell::Cell<usize>,
+}
+// Actual newly authored context/receiver surfaces, measured separately while
+// unreachable. These partial models are NOT yet a complete T1 price and are NOT
+// added to HirPlan: semantic iterators/projection frames, the eventual program
+// context construction, fresh owner and observations still require full review.
+// Existing T0 stage/frame/actuals/presence/quota/Bodies receivers stay assigned
+// there; retained cache headers cannot pay these independent local receivers.
+#[allow(dead_code)]
+struct PaidProgramControls {
+    argument: Option<&'static mut ProgramPaid<'static, 'static>>,
+    reborrow: Option<&'static mut ProgramPaid<'static, 'static>>,
+    selected: &'static mut ProgramPaid<'static, 'static>,
+    enum_types: bool,
+    bodies_room: Result<(), Box<Diagnostic>>,
+}
+#[allow(dead_code)]
+struct PaidBodyControls {
+    constructed: BodyPaid<'static>,
+    constructor_borrow: &'static mut BodyPaid<'static>,
+    constructor_option: Option<&'static mut BodyPaid<'static>>,
+    argument: Option<&'static mut BodyPaid<'static>>,
+    mutable_reborrow: Option<&'static mut BodyPaid<'static>>,
+    mutable_selected: &'static mut BodyPaid<'static>,
+    shared_reborrow: Option<&'static BodyPaid<'static>>,
+    shared_selected: &'static BodyPaid<'static>,
+    // Additional named outcome between check_body's return and final match.
+    checked: Result<TypedBody, Box<Diagnostic>>,
+    parameter_guard: bool,
+    frame_room: Result<(), Box<Diagnostic>>,
+    row_room: Result<(), Box<Diagnostic>>,
+    // The initializer frame encloses (rather than replaces) expression frames.
+    initializer_argument: Option<&'static mut BodyPaid<'static>>,
+    initializer_reborrow: Option<&'static mut BodyPaid<'static>>,
+}
+#[allow(dead_code)]
+struct PaidBodyReceivers {
+    expression_projections: Vec<Option<Projection>>,
+    statement_projections: Vec<Vec<Option<Projection>>>,
+    paid_statement_rows: Vec<Vec<Option<Projection>>>,
+    borrow_projections: Vec<BorrowProjection>,
+    final_bindings: Vec<ParameterTy>,
+    final_flows: Vec<FlowSummary>,
+    final_expressions: Vec<ValueTy>,
+}
+#[allow(dead_code)]
+struct PaidRowReceiver {
+    row: Vec<Option<Projection>>,
+}
+#[allow(dead_code)]
+struct PaidExpressionReborrows {
+    argument: Option<&'static mut BodyPaid<'static>>,
+    child_reborrow: Option<&'static mut BodyPaid<'static>>,
+    selected: &'static mut BodyPaid<'static>,
+    room: Result<(), Box<Diagnostic>>,
+}
+
+fn paid_state(at: Span) -> Box<Diagnostic> {
+    error("E0500", "invalid paid checker storage state", at)
+}
+
+/// One borrowed semantic checker. Paid branches remain disconnected behind the
+/// uninhabited observer result. Matching policy/context alone will never prove
+/// fresh owner/plan/Cell provenance; the later entrypoint must establish that.
+fn check_bodies(
+    program: &ResolvedOwnedProgram<'_>,
+    mut paid: Option<&mut ProgramPaid<'_, '_>>,
+) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
+    #[cfg(test)]
+    let enum_types = program.admission() == SourceAdmission::ObserveEnumTypes;
+    #[cfg(not(test))]
+    let enum_types = false;
+    if enum_types != paid.is_some() {
+        return Err(vec![*diagnostic(
+            "E0500",
+            "type",
+            "paid checker admission and storage disagree",
+            None,
+        )]);
+    }
     program.work().phase("type");
-    let mut bodies = Vec::new();
+    let mut bodies = match paid.as_deref_mut() {
+        Some(paid) => paid
+            .plan
+            .reserve_bodies(paid.allocator, program.index().sources().eof())
+            .map_err(|error| {
+                program.work().record_error(&error);
+                vec![*error]
+            })?,
+        None => Vec::new(),
+    };
     let mut diagnostics = Vec::new();
     for function in program.functions() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
-        match check_body(program, function) {
-            Ok(body) => bodies.push(body),
+        let checked = match paid.as_deref_mut() {
+            Some(paid) => match paid.plan.partition_next(program.work(), function.end) {
+                Ok(mut quota) => {
+                    if quota.ordinal != function.id.0 {
+                        let error = paid_state(function.end);
+                        program.work().record_error(&error);
+                        diagnostics.push(*error);
+                        break;
+                    }
+                    let mut context = BodyPaid {
+                        quota: &mut quota,
+                        allocator: &mut *paid.allocator,
+                        projection_bytes: paid.projection_bytes,
+                    };
+                    check_body(program, function, Some(&mut context))
+                }
+                Err(error) => {
+                    // A failed atomic partition leaves its ordinal unchanged.
+                    // Never continue, retry, or reuse those unconsumed rights.
+                    program.work().record_error(&error);
+                    diagnostics.push(*error);
+                    break;
+                }
+            },
+            None => check_body(program, function, None),
+        };
+        match checked {
+            Ok(body) => {
+                if paid.is_some() {
+                    if let Err(error) =
+                        storage::room(&bodies, program.functions().len(), function.end)
+                    {
+                        program.work().record_error(&error);
+                        diagnostics.push(*error);
+                        break;
+                    }
+                }
+                bodies.push(body)
+            }
             Err(error) => {
+                // Only actual body errors after a consumed partition retain
+                // the historical per-function diagnostic continuation.
                 program.work().record_error(&error);
                 diagnostics.push(*error)
             }
@@ -340,6 +476,7 @@ fn projection(
     base_span: Span,
     field_span: Span,
     bindings: &[Option<ParameterTy>],
+    mut paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<Projection, Box<Diagnostic>> {
     let (record, base) = match bindings[binding.0].expect("resolved field base initialized") {
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(record))) => {
@@ -368,10 +505,22 @@ fn projection(
         .clone()
         .filter(|token| token.kind == crate::frontend::lexer::Kind::Ident)
         .count();
-    program.admit_projection(length, field_span)?;
-    let mut path = Vec::new();
-    path.try_reserve_exact(length)
-        .map_err(|_| error("E0400", "record projection allocation failed", field_span))?;
+    let mut path = match paid.as_deref_mut() {
+        Some(paid) => storage::projection_fields_metered(
+            paid.projection_bytes,
+            paid.allocator,
+            length,
+            program.work(),
+            field_span,
+        )?,
+        None => {
+            program.admit_projection(length, field_span)?;
+            let mut path = Vec::new();
+            path.try_reserve_exact(length)
+                .map_err(|_| error("E0400", "record projection allocation failed", field_span))?;
+            path
+        }
+    };
     let mut current = ValueTy::Owned(AggregateTy::Record(record));
     for token in tokens {
         if token.kind != crate::frontend::lexer::Kind::Ident {
@@ -412,6 +561,9 @@ fn projection(
                 .private_field_diagnostic(field, token.span, "type")?);
         }
         current = field.ty;
+        if paid.is_some() {
+            storage::room(&path, length, token.span)?;
+        }
         path.push(field.id);
     }
     let field = *path
@@ -419,6 +571,7 @@ fn projection(
         .ok_or_else(|| error("E0500", "empty resolved field path", field_span))?;
     Ok(Projection { base, field, path })
 }
+#[allow(clippy::too_many_arguments)] // Existing projection inputs plus the construction-local context.
 fn projected_array_access(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -427,6 +580,7 @@ fn projected_array_access(
     access_span: Span,
     bindings: &[Option<ParameterTy>],
     borrow: bool,
+    mut paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
@@ -447,7 +601,15 @@ fn projected_array_access(
     };
     let mut field_span = first.span;
     field_span.end = base_span.end;
-    let projection = projection(program, function, binding, root, field_span, bindings)?;
+    let projection = projection(
+        program,
+        function,
+        binding,
+        root,
+        field_span,
+        bindings,
+        paid.as_deref_mut(),
+    )?;
     let ValueTy::Owned(AggregateTy::FixedArray(array)) =
         program.records()[projection.field.record.0].fields[projection.field.index].ty
     else {
@@ -548,6 +710,7 @@ fn borrow_type(
         kind,
     })
 }
+#[allow(clippy::too_many_arguments)] // Narrow local paid context, unchanged semantic arguments.
 fn expression_type(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -556,23 +719,27 @@ fn expression_type(
     expressions: &mut [Option<ValueTy>],
     projections: &mut [Option<Projection>],
     borrow_projections: &mut Vec<BorrowProjection>,
+    mut paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<ValueTy, Box<Diagnostic>> {
     if let Some(ty) = expressions[id.0] {
         return Ok(ty);
     }
     let expr = &function.expressions[id.0];
     let scalar = ValueTy::Scalar;
-    let mut child = |id| {
-        expression_type(
-            program,
-            function,
-            id,
-            bindings,
-            expressions,
-            projections,
-            borrow_projections,
-        )
-    };
+    macro_rules! child {
+        ($id:expr) => {
+            expression_type(
+                program,
+                function,
+                $id,
+                bindings,
+                expressions,
+                projections,
+                borrow_projections,
+                paid.as_deref_mut(),
+            )
+        };
+    }
     let ty = match &expr.kind {
         ExprKind::ConstructEnum { .. } => {
             return Err(error(
@@ -594,9 +761,9 @@ fn expression_type(
                 expr.span,
             )),
         },
-        ExprKind::Group(inner) => child(*inner)?,
+        ExprKind::Group(inner) => child!(*inner)?,
         ExprKind::Negate { operand, .. } => {
-            let actual = child(*operand)?;
+            let actual = child!(*operand)?;
             if actual != scalar(Ty::I32) {
                 return Err(mismatch(
                     program,
@@ -608,7 +775,7 @@ fn expression_type(
             scalar(Ty::I32)
         }
         ExprKind::Not { operand, .. } => {
-            let actual = child(*operand)?;
+            let actual = child!(*operand)?;
             if actual != scalar(Ty::Bool) {
                 return Err(mismatch(
                     program,
@@ -626,7 +793,7 @@ fn expression_type(
                 scalar(Ty::I32)
             };
             for operand in [left, right] {
-                let actual = child(*operand)?;
+                let actual = child!(*operand)?;
                 if actual != expected {
                     return Err(mismatch(
                         program,
@@ -641,7 +808,7 @@ fn expression_type(
         ExprKind::Comparison {
             op, left, right, ..
         } => {
-            let actual = child(*left)?;
+            let actual = child!(*left)?;
             let expected = match op {
                 ComparisonOp::Equal | ComparisonOp::NotEqual => {
                     if !matches!(actual, ValueTy::Scalar(Ty::Bool | Ty::I32)) {
@@ -665,7 +832,7 @@ fn expression_type(
                     scalar(Ty::I32)
                 }
             };
-            let actual = child(*right)?;
+            let actual = child!(*right)?;
             if actual != expected {
                 return Err(mismatch(
                     program,
@@ -680,9 +847,18 @@ fn expression_type(
             let called = &program.signatures()[target.0];
             // Visit all well-formed argument values in source order, including
             // statically skipped logical branches and ignored helper results.
-            let mut actuals = Vec::with_capacity(args.len());
+            let mut actuals = match paid.as_deref_mut() {
+                Some(paid) => paid.quota.storage.reserve(
+                    paid.allocator,
+                    Kind::CallActuals,
+                    args.len(),
+                    args.len(),
+                    expr.span,
+                )?,
+                None => Vec::with_capacity(args.len()),
+            };
             for (argument, arg) in args.iter().enumerate() {
-                actuals.push(match arg {
+                let actual = match arg {
                     Argument::Value(value) => (
                         ParameterTy::Value(expression_type(
                             program,
@@ -692,6 +868,7 @@ fn expression_type(
                             expressions,
                             projections,
                             borrow_projections,
+                            paid.as_deref_mut(),
                         )?),
                         function.expressions[value.0].span,
                     ),
@@ -710,12 +887,25 @@ fn expression_type(
                                 }
                             };
                             let (projected, _, element) = projected_array_access(
-                                program, function, binding, *name_span, *span, bindings, true,
+                                program,
+                                function,
+                                binding,
+                                *name_span,
+                                *span,
+                                bindings,
+                                true,
+                                paid.as_deref_mut(),
                             )?;
                             let projection = projected.ok_or_else(|| {
                                 error("E0500", "missing projected borrow path", *span)
                             })?;
-                            if borrow_projections.len() == borrow_projections.capacity() {
+                            if let Some(paid) = paid.as_deref_mut() {
+                                storage::room(
+                                    borrow_projections,
+                                    paid.quota.counts.borrow_arguments,
+                                    *span,
+                                )?;
+                            } else if borrow_projections.len() == borrow_projections.capacity() {
                                 // Geometric, fallible growth avoids repeated quadratic copies.
                                 // Charge the entire requested capacity increase before reserving.
                                 let growth = borrow_projections.capacity().max(1);
@@ -754,7 +944,11 @@ fn expression_type(
                         };
                         (actual, *span)
                     }
-                });
+                };
+                if paid.is_some() {
+                    storage::room(&actuals, args.len(), expr.span)?;
+                }
+                actuals.push(actual);
             }
             if args.len() != called.params.len() {
                 return Err(error(
@@ -813,10 +1007,17 @@ fn expression_type(
         }
         ExprKind::StructLiteral { record, fields } => {
             let declared = &program.records()[record.0];
-            let mut present = vec![false; declared.fields.len()];
+            let mut present = match paid.as_deref_mut() {
+                Some(paid) => {
+                    paid.quota
+                        .storage
+                        .presence(paid.allocator, declared.fields.len(), expr.span)?
+                }
+                None => vec![false; declared.fields.len()],
+            };
             for field in fields {
                 present[field.field.index] = true;
-                let actual = child(field.value)?;
+                let actual = child!(field.value)?;
                 let expected = declared.fields[field.field.index].ty;
                 if actual != expected {
                     return Err(mismatch(
@@ -849,7 +1050,7 @@ fn expression_type(
             let mut element_type = None;
             for element in elements {
                 program.work().debit(1, expr.span, "array type edge")?;
-                let actual = child(*element)?;
+                let actual = child!(*element)?;
                 let ValueTy::Scalar(scalar_type) = actual else {
                     return Err(error(
                         "E0300",
@@ -881,10 +1082,17 @@ fn expression_type(
             index,
         } => {
             program.work().debit(1, expr.span, "array type read")?;
-            let actual = child(*index)?;
+            let actual = child!(*index)?;
             program.work().debit(1, expr.span, "array type access")?;
             let (projection, _, element) = projected_array_access(
-                program, function, *base, *base_span, expr.span, bindings, false,
+                program,
+                function,
+                *base,
+                *base_span,
+                expr.span,
+                bindings,
+                false,
+                paid.as_deref_mut(),
             )?;
             projections[id.0] = projection;
             if actual != scalar(Ty::I32) {
@@ -901,7 +1109,14 @@ fn expression_type(
             program.work().debit(1, expr.span, "array type length")?;
             program.work().debit(1, expr.span, "array type access")?;
             let (projection, _, _) = projected_array_access(
-                program, function, *base, *base_span, expr.span, bindings, false,
+                program,
+                function,
+                *base,
+                *base_span,
+                expr.span,
+                bindings,
+                false,
+                paid.as_deref_mut(),
             )?;
             projections[id.0] = projection;
             scalar(Ty::I32)
@@ -911,8 +1126,15 @@ fn expression_type(
             base_span,
             field_span,
         } => {
-            let projection =
-                projection(program, function, *base, *base_span, *field_span, bindings)?;
+            let projection = projection(
+                program,
+                function,
+                *base,
+                *base_span,
+                *field_span,
+                bindings,
+                paid.as_deref_mut(),
+            )?;
             let ty = program.records()[projection.field.record.0].fields[projection.field.index].ty;
             if !matches!(ty, ValueTy::Scalar(_)) {
                 return Err(error(
@@ -960,6 +1182,7 @@ fn finish_expression_type(
     #[cfg(not(test))]
     let _ = (program, function, projections);
 }
+#[allow(clippy::too_many_arguments)] // Narrow local paid context, unchanged semantic arguments.
 fn initializer_type(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -968,6 +1191,7 @@ fn initializer_type(
     expressions: &mut [Option<ValueTy>],
     projections: &mut [Option<Projection>],
     borrow_projections: &mut Vec<BorrowProjection>,
+    mut paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<ValueTy, Box<Diagnostic>> {
     let (binding, root) = initializer;
     if let Some(ValueTy::Owned(AggregateTy::FixedArray(annotation))) =
@@ -1007,6 +1231,7 @@ fn initializer_type(
         expressions,
         projections,
         borrow_projections,
+        paid.as_deref_mut(),
     )
 }
 pub(super) enum TypeFrame {
@@ -1035,9 +1260,21 @@ pub(super) enum TypeFrame {
 fn check_body(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
+    mut paid: Option<&mut BodyPaid<'_>>,
 ) -> Result<TypedBody, Box<Diagnostic>> {
     let signature = &program.signatures()[function.id.0];
-    let mut bindings = vec![None; function.bindings.len()];
+    let mut bindings = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.none(
+            paid.allocator,
+            Kind::BindingStage,
+            function.bindings.len(),
+            function.end,
+        )?,
+        None => vec![None; function.bindings.len()],
+    };
+    if paid.is_some() && signature.params.len() > bindings.len() {
+        return Err(paid_state(function.end));
+    }
     for (index, ty) in signature.params.iter().enumerate() {
         bindings[index] = Some(*ty);
         #[cfg(test)]
@@ -1049,27 +1286,99 @@ fn check_body(
                 ty: *ty,
             });
     }
-    let mut expressions = vec![None; function.expressions.len()];
-    let mut projections = vec![None; function.expressions.len()];
-    // Pay the new enclosing Vec header even when the sparse table stays empty.
-    // There is no extra source walk or work debit for pre-existing whole loans.
-    program
-        .admit_projection_metadata(std::mem::size_of::<Vec<BorrowProjection>>(), function.end)?;
-    let mut borrow_projections = Vec::new();
-    let mut statement_projections: Vec<Vec<Option<Projection>>> = function
-        .blocks
-        .iter()
-        .map(|block| vec![None; block.body.len()])
-        .collect();
+    let mut expressions = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.none(
+            paid.allocator,
+            Kind::ExpressionStage,
+            function.expressions.len(),
+            function.end,
+        )?,
+        None => vec![None; function.expressions.len()],
+    };
+    let mut projections = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.none(
+            paid.allocator,
+            Kind::ExpressionProjections,
+            function.expressions.len(),
+            function.end,
+        )?,
+        None => vec![None; function.expressions.len()],
+    };
+    let mut borrow_projections = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.reserve(
+            paid.allocator,
+            Kind::BorrowProjections,
+            paid.quota.counts.borrow_arguments,
+            paid.quota.counts.borrow_arguments,
+            function.end,
+        )?,
+        None => {
+            // Preserve the ordinary enclosing-header charge and sparse growth.
+            program.admit_projection_metadata(
+                std::mem::size_of::<Vec<BorrowProjection>>(),
+                function.end,
+            )?;
+            Vec::new()
+        }
+    };
+    let mut statement_projections: Vec<Vec<Option<Projection>>> = match paid.as_deref_mut() {
+        Some(paid) => {
+            let mut rows = paid.quota.storage.reserve(
+                paid.allocator,
+                Kind::StatementRows,
+                function.blocks.len(),
+                function.blocks.len(),
+                function.end,
+            )?;
+            for block in &function.blocks {
+                let row = paid.quota.storage.none(
+                    paid.allocator,
+                    Kind::StatementProjections,
+                    block.body.len(),
+                    function.end,
+                )?;
+                storage::room(&rows, function.blocks.len(), function.end)?;
+                rows.push(row);
+            }
+            rows
+        }
+        None => function
+            .blocks
+            .iter()
+            .map(|block| vec![None; block.body.len()])
+            .collect(),
+    };
     // A continuation frame records each statement-list result without Rust
     // recursion. Both children complete before their parent's flow is resumed.
-    let mut block_flows: Vec<Option<FlowSummary>> = vec![None; function.blocks.len()];
-    let mut frames = vec![TypeFrame::Block {
+    let mut block_flows: Vec<Option<FlowSummary>> = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.none(
+            paid.allocator,
+            Kind::FlowStage,
+            function.blocks.len(),
+            function.end,
+        )?,
+        None => vec![None; function.blocks.len()],
+    };
+    let mut frames = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.reserve(
+            paid.allocator,
+            Kind::TypeFrames,
+            paid.quota.counts.type_frames,
+            paid.quota.counts.type_frames,
+            function.end,
+        )?,
+        // The historical vec![root] asks for exactly one initial slot.
+        None => Vec::with_capacity(1),
+    };
+    if let Some(paid) = paid.as_deref() {
+        storage::room(&frames, paid.quota.counts.type_frames, function.end)?;
+    }
+    frames.push(TypeFrame::Block {
         block: function.body,
         index: 0,
         flow: FlowSummary::FALLTHROUGH,
         active_loop: None,
-    }];
+    });
     while let Some(frame) = frames.pop() {
         let (block, index, mut flow, active_loop) = match frame {
             TypeFrame::Block {
@@ -1146,6 +1455,7 @@ fn check_body(
                     &mut expressions,
                     &mut projections,
                     &mut borrow_projections,
+                    paid.as_deref_mut(),
                 )?;
                 None
             }
@@ -1165,6 +1475,7 @@ fn check_body(
                         &mut expressions,
                         &mut projections,
                         &mut borrow_projections,
+                        paid.as_deref_mut(),
                     )?;
                 }
                 None
@@ -1185,6 +1496,7 @@ fn check_body(
                 &mut expressions,
                 &mut projections,
                 &mut borrow_projections,
+                paid.as_deref_mut(),
             )?;
         }
         match statement.kind {
@@ -1265,8 +1577,15 @@ fn check_body(
                 value,
                 ..
             } => {
-                let projection =
-                    projection(program, function, base, base_span, field_span, &bindings)?;
+                let projection = projection(
+                    program,
+                    function,
+                    base,
+                    base_span,
+                    field_span,
+                    &bindings,
+                    paid.as_deref_mut(),
+                )?;
                 if matches!(projection.base, AccessBase::Owner(_))
                     && !function.bindings[base.0].mutable
                 {
@@ -1319,6 +1638,7 @@ fn check_body(
                     target_span,
                     &bindings,
                     false,
+                    paid.as_deref_mut(),
                 )?;
                 statement_projections[block.0][index] = projection;
                 let index = element_index;
@@ -1392,6 +1712,9 @@ fn check_body(
                     loop_id.0, body.0,
                     "resolved loop ID is its unique body block"
                 );
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
                 frames.push(TypeFrame::WhileJoin {
                     block,
                     index: index + 1,
@@ -1399,6 +1722,9 @@ fn check_body(
                     active_loop,
                     body,
                 });
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
                 frames.push(TypeFrame::Block {
                     block: body,
                     index: 0,
@@ -1421,6 +1747,9 @@ fn check_body(
                         function.expressions[condition.0].span,
                     ));
                 }
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
                 frames.push(TypeFrame::IfJoin {
                     block,
                     index: index + 1,
@@ -1430,12 +1759,18 @@ fn check_body(
                     else_block,
                 });
                 if let Some(otherwise) = else_block {
+                    if let Some(paid) = paid.as_deref() {
+                        storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                    }
                     frames.push(TypeFrame::Block {
                         block: otherwise,
                         index: 0,
                         flow: FlowSummary::FALLTHROUGH,
                         active_loop,
                     });
+                }
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
                 }
                 frames.push(TypeFrame::Block {
                     block: then_block,
@@ -1445,6 +1780,9 @@ fn check_body(
                 });
                 continue;
             }
+        }
+        if let Some(paid) = paid.as_deref() {
+            storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
         }
         frames.push(TypeFrame::Block {
             block,
@@ -1464,14 +1802,30 @@ fn check_body(
             Some(function.end),
         ));
     }
-    let bindings = bindings
-        .into_iter()
-        .map(|ty| ty.expect("all resolved bindings have typed initializers"))
-        .collect();
-    let block_flows = block_flows
-        .into_iter()
-        .map(|flow| flow.expect("all resolved blocks have checked flow"))
-        .collect();
+    let final_bindings = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.finalize(
+            paid.allocator,
+            Kind::BindingFinal,
+            &bindings,
+            function.end,
+        )?,
+        None => bindings
+            .into_iter()
+            .map(|ty| ty.expect("all resolved bindings have typed initializers"))
+            .collect(),
+    };
+    let final_flows = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.finalize(
+            paid.allocator,
+            Kind::FlowFinal,
+            &block_flows,
+            function.end,
+        )?,
+        None => block_flows
+            .into_iter()
+            .map(|flow| flow.expect("all resolved blocks have checked flow"))
+            .collect(),
+    };
     // Borrow typing follows source evaluation order, which can interleave nested
     // call sites. Sort the sparse table for bounded binary lookup during lowering.
     let borrow_slots = borrow_projections.len();
@@ -1492,16 +1846,25 @@ fn check_body(
         )?;
         borrow_projections.sort_unstable_by_key(|entry| (entry.expression.0, entry.argument));
     }
-    Ok(TypedBody {
-        borrow_projections,
-        expressions: expressions
+    let final_expressions = match paid.as_deref_mut() {
+        Some(paid) => paid.quota.storage.finalize(
+            paid.allocator,
+            Kind::ExpressionFinal,
+            &expressions,
+            function.end,
+        )?,
+        None => expressions
             .into_iter()
             .map(|ty| ty.expect("every expression was typed"))
             .collect(),
+    };
+    Ok(TypedBody {
+        borrow_projections,
+        expressions: final_expressions,
         projections,
         statement_projections,
-        bindings,
-        block_flows,
+        bindings: final_bindings,
+        block_flows: final_flows,
     })
 }
 
@@ -1649,6 +2012,13 @@ pub(super) fn assert_enum_observation_downstream_fences(program: ResolvedOwnedPr
     assert_eq!(program.admission(), SourceAdmission::ObserveEnumTypes);
     assert!(!program.admission().executable());
     assert!(!program.admission().allows_lowering());
+    let errors = check_bodies(&program, None).unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!((errors[0].code, errors[0].stage), ("E0500", "type"));
+    assert_eq!(
+        errors[0].message,
+        "paid checker admission and storage disagree"
+    );
     let SourceView::Map(sources) = program.index().sources().view() else {
         panic!("synthetic fence fixture must retain its own source map");
     };
@@ -1752,4 +2122,50 @@ pub(super) fn assert_enum_observation_downstream_fences(program: ResolvedOwnedPr
         assert_eq!(budget::guard_counts(), [0; 7]);
     }
     drop(typed);
+}
+
+#[test]
+fn c3_t1_disconnected_paid_context_actual_layouts() {
+    use std::mem::{align_of, size_of};
+    macro_rules! layout {
+        ($($ty:ty),* $(,)?) => { $(
+            println!("C3_T1_PAID_CONTEXT_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
+        )* };
+    }
+    layout!(
+        ProgramPaid<'static, 'static>,
+        BodyPaid<'static>,
+        Option<&'static mut ProgramPaid<'static, 'static>>,
+        Option<&'static mut BodyPaid<'static>>,
+        PaidProgramControls,
+        PaidBodyControls,
+        PaidBodyReceivers,
+        PaidRowReceiver,
+        PaidExpressionReborrows,
+    );
+    assert_eq!(
+        size_of::<ProgramPaid<'_, '_>>(),
+        size_of::<&mut storage::TypePlan<'_>>()
+            + size_of::<&mut Allocator>()
+            + size_of::<&std::cell::Cell<usize>>()
+    );
+    assert_eq!(
+        size_of::<BodyPaid<'_>>(),
+        size_of::<&mut storage::FunctionQuota>()
+            + size_of::<&mut Allocator>()
+            + size_of::<&std::cell::Cell<usize>>()
+    );
+    assert_eq!(
+        size_of::<PaidBodyReceivers>(),
+        size_of::<Vec<Option<Projection>>>()
+            + 2 * size_of::<Vec<Vec<Option<Projection>>>>()
+            + size_of::<Vec<BorrowProjection>>()
+            + size_of::<Vec<ParameterTy>>()
+            + size_of::<Vec<FlowSummary>>()
+            + size_of::<Vec<ValueTy>>()
+    );
+    assert_eq!(
+        size_of::<PaidRowReceiver>(),
+        size_of::<Vec<Option<Projection>>>()
+    );
 }

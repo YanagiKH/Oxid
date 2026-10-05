@@ -1,7 +1,7 @@
 //! Disconnected T0 typed-buffer helpers, not source or typing admission.
 //!
-//! No checker or owner calls these helpers. HirPlan prepays only the measured T0
-//! controls below; actual checker/owner/admission and receiver pricing stay gated.
+//! The disconnected paid checker names these helpers but has no admitted caller.
+//! HirPlan prepays the measured T0 controls; complete T1 pricing stays gated.
 //! The local quotas do not prove the origin of a caller-supplied byte cell.
 //! Diagnostics, observer traces, allocator metadata and machine stack/RSS are
 //! outside this named-buffer model. All ordinary source routes are unchanged.
@@ -296,6 +296,35 @@ pub(super) fn projection_fields(
     // The same seed+dynamic ceiling is checked before allocation. Keep a spent
     // charge after reserve failure or later semantic rejection/drop.
     total.set(next);
+    ticket.reserve(allocator, Vec::new(), at, "paid typed projection fields")
+}
+
+/// Disconnected paid-checker path. Precharge precedes the historical work
+/// debit; the debit precedes reserve. A failed debit keeps bytes spent but makes
+/// no allocator request. Neither this helper nor its caller uses legacy charges.
+pub(super) fn projection_fields_metered(
+    total: &Cell<usize>,
+    allocator: &mut Allocator,
+    slots: usize,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<Vec<FieldId>, Box<Diagnostic>> {
+    if slots == 0 || slots > 64 {
+        return Err(failure("record access path depth limit exceeded", at));
+    }
+    let bytes = slots
+        .checked_mul(size_of::<FieldId>())
+        .ok_or_else(|| failure("typed storage size overflow", at))?;
+    let previous = total.get();
+    let next = previous
+        .checked_add(bytes)
+        .filter(|value| *value <= MAX_HIR_BYTES)
+        .ok_or_else(|| failure("affected HIR and projection payload limit exceeded", at))?;
+    let ticket = Capacity::new::<FieldId>(slots, bytes, at)?;
+    total.set(next);
+    if slots > 1 {
+        work.debit(slots as u64, at, "record projection path")?;
+    }
     ticket.reserve(allocator, Vec::new(), at, "paid typed projection fields")
 }
 
@@ -780,6 +809,36 @@ struct ProjectionControls {
     returned: Result<Vec<FieldId>, Box<Diagnostic>>,
     scalar_returns: [Result<(), Box<Diagnostic>>; 3],
 }
+// Complete metered sibling's control/primitive surface. This is a measurement
+// target, not a new HirPlan charge. T0 overlap must be independently attributed
+// before this bank can join complete T1 pricing; the checker remains denied.
+struct MeteredProjectionCarriers {
+    controls: ProjectionControls,
+    work: &'static WorkMeter,
+    work_units: u64,
+    debit: Result<(), Box<Diagnostic>>,
+    primitive: PrimitiveTransports<FieldId>,
+}
+pub(super) const fn metered_projection_carrier_bytes() -> usize {
+    size_of::<MeteredProjectionCarriers>()
+}
+#[test]
+fn c3_t1_metered_projection_actual_layout() {
+    println!(
+        "C3_T1_PAID_CONTEXT_LAYOUT MeteredProjectionCarriers {} {}",
+        size_of::<MeteredProjectionCarriers>(),
+        std::mem::align_of::<MeteredProjectionCarriers>()
+    );
+    assert!(
+        size_of::<MeteredProjectionCarriers>()
+            >= size_of::<ProjectionControls>()
+                + size_of::<&WorkMeter>()
+                + size_of::<u64>()
+                + size_of::<Result<(), Box<Diagnostic>>>()
+                + size_of::<PrimitiveTransports<FieldId>>()
+    );
+}
+
 struct ProjectionCarriers {
     controls: ProjectionControls,
     primitive: PrimitiveTransports<FieldId>,
