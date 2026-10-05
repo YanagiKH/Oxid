@@ -515,3 +515,294 @@ fn enum_candidate_all_affected_vectors_are_fallible_and_capacity_observed() {
         assert_eq!(observed.scratch_capacity, 0);
     }
 }
+
+fn parser_for<'a>(
+    file: &'a crate::frontend::source::SourceFile,
+    allocator: &'a mut Allocator,
+    mode: SourceMode,
+    limit: usize,
+) -> Parser<'a> {
+    let mut parser = Parser {
+        source: file,
+        allocator,
+        mode,
+        arrays: ArraySyntaxPolicy::Enabled,
+        enums: EnumSyntaxPolicy::Candidate,
+        storage: enums::SyntaxStorage::default(),
+        project_recovery: false,
+        tokens: lexer::lex(file).unwrap(),
+        cursor: 0,
+        expressions: Vec::new(),
+        paths: Vec::new(),
+        path_segments: Vec::new(),
+        heights: Vec::new(),
+        nodes: 0,
+        node_limit: limit,
+    };
+    parser.skip();
+    parser
+}
+
+#[test]
+fn enum_candidate_crate_root_depends_on_mode_and_confirmed_qualification() {
+    let sources = source("fn f()->(){crate::V;}");
+    let file = sources.get(SourceFileId(0));
+    for mode in [
+        SourceMode::OwnedCandidate,
+        SourceMode::ModuleCandidate,
+        SourceMode::ProjectCandidate,
+    ] {
+        let (program, nodes) = parse_enum_candidate_counted(
+            file,
+            lexer::lex(file).unwrap(),
+            mode,
+            MAX_NODES,
+            &mut Allocator::default(),
+            &mut enums::SyntaxStorage::default(),
+        )
+        .unwrap();
+        let project = mode == SourceMode::ProjectCandidate;
+        assert_eq!(nodes, 5);
+        assert_eq!(
+            program.paths[0].root,
+            if project {
+                PathRoot::Crate
+            } else {
+                PathRoot::LocalType
+            }
+        );
+        assert_eq!(program.uses_project_syntax(), project);
+        assert_eq!(program.uses_owned_syntax(file), !project);
+        assert!(program.validate_spans_and_ids(|at| file.try_text(at).is_some()));
+    }
+    // Recognition of an actual contiguous separator precedes sticky recovery.
+    for text in ["crate => {}", "crate: :V", "crate:/*gap*/:V"] {
+        let sources = source(text);
+        let file = sources.get(SourceFileId(0));
+        let mut allocator = Allocator::default();
+        let mut parser = parser_for(
+            file,
+            &mut allocator,
+            SourceMode::ProjectCandidate,
+            MAX_NODES,
+        );
+        let error = parser.enum_path().unwrap_err();
+        assert_eq!(error.message, "variant path requires `::`");
+        assert!(!parser.project_recovery);
+        assert!(parser.paths.is_empty() && parser.path_segments.is_empty());
+        assert_eq!(parser.allocator.attempts, 0);
+        assert_eq!(parser.nodes, 0);
+    }
+    let sources = source("crate::V");
+    let file = sources.get(SourceFileId(0));
+    for mode in [SourceMode::OwnedCandidate, SourceMode::ProjectCandidate] {
+        let mut allocator = Allocator::default();
+        let mut parser = parser_for(file, &mut allocator, mode, MAX_NODES);
+        parser.enum_path().unwrap();
+        assert_eq!(
+            parser.project_recovery,
+            mode == SourceMode::ProjectCandidate
+        );
+    }
+}
+
+#[test]
+fn enum_candidate_contextual_binders_and_named_underscore_keep_identifier_rules() {
+    for name in ["as", "crate", "self", "__"] {
+        let sources = source(&format!("fn f()->(){{match _{{E::V({name})=>{{}}}}}}"));
+        let file = sources.get(SourceFileId(0));
+        let program = candidate(&sources);
+        let StmtKind::Match { scrutinee, arms } = &program.functions[0].blocks[0].body[0].kind
+        else {
+            panic!("match")
+        };
+        assert_eq!(file.text_at(*scrutinee), "_");
+        assert_eq!(file.text_at(arms[0].binding.unwrap()), name);
+    }
+    rejected("fn f()->(){match _{E::V(_)=>{}}}");
+}
+
+#[test]
+fn enum_candidate_256_arms_have_exact_nodes_blocks_and_cap_precedence() {
+    for count in [256usize, 257] {
+        let text = format!("fn f()->(){{match x{{{}}}}}", "E::V=>{},".repeat(count));
+        let sources = source(&text);
+        let file = sources.get(SourceFileId(0));
+        let mut allocator = Allocator::default();
+        let mut parser = parser_for(file, &mut allocator, SourceMode::ProjectCandidate, 770);
+        let result = parser.function(None);
+        assert_eq!(parser.nodes, 770);
+        assert_eq!(parser.paths.len(), 256);
+        assert_eq!(parser.path_segments.len(), 512);
+        assert!(parser.expressions.is_empty());
+        if count == 256 {
+            let function = result.unwrap();
+            assert_eq!(function.blocks.len(), 257);
+            let StmtKind::Match { arms, .. } = &function.blocks[0].body[0].kind else {
+                panic!("match")
+            };
+            assert_eq!(arms.len(), 256);
+            assert!(arms
+                .iter()
+                .all(|arm| function.blocks[arm.body.0].body.is_empty()));
+        } else {
+            let error = result.unwrap_err();
+            let start = text.rfind("E::V").unwrap();
+            assert_eq!(
+                (error.code, error.message.as_str()),
+                ("E0400", "match arm limit exceeded (256)")
+            );
+            assert_eq!(error.primary, Some(file.span(start, start + 1)));
+            assert!(!parser
+                .allocator
+                .trace
+                .iter()
+                .any(|event| event.kind == "syntax statements"));
+            assert!(parser
+                .allocator
+                .trace
+                .iter()
+                .filter(|event| event.kind == "enum match arms")
+                .all(|event| event.length <= 256));
+        }
+    }
+}
+
+#[test]
+fn enum_candidate_flat_payload_height_includes_its_constructor() {
+    for terms in [62usize, 63, 64] {
+        let payload = vec!["1"; terms].join("+");
+        let text = format!("fn f()->(){{E::V({payload});}}");
+        let sources = source(&text);
+        let file = sources.get(SourceFileId(0));
+        let mut allocator = Allocator::default();
+        let mut parser = parser_for(
+            file,
+            &mut allocator,
+            SourceMode::ProjectCandidate,
+            MAX_NODES,
+        );
+        let result = parser.function(None);
+        if terms <= 63 {
+            result.unwrap();
+            assert_eq!(parser.heights.last(), Some(&(terms + 1)));
+            assert!(matches!(
+                parser.expressions.last().unwrap().kind,
+                ExprKind::QualifiedValue { .. }
+            ));
+        } else {
+            let error = result.unwrap_err();
+            assert_eq!(error.message, "expression nesting limit exceeded");
+            let start = text.find("E::V").unwrap();
+            let end = text.find(";").unwrap();
+            assert_eq!(error.primary, Some(file.span(start, end)));
+            assert_eq!(parser.heights.last(), Some(&64));
+            assert_eq!(parser.expressions.len(), 127);
+            assert!(!parser
+                .expressions
+                .iter()
+                .any(|expr| matches!(expr.kind, ExprKind::QualifiedValue { .. })));
+        }
+    }
+}
+
+#[test]
+fn enum_candidate_reserve_failure_origins_and_labels_are_exact() {
+    let cases: &[(&str, &[(&str, &str)])] = &[
+        (
+            "enum E{V}",
+            &[
+                ("enum declaration variants", "V"),
+                ("enum declarations", "E"),
+                ("syntax items", "E"),
+            ],
+        ),
+        (
+            "fn f()->(){E::V;}",
+            &[
+                ("syntax blocks", "{"),
+                ("qualified path segments", "E"),
+                ("qualified paths", "E::V"),
+                ("syntax expressions", "E::V"),
+                ("syntax expression heights", "E::V"),
+                ("syntax statements", "E::V;"),
+                ("syntax functions", "f"),
+                ("syntax items", "f"),
+            ],
+        ),
+    ];
+    for &(text, expected) in cases {
+        let sources = source(text);
+        let file = sources.get(SourceFileId(0));
+        let mut baseline = Allocator::default();
+        parse_candidate(
+            &sources,
+            MAX_NODES,
+            &mut baseline,
+            &mut enums::SyntaxStorage::default(),
+        )
+        .unwrap();
+        assert_eq!(baseline.attempts, expected.len());
+        for (index, &(kind, spelling)) in expected.iter().enumerate() {
+            let mut allocator = Allocator {
+                fail_at: Some(index + 1),
+                ..Allocator::default()
+            };
+            let error = parse_candidate(
+                &sources,
+                MAX_NODES,
+                &mut allocator,
+                &mut enums::SyntaxStorage::default(),
+            )
+            .unwrap_err();
+            let start = if spelling == "f" {
+                text.find("f(").unwrap()
+            } else {
+                text.find(spelling).unwrap()
+            };
+            assert_eq!((error[0].code, error[0].stage), ("E0400", "parse"));
+            assert_eq!(
+                error[0].primary,
+                Some(file.span(start, start + spelling.len())),
+                "{kind}"
+            );
+            assert_eq!(allocator.attempts, index + 1);
+            let event = allocator.trace.last().unwrap();
+            assert_eq!(event.kind, kind);
+            assert!(!event.success);
+        }
+    }
+}
+
+#[test]
+fn enum_candidate_paired_expression_height_failures_publish_neither_row() {
+    let sources = source("true");
+    let file = sources.get(SourceFileId(0));
+    let at = file.span(0, 4);
+    for fail_at in [1usize, 2] {
+        let mut allocator = Allocator {
+            fail_at: Some(fail_at),
+            ..Allocator::default()
+        };
+        let mut parser = parser_for(file, &mut allocator, SourceMode::OwnedCandidate, MAX_NODES);
+        parser.node().unwrap();
+        let error = parser.push_expr(ExprKind::Bool(true), at).unwrap_err();
+        assert_eq!(error.code, "E0400");
+        assert_eq!(error.primary, Some(at));
+        assert_eq!(parser.nodes, 1);
+        assert!(parser.expressions.is_empty() && parser.heights.is_empty());
+        assert_eq!(parser.heights.capacity(), 0);
+        assert_eq!(parser.allocator.attempts, fail_at);
+        assert_eq!(
+            parser.allocator.trace.last().unwrap().kind,
+            if fail_at == 1 {
+                "syntax expressions"
+            } else {
+                "syntax expression heights"
+            }
+        );
+        if fail_at == 2 {
+            assert_eq!(parser.expressions.capacity(), 4);
+        }
+    }
+}

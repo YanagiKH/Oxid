@@ -262,17 +262,17 @@ impl Parser<'_> {
         let first = self
             .expect(Kind::Ident, "expected qualified enum variant path")?
             .span;
-        let root = if self.source.text_at(first) == "crate" {
-            if self.mode != SourceMode::ProjectCandidate {
-                return Err(self.enum_error("absolute paths require project syntax"));
-            }
-            self.project_recovery = true;
-            PathRoot::Crate
-        } else {
-            PathRoot::LocalType
-        };
+        let root =
+            if self.source.text_at(first) == "crate" && self.mode == SourceMode::ProjectCandidate {
+                PathRoot::Crate
+            } else {
+                PathRoot::LocalType
+            };
         if !self.double_colon() {
             return Err(self.enum_error("variant path requires `::`"));
+        }
+        if root == PathRoot::Crate {
+            self.project_recovery = true;
         }
         let start = self.path_segments.len();
         let mut length = 0;

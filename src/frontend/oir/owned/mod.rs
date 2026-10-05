@@ -471,3 +471,6 @@ mod enum_match_tests;
 mod enum_consumer_fixtures;
 #[cfg(test)]
 mod enum_reference_tests;
+
+#[cfg(test)]
+mod enum_parser_allocation_tests;
