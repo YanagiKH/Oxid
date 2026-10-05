@@ -338,6 +338,17 @@ impl HirPlan {
         // T0 output objects only. No retained per-function plan table, paid
         // checker invocation or T1 owner/admission/receiver claim follows.
         charge::<type_storage::FunctionQuota>(&mut typeck_scratch, c.functions, at)?;
+        // First denied T1 slice: complete body construction/return/caller
+        // transports, separate from retained TypedBody backing and T0 helpers.
+        increment(
+            &mut typeck_scratch,
+            mul(
+                c.functions,
+                typeck::borrowed_body_return_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
 
         let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
@@ -354,6 +365,10 @@ impl HirPlan {
         // The explicit T0 core excludes the selected Capacity/Vec transports
         // above. Future T1 checker/admission/receiver carriers remain unpriced.
         increment(&mut fixed, type_storage::fixed_control_carrier_bytes(), at)?;
+        // Actual new borrowed checker and denied entrypoint carriers only.
+        // This does not yet admit a successful paid checker or fresh owner.
+        increment(&mut fixed, typeck::borrowed_check_carrier_bytes(), at)?;
+        increment(&mut fixed, resolve::denied_type_probe_carrier_bytes(), at)?;
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;
         charge::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>(&mut fixed, 1, at)?;
         let mut lower_fixed = 0;

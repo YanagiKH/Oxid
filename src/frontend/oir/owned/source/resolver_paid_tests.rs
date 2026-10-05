@@ -934,3 +934,94 @@ fn c3a_paid_resolver_allocator_counter_overflow_is_separate_from_injected_failur
         });
     }
 }
+
+#[test]
+fn c3_t1_denied_probe_selects_enum_free_before_work_or_storage() {
+    for text in [
+        "fn main()->i32{return 0;}",
+        "fn main()->(){match missing{E::V=>{return;}}}",
+        "enum Unused{V} fn main()->i32{return 0;}",
+    ] {
+        with_index(text, |index| {
+            let work = WorkMeter::new(0);
+            work.enable_observation();
+            let mut allocator = Allocator::default();
+            allocator.attempts = 7;
+            let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+                probe_enum_type_storage(index, &work, &mut allocator)
+            });
+            if index.enum_count() == 0 {
+                assert!(result.unwrap().is_none());
+                assert_eq!(measured, (0, 0, 0));
+            } else {
+                let errors = result.unwrap_err();
+                assert_eq!(errors.len(), 1);
+                assert_eq!((errors[0].code, errors[0].stage), ("E0500", "resolve"));
+                assert_eq!(
+                    errors[0].message,
+                    "paid enum type observation is not admitted"
+                );
+            }
+            assert_eq!(allocator.attempts, 7);
+            assert_eq!(work.used(), 0);
+            assert!(work.events.borrow().is_empty());
+            assert!(work.observations.borrow().is_empty());
+        });
+    }
+}
+
+#[test]
+fn c3_t1_enum_admission_rejects_ordinary_typing_before_phase_or_buffers() {
+    let mut sources = SourceMap::new();
+    let file = sources.add(
+        "denied-enum-type-owner.ox".into(),
+        "fn main()->i32{return 0;}".into(),
+    );
+    let source = sources.get(file);
+    let ast = parser::parse_with_mode(
+        source,
+        lexer::lex(source).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+    )
+    .unwrap();
+    let work = WorkMeter::new(0);
+    work.enable_observation();
+    let mut resolved = resolve(source, &ast).unwrap();
+    // Isolated synthetic owner for negative admission tests only. It has no
+    // paid seed/provenance and is never passed to a positive checker path.
+    resolved.admission = SourceAdmission::ObserveEnumTypes;
+    resolved.work = MeterOwner::Borrowed(&work);
+    assert!(!resolved.admission.executable());
+    assert!(!resolved.admission.allows_lowering());
+    let errors = super::super::typeck::check(resolved).unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!((errors[0].code, errors[0].stage), ("E0500", "type"));
+    assert_eq!(
+        errors[0].message,
+        "paid enum type observation requires its private checker"
+    );
+    assert!(work.events.borrow().is_empty());
+    assert!(work.observations.borrow().is_empty());
+    assert_eq!(work.used(), 0);
+}
+
+#[test]
+fn c3_t1_denied_probe_and_admission_actual_layouts() {
+    macro_rules! layout {
+        ($($ty:ty),* $(,)?) => { $(
+            println!("C3_T1_EARLY_LAYOUT {} {} {}", stringify!($ty), std::mem::size_of::<$ty>(), std::mem::align_of::<$ty>());
+        )* };
+    }
+    layout!(
+        SourceAdmission,
+        Option<SourceAdmission>,
+        IndexOwner<'static>,
+        MeterOwner<'static>,
+        ResolvedOwnedProgram<'static>,
+        DeniedTypeProbeCarriers
+    );
+    assert_eq!(
+        denied_type_probe_carrier_bytes(),
+        std::mem::size_of::<DeniedTypeProbeCarriers>()
+    );
+}

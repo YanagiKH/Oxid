@@ -26,6 +26,8 @@ pub(super) enum SourceAdmission {
     #[cfg(test)]
     ObserveArrayTypes,
     #[cfg(test)]
+    ObserveEnumTypes,
+    #[cfg(test)]
     ObserveArrayPipeline,
     #[cfg(test)]
     ArrayConsumer,
@@ -40,7 +42,7 @@ impl SourceAdmission {
             #[cfg(test)]
             Self::ObserveArrayPipeline | Self::ArrayConsumer => true,
             #[cfg(test)]
-            Self::ObserveArrayTypes => false,
+            Self::ObserveArrayTypes | Self::ObserveEnumTypes => false,
         }
     }
 }
@@ -434,6 +436,43 @@ pub(super) fn probe_enum_resolver_storage(
         )]),
         Err(error) => Err(vec![*error]),
     }
+}
+
+/// The first T1 checkpoint deliberately has no inhabited success payload.
+/// Enum-free selection is inert; enum-bearing input is denied before preflight,
+/// owner assembly, phase events or affected storage. Enabling fixed statistics
+/// requires the complete checker carrier and allocation-route review first.
+#[cfg(test)]
+pub(super) fn probe_enum_type_storage(
+    index: &DeclarationIndex<'_>,
+    _work: &WorkMeter,
+    _allocator: &mut Allocator,
+) -> Result<Option<std::convert::Infallible>, Vec<Diagnostic>> {
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    Err(vec![*error(
+        "E0500",
+        format_args!("paid enum type observation is not admitted"),
+        index.sources().eof(),
+    )])
+}
+
+// This complete model describes only the denied probe above, not the future
+// fresh owner/seed or successful observation. Keep it present in both builds so
+// non-test layout measurement and passive source pricing use actual Rust types.
+#[allow(dead_code)]
+struct DeniedTypeProbeCarriers {
+    index: &'static DeclarationIndex<'static>,
+    work: &'static WorkMeter,
+    allocator: &'static mut Allocator,
+    enum_count: usize,
+    source: SourceOwner<'static>,
+    origin: Span,
+    returned: Result<Option<std::convert::Infallible>, Vec<Diagnostic>>,
+}
+pub(super) const fn denied_type_probe_carrier_bytes() -> usize {
+    std::mem::size_of::<DeniedTypeProbeCarriers>()
 }
 
 // The ordinary wrapper retains its source gate and absent paid policy. Only the

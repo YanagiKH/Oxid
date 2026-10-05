@@ -523,6 +523,8 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
             + resolver_storage::fixed_carrier_bytes()
             + VECTOR_RETURN_ENVELOPE_BYTES
             + type_storage::fixed_control_carrier_bytes()
+            + typeck::borrowed_check_carrier_bytes()
+            + resolve::denied_type_probe_carrier_bytes()
             + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
             + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
     );
@@ -633,7 +635,10 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
     assert_eq!(
-        base.fixed - legacy_fixed,
+        base.fixed
+            - legacy_fixed
+            - typeck::borrowed_check_carrier_bytes()
+            - resolve::denied_type_probe_carrier_bytes(),
         type_storage::fixed_control_carrier_bytes()
     );
     for functions in [0, 1, 2] {
@@ -649,7 +654,9 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         assert_eq!(
             plan.typeck_scratch,
             functions
-                * (size_of::<Vec<typeck::TypeFrame>>() + size_of::<type_storage::FunctionQuota>())
+                * (size_of::<Vec<typeck::TypeFrame>>()
+                    + size_of::<type_storage::FunctionQuota>()
+                    + typeck::borrowed_body_return_carrier_bytes())
         );
     }
     for count in [0, 1, 2] {

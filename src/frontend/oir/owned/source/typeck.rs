@@ -261,6 +261,27 @@ fn immutable(function: &Function, binding: BindingId, span: Span) -> Box<Diagnos
 pub(in crate::frontend::oir) fn check(
     program: ResolvedOwnedProgram<'_>,
 ) -> Result<TypedOwnedProgram<'_>, Vec<Diagnostic>> {
+    // A paid statistics owner must never select the legacy storage branch.
+    // Deny before phase observation, borrowed preparation or any body vectors.
+    #[cfg(test)]
+    if program.admission() == SourceAdmission::ObserveEnumTypes {
+        return Err(vec![*diagnostic(
+            "E0500",
+            "type",
+            "paid enum type observation requires its private checker",
+            None,
+        )]);
+    }
+    match check_bodies(&program) {
+        Ok(bodies) => Ok(TypedOwnedProgram { program, bodies }),
+        Err(diagnostics) => Err(diagnostics),
+    }
+}
+
+/// One borrowed semantic checker, shared with the future private paid observer.
+/// This checkpoint has only its historical ordinary storage branch. No paid
+/// caller or successful enum observation can reach it yet.
+fn check_bodies(program: &ResolvedOwnedProgram<'_>) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
     program.work().phase("type");
     let mut bodies = Vec::new();
     let mut diagnostics = Vec::new();
@@ -268,7 +289,7 @@ pub(in crate::frontend::oir) fn check(
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
-        match check_body(&program, function) {
+        match check_body(program, function) {
             Ok(body) => bodies.push(body),
             Err(error) => {
                 program.work().record_error(&error);
@@ -277,11 +298,41 @@ pub(in crate::frontend::oir) fn check(
         }
     }
     if diagnostics.is_empty() {
-        Ok(TypedOwnedProgram { program, bodies })
+        Ok(bodies)
     } else {
         Err(diagnostics)
     }
 }
+// Complete new borrowed-core transports. The core's local Bodies header is
+// the existing T0 BodiesReserveCarriers caller role and is not added again.
+// This bank adds the distinct returned collection and consuming caller receiver.
+// The primary owner remains the owner embedded in the existing complete
+// TypedOwnedProgram envelope. Its new borrow does not copy that owner.
+#[allow(dead_code)]
+struct BorrowedCheckCarriers {
+    program_borrows: [&'static ResolvedOwnedProgram<'static>; 2],
+    functions: &'static [Function],
+    iterator: std::slice::Iter<'static, Function>,
+    next: Option<&'static Function>,
+    function: &'static Function,
+    returned: Result<Vec<TypedBody>, Vec<Diagnostic>>,
+    caller_bodies: Vec<TypedBody>,
+}
+#[allow(dead_code)]
+struct BorrowedBodyReturnCarriers {
+    // check_body's complete construction, fallible return, and success pattern
+    // coexist conservatively with the already prepaid retained Bodies slot.
+    constructed: TypedBody,
+    returned: Result<TypedBody, Box<Diagnostic>>,
+    caller: TypedBody,
+}
+pub(super) const fn borrowed_check_carrier_bytes() -> usize {
+    std::mem::size_of::<BorrowedCheckCarriers>()
+}
+pub(super) const fn borrowed_body_return_carrier_bytes() -> usize {
+    std::mem::size_of::<BorrowedBodyReturnCarriers>()
+}
+
 fn projection(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -1551,4 +1602,39 @@ mod enum_source_gate_tests {
             }
         }
     }
+}
+
+#[test]
+fn c3_t1_borrowed_checker_actual_carrier_components() {
+    use std::mem::{align_of, size_of};
+    let core = 2 * size_of::<&ResolvedOwnedProgram<'_>>()
+        + size_of::<&[Function]>()
+        + size_of::<std::slice::Iter<'_, Function>>()
+        + size_of::<Option<&Function>>()
+        + size_of::<&Function>()
+        + size_of::<Result<Vec<TypedBody>, Vec<Diagnostic>>>()
+        + size_of::<Vec<TypedBody>>();
+    let body = 2 * size_of::<TypedBody>() + size_of::<Result<TypedBody, Box<Diagnostic>>>();
+    assert!(borrowed_check_carrier_bytes() >= core);
+    assert!(borrowed_body_return_carrier_bytes() >= body);
+    println!(
+        "C3_T1_EARLY_LAYOUT BorrowedCheckCarriers {} {}",
+        size_of::<BorrowedCheckCarriers>(),
+        align_of::<BorrowedCheckCarriers>()
+    );
+    println!(
+        "C3_T1_EARLY_LAYOUT BorrowedBodyReturnCarriers {} {}",
+        size_of::<BorrowedBodyReturnCarriers>(),
+        align_of::<BorrowedBodyReturnCarriers>()
+    );
+    println!(
+        "C3_T1_EARLY_LAYOUT TypedOwnedProgram {} {}",
+        size_of::<TypedOwnedProgram<'_>>(),
+        align_of::<TypedOwnedProgram<'_>>()
+    );
+    println!(
+        "C3_T1_EARLY_LAYOUT TypedOwnedFunction {} {}",
+        size_of::<TypedOwnedFunction<'_>>(),
+        align_of::<TypedOwnedFunction<'_>>()
+    );
 }
