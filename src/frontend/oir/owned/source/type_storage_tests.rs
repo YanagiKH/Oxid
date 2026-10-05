@@ -1377,7 +1377,7 @@ fn c3_t0_enum_values_references_annotations_constructors_and_match_remain_denied
     use crate::frontend::oir::owned_types::EnumId;
     let at = origin();
     let enumeration = AggregateTy::Enum(EnumId(0));
-    for mutant in 0..7 {
+    for mutant in 0..6 {
         let (mut records, mut signatures, mut functions, source) = rich_parts();
         match mutant {
             0 => records[0].fields[0].ty = ValueTy::Owned(enumeration),
@@ -1399,12 +1399,6 @@ fn c3_t0_enum_values_references_annotations_constructors_and_match_remain_denied
                     payload: None,
                 }
             }
-            6 => {
-                functions[0].blocks[0].body[0].kind = StmtKind::Match {
-                    scrutinee: BindingId(0),
-                    arms: Vec::new(),
-                }
-            }
             _ => unreachable!(),
         }
         assert_eq!(
@@ -1423,6 +1417,51 @@ fn c3_t0_enum_values_references_annotations_constructors_and_match_remain_denied
             "mutant {mutant}"
         );
     }
+
+    // Isolate the Match-stage fence from canonical-tree rejection. There is one
+    // block and no arm children, so removing only that fence would otherwise
+    // admit the same resource counts as the ordinary-statement positive control.
+    let signatures = [plain_signature()];
+    let mut functions = [plain_function(0)];
+    functions[0].blocks[0].body.insert(
+        0,
+        Stmt {
+            kind: StmtKind::Expr(ExprId(0)),
+            span: at,
+        },
+    );
+    let source = source_bounds(TypeCounts {
+        statements: 2,
+        ..plain_counts(1)
+    });
+    assert_eq!(functions[0].blocks.len(), 1);
+    assert!(prepare(
+        &[],
+        &signatures,
+        &functions,
+        &source,
+        &WorkMeter::default(),
+        at
+    )
+    .is_ok());
+    functions[0].blocks[0].body[0].kind = StmtKind::Match {
+        scrutinee: BindingId(0),
+        arms: Vec::new(),
+    };
+    assert_eq!(
+        prepare(
+            &[],
+            &signatures,
+            &functions,
+            &source,
+            &WorkMeter::default(),
+            at
+        )
+        .err()
+        .unwrap()
+        .code,
+        "E0500"
+    );
 }
 
 #[test]
