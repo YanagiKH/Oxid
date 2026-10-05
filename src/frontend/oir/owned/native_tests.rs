@@ -512,11 +512,11 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
     assert_eq!(schedule.fuel(), 1_086);
     assert_eq!(schedule.result, Scalar::I32(816));
     let expected = [
-        (111, 304),
-        (12, 40),
-        (17, 80),
-        (26, 48),
-        (11, 32),
+        (117, 304),
+        (14, 40),
+        (19, 80),
+        (30, 48),
+        (13, 32),
         (8, 16),
         (15, 72),
     ];
@@ -524,14 +524,14 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
         assert_eq!(plan.function(f.id).usage().expanded_cells, cells);
         assert_eq!(plan.function(f.id).usage().native_bytes, bytes);
     }
-    assert_eq!(bounds[0].cells, 154);
+    assert_eq!(bounds[0].cells, 166);
     assert_eq!(bounds[0].bytes, 432);
     assert_eq!(bounds[0].depth, 3);
     assert_eq!(bounds[0].scalar_slots, 30);
     assert!(bounds[0].cyclic);
     let exact = Limits {
-        cells: 200,
-        live_cells: 154,
+        cells: 216,
+        live_cells: 166,
         bytes: 600,
         live_bytes: 440,
         ..Limits::DEFAULT
@@ -540,14 +540,14 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
     for (limits, message) in [
         (
             Limits {
-                cells: 199,
+                cells: 215,
                 ..exact
             },
             "aggregate expanded",
         ),
         (
             Limits {
-                live_cells: 153,
+                live_cells: 165,
                 ..exact
             },
             "live expanded",
@@ -2363,3 +2363,6 @@ mod slices;
 
 #[path = "composition_native_tests.rs"]
 mod composition;
+
+#[path = "projected_slice_native_tests.rs"]
+mod projected_slices;

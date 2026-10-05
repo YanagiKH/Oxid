@@ -58,6 +58,7 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/composition_verifier_tests.rs',
     'src/frontend/oir/owned/consumer_fixtures.rs',
     'src/frontend/oir/owned/consumer_pilot.rs',
+    'src/frontend/oir/owned/consumer_tests.rs',
     'src/frontend/oir/owned/denial_tests.rs',
     'src/frontend/oir/owned/execute.rs',
     'src/frontend/oir/owned/execute_tests.rs',
@@ -70,6 +71,7 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/oracle_tests.rs',
     'src/frontend/oir/owned/origin_tests.rs',
     'src/frontend/oir/owned/plan.rs',
+    'src/frontend/oir/owned/projected_slice_native_tests.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
     'src/frontend/oir/owned/reviewer_heldout.rs',
@@ -93,15 +95,20 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/source/hir.rs',
     'src/frontend/oir/owned/source/lower.rs',
     'src/frontend/oir/owned/source/mod.rs',
+    'src/frontend/oir/owned/source/native_resource_tests.rs',
     'src/frontend/oir/owned/source/program.rs',
+    'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
     'src/frontend/oir/owned/source/resolve.rs',
     'src/frontend/oir/owned/source/resource_fixtures.rs',
     'src/frontend/oir/owned/source/reviewer_heldout.rs',
+    'src/frontend/oir/owned/source/reviewer_resource_runtime.rs',
     'src/frontend/oir/owned/source/reviewer_source.rs',
+    'src/frontend/oir/owned/source/runtime_resource_tests.rs',
     'src/frontend/oir/owned/source/slice_raw_tests.rs',
     'src/frontend/oir/owned/source/slice_tests.rs',
     'src/frontend/oir/owned/source/tests.rs',
     'src/frontend/oir/owned/source/typeck.rs',
+    'src/frontend/oir/owned/storage.rs',
     'src/frontend/oir/owned/tests.rs',
     'src/frontend/oir/owned/verified.rs',
     'src/frontend/oir/owned_types.rs',
@@ -187,6 +194,7 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/composition_reference_tests.rs',
     'src/frontend/oir/owned/composition_verifier_tests.rs',
     'src/frontend/oir/owned/negation_raw_tests.rs',
+    'src/frontend/oir/owned/projected_slice_native_tests.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
     'src/frontend/oir/owned/slice_native_tests.rs',
@@ -197,6 +205,7 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/source/array_pipeline_transport.rs',
     'src/frontend/oir/owned/source/array_type_controls.rs',
     'src/frontend/oir/owned/source/array_types_tests.rs',
+    'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
     'src/frontend/oir/owned/source/slice_raw_tests.rs',
     'src/frontend/oir/owned/source/slice_tests.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
@@ -254,7 +263,8 @@ DIVISION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/lexer.rs"
 SLICES_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 COMPOSITION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 UNARY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
-AUTHORITY_SHA = "42ed09a66e317c9cd6f255585ad8660eb80e8d52efb22d3538e8966b2d95643f"
+PROJECTED_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
+AUTHORITY_SHA = "13b3bf77b1a853234eab834020ab07baab3ef34b25b5153f577d88ff9ae13668"
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -362,7 +372,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["unary_transition_patch"], active["composition_source_manifest"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["unary_transition_patch"], active["composition_source_manifest"], active["projected_transition_patch"], active["unary_source_manifest"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -374,13 +384,13 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 199, "complete current source count")
+    same(len(current["files"]), 201, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 199, "duplicate current member")
+    same(len(after), 201, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -395,7 +405,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 362, "current base count")
+    same(len(base), 364, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -423,7 +433,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 365, "current derived count")
+        same(len(ordered), 367, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -624,12 +634,42 @@ def restore_unary_source(a, name, raw):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact unary instrumentation source section")
     patch = selected[0]
-    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    unary_raw = restore_projected_source(a, name, raw)
+    restored, touched = module.apply_inverse_patch({name: unary_raw}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact unary instrumentation inverse scope")
     expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
     original = restored[name]
     same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
          "unary transition must recover exact composition source")
+    return original
+
+
+def restore_projected_source(a, name, raw):
+    """Recover the exact unary predecessor at the two projected-overlap paths."""
+    require(name in PROJECTED_INSTRUMENTATION_PATHS, "unapproved projected instrumentation path")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current projected identity")
+    runner, transition, predecessor = (active[key] for key in
+        ("source_binding_runner", "projected_transition_patch", "unary_source_manifest"))
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/projected-transition.patch", "projected transition path")
+    same(predecessor["path"], "tests/fixtures/typed_project_source_binding/unary-source.json", "unary predecessor path")
+    verify_map(REPOSITORY, [runner, transition, predecessor])
+    module = types.ModuleType("unit4_projected_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact projected instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact projected instrumentation inverse scope")
+    expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
+         "projected transition must recover exact unary source")
     return original
 
 
@@ -735,7 +775,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 146, "current compiler body count")
+    same(len(wanted), 148, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

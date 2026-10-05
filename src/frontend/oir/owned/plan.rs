@@ -60,6 +60,13 @@ pub(super) struct FrameUsage {
     pub reference_bytes: usize,
     pub native_bytes: usize,
 }
+impl FrameUsage {
+    /// Fuel counts stable logical slots, while admission counts physical metadata.
+    /// Checked view sidecars add two 64-bit cells per reference/loan, not language work.
+    pub(super) fn activation_fuel_cells(self) -> usize {
+        self.expanded_cells - 2 * (self.references + self.loans)
+    }
+}
 #[derive(Debug)]
 pub(super) struct CallPlan {
     argument_start: usize,
@@ -161,7 +168,10 @@ impl<'a> ExecutionPlan<'a> {
                 let descriptor = &function.calls[call.0];
                 let c = self.function(f).call(*call);
                 1 + descriptor.arguments.len()
-                    + self.function(descriptor.target).usage.expanded_cells
+                    + self
+                        .function(descriptor.target)
+                        .usage
+                        .activation_fuel_cells()
                     + c.owned_width
                     + c.borrow_len * c.borrow_len.saturating_sub(1) / 2
             }
@@ -299,7 +309,10 @@ impl<'a> ExecutionPlan<'a> {
             }
             for c in &f.calls {
                 let mut cost = add(1, c.arguments.len())?;
-                cost = add(cost, result.function(c.target).usage.expanded_cells)?;
+                cost = add(
+                    cost,
+                    result.function(c.target).usage.activation_fuel_cells(),
+                )?;
                 let mut borrows: usize = 0;
                 for a in &c.arguments {
                     match a {
@@ -353,8 +366,8 @@ fn usage(
     )?;
     for (count, cells, bytes) in [
         (u.owners, 4, size_of::<OwnerRuntime>()),
-        (u.references, 8, size_of::<ReferenceHandle>()),
-        (u.loans, 12, size_of::<LoanRuntime>()),
+        (u.references, 10, size_of::<ReferenceHandle>()),
+        (u.loans, 14, size_of::<LoanRuntime>()),
         (u.calls, 2, size_of::<CallRuntime>()),
     ] {
         u.expanded_cells = add(u.expanded_cells, mul(count, cells)?)?;
@@ -442,7 +455,7 @@ mod tests {
             RawOwnedFunction => 248,
             OwnerDecl => 56,
             ReferenceDecl => 48,
-            LoanDecl => 72,
+            LoanDecl => 96,
             CallDecl => 96,
             OwnedInstruction => 128,
             OwnedStatement => 208,
@@ -453,8 +466,8 @@ mod tests {
             CallPlan => 48,
             FrameUsage => 88,
             OwnerRuntime => 32,
-            ReferenceHandle => 64,
-            LoanRuntime => 96,
+            ReferenceHandle => 80,
+            LoanRuntime => 112,
             CallRuntime => 16,
             flow::DenialContext => 136,
             flow::DenialFacts => 136,

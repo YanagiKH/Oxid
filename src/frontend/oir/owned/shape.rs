@@ -373,6 +373,25 @@ pub(super) fn check(
             return Err(bad(Malformed::Binding, l.span));
         }
         let (record, _) = base(f, l.authority, l.span)?;
+        let record = if l.projection.is_empty() {
+            record
+        } else {
+            let BorrowedTy::Exact(root @ AggregateTy::Record(_)) = record else {
+                return Err(bad(Malformed::Type, l.span));
+            };
+            for _ in &l.projection {
+                meter.visit()?;
+            }
+            let (ValueTy::Owned(AggregateTy::FixedArray(array)), _) =
+                d.projection(root, &l.projection)?
+            else {
+                return Err(bad(Malformed::Type, l.span));
+            };
+            if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
+                return Err(bad(Malformed::Type, l.span));
+            }
+            BorrowedTy::Exact(AggregateTy::FixedArray(array))
+        };
         d.check_borrowed_view(record, l.referent())
             .map_err(|_| bad(Malformed::Type, l.span))?;
         if let AccessBase::Owner(o) = l.authority {

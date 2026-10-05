@@ -174,6 +174,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
         span,
     });
     f.loans.push(LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -1136,6 +1137,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
     f.blocks[1].statements.clear();
     f.calls[0].arguments.push(ArgumentSlot::Borrow(LoanId(1)));
     f.loans.push(LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 1,
         authority: AccessBase::Parameter(ReferenceParamId(0)),
@@ -1308,6 +1310,7 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
                         }
                     }
                     5 => function.loans.push(LoanDecl {
+                        projection: Vec::new(),
                         referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
                         kind: BorrowKind::Shared,
                         call: CallSiteId(0),

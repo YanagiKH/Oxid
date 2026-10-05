@@ -132,3 +132,5 @@ Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指�
 歡迎提供附最小可執行範例的 bug 回報、改善錯誤訊息、補測試或修正文件。送出 pull request 前，請依[貢獻指南](CONTRIBUTING.md)執行相關檢查。
 
 採用 [MIT](LICENSE) 或 [Apache-2.0](LICENSE-APACHE) 授權。
+
+實驗性的[陣列欄位切片借用](rfcs/0022-projected-array-slices.md)讓切片輔助函式借用固定長度純量陣列欄位，例如 `bump(&mut batch.samples)`。巢狀欄位路徑及透過整筆記錄參照的明確再借用，仍保留整個擁有者的衝突規則、可見性與僅限呼叫的生命週期。資源上限及原生目標不變。

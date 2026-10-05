@@ -39,9 +39,56 @@ NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:Arr
 SLICES_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
 SLICES_SOURCE_BYTES = 35876
 COMPOSITION_SOURCE_SHA = 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16'
-CURRENT_SOURCE_SHA = 'd9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220'
+UNARY_SOURCE_SHA = 'd9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220'
+CURRENT_SOURCE_SHA = '850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304'
 COMPOSITION_SOURCE_BYTES = 37404
-CURRENT_SOURCE_BYTES = 38090
+UNARY_SOURCE_BYTES = 38090
+CURRENT_SOURCE_BYTES = 38636
+PROJECTED_AUTHORITY_SHA = 'f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc'
+PROJECTED_AUTHORITY_BYTES = 48552
+PROJECTED_PATCH_SHA = '55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73'
+PROJECTED_PATCH_BYTES = 124986
+PROJECTED_PATHS = ('src/frontend/ast.rs',
+ 'src/frontend/format/ast_tests.rs',
+ 'src/frontend/oir/owned/array_native_tests.rs',
+ 'src/frontend/oir/owned/array_reference_tests.rs',
+ 'src/frontend/oir/owned/budget.rs',
+ 'src/frontend/oir/owned/composition_reference_tests.rs',
+ 'src/frontend/oir/owned/consumer_fixtures.rs',
+ 'src/frontend/oir/owned/consumer_pilot.rs',
+ 'src/frontend/oir/owned/consumer_tests.rs',
+ 'src/frontend/oir/owned/denial_tests.rs',
+ 'src/frontend/oir/owned/execute.rs',
+ 'src/frontend/oir/owned/execute_tests.rs',
+ 'src/frontend/oir/owned/mod.rs',
+ 'src/frontend/oir/owned/native.rs',
+ 'src/frontend/oir/owned/native_heldout_review.rs',
+ 'src/frontend/oir/owned/native_tests.rs',
+ 'src/frontend/oir/owned/oracle_tests.rs',
+ 'src/frontend/oir/owned/plan.rs',
+ 'src/frontend/oir/owned/projected_slice_native_tests.rs',
+ 'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+ 'src/frontend/oir/owned/reviewer_heldout.rs',
+ 'src/frontend/oir/owned/reviewer_reference_tests.rs',
+ 'src/frontend/oir/owned/shape.rs',
+ 'src/frontend/oir/owned/source/hir.rs',
+ 'src/frontend/oir/owned/source/lower.rs',
+ 'src/frontend/oir/owned/source/mod.rs',
+ 'src/frontend/oir/owned/source/native_resource_tests.rs',
+ 'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
+ 'src/frontend/oir/owned/source/resolve.rs',
+ 'src/frontend/oir/owned/source/resource_fixtures.rs',
+ 'src/frontend/oir/owned/source/reviewer_heldout.rs',
+ 'src/frontend/oir/owned/source/reviewer_resource_runtime.rs',
+ 'src/frontend/oir/owned/source/runtime_resource_tests.rs',
+ 'src/frontend/oir/owned/source/slice_raw_tests.rs',
+ 'src/frontend/oir/owned/source/typeck.rs',
+ 'src/frontend/oir/owned/storage.rs',
+ 'src/frontend/oir/owned/tests.rs',
+ 'src/frontend/owned_syntax_tests.rs',
+ 'src/frontend/parser.rs',
+ 'tests/typed_record_composition.rs')
+PROJECTED_ADDITIONS = ('src/frontend/oir/owned/projected_slice_native_tests.rs', 'src/frontend/oir/owned/source/projected_slice_raw_tests.rs')
 UNARY_AUTHORITY_SHA = 'ed2d16dd5b24a55005e399630f3ad7402017fca9e8615b98d232d273ec418a31'
 UNARY_AUTHORITY_BYTES = 36993
 UNARY_PATCH_SHA = '4a1e4bfa577ff02bb3c5320eb1994b281831929692acd347daf243b15ae31796'
@@ -562,6 +609,11 @@ def inverse_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
 
 
+def inverse_projected_patch(inputs, patch):
+    """Restore exactly the frozen unary source view."""
+    return apply_inverse_patch(inputs, patch, PROJECTED_PATCH_SHA, PROJECTED_PATCH_BYTES, PROJECTED_PATHS)
+
+
 def inverse_unary_patch(inputs, patch):
     """Restore exactly the frozen record-composition source view."""
     return apply_inverse_patch(inputs, patch, UNARY_PATCH_SHA, UNARY_PATCH_BYTES, UNARY_PATHS)
@@ -912,7 +964,40 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    unary_current = json.loads(package_bytes["current-source.json"])
+    projected_current = json.loads(package_bytes["current-source.json"])
+    require(digest(package_bytes["unary-source.json"]) == UNARY_SOURCE_SHA
+            and len(package_bytes["unary-source.json"]) == UNARY_SOURCE_BYTES,
+            "unapproved unary source manifest")
+    unary_current = json.loads(package_bytes["unary-source.json"])
+    require(digest(package_bytes["projected-authority.json"]) == PROJECTED_AUTHORITY_SHA
+            and len(package_bytes["projected-authority.json"]) == PROJECTED_AUTHORITY_BYTES,
+            "stale projected authority")
+    projected = json.loads(package_bytes["projected-authority.json"])
+    projected_inputs = check_entries(repo, projected_current["files"])
+    unary_rows = {r["path"]: r for r in unary_current["files"]}
+    require(set(projected_inputs) == set(unary_rows) | set(PROJECTED_ADDITIONS),
+            "unexpected projected source membership")
+    require([r["path"] for r in projected_current["files"] if r != unary_rows.get(r["path"])]
+            == list(PROJECTED_PATHS), "unexpected projected source delta")
+    require(projected["current_input_git_modes"] == [
+        {"path": r["path"], "mode": "100644"} for r in projected_current["files"]],
+        "unexpected projected input modes")
+    for item in projected["current_input_git_modes"]:
+        require(regular(repo, item["path"]).stat().st_mode & 0o111 == 0,
+                "changed input mode: " + item["path"])
+    unary_inputs, projected_touched = inverse_projected_patch(
+        projected_inputs, package_bytes["projected-transition.patch"])
+    check_bytes(unary_inputs, unary_current["files"])
+    transition = []
+    for name in PROJECTED_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", unary_inputs), ("after", projected_inputs)):
+            data = source_inputs.get(name)
+            identities[label] = None if data is None else {
+                **entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        transition.append(identities)
+    require(projected["transition_inputs"] == transition, "stale projected input identities")
     require(digest(package_bytes["composition-source.json"]) == COMPOSITION_SOURCE_SHA
             and len(package_bytes["composition-source.json"]) == COMPOSITION_SOURCE_BYTES,
             "unapproved composition source manifest")
@@ -921,7 +1006,6 @@ def preflight(repo, package=PACKAGE):
             and len(package_bytes["unary-authority.json"]) == UNARY_AUTHORITY_BYTES,
             "stale unary authority")
     unary = json.loads(package_bytes["unary-authority.json"])
-    unary_inputs = check_entries(repo, unary_current["files"])
     composition_rows = {r["path"]: r for r in composition_current["files"]}
     require(set(unary_inputs) == set(composition_rows) | set(UNARY_ADDITIONS),
             "unexpected unary source membership")
@@ -989,7 +1073,7 @@ def preflight(repo, package=PACKAGE):
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [x for x in unary_inputs if x.startswith(("src/", "native/"))]
+    expected = [x for x in projected_inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
@@ -1072,12 +1156,14 @@ def preflight(repo, package=PACKAGE):
     }, "stale borrowed Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": unary_current, "composition_source": composition_current,
+    return {"current": projected_current, "unary_source": unary_current,
+            "projected_authority": projected, "projected_touched": projected_touched,
+            "unary_inputs": unary_inputs, "composition_source": composition_current,
             "unary_authority": unary, "unary_touched": unary_touched,
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": unary_inputs, "archived": reconstructed, "references": references,
+            "inputs": projected_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": adapted_resource,
             "observer": borrowed_observer, "aggregate_observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
@@ -1125,6 +1211,9 @@ def prepare_archived(output, captured):
             "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
+            "projected_inverse_patch_sha256": PROJECTED_PATCH_SHA,
+            "projected_inverse_touched": captured["projected_touched"],
+            "unary_source_sha256": UNARY_SOURCE_SHA,
             "unary_inverse_patch_sha256": UNARY_PATCH_SHA,
             "unary_inverse_touched": captured["unary_touched"],
             "composition_source_sha256": COMPOSITION_SOURCE_SHA,
@@ -1327,6 +1416,8 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      projected_authority_sha256=PROJECTED_AUTHORITY_SHA,
+                      unary_source_sha256=UNARY_SOURCE_SHA,
                       unary_authority_sha256=UNARY_AUTHORITY_SHA,
                       composition_source_sha256=COMPOSITION_SOURCE_SHA,
                       composition_authority_sha256=COMPOSITION_AUTHORITY_SHA,

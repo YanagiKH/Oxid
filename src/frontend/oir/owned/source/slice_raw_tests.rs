@@ -71,14 +71,14 @@ fn slice_raw_cannot_narrow_a_slice_authority_back_to_fixed() {
 }
 
 #[test]
-fn slice_native_sidecars_are_accounted_without_runtime_handle_growth() {
+fn slice_native_sidecars_are_accounted_with_equal_exact_and_slice_runtime_views() {
     let (sources, program) = raw(SHARED);
     let witness = verified::verify_owned(program, &sources).unwrap();
     let slices = plan::ExecutionPlan::build(&witness).unwrap();
     let (exact_sources, exact_program) = raw(&SHARED.replace("&[i32]", "&[i32;2]"));
     let exact_witness = verified::verify_owned(exact_program, &exact_sources).unwrap();
     let exact = plan::ExecutionPlan::build(&exact_witness).unwrap();
-    assert_eq!(std::mem::size_of::<storage::ReferenceHandle>(), 64);
+    assert_eq!(std::mem::size_of::<storage::ReferenceHandle>(), 80);
     assert_eq!(
         std::mem::size_of::<BorrowedSlot>(),
         std::mem::size_of::<AggregateSlot>()

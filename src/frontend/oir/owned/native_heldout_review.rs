@@ -77,6 +77,7 @@ fn mixed_parameter_fixture(
     }];
     caller.loans = vec![
         LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: 4,
             authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -86,6 +87,7 @@ fn mixed_parameter_fixture(
             span: s(0),
         },
         LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: 1,
             authority: AccessBase::Owner(OwnerPlaceId(0)),

@@ -178,8 +178,12 @@ pub enum ItemId {
 }
 #[derive(Clone, Copy, Debug)]
 pub enum BorrowPlace {
+    /// Complete bounded named-root field path, or a single whole binding name.
     OwnerName(Span),
-    ForwardedParameter { name: Span, star_span: Span },
+    ForwardedParameter {
+        name: Span,
+        star_span: Span,
+    },
 }
 #[derive(Debug)]
 pub enum Argument {

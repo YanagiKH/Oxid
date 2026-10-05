@@ -50,7 +50,9 @@ class ReplayTests(unittest.TestCase):
                     / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
         (fixture / "sources/reviewer-array-native-v3.rs").write_bytes(combined)
         for name in replay.CONTROL_FILES:
-            (fixture / "sources" / name).write_text("// exact frozen " + name + "\n")
+            (fixture / "sources" / name).write_bytes(
+                (Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL / "sources" / name).read_bytes()
+                if name == "old-ir-export-v1.rs" else ("// exact frozen " + name + "\n").encode())
         replay.save(fixture / "qualification-v2.json", dict(source_head="f" * 40,
                     source_tree="e" * 40, reviewer_module_sha256=replay.sha(combined),
                     reviewer_module_path="sources/reviewer-array-native-v3.rs"))
@@ -120,7 +122,9 @@ class ReplayTests(unittest.TestCase):
     def test_public_successor_binding_rejects_historical_and_changed_identities(self):
         binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
                    "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
-                   "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]}
+                   "projected_loan_compatibility": dict(replay.PROJECTED_LOAN_COMPATIBILITY),
+                   "old_ir_resource_successor": dict(replay.OLD_IR_RESOURCE_SUCCESSOR),
+                   "module_sha256": replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"]}
         replay.assert_current_module_binding(binding)
         for changed in ({}, {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_sha256"]},
                         {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["current_module_sha256"]},
@@ -212,9 +216,11 @@ class ReplayTests(unittest.TestCase):
     def test_borrowed_slot_binding_requires_both_successor_metadata(self):
         binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
                    "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
-                   "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]}
+                   "projected_loan_compatibility": dict(replay.PROJECTED_LOAN_COMPATIBILITY),
+                   "old_ir_resource_successor": dict(replay.OLD_IR_RESOURCE_SUCCESSOR),
+                   "module_sha256": replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"]}
         replay.assert_current_module_binding(binding)
-        for field in ("public_array_activation", "borrowed_slot_compatibility"):
+        for field in ("public_array_activation", "borrowed_slot_compatibility", "projected_loan_compatibility", "old_ir_resource_successor"):
             missing = dict(binding)
             del missing[field]
             with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
@@ -226,6 +232,51 @@ class ReplayTests(unittest.TestCase):
                 **binding["borrowed_slot_compatibility"], field: value}}
             with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
                 replay.assert_current_module_binding(changed)
+
+    def test_projected_loan_successor_changes_only_two_root_projection_fields(self):
+        previous = replay.borrowed_slot_reviewer(self.public_reviewer())
+        current = replay.projected_loan_reviewer(previous)
+        self.assertEqual(current.count(b"projection: Vec::new(),"), 2)
+        self.assertEqual(current.replace(b"            projection: Vec::new(),\n", b"")
+                         .replace(b"        projection: Vec::new(),\n", b""), previous)
+        self.assertEqual(replay.projected_loan_reviewer(current, reverse=True), previous)
+        self.assertEqual(replay.sha(previous), replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"])
+        self.assertEqual(replay.sha(current), replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"])
+
+    def test_projected_loan_successor_rejects_drift_missing_duplicate_and_changed_output(self):
+        previous = replay.borrowed_slot_reviewer(self.public_reviewer())
+        current = replay.projected_loan_reviewer(previous)
+        for data, reverse, input_key, output_key, side in (
+                (previous, False, "input_module_sha256", "current_module_sha256", 0),
+                (current, True, "current_module_sha256", "input_module_sha256", 1)):
+            for changed in (data + b"\n", current if not reverse else previous):
+                with self.assertRaisesRegex(RuntimeError, "input identity"):
+                    replay.projected_loan_reviewer(changed, reverse=reverse)
+            for pair in replay.PROJECTED_LOAN_REPLACEMENTS:
+                fragment = pair[side].encode()
+                for changed in (data.replace(fragment, b"", 1), data + fragment):
+                    metadata = {**replay.PROJECTED_LOAN_COMPATIBILITY, input_key: replay.sha(changed)}
+                    with mock.patch.dict(replay.PROJECTED_LOAN_COMPATIBILITY, metadata), self.assertRaisesRegex(RuntimeError, "use site"):
+                        replay.projected_loan_reviewer(changed, reverse=reverse)
+            with mock.patch.dict(replay.PROJECTED_LOAN_COMPATIBILITY, {output_key: "0" * 64}), self.assertRaisesRegex(RuntimeError, "output identity"):
+                replay.projected_loan_reviewer(data, reverse=reverse)
+        with mock.patch.dict(replay.PROJECTED_LOAN_COMPATIBILITY, {"replacement_count": 3}), self.assertRaisesRegex(RuntimeError, "inventory"):
+            replay.projected_loan_reviewer(previous)
+
+    def test_projected_loan_binding_rejects_predecessor_and_metadata_drift(self):
+        binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
+                   "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
+                   "projected_loan_compatibility": dict(replay.PROJECTED_LOAN_COMPATIBILITY),
+                   "old_ir_resource_successor": dict(replay.OLD_IR_RESOURCE_SUCCESSOR),
+                   "module_sha256": replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"]}
+        replay.assert_current_module_binding(binding)
+        with self.assertRaises(RuntimeError):
+            replay.assert_current_module_binding({**binding, "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]})
+        for key, value in (("input_module_sha256", "0" * 64), ("current_module_sha256", "0" * 64),
+                           ("replacement_count", 1), ("projection_identity", "field projection")):
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                replay.assert_current_module_binding({**binding, "projected_loan_compatibility": {
+                    **binding["projected_loan_compatibility"], key: value}})
 
     def test_clean_archive_preserves_git_bytes_and_exact_append_prefix(self):
         runner = self.prepared()
@@ -249,8 +300,9 @@ class ReplayTests(unittest.TestCase):
         frozen = (runner.inputs / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
         self.assertEqual(replay.sha(frozen),
                          "b6b8f0a012c4d3b7dc1fa0140769174ee868af04db7e5ae3f34c8d1baa478c21")
-        self.assertEqual(replay.borrowed_slot_reviewer(current, reverse=True),
+        self.assertEqual(replay.borrowed_slot_reviewer(replay.projected_loan_reviewer(current, reverse=True), reverse=True),
                          replay.public_array_reviewer(frozen))
+        self.assertEqual(runner.binding["projected_loan_compatibility"], replay.PROJECTED_LOAN_COMPATIBILITY)
         self.assertEqual(runner.binding["module_sha256"], replay.sha(current))
         self.assertEqual(runner.binding["public_array_activation"], replay.PUBLIC_ARRAY_ACTIVATION)
         self.assertEqual(runner.binding["borrowed_slot_compatibility"], replay.BORROWED_SLOT_COMPATIBILITY)
@@ -406,22 +458,90 @@ class ReplayTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 replay.assert_one_pass(text, name)
 
+    def test_old_ir_resource_successor_is_exact_reversible_and_physical(self):
+        fixture = Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+        frozen = (fixture / "expectations/old-ir-inventory.tsv").read_bytes()
+        current = replay.old_ir_resource_inventory(frozen)
+        self.assertEqual(replay.old_ir_resource_inventory(current, reverse=True), frozen)
+        changes = []
+        for old, new in zip(frozen.splitlines(), current.splitlines()):
+            if old != new:
+                a, b = old.split(b"\t"), new.split(b"\t")
+                self.assertEqual(a[:5] + a[6:], b[:5] + b[6:])
+                self.assertEqual((a[0], a[5], b[5]), (b"shared", b"22", b"24"))
+                changes.append((a[1], a[2]))
+        self.assertEqual(set(changes), {(g, str(m).encode()) for g in (b"false", b"true") for m in range(5)})
+        self.assertEqual(len(changes), 10)
+        exporter = (fixture / "sources/old-ir-export-v1.rs").read_bytes()
+        adapted = replay.old_ir_resource_exporter(exporter)
+        self.assertEqual(replay.old_ir_resource_exporter(adapted, reverse=True), exporter)
+        self.assertIn(b"usage.expanded_cells,usage.native_bytes", adapted)
+        self.assertIn(b"assert_eq!((usage.references, usage.loans), (0, expected_loans))", adapted)
+        self.assertIn(b"historical_cells + 2 * expected_loans", adapted)
+        self.assertIn(b"assert_eq!(usage.activation_fuel_cells(), historical_cells)", adapted)
+
+    def test_old_ir_successors_reject_all_input_and_output_drift(self):
+        fixture = Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+        for name, function, before, after in (
+            ("sources/old-ir-export-v1.rs", replay.old_ir_resource_exporter, "frozen_exporter_sha256", "current_exporter_sha256"),
+            ("expectations/old-ir-inventory.tsv", replay.old_ir_resource_inventory, "frozen_inventory_sha256", "current_inventory_sha256")):
+            frozen = (fixture / name).read_bytes()
+            current = function(frozen)
+            for value, reverse, output_key in ((frozen, False, after), (current, True, before)):
+                for changed in (value + b"\n", value[:-1], value.replace(b"shared", b"renamed", 1)):
+                    with self.subTest(name=name, reverse=reverse), self.assertRaisesRegex(RuntimeError, "input identity"):
+                        function(changed, reverse=reverse)
+                with mock.patch.dict(replay.OLD_IR_RESOURCE_SUCCESSOR, {output_key: "0" * 64}), self.assertRaisesRegex(RuntimeError, "output identity"):
+                    function(value, reverse=reverse)
+        with mock.patch.dict(replay.OLD_IR_RESOURCE_SUCCESSOR, {"changed_rows": 9}), self.assertRaisesRegex(RuntimeError, "row count"):
+            replay.old_ir_resource_inventory(frozen)
+
+    def test_old_ir_physical_inventory_rejects_each_changed_cell_and_extra_row(self):
+        fixture = Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL
+        frozen = (fixture / "expectations/old-ir-inventory.tsv").read_bytes()
+        physical = replay.old_ir_resource_inventory(frozen)
+        root = self.root / "old-ir"
+        root.mkdir()
+        (root / "a.ll").write_bytes(b"exact llvm\n")
+        manifest = [dict(path="old-ir/a.ll", length=11, sha256=replay.file_sha(root / "a.ll"))]
+        target = root / "inventory.tsv"
+        target.write_bytes(physical)
+        receipt = replay.compare_old_ir(root, manifest, frozen)
+        self.assertEqual(target.read_bytes(), physical)
+        self.assertEqual(receipt["current_inventory_sha256"], replay.sha(physical))
+        # Every one of the 90 rows and seven fields remains exactly checked.
+        lines = physical.splitlines(keepends=True)
+        for row in range(1, len(lines)):
+            for column in range(7):
+                changed = lines[:]
+                fields = changed[row].rstrip(b"\n").split(b"\t")
+                fields[column] += b"x"
+                changed[row] = b"\t".join(fields) + b"\n"
+                target.write_bytes(b"".join(changed))
+                with self.subTest(row=row, column=column), self.assertRaisesRegex(RuntimeError, "TSV"):
+                    replay.compare_old_ir(root, manifest, frozen)
+        for changed in (frozen, physical + lines[-1], b"".join(lines[:-1])):
+            target.write_bytes(changed)
+            with self.assertRaisesRegex(RuntimeError, "TSV"):
+                replay.compare_old_ir(root, manifest, frozen)
+
     def test_old_ir_comparison_checks_exact_modules_tsv_and_extras(self):
         root = self.root / "old-ir"
         root.mkdir()
         (root / "a.ll").write_bytes(b"exact llvm\n")
-        (root / "inventory.tsv").write_bytes(b"header\nrow\n")
+        inventory = (Path(replay.__file__).resolve().parent.parent / replay.FIXTURE_REL / "expectations/old-ir-inventory.tsv").read_bytes()
+        (root / "inventory.tsv").write_bytes(replay.old_ir_resource_inventory(inventory))
         manifest = [dict(path="old-ir/a.ll", length=11, sha256=replay.file_sha(root / "a.ll"))]
-        result = replay.compare_old_ir(root, manifest, b"header\nrow\n")
+        result = replay.compare_old_ir(root, manifest, inventory)
         self.assertEqual(result["modules"], 1)
-        with self.assertRaisesRegex(RuntimeError, "TSV"):
+        with self.assertRaisesRegex(RuntimeError, "identity"):
             replay.compare_old_ir(root, manifest, b"header\nchanged\n")
         (root / "extra.ll").write_text("extra")
         with self.assertRaisesRegex(RuntimeError, "inventory"):
-            replay.compare_old_ir(root, manifest, b"header\nrow\n")
+            replay.compare_old_ir(root, manifest, inventory)
         (root / "a.ll").write_bytes(b"wrong llvm\n")
         with self.assertRaisesRegex(RuntimeError, "hash/length"):
-            replay.compare_old_ir(root, manifest, b"header\nrow\n")
+            replay.compare_old_ir(root, manifest, inventory)
 
     def test_expected_mutant_failure_requires_exact_status_and_output(self):
         expected = dict(status=1, stdout=b"", stderr=b"fatal: surviving poison at byte 1\n")

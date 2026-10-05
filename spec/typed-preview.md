@@ -162,8 +162,8 @@ must allow the access. A shared/exclusive helper borrows the complete outer
 record; explicit reborrows keep existing parent-suspension rules.
 
 No aggregate field may be extracted, moved, discarded, passed or returned by
-value, independently replaced, borrowed or converted to a slice. Replace the
-complete outer record instead. Partial initialization, arrays of records,
+value or independently replaced. Replace the complete outer record instead.
+The call-only fixed-array-field slice exception below retains whole-root authority. Partial initialization, arrays of records,
 nested arrays, stored references and temporary/grouped path roots remain
 excluded. Subobjects never gain independent ownership or loan authority.
 
@@ -173,6 +173,33 @@ Scalar leaf accesses retain their existing fuel charge. Indexed writes evaluate
 RHS then index, charge fuel, check signed bounds, and finally store. Earlier
 moves/helper effects survive a later failure. Reference and native consumers
 transfer initialized leaves and empty sentinels without copying padding.
+
+## Call-only projected array slices
+
+[RFC 0022](../rfcs/0022-projected-array-slices.md) permits `sum(&batch.samples)`
+and `bump(&mut batch.samples)` when the bounded named-root field path ends in a
+fixed bool/i32/unit array and the formal is exactly the matching shared/exclusive
+scalar slice. Paths may contain up to 64 fields and visibility is checked at each
+hop. Length zero works through an explicitly typed empty-array initializer.
+
+`&*p.samples` and `&mut *p.samples` explicitly reborrow an array field through a
+whole-record reference parameter. This restricted argument grammar parses the
+star as explicit reference forwarding and the remaining dotted path as the
+field selection. It does not accept `*p.samples` as an ordinary expression,
+`&(*p).samples`, or `&(p.samples)`, and changes no general unary precedence.
+Existing `&*p` reborrowing remains unchanged.
+
+A view exposes only the selected complete array, while its loan covers the
+entire root record. Different fields therefore still conflict for exclusive
+borrows; shared/shared loans may coexist. Parent permissions restore on return.
+The view cannot escape, grant field ownership, borrow scalar/record fields,
+supply an exact fixed-array formal, or enable ranges/element borrowing.
+
+Runtime and native consumers preserve field offsets, actual lengths, argument
+staging, RHS/index/fuel/bounds/store order and neighboring fields. Retained view
+metadata is charged against unchanged resource ceilings. This experimental
+extension has separate local tests; predecessor qualification artifacts and
+other-platform or exact-head hosted CI claims do not transfer automatically.
 
 ## Call-only borrowed scalar slices
 

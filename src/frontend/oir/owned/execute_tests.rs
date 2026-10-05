@@ -51,11 +51,11 @@ fn batch_pilot_matches_independent_state_and_all_1086_lower_budgets() {
     assert_eq!(schedule.fuel(), 1086);
     let p = ExecutionPlan::build(&witness).unwrap();
     let census = [
-        (111, 808, 304),
-        (12, 96, 40),
-        (17, 136, 80),
-        (26, 208, 48),
-        (11, 88, 32),
+        (117, 856, 304),
+        (14, 112, 40),
+        (19, 152, 80),
+        (30, 240, 48),
+        (13, 104, 32),
         (8, 48, 16),
         (15, 104, 72),
     ];
@@ -237,8 +237,12 @@ fn stopped_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>, fuel: usize) -> Machine<
         observer: array_observe::Observer::default(),
     };
     let f = &plan.witness().functions()[0];
-    m.activation_preflight(f.id, 1 + plan.function(f.id).usage().expanded_cells, f.span)
-        .unwrap();
+    m.activation_preflight(
+        f.id,
+        1 + plan.function(f.id).usage().activation_fuel_cells(),
+        f.span,
+    )
+    .unwrap();
     m.frames = plan::reserve(limits.frames).unwrap();
     m.install(Frame::allocate(plan, f.id, 1, None).unwrap());
     assert!(matches!(
@@ -277,6 +281,20 @@ fn stale_identity_and_nested_permission_checks_are_transition_inductive() {
     assert!(m.release(parent.permission, first_commit).is_err());
     assert_eq!(m.frames[0].loans[1], before); // child-active ancestor cannot end
     for corrupted in [
+        ReferenceHandle {
+            view: BorrowView {
+                offset: u64::MAX,
+                ..child.view
+            },
+            ..child
+        },
+        ReferenceHandle {
+            view: BorrowView {
+                aggregate: None,
+                ..child.view
+            },
+            ..child
+        },
         ReferenceHandle {
             root: OwnerKey {
                 activation: child.root.activation + 1,
@@ -385,12 +403,12 @@ fn preparation_snapshots_are_stored_independently_of_test_owned_scalar_cells() {
 fn exact_activation_caps_and_failure_precedence_charge_before_allocation() {
     let (sources, raw, schedule) = super::super::consumer_pilot::batch();
     let p = verified::verify_owned(raw, &sources).unwrap();
-    let bytes = 3 * size_of::<Frame>() + 1152 + size_of::<Scalar>();
+    let bytes = 3 * size_of::<Frame>() + 1248 + size_of::<Scalar>();
     let limits = Limits {
         fuel: 1086,
         frames: 3,
         slots: 30,
-        cells: 154,
+        cells: 166,
         bytes,
     };
     assert_eq!(
@@ -425,7 +443,7 @@ fn exact_activation_caps_and_failure_precedence_charge_before_allocation() {
             &p,
             Some(schedule.entry),
             Limits {
-                cells: 153,
+                cells: 165,
                 ..limits
             }
         ),
@@ -931,6 +949,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         span: s(1),
     }];
     main.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -996,6 +1015,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         span: s(6),
     }];
     recursive.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Parameter(ReferenceParamId(0)),
@@ -1070,3 +1090,133 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
 
 #[path = "source/reviewer_resource_runtime.rs"]
 mod reviewer_resources;
+
+#[test]
+fn projected_slice_runtime_rederives_view_and_never_writes_forged_extent() {
+    use super::super::source::resource_fixtures as source;
+    // main first keeps the helper's entry-independent stopped-machine harness.
+    for relayed in [false, true] {
+        let target = if relayed { "relay" } else { "edit" };
+        let text = format!("struct B{{head:i32,a:[i32;2],tail:i32}}fn main()->i32{{let mut b=B{{head:71,a:[1,2],tail:93}};{target}(&mut b.a);return b.head+b.a[0]+b.tail;}}fn edit(p:&mut[i32])->(){{p[0]=7;return;}}fn relay(p:&mut[i32])->(){{edit(&mut *p);return;}}");
+        let case = source::checked_arrays(&text);
+        let plan = ExecutionPlan::build(&case.witness).unwrap();
+        let mut events = vec![];
+        assert_eq!(
+            run_observed(&case.witness, case.entry, Limits::default(), &mut events),
+            Ok(Scalar::I32(171))
+        );
+        let write = case.witness.functions()[1]
+            .blocks
+            .iter()
+            .flat_map(|b| &b.statements)
+            .find(|s| matches!(s.kind, OwnedInstruction::WriteIndex { .. }))
+            .map(plan::instruction_span)
+            .unwrap();
+        let before_write: usize = events
+            .iter()
+            .take_while(|e| !matches!(e,Event::Charge(s,_) if *s==write))
+            .filter_map(|e| {
+                if let Event::Charge(_, cost) = e {
+                    Some(*cost)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        for mutation in 0..5 {
+            let mut m = stopped_machine(&plan, before_write);
+            let frame = m.frames.len() - 1;
+            let original = m.frames[frame].references[0];
+            assert_eq!(original.view.offset, 4);
+            assert_eq!(
+                m.checked_handle_view(original, write).unwrap(),
+                AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, 2).unwrap())
+            );
+            let snapshot = m.frames[0].payload.clone();
+            let mut forged = original;
+            match mutation {
+                0 => forged.view.offset = 0, // within owner, but aliases metadata
+                1 => forged.view.offset = 8, // within owner, but aliases tail extent
+                2 => forged.view.offset = u64::MAX,
+                3 => {
+                    forged.view.aggregate = Some(
+                        AggregateSlot::try_from_aggregate(AggregateTy::FixedArray(
+                            FixedArrayTy::check(hir::Ty::I32, 3).unwrap(),
+                        ))
+                        .unwrap(),
+                    )
+                }
+                _ => {
+                    forged.view.aggregate = Some(
+                        AggregateSlot::try_from_aggregate(AggregateTy::FixedArray(
+                            FixedArrayTy::check(hir::Ty::Bool, 2).unwrap(),
+                        ))
+                        .unwrap(),
+                    )
+                }
+            }
+            // Even coherent corruption of the mutable handle AND loan view cannot
+            // override the immutable verifier-derived nominal path.
+            m.frames[frame].references[0] = forged;
+            m.frames[original.permission.frame as usize].loans[original.permission.loan as usize]
+                .view = forged.view;
+            assert!(
+                m.checked_handle_view(forged, write).is_err(),
+                "mutation {mutation}"
+            );
+            m.fuel = 0;
+            assert_eq!(
+                m.execute(),
+                Err(OwnedRunFailure::Scalar(RunFailure::Fuel(write)))
+            );
+            assert_eq!(m.frames[0].payload, snapshot, "unpaid mutation {mutation}");
+            m.fuel = 1000;
+            assert!(matches!(m.execute(), Err(OwnedRunFailure::Invariant(..))));
+            assert_eq!(m.frames[0].payload, snapshot, "mutation {mutation}");
+        }
+    }
+}
+
+#[test]
+fn projected_slice_success_store_preserves_empty_sentinel_and_padding_bytes() {
+    use super::super::source::resource_fixtures as source;
+    let case=source::checked_arrays("struct B{head:bool,empty:[bool;0],a:[i32;2],tail:i32}fn main()->i32{let empty:[bool;0]=[];let mut b=B{head:true,empty:empty,a:[1,2],tail:93};edit(&mut b.a);if b.head{return b.a[0]+b.tail;}else{return 99;}}fn edit(p:&mut[i32])->(){p[0]=7;return;}");
+    let plan = ExecutionPlan::build(&case.witness).unwrap();
+    let write = case.witness.functions()[1]
+        .blocks
+        .iter()
+        .flat_map(|b| &b.statements)
+        .find(|s| matches!(s.kind, OwnedInstruction::WriteIndex { .. }))
+        .map(plan::instruction_span)
+        .unwrap();
+    let mut events = vec![];
+    assert_eq!(
+        run_observed(&case.witness, case.entry, Limits::default(), &mut events),
+        Ok(Scalar::I32(100))
+    );
+    let before: usize = events
+        .iter()
+        .take_while(|e| !matches!(e,Event::Charge(s,_) if *s==write))
+        .filter_map(|e| {
+            if let Event::Charge(_, n) = e {
+                Some(*n)
+            } else {
+                None
+            }
+        })
+        .sum();
+    let mut m = stopped_machine(&plan, before);
+    let handle = m.frames.last().unwrap().references[0];
+    let extent = m.owner_extent(handle.root, write).unwrap();
+    assert_eq!(handle.view.offset, 4);
+    // Empty bool-array sentinel at byte1; alignment padding at bytes2..4.
+    m.frames[0].payload[extent.start + 1..extent.start + 4].copy_from_slice(&[0x91, 0xa2, 0xb3]);
+    let mut expected = m.frames[0].payload.clone();
+    expected[extent.start + 4..extent.start + 8].copy_from_slice(&7i32.to_le_bytes());
+    m.fuel = 1; // exactly the final index-store operation, no return cleanup
+    assert!(matches!(
+        m.execute(),
+        Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
+    ));
+    assert_eq!(m.frames[0].payload, expected);
+}

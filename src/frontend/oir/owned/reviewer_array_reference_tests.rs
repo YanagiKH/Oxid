@@ -835,6 +835,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
             span: s(base, 10 + 10 * j),
         });
         f.loans.push(LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(j),
             argument: 0,
             authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -1514,6 +1515,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
         .arguments
         .push(ArgumentSlot::Borrow(LoanId(1)));
     raw.functions[0].loans.push(LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 1,
         authority: AccessBase::Owner(OwnerPlaceId(1)),

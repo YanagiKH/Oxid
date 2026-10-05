@@ -120,3 +120,21 @@ raw-byte screen verifies every frozen source identity: the only minus bytes are
 237 `->` arrows. Checked unary therefore adds no parser semantic amendment; the
 existing record-composition amendment and all frozen resource/semantic predicates
 remain unchanged. Every execution receipt still must be collected afresh.
+
+## Projected array slice successor
+
+The projected-slice source checkpoint is `052ad52` (full identity is pinned in
+`authority.json`). Its current manifest has 201 inputs, 151 historical-to-current
+changes, 364 base members, 148 compiler bodies and 367 members in each derived
+view. The two added test modules are `projected_slice_native_tests.rs` and
+`source/projected_slice_raw_tests.rs`.
+
+Before the existing unary inverse, the exact AST and parser sections of
+`projected-transition.patch` restore the preserved `unary-source.json` identities.
+The added inverse accepts only those two instrumentation overlaps; changed input,
+coherently rehashed source tails, altered transition/predecessor artifacts and
+other overlap paths remain rejected. All historical packages and predicates stay
+byte-identical. The 248 frozen parser sources contain no projected borrow token
+sequence, as checked separately from compiler observations, so this successor
+adds no semantic amendment to those parser cases. Projected-source diagnostics
+and path-node charges are qualified by their separately named source controls.

@@ -349,6 +349,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             .ok_or_else(|| bad("loan index", span))?;
         let result = ReferenceHandle {
             root: state.root,
+            view: state.view,
             permission: LoanKey {
                 frame: frame as u64,
                 activation: active.activation,
@@ -367,6 +368,9 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<OwnerKey> {
         self.owner(handle.root, span)?;
         let l = self.loan(handle.permission, span)?;
+        if l.view != handle.view {
+            return Err(bad("loan view mismatch", span));
+        }
         if l.root != handle.root {
             return Err(bad("loan root mismatch", span));
         }
@@ -491,30 +495,141 @@ impl<'p, 'w> Machine<'p, 'w> {
             AggregateTy::Record(_) => Err(bad("array aggregate type", span)),
         }
     }
+    fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
+        Ok(BorrowView {
+            offset: 0,
+            aggregate: Some(
+                AggregateSlot::try_from_aggregate(self.aggregate(key, span)?)
+                    .map_err(|_| bad("whole view type", span))?,
+            ),
+        })
+    }
+    fn view_extent(&self, key: OwnerKey, view: BorrowView, span: Span) -> Result<AggregateTy> {
+        let aggregate = view
+            .aggregate
+            .ok_or_else(|| bad("missing view type", span))?
+            .aggregate();
+        let root_type = self.aggregate(key, span)?;
+        if (matches!(root_type, AggregateTy::FixedArray(_))
+            || matches!(aggregate, AggregateTy::Record(_)))
+            && (view.offset != 0 || root_type != aggregate)
+        {
+            return Err(bad("view root type", span));
+        }
+        let size = self
+            .plan
+            .witness()
+            .declarations()
+            .aggregate_layout(aggregate)
+            .map_err(|_| bad("view layout", span))?
+            .size();
+        let extent = self.owner_extent(key, span)?;
+        index(view.offset, span)?
+            .checked_add(size)
+            .filter(|end| *end <= extent.len())
+            .ok_or_else(|| bad("view extent", span))?;
+        Ok(aggregate)
+    }
+    /// Re-derive projected storage from immutable nominal paths, rather than
+    /// trusting a retained offset/extent. Slice reborrows may cross frames; the
+    /// existing activation limit bounds this allocation-free parent walk.
+    fn projected_view(
+        &self,
+        permission: LoanKey,
+        root: OwnerKey,
+        span: Span,
+    ) -> Result<BorrowView> {
+        let mut permission = permission;
+        for _ in 0..plan::MAX_FRAMES {
+            let loan = self.loan(permission, span)?;
+            if loan.root != root {
+                return Err(bad("view ancestry root", span));
+            }
+            let function = self.function(self.frames[index(permission.frame, span)?].function);
+            let descriptor = function
+                .loans
+                .get(index(permission.loan, span)?)
+                .ok_or_else(|| bad("view loan descriptor", span))?;
+            if !descriptor.projection.is_empty() {
+                let (ValueTy::Owned(aggregate @ AggregateTy::FixedArray(_)), offset) = self
+                    .plan
+                    .witness()
+                    .declarations()
+                    .projection(self.aggregate(root, span)?, &descriptor.projection)
+                    .map_err(|_| bad("view projection path", span))?
+                else {
+                    return Err(bad("view projection array", span));
+                };
+                return Ok(BorrowView {
+                    offset: offset as u64,
+                    aggregate: Some(
+                        AggregateSlot::try_from_aggregate(aggregate)
+                            .map_err(|_| bad("view projection descriptor", span))?,
+                    ),
+                });
+            }
+            if loan.parent.instance == 0 {
+                break;
+            }
+            permission = loan.parent;
+        }
+        Err(bad("projected view provenance", span))
+    }
+    fn checked_handle_view(&self, handle: ReferenceHandle, span: Span) -> Result<AggregateTy> {
+        let actual = self.view_extent(handle.root, handle.view, span)?;
+        if matches!(
+            (self.aggregate(handle.root, span)?, actual),
+            (AggregateTy::Record(_), AggregateTy::FixedArray(_))
+        ) && self.projected_view(handle.permission, handle.root, span)? != handle.view
+        {
+            return Err(bad("projected view mismatch", span));
+        }
+        Ok(actual)
+    }
+    fn base_view(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        key: OwnerKey,
+        span: Span,
+    ) -> Result<BorrowView> {
+        let view = match base {
+            AccessBase::Owner(_) => self.whole_view(key, span)?,
+            AccessBase::Parameter(id) => self.frames[frame].references[id.0].view,
+        };
+        let actual = match base {
+            AccessBase::Owner(_) => self.view_extent(key, view, span)?,
+            AccessBase::Parameter(id) => {
+                self.checked_handle_view(self.frames[frame].references[id.0], span)?
+            }
+        };
+        let f = self.function(self.frames[frame].function);
+        let expected = match base {
+            AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
+            AccessBase::Parameter(reference) => f.references[reference.0].referent(),
+        };
+        self.plan
+            .witness()
+            .declarations()
+            .check_borrowed_view(BorrowedTy::Exact(actual), expected)
+            .map_err(|_| bad("base view type", span))?;
+        Ok(view)
+    }
     fn array_base(
         &self,
         frame: usize,
         base: AccessBase,
         access: Access,
         span: Span,
-    ) -> Result<(OwnerKey, FixedArrayTy)> {
+    ) -> Result<(OwnerKey, FixedArrayTy, usize)> {
         let key = self.base(frame, base, access, span)?;
-        let f = self.function(self.frames[frame].function);
-        let expected = match base {
-            AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
-            AccessBase::Parameter(reference) => f
-                .references
-                .get(reference.0)
-                .ok_or_else(|| bad("reference declaration", span))?
-                .referent(),
-        };
-        let actual = self.aggregate(key, span)?;
-        self.plan
-            .witness()
-            .declarations()
-            .check_borrowed_view(BorrowedTy::Exact(actual), expected)
+        let view = self
+            .base_view(frame, base, key, span)
             .map_err(|_| bad("array base type", span))?;
-        Ok((key, self.array_type(key, span)?))
+        let AggregateTy::FixedArray(array) = self.view_extent(key, view, span)? else {
+            return Err(bad("array view type", span));
+        };
+        Ok((key, array, index(view.offset, span)?))
     }
     fn owner_extent(&self, key: OwnerKey, span: Span) -> Result<std::ops::Range<usize>> {
         let aggregate = self.aggregate(key, span)?;
@@ -833,13 +948,32 @@ impl<'p, 'w> Machine<'p, 'w> {
             Access::Borrow(descriptor.kind),
             span,
         )?;
+        let mut view = self.base_view(frame, descriptor.authority, root, span)?;
+        let mut actual = self.view_extent(root, view, span)?;
+        if !descriptor.projection.is_empty() {
+            let (ValueTy::Owned(projected @ AggregateTy::FixedArray(_)), relative) = self
+                .plan
+                .witness()
+                .declarations()
+                .projection(actual, &descriptor.projection)
+                .map_err(|_| bad("loan projection", span))?
+            else {
+                return Err(bad("loan projection type", span));
+            };
+            view.offset = view
+                .offset
+                .checked_add(relative as u64)
+                .ok_or_else(|| bad("loan view offset", span))?;
+            view.aggregate = Some(
+                AggregateSlot::try_from_aggregate(projected)
+                    .map_err(|_| bad("loan view descriptor", span))?,
+            );
+            actual = self.view_extent(root, view, span)?;
+        }
         self.plan
             .witness()
             .declarations()
-            .check_borrowed_view(
-                BorrowedTy::Exact(self.aggregate(root, span)?),
-                descriptor.referent(),
-            )
+            .check_borrowed_view(BorrowedTy::Exact(actual), descriptor.referent())
             .map_err(|_| bad("loan borrowed view", span))?;
         let parent = match descriptor.authority {
             AccessBase::Owner(_) => LoanKey::default(),
@@ -882,6 +1016,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             state: 1,
             root,
             parent,
+            view,
             shared_children: 0,
             exclusive_children: 0,
         };
@@ -1278,24 +1413,51 @@ impl<'p, 'w> Machine<'p, 'w> {
                 base,
                 index,
             } => {
-                let (key, array) = self.array_base(frame, *base, Access::Read, span)?;
+                let (key, array, relative) = self.array_base(frame, *base, Access::Read, span)?;
                 if f.locals.get(destination.0).map(|local| local.ty) != Some(array.element()) {
                     return Err(bad("array read type", span));
                 }
                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
-                let value = self.load_element(key, array, ordinal, span)?;
+                let value = self.load_leaf(
+                    key,
+                    ScalarLeaf {
+                        offset: relative
+                            .checked_add(
+                                ordinal
+                                    .checked_mul(array.stride())
+                                    .ok_or_else(|| bad("array view offset", span))?,
+                            )
+                            .ok_or_else(|| bad("array view offset", span))?,
+                        ty: array.element(),
+                    },
+                    span,
+                )?;
                 self.write(frame, *destination, value, span)?;
                 #[cfg(test)]
                 self.record_event(Event::ReadIndex(key, ordinal, value));
             }
             OwnedInstruction::WriteIndex { base, index, value } => {
-                let (key, array) = self.array_base(frame, *base, Access::Write, span)?;
+                let (key, array, relative) = self.array_base(frame, *base, Access::Write, span)?;
                 let value = self.read(frame, *value)?;
                 if value.ty() != array.element() {
                     return Err(bad("array write type", span));
                 }
                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
-                self.store_element(key, array, ordinal, value, span)?;
+                self.store_leaf(
+                    key,
+                    ScalarLeaf {
+                        offset: relative
+                            .checked_add(
+                                ordinal
+                                    .checked_mul(array.stride())
+                                    .ok_or_else(|| bad("array view offset", span))?,
+                            )
+                            .ok_or_else(|| bad("array view offset", span))?,
+                        ty: array.element(),
+                    },
+                    value,
+                    span,
+                )?;
                 #[cfg(test)]
                 {
                     self.record_event(Event::WriteIndex(key, ordinal, value));
@@ -1305,7 +1467,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                 }
             }
             OwnedInstruction::ArrayLength { destination, base } => {
-                let (_key, array) = self.array_base(frame, *base, Access::Read, span)?;
+                let (_key, array, _relative) = self.array_base(frame, *base, Access::Read, span)?;
                 self.write(
                     frame,
                     *destination,
@@ -1531,18 +1693,14 @@ impl<'p, 'w> Machine<'p, 'w> {
                 (ArgumentSlot::Borrow(loan), ParameterBinding::Reference(reference)) => {
                     let handle = self.handle(frame, *loan, span)?;
                     let declared = &callee.references[reference.0];
-                    let root_function =
-                        self.function(self.frames[handle.root.frame as usize].function);
+                    let actual_view = self
+                        .checked_handle_view(handle, span)
+                        .map_err(|_| bad("incoming reference type", span))?;
                     if self
                         .plan
                         .witness()
                         .declarations()
-                        .check_borrowed_view(
-                            BorrowedTy::Exact(
-                                root_function.owners[handle.root.owner as usize].aggregate(),
-                            ),
-                            declared.referent(),
-                        )
+                        .check_borrowed_view(BorrowedTy::Exact(actual_view), declared.referent())
                         .is_err()
                         || self.loan_kind(handle.permission, span)? != declared.kind
                     {
@@ -1962,7 +2120,7 @@ fn execute_plan_inner(
     let result = (|| {
         machine.activation_preflight(
             entry,
-            plan::add(1, plan.function(entry).usage().expanded_cells)?,
+            plan::add(1, plan.function(entry).usage().activation_fuel_cells())?,
             f.span,
         )?;
         machine.frames = plan::reserve(limits.frames)

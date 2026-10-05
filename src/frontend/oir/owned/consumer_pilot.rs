@@ -269,6 +269,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
     .iter()
     .enumerate()
     .map(|(i, &(label, kind))| LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(i),
         argument: 0,
         authority: root,
@@ -577,6 +578,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
         span: o.at("dispatch.open_commit"),
     }];
     dispatch.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: parameter,

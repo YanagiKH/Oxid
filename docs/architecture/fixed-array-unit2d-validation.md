@@ -52,7 +52,9 @@ Native keys now distinguish Fuel, Overflow and Bounds together with full
 file/start/end. Identical complete keys deduplicate; end-different or
 kind-different keys remain distinct. IDs retain first encounter order. A frozen
 PR28 baseline of 90 fixture/map/guard combinations (59 distinct modules) matches
-all candidate LLVM bytes and its inventory TSV.
+all historical candidate LLVM bytes and its inventory TSV. Current projected
+sidecars preserve the LLVM bytes and use the explicit physical-resource
+successor described below.
 
 The implementation reserves K occurrence rows, deduplicates and sorts in place,
 filters against the supplied immutable SourceMap, computes checked
@@ -273,3 +275,25 @@ controller, workflow, input or source-binding body.
 Any production raw gate opening requires a separate reviewed change. Typed
 source-array grammar, public activation, additional native hosts and
 self-hosting are outside this Unit2D result.
+
+## Projected-view physical-resource successor
+
+Projected view sidecars increase physical frame admission by two cells per
+reference or loan. They do not change activation fuel or historical native IR.
+The independent exporter's nine root builders have no references; only `shared`
+has a loan (one). Thus its ten guard/source-map rows now report 24 physical cells
+rather than 22, while every other TSV field and all 90 LLVM modules stay exact.
+
+The archived exporter and inventory remain unchanged. A reversible, SHA-bound
+current exporter adds assertions for those per-builder counts, the independently
+listed historical cell totals, the two-cell physical increment and unchanged
+activation fuel. It still writes the actual physical `inventory.tsv` untouched.
+The reader compares that output to an exact, reversible ten-row successor of the
+frozen inventory, never a broad normalization. Both inventory hashes and the
+explicit amendment are retained in the comparison receipt and checked by the
+full and compact readers. Mutation tests reject every field in all 90 rows,
+missing/extra rows, predecessor physical output and exporter/binding drift.
+
+This compatibility successor changes no production resource limit, fuel rule,
+LLVM byte expectation or frozen fixture. Hosted debug/release Unit2D execution
+and full/compact admission remain required on the published exact head.

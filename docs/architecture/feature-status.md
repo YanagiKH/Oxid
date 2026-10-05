@@ -149,3 +149,10 @@ writes complete source to stdout; `--check` distinguishes drift from errors.
 No module loading, typechecking, execution or file writes occur. Ordinary
 formatter tests are registered in the repository and portable-host CI; this
 registration is not itself cross-platform validation or a stable-format claim.
+
+Experimental [projected array slices](../../rfcs/0022-projected-array-slices.md)
+let a complete fixed scalar array field supply a call-only slice helper through
+a bounded named-root path. Whole-root conflicts, field privacy, call lifetimes
+and existing caps remain. [Public tests](../../tests/typed_projected_slices.rs)
+and raw/native controls define acceptance; independent review and current-source
+qualification remain separate from the preserved predecessor ledgers.

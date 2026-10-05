@@ -275,6 +275,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
         span: s(4),
     }];
     f.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -391,6 +392,7 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
     }];
     parent.loans = (0..2)
         .map(|i| LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: i,
             authority: AccessBase::Parameter(ReferenceParamId(0)),
@@ -1223,6 +1225,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
         },
     ];
     main.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(1),
         argument: 0,
         authority: root,

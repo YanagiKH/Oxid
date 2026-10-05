@@ -328,7 +328,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -995,6 +995,38 @@
         "docs/architecture/checked-unary-negation-validation.md"
       ],
       "limitations": "i32 only, checked MIN overflow, no unary plus, casts, wider widths or floats. No legacy changes, stable ABI, completed milestone or safety certification. Historical source-binding expectations remain frozen pending a narrow successor."
+    },
+    {
+      "id": "typed-projected-array-slices",
+      "summary": "Call-only scalar slice views of fixed scalar array fields with conservative whole-root authority",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "verified-oir-reference-and-llvm",
+      "target_scope": "Local Linux x86_64 reference/native checks; independent review and exact-head hosted qualification separate",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0022-projected-array-slices.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/source/lower.rs",
+        "src/frontend/oir/owned/shape.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/typed_projected_slices.rs",
+        "src/frontend/oir/owned/source/projected_slice_raw_tests.rs",
+        "src/frontend/oir/owned/projected_slice_native_tests.rs"
+      ],
+      "evidence": [
+        "docs/architecture/projected-array-slices-validation.md"
+      ],
+      "limitations": "Only complete fixed bool/i32/unit array fields as slice formals; max64 path hops. No disjoint-field authority, exact-array projected formals, scalar/record/element borrows, stored references or raised ceilings. No v1.0, stability, self-hosting or broader native platform claim."
     }
   ]
 }

@@ -968,6 +968,7 @@ fn helper_raw(case: HelperCase, s: &impl Fn(usize) -> Span) -> RawOwnedProgram {
     ]
     .into_iter()
     .map(|(call, argument, kind, span)| LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(call),
         argument,
         authority: AccessBase::Owner(OwnerPlaceId(0)),

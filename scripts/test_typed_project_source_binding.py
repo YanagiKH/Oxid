@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 199)
+        self.assertEqual(len(captured["inputs"]), 201)
         self.assertEqual(len(captured["slices_inputs"]), 188)
         self.assertEqual(len(captured["division_inputs"]), 185)
         self.assertEqual(len(captured["combined_inputs"]), 185)
@@ -89,17 +89,95 @@ class SourceBindingTests(unittest.TestCase):
         binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
 
 
+    def test_projected_inverse_restores_exact_unary(self):
+        restored, touched = binding.inverse_projected_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["projected-transition.patch"])
+        self.assertEqual(restored, self.captured["unary_inputs"])
+        self.assertEqual(touched, list(binding.PROJECTED_PATHS))
+        self.assertEqual(len(touched), 40)
+        self.assertEqual(len(binding.PROJECTED_ADDITIONS), 2)
+        self.assertEqual(len(restored), 199)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+                         "052ad52ac876c01b91701132cffb466689b24d01")
+        self.assertEqual(self.captured["current"]["source_only_tree"],
+                         "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50")
+
+    def test_projected_members_required_and_byte_bound(self):
+        for name in binding.PROJECTED_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_projected_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.PROJECTED_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+
+    def test_projected_authority_coherent_tampering_rejects(self):
+        authority = binding.read_json(self.package / "projected-authority.json")
+        authority["transition_paths"] = []
+        binding.write_json(self.package / "projected-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale projected authority")
+
+    def test_unary_predecessor_manifest_coherent_tampering_rejects(self):
+        current = binding.read_json(self.package / "unary-source.json")
+        current["files"] = current["files"][:-1]
+        binding.write_json(self.package / "unary-source.json", current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved unary source manifest")
+
+    def test_projected_patch_changed_or_missing_rejects(self):
+        source = self.package / "projected-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_projected_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["projected-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 40)
+        for name, section in zip(binding.PROJECTED_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_projected_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_projected_patch(self.captured["unary_inputs"], original)
+
+    def test_projected_inverse_scope_order_and_duplicates_reject(self):
+        original = self.captured["package_bytes"]["projected-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.PROJECTED_PATHS)
+
     def test_unary_inverse_restores_exact_composition(self):
         restored, touched = binding.inverse_unary_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["unary-transition.patch"])
+            self.captured["unary_inputs"], self.captured["package_bytes"]["unary-transition.patch"])
         self.assertEqual(restored, self.captured["composition_inputs"])
         self.assertEqual(touched, list(binding.UNARY_PATHS))
         self.assertEqual(len(touched), 25)
         self.assertEqual(len(binding.UNARY_ADDITIONS), 3)
         self.assertEqual(len(restored), 196)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(self.captured["unary_source"]["reviewed_source_head"],
                          "bf48512acf86e2d23c28b6b9b16de3be3d127051")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["unary_source"]["source_only_tree"],
                          "715d047f37db8b7658bda688ff4e5961609193f8")
 
     def test_unary_members_required_and_byte_bound(self):
@@ -146,7 +224,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(sections), 25)
         for name, section in zip(binding.UNARY_PATHS, sections):
             with self.subTest(name=name):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["unary_inputs"])
                 hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[name].splitlines(keepends=True)
@@ -164,7 +242,7 @@ class SourceBindingTests(unittest.TestCase):
                                   (b"".join(sections[:-1]), "wrong transition scope"),
                                   (original + sections[0], "duplicate transition member")):
             with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["unary_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.UNARY_PATHS)
 
     def test_composition_inverse_restores_exact_slice_predecessor(self):
@@ -301,7 +379,7 @@ class SourceBindingTests(unittest.TestCase):
                 calls.append(name)
                 return original(*args)
             return wrapper
-        names = ("inverse_unary_patch", "inverse_composition_patch", "inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
+        names = ("inverse_projected_patch", "inverse_unary_patch", "inverse_composition_patch", "inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
         with ExitStack() as stack:
             for name in names:
                 stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
@@ -1488,7 +1566,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (199, 185, 185, 133, 129, 117))
+                         (201, 185, 185, 133, 129, 117))
         self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
         self.assertEqual(plan["unit2_current_observer_controls_per_profile"], 6)
         self.assertEqual(prepared["slices_authority_sha256"], binding.SLICES_AUTHORITY_SHA)

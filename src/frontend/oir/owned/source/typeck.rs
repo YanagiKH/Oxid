@@ -23,6 +23,13 @@ struct TypedBody {
     block_flows: Vec<FlowSummary>,
     projections: Vec<Option<Projection>>,
     statement_projections: Vec<Vec<Option<Projection>>>,
+    borrow_projections: Vec<BorrowProjection>,
+}
+#[derive(Debug)]
+struct BorrowProjection {
+    expression: ExprId,
+    argument: usize,
+    projection: Projection,
 }
 /// Possible exits from a statement list. Loop transfers always refer to its
 /// nearest enclosing while; that while consumes them before its own summary
@@ -152,6 +159,19 @@ impl<'a> TypedOwnedFunction<'a> {
     }
     pub(super) fn expression_projection(&self, id: ExprId) -> Option<&'a Projection> {
         self.body.projections[id.0].as_ref()
+    }
+    pub(super) fn borrow_projection(
+        &self,
+        expression: ExprId,
+        argument: usize,
+    ) -> Option<&'a Projection> {
+        self.body
+            .borrow_projections
+            .binary_search_by_key(&(expression.0, argument), |entry| {
+                (entry.expression.0, entry.argument)
+            })
+            .ok()
+            .map(|index| &self.body.borrow_projections[index].projection)
     }
     pub(super) fn statement_projection(
         &self,
@@ -352,6 +372,7 @@ fn projected_array_access(
     base_span: Span,
     access_span: Span,
     bindings: &[Option<ParameterTy>],
+    borrow: bool,
 ) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
@@ -378,7 +399,11 @@ fn projected_array_access(
     else {
         return Err(error(
             "E0305",
-            "indexed access requires a fixed scalar array field",
+            if borrow {
+                "projected borrowing requires a fixed scalar array field"
+            } else {
+                "indexed access requires a fixed scalar array field"
+            },
             base_span,
         ));
     };
@@ -470,13 +495,24 @@ fn expression_type(
     bindings: &[Option<ParameterTy>],
     expressions: &mut [Option<ValueTy>],
     projections: &mut [Option<Projection>],
+    borrow_projections: &mut Vec<BorrowProjection>,
 ) -> Result<ValueTy, Box<Diagnostic>> {
     if let Some(ty) = expressions[id.0] {
         return Ok(ty);
     }
     let expr = &function.expressions[id.0];
     let scalar = ValueTy::Scalar;
-    let mut child = |id| expression_type(program, function, id, bindings, expressions, projections);
+    let mut child = |id| {
+        expression_type(
+            program,
+            function,
+            id,
+            bindings,
+            expressions,
+            projections,
+            borrow_projections,
+        )
+    };
     let ty = match &expr.kind {
         ExprKind::Bool(_) => scalar(Ty::Bool),
         ExprKind::I32(_) => scalar(Ty::I32),
@@ -578,18 +614,79 @@ fn expression_type(
             // Visit all well-formed argument values in source order, including
             // statically skipped logical branches and ignored helper results.
             let mut actuals = Vec::with_capacity(args.len());
-            for arg in args {
+            for (argument, arg) in args.iter().enumerate() {
                 actuals.push(match arg {
                     Argument::Value(value) => (
-                        ParameterTy::Value(child(*value)?),
+                        ParameterTy::Value(expression_type(
+                            program,
+                            function,
+                            *value,
+                            bindings,
+                            expressions,
+                            projections,
+                            borrow_projections,
+                        )?),
                         function.expressions[value.0].span,
                     ),
                     Argument::Borrow {
-                        kind, place, span, ..
-                    } => (
-                        borrow_type(function, *kind, *place, *span, bindings)?,
-                        *span,
-                    ),
+                        kind,
+                        place,
+                        span,
+                        name_span,
+                        ..
+                    } => {
+                        let whole = borrow_type(function, *kind, *place, *span, bindings)?;
+                        let actual = if program.text(*name_span).contains('.') {
+                            let binding = match place {
+                                BorrowPlace::Owner(binding) | BorrowPlace::Forwarded(binding) => {
+                                    *binding
+                                }
+                            };
+                            let (projected, _, element) = projected_array_access(
+                                program, function, binding, *name_span, *span, bindings, true,
+                            )?;
+                            let projection = projected.ok_or_else(|| {
+                                error("E0500", "missing projected borrow path", *span)
+                            })?;
+                            if borrow_projections.len() == borrow_projections.capacity() {
+                                // Geometric, fallible growth avoids repeated quadratic copies.
+                                // Charge the entire requested capacity increase before reserving.
+                                let growth = borrow_projections.capacity().max(1);
+                                let bytes = growth
+                                    .checked_mul(std::mem::size_of::<BorrowProjection>())
+                                    .ok_or_else(|| {
+                                        error("E0400", "projected borrow inventory overflow", *span)
+                                    })?;
+                                program.admit_projection_metadata(bytes, *span)?;
+                                program.work().debit(
+                                    growth as u64,
+                                    *span,
+                                    "projected borrow inventory growth",
+                                )?;
+                                borrow_projections.try_reserve_exact(growth).map_err(|_| {
+                                    error(
+                                        "E0400",
+                                        "projected borrow inventory allocation failed",
+                                        *span,
+                                    )
+                                })?;
+                            }
+                            borrow_projections.push(BorrowProjection {
+                                expression: id,
+                                argument,
+                                projection,
+                            });
+                            // A projected fixed array is admitted only as a scalar slice.
+                            // It cannot silently add exact-array or record field borrowing.
+                            ParameterTy::Reference {
+                                referent: BorrowedTy::ScalarSlice(element),
+                                kind: *kind,
+                            }
+                        } else {
+                            whole
+                        };
+                        (actual, *span)
+                    }
                 });
             }
             if args.len() != called.params.len() {
@@ -719,8 +816,9 @@ fn expression_type(
             program.work().debit(1, expr.span, "array type read")?;
             let actual = child(*index)?;
             program.work().debit(1, expr.span, "array type access")?;
-            let (projection, _, element) =
-                projected_array_access(program, function, *base, *base_span, expr.span, bindings)?;
+            let (projection, _, element) = projected_array_access(
+                program, function, *base, *base_span, expr.span, bindings, false,
+            )?;
             projections[id.0] = projection;
             if actual != scalar(Ty::I32) {
                 return Err(mismatch(
@@ -735,8 +833,9 @@ fn expression_type(
         ExprKind::ArrayLength { base, base_span } => {
             program.work().debit(1, expr.span, "array type length")?;
             program.work().debit(1, expr.span, "array type access")?;
-            let (projection, _, _) =
-                projected_array_access(program, function, *base, *base_span, expr.span, bindings)?;
+            let (projection, _, _) = projected_array_access(
+                program, function, *base, *base_span, expr.span, bindings, false,
+            )?;
             projections[id.0] = projection;
             scalar(Ty::I32)
         }
@@ -797,12 +896,13 @@ fn finish_expression_type(
 fn initializer_type(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
-    binding: BindingId,
-    root: ExprId,
+    initializer: (BindingId, ExprId),
     bindings: &[Option<ParameterTy>],
     expressions: &mut [Option<ValueTy>],
     projections: &mut [Option<Projection>],
+    borrow_projections: &mut Vec<BorrowProjection>,
 ) -> Result<ValueTy, Box<Diagnostic>> {
+    let (binding, root) = initializer;
     if let Some(ValueTy::Owned(AggregateTy::FixedArray(annotation))) =
         function.bindings[binding.0].annotation
     {
@@ -832,7 +932,15 @@ fn initializer_type(
             }
         }
     }
-    expression_type(program, function, root, bindings, expressions, projections)
+    expression_type(
+        program,
+        function,
+        root,
+        bindings,
+        expressions,
+        projections,
+        borrow_projections,
+    )
 }
 fn check_body(
     program: &ResolvedOwnedProgram<'_>,
@@ -853,6 +961,11 @@ fn check_body(
     }
     let mut expressions = vec![None; function.expressions.len()];
     let mut projections = vec![None; function.expressions.len()];
+    // Pay the new enclosing Vec header even when the sparse table stays empty.
+    // There is no extra source walk or work debit for pre-existing whole loans.
+    program
+        .admit_projection_metadata(std::mem::size_of::<Vec<BorrowProjection>>(), function.end)?;
+    let mut borrow_projections = Vec::new();
     let mut statement_projections: Vec<Vec<Option<Projection>>> = function
         .blocks
         .iter()
@@ -954,11 +1067,11 @@ fn check_body(
                 initializer_type(
                     program,
                     function,
-                    binding,
-                    init,
+                    (binding, init),
                     &bindings,
                     &mut expressions,
                     &mut projections,
+                    &mut borrow_projections,
                 )?;
                 None
             }
@@ -977,6 +1090,7 @@ fn check_body(
                         &bindings,
                         &mut expressions,
                         &mut projections,
+                        &mut borrow_projections,
                     )?;
                 }
                 None
@@ -996,6 +1110,7 @@ fn check_body(
                 &bindings,
                 &mut expressions,
                 &mut projections,
+                &mut borrow_projections,
             )?;
         }
         match statement.kind {
@@ -1122,6 +1237,7 @@ fn check_body(
                     base_span,
                     target_span,
                     &bindings,
+                    false,
                 )?;
                 statement_projections[block.0][index] = projection;
                 let index = element_index;
@@ -1275,7 +1391,28 @@ fn check_body(
         .into_iter()
         .map(|flow| flow.expect("all resolved blocks have checked flow"))
         .collect();
+    // Borrow typing follows source evaluation order, which can interleave nested
+    // call sites. Sort the sparse table for bounded binary lookup during lowering.
+    let borrow_slots = borrow_projections.len();
+    if borrow_slots > 0 {
+        let work = borrow_slots
+            .checked_mul(borrow_slots.ilog2() as usize + 1)
+            .ok_or_else(|| {
+                error(
+                    "E0400",
+                    "projected borrow lookup work overflow",
+                    function.end,
+                )
+            })?;
+        program.work().debit(
+            work as u64,
+            function.end,
+            "projected borrow lookup ordering",
+        )?;
+        borrow_projections.sort_unstable_by_key(|entry| (entry.expression.0, entry.argument));
+    }
     Ok(TypedBody {
+        borrow_projections,
         expressions: expressions
             .into_iter()
             .map(|ty| ty.expect("every expression was typed"))
@@ -1290,6 +1427,20 @@ fn check_body(
 #[cfg(test)]
 mod array_type_layout_tests {
     use super::*;
+    #[test]
+    fn projected_slice_retained_source_layouts() {
+        use std::mem::size_of;
+        // AST and resolved borrow arguments retain spans rather than new vectors.
+        // The only new per-body enclosing allocation carrier is this sixth Vec.
+        assert_eq!(size_of::<TypedBody>(), 6 * size_of::<Vec<()>>());
+        println!("projected-slice-layout ast-borrow={} ast-argument={} hir-borrow={} hir-argument={} resolved-program={} typed-body={} typed-function={} sparse-entry={} field-id={} body-growth={}",
+            size_of::<crate::frontend::ast::BorrowPlace>(),
+            size_of::<crate::frontend::ast::Argument>(),
+            size_of::<BorrowPlace>(), size_of::<Argument>(),
+            size_of::<ResolvedOwnedProgram<'_>>(), size_of::<TypedBody>(),
+            size_of::<TypedOwnedFunction<'_>>(), size_of::<BorrowProjection>(),
+            size_of::<FieldId>(), size_of::<Vec<BorrowProjection>>());
+    }
     #[test]
     fn unit3b1_owner_slot_layouts() {
         use std::mem::size_of;

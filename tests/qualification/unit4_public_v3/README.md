@@ -144,3 +144,8 @@ The checked-unary successor advances the source and observer file identities onl
 The additive lifecycle patch and its eight-path scope remain unchanged, as do all
 frozen public contracts and location-amendment identities. Both current and
 observer builds require fresh receipts for the admitted unary sources.
+
+The projected-slice successor binds the 201-input current source and its
+202-input additive lifecycle view. The lifecycle patch, frozen public contracts,
+comparison handlers and host rosters are unchanged. Only exact current source
+and derived observer identities change; historical outcomes are not relabeled.

@@ -132,3 +132,5 @@ Visual guides: [quickstart](docs/assets/quickstart.svg), [execution path](docs/a
 Bug reports with a small runnable example, clearer diagnostics, tests, and documentation fixes are welcome. See the [contribution guide](CONTRIBUTING.md) for the checks to run before opening a pull request.
 
 Licensed under [MIT](LICENSE) or [Apache-2.0](LICENSE-APACHE).
+
+Experimental [projected array slices](rfcs/0022-projected-array-slices.md) let slice helpers borrow fixed scalar array fields, for example `bump(&mut batch.samples)`. Nested field paths and explicit whole-record-reference reborrows keep whole-root conflicts, privacy and call-only lifetimes. Resource ceilings and native targets remain unchanged.

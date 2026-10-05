@@ -38,11 +38,11 @@ class RuntimeViewPackageControls(unittest.TestCase):
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                         self.assertIn('Ran ' + str(count) + ' tests', result.stderr)
 
-    def test_exact_six_case_parser_amendment_controls(self):
+    def test_exact_seven_case_parser_amendment_controls(self):
         script = ROOT / 'tests/qualification/unit4_parser_current/test_record_composition_amendment.py'
         result = subprocess.run([sys.executable, '-B', str(script)], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('Ran 6 tests', result.stderr)
+        self.assertIn('Ran 7 tests', result.stderr)
 
 
 if __name__ == '__main__':

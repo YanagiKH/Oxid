@@ -147,9 +147,9 @@ fn record_composition_exclusions_remain_explicit() {
         ("struct R{a:[[i32;1];1]}", "E0101", "parse"),
         ("struct C{} struct R{c:&C}", "E0101", "parse"),
         (
-            "struct R{a:[i32;1]} fn g(a:&[i32])->(){return;} fn f(r:R)->(){g(&r.a);return;}",
-            "E0101",
-            "parse",
+            "struct R{a:[i32;1]} fn g(a:&[i32;1])->(){return;} fn f(r:R)->(){g(&r.a);return;}",
+            "E0300",
+            "type",
         ),
         (
             "struct C{n:i32} struct R{c:C} fn f(r:R)->i32{return (r).c.n;}",

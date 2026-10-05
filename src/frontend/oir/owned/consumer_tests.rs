@@ -6,7 +6,7 @@ fn reviewed_raw_fuel_fixtures_obtain_authoritative_witnesses() {
     for (build, fuel, cells, bytes, native) in [
         (empty_record as Builder, 17, 6, 41, 12),
         (owned_relay as Builder, 52, 20, 148, 36),
-        (shared_read as Builder, 49, 22, 172, 36),
+        (shared_read as Builder, 49, 24, 188, 36),
     ] {
         let (sources, raw, schedule) = build();
         assert_eq!(schedule.fuel(), fuel);

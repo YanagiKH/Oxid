@@ -32,6 +32,12 @@ COMPOSITION_NAMES = (
     "frontend::oir::owned::native::tests::composition::native_composition_source_free_pilot_sentinels_effects_and_phi",
 )
 
+PROJECTED_SLICE_NAMES = (
+    "frontend::oir::owned::native::tests::projected_slices::native_projected_slices_source_free_mutation_every_fuel",
+    "frontend::oir::owned::native::tests::projected_slices::native_projected_slices_source_free_mutation_metadata_and_forwarding",
+    "frontend::oir::owned::native::tests::projected_slices::native_projected_slices_source_free_signed_bounds_and_fuel",
+)
+
 def listing_fixture(names, count=None):
     count = len(names) if count is None else count
     return ("\n".join(name + ": test" for name in names)
@@ -39,7 +45,7 @@ def listing_fixture(names, count=None):
 
 
 def discovery_fixture():
-    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES)))
+    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES)))
 
 
 def selection_mutations(argv):
@@ -52,6 +58,7 @@ def selection_mutations(argv):
         "filter-drift": [argv[0], argv[1] + "_drift", *argv[2:]],
         "slice-substitution": [argv[0], SLICE_NAMES[0], *argv[2:]],
         "composition-substitution": [argv[0], COMPOSITION_NAMES[0], *argv[2:]],
+        "projected-substitution": [argv[0], PROJECTED_SLICE_NAMES[0], *argv[2:]],
         "missing-ignored": [argument for argument in argv if argument != "--ignored"],
     }
 
@@ -107,16 +114,20 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "missing listing footer"):
             admission.admit_list(terse)
 
-    def test_broad_discovery_separates_twenty_four_names_from_sixteen_selected(self):
+    def test_broad_discovery_separates_twenty_seven_names_from_sixteen_selected(self):
         self.assertEqual(tuple(admission.SLICE_ROSTER), SLICE_NAMES)
         self.assertEqual(len(admission.ROSTER), 16)
         self.assertTrue(set(admission.ROSTER).isdisjoint(SLICE_NAMES))
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
-        self.assertEqual(len(names), 24)
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
+        self.assertEqual(len(names), 27)
         # The immutable nineteen-name predecessor remains independently identified.
         predecessor = listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES)))
         self.assertEqual(admission.sha256(predecessor),
                          "cb886c3662c245bedfe4eb4ee8789f1a3acaf252d7406a31545357bce01f1ada")
+        self.assertEqual(tuple(admission.PROJECTED_SLICE_ROSTER), PROJECTED_SLICE_NAMES)
+        self.assertTrue(set(admission.ROSTER).isdisjoint(PROJECTED_SLICE_NAMES))
+        with self.assertRaises(admission.AdmissionError):
+            admission.admit_discovery(listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))))
         self.assertEqual(tuple(admission.COMPOSITION_ROSTER), COMPOSITION_NAMES)
         self.assertTrue(set(admission.ROSTER).isdisjoint(COMPOSITION_NAMES))
         with self.assertRaises(admission.AdmissionError):
@@ -129,18 +140,19 @@ class AdmissionTests(unittest.TestCase):
             admission.admit_discovery(listing_fixture(admission.ROSTER))
 
     def test_broad_discovery_rejects_unknown_missing_duplicate_and_footer_drift(self):
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
         changed_names = ([], names[:-1], names[1:], names + [names[0]],
                          names + [admission.PREFIX + "slices::native_slices_unreviewed"],
                          [name for name in names if name != SLICE_NAMES[0]],
                          *[[name for name in names if name != omitted] for omitted in COMPOSITION_NAMES],
+                         *[[name for name in names if name != omitted] for omitted in PROJECTED_SLICE_NAMES],
                          ["unexpected", *names[1:]])
         for values in changed_names:
             with self.subTest(values=values), self.assertRaises(admission.AdmissionError):
-                admission.admit_discovery(listing_fixture(values, 24))
+                admission.admit_discovery(listing_fixture(values, 27))
         for changed in (b"", listing_fixture(names, 16), listing_fixture(names, 20),
-                        discovery_fixture().replace(b"24 tests, 0 benchmarks\n", b""),
-                        discovery_fixture() + b"24 tests, 0 benchmarks\n",
+                        discovery_fixture().replace(b"27 tests, 0 benchmarks\n", b""),
+                        discovery_fixture() + b"27 tests, 0 benchmarks\n",
                         discovery_fixture() + b"unexpected: test\n"):
             with self.subTest(data=changed), self.assertRaises(admission.AdmissionError):
                 admission.admit_discovery(changed)
@@ -178,6 +190,21 @@ class AdmissionTests(unittest.TestCase):
         ignored = re.findall(r'#\[test\]\s*#\[ignore[^\n]*\]\s*fn (native_composition_\w+)\(', source)
         self.assertEqual(set(ignored), {name.rsplit("::", 1)[1] for name in COMPOSITION_NAMES})
         self.assertEqual(len(ignored), 5)
+
+    def test_projected_workflow_gate_covers_three_ignored_names_in_both_profiles(self):
+        repo = Path(__file__).resolve().parents[1]
+        workflow = (repo / ".github/workflows/ci.yml").read_text()
+        block = workflow.split("      - name: Verify projected array slice source-free parity in both profiles\n", 1)[1].split("      - name:", 1)[0]
+        commands = [shlex.split(line.strip())[1:] for line in block.splitlines()
+                    if "cargo test" in line and "--bin oxid" in line]
+        self.assertEqual(commands, [
+            ["cargo", "test", "--locked", "--bin", "oxid", "native_projected_slices", "--", "--include-ignored", "--test-threads=1"],
+            ["cargo", "test", "--release", "--locked", "--bin", "oxid", "native_projected_slices", "--", "--include-ignored", "--test-threads=1"],
+        ])
+        source = (repo / "src/frontend/oir/owned/projected_slice_native_tests.rs").read_text()
+        ignored = re.findall(r'#\[test\]\s*#\[ignore[^\n]*\]\s*fn (native_projected_slices_\w+)\(', source)
+        self.assertEqual(set(ignored), {name.rsplit("::", 1)[1] for name in PROJECTED_SLICE_NAMES})
+        self.assertEqual(len(ignored), 3)
 
     def test_container_upload_paths_cover_all_members_after_early_failure(self):
         # Observed on runner 2.337.0, runs 37169581641 and 37169578747.
@@ -783,7 +810,7 @@ class PackageTests(unittest.TestCase):
 
     def test_resealed_broad_discovery_names_and_invocation_are_required(self):
         self.fixture()
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
         mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 24),
                      "duplicate": listing_fixture([*names, names[0]], 24),
                      "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 24),
@@ -1324,7 +1351,7 @@ class CombinedReceiptTests(unittest.TestCase):
             'qualification-v2.json': admission.json_bytes({'synthetic_only': True, 'elf_artifacts': 1,
                 'source_free_executions': 30, 'official_llvm_command_receipts': 1}),
             'expectations/old-ir-manifest.json': admission.json_bytes(old_manifest),
-            'expectations/old-ir-inventory.tsv': b'synthetic\tnever-executed\n',
+            'expectations/old-ir-inventory.tsv': (Path(cls.schema.__file__).resolve().parent.parent / cls.schema.FIXTURE_REL / 'expectations/old-ir-inventory.tsv').read_bytes(),
             'expectations/physical-harness.tsv': harness.encode(),
             'expectations/supplement-v1.json': admission.json_bytes({'synthetic_only': True,
                 'positive_shared_alias': {'status': 0, 'stdout_hex': '', 'stderr_hex': ''}, 'extreme_cases': []}),
@@ -1355,7 +1382,9 @@ class CombinedReceiptTests(unittest.TestCase):
             'runner_sha256': admission.INDEPENDENT_RUNNER_SHA, 'input_checkout': str((cls.host.base / 'repo')),
             'public_array_activation': cls.schema.PUBLIC_ARRAY_ACTIVATION,
             'borrowed_slot_compatibility': cls.schema.BORROWED_SLOT_COMPATIBILITY,
-            'module_sha256': cls.schema.BORROWED_SLOT_COMPATIBILITY['current_module_sha256'],
+            'projected_loan_compatibility': cls.schema.PROJECTED_LOAN_COMPATIBILITY,
+            'old_ir_resource_successor': cls.schema.OLD_IR_RESOURCE_SUCCESSOR,
+            'module_sha256': cls.schema.PROJECTED_LOAN_COMPATIBILITY['current_module_sha256'],
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
             'input_manifest_sha256': cls.input_digest, 'original_input_manifest_sha256': cls.input_digest,
@@ -1444,7 +1473,7 @@ class CombinedReceiptTests(unittest.TestCase):
         put('tool-captures/000/stdout', b'')
         put('tool-captures/000/stderr', b'')
         put('old-ir/synthetic.ll', b'; SYNTHETIC old IR, never compiled\n')
-        put('old-ir/inventory.tsv', cls.inputs['expectations/old-ir-inventory.tsv'])
+        put('old-ir/inventory.tsv', cls.schema.old_ir_resource_inventory(cls.inputs['expectations/old-ir-inventory.tsv']))
         old = cls.schema.compare_old_ir(evidence / 'old-ir', json.loads(cls.inputs['expectations/old-ir-manifest.json']), cls.inputs['expectations/old-ir-inventory.tsv'])
         put('old-ir-comparison.json', old)
         for name in ('harness.tsv', 'manifest.tsv'):
@@ -1792,7 +1821,7 @@ class CombinedReceiptTests(unittest.TestCase):
                             shutil.rmtree(output)
 
     def test_offline_resealed_discovery_admits_only_current_nineteen_and_broad_argv(self):
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
         mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 24),
                      "duplicate": listing_fixture([*names, names[0]], 24),
                      "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 24),
@@ -1995,6 +2024,40 @@ class CombinedReceiptTests(unittest.TestCase):
                 with self.changed(path, admission.json_bytes(receipt)), self.resealed(root):
                     with self.assertRaises(admission.AdmissionError):
                         self.read_body(root)
+
+    def test_resealed_physical_old_ir_tsv_and_successor_receipt_drift_rejected(self):
+        root = self.independent['debug']['root']
+        path = root / 'evidence/old-ir/inventory.tsv'
+        current = path.read_bytes()
+        for data in (self.inputs['expectations/old-ir-inventory.tsv'], current + b'\n'):
+            with self.changed(path, data), self.resealed(root), self.assertRaisesRegex(RuntimeError, 'old IR TSV'):
+                self.read_body(root)
+        path = root / 'evidence/old-ir-comparison.json'
+        for key in ('inventory_sha256', 'current_inventory_sha256', 'resource_successor'):
+            receipt = admission.read_json(path)
+            receipt[key] = 'unrecognized-successor'
+            with self.changed(path, admission.json_bytes(receipt)), self.resealed(root), self.assertRaisesRegex(admission.AdmissionError, 'old-IR comparison body differs'):
+                self.read_body(root)
+
+    def test_compact_physical_old_ir_tsv_commitment_and_receipt_drift_rejected(self):
+        # Rehash archive membership; the independently sealed source closure
+        # must still reject both physical-output and comparison-receipt drift.
+        target = 'independent/debug/evidence/old-ir/inventory.tsv'
+        for key, value in (('bytes', 0), ('sha256', '0' * 64)):
+            def mutate(bodies, full, changes):
+                full['members'][target][key] = value
+            output = self.coherent_download('physical-tsv-commitment', mutate)
+            with self.subTest(key=key), self.assertRaisesRegex(admission.AdmissionError, 'independent full/seal file identity differs'):
+                self.audit(output)
+        receipt_name = 'independent/debug/evidence/old-ir-comparison.json'
+        for key in ('inventory_sha256', 'current_inventory_sha256', 'resource_successor'):
+            def mutate(bodies, full, changes):
+                receipt = json.loads(bodies[receipt_name])
+                receipt[key] = 'unrecognized-successor'
+                changes[receipt_name] = admission.json_bytes(receipt)
+            output = self.coherent_download('physical-tsv-receipt', mutate)
+            with self.subTest(key=key), self.assertRaisesRegex(admission.AdmissionError, 'independent full/seal file identity differs'):
+                self.audit(output)
 
     def test_full_only_binary_commitment_mismatch_is_rejected(self):
         target = 'independent/debug/evidence/bin/oxid-unit2d-tests'

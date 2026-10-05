@@ -1143,6 +1143,7 @@ impl Effects {
             span: s(7),
         });
         caller.loans.push(LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: 0,
             authority: AccessBase::Owner(OwnerPlaceId(0)),

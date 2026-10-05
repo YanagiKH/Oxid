@@ -1,0 +1,35 @@
+{
+  "schema": "oxid-projected-observer-artifacts-v1",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2044,
+      "sha256": "dc145343a010bd2e158b1388a181c7a712c24df7fb59ff5557b9acf155f3579f"
+    },
+    {
+      "path": "adapter.py",
+      "bytes": 1943,
+      "sha256": "9b14f2bf5c413924e35012cd044e8cba5a5407c1ef0f201ebf393f2ab586fd80"
+    },
+    {
+      "path": "derive.patch",
+      "bytes": 114135,
+      "sha256": "2db4318587d8dcecdf5d64fd6f5e482e60c3b7ef9caf0b743acf137eb5edb58f"
+    },
+    {
+      "path": "identity.json",
+      "bytes": 8141,
+      "sha256": "7d71ec9d28019197209d19a4c66bdf7a2ab86a1377aa55c3199947abcf871ffe"
+    },
+    {
+      "path": "reverse.patch",
+      "bytes": 112938,
+      "sha256": "6b6594c250468ca2e09646f2c28b1a8371d96d24d6e8edd20a7a086ae4768469"
+    },
+    {
+      "path": "runtime_view.py",
+      "bytes": 2646,
+      "sha256": "f4bc984f923d6c12f18de3a2fdefdfb9b47e316f6ea3cc289ca12f066df135a1"
+    }
+  ]
+}

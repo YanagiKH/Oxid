@@ -44,8 +44,8 @@ fn recursive_census(case: &source::CheckedSource, padding: usize, main_padding: 
             references: 1,
             loans: 1,
             calls: 1,
-            expanded_cells: 33 + padding,
-            reference_bytes: (11 + padding) * size_of::<Option<Scalar>>() + 64 + 96 + 16,
+            expanded_cells: 11 + padding + 10 + 14 + 2,
+            reference_bytes: (11 + padding) * size_of::<Option<Scalar>>() + 80 + 112 + 16,
             native_bytes: (11 + padding) * 8 + 16,
             ..Default::default()
         }
@@ -60,8 +60,8 @@ fn recursive_census(case: &source::CheckedSource, padding: usize, main_padding: 
             payload_bytes: 8,
             loans: 1,
             calls: 1,
-            expanded_cells: 29 + main_padding,
-            reference_bytes: (5 + main_padding) * size_of::<Option<Scalar>>() + 8 + 64 + 96 + 16,
+            expanded_cells: 5 + main_padding + 2 + 2 * 4 + 14 + 2,
+            reference_bytes: (5 + main_padding) * size_of::<Option<Scalar>>() + 8 + 64 + 112 + 16,
             native_bytes: (5 + main_padding) * 8 + 16,
             ..Default::default()
         }
@@ -126,10 +126,13 @@ fn source_shared_reborrow_reaches_1024_frames_and_rejects_attempt_1025() {
 
 #[test]
 fn source_actual_200000_live_cells_are_inclusive_and_200001_is_denied() {
-    // main X29+171=200, plus999 activations of recur X33+167=200.
-    // S174+999*176=175998; frames1000; hand fuel384003: no earlier gate masks X.
-    let exact = source::checked(&source::recursive(998, 167, 171));
-    recursive_census(&exact, 167, 171);
+    // Successor physical-view boundary: main X31+169=200, plus999
+    // activations of recur X37+163=200. S172+999*172=172000; frames1000.
+    // Each padding literal adds one activation fuel cell and one scalar step.
+    // The unchanged unpadded template costs50*999+45=49995, so the
+    // smaller source costs49995+2*169+999*2*163=376007. No earlier gate masks X.
+    let exact = source::checked(&source::recursive(998, 163, 169));
+    recursive_census(&exact, 163, 169);
     let mut events = Vec::new();
     assert_eq!(
         run_observed(&exact.witness, exact.entry, Limits::default(), &mut events),
@@ -151,10 +154,10 @@ fn source_actual_200000_live_cells_are_inclusive_and_200001_is_denied() {
                 None
             })
             .sum::<usize>(),
-        384_003
+        49_995 + 2 * 169 + 999 * 2 * 163
     );
-    let over = source::checked(&source::recursive(998, 167, 172));
-    recursive_census(&over, 167, 172);
+    let over = source::checked(&source::recursive(998, 163, 170));
+    recursive_census(&over, 163, 170);
     let mut events = Vec::new();
     let error =
         run_observed(&over.witness, over.entry, Limits::default(), &mut events).unwrap_err();
@@ -180,13 +183,14 @@ fn source_actual_200000_live_cells_are_inclusive_and_200001_is_denied() {
 fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
     let case = source::checked(source::OWNER_CLASSES);
     source::assert_owner_classes(&ExecutionPlan::build(&case.witness).unwrap());
-    // Runtime relay path: mainX40+relayX10, active bytes304+72. Both
-    // owners and all call argument snapshots remain allocated in each frame.
-    let bytes = 2 * size_of::<Frame>() + size_of::<Scalar>() + 376;
-    assert_eq!(bytes, 928);
+    // Physical-view census: mainX42/readX11/relayX10, D320/88/72.
+    // The read path now maximizes cells53 and active bytes408; owners and
+    // all call argument snapshots remain allocated in each frame.
+    let bytes = 2 * size_of::<Frame>() + size_of::<Scalar>() + 320 + 88;
+    assert_eq!(bytes, 960);
     let limits = Limits {
         frames: 2,
-        cells: 50,
+        cells: 53,
         bytes,
         ..Limits::default()
     };
@@ -194,11 +198,11 @@ fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
         run_limits(&case.witness, Some(case.entry), limits),
         Ok(Scalar::I32(7))
     );
-    let origin = case.span("relay(T{value:7})");
+    let origin = case.span("read(&x)");
     resource_failure(
         &case,
         Limits {
-            cells: 49,
+            cells: 52,
             ..limits
         },
         "live expanded cells",
@@ -218,14 +222,16 @@ fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
 #[test]
 fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
     // Exact checked-in RFC source, SHA256 dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2.
-    // Its independently frozen batch-template-ledger.json gives the peak path
-    // main -> dispatch -> commit: X142+28+18=188, Dref1008+224+144=1376.
+    // Preserve the frozen source and fuel schedule, while deriving successor
+    // physical usage from its source census with references10/80, loans14/112.
+    // main S26 A6 P32 O8 L3 C5 => X148, D1056; dispatch S4 A2 R1 L1
+    // C1 => X32, D256; commit S10 R1 => X20, D160. Peak is200/1472.
     let case = source::checked(source::BATCH);
-    let bytes = 3 * size_of::<Frame>() + size_of::<Scalar>() + 1376;
-    assert_eq!(bytes, 2200);
+    let bytes = 3 * size_of::<Frame>() + size_of::<Scalar>() + 1056 + 256 + 160;
+    assert_eq!(bytes, 2296);
     let limits = Limits {
         frames: 3,
-        cells: 188,
+        cells: 200,
         bytes,
         ..Limits::default()
     };
@@ -252,7 +258,7 @@ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
     resource_failure(
         &case,
         Limits {
-            cells: 187,
+            cells: 199,
             ..limits
         },
         "live expanded cells",
@@ -273,7 +279,7 @@ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
 fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
     // Record payload incl. alignment is <=4 bytes per owner cell. Scalar
     // snapshots are8bytes/cell and runtime metadata is exactly8bytes/cell:
-    // owners32/4, references64/8, loans96/12, calls16/2. Thus Dref<=8*X.
+    // owners32/4, references80/10, loans112/14, calls16/2. Thus Dref<=8*X.
     // The production byte cap cannot be independently reached under X200000;
     // the preceding tests deliberately establish only lowered byte seams.
     assert_eq!(size_of::<Option<Scalar>>(), 8);
@@ -284,7 +290,7 @@ fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
             size_of::<LoanRuntime>(),
             size_of::<CallRuntime>()
         ),
-        (32, 64, 96, 16)
+        (32, 80, 112, 16)
     );
     let upper =
         plan::MAX_FRAMES * size_of::<Frame>() + size_of::<Scalar>() + 8 * plan::MAX_EXPANDED_CELLS;

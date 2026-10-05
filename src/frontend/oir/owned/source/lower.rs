@@ -1272,6 +1272,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                     };
                     require(*kind == expected_kind, *span)?;
                     let authority = self.base(binding, *span)?;
+                    let projection = match self.view.borrow_projection(id, argument) {
+                        Some(projection) => self.projection_path(projection, *span)?,
+                        None => Vec::new(),
+                    };
                     let loan = LoanId(self.counts.loans);
                     self.counts.loans = budget::add(self.counts.loans, 1)?;
                     if let Some(out) = &mut self.output {
@@ -1281,6 +1285,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 call,
                                 argument,
                                 authority,
+                                projection,
                                 kind: *kind,
                                 referent: BorrowedSlot::check(referent)?,
                                 span: *span,

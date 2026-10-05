@@ -1,0 +1,20 @@
+{
+  "schema": "oxid-projected-resource-artifacts-v1",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1069,
+      "sha256": "f99da3c8dcbbf4c6ff8493c9e9a08a6ef6b127893d26210e1f0cfc62746752d0"
+    },
+    {
+      "path": "independent-review.md",
+      "bytes": 10407,
+      "sha256": "94b17028a37afb0bd80b9340e58de0f04191d9a5e3bd3ce3eeaefae2d56ec336"
+    },
+    {
+      "path": "ledger.json",
+      "bytes": 3326,
+      "sha256": "44e42c411993a331989864da198dedf8020b4078003c02c14880c4823ee51ed2"
+    }
+  ]
+}
