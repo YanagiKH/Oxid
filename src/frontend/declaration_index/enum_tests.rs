@@ -480,7 +480,7 @@ fn enum_index_actual_carriers_and_enum_free_header_growth() {
         FIXED_SCRATCH
     );
     println!("enum-index-layout Tables={} Index={} Facts={} Counts={} Plan={} Scratch={} Fixed={} Origin={} EnumRow={} VariantRow={} ModuleRow={} NominalId={} EnumView={} VariantView={} EnumViewOption={} VariantViewOption={} EnumCounts={} SourceCounts={}",size_of::<Tables<'_>>(),size_of::<DeclarationIndex<'_>>(),size_of::<DeclarationFacts<'_>>(),size_of::<Counts>(),size_of::<IndexPlan>(),size_of::<Scratch>(),FIXED_SCRATCH,size_of::<Option<CompactSpan>>(),size_of::<EnumRow>(),size_of::<VariantRow>(),size_of::<ModuleRow>(),size_of::<NominalId>(),size_of::<EnumView<'_>>(),size_of::<VariantView<'_>>(),size_of::<Option<EnumView<'_>>>(),size_of::<Option<VariantView<'_>>>(),size_of::<EnumVariantCounts<'_>>(),size_of::<sealed::EnumSourceCounts<'_>>());
-    assert!(FIXED_SCRATCH > 3592);
+    const { assert!(FIXED_SCRATCH > 3592) };
     const { assert!(FIXED_SCRATCH <= 4096) };
     let fixture = Fixture::new(&[("main.ox", "fn main()->(){return;}")]);
     let project = fixture.load();

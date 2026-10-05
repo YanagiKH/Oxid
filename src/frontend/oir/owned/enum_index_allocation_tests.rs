@@ -380,7 +380,14 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
     let duplicate = "enum E{AA,AB,AA}fn main()->(){return;}";
     let paired =
         "mod m;use crate::m::Pair as bool;use crate::m::Pair as Good;fn main()->(){return;}";
-    let cases: [(&str, &[(&str, &str)], [usize; REQUESTS], &str, usize); 2] = [
+    type FailureCase<'a> = (
+        &'a str,
+        &'a [(&'a str, &'a str)],
+        [usize; REQUESTS],
+        &'a str,
+        usize,
+    );
+    let cases: [FailureCase<'_>; 2] = [
         (
             "duplicate variants",
             &[("main.ox", duplicate)],
@@ -605,10 +612,9 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
         assert!(!allocator.observer_trace_overflow);
         assert_eq!(allocator.trace.capacity(), trace_capacity);
         assert_eq!(allocator.trace.len(), allocator.attempts);
-        // Parser error recovery can continue after a failed syntax reserve.
-        // Require the complete stable prefix and exactly the injected failure;
-        // do not reinterpret later recovery requests as earlier loader rows.
-        assert!(allocator.attempts >= fail_at);
+        // Candidate parsing stops at resource failure, retaining exactly the
+        // stable prefix through the injected failed reservation.
+        assert_eq!(allocator.attempts, fail_at);
         for (position, (actual, expected)) in allocator.trace[..fail_at]
             .iter()
             .zip(&baseline.trace[..fail_at])

@@ -18,6 +18,7 @@ impl Fixture {
         fs::write(root.join("a.ox"), "enum F{W}").unwrap();
         Self(root)
     }
+    #[allow(clippy::result_large_err)] // Match the existing loader's owned failure evidence.
     fn load(
         &self,
         limits: ProjectLimits,
