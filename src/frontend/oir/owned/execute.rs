@@ -981,6 +981,19 @@ impl<'p, 'w> Machine<'p, 'w> {
                 };
                 Scalar::Bool(!v)
             }
+            Rvalue::CheckedNegateI32 {
+                operand,
+                operator_span,
+            } => {
+                let Scalar::I32(value) = self.read(frame, operand)? else {
+                    return Err(bad("negation type", operand.span));
+                };
+                Scalar::I32(
+                    value
+                        .checked_neg()
+                        .ok_or(RunFailure::Overflow(operator_span))?,
+                )
+            }
             Rvalue::CheckedI32 {
                 op,
                 left,

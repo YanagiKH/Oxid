@@ -338,11 +338,9 @@ fn public_division_operands_are_strict_i32_even_in_dead_code_and_before_native_t
 }
 
 #[test]
-fn public_division_does_not_extend_unary_negation_or_literal_range() {
+fn public_division_preserves_name_checks_unary_plus_and_literal_range() {
     for (expression, code) in [
-        ("7 / -x", "E0101"),
-        ("7 % -(2)", "E0101"),
-        ("7 / --1", "E0101"),
+        ("7 / -x", "E0200"),
         ("7 % +1", "E0101"),
         ("7 / 2147483648", "E0203"),
         ("7 % -2147483649", "E0203"),

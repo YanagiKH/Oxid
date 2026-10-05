@@ -284,9 +284,9 @@ fn lower_expression(
                 }
                 frames.push(ExprFrame::Emit(id));
                 match &expr.kind {
-                    hir::ExprKind::Not { operand: inner, .. } | hir::ExprKind::Group(inner) => {
-                        frames.push(ExprFrame::Visit(*inner))
-                    }
+                    hir::ExprKind::Negate { operand: inner, .. }
+                    | hir::ExprKind::Not { operand: inner, .. }
+                    | hir::ExprKind::Group(inner) => frames.push(ExprFrame::Visit(*inner)),
                     hir::ExprKind::Arithmetic { left, right, .. }
                     | hir::ExprKind::Comparison { left, right, .. } => {
                         frames.push(ExprFrame::Visit(*right));
@@ -391,6 +391,13 @@ fn lower_expression(
                         }),
                     }),
                     hir::ExprKind::Group(inner) => Some(Rvalue::Copy(operand(*inner))),
+                    hir::ExprKind::Negate {
+                        operand: inner,
+                        operator_span,
+                    } => Some(Rvalue::CheckedNegateI32 {
+                        operand: operand(*inner),
+                        operator_span: *operator_span,
+                    }),
                     hir::ExprKind::Not {
                         operand: inner,
                         operator_span,

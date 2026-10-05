@@ -670,6 +670,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                             frames.push(ExprFrame::Emit(id), cause)?;
                             match other {
                                 source::ExprKind::Group(inner)
+                                | source::ExprKind::Negate { operand: inner, .. }
                                 | source::ExprKind::Not { operand: inner, .. }
                                 | source::ExprKind::IndexRead { index: inner, .. } => {
                                     frames.push(ExprFrame::Visit(*inner), cause)?
@@ -1159,6 +1160,13 @@ impl<'a, 'b> Walk<'a, 'b> {
                 _ => return Err(invariant(span)),
             },
             source::ExprKind::Group(inner) => Rvalue::Copy(self.operand(inner)?),
+            source::ExprKind::Negate {
+                operand,
+                operator_span,
+            } => Rvalue::CheckedNegateI32 {
+                operand: self.operand(operand)?,
+                operator_span,
+            },
             source::ExprKind::Not {
                 operand,
                 operator_span,

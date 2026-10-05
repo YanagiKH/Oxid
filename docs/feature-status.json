@@ -533,7 +533,7 @@
       "evidence": [
         "docs/architecture/i32-arithmetic-validation.md"
       ],
-      "limitations": "Restricted provisional i32 arithmetic only. No general unary negation, wrapping, casts, shifts, wider integers, floats or promotion. Division and remainder are tracked in typed-checked-i32-division. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support and scalar comparisons are tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
+      "limitations": "Restricted provisional i32 arithmetic only. General unary negation is tracked separately. No wrapping, casts, shifts, wider integers, floats or promotion. Division and remainder are tracked in typed-checked-i32-division. Existing fuel/frame/slot limits remain. Expression-tree height including flat chains is capped at 64. This entry records reference arithmetic; native support and scalar comparisons are tracked separately. No ownership, typed artifact, completed milestone or safety certification is claimed. Legacy f64 behavior is unchanged."
     },
     {
       "id": "typed-preview-scalar-comparisons",
@@ -957,6 +957,44 @@
         "docs/architecture/record-composition-validation.md"
       ],
       "limitations": "Containment/path depth64 and unchanged storage/work ceilings. Whole-root ownership/borrowing only. No aggregate-field extraction/replacement/projected borrow or slice conversion, partial moves, stored references, nested arrays or arrays of records. No completed milestone, soundness proof, stability or v1.0 claim."
+    },
+    {
+      "id": "typed-checked-i32-unary-negation",
+      "summary": "General checked i32 prefix negation on scalar and owned reference/native paths, preserving existing signed-decimal literal semantics and fuel",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference / llvm-native",
+      "target_scope": "Local Linux x86_64 only; exact-head hosted CI and independent review remain separate",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0021-checked-i32-unary-negation.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/hir.rs",
+        "src/frontend/typeck.rs",
+        "src/frontend/oir/lower.rs",
+        "src/frontend/oir/verify.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/source/lower.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "src/frontend/oir/unary_source_tests.rs",
+        "src/frontend/oir/negation_raw_tests.rs",
+        "src/frontend/oir/owned/negation_raw_tests.rs",
+        "tests/typed_unary_negation.rs"
+      ],
+      "evidence": [
+        "docs/architecture/checked-unary-negation-validation.md"
+      ],
+      "limitations": "i32 only, checked MIN overflow, no unary plus, casts, wider widths or floats. No legacy changes, stable ABI, completed milestone or safety certification. Historical source-binding expectations remain frozen pending a narrow successor."
     }
   ]
 }

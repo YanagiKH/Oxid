@@ -422,3 +422,6 @@ mod reviewer_array_reference_tests;
 mod composition_reference_tests;
 #[cfg(test)]
 mod composition_verifier_tests;
+
+#[cfg(test)]
+mod negation_raw_tests;

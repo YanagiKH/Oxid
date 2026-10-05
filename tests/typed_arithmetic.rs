@@ -249,8 +249,7 @@ fn arithmetic_grammar_and_mixed_depth_fail_cleanly_without_changing_literal_rule
         ("1 -", "E0100"),
         ("1 ** 2", "E0100"),
         ("1 + +2", "E0101"),
-        ("1 - -x", "E0101"),
-        ("1 + -(2)", "E0101"),
+        ("1 - -x", "E0200"),
         ("1 + 2147483648", "E0203"),
         ("1 * -2147483649", "E0203"),
     ] {

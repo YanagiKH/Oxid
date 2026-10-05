@@ -619,20 +619,22 @@ fn heldout_formatter_utf8_component_segmentation_is_irrelevant() {
 #[test]
 fn heldout_scalar_ast_and_diagnostics_match_candidate_mode_without_owned_markers() {
     let scalar="/* struct Packet{} &mut x.y */ fn helper(as: bool,n: i32) -> bool { let mut k = n; while k < 3 { k = k + 1; if as { continue; } else { break; } } return !as || k == 4; }";
-    with_source(scalar, |source| {
-        let old = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
-        let candidate = parser::parse_with_mode(
-            source,
-            lexer::lex(source).unwrap(),
-            parser::SourceMode::OwnedCandidate,
-        )
-        .unwrap();
-        assert!(!candidate.uses_owned_syntax(source));
-        assert_eq!(format!("{old:?}"), format!("{candidate:?}"));
-    });
+    for scalar in [scalar, "fn f() -> () { -x; return; }"] {
+        with_source(scalar, |source| {
+            let old = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+            let candidate = parser::parse_with_mode(
+                source,
+                lexer::lex(source).unwrap(),
+                parser::SourceMode::OwnedCandidate,
+            )
+            .unwrap();
+            assert!(!candidate.uses_owned_syntax(source));
+            assert_eq!(format!("{old:?}"), format!("{candidate:?}"));
+        });
+    }
     for text in [
         "fn f() -> () { 1.2; return; }",
-        "fn f() -> () { -x; return; }",
+        "fn f() -> () { +x; return; }",
         "fn f() -> () { true < false < true; return; }",
     ] {
         with_source(text, |source| {

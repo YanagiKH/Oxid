@@ -492,6 +492,18 @@ fn expression_type(
             )),
         },
         ExprKind::Group(inner) => child(*inner)?,
+        ExprKind::Negate { operand, .. } => {
+            let actual = child(*operand)?;
+            if actual != scalar(Ty::I32) {
+                return Err(mismatch(
+                    program,
+                    scalar(Ty::I32),
+                    actual,
+                    function.expressions[operand.0].span,
+                ));
+            }
+            scalar(Ty::I32)
+        }
         ExprKind::Not { operand, .. } => {
             let actual = child(*operand)?;
             if actual != scalar(Ty::Bool) {

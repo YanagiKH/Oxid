@@ -316,6 +316,10 @@ impl fmt::Display for Expression<'_> {
             E::Unit => f.write_str("[\"unit\"]"),
             E::Binding(id) => write!(f, "[\"binding\",{}]", id.0),
             E::Group(id) => write!(f, "[\"group\",{}]", id.0),
+            E::Negate {
+                operand,
+                operator_span,
+            } => write!(f, "[\"negate\",{},{}]", operand.0, SpanRow(*operator_span)),
             E::Not {
                 operand,
                 operator_span,
@@ -827,6 +831,15 @@ impl fmt::Display for ValueRow<'_> {
             Rvalue::I32(value) => write!(f, "[\"i32\",{value}]"),
             Rvalue::Unit => f.write_str("[\"unit\"]"),
             Rvalue::Copy(value) => write!(f, "[\"copy\",{}]", OperandRow(*value)),
+            Rvalue::CheckedNegateI32 {
+                operand,
+                operator_span,
+            } => write!(
+                f,
+                "[\"checked-negate-i32\",{},{}]",
+                OperandRow(*operand),
+                SpanRow(*operator_span)
+            ),
             Rvalue::NotBool {
                 operand,
                 operator_span,

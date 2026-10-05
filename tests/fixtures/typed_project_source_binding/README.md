@@ -1,3 +1,23 @@
+## Checked unary negation successor
+
+The active view now binds checked i32 unary negation source checkpoint
+`bf48512acf86e2d23c28b6b9b16de3be3d127051`, exact tree
+`715d047f37db8b7658bda688ff4e5961609193f8`. It has 199 inputs, including
+143 `src`/`native` members. `composition-source.json` preserves the prior
+196-input manifest byte-for-byte. `unary-authority.json` and literal runner pins
+bind the 25-path source delta and three exact additions. The first inverse stage
+restores and verifies all 196 composition input identities before the unchanged
+composition, slices, division, combined, formatter, and archived stages run.
+
+This stage changes no production source, archived package, language expectation,
+resource assertion or comparator. Its three additions are raw unary test modules
+and source coverage. Admission verifies exact current membership, modes, source
+bytes, transition input/output identities, inverse contexts, and the preserved
+predecessor manifest. Current Unit2 execution uses the unary source; reconstructed
+archive execution continues to describe only the historical compiler.
+
+The source-binding manifest alone is admission evidence, not semantic qualification.
+
 # Explicit current and archived compiler input views
 
 This adapter restores retained gates after public project syntax activation and

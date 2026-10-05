@@ -533,6 +533,20 @@ jobs:
         run: |
           cargo test --locked --test typed_division -- --ignored
           cargo test --release --locked --test typed_division -- --ignored
+      - name: Verify checked unary negation source-free parity in both profiles
+        run: |
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/debug-raw" cargo test --locked --bin oxid raw_negation -- --include-ignored --test-threads=1
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/release-raw" cargo test --release --locked --bin oxid raw_negation -- --include-ignored --test-threads=1
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/debug-source" cargo test --locked --test typed_unary_negation -- --ignored --test-threads=1
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/release-source" cargo test --release --locked --test typed_unary_negation -- --ignored --test-threads=1
+      - name: Retain checked unary negation native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checked-unary-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: target/checked-unary-native
       - name: Verify borrowed scalar slices native parity in both profiles
         run: |
           cargo test --locked --test typed_slices -- --ignored
@@ -546,7 +560,7 @@ jobs:
           cargo test --locked --bin oxid native_composition -- --include-ignored --test-threads=1
           cargo test --release --locked --bin oxid native_composition -- --include-ignored --test-threads=1
       - name: Verify production source CLI and source-free ELF outcomes
-        run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment owned-record-composition-v1 --jobs 2
+        run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment checked-unary-negation-v1 --jobs 2
       - name: Verify owned-source native budgets, stores, guards, and artifact identities
         run: python3 scripts/verify_owned_source_native.py --llvm-bin "$OXID_LLVM_BIN" --jobs 2 --evidence target/owned-source-native-ci
       - name: Recheck native matcher rejection controls against real collected evidence

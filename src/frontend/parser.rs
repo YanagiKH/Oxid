@@ -1106,8 +1106,18 @@ impl Parser<'_> {
         }
     }
     fn unary(&mut self, depth: usize, context: LiteralContext) -> Result<ExprId, Box<Diagnostic>> {
+        // Keep minus + decimal on the historical signed-literal path, including
+        // intervening trivia, so MIN conversion, origins and fuel stay unchanged.
+        // The prefix stack retains only spans; validated one-byte spelling tells
+        // us which operator to construct when unwinding without larger scratch.
         let mut prefixes = Vec::new();
-        while self.peek().kind == Kind::Not {
+        while self.peek().kind == Kind::Not
+            || (self.peek().kind == Kind::Minus
+                && self.tokens[self.cursor + 1..]
+                    .iter()
+                    .find(|token| token.kind != Kind::Trivia)
+                    .is_some_and(|token| token.kind != Kind::Number))
+        {
             if depth + prefixes.len() >= MAX_NESTING {
                 return Err(self.diagnostic(
                     "E0400",
@@ -1125,9 +1135,16 @@ impl Parser<'_> {
                 .source
                 .span(operator_span.start, self.expressions[operand.0].span.end);
             operand = self.push_expr(
-                ExprKind::Not {
-                    operand,
-                    operator_span,
+                if self.source.text_at(operator_span) == "-" {
+                    ExprKind::Negate {
+                        operand,
+                        operator_span,
+                    }
+                } else {
+                    ExprKind::Not {
+                        operand,
+                        operator_span,
+                    }
                 },
                 span,
             )?;
@@ -1163,7 +1180,9 @@ impl Parser<'_> {
         // A flat left-associative chain is a deep tree too. Bound total tree
         // height before resolution, whose recursive visits now remain <= 64.
         let height = 1 + match &kind {
-            ExprKind::Group(inner) | ExprKind::Not { operand: inner, .. } => self.heights[inner.0],
+            ExprKind::Group(inner)
+            | ExprKind::Negate { operand: inner, .. }
+            | ExprKind::Not { operand: inner, .. } => self.heights[inner.0],
             ExprKind::Call { args, .. } => args
                 .iter()
                 .map(|arg| match arg {

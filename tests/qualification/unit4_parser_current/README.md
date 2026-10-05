@@ -1,6 +1,6 @@
 # Current-source Unit4 parser qualification
 
-This reviewed successor admits the current bounded record composition, borrowed slices, checked division, formatter and fixed-array source while keeping
+This reviewed successor admits the current checked unary, bounded record composition, borrowed slices, checked division, formatter and fixed-array source while keeping
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` byte-identical.
 It retains the unchanged ten helper files, historical observer Rust, instrumentation
 patches, semantic comparator, effective contract amendment, toolchain and dependency recipes.
@@ -9,28 +9,29 @@ reviewed source-admission, provenance and path-routing changes. Its comparator
 derivation and all 22 semantic predicate handlers remain unchanged.
 
 The historical parser package binds 283 base inputs, 113 compiler bodies and two
-286-member derived views. The current composition source manifest binds 196 inputs;
-61 existing compiler files differ from the historical package and 76
+286-member derived views. The current unary source manifest binds 199 inputs;
+65 existing compiler files differ from the historical package and 79
 implementation/test inputs are added, including 42 exact published compile-time
 fixture dependencies referenced 47 times by array_types_tests.rs and three
-new slice test modules, four composition test modules and the public sample
+new slice test modules, four composition test modules, three unary test modules and the public sample
 includer with its three exact sample inputs. The includer body has its current slice migration identity;
 the fixture bytes and ordered reference roster stay unchanged. Those assets
-are admitted compiler-test inputs, with unchanged bytes and expectations. The current parser therefore binds 359 base
-inputs, 143 compiler bodies and two 362-member derived views. These inventories
+are admitted compiler-test inputs, with unchanged bytes and expectations. The current parser therefore binds 362 base
+inputs, 146 compiler bodies and two 365-member derived views. These inventories
 remain distinct. The source checkpoint is published commit
-`8ae66ef5543bcb1251868b84ea38a82c2649a3a4`, full source tree
-`f6b7dee8bac4ebcc27ad020db9940344c5e4ae41`.
+`bf48512acf86e2d23c28b6b9b16de3be3d127051`, full source tree
+`715d047f37db8b7658bda688ff4e5961609193f8`.
 
-`authority.json` pins the historical identities, the current manifest, exact 137
+`authority.json` pins the historical identities, the current manifest, exact 144
 before/after identities, current maps, source-binding runner, preserved division/combined
-manifests and all four composition/slices/division/combined inverse patches. Every load re-derives the explicit path and 76-addition rosters. Unknown
+manifests and all five unary/composition/slices/division/combined inverse patches. Every load re-derives the explicit path and 79-addition rosters. Unknown
 paths, compiler deletions and unlisted instrumentation overlaps remain rejected.
 Only `ast.rs`, `lexer.rs`, `parser.rs`, `project/budget.rs` and `source.rs` overlap observer
 instrumentation; only AST and parser overlap control instrumentation.
 
-The exact composition sections first restore AST and parser to their preserved
-slice manifest identities. The exact slice sections then restore those bodies to the pinned
+The exact unary sections first restore AST and parser to their preserved
+composition manifest identities. The composition sections then restore those
+bodies to their exact slice manifest identities. The exact slice sections then restore those bodies to the pinned
 division predecessor. The division sections then restore AST, lexer and parser bodies to the
 pinned combined predecessor. The three array-overlap bodies then reverse with
 their exact sections of the independently pinned combined transition. Each reconstructed body must equal its
@@ -59,7 +60,7 @@ and all current inputs against the actual checkout HEAD before making an output
 directory. It invokes the unchanged historical preparers and verifies their exact
 286-member outputs. Each original candidate/overlay manifest is retained under
 `prepare` or `prepare-control` with a `historical-` filename. Only then are the
-126 approved current files copied or exactly composed into each build tree. Newly generated current
+144 approved current files copied or exactly composed into each build tree. Newly generated current
 candidate/overlay manifests bind the current reviewed source checkpoint, current
 source manifest and transition authority. Builds consume these current views.
 Historical metadata is provenance only; it is never a current execution receipt.
@@ -69,12 +70,12 @@ The current session uses a distinct schema, `current_source_bound: true` and
 comparison rechecks the actual current checkout, all derived bodies, the retained
 historical metadata and the transition binding. The compact evidence reader
 consumes the same strict transition predicate and resolves both current candidate
-manifest bodies against their pinned identities and re-derived 359-member map.
+manifest bodies against their pinned identities and re-derived 362-member map.
 All 14 generated provenance artifacts remain in the compact capsule: the session,
 the historical/current authorities and current source manifest, both historical
 candidate/overlay pairs, and both current candidate/overlay/helper-manifest triples.
-Each 362-member derived view includes its generated candidate manifest; its other
-361 derived-tree members and the four executables may be full-archive-only (726 identities). The final join also binds the current 143-body map,
+Each 365-member derived view includes its generated candidate manifest; its other
+364 derived-tree members and the four executables may be full-archive-only (732 identities). The final join also binds the current 146-body map,
 source checkpoint and actual build candidate/overlay identities.
 
 Run bounded controls from the repository root:
@@ -113,3 +114,9 @@ predicate or passivity condition changes. The current result embeds the frozen
 comparison plus its canonical SHA, so the original failure and the current
 six-case successor are explicit side-by-side. The separately retained earlier
 comparison is never overwritten. All638 observations and22 handlers remain.
+
+The frozen parser corpus remains 248 sources and 638 observations. An independent
+raw-byte screen verifies every frozen source identity: the only minus bytes are
+237 `->` arrows. Checked unary therefore adds no parser semantic amendment; the
+existing record-composition amendment and all frozen resource/semantic predicates
+remain unchanged. Every execution receipt still must be collected afresh.

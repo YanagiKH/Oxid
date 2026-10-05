@@ -210,10 +210,6 @@ fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
     }
     for (expr, origin) in [
         ("+1", "+"),
-        ("-(1)", "-"),
-        ("--1", "-"),
-        ("-x", "-"),
-        ("-id()", "-"),
         ("true & false", "&"),
         ("true | false", "|"),
         ("1 as i32", "as"),
@@ -346,7 +342,30 @@ fn cast_rejection_does_not_reserve_a_previously_valid_identifier() {
 }
 #[test]
 fn signed_eof_and_numeric_diagnostic_caps_remain_bounded() {
-    reject("fn main() -> i32 { return -", "E0101", "parse", "-");
+    // General unary minus now asks for an operand; EOF is a missing-expression
+    // diagnostic, not a malformed signed-decimal literal at the minus.
+    let source = "fn main() -> i32 { return -";
+    for operation in ["check", "run"] {
+        let out = Fixture::new(source).command(&[
+            operation,
+            "main.ox",
+            "--edition=typed-preview",
+            "--message-format=json",
+        ]);
+        assert_eq!(out.status.code(), Some(1));
+        assert!(out.stderr.is_empty());
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(text.contains("\"code\":\"E0100\""), "{text}");
+        assert!(text.contains("\"stage\":\"parse\""), "{text}");
+        assert!(
+            text.contains(&format!(
+                "\"start\":{},\"end\":{}",
+                source.len(),
+                source.len()
+            )),
+            "{text}"
+        );
+    }
     let incomplete = "fn main() -> i32 { return 1";
     let fixture = Fixture::new(incomplete);
     let out = fixture.run(true);

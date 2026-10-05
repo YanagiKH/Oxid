@@ -47,6 +47,10 @@ pub enum LogicalOp {
 }
 #[derive(Debug)]
 pub enum ExprKind {
+    Negate {
+        operand: ExprId,
+        operator_span: Span,
+    },
     Not {
         operand: ExprId,
         operator_span: Span,
@@ -604,7 +608,11 @@ impl Program {
             }
             let earlier = |id: ExprId| visit() && id.0 < index;
             let ok = match &expression.kind {
-                ExprKind::Not {
+                ExprKind::Negate {
+                    operand,
+                    operator_span,
+                }
+                | ExprKind::Not {
                     operand,
                     operator_span,
                 } => earlier(*operand) && valid(*operator_span),

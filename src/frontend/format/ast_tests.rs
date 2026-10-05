@@ -279,6 +279,14 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::Negate {
+                operand,
+                operator_span,
+            } => {
+                self.tag("negate");
+                self.span(*operator_span);
+                self.expression(*operand);
+            }
             ExprKind::Not {
                 operand,
                 operator_span,

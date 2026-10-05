@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 17070,
+      "bytes": 18261,
       "path": "README.md",
-      "sha256": "f5e70d078f13c23b4a4cd7dc3d241cddff509ebfc88867722c0be258643aa7e3"
+      "sha256": "00870dccae6315855df1769dd0fafd6fc1722d70a1d173952178b088dca61d9c"
     },
     {
       "bytes": 9916,
@@ -31,14 +31,19 @@
       "sha256": "f387deb3d73643cf51109e1aee7a59717c12cfe1ac70cd3a6e14f1aafa01ee8a"
     },
     {
+      "bytes": 37404,
+      "path": "composition-source.json",
+      "sha256": "eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16"
+    },
+    {
       "bytes": 238025,
       "path": "composition-transition.patch",
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 37404,
+      "bytes": 38090,
       "path": "current-source.json",
-      "sha256": "eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16"
+      "sha256": "d9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220"
     },
     {
       "bytes": 29723,
@@ -76,9 +81,9 @@
       "sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8"
     },
     {
-      "bytes": 86806,
+      "bytes": 90989,
       "path": "run.py",
-      "sha256": "6eac4ca4e8d6c656cdaf7c65bb0d9fefab9adc6d185d79916eb8d34e2d5f4fb9"
+      "sha256": "d30e31d8e2fc7e092af8da0df8a6a1057fc82e8707d6b2c92c192b0f0f4955a6"
     },
     {
       "bytes": 55961,
@@ -99,6 +104,16 @@
       "bytes": 605300,
       "path": "source-transition.patch",
       "sha256": "63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18"
+    },
+    {
+      "bytes": 36993,
+      "path": "unary-authority.json",
+      "sha256": "ed2d16dd5b24a55005e399630f3ad7402017fca9e8615b98d232d273ec418a31"
+    },
+    {
+      "bytes": 72327,
+      "path": "unary-transition.patch",
+      "sha256": "4a1e4bfa577ff02bb3c5320eb1994b281831929692acd347daf243b15ae31796"
     }
   ],
   "schema": 1

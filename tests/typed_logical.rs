@@ -349,7 +349,6 @@ fn malformed_tokens_missing_operands_and_comparison_chains_stay_rejected() {
         ("true ! false", "!", "E0100"),
         ("true && || false", "||", "E0100"),
         ("true || && false", "&&", "E0100"),
-        ("-(1)", "-", "E0101"),
     ] {
         reject(
             &format!("{prefix}{expression}; }}"),

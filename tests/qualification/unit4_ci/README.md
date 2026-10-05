@@ -52,8 +52,8 @@ command, exit, snapshot ordering and comparison bytes. The closure requires ever
 consumed input and all four executable identities. Both generated current
 candidate-source manifests must remain as actual compact bodies and are resolved
 against their pinned identities and re-derived maps. The allowed omissions are
-exactly 353 derived-tree members per role plus four binaries (710 identities); the
-354-member derived maps and complete comparison closure are unchanged. The
+exactly 364 derived-tree members per role plus four binaries (732 identities); the
+365-member derived maps and complete comparison closure are unchanged. The
 final join reconstructs each normalized
 row from the unchanged raw case using the frozen normalizer and derives the
 complete case/mode/profile roster. Source/binary replay at original paths was
@@ -67,7 +67,7 @@ controls only; it never supplies a hosted execution row.
 
 The current parser successor lives in `tests/qualification/unit4_parser_current`.
 It preserves the complete original frozen v3 package and distinguishes its
-283/286 historical maps from the current 351/354 maps. The source manifest and
+283/286 historical maps from the current 362/365 maps. The source manifest and
 transition records bind actual current compiler bodies through the final join.
 Only a failed stage08 prints a bounded, JSON-escaped stderr tail; workflow marker
 pairs are escaped too. Full stderr and its exact receipt hash remain preserved,
@@ -80,3 +80,9 @@ AST, lexer and parser sections then reverse to the exact combined predecessor;
 the three array overlap bodies then use the unchanged historical transforms after
 exact inverse reconstruction. The lexer retains both frozen token hooks; all unlisted overlaps remain rejected. Frozen cases and expected observations
 are unchanged, and all current execution evidence must be freshly collected.
+
+The checked-unary checkpoint binds 199 current inputs, including three new Rust
+test modules. Its AST/parser inverse stage first reconstructs the exact preserved
+196-input composition predecessor; all earlier stages and frozen authorities
+remain unchanged. Parser/current public/observer admission rejects stale source
+identities before tool invocation, and requires fresh current execution evidence.

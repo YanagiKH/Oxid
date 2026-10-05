@@ -181,6 +181,14 @@ fn rvalue(value: &Rvalue) -> String {
             ("place", place.id.0.to_string()),
             ("span", span(place.span)),
         ]),
+        Rvalue::CheckedNegateI32 {
+            operand: value,
+            operator_span,
+        } => object([
+            ("kind", json_string("CheckedNegateI32")),
+            ("operand", operand(*value)),
+            ("operator_span", span(*operator_span)),
+        ]),
         Rvalue::NotBool {
             operand: value,
             operator_span,

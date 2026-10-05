@@ -905,6 +905,10 @@ fn diagnostic_occurrences(
                             visit(FailureKind::DivisionByZero, *operator_span)?;
                         }
                     }
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedNegateI32 { operator_span, .. },
+                        ..
+                    })) => visit(FailureKind::Overflow, *operator_span)?,
                     OwnedInstruction::ReadIndex { .. }
                     | OwnedInstruction::WriteIndex { .. }
                     | OwnedInstruction::ReadProjection { index: Some(_), .. }
@@ -1596,7 +1600,9 @@ fn continuation(instruction: &OwnedInstruction) -> Continuation {
     match instruction {
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
-                Rvalue::CheckedI32 { .. } => Continuation::Arithmetic,
+                Rvalue::CheckedI32 { .. } | Rvalue::CheckedNegateI32 { .. } => {
+                    Continuation::Arithmetic
+                }
                 Rvalue::Load(_)
                 | Rvalue::NotBool { .. }
                 | Rvalue::Bool(_)
@@ -2323,6 +2329,24 @@ fn emit_scalar(
             writeln!(
                 out,
                 "  %{name}_value = icmp {predicate} {operand_type} {left}, {right}"
+            )
+            .unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::CheckedNegateI32 {
+            operand,
+            operator_span,
+        } => {
+            let operand = load_operand(out, f, &format!("{name}_operand"), operand);
+            let suffix = continuation(&owned_statement.kind)
+                .suffix()
+                .expect("arithmetic continuation");
+            writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.ssub.with.overflow.i32(i32 0, i32 {operand})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1").unwrap();
+            writeln!(out, "  br i1 %{name}_overflow, label %{name}_checked_error, label %{name}_{suffix}\n{name}_checked_error:").unwrap();
+            emit_failure(out, diagnostics, FailureKind::Overflow, operator_span);
+            writeln!(
+                out,
+                "{name}_{suffix}:\n  %{name}_value = extractvalue {{ i32, i1 }} %{name}_checked, 0"
             )
             .unwrap();
             format!("%{name}_value")

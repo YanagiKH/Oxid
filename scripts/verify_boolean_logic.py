@@ -2,12 +2,15 @@
 """Independent lazy tagged-tree / reference / mandatory real LLVM O0 gate.
 
 Usage: python3 scripts/verify_boolean_logic.py target/debug/oxid target/release/oxid
+Current unary source: add --expectation-amendment checked-unary-negation-v1.
+Without the explicit selection, historical negative expectations stay unchanged.
 Requires Linux x86_64 and pinned LLVM/Clang/LLD 19.1.7. Missing tools fail.
 The source model traverses only chosen logical operands; Python bool/int
 coercion, compiler parsing/evaluation, and captured compiler errors never supply
 expected answers. Every native corpus case executes with source removed and
 Oxid/LLVM/Python absent from PATH; profile artifact hashes must match.
 """
+import argparse
 from dataclasses import dataclass
 import hashlib
 import json
@@ -19,6 +22,10 @@ import sys
 import tempfile
 
 from verify_native_arithmetic import verify_adapter
+
+UNARY_EXPECTATION_AMENDMENT_ID = "checked-unary-negation-v1"
+UNARY_NEGATIVE_SOURCE_SHA256 = "99a4ea084344bf53c945e6d754676c0cb5dbac1d34d08b7852b786c11688f8fd"
+UNARY_NEGATIVE_OLD_EXPECTATION_SHA256 = "eaf1a799ff638414999b3a45e66dc13340b940196fbbf538635e89e8eb9d363e"
 
 MIN, MAX = -(2 ** 31), 2 ** 31 - 1
 COMPARATORS = ("==", "!=", "<", "<=", ">", ">=")
@@ -431,6 +438,44 @@ def negative_cases():
     yield "token_count_limit", source + "/*x*/", "E0400", "lex", len(source), 5
 
 
+def negative_expectation_amendment(selection):
+    """Explicit current-source view; retain the historical tuple and its seal."""
+    if selection is None:
+        return None
+    if selection != UNARY_EXPECTATION_AMENDMENT_ID:
+        raise ValueError("unknown boolean negative expectation amendment")
+    return {
+        "amendment_id": selection,
+        "scope": "current-production-cli-only",
+        "source_sha256": UNARY_NEGATIVE_SOURCE_SHA256,
+        "old_expectation_sha256": UNARY_NEGATIVE_OLD_EXPECTATION_SHA256,
+        "old_expected": {"category": "invalid_token", "code": "E0101", "stage": "parse", "offset": 33, "width": 1},
+        "effective_expected": {"category": "invalid_return_type", "code": "E0300", "stage": "type", "offset": 33, "width": 4},
+        "derivation": "Checked i32 unary negation admits -(1), but its i32 result mismatches the declared bool return; the complete expression is the primary span",
+    }
+
+
+def amended_negative_cases(selection=None):
+    """Amend exactly one pinned source/expectation; fail closed on drift."""
+    amendment = negative_expectation_amendment(selection)
+    cases = list(negative_cases())
+    if amendment is None:
+        return cases
+    matches = 0
+    for index, case in enumerate(cases):
+        if hashlib.sha256(case[1].encode()).hexdigest() != amendment["source_sha256"]:
+            continue
+        encoded = json.dumps(case, ensure_ascii=True, separators=(",", ":")).encode()
+        if hashlib.sha256(encoded).hexdigest() != amendment["old_expectation_sha256"]:
+            raise ValueError("boolean amendment historical expectation identity mismatch")
+        expected = amendment["effective_expected"]
+        cases[index] = (expected["category"], case[1], expected["code"], expected["stage"], expected["offset"], expected["width"])
+        matches += 1
+    if matches != 1:
+        raise ValueError("boolean amendment requires exactly one pinned historical case")
+    return cases
+
+
 def native_resource_cases():
     """Unchanged inclusive/+1 ceilings, with bool logic in every fixture."""
     for count in (256, 257):
@@ -524,7 +569,9 @@ def assert_origin(source, primary, offset, width):
     assert primary["column"] == len(source[:offset].rsplit("\n", 1)[-1]) + 1
 
 
-def verify(binaries):
+def verify(binaries, *, expectation_amendment=None):
+    amendment = negative_expectation_amendment(expectation_amendment)
+    negatives = amended_negative_cases(expectation_amendment)
     self_check_model()
     binaries = [str(Path(binary).resolve()) for binary in binaries]
     count = {"binaries": len(binaries), "source_cases": 0, "success_cases": 0, "overflow_cases": 0,
@@ -636,7 +683,7 @@ def verify(binaries):
             count["success_cases" if error is None else "overflow_cases"] += 1
             categories[category] = categories.get(category, 0) + 1
         assert tested_io == {"true", "false", "error"}
-        for category, source, code, stage, offset, width in negative_cases():
+        for category, source, code, stage, offset, width in negatives:
             path.write_bytes(source.encode())
             previous = {}
             for binary in binaries:
@@ -726,11 +773,21 @@ def verify(binaries):
     assert categories["truth_table"] == 8 and categories["call_truth_table"] == 8
     assert compiler_hashes == [hashlib.sha256(Path(binary).read_bytes()).hexdigest() for binary in binaries], "compiler binaries changed while oracle was running"
     print(json.dumps(dict(count, categories=categories, compiler_sha256=compiler_hashes,
+                          negative_expectation_amendment=amendment,
                           corpus_sha256=source_hashes.hexdigest(), artifact_manifest_sha256=artifact_hashes.hexdigest()), sort_keys=True))
     print("boolean logic O0: lazy tagged Python/reference/native parity, source-model call-order witnesses, full static RHS checks, exact resource boundaries, first-error origins, profile-identical standalone ELF and output failures: PASS")
 
 
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("binaries", nargs="+")
+    parser.add_argument("--expectation-amendment", choices=(UNARY_EXPECTATION_AMENDMENT_ID,),
+                        help="explicit current-source expectation; preserves the historical negative corpus")
+    args = parser.parse_args(argv)
+    if sys.flags.optimize:
+        parser.error("Python assertions must remain enabled")
+    verify(args.binaries, expectation_amendment=args.expectation_amendment)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        raise SystemExit(__doc__)
-    verify(sys.argv[1:])
+    main()

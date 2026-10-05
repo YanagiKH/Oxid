@@ -13,18 +13,25 @@ from unittest.mock import patch
 import portable as p
 
 
+class UnaryOverlapRosterControls(unittest.TestCase):
+    def test_exact_unary_overlap_roster(self):
+        self.assertEqual(p.UNARY_INSTRUMENTATION_PATHS,
+                         ('src/frontend/ast.rs', 'src/frontend/parser.rs'))
+        self.assertTrue(callable(p.restore_unary_source))
+
+
 class CurrentAuthorityControls(unittest.TestCase):
     def test_historical_and_current_authorities_remain_distinct(self):
         a = p.authority()
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [359, 362, 362])
-        self.assertEqual(len(a['current_source']['files']), 196)
-        self.assertEqual(len(p.compiler_map(a)), 143)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [362, 365, 365])
+        self.assertEqual(len(a['current_source']['files']), 199)
+        self.assertEqual(len(p.compiler_map(a)), 146)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 137)
+        self.assertEqual(len(a['current']['source_delta']), 144)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
@@ -32,6 +39,7 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/format/ast_tests.rs',
  'src/frontend/format/resource_tests.rs',
  'src/frontend/format_cli.rs',
+ 'src/frontend/oir/negation_raw_tests.rs',
  'src/frontend/oir/owned/array_native_resource_tests.rs',
  'src/frontend/oir/owned/array_native_tests.rs',
  'src/frontend/oir/owned/array_observe.rs',
@@ -41,6 +49,7 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/composition_native_tests.rs',
  'src/frontend/oir/owned/composition_reference_tests.rs',
  'src/frontend/oir/owned/composition_verifier_tests.rs',
+ 'src/frontend/oir/owned/negation_raw_tests.rs',
  'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
  'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
  'src/frontend/oir/owned/slice_native_tests.rs',
@@ -55,6 +64,7 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/source/slice_tests.rs',
  'src/frontend/oir/owned_types/array_tests.rs',
  'src/frontend/oir/owned_types/composition_tests.rs',
+ 'src/frontend/oir/unary_source_tests.rs',
  'src/frontend/parser/array_syntax_tests.rs',
  'src/frontend/parser/arrays.rs',
  'src/frontend/project/array_syntax_tests.rs',
@@ -101,9 +111,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 61)
-        self.assertEqual(a['current']['reviewed_source_head'], '8ae66ef5543bcb1251868b84ea38a82c2649a3a4')
-        self.assertEqual(a['current']['source_only_tree'], 'f6b7dee8bac4ebcc27ad020db9940344c5e4ae41')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 65)
+        self.assertEqual(a['current']['reviewed_source_head'], 'bf48512acf86e2d23c28b6b9b16de3be3d127051')
+        self.assertEqual(a['current']['source_only_tree'], '715d047f37db8b7658bda688ff4e5961609193f8')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -112,7 +122,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -146,7 +156,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 359)
+        self.assertEqual(len(candidate['files']), 362)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -313,7 +323,7 @@ class ArrayCompositionControls(unittest.TestCase):
             a = copy.deepcopy(self.a)
             raw = (p.REPOSITORY / name).read_bytes() + b'// changed historical tail\n'
             next(row for row in a['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            message = ('composition transition must recover exact slices source' if name in p.SLICES_INSTRUMENTATION_PATHS
+            message = ('unary transition must recover exact composition source' if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source' if name in p.DIVISION_INSTRUMENTATION_PATHS
                        else 'array transition must recover exact historical source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
@@ -391,7 +401,7 @@ class DivisionCompositionControls(unittest.TestCase):
                 p.restore_division_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            message = ('composition transition must recover exact slices source' if name in p.SLICES_INSTRUMENTATION_PATHS
+            message = ('unary transition must recover exact composition source' if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
                 p.restore_division_source(altered, name, raw)
@@ -443,7 +453,7 @@ class SlicesCompositionControls(unittest.TestCase):
                 p.restore_slices_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'composition transition must recover exact slices source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unary transition must recover exact composition source'):
                 p.restore_slices_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -485,7 +495,7 @@ class RecordCompositionControls(unittest.TestCase):
                 p.restore_composition_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'composition transition must recover exact slices source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unary transition must recover exact composition source'):
                 p.restore_composition_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -506,6 +516,48 @@ class RecordCompositionControls(unittest.TestCase):
         for name in ('src/frontend/lexer.rs', 'src/frontend/source.rs', 'src/frontend/project/budget.rs'):
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unapproved composition instrumentation path'):
                 p.restore_composition_source(self.a, name, b'')
+
+
+class UnaryCompositionControls(unittest.TestCase):
+    def setUp(self):
+        self.a = p.authority()
+
+    def test_unary_overlaps_restore_the_exact_composition_predecessor(self):
+        before = p.read(p.REPOSITORY / self.a['current']['composition_source_manifest']['path'])
+        for name in p.UNARY_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes()
+            restored = p.restore_unary_source(self.a, name, raw)
+            self.assertEqual({'path': name, 'bytes': len(restored), 'sha256': p.sha(restored)},
+                             next(row for row in before['files'] if row['path'] == name))
+
+    def test_changed_and_coherently_rehashed_unary_source_rejects(self):
+        for name in p.UNARY_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes() + b'// unapproved unary tail\n'
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'composition current unary identity'):
+                p.restore_unary_source(self.a, name, raw)
+            altered = copy.deepcopy(self.a)
+            next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unary transition must recover exact composition source'):
+                p.restore_unary_source(altered, name, raw)
+
+    def test_unary_patch_and_predecessor_identity_reject_before_transform(self):
+        fields = ('source_binding_runner', 'unary_transition_patch', 'composition_source_manifest')
+        for field in fields:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for key in fields:
+                    relative = self.a['current'][key]['path']
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((p.REPOSITORY / relative).read_bytes() + (b'\n' if key == field else b''))
+                raw = (p.REPOSITORY / 'src/frontend/ast.rs').read_bytes()
+                with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
+                    p.restore_unary_source(self.a, 'src/frontend/ast.rs', raw)
+
+    def test_every_other_unary_overlap_remains_rejected(self):
+        for name in ('src/frontend/lexer.rs', 'src/frontend/source.rs', 'src/frontend/project/budget.rs'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unapproved unary instrumentation path'):
+                p.restore_unary_source(self.a, name, b'')
 
 
 class CheckoutControls(unittest.TestCase):
@@ -531,7 +583,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 143)
+        self.assertEqual(len(bound['compiler_files']), 146)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run all seven unchanged native oracles in one or two isolated processes.
+"""Run all seven native oracles in one or two isolated processes.
 
 Linux/POSIX only, like the real LLVM gate. Default to serial locally. Each child
 keeps its existing command/stack limits, private scratch, corpus and profile
-checks. Never import the oracle modules here: they use preexec_fn internally.
+checks. The boolean oracle selects the explicit checked-unary successor.
+Never import the oracle modules here: they use preexec_fn internally.
 """
 import argparse
 from dataclasses import dataclass
@@ -31,7 +32,8 @@ def build_jobs(scripts, debug, release):
     suites = (
         ("scalar_comparisons", b"scalar comparisons O0", (debug, release)),
         ("native_arithmetic", b"native checked i32 O0", (debug, release)),
-        ("boolean_logic", b"boolean logic O0", (debug, release)),
+        ("boolean_logic", b"boolean logic O0",
+         (debug, release, "--expectation-amendment", "checked-unary-negation-v1")),
         ("native_preview", b"native preview", (release,)),
         ("mutable_locals", b"mutable locals O0", (debug, release)),
         ("while_loops", b"while loops O0", (debug, release)),
