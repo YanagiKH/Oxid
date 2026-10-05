@@ -204,13 +204,193 @@ impl PaidStorage {
     }
 }
 
+/// Independently read initialized rows and backing capacities from completed
+/// private parts. This is neither a typecheck nor a source/ownership witness.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct ResolverInventory {
+    counts: [usize; RETAINED_KINDS],
+    capacities: [usize; KINDS],
+}
+impl ResolverInventory {
+    fn vector<T>(
+        &mut self,
+        kind: Kind,
+        values: &Vec<T>,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let k = kind as usize;
+        if k >= RETAINED_KINDS || WIDTHS[k] != size_of::<T>() {
+            return Err(invalid(at));
+        }
+        work.debit(1, at, "paid resolver inventory vector")?;
+        self.counts[k] = add(self.counts[k], values.len(), at)?;
+        self.capacities[k] = add(self.capacities[k], values.capacity(), at)?;
+        Ok(())
+    }
+}
+fn inventory_value(ty: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
+    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
+        Err(invalid(at))
+    } else {
+        Ok(())
+    }
+}
+/// No copied rows, auxiliary tables, recursion or heap allocation on success.
+/// Charge before every vector/row inspected, and retain only scalar totals.
+pub(super) fn inventory_parts(
+    parts: &ResolvedParts,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<ResolverInventory, Box<Diagnostic>> {
+    let (records, signatures, functions) = parts;
+    let mut inventory = ResolverInventory::default();
+    inventory.vector(Kind::Records, records, work, at)?;
+    inventory.vector(Kind::Signatures, signatures, work, at)?;
+    inventory.vector(Kind::Functions, functions, work, at)?;
+    for record in records {
+        work.debit(1, record.span, "paid resolver inventory row")?;
+        inventory.vector(Kind::Fields, &record.fields, work, record.span)?;
+        for field in &record.fields {
+            work.debit(1, field.span, "paid resolver inventory row")?;
+            inventory_value(&field.ty, field.span)?;
+        }
+    }
+    for signature in signatures {
+        work.debit(1, signature.span, "paid resolver inventory row")?;
+        inventory_value(&signature.result, signature.span)?;
+        inventory.vector(Kind::Parameters, &signature.params, work, signature.span)?;
+        for parameter in &signature.params {
+            work.debit(1, signature.span, "paid resolver inventory row")?;
+            match parameter {
+                ParameterTy::Value(value) => inventory_value(value, signature.span)?,
+                ParameterTy::Reference {
+                    referent: BorrowedTy::Exact(AggregateTy::Enum(_)),
+                    ..
+                } => {
+                    return Err(invalid(signature.span));
+                }
+                ParameterTy::Reference { .. } => (),
+            }
+        }
+    }
+    for function in functions {
+        work.debit(1, function.end, "paid resolver inventory row")?;
+        inventory.vector(Kind::Bindings, &function.bindings, work, function.end)?;
+        inventory.vector(Kind::Expressions, &function.expressions, work, function.end)?;
+        inventory.vector(Kind::Blocks, &function.blocks, work, function.end)?;
+        for binding in &function.bindings {
+            work.debit(1, binding.span, "paid resolver inventory row")?;
+            if let Some(annotation) = &binding.annotation {
+                inventory_value(annotation, binding.span)?;
+            }
+        }
+        for expression in &function.expressions {
+            work.debit(1, expression.span, "paid resolver inventory row")?;
+            match &expression.kind {
+                ExprKind::ConstructEnum { .. } => return Err(invalid(expression.span)),
+                ExprKind::Call { args, .. } => {
+                    inventory.vector(Kind::Arguments, args, work, expression.span)?
+                }
+                ExprKind::StructLiteral { fields, .. } => {
+                    inventory.vector(Kind::FieldInitializers, fields, work, expression.span)?
+                }
+                ExprKind::ArrayLiteral { elements } => {
+                    inventory.vector(Kind::ArrayEntries, elements, work, expression.span)?
+                }
+                _ => (),
+            }
+        }
+        for block in &function.blocks {
+            work.debit(1, block.span, "paid resolver inventory row")?;
+            inventory.vector(Kind::Statements, &block.body, work, block.span)?;
+            for statement in &block.body {
+                work.debit(1, statement.span, "paid resolver inventory row")?;
+                if matches!(statement.kind, StmtKind::Match { .. }) {
+                    return Err(invalid(statement.span));
+                }
+            }
+        }
+    }
+    Ok(inventory)
+}
+impl PaidStorage {
+    /// Reconcile facts read from real vectors, never manufacture them from the
+    /// plan or remaining quotas. This helper is disconnected from source entry.
+    pub(super) fn reconcile(
+        &self,
+        plan: &HirPlan,
+        mut inventory: ResolverInventory,
+        reservation_attempts: usize,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<ResolverStorageObservation, Box<Diagnostic>> {
+        let bounds = limits(plan.counts);
+        let mut retained_bytes = 0usize;
+        let mut scratch_capacity_bytes = 0usize;
+        for k in 0..KINDS {
+            work.debit(1, at, "paid resolver inventory reconcile")?;
+            if k < RETAINED_KINDS {
+                if inventory.counts[k] > bounds[k] || inventory.counts[k] > inventory.capacities[k]
+                {
+                    return Err(failure(
+                        "affected HIR initialized rows exceed admitted capacity",
+                        at,
+                    ));
+                }
+            } else {
+                // Only the actual once-per-function endpoint samples can fill
+                // scratch slots. An inventory caller cannot supply substitutes.
+                if inventory.capacities[k] != 0 {
+                    return Err(invalid(at));
+                }
+                inventory.capacities[k] = self.scratch[k - RETAINED_KINDS];
+            }
+            let capacity = inventory.capacities[k];
+            let consumed = bounds[k]
+                .checked_sub(self.remaining[k])
+                .ok_or_else(|| invalid(at))?;
+            if capacity != self.reserved[k] || capacity > bounds[k] || capacity > consumed {
+                return Err(failure(
+                    "affected HIR actual capacity does not match paid reserves",
+                    at,
+                ));
+            }
+            let bytes = capacity
+                .checked_mul(WIDTHS[k])
+                .ok_or_else(|| failure("affected HIR size overflow", at))?;
+            if k < RETAINED_KINDS {
+                retained_bytes = add(retained_bytes, bytes, at)?;
+            } else {
+                scratch_capacity_bytes = add(scratch_capacity_bytes, bytes, at)?;
+            }
+        }
+        if retained_bytes > plan.resolved || scratch_capacity_bytes > plan.resolver_scratch {
+            return Err(failure(
+                "affected HIR observed payload exceeds prepaid envelope",
+                at,
+            ));
+        }
+        Ok(ResolverStorageObservation {
+            plan: *plan,
+            retained_counts: inventory.counts,
+            capacities: inventory.capacities,
+            retained_bytes,
+            scratch_capacity_bytes,
+            reservation_attempts,
+        })
+    }
+}
+
 /// Fixed observation only. No HIR values, source references or owner can escape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ResolverStorageObservation {
     pub(super) plan: HirPlan,
     pub(super) retained_counts: [usize; RETAINED_KINDS],
     pub(super) capacities: [usize; KINDS],
+    /// Actual retained vector backing payload; excludes named fixed envelopes.
     pub(super) retained_bytes: usize,
+    /// Cumulative actual scratch backing payload, not simultaneous peak bytes.
     pub(super) scratch_capacity_bytes: usize,
     pub(super) reservation_attempts: usize,
 }
@@ -407,6 +587,8 @@ struct FixedCarriers {
     // Shared implementation argument and probe's temporary Some borrow. These
     // are distinct from the policy embedded in each complete Resolver.
     shared_paid_borrows: [Option<&'static mut PaidStorage>; 2],
+    // Source deny_checkpoint_enum and post-resolution inventory_value execute
+    // in disjoint phases and share this named value-guard borrow bank.
     type_guard_borrow: &'static ValueTy,
     counts: [HirCounts; 2],
     quota_arrays: [[usize; KINDS]; 4],
@@ -471,8 +653,61 @@ struct LiteralLookupCarriers {
 pub(super) const fn literal_lookup_carrier_bytes() -> usize {
     size_of::<LiteralLookupCarriers>()
 }
+// The builder, its caller and reconciliation's by-value input are separate
+// named values. Whole fallible returns include their payload exactly once.
+struct InventoryInputs {
+    plan: &'static HirPlan,
+    parts: &'static ResolvedParts,
+    records: &'static Vec<Record>,
+    signatures: &'static Vec<Signature>,
+    functions: &'static Vec<Function>,
+    vector: &'static Vec<Expr>,
+    accumulator: &'static mut ResolverInventory,
+    paid: &'static PaidStorage,
+    work: [&'static WorkMeter; 2],
+    // inventory_parts and its nested vector/value helper have distinct inputs.
+    origins: [Span; 2],
+    kind: Kind,
+}
+// A Vec borrow is not a slice iterator. Price each newly introduced named
+// loop's cursor, complete next result and current borrowed row explicitly.
+// Summing these disjoint loop states is conservative; nesting is at most three.
+struct InventorySliceLoop<T: 'static> {
+    cursor: std::slice::Iter<'static, T>,
+    next: Option<&'static T>,
+    current: &'static T,
+}
+struct InventoryWalkCarriers {
+    records: InventorySliceLoop<Record>,
+    fields: InventorySliceLoop<Field>,
+    signatures: InventorySliceLoop<Signature>,
+    parameters: InventorySliceLoop<ParameterTy>,
+    functions: InventorySliceLoop<Function>,
+    bindings: InventorySliceLoop<Binding>,
+    expressions: InventorySliceLoop<Expr>,
+    blocks: InventorySliceLoop<BodyBlock>,
+    statements: InventorySliceLoop<Stmt>,
+    reconcile_cursor: std::ops::Range<usize>,
+    reconcile_next: Option<usize>,
+    reconcile_current: usize,
+}
+struct InventoryCarriers {
+    inventories: [ResolverInventory; 3],
+    inventory_return: Result<ResolverInventory, Box<Diagnostic>>,
+    reconcile_return: Result<ResolverStorageObservation, Box<Diagnostic>>,
+    observation: ResolverStorageObservation,
+    inputs: InventoryInputs,
+    walk: InventoryWalkCarriers,
+    bounds: [usize; KINDS],
+    byte_subtotals: [usize; 2],
+    arithmetic_returns: [Result<usize, Box<Diagnostic>>; 3],
+    scalar_returns: [Result<(), Box<Diagnostic>>; 3],
+}
+pub(super) const fn inventory_carrier_bytes() -> usize {
+    size_of::<InventoryCarriers>()
+}
 pub(super) const fn fixed_carrier_bytes() -> usize {
-    size_of::<FixedCarriers>()
+    size_of::<FixedCarriers>() + inventory_carrier_bytes()
 }
 pub(super) const fn function_carrier_bytes() -> usize {
     size_of::<FunctionCarriers>()
@@ -481,3 +716,7 @@ pub(super) const fn function_carrier_bytes() -> usize {
 #[cfg(test)]
 #[path = "resolver_storage_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "resolver_inventory_tests.rs"]
+mod inventory_tests;
