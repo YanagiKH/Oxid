@@ -83,6 +83,23 @@ impl ArraySyntaxPolicy {
         }
     }
 }
+/// A private parser candidate only; no production entrypoint accepts this policy.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EnumSyntaxPolicy {
+    Closed,
+    #[cfg(test)]
+    Candidate,
+}
+impl EnumSyntaxPolicy {
+    fn enabled(self) -> bool {
+        match self {
+            Self::Closed => false,
+            #[cfg(test)]
+            Self::Candidate => true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LiteralContext {
     Allowed,
@@ -143,11 +160,58 @@ pub(super) fn parse_counted_with_arrays(
     allocator: &mut Allocator,
     arrays: ArraySyntaxPolicy,
 ) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        arrays,
+        EnumSyntaxPolicy::Closed,
+        &mut enums::SyntaxStorage::default(),
+    )
+}
+
+#[cfg(test)]
+pub(super) fn parse_enum_candidate_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Candidate,
+        storage,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_counted_with_policies(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    arrays: ArraySyntaxPolicy,
+    enums: EnumSyntaxPolicy,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    *storage = enums::SyntaxStorage::default();
     let mut parser = Parser {
         source,
         allocator,
         mode,
         arrays,
+        enums,
+        storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         tokens,
         cursor: 0,
@@ -161,6 +225,7 @@ pub(super) fn parse_counted_with_arrays(
     parser.skip();
     let mut functions = Vec::new();
     let mut records = Vec::new();
+    let mut enumerations = Vec::new();
     let mut modules = Vec::new();
     let mut imports = Vec::new();
     let mut items = Vec::new();
@@ -175,32 +240,47 @@ pub(super) fn parse_counted_with_arrays(
         {
             parser.module().and_then(|module| {
                 let at = module.name;
-                parser
-                    .allocator
-                    .vector(&mut modules, 1, "module declarations")
-                    .and_then(|()| parser.allocator.vector(&mut items, 1, "module items"))
-                    .map_err(|error| {
-                        parser.diagnostic(
-                            "E0400",
-                            "parse",
-                            match error {
-                                ReserveFailure::Overflow => "module syntax count overflow",
-                                ReserveFailure::Allocation => "module syntax allocation failed",
-                            },
-                            Some(at),
-                        )
-                    })?;
+                if parser.enums_enabled() {
+                    parser.candidate_reserve(&mut modules, MAX_NODES, "syntax modules", at)?;
+                    parser.candidate_reserve(&mut items, MAX_NODES, "syntax items", at)?;
+                } else {
+                    parser
+                        .allocator
+                        .vector(&mut modules, 1, "module declarations")
+                        .and_then(|()| parser.allocator.vector(&mut items, 1, "module items"))
+                        .map_err(|error| {
+                            parser.diagnostic(
+                                "E0400",
+                                "parse",
+                                match error {
+                                    ReserveFailure::Overflow => "module syntax count overflow",
+                                    ReserveFailure::Allocation => "module syntax allocation failed",
+                                },
+                                Some(at),
+                            )
+                        })?;
+                }
                 items.push(ItemId::Module(modules.len()));
                 modules.push(module);
                 Ok(())
             })
         } else if mode == SourceMode::ProjectCandidate && parser.peek().kind == Kind::Use {
             parser.import().and_then(|import| {
-                parser
-                    .allocator
-                    .vector(&mut imports, 1, "import declarations")
-                    .and_then(|()| parser.allocator.vector(&mut items, 1, "import items"))
-                    .map_err(|error| parser.project_reserve_error(error, import.span))?;
+                if parser.enums_enabled() {
+                    parser.candidate_reserve(
+                        &mut imports,
+                        MAX_NODES,
+                        "syntax imports",
+                        import.span,
+                    )?;
+                    parser.candidate_reserve(&mut items, MAX_NODES, "syntax items", import.span)?;
+                } else {
+                    parser
+                        .allocator
+                        .vector(&mut imports, 1, "import declarations")
+                        .and_then(|()| parser.allocator.vector(&mut items, 1, "import items"))
+                        .map_err(|error| parser.project_reserve_error(error, import.span))?;
+                }
                 items.push(ItemId::Import(imports.len()));
                 imports.push(import);
                 Ok(())
@@ -208,7 +288,8 @@ pub(super) fn parse_counted_with_arrays(
         } else {
             let public = if mode == SourceMode::ProjectCandidate
                 && parser.peek().kind == Kind::Pub
-                && matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
+                && (matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
+                    || parser.next_enum_keyword("enum"))
             {
                 parser.take(Kind::Pub).map(|token| {
                     parser.project_recovery = true;
@@ -217,26 +298,70 @@ pub(super) fn parse_counted_with_arrays(
             } else {
                 None
             };
-            if mode.owned() && parser.peek().kind == Kind::Struct {
-                parser.record(public).map(|record| {
+            if parser.enum_keyword("enum") {
+                parser.enumeration(public).and_then(|enumeration| {
+                    parser.candidate_reserve(
+                        &mut enumerations,
+                        MAX_NODES,
+                        "enum declarations",
+                        enumeration.name,
+                    )?;
+                    parser.candidate_reserve(
+                        &mut items,
+                        MAX_NODES,
+                        "syntax items",
+                        enumeration.name,
+                    )?;
+                    items.push(ItemId::Enum(enumerations.len()));
+                    enumerations.push(enumeration);
+                    Ok(())
+                })
+            } else if mode.owned() && parser.peek().kind == Kind::Struct {
+                parser.record(public).and_then(|record| {
+                    parser.candidate_reserve(
+                        &mut records,
+                        MAX_NODES,
+                        "syntax records",
+                        record.name,
+                    )?;
+                    parser.candidate_reserve(&mut items, MAX_NODES, "syntax items", record.name)?;
                     items.push(ItemId::Struct(records.len()));
                     records.push(record);
+                    Ok(())
                 })
             } else {
-                parser.function(public).map(|function| {
+                parser.function(public).and_then(|function| {
+                    parser.candidate_reserve(
+                        &mut functions,
+                        MAX_NODES,
+                        "syntax functions",
+                        function.name,
+                    )?;
+                    parser.candidate_reserve(
+                        &mut items,
+                        MAX_NODES,
+                        "syntax items",
+                        function.name,
+                    )?;
                     items.push(ItemId::Function(functions.len()));
                     functions.push(function);
+                    Ok(())
                 })
             }
         };
         if let Err(error) = result {
+            let resource_failure = parser.enums_enabled() && error.code == "E0400";
             diagnostics.push(*error);
+            if resource_failure {
+                break;
+            }
             // Recovery must consume the failing keyword before synchronizing.
             if parser.cursor == before {
                 parser.bump();
             }
             while !matches!(parser.peek().kind, Kind::Fn | Kind::Eof)
                 && !(mode.owned() && parser.peek().kind == Kind::Struct)
+                && !parser.enum_keyword("enum")
                 && !(mode == SourceMode::ModuleCandidate
                     && matches!(parser.peek().kind, Kind::Mod | Kind::Pub))
                 && !(mode == SourceMode::ProjectCandidate
@@ -247,6 +372,10 @@ pub(super) fn parse_counted_with_arrays(
             }
         }
     }
+    if parser.enums_enabled() {
+        parser.storage.scratch_capacity -= parser.heights.capacity() * std::mem::size_of::<usize>();
+    }
+    *storage = parser.storage;
     if diagnostics.is_empty() {
         Ok((
             Program::parsed(
@@ -255,7 +384,7 @@ pub(super) fn parse_counted_with_arrays(
                 functions,
                 parser.expressions,
                 records,
-                Vec::new(), // Enum source grammar remains closed in this checkpoint.
+                enumerations,
                 items,
                 modules,
                 parser.paths,
@@ -273,6 +402,8 @@ struct Parser<'a> {
     allocator: &'a mut Allocator,
     mode: SourceMode,
     arrays: ArraySyntaxPolicy,
+    enums: EnumSyntaxPolicy,
+    storage: enums::SyntaxStorage,
     // Sticky only after ordinary parsing enters project grammar. Recovery
     // scans never set it; successful source flavor comes from the AST instead.
     project_recovery: bool,
@@ -400,9 +531,21 @@ impl Parser<'_> {
             .nodes
             .checked_add(1)
             .ok_or_else(|| self.project_reserve_error(ReserveFailure::Overflow, segment))?;
-        self.allocator
-            .vector(&mut self.path_segments, 1, "absolute path segments")
-            .map_err(|error| self.project_reserve_error(error, segment))?;
+        if self.enums_enabled() {
+            enums::reserve(
+                self.allocator,
+                &mut self.storage,
+                &mut self.path_segments,
+                MAX_NODES,
+                "qualified path segments",
+                false,
+                segment,
+            )?;
+        } else {
+            self.allocator
+                .vector(&mut self.path_segments, 1, "absolute path segments")
+                .map_err(|error| self.project_reserve_error(error, segment))?;
+        }
         self.path_segments.push(segment);
         *count = next;
         Ok(())
@@ -433,9 +576,21 @@ impl Parser<'_> {
         let span = self.source.span(first.start, end);
         let segment_len = u8::try_from(segment_len)
             .map_err(|_| self.project_reserve_error(ReserveFailure::Overflow, span))?;
-        self.allocator
-            .vector(&mut self.paths, 1, "absolute paths")
-            .map_err(|error| self.project_reserve_error(error, span))?;
+        if self.enums_enabled() {
+            enums::reserve(
+                self.allocator,
+                &mut self.storage,
+                &mut self.paths,
+                MAX_NODES,
+                "qualified paths",
+                false,
+                span,
+            )?;
+        } else {
+            self.allocator
+                .vector(&mut self.paths, 1, "absolute paths")
+                .map_err(|error| self.project_reserve_error(error, span))?;
+        }
         let id = PathId(self.paths.len());
         self.paths.push(AbsolutePath {
             span,
@@ -610,10 +765,9 @@ impl Parser<'_> {
                 self.node()?;
                 let name = self.expect(Kind::Ident, "expected parameter name")?.span;
                 self.expect(Kind::Colon, "parameter requires an explicit type")?;
-                params.push(Param {
-                    name,
-                    ty: self.parameter_ty()?,
-                });
+                let ty = self.parameter_ty()?;
+                self.candidate_reserve(&mut params, MAX_PARAMS, "syntax parameters", name)?;
+                params.push(Param { name, ty });
                 if self.take(Kind::Comma).is_none() {
                     break;
                 }
@@ -648,6 +802,7 @@ impl Parser<'_> {
         // recursive drop chain, including for malformed syntax.
         let start = self.expect(Kind::LBrace, opening_message)?.span;
         let id = BodyBlockId(blocks.len());
+        self.candidate_reserve(blocks, 2 * MAX_NODES + 1, "syntax blocks", start)?;
         blocks.push(BodyBlock {
             body: Vec::new(),
             span: start,
@@ -655,7 +810,9 @@ impl Parser<'_> {
         });
         let mut body = Vec::new();
         while !matches!(self.peek().kind, Kind::RBrace | Kind::Eof) {
-            body.push(self.statement(blocks, depth + 1)?);
+            let statement = self.statement(blocks, depth + 1)?;
+            self.candidate_reserve(&mut body, MAX_NODES, "syntax statements", statement.span)?;
+            body.push(statement);
         }
         let end = self
             .expect(Kind::RBrace, "expected `}` before end of file")?
@@ -741,6 +898,7 @@ impl Parser<'_> {
             let name = self.expect(Kind::Ident, "expected field name")?.span;
             self.expect(Kind::Colon, "field requires an explicit value type")?;
             let ty = self.ty_with_paths(true)?;
+            self.candidate_reserve(&mut fields, MAX_NODES, "syntax record fields", name)?;
             fields.push(StructField {
                 public,
                 name,
@@ -831,6 +989,9 @@ impl Parser<'_> {
     ) -> Result<Stmt, Box<Diagnostic>> {
         self.node()?;
         let start = self.peek().span.start;
+        if self.enum_keyword("match") {
+            return self.match_statement(blocks, depth, start);
+        }
         if self.take(Kind::While).is_some() {
             let condition = self.expression(0, LiteralContext::ConditionRoot)?;
             if depth >= MAX_BLOCK_NESTING {
@@ -1128,11 +1289,24 @@ impl Parser<'_> {
         }
     }
     fn unary(&mut self, depth: usize, context: LiteralContext) -> Result<ExprId, Box<Diagnostic>> {
+        let mut prefixes = Vec::new();
+        let result = self.unary_with_prefixes(depth, context, &mut prefixes);
+        if self.enums_enabled() {
+            self.storage.scratch_capacity -=
+                prefixes.capacity() * std::mem::size_of::<super::source::Span>();
+        }
+        result
+    }
+    fn unary_with_prefixes(
+        &mut self,
+        depth: usize,
+        context: LiteralContext,
+        prefixes: &mut Vec<super::source::Span>,
+    ) -> Result<ExprId, Box<Diagnostic>> {
         // Keep minus + decimal on the historical signed-literal path, including
         // intervening trivia, so MIN conversion, origins and fuel stay unchanged.
         // The prefix stack retains only spans; validated one-byte spelling tells
         // us which operator to construct when unwinding without larger scratch.
-        let mut prefixes = Vec::new();
         while self.peek().kind == Kind::Not
             || (self.peek().kind == Kind::Minus
                 && self.tokens[self.cursor + 1..]
@@ -1149,10 +1323,22 @@ impl Parser<'_> {
                 ));
             }
             self.node()?;
+            if self.enums_enabled() {
+                let at = self.peek().span;
+                enums::reserve(
+                    self.allocator,
+                    &mut self.storage,
+                    prefixes,
+                    MAX_NESTING,
+                    "syntax unary prefixes",
+                    true,
+                    at,
+                )?;
+            }
             prefixes.push(self.bump().span);
         }
         let mut operand = self.primary(depth + prefixes.len(), context)?;
-        for operator_span in prefixes.into_iter().rev() {
+        while let Some(operator_span) = prefixes.pop() {
             let span = self
                 .source
                 .span(operator_span.start, self.expressions[operand.0].span.end);
@@ -1248,6 +1434,26 @@ impl Parser<'_> {
                 Some(span),
             ));
         }
+        if self.enums_enabled() {
+            enums::reserve(
+                self.allocator,
+                &mut self.storage,
+                &mut self.expressions,
+                MAX_NODES,
+                "syntax expressions",
+                false,
+                span,
+            )?;
+            enums::reserve(
+                self.allocator,
+                &mut self.storage,
+                &mut self.heights,
+                MAX_NODES,
+                "syntax expression heights",
+                true,
+                span,
+            )?;
+        }
         let id = ExprId(self.expressions.len());
         self.expressions.push(Expr { kind, span });
         self.heights.push(height);
@@ -1305,7 +1511,15 @@ impl Parser<'_> {
                 ExprKind::Number { digits, negative }
             }
             Some(PrimaryStart::Name) => {
-                let (path, path_span) = self.item_path("expected item name", true)?;
+                let qualified = if self.enum_qualified_ahead() {
+                    Some(self.enum_path()?)
+                } else {
+                    None
+                };
+                let (path, path_span) = match qualified {
+                    Some(id) => (ItemPath::Absolute(id), self.paths[id.0].span),
+                    None => self.item_path("expected item name", true)?,
+                };
                 end = path_span.end;
                 if self.take(Kind::LParen).is_some() {
                     let mut args = Vec::new();
@@ -1319,14 +1533,28 @@ impl Parser<'_> {
                                     Some(self.peek().span),
                                 ));
                             }
-                            args.push(self.argument(depth + 1)?);
+                            let argument = self.argument(depth + 1)?;
+                            let label = if qualified.is_some() {
+                                "qualified value arguments"
+                            } else {
+                                "syntax call arguments"
+                            };
+                            self.candidate_reserve(&mut args, MAX_PARAMS, label, token.span)?;
+                            args.push(argument);
                             if self.take(Kind::Comma).is_none() {
                                 break;
                             }
                         }
                     }
                     end = self.expect(Kind::RParen, "call requires `)`")?.span.end;
-                    ExprKind::Call { callee: path, args }
+                    if let Some(path) = qualified {
+                        ExprKind::QualifiedValue {
+                            path,
+                            args: Some(args),
+                        }
+                    } else {
+                        ExprKind::Call { callee: path, args }
+                    }
                 } else if self.arrays_enabled()
                     && matches!(path, ItemPath::Unqualified(_))
                     && self.array_punctuation("[")
@@ -1421,6 +1649,14 @@ impl Parser<'_> {
                     && context == LiteralContext::Allowed
                     && self.take(Kind::LBrace).is_some()
                 {
+                    if qualified.is_some_and(|id| self.paths[id.0].root == PathRoot::LocalType) {
+                        return Err(self.diagnostic(
+                            "E0100",
+                            "parse",
+                            "enum variants do not use record literal syntax",
+                            Some(path_span),
+                        ));
+                    }
                     let mut fields = Vec::new();
                     while self.peek().kind != Kind::RBrace {
                         self.node()?;
@@ -1429,6 +1665,12 @@ impl Parser<'_> {
                             .span;
                         self.expect(Kind::Colon, "literal field requires `:` and a value")?;
                         let value = self.expression(depth + 1, LiteralContext::Allowed)?;
+                        self.candidate_reserve(
+                            &mut fields,
+                            MAX_NODES,
+                            "syntax literal fields",
+                            name,
+                        )?;
                         fields.push(FieldInit {
                             name,
                             value,
@@ -1445,6 +1687,8 @@ impl Parser<'_> {
                         record: path,
                         fields,
                     }
+                } else if let Some(path) = qualified {
+                    ExprKind::QualifiedValue { path, args: None }
                 } else if matches!(path, ItemPath::Absolute(_)) {
                     return Err(self.diagnostic(
                         "E0101",
@@ -1483,10 +1727,15 @@ impl Parser<'_> {
 
 #[path = "parser/arrays.rs"]
 mod arrays;
+#[path = "parser/enums.rs"]
+mod enums;
 
 #[cfg(test)]
 #[path = "parser/array_syntax_tests.rs"]
 mod array_syntax_tests;
+#[cfg(test)]
+#[path = "parser/enum_syntax_tests.rs"]
+mod enum_syntax_tests;
 
 #[cfg(test)]
 pub(super) fn parse_with_lowered_node_limit(

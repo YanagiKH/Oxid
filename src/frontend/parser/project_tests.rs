@@ -549,6 +549,8 @@ fn checked_segment_count_overflow_precedes_all_admission_and_reserves() {
         allocator: &mut allocator,
         mode: SourceMode::ProjectCandidate,
         arrays: ArraySyntaxPolicy::Closed,
+        enums: EnumSyntaxPolicy::Closed,
+        storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         tokens: super::super::lexer::lex(file).unwrap(),
         cursor: 0,

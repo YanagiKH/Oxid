@@ -178,11 +178,23 @@ impl Parser<'_> {
                     Some(at),
                 ));
             }
-            // Preflight count/bytes and reserve before parsing the child.
-            self.allocator
-                .vector(&mut elements, 1, "array literal elements")
-                .map_err(|error| self.array_reserve_error(error, at))?;
-            elements.push(self.expression(depth + 1, LiteralContext::Allowed)?);
+            if self.enums_enabled() {
+                // The candidate's child node/depth gate precedes retained growth.
+                let element = self.expression(depth + 1, LiteralContext::Allowed)?;
+                self.candidate_reserve(
+                    &mut elements,
+                    MAX_ARRAY_ELEMENTS,
+                    "array literal elements",
+                    at,
+                )?;
+                elements.push(element);
+            } else {
+                // Preserve the existing array reservation order and observer ordinals.
+                self.allocator
+                    .vector(&mut elements, 1, "array literal elements")
+                    .map_err(|error| self.array_reserve_error(error, at))?;
+                elements.push(self.expression(depth + 1, LiteralContext::Allowed)?);
+            }
             if self.array_punctuation("]") {
                 break;
             }
