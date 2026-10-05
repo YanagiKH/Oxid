@@ -433,7 +433,7 @@ fn c3a_inventory_complete_accumulator_and_return_carriers_are_measured() {
     assert!(inventory_carrier_bytes() >= members);
     assert_eq!(
         fixed_carrier_bytes(),
-        size_of::<FixedCarriers>() + inventory_carrier_bytes()
+        size_of::<FixedCarriers>() + inventory_carrier_bytes() + probe_carrier_bytes()
     );
 }
 
@@ -474,5 +474,23 @@ fn c3a_inventory_typed_loop_cursors_and_next_returns_are_separate_from_vector_bo
         size_of::<InventoryWalkCarriers>(),
         size_of::<InventoryInputs>(),
         inventory_carrier_bytes()
+    );
+}
+
+#[test]
+fn c3a_inventory_probe_inputs_and_checked_delta_carriers_are_measured_before_entry() {
+    let members = size_of::<&DeclarationIndex<'_>>()
+        + size_of::<&WorkMeter>()
+        + size_of::<&mut Allocator>()
+        + size_of::<Span>()
+        + 3 * size_of::<usize>()
+        + size_of::<Option<usize>>();
+    assert!(probe_carrier_bytes() >= members);
+    println!(
+        "C3A_OBSERVATION_PROBE_LAYOUT inputs_and_counters={} align={} final_return={} fixed={}",
+        probe_carrier_bytes(),
+        align_of::<ProbeCarriers>(),
+        size_of::<Result<Option<ResolverStorageObservation>, Vec<Diagnostic>>>(),
+        fixed_carrier_bytes()
     );
 }

@@ -706,8 +706,24 @@ struct InventoryCarriers {
 pub(super) const fn inventory_carrier_bytes() -> usize {
     size_of::<InventoryCarriers>()
 }
+// Inputs and checked counter state of the upcoming test-only observation
+// entry. Plan/parts/inventory/reconcile/final Result carriers are charged in
+// their existing complete envelopes; direct matching avoids new map_err slots.
+struct ProbeCarriers {
+    index: &'static DeclarationIndex<'static>,
+    work: &'static WorkMeter,
+    allocator: &'static mut Allocator,
+    origin: Span,
+    attempts_before: usize,
+    attempts_after: usize,
+    delta_option: Option<usize>,
+    delta: usize,
+}
+pub(super) const fn probe_carrier_bytes() -> usize {
+    size_of::<ProbeCarriers>()
+}
 pub(super) const fn fixed_carrier_bytes() -> usize {
-    size_of::<FixedCarriers>() + inventory_carrier_bytes()
+    size_of::<FixedCarriers>() + inventory_carrier_bytes() + probe_carrier_bytes()
 }
 pub(super) const fn function_carrier_bytes() -> usize {
     size_of::<FunctionCarriers>()
