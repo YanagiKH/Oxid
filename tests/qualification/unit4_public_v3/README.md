@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact185-file combined compiler manifest, the reviewed186-file
+`authority.py` pins the exact199-file unary compiler manifest, the reviewed200-file
 lifecycle overlay map and the current additive patch successor. The successor
 changes only the parser hunk context to include its new array-policy parameter;
 reversing that context edit reproduces the exact historical additive patch.
@@ -139,3 +139,8 @@ establish execution results.
 
 The current ordinary and lifecycle maps contain 188 and 189 inputs respectively.
 The added slice test modules introduce no new bin-test include dependencies.
+
+The checked-unary successor advances the source and observer file identities only.
+The additive lifecycle patch and its eight-path scope remain unchanged, as do all
+frozen public contracts and location-amendment identities. Both current and
+observer builds require fresh receipts for the admitted unary sources.

@@ -1,5 +1,6 @@
 """Independent current contract data controls; historical facts remain immutable."""
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -29,6 +30,11 @@ class CurrentCompositionContractTests(unittest.TestCase):
         self.assertIn('no candidate semantic output used', result.stdout)
 
     def test_extractor_uses_explicit_clean_checkout_and_fresh_output(self):
+        spec = importlib.util.spec_from_file_location(
+            'resource_source_binding', REPO / 'tests/fixtures/typed_project_source_binding/run.py')
+        binding = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(binding)
+        captured = binding.preflight(REPO)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); checkout = root / 'checkout'; output = root / 'probe'
             subprocess.run(['git', 'clone', '--quiet', '--shared', str(REPO), str(checkout)], check=True)
@@ -41,7 +47,24 @@ class CurrentCompositionContractTests(unittest.TestCase):
                              (RESOURCE / 'declaration-layout-probe.rs').read_bytes())
             inputs = json.loads((output / 'declaration-layout-inputs.json').read_bytes())
             original = json.loads((RESOURCE / 'declaration-layout-inputs.json').read_bytes())
-            self.assertEqual(inputs['files'], original['files'])
+            # Whole-file provenance changes with checked unary negation; the
+            # selected declaration shapes and independently derived probe do
+            # not. Bind BOTH source views without retargeting historical facts.
+            expected = json.loads(json.dumps(original['files']))
+            for row in expected:
+                path = row['path']
+                self.assertEqual(hashlib.sha256(captured['composition_inputs'][path]).hexdigest(),
+                                 row['sha256'], path)
+                row['sha256'] = hashlib.sha256(captured['inputs'][path]).hexdigest()
+                if path == 'src/frontend/oir/owned/source/hir.rs':
+                    for declaration in row['declarations']:
+                        if declaration['name'] in ('AccessBase', 'Projection'):
+                            declaration['line'] += 4
+            self.assertEqual(inputs['files'], expected)
+            self.assertEqual([new['path'] for old, new in zip(original['files'], expected)
+                              if old['sha256'] != new['sha256']],
+                             ['src/frontend/hir.rs', 'src/frontend/oir/mod.rs',
+                              'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/owned/source/hir.rs'])
             self.assertEqual(inputs['requested_ref'], 'HEAD')
             self.assertEqual(inputs['tree'], subprocess.check_output(
                 ['git', '-C', str(checkout), 'rev-parse', 'HEAD^{tree}'], text=True).strip())
@@ -51,6 +74,7 @@ class CurrentCompositionContractTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('output already exists', result.stderr)
             self.assertEqual(before, {p.name: p.read_bytes() for p in output.iterdir()})
+        binding.assert_unchanged(REPO, captured)
 
     def test_extractor_missing_repository_or_source_object_fails_clearly(self):
         with tempfile.TemporaryDirectory() as directory:

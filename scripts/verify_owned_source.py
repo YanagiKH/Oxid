@@ -32,6 +32,9 @@ CLI_AMENDMENT_SHA256 = "568ec18e2869c9519ba34c3e1adde910dd52698efa9dda071bb3833e
 COMPOSITION_CLI_AMENDMENT_ID = "owned-record-composition-v1"
 COMPOSITION_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_record_composition_cli_v1.json")
 COMPOSITION_CLI_AMENDMENT_SHA256 = 'f4e64492da636285f006790bbecc7ea4c5989acf46dd10cc4f558c8d8bfc3420'
+UNARY_CLI_AMENDMENT_ID = "checked-unary-negation-v1"
+UNARY_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_checked_unary_negation_cli_v1.json")
+UNARY_CLI_AMENDMENT_SHA256 = "7dbd02df148782fa32edf313d219861429ec8e72d21a1cb1fee4663bd9ea01d8"
 
 
 @dataclass(frozen=True)
@@ -124,9 +127,10 @@ def load_cli_amendment(selection, directory, *, mode):
     """Load the sealed current-CLI-only contract without rewriting the oracle.
 
     Each version pins its complete data document, including historical facts
-    and effective results. The composition successor preserves both division
-    rows and adds two named cases. It cannot widen candidate/raw-IR or
-    native-budget expectations, and is never selected implicitly.
+    and effective results. Successors preserve all predecessor rows: composition
+    adds two named cases, and checked unary negation adds two more. They cannot
+    widen candidate/raw-IR or native-budget expectations, and are never selected
+    implicitly.
     """
     if selection is None: return None
     if mode != "cli": raise ValueError("CLI amendment is only valid with explicit --mode cli")
@@ -134,6 +138,8 @@ def load_cli_amendment(selection, directory, *, mode):
         path, expected_sha = CLI_AMENDMENT_PATH, CLI_AMENDMENT_SHA256
     elif selection == COMPOSITION_CLI_AMENDMENT_ID:
         path, expected_sha = COMPOSITION_CLI_AMENDMENT_PATH, COMPOSITION_CLI_AMENDMENT_SHA256
+    elif selection == UNARY_CLI_AMENDMENT_ID:
+        path, expected_sha = UNARY_CLI_AMENDMENT_PATH, UNARY_CLI_AMENDMENT_SHA256
     else:
         raise ValueError("unknown current CLI amendment")
     encoded = path.read_bytes()
@@ -1351,7 +1357,7 @@ def main(argv=None):
     parser.add_argument("--frozen", type=Path)
     parser.add_argument("--candidate-observations", type=Path)
     parser.add_argument("--collection-manifest", type=Path)
-    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID),
+    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID, UNARY_CLI_AMENDMENT_ID),
                         help="explicit current-CLI expectations; requires --mode cli and preserves the frozen model")
     parser.add_argument("--jobs", type=int, choices=(1, 2), default=1)
     parser.add_argument("--timeout", type=float, default=1800)

@@ -60,6 +60,25 @@ class CurrentParserDiagnosticAmendmentTests(unittest.TestCase):
         self.assertEqual(self.proof, p.read(p.FROZEN / 'derivation-proof.json'))
         self.assertEqual(self.proof['semantic_predicate_handlers_unchanged'], 22)
 
+    def test_unary_adds_no_semantic_amendment_to_frozen_parser_sources(self):
+        # A raw-byte superset screen proves these sources contain no unary minus;
+        # even comments and invalid syntax are included, except arrow spelling.
+        self.assertEqual(len(self.contract['cases']), 248)
+        arrows = 0
+        for case in self.contract['cases']:
+            row = case['source']
+            raw = base64.b64decode(row['base64'], validate=True)
+            with self.subTest(case=case['id']):
+                self.assertEqual(len(raw), row['bytes'])
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), row['sha256'])
+                self.assertNotIn(b'-', raw.replace(b'->', b''))
+            arrows += raw.count(b'->')
+        self.assertEqual(arrows, 237)
+        effective, receipt = p.current_parser_contract(self.a, self.effective, self.receipt)
+        expected, expected_receipt = amendment.apply(self.effective, self.receipt)
+        self.assertEqual(effective, expected)
+        self.assertEqual(receipt, expected_receipt)
+
     def test_all_diagnostic_spans_are_derived_from_frozen_utf8_source(self):
         for row in self.data['cases']:
             source = base64.b64decode(row['source']['base64'], validate=True)

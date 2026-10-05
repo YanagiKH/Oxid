@@ -82,22 +82,22 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its 126 reviewed source/input changes include five explicitly admitted observer
+Its 144 reviewed source/input changes include five explicitly admitted observer
 instrumentation overlaps: ast.rs, lexer.rs, parser.rs, project/budget.rs and source.rs.
 The AST and parser also overlap control instrumentation. Each current composition
 is pinned and preserves the historical transforms; unlisted overlaps reject.
-Historical283/current348 base maps, historical286/current354 derived maps and
-historical113/current139 compiler rosters remain separate identity domains.
-The source-binding transition separately verifies 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
+Historical283/current362 base maps, historical286/current365 derived maps and
+historical113/current146 compiler rosters remain separate identity domains.
+The source-binding transition separately verifies 199 unary inputs, 196 composition inputs, 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
 predecessor inputs and 117 archived inputs. Sessions explicitly deny historical
-source equivalence and bind the current188 manifest, reviewed source checkpoint
+source equivalence and bind the current199 manifest, reviewed source checkpoint
 and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 354-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 351-member base map. Compact omission is limited to the
-other 353 derived-tree members per role and four binaries, for 710 omitted identities.
+belong to the 365-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 362-member base map. Compact omission is limited to the
+other 364 derived-tree members per role and four binaries, for 732 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.

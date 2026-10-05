@@ -11,9 +11,9 @@
   ],
   "files": [
     {
-      "bytes": 17070,
+      "bytes": 18261,
       "path": "tests/fixtures/typed_project_source_binding/README.md",
-      "sha256": "f5e70d078f13c23b4a4cd7dc3d241cddff509ebfc88867722c0be258643aa7e3"
+      "sha256": "00870dccae6315855df1769dd0fafd6fc1722d70a1d173952178b088dca61d9c"
     },
     {
       "bytes": 9916,
@@ -41,14 +41,19 @@
       "sha256": "f387deb3d73643cf51109e1aee7a59717c12cfe1ac70cd3a6e14f1aafa01ee8a"
     },
     {
+      "bytes": 37404,
+      "path": "tests/fixtures/typed_project_source_binding/composition-source.json",
+      "sha256": "eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16"
+    },
+    {
       "bytes": 238025,
       "path": "tests/fixtures/typed_project_source_binding/composition-transition.patch",
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 37404,
+      "bytes": 38090,
       "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-      "sha256": "eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16"
+      "sha256": "d9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220"
     },
     {
       "bytes": 29723,
@@ -81,9 +86,9 @@
       "sha256": "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4"
     },
     {
-      "bytes": 3174,
+      "bytes": 3647,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "2f5a1dd075c5c79c3dd5c5cc7090a103b01c33c60cc58b009b10a21e7bbbbd72"
+      "sha256": "6d9dfd7318515c39499c549f8a4c123fbdf6dbc97e08144496021ba5d9dee5e8"
     },
     {
       "bytes": 22314,
@@ -91,9 +96,9 @@
       "sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8"
     },
     {
-      "bytes": 86806,
+      "bytes": 90989,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "6eac4ca4e8d6c656cdaf7c65bb0d9fefab9adc6d185d79916eb8d34e2d5f4fb9"
+      "sha256": "d30e31d8e2fc7e092af8da0df8a6a1057fc82e8707d6b2c92c192b0f0f4955a6"
     },
     {
       "bytes": 55961,
@@ -114,6 +119,16 @@
       "bytes": 605300,
       "path": "tests/fixtures/typed_project_source_binding/source-transition.patch",
       "sha256": "63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18"
+    },
+    {
+      "bytes": 36993,
+      "path": "tests/fixtures/typed_project_source_binding/unary-authority.json",
+      "sha256": "ed2d16dd5b24a55005e399630f3ad7402017fca9e8615b98d232d273ec418a31"
+    },
+    {
+      "bytes": 72327,
+      "path": "tests/fixtures/typed_project_source_binding/unary-transition.patch",
+      "sha256": "4a1e4bfa577ff02bb3c5320eb1994b281831929692acd347daf243b15ae31796"
     },
     {
       "bytes": 7664,
@@ -796,19 +811,19 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 7904,
+      "bytes": 8437,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "eeab9286ed620ced1071efd7a23193c59575f99fa71b6261e94404a1ddbcdd88"
+      "sha256": "4e505a7ef06d56b78d8f85ccd780ebbe20e80ba10dadb4dc59ec499f04e4ece7"
     },
     {
-      "bytes": 244657,
+      "bytes": 249239,
       "path": "tests/qualification/unit4_parser_current/authority.json",
-      "sha256": "8f47bd47a7a1dd3df5e0acfa5e44b6c890da0a89b7303f54ed38e21f7364bc1e"
+      "sha256": "42ed09a66e317c9cd6f255585ad8660eb80e8d52efb22d3538e8966b2d95643f"
     },
     {
-      "bytes": 95171,
+      "bytes": 97881,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "f2dcaf05109fa17e41cd2cdb2ab20785044b75861fe4b9507368ff071c09a40d"
+      "sha256": "8c02fd4322500b9d44a73f376524152ed9369955a94faf25409442479c5b86a5"
     },
     {
       "bytes": 28188,
@@ -821,24 +836,24 @@
       "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
     },
     {
-      "bytes": 39275,
+      "bytes": 42387,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "1c433e2d0b1107de9733453c5da9288fe7b64307e0e9a7086ab1b074339b1ebf"
+      "sha256": "7fcfc319ee96d52548caa56c16daf1f086b9bece5da56135f9d0ec9a40b9691d"
     },
     {
-      "bytes": 6700,
+      "bytes": 7762,
       "path": "tests/qualification/unit4_parser_current/test_record_composition_amendment.py",
-      "sha256": "0e53c1d41b0af58a13ab89db9667825df14d357ac36d8cf7ef9f30891ac3d8c9"
+      "sha256": "c067719616a53eec2462baf1d1fdc3ea293c2b14c99875d9bf78f518c9936cd0"
     },
     {
-      "bytes": 8434,
+      "bytes": 8744,
       "path": "tests/qualification/unit4_public_v3/README.md",
-      "sha256": "178cd691f0a4404c7e8afadd64abc6ac2e42334d5b4469a72062e20fd952e747"
+      "sha256": "13d9db593f03f7dd45d14c038f8cf48a74bfe572aae7c3b67df12e6c4c457b25"
     },
     {
       "bytes": 667,
       "path": "tests/qualification/unit4_public_v3/authority.py",
-      "sha256": "2b6f333da642ebeeaeabf2f67a5414407ecbae1cbcb3c58befd2826362a231f0"
+      "sha256": "798e8de015c38f1d08ec9560579b1a8816ffc33e4dd47601d22efa476d69cad4"
     },
     {
       "bytes": 7004,
@@ -893,7 +908,7 @@
     {
       "bytes": 18540,
       "path": "tests/qualification/unit4_public_v3/runtime.py",
-      "sha256": "a646e49f31e0b1b2f14ba9dfabb2219842f07b39f4a2c43bd29d81f462b44d6a"
+      "sha256": "9d4621496381498e6c77b3bc2ce9a9d5fe9da9c426c4fb7ef267965da48a06b6"
     },
     {
       "bytes": 10861,
