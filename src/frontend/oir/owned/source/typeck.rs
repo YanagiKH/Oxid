@@ -562,6 +562,9 @@ struct BorrowedTypeObservationCarriers {
     context: ProgramPaid<'static, 'static>,
     context_borrow: &'static mut ProgramPaid<'static, 'static>,
     context_option: Option<&'static mut ProgramPaid<'static, 'static>>,
+    // Caller-created inventory argument, distinct from owned Bodies and the
+    // callee's BodyInventoryCarriers.bodies input.
+    inventory_bodies_borrow: &'static Vec<TypedBody>,
     inventory: storage::TypedInventory,
     observed_borrow: &'static storage::TypedObserved,
     inventory_borrow: &'static storage::TypedInventory,
@@ -4049,7 +4052,7 @@ fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
         projection_sampling_control_bytes(),
         size_of::<ProjectionSamplingControls>()
     );
-    roles!(BorrowedTypeObservationCarriers, 28;
+    roles!(BorrowedTypeObservationCarriers, 29;
         program: &'static ResolvedOwnedProgram<'static>, source: &'static super::hir_budget::HirPlan,
         allocator: &'static mut Allocator, work_return: &'static WorkMeter, work: &'static WorkMeter,
         sources: SourceOwner<'static>, origin: Span, admission_return: SourceAdmission,
@@ -4058,6 +4061,7 @@ fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
         observed: storage::TypedObserved, context: ProgramPaid<'static, 'static>,
         context_borrow: &'static mut ProgramPaid<'static, 'static>,
         context_option: Option<&'static mut ProgramPaid<'static, 'static>>,
+        inventory_bodies_borrow: &'static Vec<TypedBody>,
         inventory: storage::TypedInventory, observed_borrow: &'static storage::TypedObserved,
         inventory_borrow: &'static storage::TypedInventory, attempts_after: usize,
         delta_option: Option<usize>, delta: usize,
