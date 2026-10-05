@@ -697,6 +697,286 @@ impl TypePlan<'_> {
     }
 }
 
+// Stage A observation primitives only. No source caller/context borrows this
+// state yet; no fixed successful source observation is exposed. These helpers
+// read actual Vec properties, never quota/request counts posing as capacities.
+pub(super) const SCRATCH_KINDS: [Kind; 6] = [
+    Kind::BindingStage,
+    Kind::ExpressionStage,
+    Kind::FlowStage,
+    Kind::TypeFrames,
+    Kind::CallActuals,
+    Kind::RecordPresence,
+];
+pub(super) const RETAINED_KINDS: [Kind; 8] = [
+    Kind::Bodies,
+    Kind::ExpressionProjections,
+    Kind::StatementRows,
+    Kind::StatementProjections,
+    Kind::BorrowProjections,
+    Kind::BindingFinal,
+    Kind::FlowFinal,
+    Kind::ExpressionFinal,
+];
+pub(super) fn scratch_index(kind: Kind) -> Option<usize> {
+    match kind {
+        Kind::BindingStage => Some(0),
+        Kind::ExpressionStage => Some(1),
+        Kind::FlowStage => Some(2),
+        Kind::TypeFrames => Some(3),
+        Kind::CallActuals => Some(4),
+        Kind::RecordPresence => Some(5),
+        _ => None,
+    }
+}
+pub(super) fn retained_index(kind: Kind) -> Option<usize> {
+    match kind {
+        Kind::Bodies => Some(0),
+        Kind::ExpressionProjections => Some(1),
+        Kind::StatementRows => Some(2),
+        Kind::StatementProjections => Some(3),
+        Kind::BorrowProjections => Some(4),
+        Kind::BindingFinal => Some(5),
+        Kind::FlowFinal => Some(6),
+        Kind::ExpressionFinal => Some(7),
+        _ => None,
+    }
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct TypedObserved {
+    pub(super) materialized_vectors: [usize; KINDS],
+    pub(super) materialized_capacity: [usize; KINDS],
+    pub(super) scratch_endpoints: [usize; 6],
+    pub(super) scratch_endpoint_capacity: [usize; 6],
+    pub(super) path_vectors: usize,
+    pub(super) path_capacity_fields: usize,
+}
+impl TypedObserved {
+    pub(super) fn new() -> Self {
+        Self {
+            materialized_vectors: [0; KINDS],
+            materialized_capacity: [0; KINDS],
+            scratch_endpoints: [0; 6],
+            scratch_endpoint_capacity: [0; 6],
+            path_vectors: 0,
+            path_capacity_fields: 0,
+        }
+    }
+    /// O(1), allocation-free on success; no work debit is inserted into the
+    /// historical reserve/semantic ordering. Final independent scans are metered.
+    pub(super) fn materialized<T>(
+        &mut self,
+        kind: Kind,
+        values: &Vec<T>,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let k = kind as usize;
+        let len = values.len();
+        let capacity = values.capacity();
+        let width = size_of::<T>();
+        let filled = matches!(
+            kind,
+            Kind::BindingStage
+                | Kind::ExpressionStage
+                | Kind::FlowStage
+                | Kind::ExpressionProjections
+                | Kind::StatementProjections
+                | Kind::RecordPresence
+                | Kind::BindingFinal
+                | Kind::FlowFinal
+                | Kind::ExpressionFinal
+        );
+        if width != WIDTHS[k]
+            || len > capacity
+            || (filled && len != capacity)
+            || (!filled && len != 0)
+        {
+            return Err(invalid(at));
+        }
+        let vectors = self.materialized_vectors[k]
+            .checked_add(1)
+            .ok_or_else(|| failure("typed observation vector count overflow", at))?;
+        let capacities = self.materialized_capacity[k]
+            .checked_add(capacity)
+            .ok_or_else(|| failure("typed observation capacity sum overflow", at))?;
+        // Both independent candidates are checked before either mutation.
+        self.materialized_vectors[k] = vectors;
+        self.materialized_capacity[k] = capacities;
+        Ok(())
+    }
+    /// Actual scratch capacity is read again at its successful lifetime endpoint.
+    /// Empty TypeFrames is normal; the other scratch vectors are fully filled.
+    pub(super) fn scratch_endpoint<T>(
+        &mut self,
+        kind: Kind,
+        values: &Vec<T>,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let k = kind as usize;
+        let slot = scratch_index(kind).ok_or_else(|| invalid(at))?;
+        let len = values.len();
+        let capacity = values.capacity();
+        let width = size_of::<T>();
+        let empty = kind == Kind::TypeFrames;
+        if width != WIDTHS[k]
+            || len > capacity
+            || (empty && len != 0)
+            || (!empty && len != capacity)
+        {
+            return Err(invalid(at));
+        }
+        let vectors = self.scratch_endpoints[slot]
+            .checked_add(1)
+            .ok_or_else(|| failure("typed observation endpoint count overflow", at))?;
+        let capacities = self.scratch_endpoint_capacity[slot]
+            .checked_add(capacity)
+            .ok_or_else(|| failure("typed observation endpoint capacity overflow", at))?;
+        self.scratch_endpoints[slot] = vectors;
+        self.scratch_endpoint_capacity[slot] = capacities;
+        Ok(())
+    }
+    /// Called immediately after path reserve, before field walking: len==0 is
+    /// required here. The later retained inventory must enforce initialized
+    /// len==capacity, but must not reuse this fresh-allocation shape check.
+    pub(super) fn path(&mut self, values: &Vec<FieldId>, at: Span) -> Result<(), Box<Diagnostic>> {
+        let len = values.len();
+        let capacity = values.capacity();
+        if len != 0 || !(1..=64).contains(&capacity) {
+            return Err(invalid(at));
+        }
+        let vectors = self
+            .path_vectors
+            .checked_add(1)
+            .ok_or_else(|| failure("typed observation path count overflow", at))?;
+        let capacities = self
+            .path_capacity_fields
+            .checked_add(capacity)
+            .ok_or_else(|| failure("typed observation path capacity overflow", at))?;
+        self.path_vectors = vectors;
+        self.path_capacity_fields = capacities;
+        Ok(())
+    }
+}
+
+impl PaidStorage {
+    /// Read-only successful completion, not authority to repeat any reservation.
+    /// Each actual kind is visited under the same unchanged work ceiling.
+    fn complete(&self, work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
+        for k in 0..KINDS {
+            work.debit(1, at, "typed storage completion")?;
+            if self.slots[k] != 0 || self.requests[k] != 0 {
+                return Err(invalid(at));
+            }
+        }
+        Ok(())
+    }
+}
+impl FunctionQuota {
+    pub(super) fn complete(&self, work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
+        self.storage.complete(work, at)
+    }
+}
+impl TypePlan<'_> {
+    pub(super) fn counts(&self) -> &TypeCounts {
+        &self.counts
+    }
+    pub(super) fn complete(&self, work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
+        work.debit(1, at, "typed plan completion")?;
+        if self.next_function != self.functions.len()
+            || self.counts.functions != self.functions.len()
+        {
+            return Err(invalid(at));
+        }
+        self.storage.complete(work, at)
+    }
+}
+
+// Complete Stage A helper surfaces, still disconnected and UNPRICED. No owned
+// sampler receiver in a future source helper or context field is invented here.
+struct ObservedConstructionCarriers {
+    constructed: TypedObserved,
+    returned: TypedObserved,
+}
+struct KindMappingCarriers {
+    kind: Kind,
+    returned: Option<usize>,
+    caller: Option<usize>,
+    selected: Result<usize, Box<Diagnostic>>,
+    slot: usize,
+}
+struct SampleCarriers<T: 'static> {
+    observed: &'static mut TypedObserved,
+    values: &'static Vec<T>,
+    kind: Kind,
+    origin: Span,
+    k: usize,
+    len: usize,
+    capacity: usize,
+    width: usize,
+    shape: bool,
+    additions: [Option<usize>; 2],
+    addition_returns: [Result<usize, Box<Diagnostic>>; 2],
+    vectors: usize,
+    capacities: usize,
+    returned: Result<(), Box<Diagnostic>>,
+    caller_result: Result<(), Box<Diagnostic>>,
+}
+struct EndpointSampleCarriers<T: 'static> {
+    sample: SampleCarriers<T>,
+    mapping: KindMappingCarriers,
+}
+struct PathSampleCarriers {
+    observed: &'static mut TypedObserved,
+    values: &'static Vec<FieldId>,
+    origin: Span,
+    len: usize,
+    capacity: usize,
+    range: std::ops::RangeInclusive<usize>,
+    range_input: &'static usize,
+    range_return: bool,
+    additions: [Option<usize>; 2],
+    addition_returns: [Result<usize, Box<Diagnostic>>; 2],
+    vectors: usize,
+    capacities: usize,
+    returned: Result<(), Box<Diagnostic>>,
+    caller_result: Result<(), Box<Diagnostic>>,
+}
+struct CompletionCarriers {
+    storage: &'static PaidStorage,
+    work: &'static WorkMeter,
+    origin: Span,
+    kinds: std::ops::Range<usize>,
+    next: Option<usize>,
+    kind: usize,
+    debit: Result<(), Box<Diagnostic>>,
+    returned: Result<(), Box<Diagnostic>>,
+}
+struct QuotaCompletionCarriers {
+    quota: &'static FunctionQuota,
+    work: &'static WorkMeter,
+    origin: Span,
+    storage_input: &'static PaidStorage,
+    returned: Result<(), Box<Diagnostic>>,
+    caller_result: Result<(), Box<Diagnostic>>,
+}
+struct PlanCompletionCarriers {
+    plan: &'static TypePlan<'static>,
+    work: &'static WorkMeter,
+    origin: Span,
+    debit: Result<(), Box<Diagnostic>>,
+    next_function: usize,
+    function_len: usize,
+    counts_functions: usize,
+    storage_input: &'static PaidStorage,
+    returned: Result<(), Box<Diagnostic>>,
+    caller_result: Result<(), Box<Diagnostic>>,
+}
+struct CountsAccessCarriers {
+    plan: &'static TypePlan<'static>,
+    returned: &'static TypeCounts,
+    caller: &'static TypeCounts,
+}
+
 // Complete NEW type_storage named controls, plus explicitly selected existing
 // Capacity transports. Unchanged Capacity/Allocator internals are not modeled as
 // a complete all-call-chain envelope. These are not instantiated compiler frames

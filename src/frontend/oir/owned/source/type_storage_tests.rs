@@ -1970,3 +1970,446 @@ fn c3_t1_metered_projection_reserve_failure_keeps_spent_work_and_cleans_buffers(
         }
     }
 }
+
+#[test]
+fn c3_t1_sample_kind_mappings_are_disjoint_complete_and_noncontiguous() {
+    let mut covered = [false; KINDS];
+    for (slot, kind) in SCRATCH_KINDS.iter().copied().enumerate() {
+        assert!(!covered[kind as usize]);
+        covered[kind as usize] = true;
+        assert_eq!(scratch_index(kind), Some(slot));
+        assert_eq!(retained_index(kind), None);
+    }
+    for (slot, kind) in RETAINED_KINDS.iter().copied().enumerate() {
+        assert!(!covered[kind as usize]);
+        covered[kind as usize] = true;
+        assert_eq!(retained_index(kind), Some(slot));
+        assert_eq!(scratch_index(kind), None);
+    }
+    assert_eq!(covered, [true; KINDS]);
+    assert!(retained_index(Kind::Bodies).is_some());
+    assert!(scratch_index(Kind::BindingStage).is_some());
+    assert!(retained_index(Kind::ExpressionProjections).is_some());
+    assert!(scratch_index(Kind::TypeFrames).is_some());
+    assert!(retained_index(Kind::ExpressionFinal).is_some());
+}
+
+#[test]
+fn c3_t1_empty_actual_vectors_are_sample_events_for_all_fourteen_kinds() {
+    let mut observed = TypedObserved::new();
+    macro_rules! sample {
+        ($kind:ident, $ty:ty) => {{
+            let values = Vec::<$ty>::new();
+            let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+                observed.materialized(Kind::$kind, &values, origin())
+            });
+            result.unwrap();
+            assert_eq!(measured, (0, 0, 0));
+        }};
+    }
+    sample!(Bodies, TypedBody);
+    sample!(BindingStage, Option<ParameterTy>);
+    sample!(ExpressionStage, Option<ValueTy>);
+    sample!(FlowStage, Option<FlowSummary>);
+    sample!(ExpressionProjections, Option<Projection>);
+    sample!(StatementRows, Vec<Option<Projection>>);
+    sample!(StatementProjections, Option<Projection>);
+    sample!(BorrowProjections, BorrowProjection);
+    sample!(TypeFrames, TypeFrame);
+    sample!(CallActuals, (ParameterTy, Span));
+    sample!(RecordPresence, bool);
+    sample!(BindingFinal, ParameterTy);
+    sample!(FlowFinal, FlowSummary);
+    sample!(ExpressionFinal, ValueTy);
+    assert_eq!(observed.materialized_vectors, [1; KINDS]);
+    assert_eq!(observed.materialized_capacity, [0; KINDS]);
+    assert_eq!(observed.scratch_endpoints, [0; 6]);
+    assert_eq!(
+        (observed.path_vectors, observed.path_capacity_fields),
+        (0, 0)
+    );
+}
+
+#[test]
+fn c3_t1_samples_read_actual_nonzero_capacities_and_scratch_endpoints() {
+    let mut observed = TypedObserved::new();
+    let at = origin();
+    let bindings = vec![None::<ParameterTy>; 2];
+    let expressions = vec![None::<ValueTy>; 3];
+    let flows = vec![None::<FlowSummary>; 4];
+    let frames = Vec::<TypeFrame>::with_capacity(5);
+    let mut actuals = Vec::<(ParameterTy, Span)>::with_capacity(6);
+    let presence = vec![false; 7];
+    macro_rules! both {
+        ($kind:ident, $values:expr) => {{
+            observed.materialized(Kind::$kind, &$values, at).unwrap();
+            observed
+                .scratch_endpoint(Kind::$kind, &$values, at)
+                .unwrap();
+        }};
+    }
+    both!(BindingStage, bindings);
+    both!(ExpressionStage, expressions);
+    both!(FlowStage, flows);
+    both!(TypeFrames, frames);
+    observed
+        .materialized(Kind::CallActuals, &actuals, at)
+        .unwrap();
+    for _ in 0..6 {
+        actuals.push((ParameterTy::Value(ValueTy::Scalar(Ty::Unit)), at));
+    }
+    observed
+        .scratch_endpoint(Kind::CallActuals, &actuals, at)
+        .unwrap();
+    both!(RecordPresence, presence);
+    assert_eq!(observed.scratch_endpoints, [1; 6]);
+    assert_eq!(observed.scratch_endpoint_capacity, [2, 3, 4, 5, 6, 7]);
+    for (slot, kind) in SCRATCH_KINDS.iter().copied().enumerate() {
+        assert_eq!(observed.materialized_vectors[kind as usize], 1);
+        assert_eq!(
+            observed.materialized_capacity[kind as usize],
+            observed.scratch_endpoint_capacity[slot]
+        );
+    }
+    let sparse = Vec::<BorrowProjection>::with_capacity(9);
+    observed
+        .materialized(Kind::BorrowProjections, &sparse, at)
+        .unwrap();
+    assert_eq!(
+        observed.materialized_capacity[Kind::BorrowProjections as usize],
+        sparse.capacity()
+    );
+    assert_eq!(sparse.len(), 0);
+}
+
+type SampleSnapshot = (
+    [usize; KINDS],
+    [usize; KINDS],
+    [usize; 6],
+    [usize; 6],
+    usize,
+    usize,
+);
+fn sample_snapshot(value: &TypedObserved) -> SampleSnapshot {
+    (
+        value.materialized_vectors,
+        value.materialized_capacity,
+        value.scratch_endpoints,
+        value.scratch_endpoint_capacity,
+        value.path_vectors,
+        value.path_capacity_fields,
+    )
+}
+
+#[test]
+fn c3_t1_sample_wrong_width_shape_kind_and_overflows_leave_all_counters_unchanged() {
+    let at = origin();
+    let mut observed = TypedObserved::new();
+    let full = vec![None::<ValueTy>; 1];
+    let sparse_stage = Vec::<Option<ValueTy>>::with_capacity(1);
+    let filled_actuals = vec![(ParameterTy::Value(ValueTy::Scalar(Ty::Unit)), at)];
+    let empty_actuals = Vec::<(ParameterTy, Span)>::with_capacity(1);
+    let before = sample_snapshot(&observed);
+    assert_eq!(
+        observed
+            .materialized(Kind::BindingStage, &vec![0u8], at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(
+        observed
+            .materialized(Kind::ExpressionStage, &sparse_stage, at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(
+        observed
+            .materialized(Kind::CallActuals, &filled_actuals, at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(
+        observed
+            .scratch_endpoint(Kind::CallActuals, &empty_actuals, at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(
+        observed
+            .scratch_endpoint(Kind::ExpressionFinal, &Vec::<ValueTy>::new(), at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+    let k = Kind::ExpressionStage as usize;
+    observed.materialized_vectors[k] = usize::MAX;
+    let before = sample_snapshot(&observed);
+    assert_eq!(
+        observed
+            .materialized(Kind::ExpressionStage, &full, at)
+            .unwrap_err()
+            .code,
+        "E0400"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+    observed.materialized_vectors[k] = 0;
+    observed.materialized_capacity[k] = usize::MAX;
+    let before = sample_snapshot(&observed);
+    assert_eq!(
+        observed
+            .materialized(Kind::ExpressionStage, &full, at)
+            .unwrap_err()
+            .code,
+        "E0400"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+    observed.scratch_endpoint_capacity[1] = usize::MAX;
+    let before = sample_snapshot(&observed);
+    assert_eq!(
+        observed
+            .scratch_endpoint(Kind::ExpressionStage, &full, at)
+            .unwrap_err()
+            .code,
+        "E0400"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+}
+
+#[test]
+fn c3_t1_path_sample_accepts_fresh_empty_reserved_paths_not_initialized_paths() {
+    let at = origin();
+    let mut observed = TypedObserved::new();
+    for capacity in [1, 2, 64] {
+        let path = Vec::<FieldId>::with_capacity(capacity);
+        let (result, measured) =
+            super::super::reviewer_source::integration_measured(|| observed.path(&path, at));
+        result.unwrap();
+        assert_eq!(measured, (0, 0, 0));
+    }
+    assert_eq!(
+        (observed.path_vectors, observed.path_capacity_fields),
+        (3, 67)
+    );
+    for path in [
+        Vec::new(),
+        Vec::with_capacity(65),
+        vec![FieldId {
+            record: RecordId(0),
+            index: 0,
+        }],
+    ] {
+        let before = sample_snapshot(&observed);
+        assert_eq!(observed.path(&path, at).unwrap_err().code, "E0500");
+        assert_eq!(sample_snapshot(&observed), before);
+    }
+    observed.path_capacity_fields = usize::MAX;
+    let before = sample_snapshot(&observed);
+    assert_eq!(
+        observed.path(&Vec::with_capacity(1), at).unwrap_err().code,
+        "E0400"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+}
+
+#[test]
+fn c3_t1_quota_and_plan_completion_are_read_only_metered_rights_checks() {
+    let at = origin();
+    let functions = [plain_function(0)];
+    let signatures = [plain_signature()];
+    let source = source_bounds(plain_counts(1));
+    let mut plan = prepare(
+        &[],
+        &signatures,
+        &functions,
+        &source,
+        &WorkMeter::default(),
+        at,
+    )
+    .unwrap();
+    assert!(std::ptr::eq(plan.counts(), &plan.counts));
+    let before = (
+        plan.storage.slots,
+        plan.storage.requests,
+        plan.next_function,
+    );
+    assert_eq!(
+        plan.complete(&WorkMeter::default(), at).unwrap_err().code,
+        "E0500"
+    );
+    assert_eq!(
+        (
+            plan.storage.slots,
+            plan.storage.requests,
+            plan.next_function
+        ),
+        before
+    );
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(12).unwrap();
+    let bodies = plan.reserve_bodies(&mut allocator, at).unwrap();
+    let mut quota = plan.partition_next(&WorkMeter::default(), at).unwrap();
+    let before = (quota.storage.slots, quota.storage.requests);
+    let incomplete_work = WorkMeter::default();
+    assert_eq!(
+        quota.complete(&incomplete_work, at).unwrap_err().code,
+        "E0500"
+    );
+    // Bodies has no local right; zero-slot BindingStage still owes one request.
+    assert_eq!(incomplete_work.used(), 2);
+    assert_eq!((quota.storage.slots, quota.storage.requests), before);
+    macro_rules! consume {
+        ($kind:ident, $ty:ty, $slots:expr) => {
+            drop(
+                quota
+                    .storage
+                    .reserve::<$ty>(&mut allocator, Kind::$kind, $slots, $slots, at)
+                    .unwrap(),
+            );
+        };
+    }
+    consume!(BindingStage, Option<ParameterTy>, 0);
+    consume!(ExpressionStage, Option<ValueTy>, 1);
+    consume!(FlowStage, Option<FlowSummary>, 1);
+    consume!(ExpressionProjections, Option<Projection>, 1);
+    consume!(StatementRows, Vec<Option<Projection>>, 1);
+    consume!(StatementProjections, Option<Projection>, 1);
+    consume!(BorrowProjections, BorrowProjection, 0);
+    consume!(TypeFrames, TypeFrame, 11);
+    consume!(BindingFinal, ParameterTy, 0);
+    consume!(FlowFinal, FlowSummary, 1);
+    consume!(ExpressionFinal, ValueTy, 1);
+    let before = (quota.storage.slots, quota.storage.requests);
+    assert_eq!(before, ([0; KINDS], [0; KINDS]));
+    for limit in 0..KINDS as u64 {
+        let work = WorkMeter::new(limit);
+        assert_eq!(quota.complete(&work, at).unwrap_err().code, "E0400");
+        assert_eq!(work.used(), limit);
+        assert_eq!((quota.storage.slots, quota.storage.requests), before);
+    }
+    let work = WorkMeter::new(KINDS as u64);
+    let (result, measured) =
+        super::super::reviewer_source::integration_measured(|| quota.complete(&work, at));
+    result.unwrap();
+    assert_eq!(measured, (0, 0, 0));
+    assert_eq!(work.used(), KINDS as u64);
+    let before_plan = (
+        plan.storage.slots,
+        plan.storage.requests,
+        plan.next_function,
+    );
+    let work = WorkMeter::new(KINDS as u64);
+    assert_eq!(plan.complete(&work, at).unwrap_err().code, "E0400");
+    assert_eq!(
+        (
+            plan.storage.slots,
+            plan.storage.requests,
+            plan.next_function
+        ),
+        before_plan
+    );
+    let work = WorkMeter::new(KINDS as u64 + 1);
+    plan.complete(&work, at).unwrap();
+    assert_eq!(work.used(), KINDS as u64 + 1);
+    assert_eq!(allocator.attempts, 12);
+    drop(bodies);
+    // Completion proves exhausted rights only; this test never types a body or
+    // constructs a source/paid checker context from its synthetic T0 fixtures.
+}
+
+#[test]
+fn c3_t1_observation_primitive_carriers_are_unpriced_and_t0_shapes_unchanged() {
+    macro_rules! layout {
+        ($($ty:ty),* $(,)?) => { $(
+            println!("C3_T1_OBSERVATION_PRIMITIVE_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
+        )* };
+    }
+    layout!(
+        TypedObserved,
+        ObservedConstructionCarriers,
+        KindMappingCarriers,
+        PathSampleCarriers,
+        CompletionCarriers,
+        QuotaCompletionCarriers,
+        PlanCompletionCarriers,
+        CountsAccessCarriers
+    );
+    macro_rules! samples {
+        ($($ty:ty),* $(,)?) => { $(layout!(SampleCarriers<$ty>);)* };
+    }
+    samples!(
+        TypedBody,
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    layout!(
+        EndpointSampleCarriers<Option<ParameterTy>>,
+        EndpointSampleCarriers<Option<ValueTy>>,
+        EndpointSampleCarriers<Option<FlowSummary>>,
+        EndpointSampleCarriers<TypeFrame>,
+        EndpointSampleCarriers<(ParameterTy, Span)>,
+        EndpointSampleCarriers<bool>
+    );
+    assert_eq!(
+        size_of::<TypedObserved>(),
+        (2 * KINDS + 2 * 6 + 2) * size_of::<usize>()
+    );
+    assert_eq!(size_of::<PaidStorage>(), 2 * KINDS * size_of::<usize>());
+    assert_eq!(
+        size_of::<FunctionQuota>(),
+        size_of::<usize>() + size_of::<TypeCounts>() + size_of::<PaidStorage>()
+    );
+    assert_eq!(
+        size_of::<TypePlan<'_>>(),
+        size_of::<TypeCounts>()
+            + size_of::<PaidStorage>()
+            + size_of::<&[Record]>()
+            + size_of::<&[Function]>()
+            + size_of::<usize>()
+    );
+}
+
+#[test]
+fn c3_t1_zero_function_plan_still_requires_its_one_empty_bodies_request() {
+    let at = origin();
+    let source = source_bounds(TypeCounts::default());
+    let mut plan = prepare(&[], &[], &[], &source, &WorkMeter::default(), at).unwrap();
+    let before = (
+        plan.storage.slots,
+        plan.storage.requests,
+        plan.next_function,
+    );
+    let work = WorkMeter::default();
+    assert_eq!(plan.complete(&work, at).unwrap_err().code, "E0500");
+    assert_eq!(work.used(), 2);
+    assert_eq!(
+        (
+            plan.storage.slots,
+            plan.storage.requests,
+            plan.next_function
+        ),
+        before
+    );
+    let mut allocator = Allocator::default();
+    let bodies = plan.reserve_bodies(&mut allocator, at).unwrap();
+    assert_eq!(
+        (bodies.len(), bodies.capacity(), allocator.attempts),
+        (0, 0, 1)
+    );
+    plan.complete(&WorkMeter::new(KINDS as u64 + 1), at)
+        .unwrap();
+}

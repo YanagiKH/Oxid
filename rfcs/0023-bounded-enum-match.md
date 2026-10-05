@@ -80,8 +80,12 @@ internal, not scalar source values. The checked variant table determines payload
 type; a caller-supplied tag/type/offset is never authority. Sum layout is constant
 even for nullary-only enums, avoiding representation changes as variants evolve.
 
-Whole transfers first validate the tag and active payload, then write only the
-tag and active payload and transition ownership. Explicit Discard likewise
+Whole transfers first validate the incoming value's tag and active payload, then
+write only the tag and active payload and transition ownership. Replace may
+overwrite an available or moved mutable destination without reading its old tag,
+payload or inactive bytes; it does not implicitly Discard the overwritten value.
+This permits reinitialization after a consuming match without a runtime sidecar.
+Explicit Discard likewise
 validates the available value before consuming it. StorageEnd and frame teardown
 end slot lifetimes without exposing or transferring their values: they are
 payload-free and never inspect tags or payload bytes of uninitialized, moved or
