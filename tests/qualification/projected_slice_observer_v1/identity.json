@@ -1,0 +1,214 @@
+{
+  "additions": [
+    "src/frontend/oir/owned/source/array_typing_observer.rs",
+    "src/frontend/oir/owned/unit3_raw_owned.rs",
+    "src/frontend/oir/unit3_raw_scalar.rs",
+    "src/frontend/unit3_observer.rs"
+  ],
+  "derived": {
+    "src/frontend/declaration_index/resource.rs": {
+      "bytes": 13430,
+      "sha256": "b8cc717f2863924e796316c96084c5133b93e22883ea9fc0e304f27feb86a59e"
+    },
+    "src/frontend/mod.rs": {
+      "bytes": 1083,
+      "sha256": "dcebc5a5c11a90523e86fc41225a7358d4a3242d002b05bca2e407bb4427197a"
+    },
+    "src/frontend/oir/execute.rs": {
+      "bytes": 20751,
+      "sha256": "5855e31bab5dd0fdeeb7342f29a85748bb79b8800a8a884b87c28657c532dfb4"
+    },
+    "src/frontend/oir/mod.rs": {
+      "bytes": 10318,
+      "sha256": "f2c2653cb8193318e61fb796448d5e3ee8bb80370a1f7bd83de31ddd4f64295f"
+    },
+    "src/frontend/oir/native.rs": {
+      "bytes": 63000,
+      "sha256": "43ca2afd5cf6459889856ac011203ee6b1108f791b95339eb5229c3414f4ea82"
+    },
+    "src/frontend/oir/owned/array_observe.rs": {
+      "bytes": 16504,
+      "sha256": "2a42af5b87d738630de34cf392ede82d4a8c0ad0ae0ce51deb658dc5fa9a8d85"
+    },
+    "src/frontend/oir/owned/execute.rs": {
+      "bytes": 97457,
+      "sha256": "5437b1cb679c0246dcc3abf60758066ae47ca577c761421fab0a2ec4791a5c35"
+    },
+    "src/frontend/oir/owned/mod.rs": {
+      "bytes": 10624,
+      "sha256": "89d1472bcda43be541c6b6617f0c1909b90af26705e16f454206c760a2a819ef"
+    },
+    "src/frontend/oir/owned/native.rs": {
+      "bytes": 103034,
+      "sha256": "86f5897aaed30e2de06bd519d94df300be7d44345a26a126164265c66c35b7a6"
+    },
+    "src/frontend/oir/owned/source/array_typing_observer.rs": {
+      "bytes": 38898,
+      "sha256": "3165ac68b070cec77f36175adf09fa998ee751622c8e33fd074b41c2534b5218"
+    },
+    "src/frontend/oir/owned/source/association.rs": {
+      "bytes": 12729,
+      "sha256": "0af2f67eaa41b0e67105950683320b44d14eeeee0b07f617d8ad04deee286706"
+    },
+    "src/frontend/oir/owned/source/mod.rs": {
+      "bytes": 904,
+      "sha256": "03579dda483dd1c29eb1c875a390e362fa1a102ddf036c3b7138892f2d54218c"
+    },
+    "src/frontend/oir/owned/unit3_raw_owned.rs": {
+      "bytes": 11239,
+      "sha256": "6a8cff97d7e26fe69767105a7d767c2b550c96661b938e0587966821858197e0"
+    },
+    "src/frontend/oir/source/association.rs": {
+      "bytes": 8979,
+      "sha256": "8447d809533a5d1a3bd8910eb4aa01695d5d6c66690df03e131c7991da016d7e"
+    },
+    "src/frontend/oir/source/sealed.rs": {
+      "bytes": 7500,
+      "sha256": "672c776f4b75940c04ad6dfdaa989999ee2c9a0eb2fc18670f7ee22e86ba14d8"
+    },
+    "src/frontend/oir/unit3_raw_scalar.rs": {
+      "bytes": 3345,
+      "sha256": "235fb7964b083141da0c000f70930792fb2a13ff0d391a2ef8393739fdba008e"
+    },
+    "src/frontend/project.rs": {
+      "bytes": 35861,
+      "sha256": "3dd4af8d361083599bd80599225017f2b2748687a8d662b6504bedbe9eef6166"
+    },
+    "src/frontend/project/budget.rs": {
+      "bytes": 8151,
+      "sha256": "0040fa45e97a4d45c6e5d8cafcb6a39e23e2c704ddd915fbd618e098c727503f"
+    },
+    "src/frontend/unit3_observer.rs": {
+      "bytes": 12578,
+      "sha256": "37af826c9a21a72aa895ad6568d24b018939f55b6377f724d81ec32eed361985"
+    }
+  },
+  "originals": {
+    "src/frontend/declaration_index/resource.rs": {
+      "bytes": 13343,
+      "sha256": "5f9201347edfba22a57f0020c61ebcf8080fda0249fab0322b0dfb35c9139e9f"
+    },
+    "src/frontend/mod.rs": {
+      "bytes": 387,
+      "sha256": "da20f3e1d112eeb5fbf0403bdd9950da301eed73895e565f1804f0dfc219ab88"
+    },
+    "src/frontend/oir/execute.rs": {
+      "bytes": 19103,
+      "sha256": "d97e8351d688877896d9920919743d8d5d8a7a04332a3c7890944cb012638579"
+    },
+    "src/frontend/oir/mod.rs": {
+      "bytes": 10282,
+      "sha256": "2c536a7dada6181367166a43838845fa34561dc552a8887affc388caf6a256bf"
+    },
+    "src/frontend/oir/native.rs": {
+      "bytes": 62906,
+      "sha256": "9481098c04b2e18b95e10ca89e86d9807ffe228dd3b59939651622d9520b509b"
+    },
+    "src/frontend/oir/owned/array_observe.rs": {
+      "bytes": 16256,
+      "sha256": "59289c38e1e89d28fc5563e643fcaab12586c39ce4c48f46d3d7dcaa0a1137af"
+    },
+    "src/frontend/oir/owned/execute.rs": {
+      "bytes": 87468,
+      "sha256": "4d49b8490e1074369d5b8d2c845f8b9ece6c4d495c7721e777f66d9f952cc648"
+    },
+    "src/frontend/oir/owned/mod.rs": {
+      "bytes": 10589,
+      "sha256": "1e5ae076181e6d94ba3f87b528e61189d96e497d7967c401d5c3c6b7cf1cb088"
+    },
+    "src/frontend/oir/owned/native.rs": {
+      "bytes": 102944,
+      "sha256": "86972ba6bca2da8c51b4c43488ee4b8bae6d5719dd792d8bff713f508e1ead08"
+    },
+    "src/frontend/oir/owned/source/array_typing_observer.rs": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/frontend/oir/owned/source/association.rs": {
+      "bytes": 11816,
+      "sha256": "274509c636a38c48f8b98cbebbccbfeb55d4abd349139cac8e3df44d4cf73944"
+    },
+    "src/frontend/oir/owned/source/mod.rs": {
+      "bytes": 863,
+      "sha256": "52f0edcf649a081072e774d3b98d891afab778bd169d9bffeed981dbc04f077d"
+    },
+    "src/frontend/oir/owned/unit3_raw_owned.rs": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/frontend/oir/source/association.rs": {
+      "bytes": 8191,
+      "sha256": "f5c4e13421ab43f8b6cde28c2d718303c8b7700cfa1dbf3bd6e7bd5a8a787e7e"
+    },
+    "src/frontend/oir/source/sealed.rs": {
+      "bytes": 7427,
+      "sha256": "b18fe96214f67aae59b5b291090db491851d0d3ab2428b39082f4010cd0c3c27"
+    },
+    "src/frontend/oir/unit3_raw_scalar.rs": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/frontend/project.rs": {
+      "bytes": 35585,
+      "sha256": "7931b70180c72e99488709bd8d05cf673dd32d29c4091883e608a03a91d18f85"
+    },
+    "src/frontend/project/budget.rs": {
+      "bytes": 7740,
+      "sha256": "b4bfc05194f785cb9af42d6d1dcc1b4d847259befd54abd585e41eccece5524b"
+    },
+    "src/frontend/unit3_observer.rs": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "patches": {
+    "derive.patch": {
+      "bytes": 112839,
+      "sha256": "e1c7cc0f5a4c5b6be64110a4a4f9b4234b5706e7fa6b649f0d547c36979f55d3"
+    },
+    "reverse.patch": {
+      "bytes": 111642,
+      "sha256": "208415c0ccc7bfe3d45177fcb32d82656924055847357b6cb2d1bf31c3ddc44a"
+    }
+  },
+  "paths": [
+    "src/frontend/declaration_index/resource.rs",
+    "src/frontend/mod.rs",
+    "src/frontend/oir/execute.rs",
+    "src/frontend/oir/mod.rs",
+    "src/frontend/oir/native.rs",
+    "src/frontend/oir/owned/array_observe.rs",
+    "src/frontend/oir/owned/execute.rs",
+    "src/frontend/oir/owned/mod.rs",
+    "src/frontend/oir/owned/native.rs",
+    "src/frontend/oir/owned/source/array_typing_observer.rs",
+    "src/frontend/oir/owned/source/association.rs",
+    "src/frontend/oir/owned/source/mod.rs",
+    "src/frontend/oir/owned/unit3_raw_owned.rs",
+    "src/frontend/oir/source/association.rs",
+    "src/frontend/oir/source/sealed.rs",
+    "src/frontend/oir/unit3_raw_scalar.rs",
+    "src/frontend/project.rs",
+    "src/frontend/project/budget.rs",
+    "src/frontend/unit3_observer.rs"
+  ],
+  "predecessor_packages": {
+    "tests/qualification/record_composition_current/package-manifest.json": {
+      "bytes": 3372,
+      "sha256": "31bf4b08efe03b52095bbc854d655746747e307c4ef7806ad2937d656c9eb302"
+    },
+    "tests/qualification/record_composition_current_runtime_view_v1/package-manifest.json": {
+      "bytes": 1789,
+      "sha256": "cdc4bd11777e10e0afea8456a1b71df456d44a82d45e86a4d1d5c7959b10125b"
+    }
+  },
+  "schema": "oxid-projected-current-observer-derivation-v1",
+  "scope": "Exact current test-only source observers and preserved predecessor controls; no semantic or resource pass from preparation.",
+  "source_binding": {
+    "bytes": 38636,
+    "sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304"
+  },
+  "source_head": "052ad52ac876c01b91701132cffb466689b24d01",
+  "source_tree": "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50",
+  "status": "PREPARED_NOT_EXECUTED"
+}

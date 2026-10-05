@@ -153,10 +153,57 @@ def borrowed_slot_reviewer(previous, *, reverse=False):
     return current
 
 
+# The two historical loans borrow their complete owner: an empty projection
+# preserves that identity without changing the frozen reviewer or its assertions.
+PROJECTED_LOAN_COMPATIBILITY = {
+    "adapter": "empty-loan-projection-compatibility-v1",
+    "input_module_sha256": "234a2bf5cd68e01b0f4252ffe68a3700cdf9e9f8087f51c29e68daba6269adac",
+    "current_module_sha256": "3a2181252e10d3e9a18c836583dbf70765d25f60d0ce9c9749d42682d81d2241",
+    "replacement_count": 2,
+    "projection_identity": "empty root projection"
+}
+
+PROJECTED_LOAN_REPLACEMENTS = (
+    ("""            authority: AccessBase::Owner(OwnerPlaceId(0)),
+            kind: BorrowKind::Exclusive,""",
+     """            authority: AccessBase::Owner(OwnerPlaceId(0)),
+            projection: Vec::new(),
+            kind: BorrowKind::Exclusive,"""),
+    ("""        authority: AccessBase::Owner(OwnerPlaceId(0)),
+        kind,""",
+     """        authority: AccessBase::Owner(OwnerPlaceId(0)),
+        projection: Vec::new(),
+        kind,"""),
+)
+
+
+def projected_loan_reviewer(previous, *, reverse=False):
+    """Adapt only the exact borrowed-slot successor; reverse restores its bytes."""
+    input_key, output_key = "input_module_sha256", "current_module_sha256"
+    replacements = PROJECTED_LOAN_REPLACEMENTS
+    if reverse:
+        input_key, output_key = output_key, input_key
+        replacements = tuple((new, old) for old, new in reversed(replacements))
+    require(sha(previous) == PROJECTED_LOAN_COMPATIBILITY[input_key],
+            "projected-loan adapter input identity differs")
+    require(len(replacements) == PROJECTED_LOAN_COMPATIBILITY["replacement_count"],
+            "projected-loan adapter replacement inventory differs")
+    current = previous
+    for old, new in replacements:
+        old, new = old.encode(), new.encode()
+        require(current.count(old) == 1 and current.count(new) == 0,
+                "projected-loan adapter use site differs")
+        current = current.replace(old, new, 1)
+    require(sha(current) == PROJECTED_LOAN_COMPATIBILITY[output_key],
+            "projected-loan adapter output identity differs")
+    return current
+
+
 def assert_current_module_binding(binding):
     require(binding.get("public_array_activation") == PUBLIC_ARRAY_ACTIVATION
             and binding.get("borrowed_slot_compatibility") == BORROWED_SLOT_COMPATIBILITY
-            and binding.get("module_sha256") == BORROWED_SLOT_COMPATIBILITY["current_module_sha256"],
+            and binding.get("projected_loan_compatibility") == PROJECTED_LOAN_COMPATIBILITY
+            and binding.get("module_sha256") == PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"],
             "independent current public-array module binding differs")
 
 
@@ -177,6 +224,10 @@ PROVENANCE = {
         "role": "six borrowed declaration/assignment use sites retain exact aggregate identity; "
                 "ownership slots, assertions, expectations and resource facts are unchanged",
         "borrowed_slot_compatibility": BORROWED_SLOT_COMPATIBILITY},
+    "projected_loan_compatibility": {
+        "kind": "exact reversible source-compatibility successor",
+        "role": "two whole-owner LoanDecl sites gain empty projection; frozen semantic expectations and fuel remain unchanged",
+        "projected_loan_compatibility": PROJECTED_LOAN_COMPATIBILITY},
     "physical_results": {
         "kind": "independent frozen expected-result manifest",
         "source": "expectations/physical-harness.tsv",
@@ -521,7 +572,7 @@ class Replay:
         original_native = native.read_bytes()
         require(b"independent_unit2d" not in original_native, "source already contains ephemeral Unit2D registrations")
         require(not (self.source / MODULE_REL).exists(), "ephemeral module path already exists")
-        current = borrowed_slot_reviewer(public_array_reviewer(frozen))
+        current = projected_loan_reviewer(borrowed_slot_reviewer(public_array_reviewer(frozen)))
         (self.source / MODULE_REL).write_bytes(current)
         appendix = b"\n\n// Ephemeral independent Unit2D replay controls.\n"
         for name in CONTROL_FILES:
@@ -539,6 +590,7 @@ class Replay:
                        original_native_bytes=len(original_native), appendix_sha256=sha(appendix),
                        module_sha256=sha(current), public_array_activation=PUBLIC_ARRAY_ACTIVATION,
                        borrowed_slot_compatibility=BORROWED_SLOT_COMPATIBILITY,
+                       projected_loan_compatibility=PROJECTED_LOAN_COMPATIBILITY,
                        nonce=uuid.uuid4().hex,
                        runner_sha256=file_sha(Path(__file__)),
                        capture_runner_sha256=file_sha(Path(__file__).with_name("replay_unit2d_tool_capture.py")))

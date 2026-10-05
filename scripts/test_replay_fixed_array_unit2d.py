@@ -120,7 +120,8 @@ class ReplayTests(unittest.TestCase):
     def test_public_successor_binding_rejects_historical_and_changed_identities(self):
         binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
                    "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
-                   "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]}
+                   "projected_loan_compatibility": dict(replay.PROJECTED_LOAN_COMPATIBILITY),
+                   "module_sha256": replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"]}
         replay.assert_current_module_binding(binding)
         for changed in ({}, {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_sha256"]},
                         {**binding, "module_sha256": replay.PUBLIC_ARRAY_ACTIVATION["current_module_sha256"]},
@@ -212,9 +213,10 @@ class ReplayTests(unittest.TestCase):
     def test_borrowed_slot_binding_requires_both_successor_metadata(self):
         binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
                    "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
-                   "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]}
+                   "projected_loan_compatibility": dict(replay.PROJECTED_LOAN_COMPATIBILITY),
+                   "module_sha256": replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"]}
         replay.assert_current_module_binding(binding)
-        for field in ("public_array_activation", "borrowed_slot_compatibility"):
+        for field in ("public_array_activation", "borrowed_slot_compatibility", "projected_loan_compatibility"):
             missing = dict(binding)
             del missing[field]
             with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
@@ -226,6 +228,50 @@ class ReplayTests(unittest.TestCase):
                 **binding["borrowed_slot_compatibility"], field: value}}
             with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
                 replay.assert_current_module_binding(changed)
+
+    def test_projected_loan_successor_changes_only_two_root_projection_fields(self):
+        previous = replay.borrowed_slot_reviewer(self.public_reviewer())
+        current = replay.projected_loan_reviewer(previous)
+        self.assertEqual(current.count(b"projection: Vec::new(),"), 2)
+        self.assertEqual(current.replace(b"            projection: Vec::new(),\n", b"")
+                         .replace(b"        projection: Vec::new(),\n", b""), previous)
+        self.assertEqual(replay.projected_loan_reviewer(current, reverse=True), previous)
+        self.assertEqual(replay.sha(previous), replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"])
+        self.assertEqual(replay.sha(current), replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"])
+
+    def test_projected_loan_successor_rejects_drift_missing_duplicate_and_changed_output(self):
+        previous = replay.borrowed_slot_reviewer(self.public_reviewer())
+        current = replay.projected_loan_reviewer(previous)
+        for data, reverse, input_key, output_key, side in (
+                (previous, False, "input_module_sha256", "current_module_sha256", 0),
+                (current, True, "current_module_sha256", "input_module_sha256", 1)):
+            for changed in (data + b"\n", current if not reverse else previous):
+                with self.assertRaisesRegex(RuntimeError, "input identity"):
+                    replay.projected_loan_reviewer(changed, reverse=reverse)
+            for pair in replay.PROJECTED_LOAN_REPLACEMENTS:
+                fragment = pair[side].encode()
+                for changed in (data.replace(fragment, b"", 1), data + fragment):
+                    metadata = {**replay.PROJECTED_LOAN_COMPATIBILITY, input_key: replay.sha(changed)}
+                    with mock.patch.dict(replay.PROJECTED_LOAN_COMPATIBILITY, metadata), self.assertRaisesRegex(RuntimeError, "use site"):
+                        replay.projected_loan_reviewer(changed, reverse=reverse)
+            with mock.patch.dict(replay.PROJECTED_LOAN_COMPATIBILITY, {output_key: "0" * 64}), self.assertRaisesRegex(RuntimeError, "output identity"):
+                replay.projected_loan_reviewer(data, reverse=reverse)
+        with mock.patch.dict(replay.PROJECTED_LOAN_COMPATIBILITY, {"replacement_count": 3}), self.assertRaisesRegex(RuntimeError, "inventory"):
+            replay.projected_loan_reviewer(previous)
+
+    def test_projected_loan_binding_rejects_predecessor_and_metadata_drift(self):
+        binding = {"public_array_activation": dict(replay.PUBLIC_ARRAY_ACTIVATION),
+                   "borrowed_slot_compatibility": dict(replay.BORROWED_SLOT_COMPATIBILITY),
+                   "projected_loan_compatibility": dict(replay.PROJECTED_LOAN_COMPATIBILITY),
+                   "module_sha256": replay.PROJECTED_LOAN_COMPATIBILITY["current_module_sha256"]}
+        replay.assert_current_module_binding(binding)
+        with self.assertRaises(RuntimeError):
+            replay.assert_current_module_binding({**binding, "module_sha256": replay.BORROWED_SLOT_COMPATIBILITY["current_module_sha256"]})
+        for key, value in (("input_module_sha256", "0" * 64), ("current_module_sha256", "0" * 64),
+                           ("replacement_count", 1), ("projection_identity", "field projection")):
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                replay.assert_current_module_binding({**binding, "projected_loan_compatibility": {
+                    **binding["projected_loan_compatibility"], key: value}})
 
     def test_clean_archive_preserves_git_bytes_and_exact_append_prefix(self):
         runner = self.prepared()
@@ -249,8 +295,9 @@ class ReplayTests(unittest.TestCase):
         frozen = (runner.inputs / replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
         self.assertEqual(replay.sha(frozen),
                          "b6b8f0a012c4d3b7dc1fa0140769174ee868af04db7e5ae3f34c8d1baa478c21")
-        self.assertEqual(replay.borrowed_slot_reviewer(current, reverse=True),
+        self.assertEqual(replay.borrowed_slot_reviewer(replay.projected_loan_reviewer(current, reverse=True), reverse=True),
                          replay.public_array_reviewer(frozen))
+        self.assertEqual(runner.binding["projected_loan_compatibility"], replay.PROJECTED_LOAN_COMPATIBILITY)
         self.assertEqual(runner.binding["module_sha256"], replay.sha(current))
         self.assertEqual(runner.binding["public_array_activation"], replay.PUBLIC_ARRAY_ACTIVATION)
         self.assertEqual(runner.binding["borrowed_slot_compatibility"], replay.BORROWED_SLOT_COMPATIBILITY)

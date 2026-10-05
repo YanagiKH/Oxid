@@ -49,6 +49,11 @@ COMPOSITION_ROSTER = (
     PREFIX + "composition::native_composition_source_free_depth_sixty_four",
     PREFIX + "composition::native_composition_source_free_pilot_sentinels_effects_and_phi",
 )
+PROJECTED_SLICE_ROSTER = (
+    PREFIX + "projected_slices::native_projected_slices_source_free_mutation_every_fuel",
+    PREFIX + "projected_slices::native_projected_slices_source_free_mutation_metadata_and_forwarding",
+    PREFIX + "projected_slices::native_projected_slices_source_free_signed_bounds_and_fuel",
+)
 FAMILIES = ({'additional_guarded_modules': 195,
   'compiled_elfs': 390,
   'distinct_inputs': 195,
@@ -212,13 +217,13 @@ def admit_discovery(data):
     for line in data.decode("utf-8").splitlines():
         if not line:
             continue
-        if line == "24 tests, 0 benchmarks" and not footer:
+        if line == "27 tests, 0 benchmarks" and not footer:
             footer = True
         else:
             require(not footer and line.endswith(": test"), "unknown or misplaced discovery line")
             names.append(line[:-6])
     require(footer, "missing discovery footer")
-    exact_inventory(names, (*ROSTER, *SLICE_ROSTER, *COMPOSITION_ROSTER), "current ignored prefix roster")
+    exact_inventory(names, (*ROSTER, *SLICE_ROSTER, *COMPOSITION_ROSTER, *PROJECTED_SLICE_ROSTER), "current ignored prefix roster")
     return names
 
 
@@ -1311,7 +1316,7 @@ import importlib.util
 INDEPENDENT_TOOLS = ("llvm-as", "opt", "clang", "ld.lld")
 INDEPENDENT_PHASES = ("prepare", "build", "ordinary", "native", "physical", "verify")
 INDEPENDENT_SEALS = tuple("phase-" + phase + "-artifacts.json" for phase in INDEPENDENT_PHASES[1:])
-INDEPENDENT_RUNNER_SHA = "0a17c96d54bffd5488e9ba17dfb58ca58c26afded254acd085b4616955f0cb61"
+INDEPENDENT_RUNNER_SHA = "6bec8bccf2320d653c20afd1b5f62746cf4e41421235756fa14e76033be60dff"
 INDEPENDENT_INPUT_SHA = "3a904929eb7572bad6430f7ab0ea81c3f68625856621041fa2673e4629e1e290"
 INDEPENDENT_FIXTURE = "tests/fixtures/fixed_array_unit2d_independent"
 

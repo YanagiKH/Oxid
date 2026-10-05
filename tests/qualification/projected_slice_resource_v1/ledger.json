@@ -1,0 +1,135 @@
+{
+  "batch": {
+    "active_bytes": 1472,
+    "peak_cells": 200,
+    "requested_bytes": 2296
+  },
+  "claims": [
+    "Current measured physical metadata and payload accounting",
+    "Exact amended source fixtures under unchanged caps",
+    "Unchanged-source logical activation fuel preserved"
+  ],
+  "fresh_independent_evidence": {
+    "index_sha256": "22cf2a5b00a2245f8ac5d27afa9a5e4577d00f9759f9f6a614843df9be767ede",
+    "native_real_llvm_boundaries_passed_per_profile": 1,
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "projected_filter_ignored_per_profile": 4,
+    "projected_filter_passed_per_profile": 14,
+    "review_sha256": "94b17028a37afb0bd80b9340e58de0f04191d9a5e3bd3ce3eeaefae2d56ec336",
+    "source_resources_per_profile": 8
+  },
+  "historical_package_sha256": "f0287af10b95a1596456db1dfa750170afaaa17995a8835c64af0357a9f099c0",
+  "historical_resource_package": "tests/qualification/record_composition_resource_v1",
+  "logical_activation_cells": {
+    "loan": 12,
+    "reference": 8
+  },
+  "native_exact": {
+    "bytes": 59512,
+    "cells": 8192,
+    "frames": 32,
+    "leaf_padding": 245,
+    "main_padding": 226,
+    "middle_count": 30,
+    "middle_padding": 227,
+    "over_cells": 8193,
+    "over_leaf_padding": 246,
+    "scalar_slots": 7345
+  },
+  "not_claimed": [
+    "Predecessor resource results are current results",
+    "Total RSS or allocator peaks",
+    "Cross-platform layout or stable ABI",
+    "Hosted exact-published-head CI"
+  ],
+  "owner_classes": {
+    "main": {
+      "A": 2,
+      "B": 16,
+      "C": 2,
+      "L": 1,
+      "O": 4,
+      "P": 4,
+      "R": 0,
+      "S": 2
+    },
+    "peak_bytes": 408,
+    "peak_cells": 53,
+    "read": {
+      "A": 0,
+      "B": 0,
+      "C": 0,
+      "L": 0,
+      "O": 0,
+      "P": 0,
+      "R": 1,
+      "S": 1
+    },
+    "relay": {
+      "A": 0,
+      "B": 8,
+      "C": 0,
+      "L": 0,
+      "O": 2,
+      "P": 2,
+      "R": 0,
+      "S": 0
+    },
+    "three_headers_bytes": 1232,
+    "two_headers_bytes": 960
+  },
+  "physical_cells": {
+    "call": 2,
+    "loan": 14,
+    "owner": 4,
+    "reference": 10
+  },
+  "predecessor_tree": "f052fc27b068042ef7c5835e4be001e5a5e49123",
+  "representation": {
+    "BorrowProjection": 72,
+    "BorrowView": 16,
+    "CallRuntime": 16,
+    "FieldId": 16,
+    "Frame": 272,
+    "LoanDecl": 96,
+    "LoanRuntime": 112,
+    "OwnerRuntime": 32,
+    "ReferenceHandle": 80,
+    "Scalar": 8,
+    "TypedBody": 144,
+    "TypedBody_growth": 24
+  },
+  "runtime_exact": {
+    "cells": 200000,
+    "countdown": 998,
+    "frames": 1000,
+    "fuel": 376007,
+    "main_padding": 169,
+    "over_cells": 200001,
+    "over_main_padding": 170,
+    "recursive_padding": 163,
+    "scalar_slots": 172000
+  },
+  "schema": "oxid-projected-array-slice-resource-successor-v1",
+  "source_head": "052ad52ac876c01b91701132cffb466689b24d01",
+  "source_tree": "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50",
+  "unchanged_caps": {
+    "expanded_cells": 200000,
+    "frames": 1024,
+    "fuel": 1000000,
+    "native_bytes": 1048576,
+    "native_cells": 8192,
+    "native_depth": 32,
+    "native_function_slots": 256,
+    "ownership_metadata_bytes": 33554432,
+    "path_depth": 64,
+    "plan_bytes": 33554432,
+    "raw_bytes": 67108864,
+    "requested_bytes": 16777216,
+    "scalar_slots": 200000,
+    "typed_projection_bytes": 67108864
+  }
+}
