@@ -9,6 +9,14 @@
 use super::{hir, SourceMap, Span};
 use std::mem::size_of;
 
+mod enums;
+#[allow(unused_imports)]
+pub(in crate::frontend) use enums::{admit_enum_counts, EnumId, EnumUsage, VariantId};
+#[allow(unused_imports)]
+pub(super) use enums::{
+    EnumDeclarationError, EnumDeclarations, PreparedEnums, RawEnumDecl, RawVariantDecl,
+};
+
 /// Compilation-local nominal identity, assigned in declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct RecordId(pub(in crate::frontend) usize);

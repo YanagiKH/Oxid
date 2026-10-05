@@ -1,8 +1,7 @@
 # RFC 0023: bounded nominal enums and consuming match
 
-Status: accepted bounded implementation contract, 2026-10-05, by the
-coordinating project owner under delegated architecture authority. Owner:
-bounded-enum implementation worker. Implementation and qualification are pending.
+Status: accepted bounded experimental implementation contract, 2026-10-05.
+Implementation and qualification are pending.
 Base: local `4641352646f5f04fa790efdb5dab6943c0d15190`, tree
 `f8c7f42287116b2a55326cc8aea57cd5c390f2a1` (published main equivalent
 `c37a09f332ad68ab401f1c6936e2e17afa430e90`).
@@ -84,7 +83,11 @@ type; a caller-supplied tag/type/offset is never authority. Sum layout is consta
 even for nullary-only enums, avoiding representation changes as variants evolve.
 
 Whole transfers first validate the tag and active payload, then write only the
-tag and active payload and transition ownership. Never call the static aggregate
+tag and active payload and transition ownership. Explicit Discard likewise
+validates the available value before consuming it. StorageEnd and frame teardown
+end slot lifetimes without exposing or transferring their values: they are
+payload-free and never inspect tags or payload bytes of uninitialized, moved or
+dead storage. No runtime owner-state sidecar is added to the native backend. Never call the static aggregate
 leaf iterator on an enum. Construction, move, replacement, argument staging,
 callee activation, return and teardown all need explicit sum handling. Native
 transfers branch on checked tags, never load the whole union as a typed payload,
@@ -108,9 +111,11 @@ owner moved. There is no standalone payload-read or source-visible tag operation
 Independent raw shape checking proves exact same-enum exhaustive coverage,
 unique variants, unique canonical dispatch/consume sites, correct payload local
 type/arity, no alternative predecessor to intermediate dispatch or arm-entry
-blocks, no extra instructions in intermediate dispatch blocks, and exact branch
-links. The first dispatch may follow ordinary preceding statements. A dispatch
-block cannot double as another match's arm entry. Each descriptor is used once;
+blocks (counting edge multiplicity), no extra instructions in intermediate
+dispatch blocks, and exact branch links. Function entry is forbidden as an
+intermediate dispatch or arm entry: the implicit function-entry edge is not
+established by predecessor counting. The first dispatch may follow ordinary
+preceding statements. A dispatch block cannot double as another match's arm entry. Each descriptor is used once;
 all raw blocks, including unreachable blocks, are shape-checked. Every reachable
 consume is therefore entered only from its matching dispatch. Existing scalar
 definition/dominance checks see ConsumeVariant's destination as an ordinary
@@ -168,12 +173,13 @@ independently calculated expected results. This is a compiler-component example
 using hardcoded integer-code input, not production compiler dispatch/self-hosting.
 
 Required: positive/compile-fail source, formatting, project visibility, malformed
-raw and dominance/ownership, active-payload/padding, every-fuel-boundary and
+raw and dominance/ownership, active-payload/padding, poisoned inactive/moved
+storage teardown, every-fuel-boundary and
 allocation-limit controls; source/reference/source-free LLVM 19.1.7 O0 Linux
 x86_64 parity; unchanged-program regressions; independent review; ordinary suites,
 current-source qualification and green exact-head hosted CI as separate gates.
 
-Acceptance decision: ACCEPTED 2026-10-05 by the coordinating project owner.
+Acceptance decision: ACCEPTED 2026-10-05.
 Acceptance explicitly requires invalid tags to fail closed before payload reads
 or ownership mutation, including final dispatch; checked i32 overflow in the
 pilot; documented written-arm-order fuel dependence; and actual enclosing-carrier

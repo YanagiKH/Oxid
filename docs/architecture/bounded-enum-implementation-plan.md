@@ -1,13 +1,13 @@
 # Bounded enum implementation plan
 
-Design gate: RFC 0023 accepted by the coordinating project owner on 2026-10-05.
-Save this accepted contract before production semantic edits.
+Design gate: RFC 0023 accepted on 2026-10-05. Implementation remains bounded by
+the accepted language and resource contract.
 
 1. Inspect current carrier layouts, ledgers, CFG/scalar definition rules and
    whole-owner transfers. Measure compact candidate representations with a tiny
    standalone probe; preserve existing actual-carrier size regression tests.
-2. Freeze exact sum layout, match raw proof, fuel and resource contract. Obtain
-   explicit coordinator acceptance before production edits.
+2. Freeze exact sum layout, match raw proof, fuel and resource contract. Record
+   explicit acceptance before production edits.
 3. Add checked nominal enum inventory/layout and independently rejected malformed
    declarations. Preserve old limits and existing record identities. Add raw
    construction/match/transfer vertical slice in existing owned OIR, paired
@@ -20,13 +20,7 @@ Save this accepted contract before production semantic edits.
    checks and source-free native execution. Independent review, fixes and fresh
    integrated reruns. Record feature evidence without modifying frozen oracles.
 6. Separate current qualification successor bound to the actual source identity;
-   root handles remote publication, hosted exact-head CI and merge decision.
-
-Disk: 1.9 GiB free observed at setup. No heavy build started. Use one bounded
-nonincremental debug-info-free target; keep evidence and required executables.
-Coordinate target allocation with root before builds. Save design and thin
-checkpoints early. Stop rather than bypass a qualification failure or alter
-historical evidence. Never perform unrelated unpublished remaining40 work.
+   publication and exact-head hosted CI remain separate integration gates.
 
 Likely write surfaces: frontend lexer/parser/AST/formatter/project/declaration
 index; owned source HIR/typeck/inventory/lowering; checked owned types; raw shape,
@@ -55,8 +49,7 @@ D. Feature acceptance: compile-fail matrix, loop/join/all-path-return, inactive
 E. Separate qualification: source identity binding, independent review and native
    source-free execution evidence; root owns publication/exact-head CI/merge.
 
-The tiny candidate-layout probe is saved at /tmp/oxid-enum-design with source,
-compiler version and stdout. Measurements: aggregate carrier 16 -> 16 bytes,
+Candidate measurements on x86_64 rustc 1.99.0: aggregate carrier 16 -> 16 bytes,
 compact owner slot 8 -> 8 bytes, u32-tag/four-byte-payload 8 bytes, alignment 4.
-No Cargo build has run. Actual source-carrier measurements remain checkpoint A/B
-work, not evidence already established by the candidate probe.
+Actual source-carrier measurements remain checkpoint A/B work; candidate
+measurements alone do not establish consumer admission correctness.

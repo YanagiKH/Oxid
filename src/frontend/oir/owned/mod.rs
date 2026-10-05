@@ -426,3 +426,6 @@ mod composition_verifier_tests;
 
 #[cfg(test)]
 mod negation_raw_tests;
+
+#[cfg(test)]
+mod enum_layout_tests;
