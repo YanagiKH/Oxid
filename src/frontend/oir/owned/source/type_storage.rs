@@ -1035,6 +1035,15 @@ struct SampleSizingCarriers {
 pub(super) const fn sample_sizing_carrier_bytes() -> usize {
     size_of::<SampleSizingCarriers>()
 }
+// Standalone actual models also need non-test layout forcing. These pure
+// getters use the same unpriced plain-return sizing-helper role; no values or
+// new pricing arrays/caller receivers are constructed by this surface.
+pub(super) const fn observed_construction_carrier_bytes() -> usize {
+    size_of::<ObservedConstructionCarriers>()
+}
+pub(super) const fn counts_access_carrier_bytes() -> usize {
+    size_of::<CountsAccessCarriers>()
+}
 
 // Complete NEW type_storage named controls, plus explicitly selected existing
 // Capacity transports. Unchanged Capacity/Allocator internals are not modeled as

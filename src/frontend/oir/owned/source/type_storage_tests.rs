@@ -2490,6 +2490,14 @@ fn c3_t1_non_test_sample_size_surface_uses_actual_generic_components() {
         sample_sizing_carrier_bytes(),
         size_of::<SampleSizingCarriers>()
     );
+    assert_eq!(
+        observed_construction_carrier_bytes(),
+        size_of::<ObservedConstructionCarriers>()
+    );
+    assert_eq!(
+        counts_access_carrier_bytes(),
+        size_of::<CountsAccessCarriers>()
+    );
     println!(
         "C3_T1_OBSERVATION_PRIMITIVE_LAYOUT SampleSizingCarriers {} {}",
         size_of::<SampleSizingCarriers>(),
