@@ -59,9 +59,9 @@ fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
         calls,
         reference_bytes,
         native_bytes,
-    ) in std::iter::once((0, 231, 1, 2, 2, 8, 0, 1, 1, 2040, 1872))
-        .chain((1..31).map(|id| (id, 233, 1, 0, 0, 0, 1, 1, 1, 2048, 1888)))
-        .chain(std::iter::once((31, 248, 0, 0, 0, 0, 1, 0, 0, 2048, 1992)))
+    ) in std::iter::once((0, 229, 1, 2, 2, 8, 0, 1, 1, 2040, 1856))
+        .chain((1..31).map(|id| (id, 229, 1, 0, 0, 0, 1, 1, 1, 2048, 1856)))
+        .chain(std::iter::once((31, 246, 0, 0, 0, 0, 1, 0, 0, 2048, 1976)))
     {
         assert_eq!(
             plan.function(hir::DefId(id)).usage(),
@@ -88,7 +88,7 @@ fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
             bounds[0].cells,
             bounds[0].bytes
         ),
-        (32, 7469, 8192, 60504)
+        (32, 7345, 8192, 59512)
     );
     assert!(!bounds[0].cyclic);
     // Default aggregate8192 necessarily precedes path8193. Isolate the path
@@ -134,17 +134,17 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
     let case = source::checked(source::OWNER_CLASSES);
     let plan = ExecutionPlan::build(&case.witness).unwrap();
     source::assert_owner_classes(&plan);
-    // Aggregate X10+9+40=59 and D8+16+56=80. Relay maximizes path cells
-    // (40+10), while read maximizes native bytes (56+16).
+    // Physical views: aggregate X10+11+42=63 and native D8+16+56=80.
+    // Read now maximizes path cells (42+11=53) and native bytes (56+16=72).
     let limits = Limits {
-        cells: 59,
-        live_cells: 50,
+        cells: 63,
+        live_cells: 53,
         bytes: 80,
         live_bytes: 72,
         ..Limits::DEFAULT
     };
     let bounds = admit(&plan, limits).unwrap();
-    assert_eq!((bounds[2].cells, bounds[2].bytes), (50, 72));
+    assert_eq!((bounds[2].cells, bounds[2].bytes), (53, 72));
     assert!(native_module_limits(
         &case.witness,
         Some(case.entry),
@@ -156,20 +156,20 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
     for (lowered, name, maximum, origin) in [
         (
             Limits {
-                cells: 58,
+                cells: 62,
                 ..limits
             },
             "aggregate expanded cells",
-            58,
+            62,
             case.name("relay"),
         ),
         (
             Limits {
-                live_cells: 49,
+                live_cells: 52,
                 ..limits
             },
             "live expanded cells",
-            49,
+            52,
             case.name("main"),
         ),
         (

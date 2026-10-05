@@ -90,10 +90,15 @@ fn heldout_condition_name_can_share_record_name_at_all_precedence_levels() {
 fn heldout_reference_grammar_cross_product_stays_argument_only() {
     for borrow in ["&v", "&mut v", "&*p", "&mut *p"] {
         parsed(&format!("fn f() -> () {{ call({borrow}); return; }}")).unwrap();
+        // RFC 0022 adds only complete named-root field paths at this seam;
+        // scalar/record leaves and exact-array formals are still rejected by typing.
+        parsed(&format!("fn f() -> () {{ call({borrow}.item); return; }}")).unwrap();
         for expression in [
             format!("({borrow})"),
             format!("{borrow} == v"),
-            format!("{borrow}.item"),
+            format!("({borrow}).item"),
+            format!("{borrow}.item[0]"),
+            format!("{borrow}.item()"),
             format!("{borrow}()"),
             format!("{borrow} + 0"),
         ] {

@@ -578,7 +578,7 @@ fn admit_accounted(
             }
         };
         let mut bound = Bound {
-            cost: u.expanded_cells,
+            cost: u.activation_fuel_cells(),
             cyclic,
             depth: 1,
             scalar_slots: u.scalar_slots,
@@ -596,7 +596,7 @@ fn admit_accounted(
                 let target = f.calls[call.0].target;
                 let child = bounds[target.0];
                 // Child X is already in its bound, so never charge it twice.
-                cost -= plan.function(target).usage().expanded_cells;
+                cost -= plan.function(target).usage().activation_fuel_cells();
                 cost = cost_add(cost, child.cost)?;
                 bound.depth = bound.depth.max(add(1, child.depth)?);
                 bound.scalar_slots = bound
@@ -1567,7 +1567,7 @@ fn emit(
             out,
             diagnostics,
             "root",
-            1 + plan.function(entry).usage().expanded_cells,
+            1 + plan.function(entry).usage().activation_fuel_cells(),
             root.span,
         );
     }

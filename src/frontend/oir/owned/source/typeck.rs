@@ -1428,6 +1428,20 @@ fn check_body(
 mod array_type_layout_tests {
     use super::*;
     #[test]
+    fn projected_slice_retained_source_layouts() {
+        use std::mem::size_of;
+        // AST and resolved borrow arguments retain spans rather than new vectors.
+        // The only new per-body enclosing allocation carrier is this sixth Vec.
+        assert_eq!(size_of::<TypedBody>(), 6 * size_of::<Vec<()>>());
+        println!("projected-slice-layout ast-borrow={} ast-argument={} hir-borrow={} hir-argument={} resolved-program={} typed-body={} typed-function={} sparse-entry={} field-id={} body-growth={}",
+            size_of::<crate::frontend::ast::BorrowPlace>(),
+            size_of::<crate::frontend::ast::Argument>(),
+            size_of::<BorrowPlace>(), size_of::<Argument>(),
+            size_of::<ResolvedOwnedProgram<'_>>(), size_of::<TypedBody>(),
+            size_of::<TypedOwnedFunction<'_>>(), size_of::<BorrowProjection>(),
+            size_of::<FieldId>(), size_of::<Vec<BorrowProjection>>());
+    }
+    #[test]
     fn unit3b1_owner_slot_layouts() {
         use std::mem::size_of;
         macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }

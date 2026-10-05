@@ -74,24 +74,25 @@ pub(in crate::frontend::oir::owned) fn scalar_owner_slots(extra: bool) -> String
 }
 
 pub(in crate::frontend::oir::owned) fn native_cell_chain(extra: bool) -> String {
-    // main: S231,A1,O2,P2,L1,C1 => X256.
-    // f1..f30: S233,A1,R1,L1,C1 => X256 each.
-    // f31: S248,R1 => X256; one extra literal adds exactly one cell.
-    // Every function's S+O is below256; depth32,63blocks,S7469,X8192.
+    // Physical views charge R10/L14 cells (80/112 bytes), keeping X8192.
+    // main: S229,A1,O2,P2,L1,C1 => 229+1+2+8+14+2=256.
+    // f1..f30: S229,A1,R1,L1,C1 => 229+1+10+14+2=256 each.
+    // f31: S246,R1 => 246+10=256; one extra literal adds one cell.
+    // Every function's S+O is below256; depth32,63blocks,S7345,X8192.
     let mut text = format!(
         "struct T{{value:i32}} fn main()->(){{let x=T{{value:7}};{}f1(&x);return;}}",
-        "0;".repeat(228),
+        "0;".repeat(226),
     );
     for index in 1..31 {
         text.push_str(&format!(
             "fn f{index}(p:&T)->(){{{}f{}(&*p);return;}}",
-            "0;".repeat(231),
+            "0;".repeat(227),
             index + 1,
         ));
     }
     text.push_str(&format!(
         "fn f31(p:&T)->(){{{}return;}}",
-        "0;".repeat(247 + usize::from(extra)),
+        "0;".repeat(245 + usize::from(extra)),
     ));
     text
 }
@@ -125,8 +126,8 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
             plan::FrameUsage {
                 scalar_slots: 1,
                 references: 1,
-                expanded_cells: 9,
-                reference_bytes: 72,
+                expanded_cells: 1 + 10,
+                reference_bytes: 8 + 80,
                 native_bytes: 16,
                 ..Default::default()
             },
@@ -141,8 +142,8 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
                 payload_bytes: 16,
                 loans: 1,
                 calls: 2,
-                expanded_cells: 40,
-                reference_bytes: 304,
+                expanded_cells: 2 + 2 + 4 + 4 * 4 + 14 + 2 * 2,
+                reference_bytes: 4 * 8 + 16 + 4 * 32 + 112 + 2 * 16,
                 native_bytes: 56,
                 ..Default::default()
             },
@@ -186,7 +187,7 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
 }
 
 /// Native slice qualification uses the enabled array grammar while preserving
-/// the historical record-only helper and its frozen resource fixtures.
+/// the record-only helper and its unchanged source templates.
 pub(in crate::frontend::oir::owned) fn checked_arrays(text: &str) -> CheckedSource {
     let mut sources = SourceMap::new();
     let file = sources.add("slice-native.ox".into(), text.into());

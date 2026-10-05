@@ -655,21 +655,21 @@ fn reviewer_activation_resource_order_and_requested_bytes_boundaries() {
     // Independent census: root S=3,A=2,B=8,O=2,R=0,L=2,C=1; child S=3,R=2.
     assert_eq!(
         p.function(hir::DefId(0)).usage().reference_bytes,
-        5 * size_of::<Option<Scalar>>() + 8 + 64 + 192 + 16
+        5 * size_of::<Option<Scalar>>() + 8 + 64 + 224 + 16
     );
     assert_eq!(
         p.function(hir::DefId(1)).usage().reference_bytes,
-        3 * size_of::<Option<Scalar>>() + 128
+        3 * size_of::<Option<Scalar>>() + 160
     );
     let exact = 2 * size_of::<Frame>()
         + size_of::<Scalar>()
-        + (5 * size_of::<Option<Scalar>>() + 280)
-        + (3 * size_of::<Option<Scalar>>() + 128);
+        + (5 * size_of::<Option<Scalar>>() + 312)
+        + (3 * size_of::<Option<Scalar>>() + 160);
     for (slots, cells, bytes, expected) in [
-        (5, 60, exact, "slots"),
-        (6, 59, exact, "cells"),
-        (6, 60, exact - 1, "bytes"),
-        (6, 60, exact, "ok"),
+        (5, 68, exact, "slots"),
+        (6, 67, exact, "cells"),
+        (6, 68, exact - 1, "bytes"),
+        (6, 68, exact, "ok"),
     ] {
         let result = execute_plan(
             &p,
@@ -926,12 +926,12 @@ fn reviewer_loop_reuses_slots_with_fresh_generations_loans_activations() {
         let w = verified::verify_owned(raw, &sources).unwrap();
         let p = ExecutionPlan::build(&w).unwrap();
         let mut events = vec![];
-        // Root X=32 (S12,A1,P1,O4,L12,C2), child X9. Only two frames and 13 old scalar slots ever coexist.
+        // Root X=34 (S12,A1,P1,O4,L14,C2), child X11. Only two frames and 13 old scalar slots ever coexist.
         let bytes = 2 * size_of::<Frame>()
             + size_of::<Scalar>()
-            + (13 * size_of::<Option<Scalar>>() + 4 + 32 + 96 + 16)
-            + (size_of::<Option<Scalar>>() + 64);
-        assert_eq!(p.function(hir::DefId(0)).usage().expanded_cells, 32);
+            + (13 * size_of::<Option<Scalar>>() + 4 + 32 + 112 + 16)
+            + (size_of::<Option<Scalar>>() + 80);
+        assert_eq!(p.function(hir::DefId(0)).usage().expanded_cells, 34);
         assert_eq!(
             run_observed(
                 &w,
@@ -939,7 +939,7 @@ fn reviewer_loop_reuses_slots_with_fresh_generations_loans_activations() {
                 Limits {
                     frames: 2,
                     slots: 13,
-                    cells: 41,
+                    cells: 45,
                     bytes,
                     ..Limits::default()
                 },

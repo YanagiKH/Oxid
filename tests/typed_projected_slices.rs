@@ -105,11 +105,20 @@ impl Project {
                 fs::remove_file(path).unwrap();
             }
         }
-        bounded_output(
+        let result = bounded_output(
             Command::new(self.0.join("program"))
                 .current_dir(&self.0)
                 .env_clear(),
-        )
+        );
+        if let Some(root) = std::env::var_os("OXID_PROJECTED_NATIVE_EVIDENCE") {
+            let evidence = PathBuf::from(root).join(self.0.file_name().unwrap());
+            fs::create_dir_all(&evidence).unwrap();
+            fs::copy(self.0.join("program"), evidence.join("program")).unwrap();
+            fs::write(evidence.join("stdout"), &result.stdout).unwrap();
+            fs::write(evidence.join("stderr"), &result.stderr).unwrap();
+            fs::write(evidence.join("status.txt"), format!("{}\n", result.status)).unwrap();
+        }
+        result
     }
 }
 impl Drop for Project {
@@ -217,7 +226,11 @@ fn rejection_cases() -> Vec<(String, &'static str, &'static str)> {
     ] {
         cases.push((
             format!("{b} fn main()->(){{{init}take({spelling});return;}}"),
-            "E0100",
+            if spelling == "&b.left[0]" {
+                "E0101"
+            } else {
+                "E0100"
+            },
             "parse",
         ));
     }

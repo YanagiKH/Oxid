@@ -42,7 +42,11 @@ permission identities: root-relative byte offset and exact aggregate descriptor.
 Whole views have offset zero and the root aggregate; projected views identify
 only the complete selected array. Handles must agree with their active loan's
 view as well as root/generation/permission. Projection extents are independently
-checked against the owner's padded storage bounds before use. Index bounds use
+checked against the owner's padded storage bounds before use. Projected array
+access additionally rederives its view from the immutable nominal loan path,
+following explicit slice reborrow ancestors with an allocation-free walk bounded
+by the unchanged 1024-frame limit. This matches existing bounded path-walk fuel
+semantics; it adds neither a recursive host call nor retained traversal storage. Index bounds use
 the selected array length, so empty sentinels and adjacent fields/padding never
 become elements. Native lowering stages the verified field address and length
 when the borrow argument is evaluated. Slice reborrows preserve that view.
@@ -50,7 +54,9 @@ when the borrow argument is evaluated. Slice reborrows preserve that view.
 ## Ordering, fuel and resources
 
 Existing expression and call fuel remains unchanged: projection borrowing is a
-view, not element copying. The existing PrepareBorrow charge occurs before its
+view, not element copying. Activation fuel retains the established logical-slot
+formula (8 units/reference and 12 units/loan), independently of physical retained
+metadata admission (10 cells/reference and 14 cells/loan). The existing PrepareBorrow charge occurs before its
 state transition. Index reads/writes/len keep their one-operation charge and
 store order remains complete RHS, index, access fuel, bounds, final store.
 Existing aggregate initialization/move/teardown width charges remain unchanged.

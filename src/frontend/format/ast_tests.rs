@@ -256,11 +256,11 @@ impl<'a> Fingerprint<'a> {
                 match *place {
                     BorrowPlace::OwnerName(name) => {
                         self.tag("owner");
-                        self.spelling(name);
+                        self.access_path(name);
                     }
                     BorrowPlace::ForwardedParameter { name, star_span } => {
                         self.tag("forwarded");
-                        self.spelling(name);
+                        self.access_path(name);
                         self.span(star_span);
                     }
                 }
@@ -658,6 +658,7 @@ fn normalized(text: &str) -> Vec<Part> {
 // runtime fixtures. No packages or unrelated language proposals are needed.
 const CORPUS: &[(&str, &str)] = &[
     ("empty", ""),
+    ("projected-borrow-paths", "fn use_paths()->(){f(&batch /* root */ . inner . samples,&mut batch.inner.samples,&*p . inner . samples,&mut *p /* ref */ .inner.samples);return;}"),
     ("comments-only", "// 雪\r\n/* é\n braces { } and punctuation :: */\r\n"),
     ("scalar-expressions", r#"
 // leading comment
