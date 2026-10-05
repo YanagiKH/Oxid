@@ -2009,8 +2009,9 @@ fn unit3b2_lowering_layout_without_source_observation() {
     );
 }
 
-/// Invocation-local fixed storage only. Dynamic producer caches are admitted
-/// separately after typed count mode; Output is already inline in Walk.
+/// Invocation-local fixed storage only. Dynamic producer caches must be admitted
+/// separately by the future paid path after typed count mode. Output is inline
+/// in Walk and is not charged again.
 #[allow(dead_code)]
 pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
     [

@@ -397,7 +397,22 @@ fn c3a_actual_source_hir_cache_staging_and_scope_layouts() {
         ScopeStorage,
         HirCounts,
         HirPlan,
+        Option<HirPlan>,
+        Result<HirPlan, Box<Diagnostic>>,
+        Result<Option<HirPlan>, Box<Diagnostic>>,
         Capacity,
+        Result<Capacity, Box<Diagnostic>>,
+        Result<Vec<u64>, Box<Diagnostic>>,
+        Result<Vec<MatchArm>, Box<Diagnostic>>,
+        Result<(), Box<Diagnostic>>,
+        Result<usize, Box<Diagnostic>>,
+        Result<u64, Box<Diagnostic>>,
+        PlanReturnEnvelope,
+        CapacityReturnEnvelope,
+        CursorTemporaries,
+        ScalarReturnEnvelope,
+        VectorReturnEnvelope<u64>,
+        VectorReturnEnvelope<MatchArm>,
         ExprCursor,
         BlockCursor,
         [Option<ExprCursor>; MAX_NESTING],
@@ -469,4 +484,97 @@ fn c3a_imported_unused_enum_selects_complete_index() {
         index.require_current_source_pipeline().unwrap_err().code,
         "E0101"
     );
+}
+
+#[test]
+fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
+    let sources = sources("x");
+    let at = sources.get(SourceFileId(0)).span(0, 1);
+    let plan = HirPlan::calculate(HirCounts::default(), at).unwrap();
+    // Independent member sums check that whole modeled carriers cover all
+    // complete wrapper payloads/padding, not only their success values.
+    let plans = 2 * size_of::<HirCounts>()
+        + 4 * size_of::<HirPlan>()
+        + size_of::<Result<HirPlan, Box<Diagnostic>>>()
+        + size_of::<Option<HirPlan>>()
+        + size_of::<Result<Option<HirPlan>, Box<Diagnostic>>>();
+    let capacities = 4 * size_of::<Capacity>() + size_of::<Result<Capacity, Box<Diagnostic>>>();
+    let cursors = size_of::<ExprCursor>()
+        + size_of::<Option<ExprCursor>>()
+        + size_of::<Option<ast::ExprId>>()
+        + size_of::<BlockCursor>()
+        + size_of::<Option<BlockCursor>>()
+        + size_of::<Option<ast::BodyBlockId>>();
+    let scalars = 5 * size_of::<Result<(), Box<Diagnostic>>>()
+        + 3 * size_of::<Result<usize, Box<Diagnostic>>>()
+        + size_of::<Result<u64, Box<Diagnostic>>>();
+    assert!(size_of::<PlanReturnEnvelope>() >= plans);
+    assert!(size_of::<CapacityReturnEnvelope>() >= capacities);
+    assert!(size_of::<CursorTemporaries>() >= cursors);
+    assert!(size_of::<ScalarReturnEnvelope>() >= scalars);
+    assert_eq!(
+        plan.fixed,
+        size_of::<typeck::TypedOwnedProgram<'_>>()
+            + size_of::<PlanReturnEnvelope>()
+            + size_of::<CapacityReturnEnvelope>()
+            + size_of::<CursorTemporaries>()
+            + size_of::<ScalarReturnEnvelope>()
+            + VECTOR_RETURN_ENVELOPE_BYTES
+            + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
+            + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
+    );
+    // The generic return contains a second complete Vec header while local
+    // input storage may still exist. Check every currently budgeted row type.
+    macro_rules! vector {
+        ($($ty:ty),* $(,)?) => { $(
+            let returned = size_of::<Result<Vec<$ty>, Box<Diagnostic>>>();
+            let envelope = size_of::<VectorReturnEnvelope<$ty>>();
+            assert!(envelope >= size_of::<Vec<$ty>>() + returned);
+            assert!(envelope <= VECTOR_RETURN_ENVELOPE_BYTES);
+            println!("C3A_VECTOR_RETURN {} result={} envelope={} align={}",
+                stringify!($ty), returned, envelope,
+                align_of::<VectorReturnEnvelope<$ty>>());
+        )* };
+    }
+    vector!(
+        Record,
+        Field,
+        Signature,
+        Function,
+        ParameterTy,
+        Binding,
+        Expr,
+        BodyBlock,
+        Stmt,
+        Argument,
+        FieldInit,
+        ExprId,
+        MatchArm,
+        typeck::TypedBody,
+        ValueTy,
+        Option<Projection>,
+        typeck::FlowSummary,
+        Vec<Option<Projection>>,
+        typeck::BorrowProjection,
+        Option<ValueTy>,
+        Option<ParameterTy>,
+        Option<typeck::FlowSummary>,
+        ScopeName,
+        usize,
+        LoopId,
+        resolve::ResolveFrame,
+        typeck::TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        u64,
+    );
+    // These models must not increase the numeric ceiling or receive a second
+    // allowance: their additional complete bytes reduce dynamic headroom.
+    let remaining = MAX_HIR_BYTES - plan.total;
+    assert_eq!(plan.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+    assert!(plan.with_dynamic(remaining + 1, at).is_err());
+    println!("C3A_FIXED_RETURN_ENVELOPE plan={} capacity={} cursor={} scalar={} vector={} fixed={} total={}",
+        size_of::<PlanReturnEnvelope>(), size_of::<CapacityReturnEnvelope>(),
+        size_of::<CursorTemporaries>(), size_of::<ScalarReturnEnvelope>(),
+        VECTOR_RETURN_ENVELOPE_BYTES, plan.fixed, plan.total);
 }

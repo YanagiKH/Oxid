@@ -81,6 +81,98 @@ pub(super) struct HirPlan {
     pub(super) lower_fixed: usize,
     pub(super) total: usize,
 }
+/// Conservative named-value model, never instantiated as a compiler frame.
+/// Count each complete wrapper once: its embedded payload is not another field.
+/// Distinct fields cover separate construction/transfer/caller storage without
+/// assuming that Rust elides a Copy, a return slot or an Option construction.
+struct PlanReturnEnvelope {
+    // preflight's accumulator and calculate's by-value argument.
+    counts: [HirCounts; 2],
+    // calculate's Self construction, map's input payload, one caller-retained
+    // plan, and with_dynamic's by-value self. These lifetime windows are summed
+    // conservatively, not asserted to be an exact simultaneous machine peak.
+    plans: [HirPlan; 4],
+    calculate_return: Result<HirPlan, Box<Diagnostic>>,
+    mapped_option: Option<HirPlan>,
+    preflight_return: Result<Option<HirPlan>, Box<Diagnostic>>,
+}
+struct CapacityReturnEnvelope {
+    // new's Self construction, one caller ticket, reserve's by-value self and
+    // check_observed's nested by-value self. The Result embeds its own payload.
+    capacities: [Capacity; 4],
+    created: Result<Capacity, Box<Diagnostic>>,
+}
+struct CursorTemporaries {
+    // Insertion's row and Some(row) can coexist with the independently charged
+    // destination array. The active cursor is borrowed from that array.
+    expression: ExprCursor,
+    expression_slot: Option<ExprCursor>,
+    expression_child: Option<ast::ExprId>,
+    block: BlockCursor,
+    block_slot: Option<BlockCursor>,
+    block_child: Option<ast::BodyBlockId>,
+}
+struct ScalarReturnEnvelope {
+    // count_function -> count_statement -> count_expression -> visit -> debit
+    // is the longest unit-return chain; increment/charge paths are shorter.
+    units: [Result<(), Box<Diagnostic>>; 5],
+    // Covers add -> admit -> with_dynamic and saved/intermediate arithmetic
+    // values in charge/coexist without assuming return-slot reuse.
+    sizes: [Result<usize, Box<Diagnostic>>; 3],
+    work_conversion: Result<u64, Box<Diagnostic>>,
+}
+struct VectorReturnEnvelope<T> {
+    // reserve's owned input header and its complete fallible return carrier;
+    // backing capacity is separately charged, not included in this fixed model.
+    local: Vec<T>,
+    returned: Result<Vec<T>, Box<Diagnostic>>,
+}
+// The primitive currently has only test callers. Measure every row type in the
+// passive plan (plus its actual u64 test instantiation) instead of assuming all
+// generic Result<Vec<T>, _> layouts are identical. New uses must extend this set.
+const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
+    let mut largest = 0;
+    macro_rules! include {
+        ($($ty:ty),* $(,)?) => { $(
+            let bytes = size_of::<VectorReturnEnvelope<$ty>>();
+            if bytes > largest { largest = bytes; }
+        )* };
+    }
+    include!(
+        Record,
+        Field,
+        Signature,
+        Function,
+        ParameterTy,
+        Binding,
+        Expr,
+        BodyBlock,
+        Stmt,
+        Argument,
+        FieldInit,
+        ExprId,
+        MatchArm,
+        typeck::TypedBody,
+        ValueTy,
+        Option<Projection>,
+        typeck::FlowSummary,
+        Vec<Option<Projection>>,
+        typeck::BorrowProjection,
+        Option<ValueTy>,
+        Option<ParameterTy>,
+        Option<typeck::FlowSummary>,
+        ScopeName,
+        usize,
+        LoopId,
+        resolve::ResolveFrame,
+        typeck::TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        u64,
+    );
+    largest
+};
+
 fn failure(message: &'static str, at: Span) -> Box<Diagnostic> {
     owned_diagnostic::diagnostic("E0400", "resolve", format_args!("{message}"), Some(at))
 }
@@ -205,9 +297,14 @@ impl HirPlan {
         let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
         // owner, source view and all top-level Vec headers. Do not add them again.
-        charge::<HirPlan>(&mut fixed, 1, at)?;
-        charge::<HirCounts>(&mut fixed, 1, at)?;
-        charge::<Capacity>(&mut fixed, 1, at)?;
+        // These whole measured models include each embedded Result/Option
+        // payload once, plus the separately named copies/temporaries above.
+        // This is an explicit carrier envelope, not a machine-stack/RSS bound.
+        charge::<PlanReturnEnvelope>(&mut fixed, 1, at)?;
+        charge::<CapacityReturnEnvelope>(&mut fixed, 1, at)?;
+        charge::<CursorTemporaries>(&mut fixed, 1, at)?;
+        charge::<ScalarReturnEnvelope>(&mut fixed, 1, at)?;
+        increment(&mut fixed, VECTOR_RETURN_ENVELOPE_BYTES, at)?;
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;
         charge::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>(&mut fixed, 1, at)?;
         let mut lower_fixed = 0;
