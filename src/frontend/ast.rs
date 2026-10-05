@@ -729,7 +729,7 @@ impl Program {
                                             path.root == PathRoot::LocalType
                                                 || path.segment_len >= 3
                                         })
-                                        && arm.binding.is_none_or(&mut valid)
+                                        && arm.binding.is_none_or(valid)
                                         && valid(arm.span)
                                         && block_valid(arm.body)
                                 })
