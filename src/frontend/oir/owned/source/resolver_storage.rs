@@ -401,6 +401,7 @@ impl PaidScope {
 // Conservative named-carrier envelopes, not exact simultaneous live bytes or
 // machine-stack/RSS bounds. Complete enclosing Result/Option payloads count once;
 // separately named constructor, transfer and caller values are explicit copies.
+type ResolvedParts = (Vec<Record>, Vec<Signature>, Vec<Function>);
 struct FixedCarriers {
     storage: [PaidStorage; 2],
     counts: [HirCounts; 2],
@@ -411,8 +412,8 @@ struct FixedCarriers {
     observation: [ResolverStorageObservation; 2],
     observation_option: Option<ResolverStorageObservation>,
     returned: Result<Option<ResolverStorageObservation>, Vec<Diagnostic>>,
-    parts: (Vec<Record>, Vec<Signature>, Vec<Function>),
-    parts_return: Result<(Vec<Record>, Vec<Signature>, Vec<Function>), Vec<Diagnostic>>,
+    parts: ResolvedParts,
+    parts_return: Result<ResolvedParts, Vec<Diagnostic>>,
 }
 struct FunctionCarriers {
     counts: HirCounts,
