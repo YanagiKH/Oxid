@@ -865,6 +865,13 @@ struct CountGuardCarriers {
     visit_origin: Span,
     visit_return: Result<(), Box<Diagnostic>>,
 }
+// Sum the distinct borrowed bindings in the disjoint While/If match arms.
+// They coexist with the selected child copy; no branch slot reuse is assumed.
+struct BodyChildBranches {
+    while_body: &'static BodyBlockId,
+    if_then: &'static BodyBlockId,
+    if_else: &'static Option<BodyBlockId>,
+}
 struct BodyCountCarriers {
     function: &'static Function,
     work: &'static WorkMeter,
@@ -882,6 +889,7 @@ struct BodyCountCarriers {
     statement_option: Option<&'static Stmt>,
     child_option: Option<BodyBlockId>,
     child: BodyBlockId,
+    child_branches: BodyChildBranches,
     depth: usize,
     maximum: usize,
     next_block: usize,

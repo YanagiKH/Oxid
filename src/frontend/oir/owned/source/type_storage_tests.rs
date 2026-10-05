@@ -1035,7 +1035,7 @@ fn c3_t0_hir_count_and_partition_carriers_are_measured_before_integration() {
         ($($ty:ty),* $(,)?) => { $(println!("T0_COUNT_LAYOUT {} size={} align={}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());)* };
     }
     layout!(TypePlan<'static>, FunctionQuota, Result<TypePlan<'static>, Box<Diagnostic>>, Result<FunctionQuota, Box<Diagnostic>>,
-        CountReturnCarriers, CountGuardCarriers, BodyCountCarriers, FunctionCountCarriers,
+        CountReturnCarriers, CountGuardCarriers, BodyCountCarriers, BodyChildBranches, FunctionCountCarriers,
         ReconcileCarriers, PreparationCarriers, PartitionCarriers, BodiesReserveCarriers,
         BlockCursor, Option<BlockCursor>, [Option<BlockCursor>; MAX_BLOCK_NESTING],
         EnumeratedLoop<Record>, SliceLoop<Field>, SliceLoop<Signature>, SliceLoop<ParameterTy>,
@@ -1050,10 +1050,605 @@ fn c3_t0_hir_count_and_partition_carriers_are_measured_before_integration() {
         size_of::<PartitionCarriers>()
             >= 2 * size_of::<FunctionQuota>() + size_of::<Result<FunctionQuota, Box<Diagnostic>>>()
     );
+    assert_eq!(
+        size_of::<BodyChildBranches>(),
+        2 * size_of::<&BodyBlockId>() + size_of::<&Option<BodyBlockId>>()
+    );
     println!(
         "T0_COUNT_ENVELOPES count={} preparation={} partition={}",
         count_carrier_bytes(),
         preparation_carrier_bytes(),
         partition_carrier_bytes()
     );
+}
+
+fn nested_function(depth: usize, with_elses: bool) -> Function {
+    fn append(blocks: &mut Vec<BodyBlock>, depth: usize, with_elses: bool) -> BodyBlockId {
+        let at = origin();
+        let id = BodyBlockId(blocks.len());
+        blocks.push(BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        });
+        if depth > 1 {
+            let child = append(blocks, depth - 1, with_elses);
+            let kind = if with_elses {
+                let otherwise = BodyBlockId(blocks.len());
+                blocks.push(BodyBlock {
+                    body: Vec::new(),
+                    span: at,
+                    end: at,
+                });
+                StmtKind::If {
+                    condition: ExprId(0),
+                    then_block: child,
+                    else_block: Some(otherwise),
+                }
+            } else {
+                StmtKind::While {
+                    loop_id: LoopId(child.0),
+                    condition: ExprId(0),
+                    body: child,
+                }
+            };
+            blocks[id.0].body.push(Stmt { kind, span: at });
+        }
+        id
+    }
+    let at = origin();
+    let mut function = plain_function(0);
+    function.expressions = vec![
+        Expr {
+            kind: ExprKind::Bool(true),
+            span: at,
+        },
+        Expr {
+            kind: ExprKind::Unit,
+            span: at,
+        },
+    ];
+    function.blocks.clear();
+    function.body = append(&mut function.blocks, depth, with_elses);
+    function.blocks[0].body.push(Stmt {
+        kind: StmtKind::Return(Some(ExprId(1))),
+        span: at,
+    });
+    function
+}
+
+/// Independent schedule replay, not a second count/depth implementation: retain
+/// each join and pending else exactly as the ordinary check_body LIFO schedule.
+/// It tracks occupied TypeFrame slots, not type semantics or machine stack.
+fn ordinary_frame_peak(function: &Function) -> usize {
+    enum Pending {
+        Block(BodyBlockId, usize),
+        Join(BodyBlockId, usize),
+    }
+    let mut frames = vec![Pending::Block(function.body, 0)];
+    let mut maximum = frames.len();
+    while let Some(frame) = frames.pop() {
+        let (block, position) = match frame {
+            Pending::Block(block, position) | Pending::Join(block, position) => (block, position),
+        };
+        let Some(statement) = function.blocks[block.0].body.get(position) else {
+            continue;
+        };
+        match &statement.kind {
+            StmtKind::If {
+                then_block,
+                else_block,
+                ..
+            } => {
+                frames.push(Pending::Join(block, position + 1));
+                if let Some(otherwise) = else_block {
+                    frames.push(Pending::Block(*otherwise, 0));
+                }
+                frames.push(Pending::Block(*then_block, 0));
+            }
+            StmtKind::While { body, .. } => {
+                frames.push(Pending::Join(block, position + 1));
+                frames.push(Pending::Block(*body, 0));
+            }
+            StmtKind::Match { .. } => panic!("the ordinary schedule cannot price Match"),
+            _ => frames.push(Pending::Block(block, position + 1)),
+        }
+        maximum = maximum.max(frames.len());
+    }
+    maximum
+}
+
+#[test]
+fn c3_t0_canonical_depth_exact_boundary_and_actual_ordinary_schedule_bound() {
+    for depth in [1, 2, 3, 8, MAX_BLOCK_NESTING - 1, MAX_BLOCK_NESTING] {
+        for with_elses in [false, true] {
+            let function = nested_function(depth, with_elses);
+            let work = WorkMeter::default();
+            let (result, stats) = super::super::reviewer_source::integration_measured(|| {
+                count_function(&[], &function, &work)
+            });
+            let counts = result.unwrap();
+            assert_eq!(stats, (0, 0, 0));
+            assert_eq!(counts.functions, 1);
+            assert_eq!(counts.expressions, 2);
+            assert_eq!(counts.statements, depth);
+            assert_eq!(
+                counts.blocks,
+                if with_elses { 2 * depth - 1 } else { depth }
+            );
+            assert_eq!(counts.type_frames, 3 * depth + 8);
+            let peak = ordinary_frame_peak(&function);
+            assert_eq!(peak, if with_elses { 2 * depth - 1 } else { depth });
+            assert!(peak <= counts.type_frames);
+        }
+    }
+    for with_elses in [false, true] {
+        let too_deep = nested_function(MAX_BLOCK_NESTING + 1, with_elses);
+        assert_eq!(
+            count_function(&[], &too_deep, &WorkMeter::default())
+                .err()
+                .unwrap()
+                .code,
+            "E0400"
+        );
+    }
+}
+
+#[test]
+fn c3_t0_schedule_covers_sibling_continuations_and_absent_else_without_new_frames() {
+    let at = origin();
+    let mut function = plain_function(0);
+    function.blocks[0].body.insert(
+        0,
+        Stmt {
+            kind: StmtKind::If {
+                condition: ExprId(0),
+                then_block: BodyBlockId(1),
+                else_block: None,
+            },
+            span: at,
+        },
+    );
+    function.blocks[0].body.insert(
+        1,
+        Stmt {
+            kind: StmtKind::While {
+                loop_id: LoopId(2),
+                condition: ExprId(0),
+                body: BodyBlockId(2),
+            },
+            span: at,
+        },
+    );
+    function.blocks.extend([
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: vec![Stmt {
+                kind: StmtKind::If {
+                    condition: ExprId(0),
+                    then_block: BodyBlockId(3),
+                    else_block: Some(BodyBlockId(4)),
+                },
+                span: at,
+            }],
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+    ]);
+    let counts = count_function(&[], &function, &WorkMeter::default()).unwrap();
+    assert_eq!(
+        (counts.blocks, counts.statements, counts.type_frames),
+        (5, 4, 17)
+    );
+    assert_eq!(ordinary_frame_peak(&function), 4);
+}
+
+fn rich_parts() -> (Vec<Record>, Vec<Signature>, Vec<Function>, HirPlan) {
+    let at = origin();
+    let records = vec![Record {
+        id: RecordId(0),
+        name_span: at,
+        span: at,
+        fields: (0..3)
+            .map(|index| Field {
+                id: FieldId {
+                    record: RecordId(0),
+                    index,
+                },
+                ty: ValueTy::Scalar(Ty::I32),
+                name_span: at,
+                span: at,
+            })
+            .collect(),
+        end: at,
+    }];
+    let mut signature = plain_signature();
+    signature
+        .params
+        .push(ParameterTy::Value(ValueTy::Scalar(Ty::I32)));
+    let mut function = plain_function(0);
+    function.bindings.push(Binding {
+        mutable: false,
+        span: at,
+        annotation: None,
+        scope: BodyBlockId(0),
+        parameter_position: Some(0),
+    });
+    function.expressions.push(Expr {
+        kind: ExprKind::StructLiteral {
+            record: RecordId(0),
+            fields: Vec::new(),
+        },
+        span: at,
+    });
+    function.expressions.push(Expr {
+        kind: ExprKind::Call {
+            target: DefId(0),
+            args: vec![
+                Argument::Value(ExprId(0)),
+                Argument::Borrow {
+                    kind: BorrowKind::Shared,
+                    place: BorrowPlace::Owner(BindingId(0)),
+                    span: at,
+                    name_span: at,
+                    star_span: None,
+                },
+            ],
+        },
+        span: at,
+    });
+    function.expressions.push(Expr {
+        kind: ExprKind::Call {
+            target: DefId(0),
+            args: Vec::new(),
+        },
+        span: at,
+    });
+    function.blocks[0].body.insert(
+        0,
+        Stmt {
+            kind: StmtKind::If {
+                condition: ExprId(0),
+                then_block: BodyBlockId(1),
+                else_block: Some(BodyBlockId(3)),
+            },
+            span: at,
+        },
+    );
+    function.blocks.extend([
+        BodyBlock {
+            body: vec![Stmt {
+                kind: StmtKind::While {
+                    loop_id: LoopId(2),
+                    condition: ExprId(0),
+                    body: BodyBlockId(2),
+                },
+                span: at,
+            }],
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+        BodyBlock {
+            body: Vec::new(),
+            span: at,
+            end: at,
+        },
+    ]);
+    let mut source = source_bounds(TypeCounts {
+        functions: 1,
+        bindings: 1,
+        expressions: 4,
+        blocks: 4,
+        statements: 3,
+        calls: 2,
+        call_arguments: 2,
+        borrow_arguments: 1,
+        record_literals: 1,
+        presence_slots: 3,
+        type_frames: 17,
+    });
+    source.counts.records = 1;
+    source.counts.record_fields = 3;
+    source.counts.parameters = 1;
+    (records, vec![signature], vec![function], source)
+}
+
+#[test]
+fn c3_t0_enum_values_references_annotations_constructors_and_match_remain_denied() {
+    use crate::frontend::oir::owned_types::EnumId;
+    let at = origin();
+    let enumeration = AggregateTy::Enum(EnumId(0));
+    for mutant in 0..7 {
+        let (mut records, mut signatures, mut functions, source) = rich_parts();
+        match mutant {
+            0 => records[0].fields[0].ty = ValueTy::Owned(enumeration),
+            1 => signatures[0].result = ValueTy::Owned(enumeration),
+            2 => signatures[0].params[0] = ParameterTy::Value(ValueTy::Owned(enumeration)),
+            3 => {
+                signatures[0].params[0] = ParameterTy::Reference {
+                    referent: BorrowedTy::Exact(enumeration),
+                    kind: BorrowKind::Shared,
+                }
+            }
+            4 => functions[0].bindings[0].annotation = Some(ValueTy::Owned(enumeration)),
+            5 => {
+                functions[0].expressions[0].kind = ExprKind::ConstructEnum {
+                    variant: VariantId {
+                        enumeration: EnumId(0),
+                        index: 0,
+                    },
+                    payload: None,
+                }
+            }
+            6 => {
+                functions[0].blocks[0].body[0].kind = StmtKind::Match {
+                    scrutinee: BindingId(0),
+                    arms: Vec::new(),
+                }
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            prepare(
+                &records,
+                &signatures,
+                &functions,
+                &source,
+                &WorkMeter::default(),
+                at
+            )
+            .err()
+            .unwrap()
+            .code,
+            "E0500",
+            "mutant {mutant}"
+        );
+    }
+}
+
+#[test]
+fn c3_t0_wrong_nominal_function_root_and_source_table_identities_are_denied() {
+    let at = origin();
+    for mutant in 0..10 {
+        let (mut records, mut signatures, mut functions, mut source) = rich_parts();
+        let expected = if matches!(mutant, 6 | 7) {
+            "E0400"
+        } else {
+            "E0500"
+        };
+        match mutant {
+            0 => records[0].id = RecordId(1),
+            1 => {
+                if let ExprKind::StructLiteral { record, .. } =
+                    &mut functions[0].expressions[1].kind
+                {
+                    *record = RecordId(1);
+                }
+            }
+            2 => functions[0].id = DefId(1),
+            3 => functions[0].body = BodyBlockId(1),
+            4 => {
+                signatures.clear();
+            }
+            5 => source.counts.records = 2,
+            6 => source.counts.record_fields = 2,
+            7 => source.total = MAX_HIR_BYTES + 1,
+            8 => source.counts.functions = 0,
+            9 => functions[0].blocks.clear(),
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            prepare(
+                &records,
+                &signatures,
+                &functions,
+                &source,
+                &WorkMeter::default(),
+                at
+            )
+            .err()
+            .unwrap()
+            .code,
+            expected,
+            "mutant {mutant}"
+        );
+    }
+    // Direct lookup also checks identity, independently of prepare's table walk.
+    let (mut records, _, functions, _) = rich_parts();
+    records[0].id = RecordId(1);
+    assert_eq!(
+        count_function(&records, &functions[0], &WorkMeter::default())
+            .err()
+            .unwrap()
+            .code,
+        "E0500"
+    );
+}
+
+#[test]
+fn c3_t0_every_source_slot_kind_and_zero_slot_call_literal_requests_are_bounded() {
+    let at = origin();
+    let counts = one();
+    for kind in 0..KINDS {
+        let mut source = source_bounds(counts);
+        match kind {
+            0 => source.counts.functions = 0,
+            1 | 11 => source.counts.bindings = 0,
+            2 | 4 | 13 => source.counts.expressions = 0,
+            3 | 5 | 12 => source.counts.blocks = 0,
+            6 => source.counts.statements = 0,
+            7 => source.counts.borrow_arguments = 0,
+            8 => source.counts.type_frames = 0,
+            9 => source.counts.call_arguments = 0,
+            10 => source.counts.max_record_fields = 0,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            reconcile(&counts, &source, &WorkMeter::default(), at)
+                .err()
+                .unwrap()
+                .code,
+            "E0400",
+            "slot kind {kind}"
+        );
+    }
+    // Empty calls/records have zero payload slots but still one request each.
+    for literal in [false, true] {
+        let counts = TypeCounts {
+            calls: usize::from(!literal),
+            record_literals: usize::from(literal),
+            ..TypeCounts::default()
+        };
+        let source = source_bounds(TypeCounts::default());
+        assert_eq!(counts.slots(), [0; KINDS]);
+        assert_eq!(
+            reconcile(&counts, &source, &WorkMeter::default(), at)
+                .err()
+                .unwrap()
+                .code,
+            "E0400"
+        );
+    }
+}
+
+#[test]
+fn c3_t0_each_function_local_slot_and_request_subtraction_is_atomic() {
+    let at = origin();
+    for kind in 1..KINDS {
+        for request in [false, true] {
+            let (records, signatures, functions, source) = rich_parts();
+            let mut plan = prepare(
+                &records,
+                &signatures,
+                &functions,
+                &source,
+                &WorkMeter::default(),
+                at,
+            )
+            .unwrap();
+            if request {
+                plan.storage.requests[kind] -= 1;
+            } else {
+                plan.storage.slots[kind] -= 1;
+            }
+            let before = (
+                plan.storage.slots,
+                plan.storage.requests,
+                plan.next_function,
+            );
+            assert!(
+                plan.partition_next(&WorkMeter::default(), at).is_err(),
+                "kind {kind}, request {request}"
+            );
+            assert_eq!(
+                (
+                    plan.storage.slots,
+                    plan.storage.requests,
+                    plan.next_function
+                ),
+                before
+            );
+        }
+    }
+    let (records, signatures, functions, source) = rich_parts();
+    let mut plan = prepare(
+        &records,
+        &signatures,
+        &functions,
+        &source,
+        &WorkMeter::default(),
+        at,
+    )
+    .unwrap();
+    // Consuming Bodies before partition is legitimate and must not consume any
+    // function-local right. No function gets the top-level request back.
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(1).unwrap();
+    plan.reserve_bodies(&mut allocator, at).unwrap();
+    let local = plan.partition_next(&WorkMeter::default(), at).unwrap();
+    assert_eq!(
+        local.storage.slots,
+        [0, 1, 4, 4, 4, 4, 3, 1, 17, 2, 3, 1, 4, 4]
+    );
+    assert_eq!(
+        local.storage.requests,
+        [0, 1, 1, 1, 1, 1, 4, 1, 1, 2, 1, 1, 1, 1]
+    );
+    assert_eq!(plan.storage.slots, [0; KINDS]);
+    assert_eq!(plan.storage.requests, [0; KINDS]);
+}
+
+#[test]
+fn c3_t0_every_preparation_work_boundary_cleans_up_and_success_allocates_nothing() {
+    let at = origin();
+    let (records, signatures, functions, source) = rich_parts();
+    let work = WorkMeter::default();
+    prepare(&records, &signatures, &functions, &source, &work, at).unwrap();
+    // header1 + record1+fields3 + signature1+parameter1 + outer-function1
+    // + local(function1+binding1+E4+A2+B4+S3) + reconcile1+14 = 38.
+    assert_eq!(work.used(), 38);
+    for limit in 0..=38 {
+        let work = WorkMeter::new(limit);
+        let (success, stats) = super::super::reviewer_source::integration_measured(|| {
+            let result = prepare(&records, &signatures, &functions, &source, &work, at);
+            let success = result.is_ok();
+            drop(result);
+            success
+        });
+        assert_eq!(success, limit == 38);
+        assert_eq!(stats.1, 0);
+        if success {
+            assert_eq!(stats, (0, 0, 0));
+        }
+    }
+}
+
+#[test]
+fn c3_t0_each_count_sum_overflow_leaves_both_scalar_inputs_unchanged() {
+    let at = origin();
+    for field in 0..11 {
+        let mut left = TypeCounts::default();
+        match field {
+            0 => left.functions = usize::MAX,
+            1 => left.bindings = usize::MAX,
+            2 => left.expressions = usize::MAX,
+            3 => left.blocks = usize::MAX,
+            4 => left.statements = usize::MAX,
+            5 => left.borrow_arguments = usize::MAX,
+            6 => left.type_frames = usize::MAX,
+            7 => left.call_arguments = usize::MAX,
+            8 => left.calls = usize::MAX,
+            9 => left.presence_slots = usize::MAX,
+            10 => left.record_literals = usize::MAX,
+            _ => unreachable!(),
+        }
+        let right = one();
+        let before = left;
+        assert_eq!(
+            left.combined(&right, at).err().unwrap().code,
+            "E0400",
+            "field {field}"
+        );
+        assert_eq!(left, before);
+        assert_eq!(right, one());
+    }
 }
