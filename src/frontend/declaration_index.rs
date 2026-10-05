@@ -261,9 +261,15 @@ struct Scratch {
 // Explicit state ledger: conservative sum of nonoverlapping phase state plus
 // two complete prepared nominal-name arrays. Rows are allocation-free.
 // Conservative explicit fixed-state envelope. The 128-word bank covers scalar
-// counters, ranges and formatter arithmetic; row copies and association handles
-// are listed separately. Disjoint build/query/format phases are deliberately
+// item handles, counters, ranges and formatter arithmetic; row copies and other
+// association handles are listed separately. Disjoint build/query/format phases are deliberately
 // summed. Test-only event Vec headers/payloads are excluded.
+// The prior absolute record/callee -> select -> absolute_endpoint -> segments
+// chain has four by-value ItemPathRef handles (20 measured words). Name that
+// inherited obligation inside the unchanged 128-word bank. The other 108 words
+// retain the historical scalar/range/arithmetic envelope; this change does not
+// independently re-prove that older bank's complete slot-level occupancy.
+const ITEM_HANDLE_WORDS: usize = size_of::<[ItemPathRef; 4]>() / size_of::<usize>();
 const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<IndexPlan>()
     + size_of::<Counts>()
@@ -271,7 +277,8 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<[u32; 33]>() * 3
     + size_of::<ImportTxn>()
     + size_of::<PreparedTypeName<'static>>() * 2
-    + size_of::<[usize; 128]>()
+    + size_of::<[ItemPathRef; 4]>()
+    + size_of::<[usize; 128 - ITEM_HANDLE_WORDS]>()
     + size_of::<[u64; 2]>()
     + size_of::<IndexLimits>()
     + size_of::<SourceOwner<'static>>()
@@ -300,13 +307,26 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<AliasCell>()
     + size_of::<SeenCell>()
     + size_of::<[Span; 4]>()
-    // Classified prefix/return and nominal exposure may coexist with legacy wrappers.
-    + size_of::<AbsolutePrefix>()
-    + size_of::<QualifiedValueEndpoint>()
-    + size_of::<NominalExposure>()
+    // Complete fallible query results may coexist with legacy wrapper returns.
+    + size_of::<Result<AbsolutePrefix, Box<Diagnostic>>>()
+    + size_of::<Result<QualifiedValueEndpoint, Box<Diagnostic>>>()
+    + size_of::<Result<NominalExposure, Box<Diagnostic>>>()
     // The nominal request and reverse-map validation result can coexist.
-    + size_of::<NominalId>();
-const _: () = assert!(FIXED_SCRATCH <= 4096);
+    + size_of::<Result<NominalId, Box<Diagnostic>>>()
+    // The shared nominal helper borrows a handle rather than making a fifth copy.
+    + size_of::<&ItemPathRef>();
+const _: () = {
+    assert!(FIXED_SCRATCH <= 4096);
+    assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
+    assert!(ITEM_HANDLE_WORDS <= 128);
+    // The existing four-Span envelope covers the legacy exposure return and use
+    // origin (56 + 24 on the measured target). The generic nominal result above
+    // is separate, so conversion does not borrow arbitrary counter-bank credit.
+    assert!(
+        size_of::<Result<Exposure, Box<Diagnostic>>>() + size_of::<Span>()
+            <= size_of::<[Span; 4]>()
+    );
+};
 
 #[derive(Clone, Copy, Debug)]
 enum AbsolutePrefix {
@@ -671,7 +691,7 @@ impl Tables<'_> {
             "variant diagnostic name bytes",
         )?;
         Err(owned_diagnostic::diagnostic(
-            "E0202",
+            "E0200",
             "resolve",
             format_args!(
                 "unknown variant `{}` of enum `{}`",
@@ -891,7 +911,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 }
                 self.lookup_nominal_type(
                     requester,
-                    ItemPathRef {
+                    &ItemPathRef {
                         file: ty.span.file,
                         path,
                     },
@@ -980,7 +1000,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<RecordId, Box<Diagnostic>> {
-        match self.lookup_nominal_type(requester, path, context, true)? {
+        match self.lookup_nominal_type(requester, &path, context, true)? {
             NominalId::Record(record) => Ok(record),
             NominalId::Enum(_) => Err(bad(self.tables.sources.eof())),
         }
@@ -991,16 +1011,16 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<NominalId, Box<Diagnostic>> {
-        self.lookup_nominal_type(requester, path, context, false)
+        self.lookup_nominal_type(requester, &path, context, false)
     }
     fn lookup_nominal_type(
         &mut self,
         requester: ModuleId,
-        path: ItemPathRef,
+        path: &ItemPathRef,
         context: TypeContext,
         records_only: bool,
     ) -> Result<NominalId, Box<Diagnostic>> {
-        let at = self.tables.sources.path_span(path)?;
+        let at = self.tables.sources.path_span(*path)?;
         self.work.debit(
             1,
             at,
@@ -1010,7 +1030,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 "query nominal type"
             },
         )?;
-        if let Some(id) = self.select(requester, path, true)? {
+        if let Some(id) = self.select(requester, *path, true)? {
             let row = self.tables.original(id)?;
             if row.flags & KIND_MASK == RECORD || (!records_only && row.flags & KIND_MASK == ENUM) {
                 #[cfg(test)]
@@ -1035,7 +1055,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             ast::ItemPath::Absolute(_) => *self
                 .tables
                 .sources
-                .segments(path)?
+                .segments(*path)?
                 .last()
                 .ok_or_else(|| bad(at))?,
             _ => at,
