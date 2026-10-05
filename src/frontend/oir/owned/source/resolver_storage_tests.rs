@@ -365,3 +365,208 @@ fn c3a_paid_helper_complete_carriers_are_measured_before_consumer_activation() {
         );
     });
 }
+
+#[test]
+fn c3a_paid_helper_scratch_capacities_are_cumulative_and_repeat_fails_closed() {
+    with_index(SCOPES, |index| {
+        let sources = index.sources();
+        let (key, module) = index.function(DefId(0)).unwrap();
+        let ast = sources.ast(module).unwrap();
+        let function = &ast.functions[key.index];
+        let mut counts = HirCounts::default();
+        super::super::hir_budget::count_function(ast, function, &WorkMeter::default(), &mut counts)
+            .unwrap();
+        // Two separately allocated lifetimes consume the same global quotas.
+        let mut twice = counts;
+        twice.bindings *= 2;
+        twice.scope_marks *= 2;
+        twice.loop_slots *= 2;
+        twice.resolve_frames *= 2;
+        let mut storage = PaidStorage::new(twice);
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(10).unwrap();
+        for lifetime in 1..=2 {
+            let scope = PaidScope::new(
+                index,
+                &WorkMeter::default(),
+                function,
+                &counts,
+                &mut storage,
+                &mut allocator,
+            )
+            .unwrap();
+            let loops = storage
+                .reserve::<LoopId>(
+                    &mut allocator,
+                    Kind::Loops,
+                    counts.loop_slots,
+                    function.name,
+                )
+                .unwrap();
+            let frames = storage
+                .reserve::<ResolveFrame>(
+                    &mut allocator,
+                    Kind::Frames,
+                    counts.resolve_frames,
+                    function.name,
+                )
+                .unwrap();
+            storage
+                .observe_scratch(&scope, &loops, &frames, function.name)
+                .unwrap();
+            assert_eq!(
+                storage.scratch,
+                [
+                    4 * lifetime,
+                    4 * lifetime,
+                    2 * lifetime,
+                    2 * lifetime,
+                    16 * lifetime
+                ]
+            );
+            if lifetime == 2 {
+                let before = storage.scratch;
+                assert_eq!(
+                    storage
+                        .observe_scratch(&scope, &loops, &frames, function.name)
+                        .unwrap_err()
+                        .code,
+                    "E0400"
+                );
+                assert_eq!(storage.scratch, before);
+            }
+        }
+        assert_eq!(storage.scratch, storage.reserved[RETAINED_KINDS..]);
+        assert_eq!(&storage.remaining[RETAINED_KINDS..], &[0; 5]);
+        assert_eq!(allocator.attempts, 10);
+        assert!(!allocator.observer_trace_overflow);
+        // Actual scratch without any corresponding reservation is rejected.
+        let mut empty = PaidStorage::new(HirCounts::default());
+        let scope = PaidScope {
+            names: Vec::with_capacity(1),
+            exits: Vec::new(),
+            marks: Vec::new(),
+        };
+        assert_eq!(
+            empty
+                .observe_scratch(&scope, &Vec::new(), &Vec::new(), function.name)
+                .unwrap_err()
+                .code,
+            "E0400"
+        );
+        assert_eq!(empty.scratch, [0; 5]);
+    });
+}
+
+const PREFIX_NAMES: &str = "enum Unused{V} fn names(aaaaaaaa:i32,aaaaaaab:i32)->i32{return 0;}";
+#[test]
+fn c3a_paid_helper_mid_sort_and_dedup_work_failures_release_real_allocations() {
+    with_index(PREFIX_NAMES, |index| {
+        let sources = index.sources();
+        let (key, module) = index.function(DefId(0)).unwrap();
+        let ast = sources.ast(module).unwrap();
+        let function = &ast.functions[key.index];
+        let mut counts = HirCounts::default();
+        super::super::hir_budget::count_function(ast, function, &WorkMeter::default(), &mut counts)
+            .unwrap();
+        // Independently: 2 parameter + 1 statement inventory visits, 8 bytes
+        // for the heap comparison, then 8 bytes for duplicate coalescing.
+        // Limit 7 stops four bytes into heapsort; 15 stops four into dedup.
+        for limit in [7, 15, 18, 19, 20] {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(3).unwrap();
+            let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+                let work = WorkMeter::new(limit);
+                work.enable_observation();
+                let mut storage = PaidStorage::new(counts);
+                let result = PaidScope::new(
+                    index,
+                    &work,
+                    function,
+                    &counts,
+                    &mut storage,
+                    &mut allocator,
+                );
+                assert_eq!(result.is_ok(), limit >= 19);
+                assert_eq!(work.used(), limit.min(19));
+                let bytes = work
+                    .events
+                    .borrow()
+                    .iter()
+                    .filter(|event| event.operation == "paid resolver name byte")
+                    .count();
+                assert_eq!(bytes as u64, limit.min(19) - 3);
+                if limit < 19 {
+                    assert_eq!(result.as_ref().err().unwrap().code, "E0400");
+                } else {
+                    let scope = result.as_ref().unwrap();
+                    assert_eq!(scope.names.len(), 2);
+                    assert_eq!(sources.text(scope.names[0].name).unwrap(), "aaaaaaaa");
+                    assert_eq!(sources.text(scope.names[1].name).unwrap(), "aaaaaaab");
+                }
+                drop(result);
+            });
+            assert_eq!(live, 0, "scope leaked after sort work limit {limit}");
+            assert!(peak > 0);
+            assert_eq!(allocator.attempts, 3);
+        }
+    });
+}
+
+#[test]
+fn c3a_paid_helper_mid_lookup_failure_preserves_activation_and_releases_storage() {
+    with_index(PREFIX_NAMES, |index| {
+        let sources = index.sources();
+        let (key, module) = index.function(DefId(0)).unwrap();
+        let ast = sources.ast(module).unwrap();
+        let function = &ast.functions[key.index];
+        let mut counts = HirCounts::default();
+        super::super::hir_budget::count_function(ast, function, &WorkMeter::default(), &mut counts)
+            .unwrap();
+        for limit in [4, 8, 16, 17, 18] {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(3).unwrap();
+            let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+                let mut storage = PaidStorage::new(counts);
+                let mut scope = PaidScope::new(
+                    index,
+                    &WorkMeter::default(),
+                    function,
+                    &counts,
+                    &mut storage,
+                    &mut allocator,
+                )
+                .unwrap();
+                let target = function.params[0].name;
+                scope.activate(0, BindingId(0), target).unwrap();
+                scope
+                    .activate(1, BindingId(1), function.params[1].name)
+                    .unwrap();
+                let work = WorkMeter::new(limit);
+                // Binary lookup compares the other eight-byte name, then the
+                // equal eight-byte name and its length: total exactly 17.
+                let result = scope.active(index, &work, target);
+                assert_eq!(result.is_ok(), limit >= 17);
+                assert_eq!(work.used(), limit.min(17));
+                if limit >= 17 {
+                    assert_eq!(result.as_ref().unwrap(), &Some(BindingId(0)));
+                } else {
+                    assert_eq!(result.as_ref().err().unwrap().code, "E0400");
+                }
+                assert_eq!(
+                    (scope.names[0].active, scope.names[1].active),
+                    (Some(BindingId(0)), Some(BindingId(1)))
+                );
+                assert_eq!(scope.exits, [0, 1]);
+                drop(result);
+                assert_eq!(
+                    scope.active(index, &WorkMeter::new(17), target).unwrap(),
+                    Some(BindingId(0))
+                );
+            });
+            assert_eq!(live, 0, "scope leaked after lookup work limit {limit}");
+            assert!(peak > 0);
+            assert_eq!(allocator.attempts, 3);
+        }
+    });
+}
