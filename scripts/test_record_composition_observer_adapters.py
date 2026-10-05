@@ -24,9 +24,9 @@ def source_binding():
 
 @contextmanager
 def admitted_composition_view():
-    """Validate current unary inputs, then expose the exact sealed predecessor.
+    """Validate current projected inputs, then expose the exact sealed predecessor.
 
-    This is an archived adapter control, not a unary runtime observation. The
+    This is an archived adapter control, not a projected runtime observation. The
     binding checks the complete current source roster and reversible transition.
     Admission deliberately happens in normal Python, before any -O child.
     """
@@ -81,7 +81,7 @@ class RecordObserverPackageControls(unittest.TestCase):
 
     def test_normal_and_optimized_reversal_and_scope_controls(self):
         with admitted_composition_view() as (view, captured):
-            self.assertEqual(len(captured['inputs']), 199)
+            self.assertEqual(len(captured['inputs']), 201)
             self.assertEqual(len(captured['composition_inputs']), 196)
             for optimized in (False, True):
                 with self.subTest(optimized=optimized):

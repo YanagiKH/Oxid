@@ -91,9 +91,9 @@
       "sha256": "247e03ccfe2e59b764bc84a7ae09127ee56873294acb8be4b9553acc03349f10"
     },
     {
-      "bytes": 23801,
+      "bytes": 23700,
       "path": "src/frontend/ast.rs",
-      "sha256": "21812bac3f97ab62882eac582474bb4286ba098e0e874285d80ec9d117277dfc"
+      "sha256": "eaa0305f9adcb2aea776bf5a2ac977f607b57b581f1a52e25d9309e225db8577"
     },
     {
       "bytes": 9523,
@@ -141,9 +141,9 @@
       "sha256": "762c285dbf06f832447a8175677dde808fd818c8b1504173736221012aa0f2cc"
     },
     {
-      "bytes": 40620,
+      "bytes": 40432,
       "path": "src/frontend/format/ast_tests.rs",
-      "sha256": "c00edcad44dd75028a03313537a82cd3b801263d578e538ee26de9430d4d8700"
+      "sha256": "ce74acbdbc379df6acae480e2d2a80a8735adba73b0c793fb74e81cc5fb9e32f"
     },
     {
       "bytes": 7376,
@@ -256,9 +256,9 @@
       "sha256": "b6c58d0c7585c1018dd0aadc5f9f0a19f9d8926517cc5d885fdb06336c852810"
     },
     {
-      "bytes": 50198,
+      "bytes": 50162,
       "path": "src/frontend/oir/owned/array_native_tests.rs",
-      "sha256": "94d5810c804c6fd3c1454e064fc02db9368eb8912db5d4bfbfb666ccd06099da"
+      "sha256": "8aea5e9748641f43597e9d904886fe49a827c692c227b0f73b91e21c638822e6"
     },
     {
       "bytes": 16256,
@@ -271,9 +271,9 @@
       "sha256": "202ee680998b73ad169e2886cc405e38e7f44db6a9a1dd0182d50ff08cfcd76e"
     },
     {
-      "bytes": 44096,
+      "bytes": 44064,
       "path": "src/frontend/oir/owned/array_reference_tests.rs",
-      "sha256": "11a959d6ca5be9fa5f191b549e546acb1ef0db857a34803d0fabec48f9ce0054"
+      "sha256": "511ae8ce1ae2686c87057e0d263073935a29f85844a9aec0a3cfaa0eefe5e8ba"
     },
     {
       "bytes": 32385,
@@ -281,9 +281,9 @@
       "sha256": "81f1776b86fc31c22cba980dcf3a289fc23027d707bd1d660002f712a0566873"
     },
     {
-      "bytes": 13879,
+      "bytes": 13602,
       "path": "src/frontend/oir/owned/budget.rs",
-      "sha256": "0f3322f9e96ada6441fc8856406105a631a5be0aa4ae832ca52c2ba6961bd82b"
+      "sha256": "bf62b75c83a219e492da0bd33c813bb9c1005736ee08c1a577fb77401fbccb71"
     },
     {
       "bytes": 6007,
@@ -296,9 +296,9 @@
       "sha256": "6128709e969a0bfc1ad115740a4b0abff29c03ff9e8c91802002c13e4af514f3"
     },
     {
-      "bytes": 28843,
+      "bytes": 28811,
       "path": "src/frontend/oir/owned/composition_reference_tests.rs",
-      "sha256": "50af391e3cffea2686239afa6c716e147cb30d53d2886814ad0a5e3d477a5750"
+      "sha256": "2580152003279fffd1c84c28d6827fb52393c6deddcee3d77b81bae9aa15a717"
     },
     {
       "bytes": 7570,
@@ -306,34 +306,34 @@
       "sha256": "318c84103c4d1647d79af8cda5ebae684ea11c49cd41980fe058bfce01233303"
     },
     {
-      "bytes": 45224,
+      "bytes": 45124,
       "path": "src/frontend/oir/owned/consumer_fixtures.rs",
-      "sha256": "e2c970330b4386e1f7c22c9ff3b55a1fb109ff187b6a6c47b3fdee5864612aca"
+      "sha256": "467229a3d4fbee81c79e4bafaaa0ecb48cb89c50a4720ad38d53fd6fe88f4c15"
     },
     {
-      "bytes": 35063,
+      "bytes": 34999,
       "path": "src/frontend/oir/owned/consumer_pilot.rs",
-      "sha256": "9d9f6fe4f7c2e08736b3656d0af2a474982c42a696911a8d09a417363318d035"
+      "sha256": "64b2642d8d8a1041c4046818e56047bf72ededc52a78ac8c4a28ffe7179d07ff"
     },
     {
       "bytes": 2296,
       "path": "src/frontend/oir/owned/consumer_tests.rs",
-      "sha256": "648d6414c27a6eae115d7be88d84d8005fc84470b8c675dbd4db5346df30647c"
+      "sha256": "c3e31686fd1a419eaf5f3d33c30c4f967d8183e697d17bd97f528c672af3d11a"
     },
     {
-      "bytes": 27121,
+      "bytes": 27053,
       "path": "src/frontend/oir/owned/denial_tests.rs",
-      "sha256": "4bbf3f5debc2dac7345a8047d0cd8ac04b5c1556d8a47268de175872debe1339"
+      "sha256": "faa204fa339073b01628f513d7c09f819f70fb22a47c2bb375149423df64a494"
     },
     {
-      "bytes": 87468,
+      "bytes": 80954,
       "path": "src/frontend/oir/owned/execute.rs",
-      "sha256": "4d49b8490e1074369d5b8d2c845f8b9ece6c4d495c7721e777f66d9f952cc648"
+      "sha256": "d84e3261b8480368ccfef4f6c1adf2f583716369135f53e0a427bad7a132b667"
     },
     {
-      "bytes": 41549,
+      "bytes": 35272,
       "path": "src/frontend/oir/owned/execute_tests.rs",
-      "sha256": "ffc53bb7084945172c3864fe6551d862dbb816ab5656f518d791c34ac5333b49"
+      "sha256": "5cc6ead50887fbf86454832da74eedb1024bb5e9de424e070d38cca1e7975fa0"
     },
     {
       "bytes": 40099,
@@ -341,24 +341,24 @@
       "sha256": "7061f75873d6f7bbd0af32c101f66b80f3e383ae8a33fad3e32f6f92b9da6e10"
     },
     {
-      "bytes": 10589,
+      "bytes": 10559,
       "path": "src/frontend/oir/owned/mod.rs",
-      "sha256": "1e5ae076181e6d94ba3f87b528e61189d96e497d7967c401d5c3c6b7cf1cb088"
+      "sha256": "576d306d8cc79f87d91f79f57e190d5348109630acd54c759670471ca2556603"
     },
     {
-      "bytes": 102944,
+      "bytes": 101338,
       "path": "src/frontend/oir/owned/native.rs",
-      "sha256": "86972ba6bca2da8c51b4c43488ee4b8bae6d5719dd792d8bff713f508e1ead08"
+      "sha256": "299e718e204868cc29f7149122f14a7545a5bfa3ffa896726a4c24dd270beacd"
     },
     {
-      "bytes": 25119,
+      "bytes": 25047,
       "path": "src/frontend/oir/owned/native_heldout_review.rs",
-      "sha256": "f59345443c86893479023305994e8225d448bd3f579505693d8059f871dc6df0"
+      "sha256": "8ee0580448a85d052d414543597992f72e3442bb0e276014037cd411e22ad829"
     },
     {
-      "bytes": 84561,
+      "bytes": 84494,
       "path": "src/frontend/oir/owned/native_tests.rs",
-      "sha256": "b8f21d93946b8327df4711b8f31faa593dc6479fe406890ddb0df7b59d2d5844"
+      "sha256": "6742a5effbef4a3908a78a611b8fe6fd551d06b856c442430c91b903830300b1"
     },
     {
       "bytes": 13432,
@@ -366,9 +366,9 @@
       "sha256": "37a416236d00ac3b5423497b0eca5a4b91900f4ef58c0702e1755346a8021693"
     },
     {
-      "bytes": 114405,
+      "bytes": 114321,
       "path": "src/frontend/oir/owned/oracle_tests.rs",
-      "sha256": "4ae1e5cec71a9e67dbed30c25f753ef1ce05d6eee9f2de860e983e1855f55927"
+      "sha256": "c938a73e7d9d0a4471691372d841bd142539672b357cd5e226787ea9fad5efe4"
     },
     {
       "bytes": 21238,
@@ -376,14 +376,9 @@
       "sha256": "70a229468d0fb5b9f484e8b59f3d993550ba57d779501ac35423dff6bd93c80c"
     },
     {
-      "bytes": 18690,
+      "bytes": 18214,
       "path": "src/frontend/oir/owned/plan.rs",
-      "sha256": "9f9510583aba5e8e2a786454b00d2a5624ea1e18cf29b738783a8b51bd9addcd"
-    },
-    {
-      "bytes": 18310,
-      "path": "src/frontend/oir/owned/projected_slice_native_tests.rs",
-      "sha256": "24cf3fe21ed0e3ca68e239df695e438a9758b93d7c724d170466e70c96096c04"
+      "sha256": "e2385865c703d78c71b51e02e5b395612f0a6f634939733b8f952c635d88b271"
     },
     {
       "bytes": 1705,
@@ -396,14 +391,14 @@
       "sha256": "de545a0ff0d68e851d474e0fbac43a54def930ecf86113b456340bb36fd5ba30"
     },
     {
-      "bytes": 64111,
+      "bytes": 64043,
       "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
-      "sha256": "b8d186886d88f0941735954c295c9dc564da8aa1f48adaf2c23ba35aab8f57c1"
+      "sha256": "ee7fb466ae43a8cd5740862522ab6b9da78d3f46a607499eda225946953e06a3"
     },
     {
-      "bytes": 57760,
+      "bytes": 57644,
       "path": "src/frontend/oir/owned/reviewer_heldout.rs",
-      "sha256": "29720312c8e1344a582057342ce4da5fe0e1cee53a73502e72713980bb54ca44"
+      "sha256": "56dccfa63568c91f7d08595d830bff8b4e59c7eaebaa94e9a64920386ab0d785"
     },
     {
       "bytes": 22384,
@@ -411,14 +406,14 @@
       "sha256": "6a3a353da733bdffc703929ae0d1b8c131169b1b4e736a2a1043d89444587429"
     },
     {
-      "bytes": 71140,
+      "bytes": 70933,
       "path": "src/frontend/oir/owned/reviewer_reference_tests.rs",
-      "sha256": "c7cf2f1df66b06c4d5c93957069589af3d3d9b94b7e1221771a5bed0545a418c"
+      "sha256": "f335a79c3c1530260cb986f607c48027474b713d6a600b8d250053bd73fd9b9d"
     },
     {
-      "bytes": 35194,
+      "bytes": 34439,
       "path": "src/frontend/oir/owned/shape.rs",
-      "sha256": "9e10cea9e5b72872e6f85bb3f9d5d1113e7fcccdabe31381fd5784001041aa3e"
+      "sha256": "111ba5fc3e37e0c81053331bf78d1f86b4cd40d04310bf8d71f33d40617aeaf5"
     },
     {
       "bytes": 12584,
@@ -501,14 +496,14 @@
       "sha256": "589bd31889a77a27c8ec0f7916e75a470cf50d9e04d0477b65e9fe71f572cf76"
     },
     {
-      "bytes": 5149,
+      "bytes": 5072,
       "path": "src/frontend/oir/owned/source/hir.rs",
-      "sha256": "a71a19d761a5e6a788d7852503753e75889b80d7abadd7b281625b598f770e0d"
+      "sha256": "952fdc5d1b5ea9f566951ae03adb0375d44944a9d52122b8e734d004892750db"
     },
     {
-      "bytes": 79290,
+      "bytes": 79006,
       "path": "src/frontend/oir/owned/source/lower.rs",
-      "sha256": "c4074726471490b832bcea652e043219c6459df0e4d7e44333e14db302cda8c0"
+      "sha256": "315305143bd9f3860d19d42a85a97e7506237e57fe867e7a89de9471f17b408d"
     },
     {
       "bytes": 10371,
@@ -516,14 +511,14 @@
       "sha256": "031b2d1e77edc63d4ab3db72eb77a6c1d3d1b2278a52092058fa79f7258e3649"
     },
     {
-      "bytes": 863,
+      "bytes": 818,
       "path": "src/frontend/oir/owned/source/mod.rs",
-      "sha256": "52f0edcf649a081072e774d3b98d891afab778bd169d9bffeed981dbc04f077d"
+      "sha256": "aa83e332b8bf646cd83c4749d6d56e1d8fa9f936b36e0bf211c8ab94e0855ae4"
     },
     {
-      "bytes": 7025,
+      "bytes": 7010,
       "path": "src/frontend/oir/owned/source/native_resource_tests.rs",
-      "sha256": "721fa3c78e38a2280526a2c07664f72a8d41732145c2cc0f9c5980100ed6a338"
+      "sha256": "80c5ea3164536ed106d16a7bc79414c074b759eb6c1e08a1ab8ca0d60de2dd5f"
     },
     {
       "bytes": 5526,
@@ -531,24 +526,19 @@
       "sha256": "ae981f563bb108d1681d42dc146b5834409132a25289f05ad5e86686a44a2eee"
     },
     {
-      "bytes": 4126,
-      "path": "src/frontend/oir/owned/source/projected_slice_raw_tests.rs",
-      "sha256": "05a98c16899b51c18df1fa2c77502ea4d6d1913ac6c53710a3ee028df8e4da88"
-    },
-    {
-      "bytes": 48284,
+      "bytes": 47147,
       "path": "src/frontend/oir/owned/source/resolve.rs",
-      "sha256": "9625e24ac2ad146fe2563ede2cbe2be0d5e495de85c7596fd5d15558cd4bcf8a"
+      "sha256": "153c4c40bb04bff269be2836a45f57ec66ab5b1c2dc501301f258a7ad556b259"
     },
     {
-      "bytes": 7164,
+      "bytes": 7006,
       "path": "src/frontend/oir/owned/source/resource_fixtures.rs",
-      "sha256": "0e65aa030e3aa56b15f7a5f66050454e75d84a508ab4cb43dbb07094511d6023"
+      "sha256": "39579764af0e7841bcd249be1e2bf1cf017c8e3349a9352d2e395cf9d6aa881f"
     },
     {
-      "bytes": 26974,
+      "bytes": 26643,
       "path": "src/frontend/oir/owned/source/reviewer_heldout.rs",
-      "sha256": "adb4f0586bfe7cd96051954e39c60ee80fe796c237f6a70f6a1dd4a301eb124e"
+      "sha256": "2760cd15054af7bbfdc6cfa6bc1b193a909ad78857ff6f07d96d3b1502140d44"
     },
     {
       "bytes": 1862,
@@ -556,9 +546,9 @@
       "sha256": "1a5bfa835de5b22b89d8facc66adc941970dfd968e4d59f88123b6faf8cdb6ed"
     },
     {
-      "bytes": 1929,
+      "bytes": 1890,
       "path": "src/frontend/oir/owned/source/reviewer_resource_runtime.rs",
-      "sha256": "f7d7ceb22354a2a5dbef97540204930103574ecbdbad8ef92b3278455979e01b"
+      "sha256": "9d247b483e42dd86c452c86221119628fd35c34b0e3a3d267c1e247829562e8f"
     },
     {
       "bytes": 26086,
@@ -566,14 +556,14 @@
       "sha256": "8a5e408568ddf0548de422ee0ae82e08b94ebca342aa8f5cbe09ea275902d39c"
     },
     {
-      "bytes": 10067,
+      "bytes": 9570,
       "path": "src/frontend/oir/owned/source/runtime_resource_tests.rs",
-      "sha256": "11e973beae6cbd3a12cea6ca3ea463433d799d246209ff80ad2a40f88330380d"
+      "sha256": "794e81b0c16645ec25f25ac70e140c300f11bbfa41aeb8f5dc606667f37d734f"
     },
     {
-      "bytes": 4010,
+      "bytes": 3999,
       "path": "src/frontend/oir/owned/source/slice_raw_tests.rs",
-      "sha256": "e67a18eaa5053886c25e901e5e0baa489ddb7bc74a1d3b1cffa4783976cec06a"
+      "sha256": "8733c03c9846d7577ec5e9aec3458e30b8d15ba891257b177d22565eb07a818f"
     },
     {
       "bytes": 6645,
@@ -586,19 +576,19 @@
       "sha256": "686a67ca817c06462d573ed03cef5f77aafd5545f5a0e9065f8d829560be1a51"
     },
     {
-      "bytes": 55531,
+      "bytes": 48781,
       "path": "src/frontend/oir/owned/source/typeck.rs",
-      "sha256": "0b817ed94a3acd777a43fb0371b85c97ecb9d09347a0ed5e3b9443a7e7bdf267"
+      "sha256": "75fba09c41b45dcde4aed8a7d98ffda83da00daa3b89e71112c9f0ba585965d8"
     },
     {
-      "bytes": 1925,
+      "bytes": 1630,
       "path": "src/frontend/oir/owned/storage.rs",
-      "sha256": "1190bf5496f5fb3bbbc30eeea6767f3b2e8544acc01c8c5aaa948743dea1c597"
+      "sha256": "57fe594c36068d687960c3b2b8a47ba10d3fc7ff1a7e5be9138b02c3f4ab7f88"
     },
     {
-      "bytes": 50383,
+      "bytes": 50271,
       "path": "src/frontend/oir/owned/tests.rs",
-      "sha256": "debeef9b08dc5a04d0f2964c8f389e3c808be57da1e15d6076f8c8121d25fa83"
+      "sha256": "819a2a03e4d8fac67acb2b9cd706a6c09facec0a0523531b6b53121784504fbe"
     },
     {
       "bytes": 6299,
@@ -676,14 +666,14 @@
       "sha256": "6fb80f686eedee800bd506782d0bd72d1b96d3813a6ffdf9a285da8757e3d619"
     },
     {
-      "bytes": 14131,
+      "bytes": 11522,
       "path": "src/frontend/owned_syntax_tests.rs",
-      "sha256": "202f4f091697bf761aeced18a08bf6286f9287296709c8cd7e20deec5511a241"
+      "sha256": "a4c0f5987f77ccd988e657d15717e949acc47864a69917a68d6291049c7019a5"
     },
     {
-      "bytes": 55399,
+      "bytes": 54781,
       "path": "src/frontend/parser.rs",
-      "sha256": "6dcdee648bb34eaa12f186394ed0383dde4c9373d6aca2e0f69f86895c952113"
+      "sha256": "2102b75995fd475a145eab3334664140227cf8939826231e432bd992b700ec53"
     },
     {
       "bytes": 6213,
@@ -1011,21 +1001,19 @@
       "sha256": "23e5bb6d0050b8adef32aada00f779c1a43c07dc42bd762d23529b794ac5d6a5"
     },
     {
-      "bytes": 13218,
+      "bytes": 13217,
       "path": "tests/typed_record_composition.rs",
-      "sha256": "347a35be3794ef927789a3d036e99ccb45bcb1b52c49272a8647b1924b5c8db8"
+      "sha256": "cf4e7f6b9748017bb30a5681fa0c2a0a3bada3b3c266ef886e8f210ecc55186b"
     }
   ],
   "formatter_base_head": "17ed3de243785006ab888d87af4428d06117b21d",
   "formatter_source_sha256": "69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06",
   "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
-  "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "purpose": "Current checked i32 unary negation inputs; predecessor qualification is retained separately",
-  "reviewed_source_head": "052ad52ac876c01b91701132cffb466689b24d01",
+  "reviewed_source_head": "bf48512acf86e2d23c28b6b9b16de3be3d127051",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50",
-  "unary_base_head": "c4c4ec0958a31fc7878bdc4031e93b204ff14acb",
-  "unary_source_sha256": "d9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220"
+  "source_only_tree": "715d047f37db8b7658bda688ff4e5961609193f8",
+  "unary_base_head": "c4c4ec0958a31fc7878bdc4031e93b204ff14acb"
 }

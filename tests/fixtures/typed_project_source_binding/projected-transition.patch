@@ -1,0 +1,2904 @@
+diff --git a/src/frontend/ast.rs b/src/frontend/ast.rs
+index ea235d9..267c97c 100644
+--- a/src/frontend/ast.rs
++++ b/src/frontend/ast.rs
+@@ -178,8 +178,12 @@ pub enum ItemId {
+ }
+ #[derive(Clone, Copy, Debug)]
+ pub enum BorrowPlace {
++    /// Complete bounded named-root field path, or a single whole binding name.
+     OwnerName(Span),
+-    ForwardedParameter { name: Span, star_span: Span },
++    ForwardedParameter {
++        name: Span,
++        star_span: Span,
++    },
+ }
+ #[derive(Debug)]
+ pub enum Argument {
+diff --git a/src/frontend/format/ast_tests.rs b/src/frontend/format/ast_tests.rs
+index b357714..6db2e23 100644
+--- a/src/frontend/format/ast_tests.rs
++++ b/src/frontend/format/ast_tests.rs
+@@ -256,11 +256,11 @@ impl<'a> Fingerprint<'a> {
+                 match *place {
+                     BorrowPlace::OwnerName(name) => {
+                         self.tag("owner");
+-                        self.spelling(name);
++                        self.access_path(name);
+                     }
+                     BorrowPlace::ForwardedParameter { name, star_span } => {
+                         self.tag("forwarded");
+-                        self.spelling(name);
++                        self.access_path(name);
+                         self.span(star_span);
+                     }
+                 }
+@@ -658,6 +658,7 @@ fn normalized(text: &str) -> Vec<Part> {
+ // runtime fixtures. No packages or unrelated language proposals are needed.
+ const CORPUS: &[(&str, &str)] = &[
+     ("empty", ""),
++    ("projected-borrow-paths", "fn use_paths()->(){f(&batch /* root */ . inner . samples,&mut batch.inner.samples,&*p . inner . samples,&mut *p /* ref */ .inner.samples);return;}"),
+     ("comments-only", "// 雪\r\n/* é\n braces { } and punctuation :: */\r\n"),
+     ("scalar-expressions", r#"
+ // leading comment
+diff --git a/src/frontend/oir/owned/array_native_tests.rs b/src/frontend/oir/owned/array_native_tests.rs
+index ce75509..fc05ab1 100644
+--- a/src/frontend/oir/owned/array_native_tests.rs
++++ b/src/frontend/oir/owned/array_native_tests.rs
+@@ -1143,6 +1143,7 @@ impl Effects {
+             span: s(7),
+         });
+         caller.loans.push(LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: 0,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+diff --git a/src/frontend/oir/owned/array_reference_tests.rs b/src/frontend/oir/owned/array_reference_tests.rs
+index a2c1b22..ab11fb7 100644
+--- a/src/frontend/oir/owned/array_reference_tests.rs
++++ b/src/frontend/oir/owned/array_reference_tests.rs
+@@ -968,6 +968,7 @@ fn helper_raw(case: HelperCase, s: &impl Fn(usize) -> Span) -> RawOwnedProgram {
+     ]
+     .into_iter()
+     .map(|(call, argument, kind, span)| LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(call),
+         argument,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+diff --git a/src/frontend/oir/owned/budget.rs b/src/frontend/oir/owned/budget.rs
+index 77207e2..ca34b16 100644
+--- a/src/frontend/oir/owned/budget.rs
++++ b/src/frontend/oir/owned/budget.rs
+@@ -259,6 +259,14 @@ pub(super) fn preflight(
+                 || !f.loans.is_empty(),
+             ..FunctionCounts::default()
+         };
++        for loan in &f.loans {
++            cap(
++                loan.projection.len(),
++                MAX_CONTAINMENT_DEPTH,
++                "loan projection depth",
++            )?;
++            c.projection_fields = add(c.projection_fields, loan.projection.len())?;
++        }
+         for call in &f.calls {
+             cap(
+                 call.arguments.len(),
+diff --git a/src/frontend/oir/owned/composition_reference_tests.rs b/src/frontend/oir/owned/composition_reference_tests.rs
+index 0d55f8c..fd6d9bd 100644
+--- a/src/frontend/oir/owned/composition_reference_tests.rs
++++ b/src/frontend/oir/owned/composition_reference_tests.rs
+@@ -106,6 +106,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram) {
+         },
+     ];
+     main.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(1),
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(7)),
+diff --git a/src/frontend/oir/owned/consumer_fixtures.rs b/src/frontend/oir/owned/consumer_fixtures.rs
+index 52b02d2..d650e13 100644
+--- a/src/frontend/oir/owned/consumer_fixtures.rs
++++ b/src/frontend/oir/owned/consumer_fixtures.rs
+@@ -275,6 +275,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
+         span: s(4),
+     }];
+     f.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+@@ -391,6 +392,7 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
+     }];
+     parent.loans = (0..2)
+         .map(|i| LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: i,
+             authority: AccessBase::Parameter(ReferenceParamId(0)),
+@@ -1223,6 +1225,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
+         },
+     ];
+     main.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(1),
+         argument: 0,
+         authority: root,
+diff --git a/src/frontend/oir/owned/consumer_pilot.rs b/src/frontend/oir/owned/consumer_pilot.rs
+index c3196a1..536f54b 100644
+--- a/src/frontend/oir/owned/consumer_pilot.rs
++++ b/src/frontend/oir/owned/consumer_pilot.rs
+@@ -269,6 +269,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
+     .iter()
+     .enumerate()
+     .map(|(i, &(label, kind))| LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(i),
+         argument: 0,
+         authority: root,
+@@ -577,6 +578,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
+         span: o.at("dispatch.open_commit"),
+     }];
+     dispatch.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: parameter,
+diff --git a/src/frontend/oir/owned/consumer_tests.rs b/src/frontend/oir/owned/consumer_tests.rs
+index 07d428a..7a0261c 100644
+--- a/src/frontend/oir/owned/consumer_tests.rs
++++ b/src/frontend/oir/owned/consumer_tests.rs
+@@ -6,7 +6,7 @@ fn reviewed_raw_fuel_fixtures_obtain_authoritative_witnesses() {
+     for (build, fuel, cells, bytes, native) in [
+         (empty_record as Builder, 17, 6, 41, 12),
+         (owned_relay as Builder, 52, 20, 148, 36),
+-        (shared_read as Builder, 49, 22, 172, 36),
++        (shared_read as Builder, 49, 24, 188, 36),
+     ] {
+         let (sources, raw, schedule) = build();
+         assert_eq!(schedule.fuel(), fuel);
+diff --git a/src/frontend/oir/owned/denial_tests.rs b/src/frontend/oir/owned/denial_tests.rs
+index e1bcebe..5a7a1bd 100644
+--- a/src/frontend/oir/owned/denial_tests.rs
++++ b/src/frontend/oir/owned/denial_tests.rs
+@@ -139,6 +139,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
+         span: at(s, 5),
+     });
+     f.loans.push(LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: AccessBase::Owner(source),
+@@ -670,6 +671,7 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
+         f.loans[0].authority = authority;
+         f.calls[0].arguments.push(ArgumentSlot::Borrow(LoanId(1)));
+         f.loans.push(LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: 1,
+             authority,
+diff --git a/src/frontend/oir/owned/execute.rs b/src/frontend/oir/owned/execute.rs
+index 57de19d..4560200 100644
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -349,6 +349,7 @@ impl<'p, 'w> Machine<'p, 'w> {
+             .ok_or_else(|| bad("loan index", span))?;
+         let result = ReferenceHandle {
+             root: state.root,
++            view: state.view,
+             permission: LoanKey {
+                 frame: frame as u64,
+                 activation: active.activation,
+@@ -367,6 +368,9 @@ impl<'p, 'w> Machine<'p, 'w> {
+     ) -> Result<OwnerKey> {
+         self.owner(handle.root, span)?;
+         let l = self.loan(handle.permission, span)?;
++        if l.view != handle.view {
++            return Err(bad("loan view mismatch", span));
++        }
+         if l.root != handle.root {
+             return Err(bad("loan root mismatch", span));
+         }
+@@ -491,30 +495,141 @@ impl<'p, 'w> Machine<'p, 'w> {
+             AggregateTy::Record(_) => Err(bad("array aggregate type", span)),
+         }
+     }
+-    fn array_base(
++    fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
++        Ok(BorrowView {
++            offset: 0,
++            aggregate: Some(
++                AggregateSlot::try_from_aggregate(self.aggregate(key, span)?)
++                    .map_err(|_| bad("whole view type", span))?,
++            ),
++        })
++    }
++    fn view_extent(&self, key: OwnerKey, view: BorrowView, span: Span) -> Result<AggregateTy> {
++        let aggregate = view
++            .aggregate
++            .ok_or_else(|| bad("missing view type", span))?
++            .aggregate();
++        let root_type = self.aggregate(key, span)?;
++        if (matches!(root_type, AggregateTy::FixedArray(_))
++            || matches!(aggregate, AggregateTy::Record(_)))
++            && (view.offset != 0 || root_type != aggregate)
++        {
++            return Err(bad("view root type", span));
++        }
++        let size = self
++            .plan
++            .witness()
++            .declarations()
++            .aggregate_layout(aggregate)
++            .map_err(|_| bad("view layout", span))?
++            .size();
++        let extent = self.owner_extent(key, span)?;
++        index(view.offset, span)?
++            .checked_add(size)
++            .filter(|end| *end <= extent.len())
++            .ok_or_else(|| bad("view extent", span))?;
++        Ok(aggregate)
++    }
++    /// Re-derive projected storage from immutable nominal paths, rather than
++    /// trusting a retained offset/extent. Slice reborrows may cross frames; the
++    /// existing activation limit bounds this allocation-free parent walk.
++    fn projected_view(
++        &self,
++        permission: LoanKey,
++        root: OwnerKey,
++        span: Span,
++    ) -> Result<BorrowView> {
++        let mut permission = permission;
++        for _ in 0..plan::MAX_FRAMES {
++            let loan = self.loan(permission, span)?;
++            if loan.root != root {
++                return Err(bad("view ancestry root", span));
++            }
++            let function = self.function(self.frames[index(permission.frame, span)?].function);
++            let descriptor = function
++                .loans
++                .get(index(permission.loan, span)?)
++                .ok_or_else(|| bad("view loan descriptor", span))?;
++            if !descriptor.projection.is_empty() {
++                let (ValueTy::Owned(aggregate @ AggregateTy::FixedArray(_)), offset) = self
++                    .plan
++                    .witness()
++                    .declarations()
++                    .projection(self.aggregate(root, span)?, &descriptor.projection)
++                    .map_err(|_| bad("view projection path", span))?
++                else {
++                    return Err(bad("view projection array", span));
++                };
++                return Ok(BorrowView {
++                    offset: offset as u64,
++                    aggregate: Some(
++                        AggregateSlot::try_from_aggregate(aggregate)
++                            .map_err(|_| bad("view projection descriptor", span))?,
++                    ),
++                });
++            }
++            if loan.parent.instance == 0 {
++                break;
++            }
++            permission = loan.parent;
++        }
++        Err(bad("projected view provenance", span))
++    }
++    fn checked_handle_view(&self, handle: ReferenceHandle, span: Span) -> Result<AggregateTy> {
++        let actual = self.view_extent(handle.root, handle.view, span)?;
++        if matches!(
++            (self.aggregate(handle.root, span)?, actual),
++            (AggregateTy::Record(_), AggregateTy::FixedArray(_))
++        ) && self.projected_view(handle.permission, handle.root, span)? != handle.view
++        {
++            return Err(bad("projected view mismatch", span));
++        }
++        Ok(actual)
++    }
++    fn base_view(
+         &self,
+         frame: usize,
+         base: AccessBase,
+-        access: Access,
++        key: OwnerKey,
+         span: Span,
+-    ) -> Result<(OwnerKey, FixedArrayTy)> {
+-        let key = self.base(frame, base, access, span)?;
++    ) -> Result<BorrowView> {
++        let view = match base {
++            AccessBase::Owner(_) => self.whole_view(key, span)?,
++            AccessBase::Parameter(id) => self.frames[frame].references[id.0].view,
++        };
++        let actual = match base {
++            AccessBase::Owner(_) => self.view_extent(key, view, span)?,
++            AccessBase::Parameter(id) => {
++                self.checked_handle_view(self.frames[frame].references[id.0], span)?
++            }
++        };
+         let f = self.function(self.frames[frame].function);
+         let expected = match base {
+             AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
+-            AccessBase::Parameter(reference) => f
+-                .references
+-                .get(reference.0)
+-                .ok_or_else(|| bad("reference declaration", span))?
+-                .referent(),
++            AccessBase::Parameter(reference) => f.references[reference.0].referent(),
+         };
+-        let actual = self.aggregate(key, span)?;
+         self.plan
+             .witness()
+             .declarations()
+             .check_borrowed_view(BorrowedTy::Exact(actual), expected)
++            .map_err(|_| bad("base view type", span))?;
++        Ok(view)
++    }
++    fn array_base(
++        &self,
++        frame: usize,
++        base: AccessBase,
++        access: Access,
++        span: Span,
++    ) -> Result<(OwnerKey, FixedArrayTy, usize)> {
++        let key = self.base(frame, base, access, span)?;
++        let view = self
++            .base_view(frame, base, key, span)
+             .map_err(|_| bad("array base type", span))?;
+-        Ok((key, self.array_type(key, span)?))
++        let AggregateTy::FixedArray(array) = self.view_extent(key, view, span)? else {
++            return Err(bad("array view type", span));
++        };
++        Ok((key, array, index(view.offset, span)?))
+     }
+     fn owner_extent(&self, key: OwnerKey, span: Span) -> Result<std::ops::Range<usize>> {
+         let aggregate = self.aggregate(key, span)?;
+@@ -833,13 +948,32 @@ impl<'p, 'w> Machine<'p, 'w> {
+             Access::Borrow(descriptor.kind),
+             span,
+         )?;
++        let mut view = self.base_view(frame, descriptor.authority, root, span)?;
++        let mut actual = self.view_extent(root, view, span)?;
++        if !descriptor.projection.is_empty() {
++            let (ValueTy::Owned(projected @ AggregateTy::FixedArray(_)), relative) = self
++                .plan
++                .witness()
++                .declarations()
++                .projection(actual, &descriptor.projection)
++                .map_err(|_| bad("loan projection", span))?
++            else {
++                return Err(bad("loan projection type", span));
++            };
++            view.offset = view
++                .offset
++                .checked_add(relative as u64)
++                .ok_or_else(|| bad("loan view offset", span))?;
++            view.aggregate = Some(
++                AggregateSlot::try_from_aggregate(projected)
++                    .map_err(|_| bad("loan view descriptor", span))?,
++            );
++            actual = self.view_extent(root, view, span)?;
++        }
+         self.plan
+             .witness()
+             .declarations()
+-            .check_borrowed_view(
+-                BorrowedTy::Exact(self.aggregate(root, span)?),
+-                descriptor.referent(),
+-            )
++            .check_borrowed_view(BorrowedTy::Exact(actual), descriptor.referent())
+             .map_err(|_| bad("loan borrowed view", span))?;
+         let parent = match descriptor.authority {
+             AccessBase::Owner(_) => LoanKey::default(),
+@@ -882,6 +1016,7 @@ impl<'p, 'w> Machine<'p, 'w> {
+             state: 1,
+             root,
+             parent,
++            view,
+             shared_children: 0,
+             exclusive_children: 0,
+         };
+@@ -1278,24 +1413,51 @@ impl<'p, 'w> Machine<'p, 'w> {
+                 base,
+                 index,
+             } => {
+-                let (key, array) = self.array_base(frame, *base, Access::Read, span)?;
++                let (key, array, relative) = self.array_base(frame, *base, Access::Read, span)?;
+                 if f.locals.get(destination.0).map(|local| local.ty) != Some(array.element()) {
+                     return Err(bad("array read type", span));
+                 }
+                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
+-                let value = self.load_element(key, array, ordinal, span)?;
++                let value = self.load_leaf(
++                    key,
++                    ScalarLeaf {
++                        offset: relative
++                            .checked_add(
++                                ordinal
++                                    .checked_mul(array.stride())
++                                    .ok_or_else(|| bad("array view offset", span))?,
++                            )
++                            .ok_or_else(|| bad("array view offset", span))?,
++                        ty: array.element(),
++                    },
++                    span,
++                )?;
+                 self.write(frame, *destination, value, span)?;
+                 #[cfg(test)]
+                 self.record_event(Event::ReadIndex(key, ordinal, value));
+             }
+             OwnedInstruction::WriteIndex { base, index, value } => {
+-                let (key, array) = self.array_base(frame, *base, Access::Write, span)?;
++                let (key, array, relative) = self.array_base(frame, *base, Access::Write, span)?;
+                 let value = self.read(frame, *value)?;
+                 if value.ty() != array.element() {
+                     return Err(bad("array write type", span));
+                 }
+                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
+-                self.store_element(key, array, ordinal, value, span)?;
++                self.store_leaf(
++                    key,
++                    ScalarLeaf {
++                        offset: relative
++                            .checked_add(
++                                ordinal
++                                    .checked_mul(array.stride())
++                                    .ok_or_else(|| bad("array view offset", span))?,
++                            )
++                            .ok_or_else(|| bad("array view offset", span))?,
++                        ty: array.element(),
++                    },
++                    value,
++                    span,
++                )?;
+                 #[cfg(test)]
+                 {
+                     self.record_event(Event::WriteIndex(key, ordinal, value));
+@@ -1305,7 +1467,7 @@ impl<'p, 'w> Machine<'p, 'w> {
+                 }
+             }
+             OwnedInstruction::ArrayLength { destination, base } => {
+-                let (_key, array) = self.array_base(frame, *base, Access::Read, span)?;
++                let (_key, array, _relative) = self.array_base(frame, *base, Access::Read, span)?;
+                 self.write(
+                     frame,
+                     *destination,
+@@ -1531,18 +1693,14 @@ impl<'p, 'w> Machine<'p, 'w> {
+                 (ArgumentSlot::Borrow(loan), ParameterBinding::Reference(reference)) => {
+                     let handle = self.handle(frame, *loan, span)?;
+                     let declared = &callee.references[reference.0];
+-                    let root_function =
+-                        self.function(self.frames[handle.root.frame as usize].function);
++                    let actual_view = self
++                        .checked_handle_view(handle, span)
++                        .map_err(|_| bad("incoming reference type", span))?;
+                     if self
+                         .plan
+                         .witness()
+                         .declarations()
+-                        .check_borrowed_view(
+-                            BorrowedTy::Exact(
+-                                root_function.owners[handle.root.owner as usize].aggregate(),
+-                            ),
+-                            declared.referent(),
+-                        )
++                        .check_borrowed_view(BorrowedTy::Exact(actual_view), declared.referent())
+                         .is_err()
+                         || self.loan_kind(handle.permission, span)? != declared.kind
+                     {
+@@ -1962,7 +2120,7 @@ fn execute_plan_inner(
+     let result = (|| {
+         machine.activation_preflight(
+             entry,
+-            plan::add(1, plan.function(entry).usage().expanded_cells)?,
++            plan::add(1, plan.function(entry).usage().activation_fuel_cells())?,
+             f.span,
+         )?;
+         machine.frames = plan::reserve(limits.frames)
+diff --git a/src/frontend/oir/owned/execute_tests.rs b/src/frontend/oir/owned/execute_tests.rs
+index 2fcbe76..8bbfa90 100644
+--- a/src/frontend/oir/owned/execute_tests.rs
++++ b/src/frontend/oir/owned/execute_tests.rs
+@@ -51,11 +51,11 @@ fn batch_pilot_matches_independent_state_and_all_1086_lower_budgets() {
+     assert_eq!(schedule.fuel(), 1086);
+     let p = ExecutionPlan::build(&witness).unwrap();
+     let census = [
+-        (111, 808, 304),
+-        (12, 96, 40),
+-        (17, 136, 80),
+-        (26, 208, 48),
+-        (11, 88, 32),
++        (117, 856, 304),
++        (14, 112, 40),
++        (19, 152, 80),
++        (30, 240, 48),
++        (13, 104, 32),
+         (8, 48, 16),
+         (15, 104, 72),
+     ];
+@@ -237,8 +237,12 @@ fn stopped_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>, fuel: usize) -> Machine<
+         observer: array_observe::Observer::default(),
+     };
+     let f = &plan.witness().functions()[0];
+-    m.activation_preflight(f.id, 1 + plan.function(f.id).usage().expanded_cells, f.span)
+-        .unwrap();
++    m.activation_preflight(
++        f.id,
++        1 + plan.function(f.id).usage().activation_fuel_cells(),
++        f.span,
++    )
++    .unwrap();
+     m.frames = plan::reserve(limits.frames).unwrap();
+     m.install(Frame::allocate(plan, f.id, 1, None).unwrap());
+     assert!(matches!(
+@@ -277,6 +281,20 @@ fn stale_identity_and_nested_permission_checks_are_transition_inductive() {
+     assert!(m.release(parent.permission, first_commit).is_err());
+     assert_eq!(m.frames[0].loans[1], before); // child-active ancestor cannot end
+     for corrupted in [
++        ReferenceHandle {
++            view: BorrowView {
++                offset: u64::MAX,
++                ..child.view
++            },
++            ..child
++        },
++        ReferenceHandle {
++            view: BorrowView {
++                aggregate: None,
++                ..child.view
++            },
++            ..child
++        },
+         ReferenceHandle {
+             root: OwnerKey {
+                 activation: child.root.activation + 1,
+@@ -385,12 +403,12 @@ fn preparation_snapshots_are_stored_independently_of_test_owned_scalar_cells() {
+ fn exact_activation_caps_and_failure_precedence_charge_before_allocation() {
+     let (sources, raw, schedule) = super::super::consumer_pilot::batch();
+     let p = verified::verify_owned(raw, &sources).unwrap();
+-    let bytes = 3 * size_of::<Frame>() + 1152 + size_of::<Scalar>();
++    let bytes = 3 * size_of::<Frame>() + 1248 + size_of::<Scalar>();
+     let limits = Limits {
+         fuel: 1086,
+         frames: 3,
+         slots: 30,
+-        cells: 154,
++        cells: 166,
+         bytes,
+     };
+     assert_eq!(
+@@ -425,7 +443,7 @@ fn exact_activation_caps_and_failure_precedence_charge_before_allocation() {
+             &p,
+             Some(schedule.entry),
+             Limits {
+-                cells: 153,
++                cells: 165,
+                 ..limits
+             }
+         ),
+@@ -931,6 +949,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
+         span: s(1),
+     }];
+     main.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+@@ -996,6 +1015,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
+         span: s(6),
+     }];
+     recursive.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: AccessBase::Parameter(ReferenceParamId(0)),
+@@ -1070,3 +1090,133 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
+ 
+ #[path = "source/reviewer_resource_runtime.rs"]
+ mod reviewer_resources;
++
++#[test]
++fn projected_slice_runtime_rederives_view_and_never_writes_forged_extent() {
++    use super::super::source::resource_fixtures as source;
++    // main first keeps the helper's entry-independent stopped-machine harness.
++    for relayed in [false, true] {
++        let target = if relayed { "relay" } else { "edit" };
++        let text = format!("struct B{{head:i32,a:[i32;2],tail:i32}}fn main()->i32{{let mut b=B{{head:71,a:[1,2],tail:93}};{target}(&mut b.a);return b.head+b.a[0]+b.tail;}}fn edit(p:&mut[i32])->(){{p[0]=7;return;}}fn relay(p:&mut[i32])->(){{edit(&mut *p);return;}}");
++        let case = source::checked_arrays(&text);
++        let plan = ExecutionPlan::build(&case.witness).unwrap();
++        let mut events = vec![];
++        assert_eq!(
++            run_observed(&case.witness, case.entry, Limits::default(), &mut events),
++            Ok(Scalar::I32(171))
++        );
++        let write = case.witness.functions()[1]
++            .blocks
++            .iter()
++            .flat_map(|b| &b.statements)
++            .find(|s| matches!(s.kind, OwnedInstruction::WriteIndex { .. }))
++            .map(plan::instruction_span)
++            .unwrap();
++        let before_write: usize = events
++            .iter()
++            .take_while(|e| !matches!(e,Event::Charge(s,_) if *s==write))
++            .filter_map(|e| {
++                if let Event::Charge(_, cost) = e {
++                    Some(*cost)
++                } else {
++                    None
++                }
++            })
++            .sum();
++        for mutation in 0..5 {
++            let mut m = stopped_machine(&plan, before_write);
++            let frame = m.frames.len() - 1;
++            let original = m.frames[frame].references[0];
++            assert_eq!(original.view.offset, 4);
++            assert_eq!(
++                m.checked_handle_view(original, write).unwrap(),
++                AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, 2).unwrap())
++            );
++            let snapshot = m.frames[0].payload.clone();
++            let mut forged = original;
++            match mutation {
++                0 => forged.view.offset = 0, // within owner, but aliases metadata
++                1 => forged.view.offset = 8, // within owner, but aliases tail extent
++                2 => forged.view.offset = u64::MAX,
++                3 => {
++                    forged.view.aggregate = Some(
++                        AggregateSlot::try_from_aggregate(AggregateTy::FixedArray(
++                            FixedArrayTy::check(hir::Ty::I32, 3).unwrap(),
++                        ))
++                        .unwrap(),
++                    )
++                }
++                _ => {
++                    forged.view.aggregate = Some(
++                        AggregateSlot::try_from_aggregate(AggregateTy::FixedArray(
++                            FixedArrayTy::check(hir::Ty::Bool, 2).unwrap(),
++                        ))
++                        .unwrap(),
++                    )
++                }
++            }
++            // Even coherent corruption of the mutable handle AND loan view cannot
++            // override the immutable verifier-derived nominal path.
++            m.frames[frame].references[0] = forged;
++            m.frames[original.permission.frame as usize].loans[original.permission.loan as usize]
++                .view = forged.view;
++            assert!(
++                m.checked_handle_view(forged, write).is_err(),
++                "mutation {mutation}"
++            );
++            m.fuel = 0;
++            assert_eq!(
++                m.execute(),
++                Err(OwnedRunFailure::Scalar(RunFailure::Fuel(write)))
++            );
++            assert_eq!(m.frames[0].payload, snapshot, "unpaid mutation {mutation}");
++            m.fuel = 1000;
++            assert!(matches!(m.execute(), Err(OwnedRunFailure::Invariant(..))));
++            assert_eq!(m.frames[0].payload, snapshot, "mutation {mutation}");
++        }
++    }
++}
++
++#[test]
++fn projected_slice_success_store_preserves_empty_sentinel_and_padding_bytes() {
++    use super::super::source::resource_fixtures as source;
++    let case=source::checked_arrays("struct B{head:bool,empty:[bool;0],a:[i32;2],tail:i32}fn main()->i32{let empty:[bool;0]=[];let mut b=B{head:true,empty:empty,a:[1,2],tail:93};edit(&mut b.a);if b.head{return b.a[0]+b.tail;}else{return 99;}}fn edit(p:&mut[i32])->(){p[0]=7;return;}");
++    let plan = ExecutionPlan::build(&case.witness).unwrap();
++    let write = case.witness.functions()[1]
++        .blocks
++        .iter()
++        .flat_map(|b| &b.statements)
++        .find(|s| matches!(s.kind, OwnedInstruction::WriteIndex { .. }))
++        .map(plan::instruction_span)
++        .unwrap();
++    let mut events = vec![];
++    assert_eq!(
++        run_observed(&case.witness, case.entry, Limits::default(), &mut events),
++        Ok(Scalar::I32(100))
++    );
++    let before: usize = events
++        .iter()
++        .take_while(|e| !matches!(e,Event::Charge(s,_) if *s==write))
++        .filter_map(|e| {
++            if let Event::Charge(_, n) = e {
++                Some(*n)
++            } else {
++                None
++            }
++        })
++        .sum();
++    let mut m = stopped_machine(&plan, before);
++    let handle = m.frames.last().unwrap().references[0];
++    let extent = m.owner_extent(handle.root, write).unwrap();
++    assert_eq!(handle.view.offset, 4);
++    // Empty bool-array sentinel at byte1; alignment padding at bytes2..4.
++    m.frames[0].payload[extent.start + 1..extent.start + 4].copy_from_slice(&[0x91, 0xa2, 0xb3]);
++    let mut expected = m.frames[0].payload.clone();
++    expected[extent.start + 4..extent.start + 8].copy_from_slice(&7i32.to_le_bytes());
++    m.fuel = 1; // exactly the final index-store operation, no return cleanup
++    assert!(matches!(
++        m.execute(),
++        Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
++    ));
++    assert_eq!(m.frames[0].payload, expected);
++}
+diff --git a/src/frontend/oir/owned/mod.rs b/src/frontend/oir/owned/mod.rs
+index bd59ce1..1b47edd 100644
+--- a/src/frontend/oir/owned/mod.rs
++++ b/src/frontend/oir/owned/mod.rs
+@@ -89,6 +89,7 @@ struct LoanDecl {
+     call: CallSiteId,
+     argument: usize,
+     authority: AccessBase,
++    projection: Vec<FieldId>,
+     kind: BorrowKind,
+     referent: BorrowedSlot,
+     span: Span,
+diff --git a/src/frontend/oir/owned/native.rs b/src/frontend/oir/owned/native.rs
+index 6aa950d..5984493 100644
+--- a/src/frontend/oir/owned/native.rs
++++ b/src/frontend/oir/owned/native.rs
+@@ -81,6 +81,8 @@ pub(super) struct NativeMetrics {
+     pub render_ordinary_visits: usize,
+     pub count_predecessor_visits: usize,
+     pub render_predecessor_visits: usize,
++    pub count_borrow_projection_visits: usize,
++    pub render_borrow_projection_visits: usize,
+ }
+ #[derive(Default)]
+ struct Accounting {
+@@ -390,6 +392,7 @@ fn native_module_accounted(
+     accounting.metrics.count_expansion_kinds = count.expansion_kinds;
+     accounting.metrics.count_ordinary_visits = count.ordinary_visits;
+     accounting.metrics.count_predecessor_visits = count.predecessor_visits;
++    accounting.metrics.count_borrow_projection_visits = count.borrow_projection_visits;
+     accounting.metrics.count_call_scratch_peak = count.call_scratch_peak;
+     if count.exceeded {
+         return Err(reject(
+@@ -426,6 +429,7 @@ fn native_module_accounted(
+     accounting.metrics.render_expansion_kinds = output.expansion_kinds;
+     accounting.metrics.render_ordinary_visits = output.ordinary_visits;
+     accounting.metrics.render_predecessor_visits = output.predecessor_visits;
++    accounting.metrics.render_borrow_projection_visits = output.borrow_projection_visits;
+     accounting.metrics.render_call_scratch_peak = output.call_scratch_peak;
+     if output.exceeded
+         || output.len != count.len
+@@ -433,6 +437,7 @@ fn native_module_accounted(
+         || output.expansion_kinds != count.expansion_kinds
+         || output.ordinary_visits != count.ordinary_visits
+         || output.predecessor_visits != count.predecessor_visits
++        || output.borrow_projection_visits != count.borrow_projection_visits
+     {
+         return Err(Diagnostic::new(
+             "E0500",
+@@ -573,7 +578,7 @@ fn admit_accounted(
+             }
+         };
+         let mut bound = Bound {
+-            cost: u.expanded_cells,
++            cost: u.activation_fuel_cells(),
+             cyclic,
+             depth: 1,
+             scalar_slots: u.scalar_slots,
+@@ -591,7 +596,7 @@ fn admit_accounted(
+                 let target = f.calls[call.0].target;
+                 let child = bounds[target.0];
+                 // Child X is already in its bound, so never charge it twice.
+-                cost -= plan.function(target).usage().expanded_cells;
++                cost -= plan.function(target).usage().activation_fuel_cells();
+                 cost = cost_add(cost, child.cost)?;
+                 bound.depth = bound.depth.max(add(1, child.depth)?);
+                 bound.scalar_slots = bound
+@@ -727,6 +732,7 @@ struct Emission {
+     expansion_kinds: [usize; 3],
+     ordinary_visits: usize,
+     predecessor_visits: usize,
++    borrow_projection_visits: usize,
+     #[cfg(test)]
+     field_visits: usize,
+ }
+@@ -760,6 +766,7 @@ impl Emission {
+             expansion_kinds: [0; 3],
+             ordinary_visits: 0,
+             predecessor_visits: 0,
++            borrow_projection_visits: 0,
+             #[cfg(test)]
+             field_visits: 0,
+         }
+@@ -1560,7 +1567,7 @@ fn emit(
+             out,
+             diagnostics,
+             "root",
+-            1 + plan.function(entry).usage().expanded_cells,
++            1 + plan.function(entry).usage().activation_fuel_cells(),
+             root.span,
+         );
+     }
+@@ -2243,17 +2250,41 @@ fn emit_statement(
+             );
+         }
+         OwnedInstruction::PrepareBorrow { loan, .. } => {
+-            let pointer = base_pointer(out, name, f.loans[loan.0].authority);
++            let declaration = &f.loans[loan.0];
++            let base = base_pointer(out, name, declaration.authority);
++            if out.exceeded {
++                return;
++            }
++            let (pointer, projected_length) = if declaration.projection.is_empty() {
++                (base, None)
++            } else {
++                // A checked path selects a view, never independent authority.
++                // Resolve against the witness's nominal root and retain only
++                // its address and actual array length in the existing slots.
++                out.borrow_projection_visits += declaration.projection.len();
++                let (value, offset) =
++                    projection(plan, f, declaration.authority, &declaration.projection);
++                let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
++                    unreachable!("verified projected array slice")
++                };
++                (
++                    field_pointer(out, &format!("{name}_borrow_projection"), &base, offset),
++                    Some(array.length()),
++                )
++            };
+             writeln!(
+                 out,
+                 "  store ptr {pointer}, ptr %r{}, align 8",
+                 f.references.len() + loan.0
+             )
+             .unwrap();
+-            if matches!(f.loans[loan.0].referent(), BorrowedTy::ScalarSlice(_)) {
++            if matches!(declaration.referent(), BorrowedTy::ScalarSlice(_)) {
+                 // Stage the target view's length when its loan begins, alongside
+                 // the pointer, before evaluating any later call argument.
+-                let length = index_length(out, f, name, f.loans[loan.0].authority);
++                let length = projected_length.map_or_else(
++                    || index_length(out, f, name, declaration.authority),
++                    |length| length.to_string(),
++                );
+                 writeln!(out, "  store i32 {length}, ptr %ll{}, align 4", loan.0).unwrap();
+             }
+         }
+diff --git a/src/frontend/oir/owned/native_heldout_review.rs b/src/frontend/oir/owned/native_heldout_review.rs
+index 87080af..23d7e8d 100644
+--- a/src/frontend/oir/owned/native_heldout_review.rs
++++ b/src/frontend/oir/owned/native_heldout_review.rs
+@@ -77,6 +77,7 @@ fn mixed_parameter_fixture(
+     }];
+     caller.loans = vec![
+         LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: 4,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+@@ -86,6 +87,7 @@ fn mixed_parameter_fixture(
+             span: s(0),
+         },
+         LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: 1,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+diff --git a/src/frontend/oir/owned/native_tests.rs b/src/frontend/oir/owned/native_tests.rs
+index c52c82e..5255e79 100644
+--- a/src/frontend/oir/owned/native_tests.rs
++++ b/src/frontend/oir/owned/native_tests.rs
+@@ -512,11 +512,11 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
+     assert_eq!(schedule.fuel(), 1_086);
+     assert_eq!(schedule.result, Scalar::I32(816));
+     let expected = [
+-        (111, 304),
+-        (12, 40),
+-        (17, 80),
+-        (26, 48),
+-        (11, 32),
++        (117, 304),
++        (14, 40),
++        (19, 80),
++        (30, 48),
++        (13, 32),
+         (8, 16),
+         (15, 72),
+     ];
+@@ -524,14 +524,14 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
+         assert_eq!(plan.function(f.id).usage().expanded_cells, cells);
+         assert_eq!(plan.function(f.id).usage().native_bytes, bytes);
+     }
+-    assert_eq!(bounds[0].cells, 154);
++    assert_eq!(bounds[0].cells, 166);
+     assert_eq!(bounds[0].bytes, 432);
+     assert_eq!(bounds[0].depth, 3);
+     assert_eq!(bounds[0].scalar_slots, 30);
+     assert!(bounds[0].cyclic);
+     let exact = Limits {
+-        cells: 200,
+-        live_cells: 154,
++        cells: 216,
++        live_cells: 166,
+         bytes: 600,
+         live_bytes: 440,
+         ..Limits::DEFAULT
+@@ -540,14 +540,14 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
+     for (limits, message) in [
+         (
+             Limits {
+-                cells: 199,
++                cells: 215,
+                 ..exact
+             },
+             "aggregate expanded",
+         ),
+         (
+             Limits {
+-                live_cells: 153,
++                live_cells: 165,
+                 ..exact
+             },
+             "live expanded",
+@@ -2363,3 +2363,6 @@ mod slices;
+ 
+ #[path = "composition_native_tests.rs"]
+ mod composition;
++
++#[path = "projected_slice_native_tests.rs"]
++mod projected_slices;
+diff --git a/src/frontend/oir/owned/oracle_tests.rs b/src/frontend/oir/owned/oracle_tests.rs
+index 59ae3f1..9625575 100644
+--- a/src/frontend/oir/owned/oracle_tests.rs
++++ b/src/frontend/oir/owned/oracle_tests.rs
+@@ -651,6 +651,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
+         };
+         let acquisition = at(span, 400 + position);
+         caller.loans.push(LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: position,
+             authority: AccessBase::Owner(OwnerPlaceId(root)),
+@@ -1960,6 +1961,7 @@ impl NestedRawBuilder<'_> {
+                         nested_model::Mode::Exclusive => BorrowKind::Exclusive,
+                     };
+                     self.raw.loans.push(LoanDecl {
++                        projection: Vec::new(),
+                         call,
+                         argument,
+                         authority,
+diff --git a/src/frontend/oir/owned/plan.rs b/src/frontend/oir/owned/plan.rs
+index eb0f1a9..a91b106 100644
+--- a/src/frontend/oir/owned/plan.rs
++++ b/src/frontend/oir/owned/plan.rs
+@@ -60,6 +60,13 @@ pub(super) struct FrameUsage {
+     pub reference_bytes: usize,
+     pub native_bytes: usize,
+ }
++impl FrameUsage {
++    /// Fuel counts stable logical slots, while admission counts physical metadata.
++    /// Checked view sidecars add two 64-bit cells per reference/loan, not language work.
++    pub(super) fn activation_fuel_cells(self) -> usize {
++        self.expanded_cells - 2 * (self.references + self.loans)
++    }
++}
+ #[derive(Debug)]
+ pub(super) struct CallPlan {
+     argument_start: usize,
+@@ -161,7 +168,10 @@ impl<'a> ExecutionPlan<'a> {
+                 let descriptor = &function.calls[call.0];
+                 let c = self.function(f).call(*call);
+                 1 + descriptor.arguments.len()
+-                    + self.function(descriptor.target).usage.expanded_cells
++                    + self
++                        .function(descriptor.target)
++                        .usage
++                        .activation_fuel_cells()
+                     + c.owned_width
+                     + c.borrow_len * c.borrow_len.saturating_sub(1) / 2
+             }
+@@ -299,7 +309,10 @@ impl<'a> ExecutionPlan<'a> {
+             }
+             for c in &f.calls {
+                 let mut cost = add(1, c.arguments.len())?;
+-                cost = add(cost, result.function(c.target).usage.expanded_cells)?;
++                cost = add(
++                    cost,
++                    result.function(c.target).usage.activation_fuel_cells(),
++                )?;
+                 let mut borrows: usize = 0;
+                 for a in &c.arguments {
+                     match a {
+@@ -353,8 +366,8 @@ fn usage(
+     )?;
+     for (count, cells, bytes) in [
+         (u.owners, 4, size_of::<OwnerRuntime>()),
+-        (u.references, 8, size_of::<ReferenceHandle>()),
+-        (u.loans, 12, size_of::<LoanRuntime>()),
++        (u.references, 10, size_of::<ReferenceHandle>()),
++        (u.loans, 14, size_of::<LoanRuntime>()),
+         (u.calls, 2, size_of::<CallRuntime>()),
+     ] {
+         u.expanded_cells = add(u.expanded_cells, mul(count, cells)?)?;
+@@ -442,7 +455,7 @@ mod tests {
+             RawOwnedFunction => 248,
+             OwnerDecl => 56,
+             ReferenceDecl => 48,
+-            LoanDecl => 72,
++            LoanDecl => 96,
+             CallDecl => 96,
+             OwnedInstruction => 128,
+             OwnedStatement => 208,
+@@ -453,8 +466,8 @@ mod tests {
+             CallPlan => 48,
+             FrameUsage => 88,
+             OwnerRuntime => 32,
+-            ReferenceHandle => 64,
+-            LoanRuntime => 96,
++            ReferenceHandle => 80,
++            LoanRuntime => 112,
+             CallRuntime => 16,
+             flow::DenialContext => 136,
+             flow::DenialFacts => 136,
+diff --git a/src/frontend/oir/owned/projected_slice_native_tests.rs b/src/frontend/oir/owned/projected_slice_native_tests.rs
+new file mode 100644
+index 0000000..f24ea9d
+--- /dev/null
++++ b/src/frontend/oir/owned/projected_slice_native_tests.rs
+@@ -0,0 +1,440 @@
++//! Projected views use the ordinary verifier and native consumer. The expected
++//! values are hand-derived; fuel sweeps compare consumers rather than claiming
++//! an independent source-fuel oracle.
++use super::*;
++use crate::frontend::oir::owned::source::resource_fixtures as source;
++
++const SUM: &str = "fn sum(xs:&[i32])->i32{let mut i=0;let mut total=0;while i<xs.len(){total=total+xs[i];i=i+1;}return total;}";
++const BUMP: &str =
++    "fn bump(xs:&mut[i32])->(){let mut i=0;while i<xs.len(){xs[i]=xs[i]+1;i=i+1;}return;}";
++const PILOT: &str = "struct Meta{completed:i32}struct Batch{meta:Meta,samples:[i32;3],tail:bool}fn main()->i32{let mut batch=Batch{meta:Meta{completed:73},samples:[1,2,3],tail:true};bump(&mut batch.samples);if batch.meta.completed==73&&batch.tail&&batch.samples[0]==2&&batch.samples[1]==3&&batch.samples[2]==4{return sum(&batch.samples);}else{return -99;}}";
++const FORWARD: &str = "struct Inner{tag:i32,samples:[i32;3]}struct Outer{prefix:bool,inner:Inner,suffix:i32}fn forward(xs:&mut[i32])->i32{bump(&mut *xs);return sum(&*xs);}fn edit(p:&mut Outer)->i32{return forward(&mut *p.inner.samples);}fn read(p:&Outer)->i32{return sum(&*p.inner.samples);}fn main()->i32{let mut x=Outer{prefix:true,inner:Inner{tag:41,samples:[1,2,3]},suffix:59};let a=edit(&mut x);let b=read(&x);if x.prefix&&x.inner.tag==41&&x.suffix==59{return a+b;}else{return -99;}}";
++const MIXED: &str = "struct Inner{flags:[bool;2],units:[();3],empty:[i32;0]}struct Outer{before:i32,inner:Inner,after:i32}fn flip(xs:&mut[bool])->(){xs[0]=!xs[0];return;}fn units(xs:&mut[()])->i32{xs[2]=();xs[2];return xs.len();}fn empty(xs:&mut[i32])->i32{return xs.len();}fn main()->i32{let empty_values:[i32;0]=[];let mut x=Outer{before:17,inner:Inner{flags:[false,true],units:[(),(),()],empty:empty_values},after:29};flip(&mut x.inner.flags);let n=units(&mut x.inner.units);let z=empty(&mut x.inner.empty);if x.before==17&&x.after==29&&x.inner.flags[0]&&x.inner.flags[1]{return n+z+sum(&x.inner.empty);}else{return -99;}}";
++const STAGING: &str = "struct Batch{tag:i32,samples:[i32;3]}fn join(xs:&[i32],n:i32)->i32{return xs[0]+xs.len()+n;}fn later(xs:&mut[i32])->i32{xs[0]=xs[0]+1;return xs[0];}fn main()->i32{let b=Batch{tag:73,samples:[8,13,21]};let mut counter=[0];return join(&b.samples,later(&mut counter));}";
++
++fn checked_module(text: &str) -> (source::CheckedSource, String) {
++    let case = source::checked_arrays(text);
++    let module = native_module(&case.witness, Some(case.entry), &case.sources).unwrap();
++    (case, module)
++}
++
++fn assert_safe_module(module: &str) {
++    for forbidden in [
++        "inbounds",
++        "noalias",
++        "nonnull",
++        "dereferenceable",
++        "memcpy",
++        "undef",
++        "poison",
++    ] {
++        assert!(!module.contains(forbidden), "{forbidden}");
++    }
++    for (position, _) in module.match_indices("_index64 = zext i32") {
++        let prior = &module[..position];
++        let success = prior.rfind("_bounds_ok:\n").unwrap();
++        let branch = prior[..success].rfind("_in_range, label").unwrap();
++        let signed = prior[..branch]
++            .rfind("_nonnegative = icmp sge i32")
++            .unwrap();
++        assert!(signed < branch && branch < success);
++    }
++}
++
++#[test]
++fn native_projected_slices_stage_checked_field_address_and_actual_length() {
++    let (case, module) = checked_module(&format!("{SUM}{BUMP}{PILOT}"));
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(9))
++    );
++    assert_safe_module(&module);
++    let mut projected = 0;
++    for f in case.witness.functions() {
++        for (b, block) in f.blocks.iter().enumerate() {
++            for (i, statement) in block.statements.iter().enumerate() {
++                let OwnedInstruction::PrepareBorrow { loan, .. } = statement.kind else {
++                    continue;
++                };
++                let declaration = &f.loans[loan.0];
++                if declaration.projection.is_empty() {
++                    continue;
++                }
++                projected += 1;
++                let name = format!("f{}_b{b}_i{i}", f.id.0);
++                let pointer = format!("%{name}_borrow_projection_ptr");
++                // Meta's i32 occupies the first four bytes. The slice must not
++                // observe or mutate that whole-root address.
++                assert!(module.contains(&format!("{pointer} = getelementptr i8, ptr %o")));
++                let pointer_line = module
++                    .lines()
++                    .find(|line| line.contains(&format!("{pointer} =")))
++                    .unwrap();
++                assert!(pointer_line.ends_with(", i64 4"), "{pointer_line}");
++                assert!(module.contains(&format!(
++                    "store ptr {pointer}, ptr %r{}, align 8",
++                    f.references.len() + loan.0
++                )));
++                assert!(module.contains(&format!("store i32 3, ptr %ll{}, align 4", loan.0)));
++            }
++        }
++    }
++    assert_eq!(projected, 2);
++}
++
++#[test]
++fn native_projected_slices_stage_before_later_argument_and_forward_views() {
++    let (case, module) = checked_module(STAGING);
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(12))
++    );
++    let pointer = module
++        .find("_borrow_projection_ptr = getelementptr")
++        .unwrap();
++    let staged_pointer = module[pointer..].find("store ptr ").unwrap() + pointer;
++    let staged_length = module[staged_pointer..]
++        .find("store i32 3, ptr %ll")
++        .unwrap()
++        + staged_pointer;
++    let later_call = module.rfind("call i32 @__oxid_owned_fn_1(").unwrap();
++    assert!(
++        pointer < staged_pointer && staged_pointer < staged_length && staged_length < later_call
++    );
++    let (case, module) = checked_module(&format!("{SUM}{BUMP}{FORWARD}"));
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(18))
++    );
++    assert!(module.contains("_length = load i32, ptr %rl0, align 4"));
++    assert!(module.contains("_arg0_length = load i32, ptr %ll"));
++    assert!(module.contains("_borrow_projection_ptr = getelementptr i8, ptr %"));
++    assert_safe_module(&module);
++    let (case, module) = checked_module(&format!("{SUM}{MIXED}"));
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(3))
++    );
++    for length in [0, 2, 3] {
++        assert!(module.contains(&format!("store i32 {length}, ptr %ll")));
++    }
++    assert_safe_module(&module);
++}
++
++#[test]
++fn native_projected_slices_account_bounded_path_walks_and_exact_output_cap() {
++    let case = source::checked_arrays(&format!("{SUM}{BUMP}{FORWARD}"));
++    let observation = run_array_observed(
++        &case.witness,
++        Some(case.entry),
++        &case.sources,
++        NativeControl::default(),
++    );
++    let module = observation.result.unwrap();
++    let m = observation.metrics;
++    let paths: usize = case
++        .witness
++        .functions()
++        .iter()
++        .flat_map(|f| {
++            f.blocks.iter().flat_map(move |b| {
++                b.statements.iter().map(move |s| match s.kind {
++                    OwnedInstruction::PrepareBorrow { loan, .. } => {
++                        f.loans[loan.0].projection.len()
++                    }
++                    _ => 0,
++                })
++            })
++        })
++        .sum();
++    assert_eq!(paths, 4);
++    assert_eq!(m.count_borrow_projection_visits, paths);
++    assert_eq!(m.render_borrow_projection_visits, paths);
++    assert_eq!(m.count_bytes, module.len());
++    assert_eq!(m.render_bytes, module.len());
++    assert_eq!(m.count_ordinary_visits, m.render_ordinary_visits);
++    assert_eq!(m.count_expansions, m.render_expansions);
++    assert_eq!(m.count_expansions, m.transfer_cells + m.message_bytes);
++    assert_eq!(m.count_call_scratch_peak, m.render_call_scratch_peak);
++    assert!(m.metadata_peak <= Limits::DEFAULT.metadata_bytes);
++    assert!(m.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
++    for (cap, accepted) in [(module.len(), true), (module.len() - 1, false)] {
++        let observation = run_array_observed(
++            &case.witness,
++            Some(case.entry),
++            &case.sources,
++            NativeControl {
++                limits: Limits {
++                    ir_bytes: cap,
++                    ..Limits::DEFAULT
++                },
++                ..NativeControl::default()
++            },
++        );
++        if accepted {
++            assert_eq!(observation.result.unwrap(), module);
++        } else {
++            assert!(observation
++                .result
++                .unwrap_err()
++                .message
++                .contains("LLVM bytes"));
++            assert_eq!(observation.metrics.render_bytes, 0);
++            assert_eq!(observation.metrics.render_borrow_projection_visits, 0);
++        }
++    }
++    for fail_after in 0..m.allocation_attempts {
++        let failed = run_array_observed(
++            &case.witness,
++            Some(case.entry),
++            &case.sources,
++            NativeControl {
++                fail_after: Some(fail_after),
++                ..NativeControl::default()
++            },
++        );
++        assert!(failed.result.unwrap_err().message.contains("allocation"));
++        assert_eq!(failed.metrics.render_bytes, 0);
++    }
++}
++
++fn assert_paid_slice_writes(case: &source::CheckedSource, module: &str) {
++    let mut writes = 0;
++    for f in case.witness.functions() {
++        let cfg = LlvmCfg::parse(module, &format!("__oxid_owned_fn_{}", f.id.0));
++        for (b, block) in f.blocks.iter().enumerate() {
++            for (i, statement) in block.statements.iter().enumerate() {
++                if let OwnedInstruction::WriteIndex { value, .. } = statement.kind {
++                    writes += 1;
++                    let name = format!("f{}_b{b}_i{i}", f.id.0);
++                    let store = format!(
++                        "store {} %{name}_value, ptr %{name}_ptr, align 1",
++                        ty(f.locals[value.local.0].ty)
++                    );
++                    let guard = format!("f{}_b{b}_g{}", f.id.0, i + 1);
++                    cfg.assert_success_dominates(
++                        &format!("{guard}_ok"),
++                        &format!("{guard}_error"),
++                        &store,
++                    );
++                    cfg.assert_success_dominates(
++                        &format!("{name}_bounds_ok"),
++                        &format!("{name}_bounds_error"),
++                        &store,
++                    );
++                }
++            }
++        }
++    }
++    assert!(writes > 0);
++}
++
++#[test]
++fn native_projected_slices_no_unpaid_or_out_of_bounds_write() {
++    let (case, module) = checked_module(&format!("{SUM}{BUMP}{PILOT}"));
++    assert_paid_slice_writes(&case, &module);
++}
++
++fn depth_source() -> String {
++    let mut text = format!("{SUM}{BUMP}");
++    for depth in 0..64 {
++        let child = if depth == 63 {
++            "[i32;3]".into()
++        } else {
++            format!("R{}", depth + 1)
++        };
++        write!(text, "struct R{depth}{{value:{child}}}").unwrap();
++    }
++    let path = ".value".repeat(64);
++    write!(
++        text,
++        "fn project(p:&mut R0)->i32{{bump(&mut *p{path});return sum(&*p{path});}}fn main()->i32{{"
++    )
++    .unwrap();
++    // Segment construction to respect the existing parser-depth ceiling.
++    for start in [48, 32, 16, 0] {
++        write!(text, "let v{start}=").unwrap();
++        for depth in start..start + 16 {
++            write!(text, "R{depth}{{value:").unwrap();
++        }
++        if start == 48 {
++            text.push_str("[1,2,3]");
++        } else {
++            write!(text, "v{}", start + 16).unwrap();
++        }
++        text.push_str(&"}".repeat(16));
++        text.push(';');
++    }
++    text.push_str("let mut x=v0;return project(&mut x);}");
++    text
++}
++
++#[test]
++fn native_projected_slices_depth_sixty_four_has_bounded_walks() {
++    let case = source::checked_arrays(&depth_source());
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(9))
++    );
++    let observation = run_array_observed(
++        &case.witness,
++        Some(case.entry),
++        &case.sources,
++        NativeControl::default(),
++    );
++    let module = observation.result.unwrap();
++    assert_safe_module(&module);
++    assert_eq!(observation.metrics.count_borrow_projection_visits, 128);
++    assert_eq!(observation.metrics.render_borrow_projection_visits, 128);
++    assert_eq!(
++        observation.metrics.emitter_transient_bound,
++        EMITTER_TRANSIENT_BYTES
++    );
++    assert_eq!(observation.metrics.count_bytes, module.len());
++    assert_eq!(observation.metrics.render_bytes, module.len());
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++#[test]
++#[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
++fn native_projected_slices_source_free_mutation_metadata_and_forwarding() {
++    let scratch = Scratch::new();
++    for (name, text, expected) in [
++        ("projected-slice-sum9", format!("{SUM}{BUMP}{PILOT}"), 9),
++        (
++            "projected-slice-forward",
++            format!("{SUM}{BUMP}{FORWARD}"),
++            18,
++        ),
++        ("projected-slice-mixed", format!("{SUM}{MIXED}"), 3),
++        ("projected-slice-staging", STAGING.into(), 12),
++        ("projected-slice-depth64", depth_source(), 9),
++    ] {
++        let (case, module) = checked_module(&text);
++        assert_eq!(
++            execute::run(&case.witness, Some(case.entry)),
++            Ok(Scalar::I32(expected))
++        );
++        assert_safe_module(&module);
++        let binary = scratch.compile(&module, name);
++        assert_result(
++            scratch.run(&binary, &[]),
++            format!("{expected}\n").as_bytes(),
++            b"",
++            0,
++        );
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++#[test]
++#[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
++fn native_projected_slices_source_free_mutation_every_fuel() {
++    let (case, module) = checked_module(&format!("{SUM}{BUMP}{PILOT}"));
++    assert_paid_slice_writes(&case, &module);
++    let scratch = Scratch::new();
++    let binary = scratch.compile(
++        &argv_fuel_harness(&module, plan::MAX_FUEL),
++        "projected-slice-fuel",
++    );
++    let mut successful = false;
++    for fuel in 0..2000 {
++        match execute::run_limits(
++            &case.witness,
++            Some(case.entry),
++            execute::Limits {
++                fuel,
++                ..execute::Limits::default()
++            },
++        ) {
++            Ok(value) => {
++                assert_eq!(value, Scalar::I32(9));
++                assert_result(scratch.run(&binary, &[fuel.to_string()]), b"9\n", b"", 0);
++                let production =
++                    native_module_with_fuel(&case.witness, case.entry, &case.sources, fuel)
++                        .unwrap();
++                let binary = scratch.compile(&production, "projected-slice-exact-fuel");
++                assert_result(scratch.run(&binary, &[]), b"9\n", b"", 0);
++                successful = true;
++                break;
++            }
++            Err(error) => {
++                let stderr = error.diagnostic(&case.sources).render_human(&case.sources);
++                assert_result(
++                    scratch.run(&binary, &[fuel.to_string()]),
++                    b"",
++                    stderr.as_bytes(),
++                    1,
++                );
++            }
++        }
++    }
++    assert!(successful, "small projected slice fixture terminates");
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++#[test]
++#[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
++fn native_projected_slices_source_free_signed_bounds_and_fuel() {
++    let scratch = Scratch::new();
++    let mut artifacts = 0;
++    for (scalar, initializer, length) in [
++        ("i32", "[17,29]", 2),
++        ("bool", "[true,false]", 2),
++        ("()", "[(),()]", 2),
++        ("i32", "[]", 0),
++        ("bool", "[]", 0),
++        ("()", "[]", 0),
++    ] {
++        for index in [i32::MIN, -1, length, i32::MAX] {
++            let text = format!("struct Inner{{xs:[{scalar};{length}]}}struct Outer{{pad:i32,inner:Inner,tail:i32}}fn read(xs:&[{scalar}])->{scalar}{{return xs[{index}];}}fn main()->{scalar}{{let xs:[{scalar};{length}]={initializer};let x=Outer{{pad:41,inner:Inner{{xs:xs}},tail:59}};return read(&x.inner.xs);}}fn guard()->(){{while false{{}}return;}}");
++            let (case, module) = checked_module(&text);
++            let span = case.span(&format!("xs[{index}]"));
++            let bounds = || execute::OwnedRunFailure::Bounds(span);
++            assert_eq!(execute::run(&case.witness, Some(case.entry)), Err(bounds()));
++            let first_bounds = (1..2000)
++                .find(|&fuel| {
++                    execute::run_limits(
++                        &case.witness,
++                        Some(case.entry),
++                        execute::Limits {
++                            fuel,
++                            ..execute::Limits::default()
++                        },
++                    ) == Err(bounds())
++                })
++                .unwrap();
++            let binary = scratch.compile(
++                &argv_fuel_harness(&module, plan::MAX_FUEL),
++                &format!("projected-slice-bounds-{artifacts}"),
++            );
++            artifacts += 1;
++            for fuel in [0, first_bounds - 1, first_bounds, first_bounds + 1] {
++                let failure = execute::run_limits(
++                    &case.witness,
++                    Some(case.entry),
++                    execute::Limits {
++                        fuel,
++                        ..execute::Limits::default()
++                    },
++                )
++                .unwrap_err();
++                if fuel == first_bounds - 1 {
++                    assert_eq!(
++                        failure,
++                        execute::OwnedRunFailure::Scalar(RunFailure::Fuel(span))
++                    );
++                }
++                let stderr = failure
++                    .diagnostic(&case.sources)
++                    .render_human(&case.sources);
++                assert_result(
++                    scratch.run(&binary, &[fuel.to_string()]),
++                    b"",
++                    stderr.as_bytes(),
++                    1,
++                );
++            }
++        }
++    }
++}
+diff --git a/src/frontend/oir/owned/reviewer_array_reference_tests.rs b/src/frontend/oir/owned/reviewer_array_reference_tests.rs
+index 4c08327..2da945f 100644
+--- a/src/frontend/oir/owned/reviewer_array_reference_tests.rs
++++ b/src/frontend/oir/owned/reviewer_array_reference_tests.rs
+@@ -835,6 +835,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
+             span: s(base, 10 + 10 * j),
+         });
+         f.loans.push(LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(j),
+             argument: 0,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+@@ -1514,6 +1515,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
+         .arguments
+         .push(ArgumentSlot::Borrow(LoanId(1)));
+     raw.functions[0].loans.push(LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 1,
+         authority: AccessBase::Owner(OwnerPlaceId(1)),
+diff --git a/src/frontend/oir/owned/reviewer_heldout.rs b/src/frontend/oir/owned/reviewer_heldout.rs
+index 689836a..e3a7661 100644
+--- a/src/frontend/oir/owned/reviewer_heldout.rs
++++ b/src/frontend/oir/owned/reviewer_heldout.rs
+@@ -169,6 +169,7 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
+     for (i, (owner, kind)) in specs.iter().enumerate() {
+         let t = at(s, 40 + i);
+         f.loans.push(LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: i,
+             authority: AccessBase::Owner(OwnerPlaceId(*owner)),
+@@ -728,6 +729,7 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
+                     span: s,
+                 });
+                 f.loans.push(LoanDecl {
++                    projection: Vec::new(),
+                     call: CallSiteId(0),
+                     argument: 0,
+                     authority: AccessBase::Parameter(ReferenceParamId(0)),
+@@ -818,6 +820,7 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
+         .push(ins(OwnedInstruction::OpenCall(CallSiteId(0)), s));
+     for i in 0..2 {
+         f.loans.push(LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: i,
+             authority: AccessBase::Parameter(ReferenceParamId(i)),
+diff --git a/src/frontend/oir/owned/reviewer_reference_tests.rs b/src/frontend/oir/owned/reviewer_reference_tests.rs
+index a56ae7d..825536e 100644
+--- a/src/frontend/oir/owned/reviewer_reference_tests.rs
++++ b/src/frontend/oir/owned/reviewer_reference_tests.rs
+@@ -351,6 +351,7 @@ fn rv_alias(
+     }];
+     f.loans = (0..2)
+         .map(|i| LoanDecl {
++            projection: Vec::new(),
+             call: CallSiteId(0),
+             argument: i,
+             authority: AccessBase::Owner(OwnerPlaceId(roots[i])),
+@@ -654,21 +655,21 @@ fn reviewer_activation_resource_order_and_requested_bytes_boundaries() {
+     // Independent census: root S=3,A=2,B=8,O=2,R=0,L=2,C=1; child S=3,R=2.
+     assert_eq!(
+         p.function(hir::DefId(0)).usage().reference_bytes,
+-        5 * size_of::<Option<Scalar>>() + 8 + 64 + 192 + 16
++        5 * size_of::<Option<Scalar>>() + 8 + 64 + 224 + 16
+     );
+     assert_eq!(
+         p.function(hir::DefId(1)).usage().reference_bytes,
+-        3 * size_of::<Option<Scalar>>() + 128
++        3 * size_of::<Option<Scalar>>() + 160
+     );
+     let exact = 2 * size_of::<Frame>()
+         + size_of::<Scalar>()
+-        + (5 * size_of::<Option<Scalar>>() + 280)
+-        + (3 * size_of::<Option<Scalar>>() + 128);
++        + (5 * size_of::<Option<Scalar>>() + 312)
++        + (3 * size_of::<Option<Scalar>>() + 160);
+     for (slots, cells, bytes, expected) in [
+-        (5, 60, exact, "slots"),
+-        (6, 59, exact, "cells"),
+-        (6, 60, exact - 1, "bytes"),
+-        (6, 60, exact, "ok"),
++        (5, 68, exact, "slots"),
++        (6, 67, exact, "cells"),
++        (6, 68, exact - 1, "bytes"),
++        (6, 68, exact, "ok"),
+     ] {
+         let result = execute_plan(
+             &p,
+@@ -750,6 +751,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
+         span: s,
+     }];
+     f.loans = vec![LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+@@ -924,12 +926,12 @@ fn reviewer_loop_reuses_slots_with_fresh_generations_loans_activations() {
+         let w = verified::verify_owned(raw, &sources).unwrap();
+         let p = ExecutionPlan::build(&w).unwrap();
+         let mut events = vec![];
+-        // Root X=32 (S12,A1,P1,O4,L12,C2), child X9. Only two frames and 13 old scalar slots ever coexist.
++        // Root X=34 (S12,A1,P1,O4,L14,C2), child X11. Only two frames and 13 old scalar slots ever coexist.
+         let bytes = 2 * size_of::<Frame>()
+             + size_of::<Scalar>()
+-            + (13 * size_of::<Option<Scalar>>() + 4 + 32 + 96 + 16)
+-            + (size_of::<Option<Scalar>>() + 64);
+-        assert_eq!(p.function(hir::DefId(0)).usage().expanded_cells, 32);
++            + (13 * size_of::<Option<Scalar>>() + 4 + 32 + 112 + 16)
++            + (size_of::<Option<Scalar>>() + 80);
++        assert_eq!(p.function(hir::DefId(0)).usage().expanded_cells, 34);
+         assert_eq!(
+             run_observed(
+                 &w,
+@@ -937,7 +939,7 @@ fn reviewer_loop_reuses_slots_with_fresh_generations_loans_activations() {
+                 Limits {
+                     frames: 2,
+                     slots: 13,
+-                    cells: 41,
++                    cells: 45,
+                     bytes,
+                     ..Limits::default()
+                 },
+@@ -1158,6 +1160,7 @@ fn rv_chain(
+             next += 1;
+             f.loans = (0..count)
+                 .map(|i| LoanDecl {
++                    projection: Vec::new(),
+                     call: CallSiteId(0),
+                     argument: i,
+                     authority: base,
+@@ -1341,6 +1344,7 @@ fn rv_probe_trace(
+         let h = ReferenceHandle {
+             root: p.root,
+             permission: p.key,
++            view: m.loan(p.key, span).unwrap().view,
+         };
+         assert_eq!(
+             m.validate_handle(h, Access::Read, span).is_ok(),
+@@ -1460,6 +1464,7 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
+             .collect();
+         raw.functions[0].loans = (0..count)
+             .map(|i| LoanDecl {
++                projection: Vec::new(),
+                 call: CallSiteId(0),
+                 argument: i,
+                 authority: AccessBase::Owner(OwnerPlaceId(0)),
+diff --git a/src/frontend/oir/owned/shape.rs b/src/frontend/oir/owned/shape.rs
+index 700acfc..aa43c23 100644
+--- a/src/frontend/oir/owned/shape.rs
++++ b/src/frontend/oir/owned/shape.rs
+@@ -373,6 +373,25 @@ pub(super) fn check(
+             return Err(bad(Malformed::Binding, l.span));
+         }
+         let (record, _) = base(f, l.authority, l.span)?;
++        let record = if l.projection.is_empty() {
++            record
++        } else {
++            let BorrowedTy::Exact(root @ AggregateTy::Record(_)) = record else {
++                return Err(bad(Malformed::Type, l.span));
++            };
++            for _ in &l.projection {
++                meter.visit()?;
++            }
++            let (ValueTy::Owned(AggregateTy::FixedArray(array)), _) =
++                d.projection(root, &l.projection)?
++            else {
++                return Err(bad(Malformed::Type, l.span));
++            };
++            if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
++                return Err(bad(Malformed::Type, l.span));
++            }
++            BorrowedTy::Exact(AggregateTy::FixedArray(array))
++        };
+         d.check_borrowed_view(record, l.referent())
+             .map_err(|_| bad(Malformed::Type, l.span))?;
+         if let AccessBase::Owner(o) = l.authority {
+diff --git a/src/frontend/oir/owned/source/hir.rs b/src/frontend/oir/owned/source/hir.rs
+index 33d089d..7710917 100644
+--- a/src/frontend/oir/owned/source/hir.rs
++++ b/src/frontend/oir/owned/source/hir.rs
+@@ -42,6 +42,7 @@ pub(super) enum Argument {
+         kind: BorrowKind,
+         place: BorrowPlace,
+         span: Span,
++        // Complete named-root path; no separately allocated syntactic path.
+         name_span: Span,
+         star_span: Option<Span>,
+     },
+diff --git a/src/frontend/oir/owned/source/lower.rs b/src/frontend/oir/owned/source/lower.rs
+index 699b7fb..819a31c 100644
+--- a/src/frontend/oir/owned/source/lower.rs
++++ b/src/frontend/oir/owned/source/lower.rs
+@@ -1272,6 +1272,10 @@ impl<'a, 'b> Walk<'a, 'b> {
+                     };
+                     require(*kind == expected_kind, *span)?;
+                     let authority = self.base(binding, *span)?;
++                    let projection = match self.view.borrow_projection(id, argument) {
++                        Some(projection) => self.projection_path(projection, *span)?,
++                        None => Vec::new(),
++                    };
+                     let loan = LoanId(self.counts.loans);
+                     self.counts.loans = budget::add(self.counts.loans, 1)?;
+                     if let Some(out) = &mut self.output {
+@@ -1281,6 +1285,7 @@ impl<'a, 'b> Walk<'a, 'b> {
+                                 call,
+                                 argument,
+                                 authority,
++                                projection,
+                                 kind: *kind,
+                                 referent: BorrowedSlot::check(referent)?,
+                                 span: *span,
+diff --git a/src/frontend/oir/owned/source/mod.rs b/src/frontend/oir/owned/source/mod.rs
+index 4bd933a..05330f7 100644
+--- a/src/frontend/oir/owned/source/mod.rs
++++ b/src/frontend/oir/owned/source/mod.rs
+@@ -44,3 +44,6 @@ mod array_consumer_tests;
+ mod slice_raw_tests;
+ #[cfg(test)]
+ mod slice_tests;
++
++#[cfg(test)]
++mod projected_slice_raw_tests;
+diff --git a/src/frontend/oir/owned/source/native_resource_tests.rs b/src/frontend/oir/owned/source/native_resource_tests.rs
+index 40af9b3..e3167a1 100644
+--- a/src/frontend/oir/owned/source/native_resource_tests.rs
++++ b/src/frontend/oir/owned/source/native_resource_tests.rs
+@@ -59,9 +59,9 @@ fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
+         calls,
+         reference_bytes,
+         native_bytes,
+-    ) in std::iter::once((0, 231, 1, 2, 2, 8, 0, 1, 1, 2040, 1872))
+-        .chain((1..31).map(|id| (id, 233, 1, 0, 0, 0, 1, 1, 1, 2048, 1888)))
+-        .chain(std::iter::once((31, 248, 0, 0, 0, 0, 1, 0, 0, 2048, 1992)))
++    ) in std::iter::once((0, 229, 1, 2, 2, 8, 0, 1, 1, 2040, 1856))
++        .chain((1..31).map(|id| (id, 229, 1, 0, 0, 0, 1, 1, 1, 2048, 1856)))
++        .chain(std::iter::once((31, 246, 0, 0, 0, 0, 1, 0, 0, 2048, 1976)))
+     {
+         assert_eq!(
+             plan.function(hir::DefId(id)).usage(),
+@@ -88,7 +88,7 @@ fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
+             bounds[0].cells,
+             bounds[0].bytes
+         ),
+-        (32, 7469, 8192, 60504)
++        (32, 7345, 8192, 59512)
+     );
+     assert!(!bounds[0].cyclic);
+     // Default aggregate8192 necessarily precedes path8193. Isolate the path
+@@ -134,17 +134,17 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
+     let case = source::checked(source::OWNER_CLASSES);
+     let plan = ExecutionPlan::build(&case.witness).unwrap();
+     source::assert_owner_classes(&plan);
+-    // Aggregate X10+9+40=59 and D8+16+56=80. Relay maximizes path cells
+-    // (40+10), while read maximizes native bytes (56+16).
++    // Physical views: aggregate X10+11+42=63 and native D8+16+56=80.
++    // Read now maximizes path cells (42+11=53) and native bytes (56+16=72).
+     let limits = Limits {
+-        cells: 59,
+-        live_cells: 50,
++        cells: 63,
++        live_cells: 53,
+         bytes: 80,
+         live_bytes: 72,
+         ..Limits::DEFAULT
+     };
+     let bounds = admit(&plan, limits).unwrap();
+-    assert_eq!((bounds[2].cells, bounds[2].bytes), (50, 72));
++    assert_eq!((bounds[2].cells, bounds[2].bytes), (53, 72));
+     assert!(native_module_limits(
+         &case.witness,
+         Some(case.entry),
+@@ -156,20 +156,20 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
+     for (lowered, name, maximum, origin) in [
+         (
+             Limits {
+-                cells: 58,
++                cells: 62,
+                 ..limits
+             },
+             "aggregate expanded cells",
+-            58,
++            62,
+             case.name("relay"),
+         ),
+         (
+             Limits {
+-                live_cells: 49,
++                live_cells: 52,
+                 ..limits
+             },
+             "live expanded cells",
+-            49,
++            52,
+             case.name("main"),
+         ),
+         (
+diff --git a/src/frontend/oir/owned/source/projected_slice_raw_tests.rs b/src/frontend/oir/owned/source/projected_slice_raw_tests.rs
+new file mode 100644
+index 0000000..ab5f1ba
+--- /dev/null
++++ b/src/frontend/oir/owned/source/projected_slice_raw_tests.rs
+@@ -0,0 +1,96 @@
++//! Independent raw admission controls: source lowering is not a witness.
++use super::super::*;
++use super::{lower, resolve, typeck};
++use crate::frontend::{lexer, parser};
++
++const PILOT: &str = "struct Batch{tag:i32,samples:[i32;3],tail:bool}fn edit(p:&mut[i32])->i32{p[0]=p[0]+1;return p.len();}fn main()->i32{let mut b=Batch{tag:73,samples:[1,2,3],tail:true};let n=edit(&mut b.samples);if b.tag==73&&b.tail{return n+b.samples[0];}else{return 99;}}";
++fn raw(text: &str) -> (SourceMap, RawOwnedProgram) {
++    let mut sources = SourceMap::new();
++    let id = sources.add("projected-raw.ox".into(), text.into());
++    let file = sources.get(id);
++    let (ast, _) = parser::parse_counted_with_arrays(
++        file,
++        lexer::lex(file).unwrap(),
++        parser::SourceMode::OwnedCandidate,
++        parser::MAX_NODES,
++        &mut crate::frontend::project::budget::Allocator::default(),
++        parser::ArraySyntaxPolicy::Enabled,
++    )
++    .unwrap();
++    let typed = typeck::check(resolve::resolve_in_map(file, &ast, &sources).unwrap()).unwrap();
++    let raw = lower::lower(&typed).unwrap();
++    (sources, raw)
++}
++
++#[test]
++fn projected_slice_raw_rederives_paths_and_rejects_forged_view_types() {
++    let (sources, program) = raw(PILOT);
++    let witness = verified::verify_owned(program, &sources).unwrap();
++    assert_eq!(
++        execute::run(&witness, Some(hir::DefId(1))),
++        Ok(Scalar::I32(5))
++    );
++    for mutation in 0..9 {
++        let (sources, mut program) = raw(PILOT);
++        let loan = &mut program.functions[1].loans[0];
++        match mutation {
++            0 => loan.projection.clear(),
++            1 => loan.projection[0].record = RecordId(999),
++            2 => loan.projection[0].index = 999,
++            3 => loan.projection[0].index = 0, // scalar metadata is not an array view
++            4 => loan.projection.push(loan.projection[0]), // cannot walk through an array
++            5 => {
++                loan.referent = BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::Bool)).unwrap()
++            }
++            6 => {
++                loan.referent = BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::FixedArray(
++                    FixedArrayTy::check(hir::Ty::I32, 3).unwrap(),
++                )))
++                .unwrap()
++            }
++            7 => loan.projection = vec![loan.projection[0]; 65],
++            _ => {
++                // Matching forged formal still cannot change the actual field element.
++                let other = BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::Bool)).unwrap();
++                loan.referent = other;
++                program.functions[0].references[0].referent = other;
++            }
++        }
++        assert!(
++            verified::verify_owned(program, &sources).is_err(),
++            "mutation {mutation}"
++        );
++    }
++}
++
++#[test]
++fn projected_slice_paths_and_retained_views_are_charged() {
++    use std::mem::size_of;
++    assert_eq!(size_of::<storage::BorrowView>(), 16);
++    assert_eq!(size_of::<storage::ReferenceHandle>(), 80);
++    assert_eq!(size_of::<storage::LoanRuntime>(), 112);
++    let (sources, program) = raw(PILOT);
++    let usage = budget::preflight(&program, budget::Limits::DEFAULT).unwrap();
++    let path_bytes: usize = program
++        .functions
++        .iter()
++        .flat_map(|f| &f.loans)
++        .map(|l| l.projection.len() * size_of::<FieldId>())
++        .sum();
++    assert_eq!(path_bytes, size_of::<FieldId>());
++    assert!(usage.metadata_bytes >= path_bytes);
++    let witness = verified::verify_owned(program, &sources).unwrap();
++    let plan = plan::ExecutionPlan::build(&witness).unwrap();
++    for f in witness.functions() {
++        let u = plan.function(f.id).usage();
++        assert!(u.expanded_cells >= f.references.len() * 10 + f.loans.len() * 14);
++        assert!(u.reference_bytes >= f.references.len() * 80 + f.loans.len() * 112);
++    }
++    eprintln!(
++        "projected layouts LoanDecl={} BorrowView={} ReferenceHandle={} LoanRuntime={}",
++        size_of::<LoanDecl>(),
++        size_of::<storage::BorrowView>(),
++        size_of::<storage::ReferenceHandle>(),
++        size_of::<storage::LoanRuntime>()
++    );
++}
+diff --git a/src/frontend/oir/owned/source/resolve.rs b/src/frontend/oir/owned/source/resolve.rs
+index 522bb60..6945fc8 100644
+--- a/src/frontend/oir/owned/source/resolve.rs
++++ b/src/frontend/oir/owned/source/resolve.rs
+@@ -58,7 +58,7 @@ enum MeterOwner<'src> {
+ }
+ #[derive(Debug)]
+ pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
+-    projection_fields: std::cell::Cell<usize>,
++    projection_bytes: std::cell::Cell<usize>,
+     admission: SourceAdmission,
+     index: IndexOwner<'src>,
+     work: MeterOwner<'src>,
+@@ -84,16 +84,8 @@ impl<'src> ResolvedOwnedProgram<'src> {
+                 span,
+             ));
+         }
+-        let total = self
+-            .projection_fields
+-            .get()
+-            .checked_add(length)
+-            .and_then(|total| {
+-                total
+-                    .checked_mul(std::mem::size_of::<FieldId>())
+-                    .map(|bytes| (total, bytes))
+-            })
+-            .filter(|(_, bytes)| *bytes <= super::budget::MAX_RAW_BYTES)
++        let bytes = length
++            .checked_mul(std::mem::size_of::<FieldId>())
+             .ok_or_else(|| {
+                 error(
+                     "E0400",
+@@ -101,12 +93,34 @@ impl<'src> ResolvedOwnedProgram<'src> {
+                     span,
+                 )
+             })?;
++        self.admit_projection_metadata(bytes, span)?;
+         // Existing one-hop fields retain their permission-query work charge.
+         if length > 1 {
+             self.work()
+                 .debit(length as u64, span, "record projection path")?;
+         }
+-        self.projection_fields.set(total.0);
++        Ok(())
++    }
++    /// Sparse borrow-path lookup entries and path fields share a cumulative byte
++    /// cap. Admit each complete requested reservation before any growth.
++    pub(super) fn admit_projection_metadata(
++        &self,
++        bytes: usize,
++        span: Span,
++    ) -> Result<(), Box<Diagnostic>> {
++        let total = self
++            .projection_bytes
++            .get()
++            .checked_add(bytes)
++            .filter(|bytes| *bytes <= super::budget::MAX_RAW_BYTES)
++            .ok_or_else(|| {
++                error(
++                    "E0400",
++                    format_args!("typed record projection payload limit exceeded"),
++                    span,
++                )
++            })?;
++        self.projection_bytes.set(total);
+         Ok(())
+     }
+     pub(super) fn admission(&self) -> SourceAdmission {
+@@ -241,7 +255,7 @@ pub(in crate::frontend) fn resolve_sources(
+         resolve_source_parts(sources, &work, &mut allocator, IndexLimits::default())?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
+-        projection_fields: std::cell::Cell::new(0),
++        projection_bytes: std::cell::Cell::new(0),
+         admission: SourceAdmission::Executable,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+@@ -265,7 +279,7 @@ pub(in crate::frontend::oir) fn resolve_observed<'s>(
+         resolve_source_parts(sources, work, allocator, IndexLimits::default())?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
+-        projection_fields: std::cell::Cell::new(0),
++        projection_bytes: std::cell::Cell::new(0),
+         admission: SourceAdmission::Executable,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+@@ -294,7 +308,7 @@ pub(in crate::frontend) fn resolve_project<'s>(
+     let mut allocator = Allocator::default();
+     let (records, signatures, functions) = resolve_index(index, work, &mut allocator)?;
+     Ok(ResolvedOwnedProgram {
+-        projection_fields: std::cell::Cell::new(0),
++        projection_bytes: std::cell::Cell::new(0),
+         admission: SourceAdmission::Executable,
+         sources: index.sources().view(),
+         index: IndexOwner::Borrowed(index),
+@@ -568,7 +582,7 @@ impl<'a> Resolver<'_, 'a> {
+             .expect("validated source span")
+     }
+     fn lookup(&self, span: Span) -> Result<BindingId, Box<Diagnostic>> {
+-        // Projected array access retains the complete named-root path in its
++        // Projected array access and borrowing retain the named-root path in their
+         // base span; only its first identifier participates in local lookup.
+         let start = self
+             .ast
+@@ -1105,17 +1119,37 @@ mod source_identity_tests {
+         .unwrap();
+         let program = resolve(source, &ast).unwrap();
+         let span = source.span(0, 0);
+-        let maximum = super::super::budget::MAX_RAW_BYTES / std::mem::size_of::<FieldId>();
+-        program.projection_fields.set(maximum - 1);
++        let maximum = super::super::budget::MAX_RAW_BYTES;
++        program
++            .projection_bytes
++            .set(maximum - std::mem::size_of::<FieldId>());
+         program.admit_projection(1, span).unwrap();
+         assert_eq!(program.admit_projection(1, span).unwrap_err().code, "E0400");
+-        assert_eq!(program.projection_fields.get(), maximum);
+-        program.projection_fields.set(0);
++        assert_eq!(program.projection_bytes.get(), maximum);
++        program.projection_bytes.set(0);
+         assert_eq!(
+             program.admit_projection(65, span).unwrap_err().code,
+             "E0400"
+         );
+-        assert_eq!(program.projection_fields.get(), 0);
++        assert_eq!(program.projection_bytes.get(), 0);
++        let metadata = std::mem::size_of::<Vec<FieldId>>();
++        program.admit_projection_metadata(metadata, span).unwrap();
++        program.admit_projection(2, span).unwrap();
++        assert_eq!(
++            program.projection_bytes.get(),
++            metadata + 2 * std::mem::size_of::<FieldId>()
++        );
++        assert_eq!(
++            program
++                .admit_projection_metadata(usize::MAX, span)
++                .unwrap_err()
++                .code,
++            "E0400"
++        );
++        assert_eq!(
++            program.projection_bytes.get(),
++            metadata + 2 * std::mem::size_of::<FieldId>()
++        );
+     }
+     #[test]
+     fn resolved_owned_names_select_each_original_file() {
+@@ -1176,7 +1210,7 @@ pub(super) fn resolve_array_types<'s>(
+         resolve_source_parts(sources, work, allocator, limits)?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
+-        projection_fields: std::cell::Cell::new(0),
++        projection_bytes: std::cell::Cell::new(0),
+         admission: SourceAdmission::ObserveArrayTypes,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+@@ -1201,7 +1235,7 @@ pub(super) fn resolve_array_pipeline<'s>(
+         resolve_source_parts(sources, work, allocator, limits)?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
+-        projection_fields: std::cell::Cell::new(0),
++        projection_bytes: std::cell::Cell::new(0),
+         admission: SourceAdmission::ObserveArrayPipeline,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+@@ -1226,7 +1260,7 @@ pub(super) fn resolve_array_consumer<'s>(
+         resolve_source_parts(sources, work, allocator, limits)?;
+     let entry = index.root_original_main();
+     Ok(ResolvedOwnedProgram {
+-        projection_fields: std::cell::Cell::new(0),
++        projection_bytes: std::cell::Cell::new(0),
+         admission: SourceAdmission::ArrayConsumer,
+         sources: sources.view(),
+         index: IndexOwner::Owned(index),
+diff --git a/src/frontend/oir/owned/source/resource_fixtures.rs b/src/frontend/oir/owned/source/resource_fixtures.rs
+index d40446f..3a28a27 100644
+--- a/src/frontend/oir/owned/source/resource_fixtures.rs
++++ b/src/frontend/oir/owned/source/resource_fixtures.rs
+@@ -74,24 +74,25 @@ pub(in crate::frontend::oir::owned) fn scalar_owner_slots(extra: bool) -> String
+ }
+ 
+ pub(in crate::frontend::oir::owned) fn native_cell_chain(extra: bool) -> String {
+-    // main: S231,A1,O2,P2,L1,C1 => X256.
+-    // f1..f30: S233,A1,R1,L1,C1 => X256 each.
+-    // f31: S248,R1 => X256; one extra literal adds exactly one cell.
+-    // Every function's S+O is below256; depth32,63blocks,S7469,X8192.
++    // Physical views charge R10/L14 cells (80/112 bytes), keeping X8192.
++    // main: S229,A1,O2,P2,L1,C1 => 229+1+2+8+14+2=256.
++    // f1..f30: S229,A1,R1,L1,C1 => 229+1+10+14+2=256 each.
++    // f31: S246,R1 => 246+10=256; one extra literal adds one cell.
++    // Every function's S+O is below256; depth32,63blocks,S7345,X8192.
+     let mut text = format!(
+         "struct T{{value:i32}} fn main()->(){{let x=T{{value:7}};{}f1(&x);return;}}",
+-        "0;".repeat(228),
++        "0;".repeat(226),
+     );
+     for index in 1..31 {
+         text.push_str(&format!(
+             "fn f{index}(p:&T)->(){{{}f{}(&*p);return;}}",
+-            "0;".repeat(231),
++            "0;".repeat(227),
+             index + 1,
+         ));
+     }
+     text.push_str(&format!(
+         "fn f31(p:&T)->(){{{}return;}}",
+-        "0;".repeat(247 + usize::from(extra)),
++        "0;".repeat(245 + usize::from(extra)),
+     ));
+     text
+ }
+@@ -125,8 +126,8 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
+             plan::FrameUsage {
+                 scalar_slots: 1,
+                 references: 1,
+-                expanded_cells: 9,
+-                reference_bytes: 72,
++                expanded_cells: 1 + 10,
++                reference_bytes: 8 + 80,
+                 native_bytes: 16,
+                 ..Default::default()
+             },
+@@ -141,8 +142,8 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
+                 payload_bytes: 16,
+                 loans: 1,
+                 calls: 2,
+-                expanded_cells: 40,
+-                reference_bytes: 304,
++                expanded_cells: 2 + 2 + 4 + 4 * 4 + 14 + 2 * 2,
++                reference_bytes: 4 * 8 + 16 + 4 * 32 + 112 + 2 * 16,
+                 native_bytes: 56,
+                 ..Default::default()
+             },
+@@ -186,7 +187,7 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
+ }
+ 
+ /// Native slice qualification uses the enabled array grammar while preserving
+-/// the historical record-only helper and its frozen resource fixtures.
++/// the record-only helper and its unchanged source templates.
+ pub(in crate::frontend::oir::owned) fn checked_arrays(text: &str) -> CheckedSource {
+     let mut sources = SourceMap::new();
+     let file = sources.add("slice-native.ox".into(), text.into());
+diff --git a/src/frontend/oir/owned/source/reviewer_heldout.rs b/src/frontend/oir/owned/source/reviewer_heldout.rs
+index 9db7987..ad756a9 100644
+--- a/src/frontend/oir/owned/source/reviewer_heldout.rs
++++ b/src/frontend/oir/owned/source/reviewer_heldout.rs
+@@ -90,10 +90,15 @@ fn heldout_condition_name_can_share_record_name_at_all_precedence_levels() {
+ fn heldout_reference_grammar_cross_product_stays_argument_only() {
+     for borrow in ["&v", "&mut v", "&*p", "&mut *p"] {
+         parsed(&format!("fn f() -> () {{ call({borrow}); return; }}")).unwrap();
++        // RFC 0022 adds only complete named-root field paths at this seam;
++        // scalar/record leaves and exact-array formals are still rejected by typing.
++        parsed(&format!("fn f() -> () {{ call({borrow}.item); return; }}")).unwrap();
+         for expression in [
+             format!("({borrow})"),
+             format!("{borrow} == v"),
+-            format!("{borrow}.item"),
++            format!("({borrow}).item"),
++            format!("{borrow}.item[0]"),
++            format!("{borrow}.item()"),
+             format!("{borrow}()"),
+             format!("{borrow} + 0"),
+         ] {
+diff --git a/src/frontend/oir/owned/source/reviewer_resource_runtime.rs b/src/frontend/oir/owned/source/reviewer_resource_runtime.rs
+index a7e4195..0a9722e 100644
+--- a/src/frontend/oir/owned/source/reviewer_resource_runtime.rs
++++ b/src/frontend/oir/owned/source/reviewer_resource_runtime.rs
+@@ -11,13 +11,14 @@ fn reviewer_source_resource_reserved_headers_charge_capacity_not_peak() {
+     let entry = case.entry;
+     let witness = case.witness;
+     let sources = case.sources;
+-    // Hand census: main S2 A2 O4 P4 B16 L1 C2 => D304;
+-    // relay O2 P2 B8 => D72; read S1 R1 => D72. Peak uses2 frames.
+-    // Capacity3 headers must still be reserved. This expectation does not inspect a plan.
+-    let exact = 3 * size_of::<Frame>() + size_of::<Scalar>() + 376;
++    // Hand census with physical-view R80/L112: main S2 A2 O4 P4 B16 L1
++    // C2 => D320; relay O2 P2 B8 => D72; read S1 R1 => D88. The read
++    // path peaks at408 dynamic bytes and2 frames; reserve3 headers anyway.
++    // This expectation does not inspect a plan.
++    let exact = 3 * size_of::<Frame>() + size_of::<Scalar>() + 320 + 88;
+     assert_eq!(size_of::<Frame>(), 272);
+     assert_eq!(size_of::<Scalar>(), 8);
+-    assert_eq!(exact, 1200);
++    assert_eq!(exact, 1232);
+     assert_eq!(
+         run_limits(
+             &witness,
+@@ -41,11 +42,11 @@ fn reviewer_source_resource_reserved_headers_charge_capacity_not_peak() {
+         },
+     )
+     .unwrap_err();
+-    let start = text.find("relay(T{value:7})").unwrap();
++    let start = text.find("read(&x)").unwrap();
+     let expected = Span {
+         file: file_id,
+         start,
+-        end: start + "relay(T{value:7})".len(),
++        end: start + "read(&x)".len(),
+     };
+     assert_eq!(
+         failure,
+diff --git a/src/frontend/oir/owned/source/runtime_resource_tests.rs b/src/frontend/oir/owned/source/runtime_resource_tests.rs
+index 7f7bdcc..b6b143e 100644
+--- a/src/frontend/oir/owned/source/runtime_resource_tests.rs
++++ b/src/frontend/oir/owned/source/runtime_resource_tests.rs
+@@ -44,8 +44,8 @@ fn recursive_census(case: &source::CheckedSource, padding: usize, main_padding:
+             references: 1,
+             loans: 1,
+             calls: 1,
+-            expanded_cells: 33 + padding,
+-            reference_bytes: (11 + padding) * size_of::<Option<Scalar>>() + 64 + 96 + 16,
++            expanded_cells: 11 + padding + 10 + 14 + 2,
++            reference_bytes: (11 + padding) * size_of::<Option<Scalar>>() + 80 + 112 + 16,
+             native_bytes: (11 + padding) * 8 + 16,
+             ..Default::default()
+         }
+@@ -60,8 +60,8 @@ fn recursive_census(case: &source::CheckedSource, padding: usize, main_padding:
+             payload_bytes: 8,
+             loans: 1,
+             calls: 1,
+-            expanded_cells: 29 + main_padding,
+-            reference_bytes: (5 + main_padding) * size_of::<Option<Scalar>>() + 8 + 64 + 96 + 16,
++            expanded_cells: 5 + main_padding + 2 + 2 * 4 + 14 + 2,
++            reference_bytes: (5 + main_padding) * size_of::<Option<Scalar>>() + 8 + 64 + 112 + 16,
+             native_bytes: (5 + main_padding) * 8 + 16,
+             ..Default::default()
+         }
+@@ -126,10 +126,13 @@ fn source_shared_reborrow_reaches_1024_frames_and_rejects_attempt_1025() {
+ 
+ #[test]
+ fn source_actual_200000_live_cells_are_inclusive_and_200001_is_denied() {
+-    // main X29+171=200, plus999 activations of recur X33+167=200.
+-    // S174+999*176=175998; frames1000; hand fuel384003: no earlier gate masks X.
+-    let exact = source::checked(&source::recursive(998, 167, 171));
+-    recursive_census(&exact, 167, 171);
++    // Successor physical-view boundary: main X31+169=200, plus999
++    // activations of recur X37+163=200. S172+999*172=172000; frames1000.
++    // Each padding literal adds one activation fuel cell and one scalar step.
++    // The unchanged unpadded template costs50*999+45=49995, so the
++    // smaller source costs49995+2*169+999*2*163=376007. No earlier gate masks X.
++    let exact = source::checked(&source::recursive(998, 163, 169));
++    recursive_census(&exact, 163, 169);
+     let mut events = Vec::new();
+     assert_eq!(
+         run_observed(&exact.witness, exact.entry, Limits::default(), &mut events),
+@@ -151,10 +154,10 @@ fn source_actual_200000_live_cells_are_inclusive_and_200001_is_denied() {
+                 None
+             })
+             .sum::<usize>(),
+-        384_003
++        49_995 + 2 * 169 + 999 * 2 * 163
+     );
+-    let over = source::checked(&source::recursive(998, 167, 172));
+-    recursive_census(&over, 167, 172);
++    let over = source::checked(&source::recursive(998, 163, 170));
++    recursive_census(&over, 163, 170);
+     let mut events = Vec::new();
+     let error =
+         run_observed(&over.witness, over.entry, Limits::default(), &mut events).unwrap_err();
+@@ -180,13 +183,14 @@ fn source_actual_200000_live_cells_are_inclusive_and_200001_is_denied() {
+ fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
+     let case = source::checked(source::OWNER_CLASSES);
+     source::assert_owner_classes(&ExecutionPlan::build(&case.witness).unwrap());
+-    // Runtime relay path: mainX40+relayX10, active bytes304+72. Both
+-    // owners and all call argument snapshots remain allocated in each frame.
+-    let bytes = 2 * size_of::<Frame>() + size_of::<Scalar>() + 376;
+-    assert_eq!(bytes, 928);
++    // Physical-view census: mainX42/readX11/relayX10, D320/88/72.
++    // The read path now maximizes cells53 and active bytes408; owners and
++    // all call argument snapshots remain allocated in each frame.
++    let bytes = 2 * size_of::<Frame>() + size_of::<Scalar>() + 320 + 88;
++    assert_eq!(bytes, 960);
+     let limits = Limits {
+         frames: 2,
+-        cells: 50,
++        cells: 53,
+         bytes,
+         ..Limits::default()
+     };
+@@ -194,11 +198,11 @@ fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
+         run_limits(&case.witness, Some(case.entry), limits),
+         Ok(Scalar::I32(7))
+     );
+-    let origin = case.span("relay(T{value:7})");
++    let origin = case.span("read(&x)");
+     resource_failure(
+         &case,
+         Limits {
+-            cells: 49,
++            cells: 52,
+             ..limits
+         },
+         "live expanded cells",
+@@ -218,14 +222,16 @@ fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
+ #[test]
+ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
+     // Exact checked-in RFC source, SHA256 dbbadef9a035e3af62aab6ae2ca0ac19531684e4ad8ef25bc4d81a4fa7c07db2.
+-    // Its independently frozen batch-template-ledger.json gives the peak path
+-    // main -> dispatch -> commit: X142+28+18=188, Dref1008+224+144=1376.
++    // Preserve the frozen source and fuel schedule, while deriving successor
++    // physical usage from its source census with references10/80, loans14/112.
++    // main S26 A6 P32 O8 L3 C5 => X148, D1056; dispatch S4 A2 R1 L1
++    // C1 => X32, D256; commit S10 R1 => X20, D160. Peak is200/1472.
+     let case = source::checked(source::BATCH);
+-    let bytes = 3 * size_of::<Frame>() + size_of::<Scalar>() + 1376;
+-    assert_eq!(bytes, 2200);
++    let bytes = 3 * size_of::<Frame>() + size_of::<Scalar>() + 1056 + 256 + 160;
++    assert_eq!(bytes, 2296);
+     let limits = Limits {
+         frames: 3,
+-        cells: 188,
++        cells: 200,
+         bytes,
+         ..Limits::default()
+     };
+@@ -252,7 +258,7 @@ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
+     resource_failure(
+         &case,
+         Limits {
+-            cells: 187,
++            cells: 199,
+             ..limits
+         },
+         "live expanded cells",
+@@ -273,7 +279,7 @@ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
+ fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
+     // Record payload incl. alignment is <=4 bytes per owner cell. Scalar
+     // snapshots are8bytes/cell and runtime metadata is exactly8bytes/cell:
+-    // owners32/4, references64/8, loans96/12, calls16/2. Thus Dref<=8*X.
++    // owners32/4, references80/10, loans112/14, calls16/2. Thus Dref<=8*X.
+     // The production byte cap cannot be independently reached under X200000;
+     // the preceding tests deliberately establish only lowered byte seams.
+     assert_eq!(size_of::<Option<Scalar>>(), 8);
+@@ -284,7 +290,7 @@ fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
+             size_of::<LoanRuntime>(),
+             size_of::<CallRuntime>()
+         ),
+-        (32, 64, 96, 16)
++        (32, 80, 112, 16)
+     );
+     let upper =
+         plan::MAX_FRAMES * size_of::<Frame>() + size_of::<Scalar>() + 8 * plan::MAX_EXPANDED_CELLS;
+diff --git a/src/frontend/oir/owned/source/slice_raw_tests.rs b/src/frontend/oir/owned/source/slice_raw_tests.rs
+index e943210..b2d2191 100644
+--- a/src/frontend/oir/owned/source/slice_raw_tests.rs
++++ b/src/frontend/oir/owned/source/slice_raw_tests.rs
+@@ -71,14 +71,14 @@ fn slice_raw_cannot_narrow_a_slice_authority_back_to_fixed() {
+ }
+ 
+ #[test]
+-fn slice_native_sidecars_are_accounted_without_runtime_handle_growth() {
++fn slice_native_sidecars_are_accounted_with_equal_exact_and_slice_runtime_views() {
+     let (sources, program) = raw(SHARED);
+     let witness = verified::verify_owned(program, &sources).unwrap();
+     let slices = plan::ExecutionPlan::build(&witness).unwrap();
+     let (exact_sources, exact_program) = raw(&SHARED.replace("&[i32]", "&[i32;2]"));
+     let exact_witness = verified::verify_owned(exact_program, &exact_sources).unwrap();
+     let exact = plan::ExecutionPlan::build(&exact_witness).unwrap();
+-    assert_eq!(std::mem::size_of::<storage::ReferenceHandle>(), 64);
++    assert_eq!(std::mem::size_of::<storage::ReferenceHandle>(), 80);
+     assert_eq!(
+         std::mem::size_of::<BorrowedSlot>(),
+         std::mem::size_of::<AggregateSlot>()
+diff --git a/src/frontend/oir/owned/source/typeck.rs b/src/frontend/oir/owned/source/typeck.rs
+index 85d2e56..057b4c4 100644
+--- a/src/frontend/oir/owned/source/typeck.rs
++++ b/src/frontend/oir/owned/source/typeck.rs
+@@ -23,6 +23,13 @@ struct TypedBody {
+     block_flows: Vec<FlowSummary>,
+     projections: Vec<Option<Projection>>,
+     statement_projections: Vec<Vec<Option<Projection>>>,
++    borrow_projections: Vec<BorrowProjection>,
++}
++#[derive(Debug)]
++struct BorrowProjection {
++    expression: ExprId,
++    argument: usize,
++    projection: Projection,
+ }
+ /// Possible exits from a statement list. Loop transfers always refer to its
+ /// nearest enclosing while; that while consumes them before its own summary
+@@ -153,6 +160,19 @@ impl<'a> TypedOwnedFunction<'a> {
+     pub(super) fn expression_projection(&self, id: ExprId) -> Option<&'a Projection> {
+         self.body.projections[id.0].as_ref()
+     }
++    pub(super) fn borrow_projection(
++        &self,
++        expression: ExprId,
++        argument: usize,
++    ) -> Option<&'a Projection> {
++        self.body
++            .borrow_projections
++            .binary_search_by_key(&(expression.0, argument), |entry| {
++                (entry.expression.0, entry.argument)
++            })
++            .ok()
++            .map(|index| &self.body.borrow_projections[index].projection)
++    }
+     pub(super) fn statement_projection(
+         &self,
+         block: BodyBlockId,
+@@ -352,6 +372,7 @@ fn projected_array_access(
+     base_span: Span,
+     access_span: Span,
+     bindings: &[Option<ParameterTy>],
++    borrow: bool,
+ ) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
+     let requester = program.requester(function.id)?;
+     let ast = program.index().sources().ast(requester)?;
+@@ -378,7 +399,11 @@ fn projected_array_access(
+     else {
+         return Err(error(
+             "E0305",
+-            "indexed access requires a fixed scalar array field",
++            if borrow {
++                "projected borrowing requires a fixed scalar array field"
++            } else {
++                "indexed access requires a fixed scalar array field"
++            },
+             base_span,
+         ));
+     };
+@@ -470,13 +495,24 @@ fn expression_type(
+     bindings: &[Option<ParameterTy>],
+     expressions: &mut [Option<ValueTy>],
+     projections: &mut [Option<Projection>],
++    borrow_projections: &mut Vec<BorrowProjection>,
+ ) -> Result<ValueTy, Box<Diagnostic>> {
+     if let Some(ty) = expressions[id.0] {
+         return Ok(ty);
+     }
+     let expr = &function.expressions[id.0];
+     let scalar = ValueTy::Scalar;
+-    let mut child = |id| expression_type(program, function, id, bindings, expressions, projections);
++    let mut child = |id| {
++        expression_type(
++            program,
++            function,
++            id,
++            bindings,
++            expressions,
++            projections,
++            borrow_projections,
++        )
++    };
+     let ty = match &expr.kind {
+         ExprKind::Bool(_) => scalar(Ty::Bool),
+         ExprKind::I32(_) => scalar(Ty::I32),
+@@ -578,18 +614,79 @@ fn expression_type(
+             // Visit all well-formed argument values in source order, including
+             // statically skipped logical branches and ignored helper results.
+             let mut actuals = Vec::with_capacity(args.len());
+-            for arg in args {
++            for (argument, arg) in args.iter().enumerate() {
+                 actuals.push(match arg {
+                     Argument::Value(value) => (
+-                        ParameterTy::Value(child(*value)?),
++                        ParameterTy::Value(expression_type(
++                            program,
++                            function,
++                            *value,
++                            bindings,
++                            expressions,
++                            projections,
++                            borrow_projections,
++                        )?),
+                         function.expressions[value.0].span,
+                     ),
+                     Argument::Borrow {
+-                        kind, place, span, ..
+-                    } => (
+-                        borrow_type(function, *kind, *place, *span, bindings)?,
+-                        *span,
+-                    ),
++                        kind,
++                        place,
++                        span,
++                        name_span,
++                        ..
++                    } => {
++                        let whole = borrow_type(function, *kind, *place, *span, bindings)?;
++                        let actual = if program.text(*name_span).contains('.') {
++                            let binding = match place {
++                                BorrowPlace::Owner(binding) | BorrowPlace::Forwarded(binding) => {
++                                    *binding
++                                }
++                            };
++                            let (projected, _, element) = projected_array_access(
++                                program, function, binding, *name_span, *span, bindings, true,
++                            )?;
++                            let projection = projected.ok_or_else(|| {
++                                error("E0500", "missing projected borrow path", *span)
++                            })?;
++                            if borrow_projections.len() == borrow_projections.capacity() {
++                                // Geometric, fallible growth avoids repeated quadratic copies.
++                                // Charge the entire requested capacity increase before reserving.
++                                let growth = borrow_projections.capacity().max(1);
++                                let bytes = growth
++                                    .checked_mul(std::mem::size_of::<BorrowProjection>())
++                                    .ok_or_else(|| {
++                                        error("E0400", "projected borrow inventory overflow", *span)
++                                    })?;
++                                program.admit_projection_metadata(bytes, *span)?;
++                                program.work().debit(
++                                    growth as u64,
++                                    *span,
++                                    "projected borrow inventory growth",
++                                )?;
++                                borrow_projections.try_reserve_exact(growth).map_err(|_| {
++                                    error(
++                                        "E0400",
++                                        "projected borrow inventory allocation failed",
++                                        *span,
++                                    )
++                                })?;
++                            }
++                            borrow_projections.push(BorrowProjection {
++                                expression: id,
++                                argument,
++                                projection,
++                            });
++                            // A projected fixed array is admitted only as a scalar slice.
++                            // It cannot silently add exact-array or record field borrowing.
++                            ParameterTy::Reference {
++                                referent: BorrowedTy::ScalarSlice(element),
++                                kind: *kind,
++                            }
++                        } else {
++                            whole
++                        };
++                        (actual, *span)
++                    }
+                 });
+             }
+             if args.len() != called.params.len() {
+@@ -719,8 +816,9 @@ fn expression_type(
+             program.work().debit(1, expr.span, "array type read")?;
+             let actual = child(*index)?;
+             program.work().debit(1, expr.span, "array type access")?;
+-            let (projection, _, element) =
+-                projected_array_access(program, function, *base, *base_span, expr.span, bindings)?;
++            let (projection, _, element) = projected_array_access(
++                program, function, *base, *base_span, expr.span, bindings, false,
++            )?;
+             projections[id.0] = projection;
+             if actual != scalar(Ty::I32) {
+                 return Err(mismatch(
+@@ -735,8 +833,9 @@ fn expression_type(
+         ExprKind::ArrayLength { base, base_span } => {
+             program.work().debit(1, expr.span, "array type length")?;
+             program.work().debit(1, expr.span, "array type access")?;
+-            let (projection, _, _) =
+-                projected_array_access(program, function, *base, *base_span, expr.span, bindings)?;
++            let (projection, _, _) = projected_array_access(
++                program, function, *base, *base_span, expr.span, bindings, false,
++            )?;
+             projections[id.0] = projection;
+             scalar(Ty::I32)
+         }
+@@ -797,12 +896,13 @@ fn finish_expression_type(
+ fn initializer_type(
+     program: &ResolvedOwnedProgram<'_>,
+     function: &Function,
+-    binding: BindingId,
+-    root: ExprId,
++    initializer: (BindingId, ExprId),
+     bindings: &[Option<ParameterTy>],
+     expressions: &mut [Option<ValueTy>],
+     projections: &mut [Option<Projection>],
++    borrow_projections: &mut Vec<BorrowProjection>,
+ ) -> Result<ValueTy, Box<Diagnostic>> {
++    let (binding, root) = initializer;
+     if let Some(ValueTy::Owned(AggregateTy::FixedArray(annotation))) =
+         function.bindings[binding.0].annotation
+     {
+@@ -832,7 +932,15 @@ fn initializer_type(
+             }
+         }
+     }
+-    expression_type(program, function, root, bindings, expressions, projections)
++    expression_type(
++        program,
++        function,
++        root,
++        bindings,
++        expressions,
++        projections,
++        borrow_projections,
++    )
+ }
+ fn check_body(
+     program: &ResolvedOwnedProgram<'_>,
+@@ -853,6 +961,11 @@ fn check_body(
+     }
+     let mut expressions = vec![None; function.expressions.len()];
+     let mut projections = vec![None; function.expressions.len()];
++    // Pay the new enclosing Vec header even when the sparse table stays empty.
++    // There is no extra source walk or work debit for pre-existing whole loans.
++    program
++        .admit_projection_metadata(std::mem::size_of::<Vec<BorrowProjection>>(), function.end)?;
++    let mut borrow_projections = Vec::new();
+     let mut statement_projections: Vec<Vec<Option<Projection>>> = function
+         .blocks
+         .iter()
+@@ -954,11 +1067,11 @@ fn check_body(
+                 initializer_type(
+                     program,
+                     function,
+-                    binding,
+-                    init,
++                    (binding, init),
+                     &bindings,
+                     &mut expressions,
+                     &mut projections,
++                    &mut borrow_projections,
+                 )?;
+                 None
+             }
+@@ -977,6 +1090,7 @@ fn check_body(
+                         &bindings,
+                         &mut expressions,
+                         &mut projections,
++                        &mut borrow_projections,
+                     )?;
+                 }
+                 None
+@@ -996,6 +1110,7 @@ fn check_body(
+                 &bindings,
+                 &mut expressions,
+                 &mut projections,
++                &mut borrow_projections,
+             )?;
+         }
+         match statement.kind {
+@@ -1122,6 +1237,7 @@ fn check_body(
+                     base_span,
+                     target_span,
+                     &bindings,
++                    false,
+                 )?;
+                 statement_projections[block.0][index] = projection;
+                 let index = element_index;
+@@ -1275,7 +1391,28 @@ fn check_body(
+         .into_iter()
+         .map(|flow| flow.expect("all resolved blocks have checked flow"))
+         .collect();
++    // Borrow typing follows source evaluation order, which can interleave nested
++    // call sites. Sort the sparse table for bounded binary lookup during lowering.
++    let borrow_slots = borrow_projections.len();
++    if borrow_slots > 0 {
++        let work = borrow_slots
++            .checked_mul(borrow_slots.ilog2() as usize + 1)
++            .ok_or_else(|| {
++                error(
++                    "E0400",
++                    "projected borrow lookup work overflow",
++                    function.end,
++                )
++            })?;
++        program.work().debit(
++            work as u64,
++            function.end,
++            "projected borrow lookup ordering",
++        )?;
++        borrow_projections.sort_unstable_by_key(|entry| (entry.expression.0, entry.argument));
++    }
+     Ok(TypedBody {
++        borrow_projections,
+         expressions: expressions
+             .into_iter()
+             .map(|ty| ty.expect("every expression was typed"))
+@@ -1291,6 +1428,20 @@ fn check_body(
+ mod array_type_layout_tests {
+     use super::*;
+     #[test]
++    fn projected_slice_retained_source_layouts() {
++        use std::mem::size_of;
++        // AST and resolved borrow arguments retain spans rather than new vectors.
++        // The only new per-body enclosing allocation carrier is this sixth Vec.
++        assert_eq!(size_of::<TypedBody>(), 6 * size_of::<Vec<()>>());
++        println!("projected-slice-layout ast-borrow={} ast-argument={} hir-borrow={} hir-argument={} resolved-program={} typed-body={} typed-function={} sparse-entry={} field-id={} body-growth={}",
++            size_of::<crate::frontend::ast::BorrowPlace>(),
++            size_of::<crate::frontend::ast::Argument>(),
++            size_of::<BorrowPlace>(), size_of::<Argument>(),
++            size_of::<ResolvedOwnedProgram<'_>>(), size_of::<TypedBody>(),
++            size_of::<TypedOwnedFunction<'_>>(), size_of::<BorrowProjection>(),
++            size_of::<FieldId>(), size_of::<Vec<BorrowProjection>>());
++    }
++    #[test]
+     fn unit3b1_owner_slot_layouts() {
+         use std::mem::size_of;
+         macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
+diff --git a/src/frontend/oir/owned/storage.rs b/src/frontend/oir/owned/storage.rs
+index 1799ee9..267271e 100644
+--- a/src/frontend/oir/owned/storage.rs
++++ b/src/frontend/oir/owned/storage.rs
+@@ -1,5 +1,13 @@
+ //! Fixed-width checked reference-machine identities; never host pointers.
+ //! Indices are zero-based. Only identity epochs reserve zero as invalid.
++use super::AggregateSlot;
++
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++#[repr(C)]
++pub(super) struct BorrowView {
++    pub offset: u64,
++    pub aggregate: Option<AggregateSlot>,
++}
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+ #[repr(C)]
+ pub(super) struct OwnerKey {
+@@ -21,6 +29,7 @@ pub(super) struct LoanKey {
+ pub(super) struct ReferenceHandle {
+     pub root: OwnerKey,
+     pub permission: LoanKey,
++    pub view: BorrowView,
+ }
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+ #[repr(C)]
+@@ -37,6 +46,7 @@ pub(super) struct LoanRuntime {
+     pub state: u64,
+     pub root: OwnerKey,
+     pub parent: LoanKey,
++    pub view: BorrowView,
+     pub shared_children: u64,
+     pub exclusive_children: u64,
+ }
+@@ -50,8 +60,9 @@ pub(super) struct CallRuntime {
+ const _: () = {
+     assert!(std::mem::size_of::<OwnerKey>() == 32);
+     assert!(std::mem::size_of::<LoanKey>() == 32);
+-    assert!(std::mem::size_of::<ReferenceHandle>() == 64);
++    assert!(std::mem::size_of::<BorrowView>() == 16);
++    assert!(std::mem::size_of::<ReferenceHandle>() == 80);
+     assert!(std::mem::size_of::<OwnerRuntime>() == 32);
+-    assert!(std::mem::size_of::<LoanRuntime>() == 96);
++    assert!(std::mem::size_of::<LoanRuntime>() == 112);
+     assert!(std::mem::size_of::<CallRuntime>() == 16);
+ };
+diff --git a/src/frontend/oir/owned/tests.rs b/src/frontend/oir/owned/tests.rs
+index 34c8fef..989ffb8 100644
+--- a/src/frontend/oir/owned/tests.rs
++++ b/src/frontend/oir/owned/tests.rs
+@@ -174,6 +174,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
+         span,
+     });
+     f.loans.push(LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+@@ -1136,6 +1137,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
+     f.blocks[1].statements.clear();
+     f.calls[0].arguments.push(ArgumentSlot::Borrow(LoanId(1)));
+     f.loans.push(LoanDecl {
++        projection: Vec::new(),
+         call: CallSiteId(0),
+         argument: 1,
+         authority: AccessBase::Parameter(ReferenceParamId(0)),
+@@ -1308,6 +1310,7 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
+                         }
+                     }
+                     5 => function.loans.push(LoanDecl {
++                        projection: Vec::new(),
+                         referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
+                         kind: BorrowKind::Shared,
+                         call: CallSiteId(0),
+diff --git a/src/frontend/owned_syntax_tests.rs b/src/frontend/owned_syntax_tests.rs
+index cb9b2b5..11b50b1 100644
+--- a/src/frontend/owned_syntax_tests.rs
++++ b/src/frontend/owned_syntax_tests.rs
+@@ -45,10 +45,8 @@ fn grammar_rejects_reference_storage_unsupported_roots_and_partial_borrows() {
+         "fn f() -> () { (&p); return; }",
+         "fn f() -> () { f((&p)); return; }",
+         "fn f() -> () { f(&(p)); return; }",
+-        "fn f() -> () { f(&p.field); return; }",
+         "fn f() -> () { f(&C {}); return; }",
+         "fn f() -> () { f(&make()); return; }",
+-        "fn f() -> () { f(&*p.field); return; }",
+         "fn f() -> () { f(&p + 1); return; }",
+         "fn f() -> () { (p).field; return; }",
+         "fn f() -> () { (*p).field; return; }",
+@@ -311,3 +309,86 @@ fn borrow_arguments_and_reference_parameters_keep_256_limit() {
+         }
+     }
+ }
++
++#[test]
++fn projected_borrow_grammar_keeps_named_roots_and_explicit_reborrow_spans() {
++    use super::ast::{Argument, BorrowPlace, ExprKind};
++    let text =
++        "fn relay() -> () { f(&root /* a */ . inner . samples, &mut *p.inner.samples); return; }";
++    let mut sources = SourceMap::new();
++    let file = sources.add("projected.ox".into(), text.into());
++    let source = sources.get(file);
++    let ast = parser::parse_with_mode(
++        source,
++        lexer::lex(source).unwrap(),
++        parser::SourceMode::OwnedCandidate,
++    )
++    .unwrap();
++    let ExprKind::Call { args, .. } = &ast.expressions[0].kind else {
++        panic!("call")
++    };
++    let Argument::Borrow {
++        place: BorrowPlace::OwnerName(name),
++        span,
++        ..
++    } = &args[0]
++    else {
++        panic!("owner path")
++    };
++    assert_eq!(source.text_at(*name), "root /* a */ . inner . samples");
++    assert_eq!(source.text_at(*span), "&root /* a */ . inner . samples");
++    let Argument::Borrow {
++        mutable: true,
++        place: BorrowPlace::ForwardedParameter { name, star_span },
++        span,
++    } = &args[1]
++    else {
++        panic!("explicit projected reborrow")
++    };
++    assert_eq!(source.text_at(*name), "p.inner.samples");
++    assert_eq!(source.text_at(*star_span), "*");
++    assert_eq!(source.text_at(*span), "&mut *p.inner.samples");
++    for spelling in [
++        "&(r.samples)",
++        "&(*p).samples",
++        "&*(p.samples)",
++        "&mut *(p).samples",
++        "&r.samples[0]",
++        "&r.samples.len()",
++        "&make().samples",
++    ] {
++        assert!(
++            parsed(
++                &format!("fn f()->(){{f({spelling});return;}}"),
++                parser::SourceMode::OwnedCandidate
++            )
++            .is_err(),
++            "{spelling}"
++        );
++    }
++    // The star is narrowly part of a complete borrow argument, never a general
++    // dereference expression or changed field-access precedence elsewhere.
++    for expression in ["*p.samples", "(*p).samples", "*(p.samples)"] {
++        assert!(
++            parsed(
++                &format!("fn f()->(){{{expression};return;}}"),
++                parser::SourceMode::OwnedCandidate
++            )
++            .is_err(),
++            "{expression}"
++        );
++    }
++}
++
++#[test]
++fn projected_borrow_paths_have_the_inclusive_64_hop_bound() {
++    for (hops, accepted) in [(64, true), (65, false)] {
++        let text = format!("fn f()->(){{f(&root{});return;}}", ".field".repeat(hops));
++        let result = parsed(&text, parser::SourceMode::OwnedCandidate);
++        if accepted {
++            assert!(result.is_ok(), "{result:?}");
++        } else {
++            assert_eq!(result.unwrap_err()[0].code, "E0400");
++        }
++    }
++}
+diff --git a/src/frontend/parser.rs b/src/frontend/parser.rs
+index 2b31727..1ec7a82 100644
+--- a/src/frontend/parser.rs
++++ b/src/frontend/parser.rs
+@@ -771,9 +771,26 @@ impl Parser<'_> {
+             let start = self.bump().span.start;
+             let mutable = self.take(Kind::Mut).is_some();
+             let star = self.take(Kind::Star);
+-            let name = self
++            let mut name = self
+                 .expect(Kind::Ident, "borrow argument requires a binding name")?
+                 .span;
++            let mut hops = 0;
++            while self.take(Kind::Dot).is_some() {
++                if hops >= 64 {
++                    return Err(self.diagnostic(
++                        "E0400",
++                        "parse",
++                        "record access path depth limit exceeded",
++                        Some(self.peek().span),
++                    ));
++                }
++                self.node()?;
++                name.end = self
++                    .expect(Kind::Ident, "expected field name after `.`")?
++                    .span
++                    .end;
++                hops += 1;
++            }
+             if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
+                 self.project_recovery = true;
+                 return Err(self.diagnostic(
+diff --git a/tests/typed_record_composition.rs b/tests/typed_record_composition.rs
+index db96cb9..8727eb3 100644
+--- a/tests/typed_record_composition.rs
++++ b/tests/typed_record_composition.rs
+@@ -147,9 +147,9 @@ fn record_composition_exclusions_remain_explicit() {
+         ("struct R{a:[[i32;1];1]}", "E0101", "parse"),
+         ("struct C{} struct R{c:&C}", "E0101", "parse"),
+         (
+-            "struct R{a:[i32;1]} fn g(a:&[i32])->(){return;} fn f(r:R)->(){g(&r.a);return;}",
+-            "E0101",
+-            "parse",
++            "struct R{a:[i32;1]} fn g(a:&[i32;1])->(){return;} fn f(r:R)->(){g(&r.a);return;}",
++            "E0300",
++            "type",
+         ),
+         (
+             "struct C{n:i32} struct R{c:C} fn f(r:R)->i32{return (r).c.n;}",

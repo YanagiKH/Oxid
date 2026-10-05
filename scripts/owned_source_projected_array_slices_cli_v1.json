@@ -1,0 +1,197 @@
+{
+  "amendment_id": "projected-array-slices-v1",
+  "cases": [
+    {
+      "effective_expected": {
+        "result": 2,
+        "result_type": "i32",
+        "runtime_failure": null,
+        "status": "accept"
+      },
+      "function_count": 5,
+      "id": "scalar-unsupported-division",
+      "old_expectation_sha256": "ed9a154413448f30056774550bd12bf365d8e1192f3d88f8ad82b43ecb60cf45",
+      "old_expected": {
+        "code": "E0101",
+        "message": "unsupported scalar operator",
+        "origin": "n0018.operator",
+        "related": [],
+        "span": [
+          264,
+          265
+        ],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "source_sha256": "2e2022e44f2137cf2091fa36b1aa9d9b028d34af8446cafee9f7d586514bd047"
+    },
+    {
+      "effective_expected": {
+        "result": 1,
+        "result_type": "i32",
+        "runtime_failure": null,
+        "status": "accept"
+      },
+      "function_count": 5,
+      "id": "scalar-unsupported-remainder",
+      "old_expectation_sha256": "f114cee5b7a8fb5a6b58e83c94df7b21ac1bb6b4119e779b4f6b5b5c52affb59",
+      "old_expected": {
+        "code": "E0101",
+        "message": "unsupported scalar operator",
+        "origin": "n0018.operator",
+        "related": [],
+        "span": [
+          264,
+          265
+        ],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "source_sha256": "86f09980b8a9ce523a40f036c5292837a607b6d3aaa6056bba9449b2753b0227"
+    },
+    {
+      "derivation": "RFC0020 parses named-root paths; value has scalar i32 type so traversal rejects at the following identifier other, whose byte span is independently located in the frozen ASCII source",
+      "effective_expected": {
+        "code": "E0305",
+        "message": "intermediate field access requires a record",
+        "related": [],
+        "span": [
+          75,
+          80
+        ],
+        "span_match": "exact",
+        "stage": "type",
+        "status": "reject"
+      },
+      "function_count": null,
+      "id": "excluded-chained-projection",
+      "old_expectation_sha256": "682ed2bafab96a98482e76bd1af0d7befb56f4a1e5ceaaa84fa69bca60ade0aa",
+      "old_expected": {
+        "code": "E0101",
+        "span": [
+          74,
+          75
+        ],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "source_sha256": "8fa1c490a21e054ef71c497e2d11c837a43c80f5ab9e7c01586f7ba3298f8b11"
+    },
+    {
+      "derivation": "RFC0020 admits acyclic nominal record fields; unused declarations and main returning literal zero remain valid",
+      "effective_expected": {
+        "result": 0,
+        "result_type": "i32",
+        "runtime_failure": null,
+        "status": "accept"
+      },
+      "function_count": 1,
+      "id": "nested-record-field",
+      "old_expectation_sha256": "f5078521f24f8f46b7fc42f303acabad84349223767b44eafa3aa8c0c8541576",
+      "old_expected": {
+        "code": "E0202",
+        "message": "record fields must be scalar",
+        "origin": "record.1.field.0.type",
+        "related": [],
+        "span": [
+          31,
+          32
+        ],
+        "span_match": "exact",
+        "stage": "resolve",
+        "status": "reject"
+      },
+      "source_sha256": "0c14e63cc817379f7ce760bfecb97727761e7f8b835eacea13ebf7e28905c4dc"
+    },
+    {
+      "derivation": "Checked unary i32 negation accepts the frozen local x initialized to 3 and returns -3; the existing five functions and owned declarations are unchanged",
+      "effective_expected": {
+        "result": -3,
+        "result_type": "i32",
+        "runtime_failure": null,
+        "status": "accept"
+      },
+      "function_count": 5,
+      "id": "scalar-general-minus",
+      "old_expectation_sha256": "00b2110dc0f755bd20bee6192ba780734e45dd86858a6d19eabc1d436e32ce34",
+      "old_expected": {
+        "code": "E0101",
+        "message": "general unary arithmetic is not supported",
+        "origin": "n0019.operator",
+        "related": [],
+        "span": [
+          277,
+          278
+        ],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "source_sha256": "0f2a4ee063aa983fd8acecbc18f8738e9f6734c96fcd01152648ccea0ddd4696"
+    },
+    {
+      "derivation": "Checked unary i32 negation accepts the frozen grouped literal 1 and returns -1; the existing five functions and owned declarations are unchanged",
+      "effective_expected": {
+        "result": -1,
+        "result_type": "i32",
+        "runtime_failure": null,
+        "status": "accept"
+      },
+      "function_count": 5,
+      "id": "scalar-minus-group",
+      "old_expectation_sha256": "8941c22197b52c8ab4be8c61146f8ca95fd906c9570c9736e1fe55213723535f",
+      "old_expected": {
+        "code": "E0101",
+        "message": "general unary arithmetic is not supported",
+        "origin": "n0018.operator",
+        "related": [],
+        "span": [
+          262,
+          263
+        ],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "source_sha256": "739f68e495e9b797ceb356cd5537e1540946756edb059b7a1f63a6a8d80f3828"
+    },
+    {
+      "derivation": "RFC0022 admits named-root field borrow syntax. The historical fixture declares only main and no read function, so resolution rejects read before typing the projected scalar place; its ASCII identifier span is independently located in the unchanged source.",
+      "effective_expected": {
+        "code": "E0200",
+        "message": "unknown direct function `read`",
+        "related": [],
+        "span": [
+          67,
+          71
+        ],
+        "span_match": "exact",
+        "stage": "resolve",
+        "status": "reject"
+      },
+      "function_count": null,
+      "id": "excluded-field-borrow",
+      "old_expectation_sha256": "b4a9609389cb15242372422d99236d9a57936a1913addeae16784031cb28137b",
+      "old_expected": {
+        "code": "E0101",
+        "span": [
+          74,
+          75
+        ],
+        "span_match": "exact",
+        "stage": "parse",
+        "status": "reject"
+      },
+      "source_sha256": "f8cfbbe8e1c451c590af26d5da89ce4138c5bea30eedd45164d6270b73d2a402"
+    }
+  ],
+  "full_qualification": false,
+  "introduced_source_commit": "052ad52ac876c01b91701132cffb466689b24d01",
+  "introduced_source_tree": "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50",
+  "predecessor_amendment_sha256": "7dbd02df148782fa32edf313d219861429ec8e72d21a1cb1fee4663bd9ea01d8",
+  "schema": "oxid-owned-source-cli-amendment-v1",
+  "scope": "current-production-cli-only"
+}

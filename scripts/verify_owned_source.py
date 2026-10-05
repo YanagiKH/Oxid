@@ -35,6 +35,9 @@ COMPOSITION_CLI_AMENDMENT_SHA256 = 'f4e64492da636285f006790bbecc7ea4c5989acf46dd
 UNARY_CLI_AMENDMENT_ID = "checked-unary-negation-v1"
 UNARY_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_checked_unary_negation_cli_v1.json")
 UNARY_CLI_AMENDMENT_SHA256 = "7dbd02df148782fa32edf313d219861429ec8e72d21a1cb1fee4663bd9ea01d8"
+PROJECTED_CLI_AMENDMENT_ID = "projected-array-slices-v1"
+PROJECTED_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_projected_array_slices_cli_v1.json")
+PROJECTED_CLI_AMENDMENT_SHA256 = "24b627591e68b89eaea04b21a35ff64d186086c8f9014714d11fa8ed4d19c0cd"
 
 
 @dataclass(frozen=True)
@@ -128,7 +131,8 @@ def load_cli_amendment(selection, directory, *, mode):
 
     Each version pins its complete data document, including historical facts
     and effective results. Successors preserve all predecessor rows: composition
-    adds two named cases, and checked unary negation adds two more. They cannot
+    adds two named cases, checked unary negation adds two more, and projected
+    array slices adds one diagnostic successor. They cannot
     widen candidate/raw-IR or native-budget expectations, and are never selected
     implicitly.
     """
@@ -140,6 +144,8 @@ def load_cli_amendment(selection, directory, *, mode):
         path, expected_sha = COMPOSITION_CLI_AMENDMENT_PATH, COMPOSITION_CLI_AMENDMENT_SHA256
     elif selection == UNARY_CLI_AMENDMENT_ID:
         path, expected_sha = UNARY_CLI_AMENDMENT_PATH, UNARY_CLI_AMENDMENT_SHA256
+    elif selection == PROJECTED_CLI_AMENDMENT_ID:
+        path, expected_sha = PROJECTED_CLI_AMENDMENT_PATH, PROJECTED_CLI_AMENDMENT_SHA256
     else:
         raise ValueError("unknown current CLI amendment")
     encoded = path.read_bytes()
@@ -1357,7 +1363,7 @@ def main(argv=None):
     parser.add_argument("--frozen", type=Path)
     parser.add_argument("--candidate-observations", type=Path)
     parser.add_argument("--collection-manifest", type=Path)
-    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID, UNARY_CLI_AMENDMENT_ID),
+    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID, UNARY_CLI_AMENDMENT_ID, PROJECTED_CLI_AMENDMENT_ID),
                         help="explicit current-CLI expectations; requires --mode cli and preserves the frozen model")
     parser.add_argument("--jobs", type=int, choices=(1, 2), default=1)
     parser.add_argument("--timeout", type=float, default=1800)

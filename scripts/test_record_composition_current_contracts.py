@@ -47,7 +47,7 @@ class CurrentCompositionContractTests(unittest.TestCase):
                              (RESOURCE / 'declaration-layout-probe.rs').read_bytes())
             inputs = json.loads((output / 'declaration-layout-inputs.json').read_bytes())
             original = json.loads((RESOURCE / 'declaration-layout-inputs.json').read_bytes())
-            # Whole-file provenance changes with checked unary negation; the
+            # Whole-file provenance changes with unary and projected slices; the
             # selected declaration shapes and independently derived probe do
             # not. Bind BOTH source views without retargeting historical facts.
             expected = json.loads(json.dumps(original['files']))
@@ -56,15 +56,20 @@ class CurrentCompositionContractTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(captured['composition_inputs'][path]).hexdigest(),
                                  row['sha256'], path)
                 row['sha256'] = hashlib.sha256(captured['inputs'][path]).hexdigest()
+                if path == 'src/frontend/oir/owned/mod.rs':
+                    for declaration in row['declarations']:
+                        if declaration['name'] == 'FieldInitializer':
+                            declaration['line'] += 1
                 if path == 'src/frontend/oir/owned/source/hir.rs':
                     for declaration in row['declarations']:
                         if declaration['name'] in ('AccessBase', 'Projection'):
-                            declaration['line'] += 4
+                            declaration['line'] += 5
             self.assertEqual(inputs['files'], expected)
             self.assertEqual([new['path'] for old, new in zip(original['files'], expected)
                               if old['sha256'] != new['sha256']],
                              ['src/frontend/hir.rs', 'src/frontend/oir/mod.rs',
-                              'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/owned/source/hir.rs'])
+                              'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/owned/budget.rs',
+                              'src/frontend/oir/owned/source/hir.rs'])
             self.assertEqual(inputs['requested_ref'], 'HEAD')
             self.assertEqual(inputs['tree'], subprocess.check_output(
                 ['git', '-C', str(checkout), 'rev-parse', 'HEAD^{tree}'], text=True).strip())

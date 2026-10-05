@@ -79,6 +79,27 @@ class CurrentParserDiagnosticAmendmentTests(unittest.TestCase):
         self.assertEqual(effective, expected)
         self.assertEqual(receipt, expected_receipt)
 
+    def test_projected_borrows_add_no_semantic_amendment_to_frozen_sources(self):
+        # Token-level superset includes whitespace and comments: the production
+        # delta only executes when a borrow binding is immediately followed by dot.
+        import re
+        count = 0
+        for case in self.contract['cases']:
+            raw = base64.b64decode(case['source']['base64'], validate=True)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), case['source']['sha256'])
+            tokens = re.findall(rb'/\*.*?\*/|//[^\n]*|[A-Za-z_][A-Za-z_0-9]*|[^\s]', raw, re.S)
+            tokens = [token for token in tokens if not token.startswith((b'/*', b'//'))]
+            for index, token in enumerate(tokens):
+                if token != b'&':
+                    continue
+                count += 1
+                tail = tokens[index + 1:]
+                if tail and tail[0] == b'mut': tail = tail[1:]
+                if tail and tail[0] == b'*': tail = tail[1:]
+                with self.subTest(case=case['id'], borrow=count):
+                    self.assertFalse(len(tail) > 1 and tail[1] == b'.')
+        self.assertGreater(count, 0)
+
     def test_all_diagnostic_spans_are_derived_from_frozen_utf8_source(self):
         for row in self.data['cases']:
             source = base64.b64decode(row['source']['base64'], validate=True)
