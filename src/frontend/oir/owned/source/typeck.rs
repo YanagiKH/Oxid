@@ -589,6 +589,369 @@ fn semantic_iterator_layout() -> [usize; 11] {
     ))
 }
 
+// Explicit checker banks only. No source admission uses these measurement-only
+// models yet. They are named construction/return/caller envelopes, not machine
+// stack/RSS bounds or recursive accounting of inherited helper internals.
+#[allow(dead_code)]
+mod semantic_carriers {
+    use super::*;
+    use crate::frontend::oir::owned_types::DeclarationError;
+    use crate::frontend::{ast, declaration_index::SourceOwner, project::ModuleId};
+    use std::{
+        array,
+        iter::{Enumerate, Zip},
+        mem::size_of,
+        slice, vec,
+    };
+
+    type ArrayProjection = (Option<Projection>, AccessBase, Ty);
+    type FrameState = (BodyBlockId, usize, FlowSummary, Option<LoopId>);
+    type CallComparison =
+        Enumerate<Zip<vec::IntoIter<(ParameterTy, Span)>, slice::Iter<'static, ParameterTy>>>;
+    type CallComparisonItem = (usize, ((ParameterTy, Span), &'static ParameterTy));
+
+    // One nonrecursive bank: array projection can enclose field projection, but
+    // neither helper types a child, and each path is cached before a later child.
+    pub(super) struct ProjectionSemanticCarriers {
+        programs: [&'static ResolvedOwnedProgram<'static>; 2],
+        functions: [&'static Function; 2],
+        binding_inputs: [BindingId; 2],
+        span_inputs: [Span; 4],
+        bindings: [&'static [Option<ParameterTy>]; 2],
+        contexts: [Option<&'static mut BodyPaid<'static>>; 2],
+        context_reborrow: Option<&'static mut BodyPaid<'static>>,
+        selected_context: &'static mut BodyPaid<'static>,
+        borrow: bool,
+        base_selection: (RecordId, AccessBase),
+        selected_record: RecordId,
+        selected_base: AccessBase,
+        // The loop shadows the base record; never assume its slot is reused.
+        loop_record: RecordId,
+        binding_option: Option<ParameterTy>,
+        binding_value: ParameterTy,
+        current: ValueTy,
+        requester_returns: [Result<ModuleId, Box<Diagnostic>>; 2],
+        requesters: [ModuleId; 2],
+        source_owners: [SourceOwner<'static>; 2],
+        ast_returns: [Result<&'static ast::Program, Box<Diagnostic>>; 2],
+        ast_receivers: [&'static ast::Program; 2],
+        starts: [usize; 2],
+        length: usize,
+        spelling: &'static str,
+        permission: Result<Access, Box<Diagnostic>>,
+        denied_field: FieldId,
+        path: Vec<FieldId>,
+        path_last: Option<&'static FieldId>,
+        last_return: Result<&'static FieldId, Box<Diagnostic>>,
+        final_field: FieldId,
+        constructed: Projection,
+        returned: Result<Projection, Box<Diagnostic>>,
+        nested_receiver: Projection,
+        array: FixedArrayTy,
+        root_token_return: Result<&'static Token, Box<Diagnostic>>,
+        root: Span,
+        field_span: Span,
+        array_base: AccessBase,
+        constructed_option: Option<Projection>,
+        constructed_array: ArrayProjection,
+        array_return: Result<ArrayProjection, Box<Diagnostic>>,
+        // FieldRead/FieldAssign are mutually exclusive roles of this type.
+        direct_field_caller: Projection,
+        array_caller_tuple: ArrayProjection,
+        caller_projection: Option<Projection>,
+        caller_access: AccessBase,
+        caller_element: Ty,
+        borrow_conversion: Result<Projection, Box<Diagnostic>>,
+        borrow_receiver: Projection,
+        borrow_row: BorrowProjection,
+        cache_transfer: Option<Projection>,
+        path_room: Result<(), Box<Diagnostic>>,
+        sparse_room: Result<(), Box<Diagnostic>>,
+        // Path-free array_access is an explicit alternate helper surface.
+        whole_array_input: (
+            &'static Function,
+            BindingId,
+            Span,
+            &'static [Option<ParameterTy>],
+        ),
+        whole_array_parameter: ParameterTy,
+        whole_array_constructed: (AccessBase, Ty),
+        whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+        whole_array_caller: (AccessBase, Ty),
+    }
+    // Closure invocation values are separate from their opaque object captures.
+    // Sort's argument/key result belongs only to BodyFrameSemanticCarriers.
+    pub(super) struct PredicateInvocationCarriers {
+        start_inputs: [&'static Token; 2],
+        start_returns: [bool; 2],
+        end_inputs: [&'static &'static Token; 2],
+        end_returns: [bool; 2],
+        identifier_inputs: [&'static &'static Token; 2],
+        identifier_returns: [bool; 2],
+        field_input: &'static &'static Field,
+        field_return: bool,
+    }
+    pub(super) struct CallSemanticCarriers {
+        called: &'static Signature,
+        target: &'static DefId,
+        arguments: &'static Vec<Argument>,
+        argument_cursor: Enumerate<slice::Iter<'static, Argument>>,
+        argument_next: Option<(usize, &'static Argument)>,
+        argument_tuple: (usize, &'static Argument),
+        argument_position: usize,
+        argument: &'static Argument,
+        value_argument: &'static ExprId,
+        constructed_actual: (ParameterTy, Span),
+        current_actual: (ParameterTy, Span),
+        borrowed_kind: &'static BorrowKind,
+        borrowed_place: &'static BorrowPlace,
+        borrowed_span: &'static Span,
+        borrowed_name: &'static Span,
+        binding_pattern: &'static BindingId,
+        binding: BindingId,
+        whole: ParameterTy,
+        selected_actual: ParameterTy,
+        // Complete cursor includes its owned IntoIter, Zip and parameter cursor
+        // once; the source chain names no extra intermediate cursor receivers.
+        comparison_cursor: CallComparison,
+        comparison_next: Option<CallComparisonItem>,
+        comparison_tuple: CallComparisonItem,
+        position: usize,
+        actual: ParameterTy,
+        actual_span: Span,
+        expected: &'static ParameterTy,
+        mode_input: (ParameterTy, ParameterTy),
+        authority: BorrowedTy,
+        target_type: BorrowedTy,
+        actual_kind: BorrowKind,
+        expected_kind: BorrowKind,
+        matches: bool,
+        borrow_inputs: (
+            &'static Function,
+            BorrowKind,
+            BorrowPlace,
+            Span,
+            &'static [Option<ParameterTy>],
+        ),
+        borrow_record: BorrowedTy,
+        borrow_constructed: ParameterTy,
+        borrow_returned: Result<ParameterTy, Box<Diagnostic>>,
+    }
+    pub(super) struct LiteralSemanticCarriers {
+        record: &'static RecordId,
+        fields: &'static Vec<FieldInit>,
+        declared: &'static Record,
+        cursor: slice::Iter<'static, FieldInit>,
+        next: Option<&'static FieldInit>,
+        field: &'static FieldInit,
+        // Recursive callee's complete Result is in the depth bank. Here are
+        // only the actual parent's named success receiver and expected value.
+        actual: ValueTy,
+        expected: ValueTy,
+    }
+    pub(super) struct StatementPatternCarriers {
+        // Root-selection match and later semantic match have distinct patterns.
+        root_binding: BindingId,
+        root_init: ExprId,
+        root_value: ExprId,
+        root_index: ExprId,
+        root_condition: ExprId,
+        root_return: Option<ExprId>,
+        root_target_span: Span,
+        statement_binding: BindingId,
+        statement_base: BindingId,
+        statement_init: ExprId,
+        statement_value: ExprId,
+        statement_condition: ExprId,
+        statement_base_span: Span,
+        statement_field_span: Span,
+        statement_target_span: Span,
+        statement_return: Option<ExprId>,
+        statement_target: LoopId,
+        statement_loop: LoopId,
+        statement_body: BodyBlockId,
+        statement_then: BodyBlockId,
+        statement_else: Option<BodyBlockId>,
+        // Two ExprId locals, distinct from the frame's usize index as well.
+        element_index: ExprId,
+        local_index: ExprId,
+        otherwise: BodyBlockId,
+    }
+    pub(super) struct BodyFrameSemanticCarriers {
+        program: &'static ResolvedOwnedProgram<'static>,
+        function: &'static Function,
+        signature: &'static Signature,
+        parameters: Enumerate<slice::Iter<'static, ParameterTy>>,
+        parameter_next: Option<(usize, &'static ParameterTy)>,
+        parameter_tuple: (usize, &'static ParameterTy),
+        parameter_index: usize,
+        parameter_type: &'static ParameterTy,
+        inserted_binding: Option<ParameterTy>,
+        rows: slice::Iter<'static, BodyBlock>,
+        row_next: Option<&'static BodyBlock>,
+        row: &'static BodyBlock,
+        popped: Option<TypeFrame>,
+        frame: TypeFrame,
+        tuple: FrameState,
+        block: BodyBlockId,
+        index: usize,
+        flow: FlowSummary,
+        active_loop: Option<LoopId>,
+        // Arm patterns and outer tuple destructuring do not share slots here.
+        match_block: BodyBlockId,
+        match_index: usize,
+        match_active_loop: Option<LoopId>,
+        match_block_flow: FlowSummary,
+        before: FlowSummary,
+        then_flow: FlowSummary,
+        else_flow: FlowSummary,
+        body_flow: FlowSummary,
+        then_block: BodyBlockId,
+        else_block: Option<BodyBlockId>,
+        loop_body: BodyBlockId,
+        pushed: TypeFrame,
+        statement_option: Option<&'static Stmt>,
+        statement: &'static Stmt,
+        root_option: Option<ExprId>,
+        root: ExprId,
+        indexed_roots: [ExprId; 2],
+        indexed_cursor: array::IntoIter<ExprId, 2>,
+        indexed_next: Option<ExprId>,
+        indexed_root: ExprId,
+        declaration: &'static Binding,
+        expected_parameter: ParameterTy,
+        expected: ValueTy,
+        actual: ValueTy,
+        index_type: ValueTy,
+        transfer: FlowSummary,
+        borrow_slots: usize,
+        work: usize,
+        sort_product: Option<usize>,
+        sort_product_return: Result<usize, Box<Diagnostic>>,
+        sparse_slice: &'static mut [BorrowProjection],
+        sort_argument: &'static BorrowProjection,
+        sort_key_return: (usize, usize),
+    }
+    pub(super) struct InitializerSemanticCarriers {
+        program: &'static ResolvedOwnedProgram<'static>,
+        function: &'static Function,
+        initializer: (BindingId, ExprId),
+        binding: BindingId,
+        root: ExprId,
+        bindings: &'static [Option<ParameterTy>],
+        expressions: &'static mut [Option<ValueTy>],
+        projections: &'static mut [Option<Projection>],
+        borrow_projections: &'static mut Vec<BorrowProjection>,
+        annotation: Option<ValueTy>,
+        array_annotation: FixedArrayTy,
+        leaf: ExprId,
+        expr: &'static Expr,
+        array: FixedArrayTy,
+        group_inner: &'static ExprId,
+        array_elements: &'static Vec<ExprId>,
+        returned: Result<ValueTy, Box<Diagnostic>>,
+    }
+    pub(super) struct ExpressionSemanticCarriers {
+        program: &'static ResolvedOwnedProgram<'static>,
+        function: &'static Function,
+        id: ExprId,
+        bindings: &'static [Option<ParameterTy>],
+        expressions: &'static mut [Option<ValueTy>],
+        projections: &'static mut [Option<Projection>],
+        borrow_projections: &'static mut Vec<BorrowProjection>,
+        cached: Option<ValueTy>,
+        expr: &'static Expr,
+        ty: ValueTy,
+        field_read_inner_ty: ValueTy,
+        returned: Result<ValueTy, Box<Diagnostic>>,
+        binding_pattern: &'static BindingId,
+        group_inner: &'static ExprId,
+        projected_base: &'static BindingId,
+        projected_base_span: &'static Span,
+        field_span_pattern: &'static Span,
+        index_pattern: &'static ExprId,
+        expected: ValueTy,
+        first_actual: ValueTy,
+        second_comparison_actual: ValueTy,
+        comparison_op: &'static ComparisonOp,
+        left: &'static ExprId,
+        right: &'static ExprId,
+        operand: &'static ExprId,
+        binary_operands: [&'static ExprId; 2],
+        binary_cursor: array::IntoIter<&'static ExprId, 2>,
+        binary_next: Option<&'static ExprId>,
+        binary_operand: &'static ExprId,
+        array_elements: &'static Vec<ExprId>,
+        array_cursor: slice::Iter<'static, ExprId>,
+        array_next: Option<&'static ExprId>,
+        element: &'static ExprId,
+        element_type: Option<Ty>,
+        scalar_type: Ty,
+        expected_element: Ty,
+        checked_array: Result<FixedArrayTy, DeclarationError>,
+        mapped_array: Result<FixedArrayTy, Box<Diagnostic>>,
+        array: FixedArrayTy,
+    }
+    pub(super) struct MapOrSemanticCarriers<E, R> {
+        // Object construction, factory return and actual map_or input.
+        else_closures: [E; 3],
+        return_closures: [R; 3],
+        flow_factory_input: &'static [Option<FlowSummary>],
+        value_factory_input: &'static [Option<ValueTy>],
+        flow_option: Option<BodyBlockId>,
+        flow_default: FlowSummary,
+        flow_invocation_id: BodyBlockId,
+        flow_invocation_return: FlowSummary,
+        flow_map_return: FlowSummary,
+        value_option: Option<ExprId>,
+        value_default: ValueTy,
+        value_invocation_id: ExprId,
+        value_invocation_return: ValueTy,
+        value_map_return: ValueTy,
+        // Outer else_flow and actual receivers live in BodyFrameSemanticCarriers.
+    }
+    pub(super) struct MapOrWitnessCarriers<FE, FR> {
+        factories: [(FE, FR); 2],
+        layouts: [[usize; 5]; 4],
+    }
+    pub(super) const fn declared_bank_sizes() -> [usize; 8] {
+        [
+            size_of::<ProjectionSemanticCarriers>(),
+            size_of::<PredicateInvocationCarriers>(),
+            size_of::<CallSemanticCarriers>(),
+            size_of::<LiteralSemanticCarriers>(),
+            size_of::<StatementPatternCarriers>(),
+            size_of::<BodyFrameSemanticCarriers>(),
+            size_of::<InitializerSemanticCarriers>(),
+            size_of::<ExpressionSemanticCarriers>(),
+        ]
+    }
+}
+fn else_flow_lookup(flows: &[Option<FlowSummary>]) -> impl FnOnce(BodyBlockId) -> FlowSummary + '_ {
+    move |id| flows[id.0].expect("else arm was checked")
+}
+fn returned_value_lookup(values: &[Option<ValueTy>]) -> impl FnOnce(ExprId) -> ValueTy + '_ {
+    move |id| values[id.0].expect("typed return")
+}
+fn map_or_layout_witness<E, R, FE, FR>(_factories: (FE, FR)) -> [usize; 5]
+where
+    FE: FnOnce(&'static [Option<FlowSummary>]) -> E,
+    FR: FnOnce(&'static [Option<ValueTy>]) -> R,
+{
+    use std::mem::{align_of, size_of};
+    [
+        size_of::<semantic_carriers::MapOrSemanticCarriers<E, R>>(),
+        align_of::<semantic_carriers::MapOrSemanticCarriers<E, R>>(),
+        size_of::<semantic_carriers::MapOrWitnessCarriers<FE, FR>>(),
+        size_of::<E>(),
+        size_of::<R>(),
+    ]
+}
+#[allow(dead_code)] // Measurement only; no source pricing or observer activation.
+fn semantic_map_or_layout() -> [usize; 5] {
+    map_or_layout_witness((else_flow_lookup, returned_value_lookup))
+}
+
 fn projection(
     program: &ResolvedOwnedProgram<'_>,
     function: &Function,
@@ -1501,9 +1864,8 @@ fn check_body(
                 else_block,
             } => {
                 let then_flow = block_flows[then_block.0].expect("then arm was checked");
-                let else_flow = else_block.map_or(FlowSummary::FALLTHROUGH, |id| {
-                    block_flows[id.0].expect("else arm was checked")
-                });
+                let else_flow =
+                    else_block.map_or(FlowSummary::FALLTHROUGH, else_flow_lookup(&block_flows));
                 (
                     block,
                     index,
@@ -1772,9 +2134,10 @@ fn check_body(
             }
             StmtKind::Expr(_) => {}
             StmtKind::Return(value) => {
-                let actual = value.map_or(ValueTy::Scalar(Ty::Unit), |id| {
-                    expressions[id.0].expect("typed return")
-                });
+                let actual = value.map_or(
+                    ValueTy::Scalar(Ty::Unit),
+                    returned_value_lookup(&expressions),
+                );
                 if signature.result != actual {
                     return Err(mismatch(
                         program,
@@ -2284,4 +2647,35 @@ fn c3_t1_exact_semantic_iterator_factories_are_sized_without_invocation_or_heap(
     assert_eq!(layout[2], 4 * std::mem::size_of::<[usize; 11]>());
     println!("C3_T1_SEMANTIC_ITERATOR_LAYOUT bank={} align={} witness={} window={} identifiers={} field_predicate={} start_predicate={} identifier_predicate={} sort_key={} scalar_item={} end_predicate={}",
         layout[0], layout[1], layout[2], layout[3], layout[4], layout[5], layout[6], layout[7], layout[8], layout[9], layout[10]);
+}
+
+#[test]
+fn c3_t1_remaining_explicit_semantic_banks_are_measurement_only() {
+    use semantic_carriers::*;
+    use std::mem::{align_of, size_of};
+    macro_rules! layout {
+        ($($ty:ty),* $(,)?) => { $(
+            println!("C3_T1_SEMANTIC_BANK_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
+        )* };
+    }
+    layout!(
+        ProjectionSemanticCarriers,
+        PredicateInvocationCarriers,
+        CallSemanticCarriers,
+        LiteralSemanticCarriers,
+        StatementPatternCarriers,
+        BodyFrameSemanticCarriers,
+        InitializerSemanticCarriers,
+        ExpressionSemanticCarriers
+    );
+    let (banks, measured) = super::reviewer_source::integration_measured(declared_bank_sizes);
+    assert_eq!(measured, (0, 0, 0));
+    assert!(banks.iter().all(|bytes| *bytes > 0));
+    let (map_or, measured) = super::reviewer_source::integration_measured(semantic_map_or_layout);
+    assert_eq!(measured, (0, 0, 0));
+    assert_eq!(map_or[2], 4 * size_of::<[usize; 5]>());
+    assert_eq!(map_or[3], size_of::<&[Option<FlowSummary>]>());
+    assert_eq!(map_or[4], size_of::<&[Option<ValueTy>]>());
+    println!("C3_T1_SEMANTIC_BANK_LAYOUT map_or={} align={} witness={} else_closure={} return_closure={}",
+        map_or[0], map_or[1], map_or[2], map_or[3], map_or[4]);
 }
