@@ -444,24 +444,19 @@ pub(super) fn probe_enum_resolver_storage(
     }
 }
 
-/// The result layout is inhabited and prepaid, but the selector stays denied.
-/// Enum-free selection is inert; enum-bearing input is denied before preflight,
-/// owner assembly, phase events or affected storage. A positive call requires
-/// separately reviewed source-entry authority; no fresh helper is called here.
+/// Private fixed statistics through the one reviewed fresh construction path.
+/// Enum-free selection stays inert. No source/type/ownership witness escapes,
+/// and executable/semantic enum admission remains closed.
 #[cfg(test)]
-pub(super) fn probe_enum_type_storage(
-    index: &DeclarationIndex<'_>,
-    _work: &WorkMeter,
-    _allocator: &mut Allocator,
+pub(super) fn probe_enum_type_storage<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
 ) -> Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>> {
     if index.enum_count() == 0 {
         return Ok(None);
     }
-    Err(vec![*error(
-        "E0500",
-        format_args!("paid enum type observation is not admitted"),
-        index.sources().eof(),
-    )])
+    fresh_enum_type_storage(index, work, allocator)
 }
 
 /// Fixed facts only. The one source plan stays inside the resolver member.
@@ -472,8 +467,8 @@ pub(super) struct EnumTypeStorageObservation {
     pub(super) typed: super::type_storage::TypeStorageObservation,
 }
 
-/// Deliberately uncalled until every new carrier and this closed call graph is
-/// prepaid and reviewed. The selectable probe above remains hard-denied.
+/// Only the private fixed-statistics selector above calls this construction.
+/// Its three inputs cannot substitute an owner, seed, context or callback.
 #[cfg(test)]
 #[allow(dead_code)]
 fn fresh_enum_type_storage<'s>(
@@ -642,9 +637,10 @@ pub(super) const fn enum_type_observation_return_bytes() -> usize {
     std::mem::size_of::<Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>>()
 }
 
-// This complete model describes the hard-denied selector, including its actual
-// inhabited return representation. The fresh helper has a separate full return
-// role. Layout/payment does not authorize a positive call or successful Some.
+// Retain the reviewed selector envelope, including its complete inhabited
+// return. The separate helper input/return roles remain in their existing banks.
+// source/origin are now unused conservative denial-era charges; they provide no
+// credit for a different forwarding role and cause no pointless runtime query.
 #[allow(dead_code)]
 struct DeniedTypeProbeCarriers {
     index: &'static DeclarationIndex<'static>,

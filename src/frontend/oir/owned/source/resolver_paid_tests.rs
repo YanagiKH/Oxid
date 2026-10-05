@@ -936,7 +936,7 @@ fn c3a_paid_resolver_allocator_counter_overflow_is_separate_from_injected_failur
 }
 
 #[test]
-fn c3_t1_denied_probe_selects_enum_free_before_work_or_storage() {
+fn c3_t1_private_probe_selects_enum_free_before_work_or_storage() {
     for text in [
         "fn main()->i32{return 0;}",
         "fn main()->(){match missing{E::V=>{return;}}}",
@@ -960,11 +960,13 @@ fn c3_t1_denied_probe_selects_enum_free_before_work_or_storage() {
             } else {
                 let errors = result.unwrap_err();
                 assert_eq!(errors.len(), 1);
-                assert_eq!((errors[0].code, errors[0].stage), ("E0500", "resolve"));
+                // The private selector now reaches metered preflight, which
+                // fails before the first affected reserve under this zero cap.
                 assert_eq!(
-                    errors[0].message,
-                    "paid enum type observation is not admitted"
+                    (errors[0].code, errors[0].stage),
+                    ("E0400", "resolve-project")
                 );
+                assert_eq!(errors[0].message, "declaration index work limit exceeded");
             }
             assert_eq!(allocator.attempts, 7);
             assert_eq!(work.used(), 0);
@@ -1119,4 +1121,281 @@ fn c3_t1_inhabited_denied_selector_prices_its_complete_return_representation() {
     );
     println!("C3_T1_DENIED_SELECTOR_LAYOUT fields={} typed_bytes={} carrier={} return={} old_carrier={} fixed_delta={}",
         roles.len(), occupied, denied_type_probe_carrier_bytes(), size_of::<Returned>(), old_carrier, delta);
+}
+
+#[test]
+fn c3_t1_first_tiny_source_observations_match_independent_ledgers_and_drop_all_buffers() {
+    use super::super::typeck::{FlowSummary, TypeFrame, TypedBody};
+    use std::mem::size_of;
+    // Frozen from the independent pre-execution source ledger, not a trace or
+    // returned observation. Marks and loops reserve1 even in loop-free main.
+    for (text, has_body) in [
+        ("enum Unused{V}", false),
+        ("enum Unused{V} fn main()->i32{return 0;}", true),
+    ] {
+        for preused in [false, true] {
+            with_index(text, |index| {
+                let mut allocator = Allocator::default();
+                allocator.observer_trace_bound(32).unwrap(); // Before any prefix row.
+                let mut sentinel = Vec::<u8>::new();
+                if preused {
+                    allocator
+                        .vector_exact(&mut sentinel, 3, "typed observation sentinel")
+                        .unwrap();
+                    sentinel.extend_from_slice(&[23, 41, 59]);
+                }
+                let before = allocator.attempts;
+                let prefix_rows = allocator.trace.len();
+                let trace_capacity = allocator.trace.capacity();
+                let sentinel_capacity = sentinel.capacity();
+                let work = WorkMeter::default(); // No growing work/event log in this window.
+                let (result, heap) = super::super::reviewer_source::integration_measured(|| {
+                    probe_enum_type_storage(index, &work, &mut allocator)
+                });
+                let facts = result.unwrap().unwrap();
+                assert_eq!(
+                    heap.1, 0,
+                    "selected buffers must be gone while fixed facts live"
+                );
+                if has_body {
+                    assert!(heap.0 > 0 && heap.2 > 0);
+                } else {
+                    assert_eq!(heap, (0, 0, 0));
+                }
+                assert!(work.used() > 0);
+                assert!(work.events.borrow().is_empty() && work.observations.borrow().is_empty());
+                assert_eq!(allocator.trace.capacity(), trace_capacity);
+                assert_eq!(sentinel.capacity(), sentinel_capacity);
+                assert_eq!(
+                    sentinel.as_slice(),
+                    if preused { &[23, 41, 59][..] } else { &[][..] }
+                );
+                assert_eq!(before, usize::from(preused));
+                assert_eq!(prefix_rows, usize::from(preused));
+                if preused {
+                    let prefix = &allocator.trace[0];
+                    assert_eq!(
+                        (
+                            prefix.kind,
+                            prefix.length,
+                            prefix.element_bytes,
+                            prefix.success
+                        ),
+                        ("typed observation sentinel", 3, 1, true)
+                    );
+                }
+                let resolver_attempts = if has_body { 13 } else { 3 };
+                let typed_attempts = if has_body { 12 } else { 1 };
+                assert_eq!(facts.resolver.reservation_attempts, resolver_attempts);
+                assert_eq!(facts.typed.typed_attempts, typed_attempts);
+                assert_eq!(
+                    allocator.attempts.checked_sub(before).unwrap(),
+                    facts
+                        .resolver
+                        .reservation_attempts
+                        .checked_add(facts.typed.typed_attempts)
+                        .unwrap()
+                );
+                assert_eq!(
+                    allocator.trace.len() - prefix_rows,
+                    resolver_attempts + typed_attempts
+                );
+                assert!(!allocator.observer_trace_overflow);
+                assert!(allocator.trace[prefix_rows..].iter().all(|row| row.success));
+                assert_eq!(
+                    facts.typed.materialized_vectors,
+                    if has_body {
+                        [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1]
+                    } else {
+                        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                    }
+                );
+                assert_eq!(
+                    facts.typed.capacities,
+                    if has_body {
+                        [1, 0, 1, 1, 1, 1, 1, 0, 11, 0, 0, 0, 1, 1]
+                    } else {
+                        [0; 14]
+                    }
+                );
+                assert_eq!(
+                    facts.typed.retained_lengths,
+                    if has_body {
+                        [1, 1, 1, 1, 0, 0, 1, 1]
+                    } else {
+                        [0; 8]
+                    }
+                );
+                assert_eq!(
+                    facts.resolver.retained_counts,
+                    if has_body {
+                        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0]
+                    } else {
+                        [0; 12]
+                    }
+                );
+                assert_eq!(
+                    facts.resolver.capacities,
+                    if has_body {
+                        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 12]
+                    } else {
+                        [0; 17]
+                    }
+                );
+                let resolver_backing = if has_body {
+                    size_of::<Signature>()
+                        + size_of::<Function>()
+                        + size_of::<Expr>()
+                        + size_of::<BodyBlock>()
+                        + size_of::<Stmt>()
+                } else {
+                    0
+                };
+                let resolver_scratch = if has_body {
+                    size_of::<usize>() + size_of::<LoopId>() + 12 * size_of::<ResolveFrame>()
+                } else {
+                    0
+                };
+                let typed_backing = if has_body {
+                    size_of::<TypedBody>()
+                        + 2 * size_of::<Option<Projection>>()
+                        + size_of::<Vec<Option<Projection>>>()
+                        + size_of::<FlowSummary>()
+                        + size_of::<ValueTy>()
+                } else {
+                    0
+                };
+                let staging = if has_body {
+                    size_of::<Option<ValueTy>>() + size_of::<Option<FlowSummary>>()
+                } else {
+                    0
+                };
+                let scratch = if has_body {
+                    11 * size_of::<TypeFrame>()
+                } else {
+                    0
+                };
+                assert_eq!(
+                    (
+                        facts.resolver.retained_bytes,
+                        facts.resolver.scratch_capacity_bytes
+                    ),
+                    (resolver_backing, resolver_scratch)
+                );
+                assert_eq!(
+                    (
+                        facts.typed.retained_backing_bytes,
+                        facts.typed.staging_backing_bytes,
+                        facts.typed.scratch_backing_bytes
+                    ),
+                    (typed_backing, staging, scratch)
+                );
+                assert_eq!(
+                    (
+                        facts.typed.path_vectors,
+                        facts.typed.path_length_fields,
+                        facts.typed.path_capacity_fields
+                    ),
+                    (0, 0, 0)
+                );
+                assert_eq!(
+                    (
+                        facts.typed.materialized_path_bytes,
+                        facts.typed.retained_path_bytes,
+                        facts.typed.precharged_path_bytes
+                    ),
+                    (0, 0, 0)
+                );
+                assert_eq!(facts.typed.final_cell, facts.resolver.plan.total);
+                assert_eq!(
+                    facts.typed.typed_attempts,
+                    facts.typed.materialized_vectors.iter().sum::<usize>()
+                        + facts.typed.path_vectors
+                );
+                assert_eq!(
+                    (
+                        facts.resolver.plan.counts.functions,
+                        facts.resolver.plan.counts.blocks,
+                        facts.resolver.plan.counts.statements,
+                        facts.resolver.plan.counts.expressions
+                    ),
+                    if has_body { (1, 1, 1, 1) } else { (0, 0, 0, 0) }
+                );
+                println!("C3_T1_FIRST_SOURCE body={has_body} preused={preused} resolver_attempts={resolver_attempts} typed_attempts={typed_attempts} whole_attempts={} final_cell={} live={} peak={}",
+                    allocator.attempts - before, facts.typed.final_cell, heap.1, heap.2);
+                // Source/index, prefix payload and pre-admitted trace are still
+                // live here; none can cancel a leak by dropping inside the window.
+            });
+        }
+    }
+}
+
+#[test]
+fn c3_t1_enum_free_tiny_twins_preserve_preused_storage_and_observation_state() {
+    for text in ["", "fn main()->i32{return 0;}"] {
+        for preused in [false, true] {
+            with_index(text, |index| {
+                let mut allocator = Allocator::default();
+                allocator.observer_trace_bound(2).unwrap();
+                let mut sentinel = Vec::<u8>::new();
+                if preused {
+                    allocator
+                        .vector_exact(&mut sentinel, 3, "typed observation sentinel")
+                        .unwrap();
+                    sentinel.extend_from_slice(&[23, 41, 59]);
+                }
+                let before = (
+                    allocator.attempts,
+                    allocator.trace.len(),
+                    allocator.trace.capacity(),
+                    sentinel.capacity(),
+                );
+                let work = WorkMeter::new(0);
+                work.enable_observation();
+                work.phase("preserved enum-free phase"); // Outside the selected heap window.
+                let event_count = work.events.borrow().len();
+                let observation_count = work.observations.borrow().len();
+                let (result, heap) = super::super::reviewer_source::integration_measured(|| {
+                    probe_enum_type_storage(index, &work, &mut allocator)
+                });
+                assert!(result.unwrap().is_none());
+                assert_eq!(heap, (0, 0, 0));
+                assert_eq!(work.used(), 0);
+                assert_eq!(
+                    (work.events.borrow().len(), work.observations.borrow().len()),
+                    (event_count, observation_count)
+                );
+                assert!(matches!(
+                    work.observations.borrow().as_slice(),
+                    [index::Observation::Phase("preserved enum-free phase")]
+                ));
+                assert_eq!(
+                    (
+                        allocator.attempts,
+                        allocator.trace.len(),
+                        allocator.trace.capacity(),
+                        sentinel.capacity()
+                    ),
+                    before
+                );
+                assert!(!allocator.observer_trace_overflow);
+                assert_eq!(
+                    sentinel.as_slice(),
+                    if preused { &[23, 41, 59][..] } else { &[][..] }
+                );
+                if preused {
+                    let prefix = &allocator.trace[0];
+                    assert_eq!(
+                        (
+                            prefix.kind,
+                            prefix.length,
+                            prefix.element_bytes,
+                            prefix.success
+                        ),
+                        ("typed observation sentinel", 3, 1, true)
+                    );
+                }
+            });
+        }
+    }
 }

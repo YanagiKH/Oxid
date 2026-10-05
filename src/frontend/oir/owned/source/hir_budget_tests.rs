@@ -1010,7 +1010,10 @@ fn c3_t1_passive_checker_price_does_not_change_enum_free_selection_or_denial() {
             ..Allocator::default()
         };
         let errors = resolve::probe_enum_type_storage(index, &work, &mut allocator).unwrap_err();
-        assert_eq!((errors.len(), errors[0].code), (1, "E0500"));
+        // Enum-bearing selection now enters preflight, still before reserves.
+        assert_eq!((errors.len(), errors[0].code), (1, "E0400"));
+        assert_eq!(errors[0].stage, "resolve-project");
+        assert_eq!(errors[0].message, "declaration index work limit exceeded");
         assert_eq!((work.used(), allocator.attempts), (0, 7));
         assert_eq!(
             resolve::resolve_project(index, &work).unwrap_err()[0].code,

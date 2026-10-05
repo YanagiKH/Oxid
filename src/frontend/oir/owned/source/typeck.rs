@@ -287,8 +287,8 @@ pub(in crate::frontend::oir) fn check(
     }
 }
 
-/// Construction-local borrows only. No paid caller constructs this context in
-/// this checkpoint; the only real checker call still supplies None.
+/// Construction-local borrows only. Ordinary checking supplies None; the one
+/// private fresh fixed-statistics helper constructs the paid context.
 struct ProgramPaid<'borrow, 'hir> {
     plan: &'borrow mut storage::TypePlan<'hir>,
     allocator: &'borrow mut Allocator,
@@ -448,7 +448,7 @@ fn paid_state(at: Span) -> Box<Diagnostic> {
     error("E0500", "invalid paid checker storage state", at)
 }
 
-/// Sole caller is resolve's private, uncalled fresh construction. Admission and
+/// Sole caller is resolve's private fresh construction. Admission and
 /// seed equality are consistency checks, not authority to reuse another owner.
 #[cfg(test)]
 #[allow(dead_code)]
@@ -590,9 +590,9 @@ pub(super) const fn borrowed_type_observation_return_bytes() -> usize {
     std::mem::size_of::<Result<storage::TypeStorageObservation, Vec<Diagnostic>>>()
 }
 
-/// One borrowed semantic checker. Paid branches remain disconnected behind the
-/// hard-denied observer entry. Matching policy/context alone will never prove
-/// fresh owner/plan/Cell provenance; the later entrypoint must establish that.
+/// One borrowed semantic checker. Only the private fixed-statistics path may
+/// supply paid state. Policy/context equality is not provenance; that authority
+/// comes from the single fresh resolver construction and its lexical lifetime.
 fn check_bodies(
     program: &ResolvedOwnedProgram<'_>,
     mut paid: Option<&mut ProgramPaid<'_, '_>>,

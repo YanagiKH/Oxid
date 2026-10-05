@@ -1,7 +1,7 @@
-//! Disconnected T0 typed-buffer helpers, not source or typing admission.
+//! Construction-local typed-buffer helpers, not source or typing witnesses.
 //!
-//! The disconnected paid checker names these helpers but has no admitted caller.
-//! HirPlan prepays the authored helper banks; source entry remains gated.
+//! The private fixed-statistics checker supplies local paid construction rights.
+//! HirPlan prepays the authored banks; public/executable enum entry stays gated.
 //! The local quotas do not prove the origin of a caller-supplied byte cell.
 //! Diagnostics, observer traces, allocator metadata and machine stack/RSS are
 //! outside this named-buffer model. All ordinary source routes are unchanged.
@@ -1058,7 +1058,7 @@ pub(super) const fn plan_completion_carrier_bytes() -> usize {
 }
 
 // Stage B fixed facts and scalar reconciliation. These helpers remain
-// unreachable from a selectable source entry and prove no owner provenance.
+// reached only through private fresh statistics and prove no owner provenance.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct TypedInventory {
     pub(super) retained_vectors: [usize; 8],
