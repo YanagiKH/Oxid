@@ -293,7 +293,6 @@ struct BodyPaid<'borrow> {
     quota: &'borrow mut storage::FunctionQuota,
     allocator: &'borrow mut Allocator,
     projection_bytes: &'borrow std::cell::Cell<usize>,
-    #[allow(dead_code)] // Remaining disconnected body samples are a later slice.
     observed: &'borrow mut storage::TypedObserved,
 }
 // Explicit checker-only context/receiver surfaces. HirPlan passively prices
@@ -375,6 +374,35 @@ struct BodyCompletionControls {
     body_succeeded: bool,
     quota_work_return: &'static crate::frontend::declaration_index::WorkMeter,
 }
+// Remaining Stage C source selections, still UNPRICED. Helper inputs and
+// complete sample/endpoint/path Results stay in their actual Stage A models.
+#[allow(dead_code)]
+struct BodySamplingControls {
+    // BindingStage, ExpressionStage, ExpressionProjections, BorrowProjections,
+    // FlowStage, TypeFrames reserve/endpoint, BindingFinal and FlowFinal.
+    reborrows: [Option<&'static mut BodyPaid<'static>>; 9],
+    // The same nine plus ExpressionFinal's terminal Some(paid) selection.
+    selected: [&'static mut BodyPaid<'static>; 10],
+    // Finalization now borrows rather than consuming the paid Option, so the
+    // subsequent final sample can consume that original Option without copying.
+    final_expression_reborrow: Option<&'static mut BodyPaid<'static>>,
+}
+#[allow(dead_code)]
+struct CallSamplingControls {
+    materialized_reborrow: Option<&'static mut BodyPaid<'static>>,
+    // Initial sample and terminal endpoint; only the former creates a reborrow.
+    selected: [&'static mut BodyPaid<'static>; 2],
+}
+#[allow(dead_code)]
+struct LiteralSamplingControls {
+    materialized_reborrow: Option<&'static mut BodyPaid<'static>>,
+    selected: [&'static mut BodyPaid<'static>; 2],
+}
+#[allow(dead_code)]
+struct ProjectionSamplingControls {
+    reborrow: Option<&'static mut BodyPaid<'static>>,
+    selected: &'static mut BodyPaid<'static>,
+}
 // No-value non-test forcing, with only the existing unpriced sizing helper's
 // plain-return role. No pricing array or future owner/context constructor.
 #[allow(dead_code)]
@@ -392,6 +420,22 @@ pub(super) const fn observed_program_context_bytes() -> usize {
 #[allow(dead_code)]
 pub(super) const fn observed_body_context_bytes() -> usize {
     std::mem::size_of::<BodyPaid<'static>>()
+}
+#[allow(dead_code)]
+pub(super) const fn body_sampling_control_bytes() -> usize {
+    std::mem::size_of::<BodySamplingControls>()
+}
+#[allow(dead_code)]
+pub(super) const fn call_sampling_control_bytes() -> usize {
+    std::mem::size_of::<CallSamplingControls>()
+}
+#[allow(dead_code)]
+pub(super) const fn literal_sampling_control_bytes() -> usize {
+    std::mem::size_of::<LiteralSamplingControls>()
+}
+#[allow(dead_code)]
+pub(super) const fn projection_sampling_control_bytes() -> usize {
+    std::mem::size_of::<ProjectionSamplingControls>()
 }
 
 fn paid_state(at: Span) -> Box<Diagnostic> {
@@ -1405,6 +1449,10 @@ fn projection(
             path
         }
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        // The successful reserve has len0; sample before semantic field walking.
+        paid.observed.path(&path, field_span)?;
+    }
     let mut current = ValueTy::Owned(AggregateTy::Record(record));
     for token in tokens {
         if token.kind != crate::frontend::lexer::Kind::Ident {
@@ -1731,6 +1779,10 @@ fn expression_type(
                 )?,
                 None => Vec::with_capacity(args.len()),
             };
+            if let Some(paid) = paid.as_deref_mut() {
+                paid.observed
+                    .materialized(Kind::CallActuals, &actuals, expr.span)?;
+            }
             for (argument, arg) in args.iter().enumerate() {
                 let actual = match arg {
                     Argument::Value(value) => (
@@ -1824,6 +1876,10 @@ fn expression_type(
                 }
                 actuals.push(actual);
             }
+            if let Some(paid) = paid {
+                paid.observed
+                    .scratch_endpoint(Kind::CallActuals, &actuals, expr.span)?;
+            }
             if args.len() != called.params.len() {
                 return Err(error(
                     "E0301",
@@ -1889,6 +1945,10 @@ fn expression_type(
                 }
                 None => vec![false; declared.fields.len()],
             };
+            if let Some(paid) = paid.as_deref_mut() {
+                paid.observed
+                    .materialized(Kind::RecordPresence, &present, expr.span)?;
+            }
             for field in fields {
                 present[field.field.index] = true;
                 let actual = child!(field.value)?;
@@ -1901,6 +1961,10 @@ fn expression_type(
                         function.expressions[field.value.0].span,
                     ));
                 }
+            }
+            if let Some(paid) = paid {
+                paid.observed
+                    .scratch_endpoint(Kind::RecordPresence, &present, expr.span)?;
             }
             if fields.len() != declared.fields.len() {
                 return Err(owned_diagnostic::missing_fields(
@@ -2146,6 +2210,10 @@ fn check_body(
         )?,
         None => vec![None; function.bindings.len()],
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::BindingStage, &bindings, function.end)?;
+    }
     if paid.is_some() && signature.params.len() > bindings.len() {
         return Err(paid_state(function.end));
     }
@@ -2169,6 +2237,10 @@ fn check_body(
         )?,
         None => vec![None; function.expressions.len()],
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::ExpressionStage, &expressions, function.end)?;
+    }
     let mut projections = match paid.as_deref_mut() {
         Some(paid) => paid.quota.storage.none(
             paid.allocator,
@@ -2178,6 +2250,10 @@ fn check_body(
         )?,
         None => vec![None; function.expressions.len()],
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::ExpressionProjections, &projections, function.end)?;
+    }
     let mut borrow_projections = match paid.as_deref_mut() {
         Some(paid) => paid.quota.storage.reserve(
             paid.allocator,
@@ -2195,6 +2271,10 @@ fn check_body(
             Vec::new()
         }
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::BorrowProjections, &borrow_projections, function.end)?;
+    }
     let mut statement_projections: Vec<Vec<Option<Projection>>> = match paid.as_deref_mut() {
         Some(paid) => {
             let mut rows = paid.quota.storage.reserve(
@@ -2204,6 +2284,8 @@ fn check_body(
                 function.blocks.len(),
                 function.end,
             )?;
+            paid.observed
+                .materialized(Kind::StatementRows, &rows, function.end)?;
             for block in &function.blocks {
                 let row = paid.quota.storage.none(
                     paid.allocator,
@@ -2211,6 +2293,8 @@ fn check_body(
                     block.body.len(),
                     function.end,
                 )?;
+                paid.observed
+                    .materialized(Kind::StatementProjections, &row, function.end)?;
                 storage::room(&rows, function.blocks.len(), function.end)?;
                 rows.push(row);
             }
@@ -2233,6 +2317,10 @@ fn check_body(
         )?,
         None => vec![None; function.blocks.len()],
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::FlowStage, &block_flows, function.end)?;
+    }
     let mut frames = match paid.as_deref_mut() {
         Some(paid) => paid.quota.storage.reserve(
             paid.allocator,
@@ -2244,6 +2332,10 @@ fn check_body(
         // The historical vec![root] asks for exactly one initial slot.
         None => Vec::with_capacity(1),
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::TypeFrames, &frames, function.end)?;
+    }
     if let Some(paid) = paid.as_deref() {
         storage::room(&frames, paid.quota.counts.type_frames, function.end)?;
     }
@@ -2665,6 +2757,10 @@ fn check_body(
             active_loop,
         });
     }
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .scratch_endpoint(Kind::TypeFrames, &frames, function.end)?;
+    }
     if !block_flows[function.body.0]
         .expect("function body was checked")
         .returns_only()
@@ -2677,29 +2773,45 @@ fn check_body(
         ));
     }
     let final_bindings = match paid.as_deref_mut() {
-        Some(paid) => paid.quota.storage.finalize(
-            paid.allocator,
-            Kind::BindingFinal,
-            &bindings,
-            function.end,
-        )?,
+        Some(paid) => {
+            paid.observed
+                .scratch_endpoint(Kind::BindingStage, &bindings, function.end)?;
+            paid.quota.storage.finalize(
+                paid.allocator,
+                Kind::BindingFinal,
+                &bindings,
+                function.end,
+            )?
+        }
         None => bindings
             .into_iter()
             .map(|ty| ty.expect("all resolved bindings have typed initializers"))
             .collect(),
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::BindingFinal, &final_bindings, function.end)?;
+    }
     let final_flows = match paid.as_deref_mut() {
-        Some(paid) => paid.quota.storage.finalize(
-            paid.allocator,
-            Kind::FlowFinal,
-            &block_flows,
-            function.end,
-        )?,
+        Some(paid) => {
+            paid.observed
+                .scratch_endpoint(Kind::FlowStage, &block_flows, function.end)?;
+            paid.quota.storage.finalize(
+                paid.allocator,
+                Kind::FlowFinal,
+                &block_flows,
+                function.end,
+            )?
+        }
         None => block_flows
             .into_iter()
             .map(|flow| flow.expect("all resolved blocks have checked flow"))
             .collect(),
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        paid.observed
+            .materialized(Kind::FlowFinal, &final_flows, function.end)?;
+    }
     // Borrow typing follows source evaluation order, which can interleave nested
     // call sites. Sort the sparse table for bounded binary lookup during lowering.
     let borrow_slots = borrow_projections.len();
@@ -2720,18 +2832,26 @@ fn check_body(
         )?;
         borrow_projections.sort_unstable_by_key(borrow_projection_key());
     }
-    let final_expressions = match paid {
-        Some(paid) => paid.quota.storage.finalize(
-            paid.allocator,
-            Kind::ExpressionFinal,
-            &expressions,
-            function.end,
-        )?,
+    let final_expressions = match paid.as_deref_mut() {
+        Some(paid) => {
+            paid.observed
+                .scratch_endpoint(Kind::ExpressionStage, &expressions, function.end)?;
+            paid.quota.storage.finalize(
+                paid.allocator,
+                Kind::ExpressionFinal,
+                &expressions,
+                function.end,
+            )?
+        }
         None => expressions
             .into_iter()
             .map(|ty| ty.expect("every expression was typed"))
             .collect(),
     };
+    if let Some(paid) = paid {
+        paid.observed
+            .materialized(Kind::ExpressionFinal, &final_expressions, function.end)?;
+    }
     Ok(TypedBody {
         borrow_projections,
         expressions: final_expressions,
@@ -3018,6 +3138,10 @@ fn c3_t1_disconnected_paid_context_actual_layouts() {
         PaidExpressionReborrows,
         ProgramObservationControls,
         BodyCompletionControls,
+        BodySamplingControls,
+        CallSamplingControls,
+        LiteralSamplingControls,
+        ProjectionSamplingControls,
     );
     assert_eq!(
         size_of::<ProgramPaid<'_, '_>>(),
@@ -3755,6 +3879,35 @@ fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
     roles!(BodyCompletionControls, 3;
         body_result: Result<TypedBody, Box<Diagnostic>>, body_succeeded: bool,
         quota_work_return: &'static WorkMeter);
+    roles!(BodySamplingControls, 3;
+        reborrows: [Option<&'static mut BodyPaid<'static>>; 9],
+        selected: [&'static mut BodyPaid<'static>; 10],
+        final_expression_reborrow: Option<&'static mut BodyPaid<'static>>);
+    roles!(CallSamplingControls, 2;
+        materialized_reborrow: Option<&'static mut BodyPaid<'static>>,
+        selected: [&'static mut BodyPaid<'static>; 2]);
+    roles!(LiteralSamplingControls, 2;
+        materialized_reborrow: Option<&'static mut BodyPaid<'static>>,
+        selected: [&'static mut BodyPaid<'static>; 2]);
+    roles!(ProjectionSamplingControls, 2;
+        reborrow: Option<&'static mut BodyPaid<'static>>,
+        selected: &'static mut BodyPaid<'static>);
+    assert_eq!(
+        body_sampling_control_bytes(),
+        size_of::<BodySamplingControls>()
+    );
+    assert_eq!(
+        call_sampling_control_bytes(),
+        size_of::<CallSamplingControls>()
+    );
+    assert_eq!(
+        literal_sampling_control_bytes(),
+        size_of::<LiteralSamplingControls>()
+    );
+    assert_eq!(
+        projection_sampling_control_bytes(),
+        size_of::<ProjectionSamplingControls>()
+    );
     let _: for<'a> fn(&'a PaidBodyControls) -> &'a Result<TypedBody, Box<Diagnostic>> =
         |model| &model.checked;
     let _: for<'a> fn(&'a PaidBodyControls) -> &'a BodyPaid<'static> = |model| &model.constructed;
