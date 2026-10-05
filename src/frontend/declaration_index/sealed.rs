@@ -24,6 +24,36 @@ pub(in crate::frontend) fn collect_originals<'s>(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+    collect(sources, limits, work, allocator, CollectionSyntax::Closed)
+}
+#[cfg(test)]
+pub(in crate::frontend) fn collect_enum_candidate<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+    collect(
+        sources,
+        limits,
+        work,
+        allocator,
+        CollectionSyntax::EnumCandidate,
+    )
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CollectionSyntax {
+    Closed,
+    #[cfg(test)]
+    EnumCandidate,
+}
+fn collect<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+    syntax: CollectionSyntax,
+) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
     work.restrict(limits.work);
     work.phase("collection");
     let at = sources.eof();
@@ -40,14 +70,40 @@ pub(in crate::frontend) fn collect_originals<'s>(
         local: 0,
         remaining,
     };
-    if super::super::oir::owned_types::admit_declaration_counts(fields).is_err() {
-        return Err(diagnostic(
+    let declaration_limit = || {
+        diagnostic(
             "E0400",
             "resolve",
             "owned declaration resource limit exceeded",
-            sources.file(ModuleId(0))?.span(0, 0),
-        ));
+            sources.file(ModuleId(0)).map_or(at, |file| file.span(0, 0)),
+        )
+    };
+    let record_usage = super::super::oir::owned_types::admit_declaration_counts(fields)
+        .map_err(|_| declaration_limit())?;
+    if syntax != CollectionSyntax::Closed {
+        let mut remaining = 0usize;
+        for module in 0..sources.count() {
+            work.preflight(at)?;
+            let ast = sources.ast(ModuleId(module))?;
+            remaining = remaining
+                .checked_add(ast.enums.len())
+                .ok_or_else(|| overflow(at))?;
+            for enumeration in &ast.enums {
+                work.preflight(enumeration.name)?;
+            }
+        }
+        super::super::oir::owned_types::admit_enum_counts(
+            EnumSourceCounts {
+                sources,
+                module: 0,
+                local: 0,
+                remaining,
+            },
+            record_usage,
+        )
+        .map_err(|_| declaration_limit())?;
     }
+    let mut candidate_source_origin = None;
     let mut c = Counts {
         modules: u64::try_from(sources.count()).map_err(|_| overflow(at))?,
         ..Counts::default()
@@ -81,18 +137,24 @@ pub(in crate::frontend) fn collect_originals<'s>(
             return Err(bad(at));
         }
         if let Some(span) = enum_syntax {
-            return Err(diagnostic(
-                "E0101",
-                "resolve",
-                "enum source syntax is unavailable",
-                span,
-            ));
+            if syntax == CollectionSyntax::Closed {
+                return Err(diagnostic(
+                    "E0101",
+                    "resolve",
+                    "enum source syntax is unavailable",
+                    span,
+                ));
+            }
+            if candidate_source_origin.is_none() {
+                candidate_source_origin = Some(CompactSpan::new(span)?);
+            }
         }
         if sources.is_original_adapter() && ast.uses_project_syntax() {
             return Err(bad(at));
         }
         c.functions = add(c.functions, ast.functions.len() as u64, at)?;
         c.records = add(c.records, ast.records.len() as u64, at)?;
+        c.enums = add(c.enums, ast.enums.len() as u64, at)?;
         c.imports = add(c.imports, ast.imports.len() as u64, at)?;
         for item in &ast.items {
             work.preflight(at)?;
@@ -101,7 +163,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
                 ast::ItemId::Struct(i) => Some(ast.records[i].name),
                 ast::ItemId::Module(i) => Some(ast.modules[i].name),
                 ast::ItemId::Import(_) => None,
-                ast::ItemId::Enum(_) => return Err(bad(at)),
+                ast::ItemId::Enum(i) => Some(ast.enums[i].name),
             };
             if let Some(name) = name {
                 c.original_bytes = add(c.original_bytes, sources.text(name)?.len() as u64, at)?;
@@ -110,6 +172,28 @@ pub(in crate::frontend) fn collect_originals<'s>(
         for record in &ast.records {
             work.preflight(record.name)?;
             c.fields = add(c.fields, record.fields.len() as u64, at)?;
+        }
+        for enumeration in &ast.enums {
+            work.preflight(enumeration.name)?;
+            let variants = enumeration.variants.len() as u64;
+            c.variants = add(c.variants, variants, at)?;
+            let mut bytes = 0u64;
+            for variant in &enumeration.variants {
+                work.preflight(variant.name)?;
+                bytes = add(bytes, sources.text(variant.name)?.len() as u64, at)?;
+            }
+            let repetitions = variants
+                .checked_sub(1)
+                .ok_or_else(|| bad(enumeration.name))?;
+            // Pair visit + compare invocation, then a conservative byte bound.
+            let duplicate_work = add(
+                variants
+                    .checked_mul(repetitions)
+                    .ok_or_else(|| overflow(at))?,
+                bytes.checked_mul(repetitions).ok_or_else(|| overflow(at))?,
+                at,
+            )?;
+            c.variant_duplicate_work = add(c.variant_duplicate_work, duplicate_work, at)?;
         }
         for import in &ast.imports {
             work.preflight(import.alias)?;
@@ -127,12 +211,18 @@ pub(in crate::frontend) fn collect_originals<'s>(
             }
         }
     }
-    c.originals = add(add(c.functions, c.records, at)?, c.modules - 1, at)?;
+    c.originals = add(
+        add(add(c.functions, c.records, at)?, c.enums, at)?,
+        c.modules - 1,
+        at,
+    )?;
     for count in [
         c.originals,
         c.functions,
         c.records,
         c.fields,
+        c.enums,
+        c.variants,
         c.modules,
         c.imports,
     ] {
@@ -197,7 +287,23 @@ pub(in crate::frontend) fn collect_originals<'s>(
             at,
             work,
         )?,
-        modules: allocate(
+        enums: allocate_exact(
+            c.enums as usize,
+            EnumRow::default(),
+            allocator,
+            "index enums",
+            at,
+            work,
+        )?,
+        variants: allocate_exact(
+            c.variants as usize,
+            VariantRow::default(),
+            allocator,
+            "index variants",
+            at,
+            work,
+        )?,
+        modules: allocate_exact(
             c.modules as usize,
             ModuleRow::default(),
             allocator,
@@ -238,6 +344,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
             work,
         )?,
         root_main: NONE,
+        candidate_source_origin,
     };
     let mut scratch = Scratch {
         merge: allocate(
@@ -273,8 +380,14 @@ pub(in crate::frontend) fn collect_originals<'s>(
             work,
         )?,
     };
-    let (mut function_base, mut record_base, mut original_base, mut import_base, mut child_base) =
-        (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (
+        mut function_base,
+        mut record_base,
+        mut enum_base,
+        mut original_base,
+        mut import_base,
+        mut child_base,
+    ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
     for m in 0..sources.count() {
         work.debit(1, at, "module prefix")?;
         let ast = sources.ast(ModuleId(m))?;
@@ -290,7 +403,8 @@ pub(in crate::frontend) fn collect_originals<'s>(
         {
             return Err(bad(at));
         }
-        let original_len = ast.functions.len() + ast.records.len() + ast.modules.len();
+        let original_len =
+            ast.functions.len() + ast.records.len() + ast.enums.len() + ast.modules.len();
         tables.modules[m] = ModuleRow {
             parent,
             subtree_end: c.modules as u32,
@@ -299,6 +413,8 @@ pub(in crate::frontend) fn collect_originals<'s>(
             function_len: compact(ast.functions.len(), at)?,
             record_base: compact(record_base, at)?,
             record_len: compact(ast.records.len(), at)?,
+            enum_base: compact(enum_base, at)?,
+            enum_len: compact(ast.enums.len(), at)?,
             original_start: compact(original_base, at)?,
             original_len: compact(original_len, at)?,
             import_start: compact(import_base, at)?,
@@ -310,6 +426,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
         };
         function_base += ast.functions.len();
         record_base += ast.records.len();
+        enum_base += ast.enums.len();
         original_base += original_len;
         import_base += ast.imports.len();
         child_base += ast.modules.len();
@@ -317,12 +434,14 @@ pub(in crate::frontend) fn collect_originals<'s>(
     if (
         function_base,
         record_base,
+        enum_base,
         original_base,
         import_base,
         child_base,
     ) != (
         c.functions as usize,
         c.records as usize,
+        c.enums as usize,
         c.originals as usize,
         c.imports as usize,
         c.modules as usize - 1,
@@ -380,6 +499,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
         }
     }
     let mut field_count = 0usize;
+    let mut variant_count = 0usize;
     for m in 0..sources.count() {
         let module = tables.modules[m];
         let ast = sources.ast(ModuleId(m))?;
@@ -439,7 +559,25 @@ pub(in crate::frontend) fn collect_originals<'s>(
                     scratch.targets[id] = id as u32;
                     continue;
                 }
-                ast::ItemId::Enum(_) => return Err(bad(at)),
+                ast::ItemId::Enum(local) => {
+                    let declaration = &ast.enums[local];
+                    let id = module.enum_base as usize + local;
+                    tables.enums[id] = EnumRow {
+                        file,
+                        local_enum: compact(local, at)?,
+                        original: compact(original, at)?,
+                        variant_start: compact(variant_count, at)?,
+                        variant_len: compact(declaration.variants.len(), at)?,
+                    };
+                    for variant in &declaration.variants {
+                        work.debit(1, variant.name, "variant fill")?;
+                        tables.variants[variant_count] = VariantRow {
+                            name: CompactSpan::new(variant.name)?,
+                        };
+                        variant_count += 1;
+                    }
+                    (declaration.name, declaration.public, ENUM, id)
+                }
             };
             tables.originals[original] = OriginalRow {
                 name: CompactSpan::new(name)?,
@@ -453,18 +591,20 @@ pub(in crate::frontend) fn collect_originals<'s>(
             #[cfg(test)]
             if kind != MODULE {
                 work.observe(Observation::Original {
-                    kind: if kind == FUNCTION {
-                        "function"
-                    } else {
-                        "record"
+                    kind: match kind {
+                        FUNCTION => "function",
+                        RECORD => "record",
+                        ENUM => "enum",
+                        _ => unreachable!("nonmodule original"),
                     },
                     id: target,
                     module: ModuleId(m),
                     name,
-                    local: if kind == FUNCTION {
-                        tables.functions[target].local_function as usize
-                    } else {
-                        tables.records[target].local_record as usize
+                    local: match kind {
+                        FUNCTION => tables.functions[target].local_function as usize,
+                        RECORD => tables.records[target].local_record as usize,
+                        ENUM => tables.enums[target].local_enum as usize,
+                        _ => unreachable!("nonmodule original"),
                     },
                 });
             }
@@ -475,7 +615,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
             return Err(bad(at));
         }
     }
-    if field_count != c.fields as usize {
+    if field_count != c.fields as usize || variant_count != c.variants as usize {
         return Err(bad(at));
     }
     for m in 1..tables.modules.len() {
@@ -495,7 +635,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
     for original in &mut tables.originals {
         work.debit(1, original.name.span(), "original domain")?;
         let module = tables.modules[original.owner as usize];
-        let id = if original.flags & 3 == MODULE {
+        let id = if original.flags & KIND_MASK == MODULE {
             tables.modules[original.target as usize].original
         } else {
             NONE
@@ -582,7 +722,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
             first = id;
         }
         let spelling = sources.text(row.name.span())?;
-        if row.flags & 3 != FUNCTION
+        if row.flags & KIND_MASK != FUNCTION
             && (compare_bytes(spelling, "bool", work, row.name.span())? == Ordering::Equal
                 || compare_bytes(spelling, "i32", work, row.name.span())? == Ordering::Equal)
         {
@@ -591,7 +731,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
             tables.originals[id as usize].conflict = first;
         }
         if row.owner == 0
-            && row.flags & 3 == FUNCTION
+            && row.flags & KIND_MASK == FUNCTION
             && compare_bytes(spelling, "main", work, row.name.span())? == Ordering::Equal
             && tables.root_main == NONE
         {
@@ -618,6 +758,15 @@ fn intersect(parent: u32, witness: u32, own: u32, own_witness: u32) -> (u32, u32
 }
 
 impl<'s> DeclarationFacts<'s> {
+    pub fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        self.tables.require_current_source_pipeline()
+    }
+    pub fn enum_count(&self) -> usize {
+        self.tables.enums.len()
+    }
+    pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
+        enumeration(&self.tables, id)
+    }
     pub fn plan(&self) -> IndexPlan {
         self.plan
     }
@@ -695,6 +844,47 @@ impl<'s> DeclarationFacts<'s> {
             }
             if errors.len() >= super::super::parser::MAX_DIAGNOSTICS {
                 break;
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        if !self.tables.enums.is_empty() {
+            work.phase("enum-variants");
+            for row in &self.tables.enums {
+                work.debit(1, at_enum(&self.tables, row), "enum variant declaration")
+                    .map_err(|e| vec![*e])?;
+                for current in 0..row.variant_len as usize {
+                    let name = self.tables.variants[row.variant_start as usize + current]
+                        .name
+                        .span();
+                    work.debit(1, name, "variant uniqueness")
+                        .map_err(|e| vec![*e])?;
+                    for earlier in 0..current {
+                        let previous = self.tables.variants[row.variant_start as usize + earlier]
+                            .name
+                            .span();
+                        work.debit(1, name, "variant duplicate pair")
+                            .map_err(|e| vec![*e])?;
+                        if compare_bytes(
+                            self.tables.sources.text(previous).map_err(|e| vec![*e])?,
+                            self.tables.sources.text(name).map_err(|e| vec![*e])?,
+                            work,
+                            name,
+                        )
+                        .map_err(|e| vec![*e])?
+                            == Ordering::Equal
+                        {
+                            let error = duplicate(name, previous);
+                            work.record_error(&error);
+                            errors.push(*error);
+                            break;
+                        }
+                    }
+                    if errors.len() >= super::super::parser::MAX_DIAGNOSTICS {
+                        return Err(errors);
+                    }
+                }
             }
         }
         if !errors.is_empty() {
@@ -889,7 +1079,7 @@ fn stage_import(
         alias: row.alias_group as usize,
         seen: row.target_group as usize,
         import: id,
-        ty: ty.map_or(NONE, |id| tables.originals[id as usize].target),
+        ty: ty.unwrap_or(NONE),
         value: value.map_or(NONE, |id| tables.originals[id as usize].target),
     })
 }
@@ -933,8 +1123,97 @@ fn record(tables: &Tables<'_>, id: RecordId) -> Result<(RecordAstKey, ModuleId),
     }
     Ok((key, owner))
 }
+fn at_enum(tables: &Tables<'_>, row: &EnumRow) -> Span {
+    tables.originals[row.original as usize].name.span()
+}
+fn enumeration(tables: &Tables<'_>, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
+    let row = tables
+        .enums
+        .get(id.0)
+        .ok_or_else(|| bad(tables.sources.eof()))?;
+    if tables.nominal_original(row.original)? != NominalId::Enum(id) {
+        return Err(bad(tables.sources.eof()));
+    }
+    let owner = ModuleId(tables.original(row.original)?.owner as usize);
+    let key = EnumAstKey {
+        file: SourceFileId(row.file as usize),
+        index: row.local_enum as usize,
+    };
+    let declaration = tables
+        .sources
+        .ast(owner)?
+        .enums
+        .get(key.index)
+        .ok_or_else(|| bad(tables.sources.eof()))?;
+    if tables.sources.module_for_file(key.file)? != owner
+        || declaration.name.file != key.file
+        || declaration.variants.len() != row.variant_len as usize
+    {
+        return Err(bad(tables.sources.eof()));
+    }
+    let end = (row.variant_start as usize)
+        .checked_add(row.variant_len as usize)
+        .ok_or_else(|| bad(tables.sources.eof()))?;
+    if tables
+        .variants
+        .get(row.variant_start as usize..end)
+        .is_none()
+    {
+        return Err(bad(tables.sources.eof()));
+    }
+    Ok((key, owner))
+}
 impl<'s> DeclarationIndex<'s> {
+    pub fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        self.tables.require_current_source_pipeline()
+    }
+    pub fn enum_count(&self) -> usize {
+        self.tables.enums.len()
+    }
+    pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
+        enumeration(&self.tables, id)
+    }
+    pub fn enum_for(&self, key: EnumAstKey) -> Result<EnumId, Box<Diagnostic>> {
+        let module = self.tables.sources.module_for_file(key.file)?;
+        let row = self.tables.modules[module.0];
+        if key.index >= row.enum_len as usize {
+            return Err(bad(self.tables.sources.eof()));
+        }
+        let id = EnumId(row.enum_base as usize + key.index);
+        if self.enumeration(id)?.0 != key {
+            return Err(bad(self.tables.sources.eof()));
+        }
+        Ok(id)
+    }
+    pub fn enum_view(&self, id: EnumId) -> Result<EnumView<'_>, Box<Diagnostic>> {
+        EnumView::from_index(self, id)
+    }
+    pub fn enum_variant_counts(&self) -> EnumVariantCounts<'_> {
+        EnumVariantCounts {
+            rows: self.tables.enums.iter(),
+        }
+    }
+    /// The historical observation shape cannot represent enum rows.
+    #[cfg(test)]
     pub fn row_lengths(&self) -> [usize; 10] {
+        assert!(
+            self.tables.enums.is_empty(),
+            "legacy index row observation excludes enum projection"
+        );
+        let complete = self.complete_row_lengths();
+        complete[..10]
+            .try_into()
+            .expect("ten legacy index row lanes")
+    }
+    #[cfg(test)]
+    pub fn enum_scoped_row_capacities(&self) -> [usize; 3] {
+        [
+            self.tables.enums.capacity(),
+            self.tables.variants.capacity(),
+            self.tables.modules.capacity(),
+        ]
+    }
+    pub fn complete_row_lengths(&self) -> [usize; 12] {
         [
             self.tables.originals.len(),
             self.tables.original_order.len(),
@@ -946,6 +1225,8 @@ impl<'s> DeclarationIndex<'s> {
             self.tables.imports.len(),
             self.tables.aliases.len(),
             self.tables.alias_order.len(),
+            self.tables.enums.len(),
+            self.tables.variants.len(),
         ]
     }
     pub fn sources(&self) -> SourceOwner<'s> {
@@ -1025,6 +1306,33 @@ impl Iterator for RecordFieldCounts<'_> {
 }
 impl ExactSizeIterator for RecordFieldCounts<'_> {}
 
+pub(super) struct EnumSourceCounts<'s> {
+    sources: SourceOwner<'s>,
+    module: usize,
+    local: usize,
+    remaining: usize,
+}
+impl Iterator for EnumSourceCounts<'_> {
+    type Item = usize;
+    fn next(&mut self) -> Option<usize> {
+        while self.module < self.sources.count() {
+            let ast = self.sources.ast(ModuleId(self.module)).ok()?;
+            if let Some(declaration) = ast.enums.get(self.local) {
+                self.local += 1;
+                self.remaining -= 1;
+                return Some(declaration.variants.len());
+            }
+            self.module += 1;
+            self.local = 0;
+        }
+        None
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+impl ExactSizeIterator for EnumSourceCounts<'_> {}
+
 #[cfg(test)]
 fn observe_import(
     tables: &Tables<'_>,
@@ -1034,6 +1342,11 @@ fn observe_import(
     work: &WorkMeter,
 ) {
     if !work.observing() {
+        return;
+    }
+    // Complete enum identities choose the schema, not candidate AST syntax.
+    if !tables.enums.is_empty() {
+        observe_nominal_import(tables, seen, id, committed, work);
         return;
     }
     let row = tables.imports[id];
@@ -1049,7 +1362,12 @@ fn observe_import(
             AliasObservation {
                 module: ModuleId(r.module as usize),
                 alias: tables.import(i as u32).expect("checked alias").alias,
-                ty: (c.type_target != NONE).then_some(RecordId(c.type_target as usize)),
+                ty: (c.type_target != NONE).then(|| {
+                    tables
+                        .nominal_original(c.type_target)
+                        .expect("checked alias type")
+                        .legacy_record()
+                }),
                 value: (c.value_target != NONE).then_some(DefId(c.value_target as usize)),
                 type_first: (c.type_first_import != NONE).then_some(c.type_first_import as usize),
                 value_first: (c.value_first_import != NONE)
@@ -1078,8 +1396,81 @@ fn observe_import(
         module: ModuleId(row.module as usize),
         alias: import.alias,
         committed,
-        ty: (committed && cell.type_first_import == id as u32)
-            .then_some(RecordId(cell.type_target as usize)),
+        ty: (committed && cell.type_first_import == id as u32).then(|| {
+            tables
+                .nominal_original(cell.type_target)
+                .expect("checked import type")
+                .legacy_record()
+        }),
+        value: (committed && cell.value_first_import == id as u32)
+            .then_some(DefId(cell.value_target as usize)),
+        aliases,
+        seen,
+    });
+}
+
+#[cfg(test)]
+fn observe_nominal_import(
+    tables: &Tables<'_>,
+    seen: &[SeenCell],
+    id: usize,
+    committed: bool,
+    work: &WorkMeter,
+) {
+    if !work.observing() {
+        return;
+    }
+    let row = tables.imports[id];
+    let import = tables.import(id as u32).expect("checked import");
+    let cell = tables.aliases[row.alias_group as usize];
+    let aliases = tables
+        .imports
+        .iter()
+        .enumerate()
+        .filter(|(i, r)| r.alias_group as usize == *i)
+        .map(|(i, r)| {
+            let c = tables.aliases[i];
+            NominalAliasObservation {
+                module: ModuleId(r.module as usize),
+                alias: tables.import(i as u32).expect("checked alias").alias,
+                ty: (c.type_target != NONE).then(|| {
+                    tables
+                        .nominal_original(c.type_target)
+                        .expect("checked alias type")
+                }),
+                value: (c.value_target != NONE).then_some(DefId(c.value_target as usize)),
+                type_first: (c.type_first_import != NONE).then_some(c.type_first_import as usize),
+                value_first: (c.value_first_import != NONE)
+                    .then_some(c.value_first_import as usize),
+            }
+        })
+        .collect();
+    let seen = tables
+        .imports
+        .iter()
+        .enumerate()
+        .filter(|(i, r)| r.target_group as usize == *i)
+        .map(|(i, r)| {
+            let c = seen[i];
+            SeenObservation {
+                module: ModuleId(r.module as usize),
+                group: i,
+                type_first: (c.type_first_import != NONE).then_some(c.type_first_import as usize),
+                value_first: (c.value_first_import != NONE)
+                    .then_some(c.value_first_import as usize),
+            }
+        })
+        .collect();
+    work.observe(Observation::NominalImport {
+        id,
+        module: ModuleId(row.module as usize),
+        alias: import.alias,
+        committed,
+        ty: (committed && cell.type_first_import == id as u32).then(|| {
+            tables
+                .nominal_original(cell.type_target)
+                .expect("checked import type")
+        }),
         value: (committed && cell.value_first_import == id as u32)
             .then_some(DefId(cell.value_target as usize)),
         aliases,

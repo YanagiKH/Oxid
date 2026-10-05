@@ -287,6 +287,9 @@ pub(super) fn original_signatures(
     facts: &DeclarationFacts<'_>,
     work: &WorkMeter,
 ) -> Result<Vec<Signature>, Vec<Diagnostic>> {
+    facts
+        .require_current_source_pipeline()
+        .map_err(|e| vec![*e])?;
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
     for index in 0..facts.function_count() {
@@ -326,6 +329,9 @@ pub(super) fn resolve_project(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
 ) -> Result<Program, Vec<Diagnostic>> {
+    index
+        .require_current_source_pipeline()
+        .map_err(|e| vec![*e])?;
     work.phase("signatures");
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
@@ -355,6 +361,9 @@ pub(super) fn resolve_bodies(
     work: &WorkMeter,
     signatures: Vec<Signature>,
 ) -> Result<Program, Vec<Diagnostic>> {
+    index
+        .require_current_source_pipeline()
+        .map_err(|e| vec![*e])?;
     work.phase("body-resolution");
     let mut functions = Vec::new();
     let mut diagnostics = Vec::new();

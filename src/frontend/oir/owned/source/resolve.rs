@@ -355,6 +355,9 @@ fn resolve_index(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<ResolvedParts, Vec<Diagnostic>> {
+    index
+        .require_current_source_pipeline()
+        .map_err(|e| vec![*e])?;
     let sources = index.sources();
     let mut diagnostics = Vec::new();
     let mut records = Vec::new();
@@ -1345,5 +1348,58 @@ mod array_reservation_tests {
         println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"overflow\",\"control\":\"attempt\",\"synthetic\":true,\"attempt_counter\":{},\"result\":\"{:?}\",\"trace_rows\":{}}}", allocator.attempts, result, allocator.trace.len());
         assert_eq!(result, Err(ReserveFailure::Overflow));
         assert!(allocator.trace.is_empty() && values.is_empty() && values.capacity() == 0);
+    }
+}
+
+#[cfg(test)]
+mod enum_index_layout_tests {
+    use super::*;
+    #[test]
+    fn enum_index_owned_direct_source_producer_rejects_before_hir_reservations() {
+        for text in [
+            "enum E{V} fn main()->(){return;}",
+            "fn main()->(){E::V;return;}",
+            "fn main()->(){match x{E::V=>{}} return;}",
+        ] {
+            let mut sources = SourceMap::new();
+            let file = sources.add("enum-index-owned-gate.ox".into(), text.into());
+            let source = sources.get(file);
+            let (ast, _) = crate::frontend::parser::parse_enum_candidate_counted(
+                source,
+                crate::frontend::lexer::lex(source).unwrap(),
+                crate::frontend::parser::SourceMode::ProjectCandidate,
+                crate::frontend::parser::MAX_NODES,
+                &mut Allocator::default(),
+                &mut Default::default(),
+            )
+            .unwrap();
+            let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let index =
+                index::collect_enum_candidate(owner, IndexLimits::default(), &work, &mut allocator)
+                    .unwrap()
+                    .finish(&work, &mut allocator)
+                    .unwrap();
+            let mut denied_allocator = Allocator {
+                fail_at: Some(1),
+                ..Allocator::default()
+            };
+            assert_eq!(
+                resolve_index(&index, &work, &mut denied_allocator).unwrap_err()[0].code,
+                "E0101"
+            );
+            assert_eq!(denied_allocator.attempts, 0);
+            assert_eq!(resolve_project(&index, &work).unwrap_err()[0].code, "E0101");
+        }
+    }
+    #[test]
+    fn enum_index_enclosing_source_owners_are_measured() {
+        println!(
+            "enum-index-source-layout IndexOwner={} ResolvedOwnedProgram={} TypedOwnedProgram={}",
+            std::mem::size_of::<IndexOwner<'_>>(),
+            std::mem::size_of::<ResolvedOwnedProgram<'_>>(),
+            std::mem::size_of::<super::super::typeck::TypedOwnedProgram<'_>>()
+        );
     }
 }

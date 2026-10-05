@@ -10,6 +10,9 @@ pub(super) mod budget;
 #[cfg(test)]
 #[path = "project/enum_carrier_tests.rs"]
 mod enum_carrier_tests;
+#[cfg(test)]
+#[path = "project/enum_index_tests.rs"]
+mod enum_index_tests;
 mod filesystem;
 #[cfg(test)]
 mod tests;
@@ -40,6 +43,11 @@ pub(super) struct FunctionAstKey {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RecordAstKey {
+    pub file: SourceFileId,
+    pub index: usize,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct EnumAstKey {
     pub file: SourceFileId,
     pub index: usize,
 }
@@ -207,6 +215,21 @@ impl ProjectSources {
             parser::ArraySyntaxPolicy::Candidate,
         )
     }
+    #[cfg(test)]
+    pub(super) fn load_enum_index_candidate(
+        entry: &str,
+        limits: ProjectLimits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            allocator,
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::Candidate,
+        )
+    }
     fn load_with_arrays(
         entry: &str,
         limits: ProjectLimits,
@@ -214,12 +237,30 @@ impl ProjectSources {
         allocator: &mut Allocator,
         arrays: parser::ArraySyntaxPolicy,
     ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax(
+            entry,
+            limits,
+            mode,
+            allocator,
+            arrays,
+            ProjectEnumSyntax::Closed,
+        )
+    }
+    fn load_with_syntax(
+        entry: &str,
+        limits: ProjectLimits,
+        mode: parser::SourceMode,
+        allocator: &mut Allocator,
+        arrays: parser::ArraySyntaxPolicy,
+        enums: ProjectEnumSyntax,
+    ) -> Result<Self, LoadFailure> {
         let mut builder = SourceSetBuilder {
             entry,
             limits,
             allocator,
             mode,
             arrays,
+            enums,
             project: Self {
                 sources: SourceMap::new(),
                 programs: Vec::new(),
@@ -282,6 +323,12 @@ impl ProjectSources {
             .get(key.index)
             .filter(|record| record.name.file == key.file)
     }
+    pub fn try_enum(&self, key: EnumAstKey) -> Option<&ast::EnumDecl> {
+        self.try_file_ast(key.file)?
+            .enums
+            .get(key.index)
+            .filter(|declaration| declaration.name.file == key.file)
+    }
     pub fn try_expression(&self, key: ExprKey) -> Option<&ast::Expr> {
         self.try_file_ast(key.file)?
             .expressions
@@ -311,6 +358,17 @@ impl ProjectSources {
             .enumerate()
             .flat_map(|(file, program)| {
                 (0..program.records.len()).map(move |index| RecordAstKey {
+                    file: SourceFileId(file),
+                    index,
+                })
+            })
+    }
+    pub fn enum_handles(&self) -> impl Iterator<Item = EnumAstKey> + '_ {
+        self.programs
+            .iter()
+            .enumerate()
+            .flat_map(|(file, program)| {
+                (0..program.enums.len()).map(move |index| EnumAstKey {
                     file: SourceFileId(file),
                     index,
                 })
@@ -518,12 +576,20 @@ fn io_error(error: io::Error, display: &str, origin: Option<Span>) -> Box<Diagno
     }
 }
 
+#[derive(Clone, Copy)]
+enum ProjectEnumSyntax {
+    Closed,
+    #[cfg(test)]
+    Candidate,
+}
+
 struct SourceSetBuilder<'a> {
     entry: &'a str,
     limits: ProjectLimits,
     allocator: &'a mut Allocator,
     mode: parser::SourceMode,
     arrays: parser::ArraySyntaxPolicy,
+    enums: ProjectEnumSyntax,
     project: ProjectSources,
 }
 #[derive(Clone, Copy)]
@@ -770,17 +836,36 @@ impl SourceSetBuilder<'_> {
             .min(parser::MAX_NODES)
             .checked_sub(self.project.usage.syntax_nodes)
             .ok_or_else(|| one(overflow(origin)))?;
-        let (program, nodes) = if self.arrays == parser::ArraySyntaxPolicy::Closed {
-            parser::parse_counted(source, tokens, self.mode, remaining_nodes, self.allocator)?
-        } else {
-            parser::parse_counted_with_arrays(
+        let (program, nodes) = match self.enums {
+            ProjectEnumSyntax::Closed => {
+                if self.arrays == parser::ArraySyntaxPolicy::Closed {
+                    parser::parse_counted(
+                        source,
+                        tokens,
+                        self.mode,
+                        remaining_nodes,
+                        self.allocator,
+                    )?
+                } else {
+                    parser::parse_counted_with_arrays(
+                        source,
+                        tokens,
+                        self.mode,
+                        remaining_nodes,
+                        self.allocator,
+                        self.arrays,
+                    )?
+                }
+            }
+            #[cfg(test)]
+            ProjectEnumSyntax::Candidate => parser::parse_enum_candidate_counted(
                 source,
                 tokens,
                 self.mode,
                 remaining_nodes,
                 self.allocator,
-                self.arrays,
-            )?
+                &mut Default::default(),
+            )?,
         };
         self.project.usage.syntax_nodes =
             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;

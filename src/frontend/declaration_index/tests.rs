@@ -270,7 +270,7 @@ fn exact_space_caps_and_real_reserve_failures_precede_allocated_index() {
     .unwrap();
     let plan = facts.plan();
     let attempts = alloc.attempts;
-    assert_eq!(attempts, 14);
+    assert_eq!(attempts, 16);
     for (limits, ok) in [
         (
             IndexLimits {

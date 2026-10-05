@@ -2,10 +2,13 @@
 //! No linked execution witness is constructed in this module.
 #![allow(dead_code)] // Private ProjectCandidate qualification precedes activation.
 
+mod enum_views;
 mod resource;
 mod sealed;
 mod source_owner;
 pub(super) use source_owner::SourceOwner;
+#[cfg(test)]
+mod enum_tests;
 #[cfg(test)]
 mod tests;
 use super::{
@@ -13,19 +16,26 @@ use super::{
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
     oir::owned_types::{
-        AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+        AggregateTy, BorrowKind, BorrowedTy, EnumId, FieldId, FixedArrayTy, ParameterTy, RecordId,
+        ValueTy, VariantId,
     },
     owned_diagnostic,
     project::{
         budget::{Allocator, ReserveFailure},
-        FunctionAstKey, ItemPathRef, ModuleId, ProjectSources, RecordAstKey, SyntaxFlavor,
+        EnumAstKey, FunctionAstKey, ItemPathRef, ModuleId, ProjectSources, RecordAstKey,
+        SyntaxFlavor,
     },
     source::{SourceFile, SourceFileId, SourceView, Span},
 };
-use resource::{add, allocate, compact, compare_bytes, merge_sort};
+pub(super) use enum_views::{EnumVariantCounts, EnumView, NominalId, VariantView};
+use resource::{add, allocate, allocate_exact, compact, compare_bytes, merge_sort};
 #[cfg(test)]
-pub(super) use resource::{AliasObservation, Observation, SeenObservation};
+pub(super) use resource::{
+    AliasObservation, NominalAliasObservation, Observation, SeenObservation,
+};
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
+#[cfg(test)]
+pub(super) use sealed::collect_enum_candidate;
 pub(super) use sealed::{collect_originals, DeclarationFacts, DeclarationIndex};
 use std::{cmp::Ordering, fmt, mem::size_of};
 
@@ -34,6 +44,8 @@ const BUILTIN_CONFLICT: u32 = u32::MAX - 1;
 const FUNCTION: u32 = 0;
 const RECORD: u32 = 1;
 const MODULE: u32 = 2;
+const ENUM: u32 = 3;
+const KIND_MASK: u32 = 3;
 const PUBLIC: u32 = 4;
 
 fn diagnostic(
@@ -131,6 +143,20 @@ struct FieldRow {
 }
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
+struct EnumRow {
+    file: u32,
+    local_enum: u32,
+    original: u32,
+    variant_start: u32,
+    variant_len: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct VariantRow {
+    name: CompactSpan,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 struct ModuleRow {
     parent: u32,
     subtree_end: u32,
@@ -139,6 +165,8 @@ struct ModuleRow {
     function_len: u32,
     record_base: u32,
     record_len: u32,
+    enum_base: u32,
+    enum_len: u32,
     original_start: u32,
     original_len: u32,
     import_start: u32,
@@ -160,6 +188,7 @@ struct ImportRow {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct AliasCell {
+    // Original-row identity (RECORD or ENUM), never a record-table ordinal.
     type_target: u32,
     value_target: u32,
     type_first_import: u32,
@@ -194,7 +223,9 @@ const _: () = {
     assert!(size_of::<FunctionRow>() == 12);
     assert!(size_of::<RecordRow>() == 28);
     assert!(size_of::<FieldRow>() == 16);
-    assert!(size_of::<ModuleRow>() == 60);
+    assert!(size_of::<ModuleRow>() == 68);
+    assert!(size_of::<EnumRow>() == 20);
+    assert!(size_of::<VariantRow>() == 12);
     assert!(size_of::<ImportRow>() == 20);
     assert!(size_of::<AliasCell>() == 16);
     assert!(size_of::<SeenCell>() == 8);
@@ -208,12 +239,15 @@ struct Tables<'s> {
     functions: Vec<FunctionRow>,
     records: Vec<RecordRow>,
     fields: Vec<FieldRow>,
+    enums: Vec<EnumRow>,
+    variants: Vec<VariantRow>,
     modules: Vec<ModuleRow>,
     children: Vec<u32>,
     imports: Vec<ImportRow>,
     aliases: Vec<AliasCell>,
     alias_order: Vec<u32>,
     root_main: u32,
+    candidate_source_origin: Option<CompactSpan>,
 }
 #[derive(Debug)]
 struct Scratch {
@@ -248,6 +282,18 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<FunctionRow>()
     + size_of::<RecordRow>()
     + size_of::<FieldRow>()
+    + size_of::<EnumRow>()
+    + size_of::<VariantRow>()
+    + size_of::<EnumAstKey>()
+    + size_of::<NominalId>()
+    + size_of::<Option<CompactSpan>>()
+    + size_of::<Option<EnumView<'static>>>()
+    + size_of::<Option<VariantView<'static>>>()
+    + size_of::<EnumVariantCounts<'static>>()
+    + size_of::<sealed::EnumSourceCounts<'static>>()
+    // Record inventory remains live while enum count admission returns its summary.
+    + size_of::<super::oir::owned_types::DeclarationUsage>()
+    + size_of::<super::oir::owned_types::EnumUsage>()
     + size_of::<ImportRow>()
     + size_of::<AliasCell>()
     + size_of::<SeenCell>()
@@ -255,6 +301,43 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
 const _: () = assert!(FIXED_SCRATCH <= 4096);
 
 impl Tables<'_> {
+    fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        if let Some(origin) = self.candidate_source_origin {
+            return Err(diagnostic(
+                "E0101",
+                "resolve",
+                "enum source syntax is unavailable",
+                origin.span(),
+            ));
+        }
+        Ok(())
+    }
+    fn nominal_original(&self, id: u32) -> Result<NominalId, Box<Diagnostic>> {
+        let original = self.original(id)?;
+        match original.flags & KIND_MASK {
+            RECORD => {
+                let row = self
+                    .records
+                    .get(original.target as usize)
+                    .ok_or_else(|| bad(original.name.span()))?;
+                if row.original != id {
+                    return Err(bad(original.name.span()));
+                }
+                Ok(NominalId::Record(RecordId(original.target as usize)))
+            }
+            ENUM => {
+                let row = self
+                    .enums
+                    .get(original.target as usize)
+                    .ok_or_else(|| bad(original.name.span()))?;
+                if row.original != id {
+                    return Err(bad(original.name.span()));
+                }
+                Ok(NominalId::Enum(EnumId(original.target as usize)))
+            }
+            _ => Err(bad(original.name.span())),
+        }
+    }
     fn original(&self, id: u32) -> Result<&OriginalRow, Box<Diagnostic>> {
         self.originals
             .get(id as usize)
@@ -279,7 +362,8 @@ impl Tables<'_> {
         at: Span,
     ) -> Result<Ordering, Box<Diagnostic>> {
         let (a, b) = (self.original(a)?, self.original(b)?);
-        let numeric = (a.owner, a.flags & 3 != FUNCTION).cmp(&(b.owner, b.flags & 3 != FUNCTION));
+        let numeric = (a.owner, a.flags & KIND_MASK != FUNCTION)
+            .cmp(&(b.owner, b.flags & KIND_MASK != FUNCTION));
         if numeric != Ordering::Equal {
             work.debit(1, at, "comparison")?;
             return Ok(numeric);
@@ -390,7 +474,7 @@ impl Tables<'_> {
             let id = self.original_order[mid];
             let row = self.original(id)?;
             let numeric =
-                (row.owner as usize, row.flags & 3 != FUNCTION).cmp(&(module.0, type_lane));
+                (row.owner as usize, row.flags & KIND_MASK != FUNCTION).cmp(&(module.0, type_lane));
             let order = if numeric == Ordering::Equal {
                 compare_bytes(self.sources.text(row.name.span())?, query, work, name)?
             } else {
@@ -501,7 +585,7 @@ impl Tables<'_> {
                 return Err(error);
             };
             let row = self.original(id)?;
-            if row.flags & 3 != MODULE {
+            if row.flags & KIND_MASK != MODULE {
                 return Err(diagnostic(
                     "E0205",
                     "resolve",
@@ -515,13 +599,22 @@ impl Tables<'_> {
         let endpoint = *segments.last().ok_or_else(|| bad(self.sources.eof()))?;
         work.debit(1, endpoint, "absolute path segment")?;
         let original_type = self.lookup_original(owner, true, endpoint, work)?;
-        let ty = original_type.filter(|id| self.originals[*id as usize].flags & 3 == RECORD);
+        let ty = original_type.filter(|id| {
+            matches!(
+                self.originals[*id as usize].flags & KIND_MASK,
+                RECORD | ENUM
+            )
+        });
         let value = self.lookup_original(owner, false, endpoint, work)?;
         if importing && ty.is_none() && value.is_none() {
             let mut error = diagnostic(
                 "E0205",
                 "resolve",
-                "absolute path endpoint is not an original function or record",
+                if self.enums.is_empty() {
+                    "absolute path endpoint is not an original function or record"
+                } else {
+                    "absolute path endpoint is not an original function or nominal type"
+                },
                 endpoint,
             );
             if let Some(alias) = if original_type.is_none() {
@@ -606,7 +699,8 @@ impl<'i, 's> QuerySession<'i, 's> {
                         None
                     } else {
                         Some(if type_lane {
-                            self.tables.records[target as usize].original
+                            self.tables.nominal_original(target)?;
+                            target
                         } else {
                             self.tables.functions[target as usize].original
                         })
@@ -773,7 +867,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.work.debit(1, at, "query record type")?;
         if let Some(id) = self.select(requester, path, true)? {
             let row = self.tables.original(id)?;
-            if row.flags & 3 == RECORD {
+            if row.flags & KIND_MASK == RECORD {
                 #[cfg(test)]
                 self.work.observe(Observation::Target {
                     operation: match context {
@@ -1157,6 +1251,7 @@ struct ImportTxn {
     alias: usize,
     seen: usize,
     import: u32,
+    // Original-row identity, matching AliasCell.type_target.
     ty: u32,
     value: u32,
 }
