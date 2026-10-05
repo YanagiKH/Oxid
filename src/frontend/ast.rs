@@ -7,12 +7,20 @@ pub enum ItemPath {
     Unqualified(Span),
     Absolute(PathId),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathRoot {
+    Crate,
+    LocalType,
+}
 #[derive(Clone, Copy, Debug)]
-pub struct AbsolutePath {
+pub struct QualifiedPath {
     pub span: Span,
     pub segment_start: usize,
-    pub segment_len: usize,
+    pub segment_len: u8,
+    pub root: PathRoot,
 }
+/// Compatibility spelling for the still-absolute production parser.
+pub type AbsolutePath = QualifiedPath;
 #[derive(Clone, Copy, Debug)]
 pub struct ImportDecl {
     pub path: PathId,
@@ -78,6 +86,12 @@ pub enum ExprKind {
     Call {
         callee: ItemPath,
         args: Vec<Argument>,
+    },
+    /// Private carrier only. Ordinary parsing does not produce this form yet.
+    #[cfg_attr(not(test), allow(dead_code))]
+    QualifiedValue {
+        path: PathId,
+        args: Option<Vec<Argument>>,
     },
     StructLiteral {
         record: ItemPath,
@@ -161,6 +175,26 @@ pub struct StructDecl {
     pub span: Span,
     pub end: Span,
 }
+#[derive(Clone, Copy, Debug)]
+pub struct EnumPayloadSyntax {
+    #[cfg_attr(not(test), allow(dead_code))] // Read by private structural qualification.
+    pub kind: ScalarTypeSyntax,
+    pub span: Span,
+}
+#[derive(Debug)]
+pub struct EnumVariantSyntax {
+    pub name: Span,
+    pub payload: Option<EnumPayloadSyntax>,
+    pub span: Span,
+}
+#[derive(Debug)]
+pub struct EnumDecl {
+    pub public: Option<Span>,
+    pub name: Span,
+    pub variants: Vec<EnumVariantSyntax>,
+    pub span: Span,
+    pub end: Span,
+}
 /// Private source-discovery grammar; no namespace or runtime semantics yet.
 #[derive(Clone, Copy, Debug)]
 pub struct ModuleDecl {
@@ -175,6 +209,8 @@ pub enum ItemId {
     Import(usize),
     Function(usize),
     Struct(usize),
+    #[cfg_attr(not(test), allow(dead_code))] // No enum parser production yet.
+    Enum(usize),
 }
 #[derive(Clone, Copy, Debug)]
 pub enum BorrowPlace {
@@ -205,6 +241,13 @@ pub struct FieldInit {
 pub struct Param {
     pub name: Span,
     pub ty: TypeSyntax,
+}
+#[derive(Debug)]
+pub struct MatchArmSyntax {
+    pub variant: PathId,
+    pub binding: Option<Span>,
+    pub body: BodyBlockId,
+    pub span: Span,
 }
 #[derive(Debug)]
 pub enum StmtKind {
@@ -245,6 +288,11 @@ pub enum StmtKind {
         then_block: BodyBlockId,
         else_block: Option<BodyBlockId>,
     },
+    #[cfg_attr(not(test), allow(dead_code))] // No match parser production yet.
+    Match {
+        scrutinee: Span,
+        arms: Vec<MatchArmSyntax>,
+    },
 }
 #[derive(Debug)]
 pub struct Stmt {
@@ -274,9 +322,10 @@ pub struct Program {
     pub functions: Vec<Function>,
     pub expressions: Vec<Expr>,
     pub records: Vec<StructDecl>,
+    pub enums: Vec<EnumDecl>,
     pub items: Vec<ItemId>,
     pub modules: Vec<ModuleDecl>,
-    pub paths: Vec<AbsolutePath>,
+    pub paths: Vec<QualifiedPath>,
     pub path_segments: Vec<Span>,
     pub imports: Vec<ImportDecl>,
     source: super::parser::SourceProvenance,
@@ -291,24 +340,27 @@ impl Program {
         functions: Vec<Function>,
         expressions: Vec<Expr>,
         records: Vec<StructDecl>,
+        enums: Vec<EnumDecl>,
         items: Vec<ItemId>,
         modules: Vec<ModuleDecl>,
-        paths: Vec<AbsolutePath>,
+        paths: Vec<QualifiedPath>,
         path_segments: Vec<Span>,
         imports: Vec<ImportDecl>,
     ) -> Self {
         let project_syntax = !modules.is_empty()
             || !imports.is_empty()
-            || !paths.is_empty()
+            || paths.iter().any(|path| path.root == PathRoot::Crate)
             || functions.iter().any(|function| function.public.is_some())
             || records.iter().any(|record| {
                 record.public.is_some() || record.fields.iter().any(|field| field.public.is_some())
-            });
+            })
+            || enums.iter().any(|enumeration| enumeration.public.is_some());
         Self {
             tokens,
             functions,
             expressions,
             records,
+            enums,
             items,
             modules,
             paths,
@@ -324,13 +376,21 @@ impl Program {
     pub(super) fn item_path_span(&self, path: ItemPath) -> Option<Span> {
         match path {
             ItemPath::Unqualified(span) => Some(span),
-            ItemPath::Absolute(id) => self.paths.get(id.0).map(|path| path.span),
+            ItemPath::Absolute(id) => self
+                .paths
+                .get(id.0)
+                .filter(|path| path.root == PathRoot::Crate)
+                .map(|path| path.span),
         }
     }
     pub(super) fn path_segments(&self, path: PathId) -> Option<&[Span]> {
         let path = self.paths.get(path.0)?;
-        self.path_segments
-            .get(path.segment_start..path.segment_start.checked_add(path.segment_len)?)
+        self.path_segments.get(
+            path.segment_start
+                ..path
+                    .segment_start
+                    .checked_add(usize::from(path.segment_len))?,
+        )
     }
     pub(super) fn uses_project_syntax(&self) -> bool {
         self.project_syntax
@@ -344,21 +404,37 @@ impl Program {
     }
     /// None reports an arena/item/edge visit; Some reports a span inspection.
     /// This is the same validation used above, with allocation-free accounting.
+    #[cfg(test)]
     pub(super) fn validate_spans_and_ids_counted(
         &self,
         inspect: impl FnMut(Option<Span>) -> bool,
     ) -> bool {
+        self.validate_spans_and_ids_counted_with_enum_syntax(inspect, &mut None)
+    }
+    /// Report the closed feature during the already counted structural walk.
+    /// This avoids another unmetered scan of every pre-existing source node.
+    pub(super) fn validate_spans_and_ids_counted_with_enum_syntax(
+        &self,
+        inspect: impl FnMut(Option<Span>) -> bool,
+        enum_syntax: &mut Option<Span>,
+    ) -> bool {
+        *enum_syntax = None;
         let inspect = std::cell::RefCell::new(inspect);
         let mut valid = |span| (inspect.borrow_mut())(Some(span));
         let visit = || (inspect.borrow_mut())(None);
         if !visit() {
             return false;
         }
-        let mut project_syntax =
-            !self.modules.is_empty() || !self.imports.is_empty() || !self.paths.is_empty();
+        let mut project_syntax = !self.modules.is_empty() || !self.imports.is_empty();
         let path_valid = |path: ItemPath, valid: &mut dyn FnMut(Span) -> bool| match path {
             ItemPath::Unqualified(span) => valid(span),
-            ItemPath::Absolute(id) => visit() && self.paths.get(id.0).is_some(),
+            ItemPath::Absolute(id) => {
+                visit()
+                    && self
+                        .paths
+                        .get(id.0)
+                        .is_some_and(|path| path.root == PathRoot::Crate)
+            }
         };
         let type_valid = |ty: TypeSyntax, valid: &mut dyn FnMut(Span) -> bool| {
             valid(ty.span)
@@ -372,12 +448,19 @@ impl Program {
                 }
         };
         let mut path_end = 0;
+        let mut previous_path: Option<Span> = None;
         for (index, path) in self.paths.iter().enumerate() {
             if !visit() {
                 return false;
             }
+            let length = usize::from(path.segment_len);
+            project_syntax |= path.root == PathRoot::Crate;
             if path.segment_start != path_end
-                || !(2..=super::parser::MAX_PATH_SEGMENTS).contains(&path.segment_len)
+                || previous_path.is_some_and(|previous| {
+                    previous.file != path.span.file || previous.end > path.span.start
+                })
+                || !(2..=super::parser::MAX_PATH_SEGMENTS).contains(&length)
+                || (path.root == PathRoot::LocalType && length != 2)
                 || !valid(path.span)
             {
                 return false;
@@ -392,15 +475,23 @@ impl Program {
             {
                 return false;
             }
+            let mut segment_end = path.span.start;
             for segment in segments {
                 if !visit() {
                     return false;
                 }
-                if !valid(*segment) {
+                if !valid(*segment)
+                    || segment.file != path.span.file
+                    || segment.start < segment_end
+                    || segment.start >= segment.end
+                    || segment.end > path.span.end
+                {
                     return false;
                 }
+                segment_end = segment.end;
             }
-            let Some(end) = path_end.checked_add(path.segment_len) else {
+            previous_path = Some(path.span);
+            let Some(end) = path_end.checked_add(length) else {
                 return false;
             };
             path_end = end;
@@ -431,14 +522,17 @@ impl Program {
             if !visit() {
                 return false;
             }
-            if self.paths.get(import.path.0).is_none()
+            if !self
+                .paths
+                .get(import.path.0)
+                .is_some_and(|path| path.root == PathRoot::Crate)
                 || !valid(import.alias)
                 || !valid(import.span)
             {
                 return false;
             }
         }
-        let mut counts = [0usize; 4];
+        let mut counts = [0usize; 5];
         for item in &self.items {
             if !visit() {
                 return false;
@@ -448,6 +542,7 @@ impl Program {
                 ItemId::Struct(index) => (1, index, self.records.len()),
                 ItemId::Module(index) => (2, index, self.modules.len()),
                 ItemId::Import(index) => (3, index, self.imports.len()),
+                ItemId::Enum(index) => (4, index, self.enums.len()),
             };
             if index != counts[lane] || index >= length {
                 return false;
@@ -463,9 +558,36 @@ impl Program {
                 self.records.len(),
                 self.modules.len(),
                 self.imports.len(),
+                self.enums.len(),
             ]
         {
             return false;
+        }
+        for enumeration in &self.enums {
+            if !visit() {
+                return false;
+            }
+            enum_syntax.get_or_insert(enumeration.span);
+            project_syntax |= enumeration.public.is_some();
+            if !valid(enumeration.name)
+                || !valid(enumeration.span)
+                || !valid(enumeration.end)
+                || enumeration.public.is_some_and(|span| !valid(span))
+                || !(1..=super::parser::MAX_ENUM_VARIANTS).contains(&enumeration.variants.len())
+            {
+                return false;
+            }
+            for variant in &enumeration.variants {
+                if !visit()
+                    || !valid(variant.name)
+                    || !valid(variant.span)
+                    || variant
+                        .payload
+                        .is_some_and(|payload| !visit() || !valid(payload.span))
+                {
+                    return false;
+                }
+            }
         }
         for record in &self.records {
             if !visit() {
@@ -539,22 +661,22 @@ impl Program {
                     if !valid(statement.span) {
                         return false;
                     }
-                    let ok = match statement.kind {
+                    let ok = match &statement.kind {
                         StmtKind::Let {
                             name,
                             annotation,
                             init,
                             ..
                         } => {
-                            valid(name)
+                            valid(*name)
                                 && annotation.is_none_or(|ty| type_valid(ty, &mut valid))
-                                && expr_valid(init)
+                                && expr_valid(*init)
                         }
                         StmtKind::Assign {
                             name,
                             operator_span,
                             value,
-                        } => valid(name) && valid(operator_span) && expr_valid(value),
+                        } => valid(*name) && valid(*operator_span) && expr_valid(*value),
                         StmtKind::FieldAssign {
                             base,
                             field,
@@ -562,39 +684,55 @@ impl Program {
                             operator_span,
                             value,
                         } => {
-                            valid(base)
-                                && valid(field)
-                                && valid(target_span)
-                                && valid(operator_span)
-                                && expr_valid(value)
+                            valid(*base)
+                                && valid(*field)
+                                && valid(*target_span)
+                                && valid(*operator_span)
+                                && expr_valid(*value)
                         }
                         StmtKind::IndexAssign {
                             target,
                             operator_span,
                             value,
                         } => {
-                            expr_valid(target)
+                            expr_valid(*target)
                                 && matches!(
                                     self.expressions[target.0].kind,
                                     ExprKind::IndexRead { .. }
                                 )
-                                && valid(operator_span)
-                                && expr_valid(value)
+                                && valid(*operator_span)
+                                && expr_valid(*value)
                         }
-                        StmtKind::Expr(expression) => expr_valid(expression),
+                        StmtKind::Expr(expression) => expr_valid(*expression),
                         StmtKind::Return(expression) => expression.is_none_or(expr_valid),
                         StmtKind::Break | StmtKind::Continue => true,
                         StmtKind::While { condition, body } => {
-                            expr_valid(condition) && block_valid(body)
+                            expr_valid(*condition) && block_valid(*body)
                         }
                         StmtKind::If {
                             condition,
                             then_block,
                             else_block,
                         } => {
-                            expr_valid(condition)
-                                && block_valid(then_block)
+                            expr_valid(*condition)
+                                && block_valid(*then_block)
                                 && else_block.is_none_or(block_valid)
+                        }
+                        StmtKind::Match { scrutinee, arms } => {
+                            enum_syntax.get_or_insert(statement.span);
+                            valid(*scrutinee)
+                                && (1..=super::parser::MAX_ENUM_VARIANTS).contains(&arms.len())
+                                && arms.iter().all(|arm| {
+                                    visit()
+                                        && visit()
+                                        && self.paths.get(arm.variant.0).is_some_and(|path| {
+                                            path.root == PathRoot::LocalType
+                                                || path.segment_len >= 3
+                                        })
+                                        && arm.binding.is_none_or(&mut valid)
+                                        && valid(arm.span)
+                                        && block_valid(arm.body)
+                                })
                         }
                     };
                     if !ok {
@@ -661,6 +799,32 @@ impl Program {
                             }
                         })
                 }
+                ExprKind::QualifiedValue { path, args } => {
+                    enum_syntax.get_or_insert(expression.span);
+                    visit()
+                        && self.paths.get(path.0).is_some()
+                        && args.as_ref().is_none_or(|args| {
+                            args.len() <= super::parser::MAX_PARAMS
+                                && args.iter().all(|arg| {
+                                    if !visit() {
+                                        return false;
+                                    }
+                                    match arg {
+                                        Argument::Value(id) => earlier(*id),
+                                        Argument::Borrow { place, span, .. } => {
+                                            valid(*span)
+                                                && match place {
+                                                    BorrowPlace::OwnerName(name) => valid(*name),
+                                                    BorrowPlace::ForwardedParameter {
+                                                        name,
+                                                        star_span,
+                                                    } => valid(*name) && valid(*star_span),
+                                                }
+                                        }
+                                    }
+                                })
+                        })
+                }
                 ExprKind::StructLiteral { record, fields } => {
                     path_valid(*record, &mut valid)
                         && fields.iter().all(|field| {
@@ -699,6 +863,7 @@ impl Program {
             TypeSyntaxKind::Name(ItemPath::Absolute(_)) => true,
         };
         !self.records.is_empty()
+            || !self.enums.is_empty()
             || self.functions.iter().any(|f| {
                 owned_type(&f.result)
                     || f.params.iter().any(|p| owned_type(&p.ty))
@@ -708,7 +873,9 @@ impl Program {
                                 annotation: Some(ty),
                                 ..
                             } => owned_type(ty),
-                            StmtKind::FieldAssign { .. } | StmtKind::IndexAssign { .. } => true,
+                            StmtKind::FieldAssign { .. }
+                            | StmtKind::IndexAssign { .. }
+                            | StmtKind::Match { .. } => true,
                             _ => false,
                         })
                     })
@@ -721,6 +888,15 @@ impl Program {
                 | ExprKind::ArrayLength { .. } => true,
                 ExprKind::Call { args, .. } => {
                     args.iter().any(|a| matches!(a, Argument::Borrow { .. }))
+                }
+                ExprKind::QualifiedValue { path, args } => {
+                    self.paths
+                        .get(path.0)
+                        .is_some_and(|path| path.root == PathRoot::LocalType)
+                        || args.as_ref().is_some_and(|args| {
+                            args.iter()
+                                .any(|arg| matches!(arg, Argument::Borrow { .. }))
+                        })
                 }
                 _ => false,
             })

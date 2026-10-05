@@ -44,6 +44,7 @@ pub const MAX_BLOCK_NESTING: usize = 64;
 pub const MAX_PARAMS: usize = 256;
 pub(super) const MAX_ARRAY_ELEMENTS: usize = 1024;
 pub(super) const MAX_PATH_SEGMENTS: usize = 34;
+pub(super) const MAX_ENUM_VARIANTS: usize = 256;
 pub const MAX_DIAGNOSTICS: usize = 100;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -254,6 +255,7 @@ pub(super) fn parse_counted_with_arrays(
                 functions,
                 parser.expressions,
                 records,
+                Vec::new(), // Enum source grammar remains closed in this checkpoint.
                 items,
                 modules,
                 parser.paths,
@@ -429,6 +431,8 @@ impl Parser<'_> {
             }
         }
         let span = self.source.span(first.start, end);
+        let segment_len = u8::try_from(segment_len)
+            .map_err(|_| self.project_reserve_error(ReserveFailure::Overflow, span))?;
         self.allocator
             .vector(&mut self.paths, 1, "absolute paths")
             .map_err(|error| self.project_reserve_error(error, span))?;
@@ -437,6 +441,7 @@ impl Parser<'_> {
             span,
             segment_start,
             segment_len,
+            root: PathRoot::Crate,
         });
         Ok(id)
     }
@@ -1202,6 +1207,15 @@ impl Parser<'_> {
             | ExprKind::Not { operand: inner, .. } => self.heights[inner.0],
             ExprKind::Call { args, .. } => args
                 .iter()
+                .map(|arg| match arg {
+                    Argument::Value(id) => self.heights[id.0],
+                    Argument::Borrow { .. } => 1,
+                })
+                .max()
+                .unwrap_or(0),
+            ExprKind::QualifiedValue { args, .. } => args
+                .iter()
+                .flatten()
                 .map(|arg| match arg {
                     Argument::Value(id) => self.heights[id.0],
                     Argument::Borrow { .. } => 1,

@@ -185,7 +185,7 @@ fn unit3a_remeasure_enclosing_rows_and_disjoint_ast_envelope() {
                 size_of::<ast::Function>(),
                 size_of::<ast::Program>()
             ),
-            (88, 200, 248)
+            (88, 200, 272)
         );
         assert_eq!(
             size_of::<ast::Function>() + size_of::<ast::BodyBlock>() + size_of::<ast::ItemId>(),

@@ -1,5 +1,24 @@
 //! Checked, immutable source/AST associations; constructor authority is local.
 use super::*;
+use crate::frontend::project::QualifiedPathRef;
+
+/// A borrowed view from this exact source/AST owner, never a second path row.
+pub(in crate::frontend) struct QualifiedPathView<'s> {
+    root: ast::PathRoot,
+    span: Span,
+    segments: &'s [Span],
+}
+impl<'s> QualifiedPathView<'s> {
+    pub fn root(&self) -> ast::PathRoot {
+        self.root
+    }
+    pub fn span(&self) -> Span {
+        self.span
+    }
+    pub fn segments(&self) -> &'s [Span] {
+        self.segments
+    }
+}
 
 /// No owning source copy. The legacy adapter binds the exact source allocation
 /// recorded by the real parser, and validates the enclosing map association.
@@ -128,6 +147,16 @@ impl<'s> SourceOwner<'s> {
         file.span(file.text().len(), file.text().len())
     }
     pub fn path_span(self, path: ItemPathRef) -> Result<Span, Box<Diagnostic>> {
+        if let ast::ItemPath::Absolute(id) = path.path {
+            let view = self.qualified_path(QualifiedPathRef {
+                file: path.file,
+                path: id,
+            })?;
+            if view.root != ast::PathRoot::Crate {
+                return Err(bad(self.eof()));
+            }
+            return Ok(view.span);
+        }
         let module = self.module_for_file(path.file)?;
         let span = self
             .ast(module)?
@@ -143,17 +172,49 @@ impl<'s> SourceOwner<'s> {
         let ast::ItemPath::Absolute(id) = path.path else {
             return Err(bad(self.eof()));
         };
-        let segments = self
-            .ast(self.module_for_file(path.file)?)?
-            .path_segments(id)
-            .ok_or_else(|| bad(self.eof()))?;
+        let view = self.qualified_path(QualifiedPathRef {
+            file: path.file,
+            path: id,
+        })?;
+        if view.root != ast::PathRoot::Crate {
+            return Err(bad(self.eof()));
+        }
         // Collection checks every segment's file/span once before using this
         // access. Immutable source/AST borrows preserve that association; do not
         // rescan full paths inside each prefix comparison or semantic lookup.
-        if !(2..=34).contains(&segments.len()) {
+        Ok(view.segments)
+    }
+    pub fn qualified_path(
+        self,
+        path: QualifiedPathRef,
+    ) -> Result<QualifiedPathView<'s>, Box<Diagnostic>> {
+        let ast = self.ast(self.module_for_file(path.file)?)?;
+        let row = ast.paths.get(path.path.0).ok_or_else(|| bad(self.eof()))?;
+        let segments = ast
+            .path_segments(path.path)
+            .ok_or_else(|| bad(self.eof()))?;
+        if row.span.file != path.file
+            || !(2..=crate::frontend::parser::MAX_PATH_SEGMENTS).contains(&segments.len())
+            || (row.root == ast::PathRoot::LocalType && segments.len() != 2)
+        {
             return Err(bad(self.eof()));
         }
-        Ok(segments)
+        self.text(row.span)?;
+        let first = segments.first().ok_or_else(|| bad(self.eof()))?;
+        let last = segments.last().ok_or_else(|| bad(self.eof()))?;
+        if first.file != path.file
+            || last.file != path.file
+            || first.start != row.span.start
+            || last.end != row.span.end
+            || (row.root == ast::PathRoot::Crate && self.text(*first)? != "crate")
+        {
+            return Err(bad(self.eof()));
+        }
+        Ok(QualifiedPathView {
+            root: row.root,
+            span: row.span,
+            segments,
+        })
     }
     pub fn owned(self, work: &WorkMeter) -> Result<bool, Box<Diagnostic>> {
         let mut owned = false;
@@ -161,7 +222,7 @@ impl<'s> SourceOwner<'s> {
             let module = ModuleId(m);
             let program = self.ast(module)?;
             work.preflight(self.file(module)?.span(0, 0))?;
-            if !program.records.is_empty() {
+            if !program.records.is_empty() || !program.enums.is_empty() {
                 owned = true;
                 continue;
             }
@@ -182,7 +243,8 @@ impl<'s> SourceOwner<'s> {
                                 ..
                             } => owned |= self.owned_type(ty, work)?,
                             ast::StmtKind::FieldAssign { .. }
-                            | ast::StmtKind::IndexAssign { .. } => owned = true,
+                            | ast::StmtKind::IndexAssign { .. }
+                            | ast::StmtKind::Match { .. } => owned = true,
                             _ => (),
                         }
                     }
@@ -198,6 +260,17 @@ impl<'s> SourceOwner<'s> {
                     | ast::ExprKind::ArrayLength { .. } => owned = true,
                     ast::ExprKind::Call { args, .. } => {
                         for argument in args {
+                            work.preflight(expression.span)?;
+                            owned |= matches!(argument, ast::Argument::Borrow { .. });
+                        }
+                    }
+                    ast::ExprKind::QualifiedValue { path, args } => {
+                        let path = self.qualified_path(QualifiedPathRef {
+                            file: expression.span.file,
+                            path: *path,
+                        })?;
+                        owned |= path.root == ast::PathRoot::LocalType;
+                        for argument in args.iter().flatten() {
                             work.preflight(expression.span)?;
                             owned |= matches!(argument, ast::Argument::Borrow { .. });
                         }
@@ -239,6 +312,40 @@ impl<'s> SourceOwner<'s> {
                 }
                 Ok(!builtin)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod enum_carrier_tests {
+    use super::*;
+    use crate::frontend::{lexer, parser, source::SourceMap};
+
+    #[test]
+    fn enum_carrier_absolute_segments_reject_local_and_forged_roots() {
+        let mut sources = SourceMap::new();
+        let file = sources.add("paths.ox".into(), "/* E::V */ fn f()->(){return;}".into());
+        let source = sources.get(file);
+        let mut ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let start = source.text().find("E::V").unwrap();
+        ast.paths.push(ast::QualifiedPath {
+            span: source.span(start, start + 4),
+            segment_start: 0,
+            segment_len: 2,
+            root: ast::PathRoot::LocalType,
+        });
+        ast.path_segments.extend([
+            source.span(start, start + 1),
+            source.span(start + 3, start + 4),
+        ]);
+        let handle = ItemPathRef {
+            file,
+            path: ast::ItemPath::Absolute(ast::PathId(0)),
+        };
+        for root in [ast::PathRoot::LocalType, ast::PathRoot::Crate] {
+            ast.paths[0].root = root;
+            let owner = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
+            assert!(owner.segments(handle).is_err(), "{root:?}");
         }
     }
 }

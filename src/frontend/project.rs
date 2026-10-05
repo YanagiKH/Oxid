@@ -7,6 +7,9 @@
 #[path = "project/array_syntax_tests.rs"]
 mod array_syntax_tests;
 pub(super) mod budget;
+#[cfg(test)]
+#[path = "project/enum_carrier_tests.rs"]
+mod enum_carrier_tests;
 mod filesystem;
 #[cfg(test)]
 mod tests;
@@ -49,6 +52,11 @@ pub(super) struct ExprKey {
 pub(super) struct ItemPathRef {
     pub file: SourceFileId,
     pub path: ast::ItemPath,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct QualifiedPathRef {
+    pub file: SourceFileId,
+    pub path: ast::PathId,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BlockKey {
@@ -353,6 +361,12 @@ impl ProjectSources {
                 )?
                 .checked_add(
                     program
+                        .enums
+                        .len()
+                        .checked_mul(size_of::<ast::EnumDecl>())?,
+                )?
+                .checked_add(
+                    program
                         .expressions
                         .len()
                         .checked_mul(size_of::<ast::Expr>())?,
@@ -391,7 +405,22 @@ impl ProjectSources {
                     result.ast_payload = result
                         .ast_payload
                         .checked_add(block.body.len().checked_mul(size_of::<ast::Stmt>())?)?;
+                    for statement in &block.body {
+                        if let ast::StmtKind::Match { arms, .. } = &statement.kind {
+                            result.ast_payload = result.ast_payload.checked_add(
+                                arms.len().checked_mul(size_of::<ast::MatchArmSyntax>())?,
+                            )?;
+                        }
+                    }
                 }
+            }
+            for enumeration in &program.enums {
+                result.ast_payload = result.ast_payload.checked_add(
+                    enumeration
+                        .variants
+                        .len()
+                        .checked_mul(size_of::<ast::EnumVariantSyntax>())?,
+                )?;
             }
             for record in &program.records {
                 result.ast_payload = result.ast_payload.checked_add(
@@ -405,6 +434,11 @@ impl ProjectSources {
                 result.ast_payload = result.ast_payload.checked_add(match &expression.kind {
                     ast::ExprKind::Call { args, .. } => {
                         args.len().checked_mul(size_of::<ast::Argument>())?
+                    }
+                    ast::ExprKind::QualifiedValue { args, .. } => {
+                        args.as_ref().map_or(Some(0), |args| {
+                            args.len().checked_mul(size_of::<ast::Argument>())
+                        })?
                     }
                     ast::ExprKind::StructLiteral { fields, .. } => {
                         fields.len().checked_mul(size_of::<ast::FieldInit>())?

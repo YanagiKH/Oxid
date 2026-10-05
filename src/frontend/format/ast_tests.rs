@@ -186,8 +186,14 @@ impl<'a> Fingerprint<'a> {
             span,
             segment_start,
             segment_len,
+            root,
         } = program.paths[id.0];
+        self.tag(match root {
+            PathRoot::Crate => "crate-root",
+            PathRoot::LocalType => "local-type-root",
+        });
         self.span(span);
+        let segment_len = usize::from(segment_len);
         self.count(segment_len);
         for &segment in &program.path_segments[segment_start..segment_start + segment_len] {
             self.spelling(segment);
@@ -349,6 +355,17 @@ impl<'a> Fingerprint<'a> {
                     self.argument(argument);
                 }
             }
+            ExprKind::QualifiedValue { path, args } => {
+                self.tag("qualified-value");
+                self.absolute(*path);
+                self.flag(args.is_some());
+                if let Some(args) = args {
+                    self.count(args.len());
+                    for argument in args {
+                        self.argument(argument);
+                    }
+                }
+            }
             ExprKind::StructLiteral { record, fields } => {
                 self.tag("record-literal");
                 self.path(*record);
@@ -470,6 +487,20 @@ impl<'a> Fingerprint<'a> {
             }
             StmtKind::Break => self.tag("break"),
             StmtKind::Continue => self.tag("continue"),
+            StmtKind::Match { scrutinee, arms } => {
+                self.tag("match");
+                self.spelling(*scrutinee);
+                self.count(arms.len());
+                for arm in arms {
+                    self.absolute(arm.variant);
+                    self.optional_span(arm.binding);
+                    if let Some(binding) = arm.binding {
+                        self.spelling(binding);
+                    }
+                    self.span(arm.span);
+                    self.block(function, blocks, arm.body);
+                }
+            }
             StmtKind::While { condition, body } => {
                 self.tag("while");
                 self.expression(*condition);
@@ -515,6 +546,7 @@ impl<'a> Fingerprint<'a> {
             program.functions.len(),
             program.expressions.len(),
             program.records.len(),
+            program.enums.len(),
             program.items.len(),
             program.modules.len(),
             program.paths.len(),
@@ -535,6 +567,7 @@ impl<'a> Fingerprint<'a> {
         self.tag("items");
         let mut functions = Ids::new(program.functions.len());
         let mut records = Ids::new(program.records.len());
+        let mut enums = Ids::new(program.enums.len());
         let mut modules = Ids::new(program.modules.len());
         let mut imports = Ids::new(program.imports.len());
         for item in &program.items {
@@ -610,11 +643,36 @@ impl<'a> Fingerprint<'a> {
                     self.block(function, &mut blocks, *body);
                     blocks.assert_complete();
                 }
+                ItemId::Enum(index) => {
+                    assert!(enums.visit(index).1, "duplicate item root");
+                    let enumeration = &program.enums[index];
+                    self.tag("enum");
+                    self.optional_span(enumeration.public);
+                    self.spelling(enumeration.name);
+                    self.span(enumeration.span);
+                    self.span(enumeration.end);
+                    self.count(enumeration.variants.len());
+                    for variant in &enumeration.variants {
+                        self.tag("variant");
+                        self.spelling(variant.name);
+                        self.span(variant.span);
+                        self.flag(variant.payload.is_some());
+                        if let Some(payload) = variant.payload {
+                            self.tag(match payload.kind {
+                                ScalarTypeSyntax::Bool => "bool-payload",
+                                ScalarTypeSyntax::I32 => "i32-payload",
+                                ScalarTypeSyntax::Unit => "unit-payload",
+                            });
+                            self.span(payload.span);
+                        }
+                    }
+                }
             }
         }
         for ids in [
             &functions,
             &records,
+            &enums,
             &modules,
             &imports,
             &self.expressions,
@@ -624,7 +682,11 @@ impl<'a> Fingerprint<'a> {
         }
         assert_eq!(
             program.path_segments.len(),
-            program.paths.iter().map(|p| p.segment_len).sum()
+            program
+                .paths
+                .iter()
+                .map(|p| usize::from(p.segment_len))
+                .sum()
         );
         self.parts
     }
@@ -816,17 +878,21 @@ fn normalization_ignores_arena_storage_order_but_retains_edges() {
     for path in &mut program.paths {
         let old_start = path.segment_start;
         path.segment_start = segments.len();
-        segments.extend_from_slice(&program.path_segments[old_start..old_start + path.segment_len]);
+        segments.extend_from_slice(
+            &program.path_segments[old_start..old_start + usize::from(path.segment_len)],
+        );
     }
     program.path_segments = segments;
     program.functions.reverse();
     program.records.reverse();
+    program.enums.reverse();
     program.modules.reverse();
     program.imports.reverse();
     for item in &mut program.items {
         match item {
             ItemId::Function(index) => *index = program.functions.len() - 1 - *index,
             ItemId::Struct(index) => *index = program.records.len() - 1 - *index,
+            ItemId::Enum(index) => *index = program.enums.len() - 1 - *index,
             ItemId::Module(index) => *index = program.modules.len() - 1 - *index,
             ItemId::Import(index) => *index = program.imports.len() - 1 - *index,
         }

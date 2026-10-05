@@ -822,6 +822,13 @@ impl<'a> Resolver<'_, 'a> {
                     }
                 }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
+                ast::StmtKind::Match { .. } => {
+                    return Err(error(
+                        "E0101",
+                        format_args!("enum source syntax is unavailable"),
+                        statement.span,
+                    ));
+                }
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
                 }
@@ -890,6 +897,13 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::QualifiedValue { .. } => {
+                return Err(error(
+                    "E0101",
+                    format_args!("enum source syntax is unavailable"),
+                    expr.span,
+                ));
+            }
             ast::ExprKind::ArrayLiteral { elements } => {
                 self.work.debit(1, expr.span, "array resolve literal")?;
                 let requested = checked_array_entries(*self.array_entries, elements.len())

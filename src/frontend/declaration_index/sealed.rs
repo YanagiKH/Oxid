@@ -61,20 +61,32 @@ pub(in crate::frontend) fn collect_originals<'s>(
         let ast = sources.ast(module)?;
         let file = sources.file(module)?;
         let mut failure = None;
-        let valid = ast.validate_spans_and_ids_counted(|span| {
-            if let Err(error) = work.preflight(span.unwrap_or(at)) {
-                failure = Some(error);
-                return false;
-            }
-            span.is_none_or(|span| {
-                span.file == file.span(0, 0).file && file.try_text(span).is_some()
-            })
-        });
+        let mut enum_syntax = None;
+        let valid = ast.validate_spans_and_ids_counted_with_enum_syntax(
+            |span| {
+                if let Err(error) = work.preflight(span.unwrap_or(at)) {
+                    failure = Some(error);
+                    return false;
+                }
+                span.is_none_or(|span| {
+                    span.file == file.span(0, 0).file && file.try_text(span).is_some()
+                })
+            },
+            &mut enum_syntax,
+        );
         if let Some(error) = failure {
             return Err(error);
         }
         if !valid {
             return Err(bad(at));
+        }
+        if let Some(span) = enum_syntax {
+            return Err(diagnostic(
+                "E0101",
+                "resolve",
+                "enum source syntax is unavailable",
+                span,
+            ));
         }
         if sources.is_original_adapter() && ast.uses_project_syntax() {
             return Err(bad(at));
@@ -89,6 +101,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
                 ast::ItemId::Struct(i) => Some(ast.records[i].name),
                 ast::ItemId::Module(i) => Some(ast.modules[i].name),
                 ast::ItemId::Import(_) => None,
+                ast::ItemId::Enum(_) => return Err(bad(at)),
             };
             if let Some(name) = name {
                 c.original_bytes = add(c.original_bytes, sources.text(name)?.len() as u64, at)?;
@@ -426,6 +439,7 @@ pub(in crate::frontend) fn collect_originals<'s>(
                     scratch.targets[id] = id as u32;
                     continue;
                 }
+                ast::ItemId::Enum(_) => return Err(bad(at)),
             };
             tables.originals[original] = OriginalRow {
                 name: CompactSpan::new(name)?,
