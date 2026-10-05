@@ -1310,7 +1310,9 @@ struct TypedReconciliationCarriers {
     next: Option<usize>,
     k: usize,
     kind: Kind,
-    retained_map: Option<usize>,
+    retained_map_kind: Kind,
+    retained_map_return: Option<usize>,
+    retained_map_caller: Option<usize>,
     retained_slot: usize,
     scratch_mapping: KindMappingCarriers,
     retained_product: Option<usize>,
@@ -1366,6 +1368,20 @@ pub(super) const fn retained_sample_carrier_bytes() -> usize {
 }
 pub(super) const fn typed_reconciliation_carrier_bytes() -> usize {
     size_of::<TypedReconciliationCarriers>()
+}
+// Force the fixed facts and their complete Result representations without
+// constructing values. These helper-local sizing roles are still unpriced.
+pub(super) const fn inventory_result_carrier_bytes() -> usize {
+    size_of::<TypedInventory>()
+}
+pub(super) const fn inventory_return_carrier_bytes() -> usize {
+    size_of::<Result<TypedInventory, Box<Diagnostic>>>()
+}
+pub(super) const fn observation_result_carrier_bytes() -> usize {
+    size_of::<TypeStorageObservation>()
+}
+pub(super) const fn observation_return_carrier_bytes() -> usize {
+    size_of::<Result<TypeStorageObservation, Box<Diagnostic>>>()
 }
 // These no-value sizing getters reuse SampleSizingCarriers' getter-owned
 // roles. Their eventual separately named pricing callers remain unpriced.

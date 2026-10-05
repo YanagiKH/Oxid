@@ -2776,3 +2776,580 @@ fn c3_t1_inventory_and_reconciliation_actual_models_remain_unpriced() {
         size_of::<TypedReconciliationCarriers>()
     );
 }
+
+// Explicit Stage B role schemas: field names/types and role counts are checked
+// independently of total width, which can conceal an omission in padding.
+macro_rules! inventory_roles {
+    ($model:ty, $count:expr; $( $field:ident : $ty:ty ),+ $(,)?) => {{
+        $(let _: for<'a> fn(&'a $model) -> &'a $ty = |model| &model.$field;)+
+        let roles = [$(
+            (std::mem::offset_of!($model, $field), size_of::<$ty>(), align_of::<$ty>())
+        ),+];
+        assert_eq!(roles.len(), $count);
+        let mut occupied = 0;
+        for (i, (offset, bytes, alignment)) in roles.iter().copied().enumerate() {
+            assert_eq!(offset % alignment, 0);
+            assert!(offset + bytes <= size_of::<$model>());
+            occupied += bytes;
+            for (j, (other, width, _)) in roles.iter().copied().enumerate() {
+                if i != j && bytes != 0 && width != 0 {
+                    assert!(offset + bytes <= other || other + width <= offset);
+                }
+            }
+        }
+        assert!(occupied <= size_of::<$model>());
+        println!("C3_T1_INVENTORY_ROLES {} fields={} typed_bytes={} padding={}",
+            stringify!($model), roles.len(), occupied, size_of::<$model>() - occupied);
+    }};
+}
+fn retained_sample_roles<T: 'static>() {
+    inventory_roles!(RetainedSampleCarriers<T>, 17;
+        inventory: &'static mut TypedInventory, kind: Kind, values: &'static Vec<T>,
+        work: &'static WorkMeter, origin: Span, debit: Result<(), Box<Diagnostic>>,
+        mapping: KindMappingCarriers, kind_index: usize, len: usize, capacity: usize,
+        width: usize, additions: [Result<usize, Box<Diagnostic>>; 3], vectors: usize,
+        lengths: usize, capacities: usize, returned: Result<(), Box<Diagnostic>>,
+        caller_result: Result<(), Box<Diagnostic>>);
+}
+#[test]
+fn c3_t1_inventory_role_schemas_and_fixed_return_forcing_are_complete() {
+    inventory_roles!(TypedInventory, 6;
+        retained_vectors: [usize; 8], retained_lengths: [usize; 8],
+        retained_capacities: [usize; 8], path_vectors: usize,
+        path_length_fields: usize, path_capacity_fields: usize);
+    inventory_roles!(TypeStorageObservation, 14;
+        materialized_vectors: [usize; KINDS], capacities: [usize; KINDS],
+        retained_lengths: [usize; 8], retained_backing_bytes: usize,
+        staging_backing_bytes: usize, scratch_backing_bytes: usize,
+        path_vectors: usize, path_length_fields: usize, path_capacity_fields: usize,
+        materialized_path_bytes: usize, retained_path_bytes: usize,
+        precharged_path_bytes: usize, final_cell: usize, typed_attempts: usize);
+    inventory_roles!(InventoryConstructionCarriers, 2;
+        constructed: TypedInventory, returned: TypedInventory);
+    inventory_roles!(TypedReconciliationCarriers, 51;
+        observed: &'static TypedObserved, inventory: &'static TypedInventory,
+        counts: &'static TypeCounts, source: &'static HirPlan, total: &'static Cell<usize>,
+        typed_attempts: usize, work: &'static WorkMeter, origin: Span,
+        expected_array_returns: [[usize; KINDS]; 2], expected_arrays: [[usize; KINDS]; 2],
+        capacities: [usize; KINDS], retained_bytes: usize, staging_bytes: usize,
+        scratch_bytes: usize, vector_events: usize, kinds: std::ops::Range<usize>,
+        next: Option<usize>, k: usize, kind: Kind, retained_map_kind: Kind,
+        retained_map_return: Option<usize>, retained_map_caller: Option<usize>,
+        retained_slot: usize, scratch_mapping: KindMappingCarriers,
+        retained_product: Option<usize>, retained_product_result: Result<usize, Box<Diagnostic>>,
+        retained_product_bytes: usize, scratch_product: Option<usize>,
+        scratch_product_result: Result<usize, Box<Diagnostic>>, scratch_product_bytes: usize,
+        backing_add_returns: [Result<usize, Box<Diagnostic>>; 3],
+        event_add_return: Result<usize, Box<Diagnostic>>, debit_returns: [Result<(), Box<Diagnostic>>; 3],
+        path_products: [Option<usize>; 2], path_product_returns: [Result<usize, Box<Diagnostic>>; 2],
+        materialized_path_bytes: usize, retained_path_bytes: usize, final_cell: usize,
+        precharge_subtraction: Option<usize>, precharge_return: Result<usize, Box<Diagnostic>>,
+        precharged_path_bytes: usize, attempt_return: Result<usize, Box<Diagnostic>>,
+        attempts: usize, path_bound_option: Option<usize>, path_bound_return: Result<usize, Box<Diagnostic>>,
+        path_bound: usize, path_slot_returns: [Result<usize, Box<Diagnostic>>; 2],
+        path_slot_inner: usize, path_slots: usize, constructed: TypeStorageObservation,
+        returned: Result<TypeStorageObservation, Box<Diagnostic>>);
+    retained_sample_roles::<TypedBody>();
+    retained_sample_roles::<Option<Projection>>();
+    retained_sample_roles::<Vec<Option<Projection>>>();
+    retained_sample_roles::<BorrowProjection>();
+    retained_sample_roles::<ParameterTy>();
+    retained_sample_roles::<FlowSummary>();
+    retained_sample_roles::<ValueTy>();
+    assert_eq!(
+        inventory_result_carrier_bytes(),
+        size_of::<TypedInventory>()
+    );
+    assert_eq!(
+        inventory_return_carrier_bytes(),
+        size_of::<Result<TypedInventory, Box<Diagnostic>>>()
+    );
+    assert_eq!(
+        observation_result_carrier_bytes(),
+        size_of::<TypeStorageObservation>()
+    );
+    assert_eq!(
+        observation_return_carrier_bytes(),
+        size_of::<Result<TypeStorageObservation, Box<Diagnostic>>>()
+    );
+}
+
+fn inventory_snapshot(
+    value: &TypedInventory,
+) -> ([usize; 8], [usize; 8], [usize; 8], usize, usize, usize) {
+    (
+        value.retained_vectors,
+        value.retained_lengths,
+        value.retained_capacities,
+        value.path_vectors,
+        value.path_length_fields,
+        value.path_capacity_fields,
+    )
+}
+#[test]
+fn c3_t1_retained_samples_cover_nonzero_shapes_and_independent_atomic_failures() {
+    let at = origin();
+    let mut inventory = TypedInventory::new();
+    let bindings = vec![ParameterTy::Value(ValueTy::Scalar(Ty::I32)); 2]
+        .into_boxed_slice()
+        .into_vec();
+    let projections = vec![None::<Projection>, None].into_boxed_slice().into_vec();
+    let rows = vec![vec![None::<Projection>], Vec::new()]
+        .into_boxed_slice()
+        .into_vec();
+    let bodies = Vec::<TypedBody>::new();
+    let sparse = Vec::<BorrowProjection>::with_capacity(3);
+    let work = WorkMeter::new(5);
+    let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+        inventory.retained(Kind::Bodies, &bodies, &work, at)?;
+        inventory.retained(Kind::BindingFinal, &bindings, &work, at)?;
+        inventory.retained(Kind::ExpressionProjections, &projections, &work, at)?;
+        inventory.retained(Kind::StatementRows, &rows, &work, at)?;
+        inventory.retained(Kind::BorrowProjections, &sparse, &work, at)
+    });
+    result.unwrap();
+    assert_eq!(measured, (0, 0, 0));
+    assert_eq!(inventory.retained_vectors, [1, 1, 1, 0, 1, 1, 0, 0]);
+    assert_eq!(inventory.retained_lengths, [0, 2, 2, 0, 0, 2, 0, 0]);
+    assert_eq!(
+        inventory.retained_capacities,
+        [0, 2, 2, 0, sparse.capacity(), 2, 0, 0]
+    );
+    for kind in [Kind::BindingStage, Kind::CallActuals] {
+        // Scratch-only kinds are forbidden even if their width happened to match.
+        let before = inventory_snapshot(&inventory);
+        let error = inventory
+            .retained(kind, &bindings, &WorkMeter::new(0), at)
+            .unwrap_err();
+        assert_eq!(error.message, "declaration index work limit exceeded");
+        assert_eq!(
+            inventory
+                .retained(kind, &bindings, &WorkMeter::new(1), at)
+                .unwrap_err()
+                .code,
+            "E0500"
+        );
+        assert_eq!(inventory_snapshot(&inventory), before);
+    }
+    let slot = retained_index(Kind::BindingFinal).unwrap();
+    for counter in 0..3 {
+        let mut inventory = TypedInventory::new();
+        match counter {
+            0 => inventory.retained_vectors[slot] = usize::MAX,
+            1 => inventory.retained_lengths[slot] = usize::MAX,
+            _ => inventory.retained_capacities[slot] = usize::MAX,
+        }
+        let before = inventory_snapshot(&inventory);
+        let work = WorkMeter::new(1);
+        assert_eq!(
+            inventory
+                .retained(Kind::BindingFinal, &bindings, &work, at)
+                .unwrap_err()
+                .code,
+            "E0400"
+        );
+        assert_eq!(work.used(), 1);
+        assert_eq!(inventory_snapshot(&inventory), before);
+        // Invalid shape must win over the same pending arithmetic overflow.
+        let unfilled = Vec::<ParameterTy>::with_capacity(1);
+        assert_eq!(
+            inventory
+                .retained(Kind::BindingFinal, &unfilled, &WorkMeter::new(1), at)
+                .unwrap_err()
+                .code,
+            "E0500"
+        );
+        assert_eq!(inventory_snapshot(&inventory), before);
+        let error = inventory
+            .retained(Kind::BindingFinal, &unfilled, &WorkMeter::new(0), at)
+            .unwrap_err();
+        assert_eq!(error.message, "declaration index work limit exceeded");
+        assert_eq!(inventory_snapshot(&inventory), before);
+    }
+}
+
+// Arbitrary scalar primitive facts, explicitly not a matching fresh source/T0
+// receipt. Constants below independently spell out the noncontiguous maps.
+fn nonzero_inventory_primitive() -> (
+    TypedObserved,
+    TypedInventory,
+    TypeCounts,
+    HirPlan,
+    Cell<usize>,
+) {
+    let counts = TypeCounts {
+        functions: 2,
+        bindings: 3,
+        expressions: 5,
+        blocks: 7,
+        statements: 11,
+        borrow_arguments: 13,
+        type_frames: 17,
+        call_arguments: 19,
+        calls: 23,
+        presence_slots: 29,
+        record_literals: 31,
+    };
+    let observed = TypedObserved {
+        materialized_vectors: [1, 2, 2, 2, 2, 2, 7, 2, 2, 23, 31, 2, 2, 2],
+        materialized_capacity: [2, 3, 5, 7, 5, 7, 11, 13, 17, 19, 29, 3, 7, 5],
+        scratch_endpoints: [2, 2, 2, 2, 23, 31],
+        scratch_endpoint_capacity: [3, 5, 7, 17, 19, 29],
+        path_vectors: 3,
+        path_capacity_fields: 6,
+    };
+    let inventory = TypedInventory {
+        retained_vectors: [1, 2, 2, 7, 2, 2, 2, 2],
+        retained_lengths: [2, 5, 7, 11, 4, 3, 7, 5],
+        retained_capacities: [2, 5, 7, 11, 13, 3, 7, 5],
+        path_vectors: 3,
+        path_length_fields: 6,
+        path_capacity_fields: 6,
+    };
+    let mut source = source_bounds(counts);
+    source.typed = 2 * size_of::<TypedBody>()
+        + 16 * size_of::<Option<Projection>>()
+        + 7 * size_of::<Vec<Option<Projection>>>()
+        + 13 * size_of::<BorrowProjection>()
+        + 3 * size_of::<ParameterTy>()
+        + 7 * size_of::<FlowSummary>()
+        + 5 * size_of::<ValueTy>();
+    source.staging = 3 * size_of::<Option<ParameterTy>>()
+        + 5 * size_of::<Option<ValueTy>>()
+        + 7 * size_of::<Option<FlowSummary>>();
+    source.typeck_scratch = 17 * size_of::<TypeFrame>()
+        + 19 * size_of::<(ParameterTy, Span)>()
+        + 29 * size_of::<bool>();
+    source.total = 12345;
+    let total = Cell::new(12345 + 6 * size_of::<FieldId>());
+    (observed, inventory, counts, source, total)
+}
+#[test]
+fn c3_t1_nonzero_reconciliation_has_independent_asymmetric_outputs_and_work() {
+    let (observed, inventory, counts, source, total) = nonzero_inventory_primitive();
+    // 82 fixed-vector requests plus three paths, independently summed here.
+    let attempts = 1 + 10 * 2 + 7 + 23 + 31 + 3;
+    assert_eq!(attempts, 85);
+    let before = (
+        format!("{observed:?}{inventory:?}"),
+        counts,
+        source,
+        total.get(),
+    );
+    for limit in 0..16 {
+        let work = WorkMeter::new(limit);
+        let error = reconcile_typed_storage(
+            &observed,
+            &inventory,
+            &counts,
+            &source,
+            &total,
+            attempts,
+            &work,
+            origin(),
+        )
+        .unwrap_err();
+        assert_eq!(error.message, "declaration index work limit exceeded");
+        assert_eq!(work.used(), limit);
+        assert_eq!(
+            (
+                format!("{observed:?}{inventory:?}"),
+                counts,
+                source,
+                total.get()
+            ),
+            before
+        );
+    }
+    let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+        reconcile_typed_storage(
+            &observed,
+            &inventory,
+            &counts,
+            &source,
+            &total,
+            attempts,
+            &WorkMeter::new(16),
+            origin(),
+        )
+    });
+    let result = result.unwrap();
+    assert_eq!(measured, (0, 0, 0));
+    assert_eq!(
+        result.materialized_vectors,
+        [1, 2, 2, 2, 2, 2, 7, 2, 2, 23, 31, 2, 2, 2]
+    );
+    assert_eq!(
+        result.capacities,
+        [2, 3, 5, 7, 5, 7, 11, 13, 17, 19, 29, 3, 7, 5]
+    );
+    assert_eq!(result.retained_lengths, [2, 5, 7, 11, 4, 3, 7, 5]);
+    assert_eq!(
+        (
+            result.retained_backing_bytes,
+            result.staging_backing_bytes,
+            result.scratch_backing_bytes
+        ),
+        (source.typed, source.staging, source.typeck_scratch)
+    );
+    assert_eq!(
+        (
+            result.path_vectors,
+            result.path_length_fields,
+            result.path_capacity_fields
+        ),
+        (3, 6, 6)
+    );
+    assert_eq!(
+        (
+            result.materialized_path_bytes,
+            result.retained_path_bytes,
+            result.precharged_path_bytes
+        ),
+        (
+            6 * size_of::<FieldId>(),
+            6 * size_of::<FieldId>(),
+            6 * size_of::<FieldId>()
+        )
+    );
+    assert_eq!(
+        (result.final_cell, result.typed_attempts),
+        (12345 + 6 * size_of::<FieldId>(), 85)
+    );
+    assert_eq!(
+        (
+            format!("{observed:?}{inventory:?}"),
+            counts,
+            source,
+            total.get()
+        ),
+        before
+    );
+}
+
+fn reject_scalar_inventory(
+    facts: &(
+        TypedObserved,
+        TypedInventory,
+        TypeCounts,
+        HirPlan,
+        Cell<usize>,
+    ),
+    attempts: usize,
+    code: &str,
+    visits: u64,
+) {
+    let (observed, inventory, counts, source, total) = facts;
+    let before = (
+        format!("{observed:?}{inventory:?}"),
+        *counts,
+        *source,
+        total.get(),
+    );
+    let work = WorkMeter::new(16);
+    let error = reconcile_typed_storage(
+        observed,
+        inventory,
+        counts,
+        source,
+        total,
+        attempts,
+        &work,
+        origin(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, code);
+    assert_eq!(work.used(), visits);
+    assert_eq!(
+        (
+            format!("{observed:?}{inventory:?}"),
+            *counts,
+            *source,
+            total.get()
+        ),
+        before
+    );
+}
+#[test]
+fn c3_t1_nonzero_reconciliation_checks_every_kind_and_noncontiguous_mapping() {
+    for k in 0..14 {
+        for capacity in [false, true] {
+            let mut facts = nonzero_inventory_primitive();
+            if capacity {
+                facts.0.materialized_capacity[k] += 1;
+            } else {
+                facts.0.materialized_vectors[k] += 1;
+            }
+            reject_scalar_inventory(&facts, 85, "E0500", 2 + k as u64);
+        }
+    }
+    // Independent literal ordinal lists, not calls to the implementation maps.
+    for (slot, kind) in [0, 4, 5, 6, 7, 11, 12, 13].into_iter().enumerate() {
+        for component in 0..3 {
+            let mut facts = nonzero_inventory_primitive();
+            match component {
+                0 => facts.1.retained_vectors[slot] += 1,
+                1 => facts.1.retained_capacities[slot] += 1,
+                _ if slot == 4 => facts.1.retained_lengths[slot] = 14,
+                _ => facts.1.retained_lengths[slot] -= 1,
+            }
+            reject_scalar_inventory(&facts, 85, "E0500", 2 + kind);
+        }
+    }
+    for (slot, kind) in [1, 2, 3, 8, 9, 10].into_iter().enumerate() {
+        for capacity in [false, true] {
+            let mut facts = nonzero_inventory_primitive();
+            if capacity {
+                facts.0.scratch_endpoint_capacity[slot] += 1;
+            } else {
+                facts.0.scratch_endpoints[slot] += 1;
+            }
+            reject_scalar_inventory(&facts, 85, "E0500", 2 + kind);
+        }
+    }
+}
+#[test]
+fn c3_t1_nonzero_reconciliation_final_guards_follow_the_last_debit() {
+    for mutant in 0..15 {
+        let mut facts = nonzero_inventory_primitive();
+        let (observed, inventory, _, source, total) = &mut facts;
+        let mut attempts = 85;
+        match mutant {
+            0 => source.typed -= 1,
+            1 => source.staging -= 1,
+            2 => source.typeck_scratch -= 1,
+            3 => total.set(source.total - 1),
+            4 => {
+                source.total = MAX_HIR_BYTES + 1;
+                total.set(source.total + 6 * size_of::<FieldId>());
+            }
+            5 => total.set(total.get() + 1),
+            6 => observed.path_vectors += 1,
+            7 => observed.path_capacity_fields += 1,
+            8 => inventory.path_vectors += 1,
+            9 => inventory.path_length_fields -= 1,
+            10 => inventory.path_capacity_fields += 1,
+            11 => {
+                observed.path_vectors = 7;
+                inventory.path_vectors = 7;
+                attempts = 89;
+            } // fields < paths
+            12 => {
+                observed.path_capacity_fields = 193;
+                inventory.path_length_fields = 193;
+                inventory.path_capacity_fields = 193;
+                total.set(source.total + 193 * size_of::<FieldId>());
+            } // fields > 64P
+            13 => {
+                observed.path_vectors = 21;
+                inventory.path_vectors = 21; // only 5+11+4 eligible slots
+                observed.path_capacity_fields = 21;
+                inventory.path_length_fields = 21;
+                inventory.path_capacity_fields = 21;
+                total.set(source.total + 21 * size_of::<FieldId>());
+                attempts = 103;
+            }
+            _ => attempts -= 1,
+        }
+        let work = WorkMeter::new(15);
+        let error = reconcile_typed_storage(
+            &facts.0,
+            &facts.1,
+            &facts.2,
+            &facts.3,
+            &facts.4,
+            attempts,
+            &work,
+            origin(),
+        )
+        .unwrap_err();
+        assert_eq!(error.message, "declaration index work limit exceeded");
+        assert_eq!(work.used(), 15);
+        reject_scalar_inventory(&facts, attempts, "E0500", 16);
+    }
+}
+#[test]
+fn c3_t1_nonzero_reconciliation_checked_arithmetic_fails_without_mutation() {
+    // Retained product: the first kind fails before later count mismatches.
+    let mut facts = nonzero_inventory_primitive();
+    facts.2.functions = usize::MAX;
+    facts.0.materialized_capacity[0] = usize::MAX;
+    facts.1.retained_capacities[0] = usize::MAX;
+    facts.1.retained_lengths[0] = usize::MAX;
+    reject_scalar_inventory(&facts, 85, "E0400", 2);
+
+    let mut facts = nonzero_inventory_primitive();
+    facts.2.type_frames = usize::MAX;
+    facts.0.materialized_capacity[8] = usize::MAX;
+    facts.0.scratch_endpoint_capacity[3] = usize::MAX;
+    reject_scalar_inventory(&facts, 85, "E0400", 10); // scratch product
+
+    // Retained category addition: every preceding count/shape is consistent.
+    let mut facts = nonzero_inventory_primitive();
+    let functions = usize::MAX / size_of::<TypedBody>();
+    facts.2.functions = functions;
+    facts.0.materialized_capacity[0] = functions;
+    facts.1.retained_capacities[0] = functions;
+    facts.1.retained_lengths[0] = functions;
+    for k in [1, 2, 3, 4, 5, 7, 8, 11, 12, 13] {
+        facts.0.materialized_vectors[k] = functions;
+    }
+    for slot in [1, 2, 4, 5, 6, 7] {
+        facts.1.retained_vectors[slot] = functions;
+    }
+    for slot in [0, 1, 2, 3] {
+        facts.0.scratch_endpoints[slot] = functions;
+    }
+    assert!(usize::MAX - functions * size_of::<TypedBody>() < 5 * size_of::<Option<Projection>>());
+    reject_scalar_inventory(&facts, 85, "E0400", 6);
+
+    let mut facts = nonzero_inventory_primitive();
+    let bindings = usize::MAX / size_of::<Option<ParameterTy>>();
+    facts.2.bindings = bindings;
+    facts.0.materialized_capacity[1] = bindings;
+    facts.0.materialized_capacity[11] = bindings;
+    facts.0.scratch_endpoint_capacity[0] = bindings;
+    facts.1.retained_capacities[5] = bindings;
+    facts.1.retained_lengths[5] = bindings;
+    assert!(
+        usize::MAX - bindings * size_of::<Option<ParameterTy>>() < 5 * size_of::<Option<ValueTy>>()
+    );
+    reject_scalar_inventory(&facts, 85, "E0400", 4); // staging addition
+
+    let mut facts = nonzero_inventory_primitive();
+    facts.2.presence_slots = usize::MAX;
+    facts.0.materialized_capacity[10] = usize::MAX;
+    facts.0.scratch_endpoint_capacity[5] = usize::MAX;
+    reject_scalar_inventory(&facts, 85, "E0400", 12); // bool width1, scratch addition
+
+    let mut facts = nonzero_inventory_primitive();
+    facts.2.calls = usize::MAX;
+    facts.0.materialized_vectors[9] = usize::MAX;
+    facts.0.scratch_endpoints[4] = usize::MAX;
+    reject_scalar_inventory(&facts, 85, "E0400", 11); // materialized event addition
+
+    for mutant in 0..4 {
+        let mut facts = nonzero_inventory_primitive();
+        let mut attempts = 85;
+        match mutant {
+            0 => facts.0.path_capacity_fields = usize::MAX,
+            1 => facts.1.path_capacity_fields = usize::MAX,
+            2 => facts.0.path_vectors = usize::MAX, // vector events + paths
+            _ => {
+                let paths = usize::MAX / 64 + 1;
+                facts.0.path_vectors = paths;
+                facts.1.path_vectors = paths;
+                attempts = 82 + paths;
+            }
+        }
+        reject_scalar_inventory(
+            &facts,
+            attempts,
+            if mutant == 3 { "E0500" } else { "E0400" },
+            16,
+        );
+    }
+    // path_slots adds a subset of retained lengths. Its overflow cannot follow
+    // successful positive-width retained products and their checked total;
+    // manufacturing that branch would require bypassing an earlier guard.
+}

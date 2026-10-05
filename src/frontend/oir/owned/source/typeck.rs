@@ -3313,7 +3313,7 @@ mod typed_inventory {
         arguments: &'static Vec<Argument>,
         argument_option: Option<&'static Argument>,
         previous_assignment: Option<(usize, usize)>,
-        debit_returns: [Result<(), Box<Diagnostic>>; 4],
+        debit_returns: [Result<(), Box<Diagnostic>>; 5],
         returned: Result<storage::TypedInventory, Box<Diagnostic>>,
     }
     struct SumCarriers {
@@ -3349,6 +3349,275 @@ mod typed_inventory {
             std::mem::size_of::<BodyInventoryCarriers>()
         );
         assert_eq!(sum_carrier_bytes(), std::mem::size_of::<SumCarriers>());
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::frontend::source::SourceFileId;
+        use std::mem::{align_of, size_of};
+
+        fn at() -> Span {
+            Span {
+                file: SourceFileId(0),
+                start: 0,
+                end: 1,
+            }
+        }
+        fn id() -> FieldId {
+            FieldId {
+                record: RecordId(0),
+                index: 0,
+            }
+        }
+        fn records() -> [Record; 1] {
+            [Record {
+                id: RecordId(0),
+                name_span: at(),
+                span: at(),
+                end: at(),
+                fields: vec![Field {
+                    id: id(),
+                    ty: ValueTy::Scalar(Ty::I32),
+                    name_span: at(),
+                    span: at(),
+                }],
+            }]
+        }
+        fn path(length: usize) -> Projection {
+            let path = vec![id(); length].into_boxed_slice().into_vec();
+            assert_eq!(path.len(), path.capacity());
+            Projection {
+                base: AccessBase::Owner(BindingId(0)),
+                field: id(),
+                path,
+            }
+        }
+        fn snapshot(
+            value: &storage::TypedInventory,
+        ) -> ([usize; 8], [usize; 8], [usize; 8], usize, usize, usize) {
+            (
+                value.retained_vectors,
+                value.retained_lengths,
+                value.retained_capacities,
+                value.path_vectors,
+                value.path_length_fields,
+                value.path_capacity_fields,
+            )
+        }
+        #[test]
+        fn c3_t1_retained_sparse_sample_preserves_nonzero_slack() {
+            let mut rows = Vec::with_capacity(3);
+            rows.push(BorrowProjection {
+                expression: ExprId(0),
+                argument: 0,
+                projection: path(1),
+            });
+            assert!(rows.capacity() > rows.len());
+            let mut inventory = storage::TypedInventory::new();
+            inventory
+                .retained(Kind::BorrowProjections, &rows, &WorkMeter::new(1), at())
+                .unwrap();
+            assert_eq!(inventory.retained_vectors, [0, 0, 0, 0, 1, 0, 0, 0]);
+            assert_eq!(inventory.retained_lengths, [0, 0, 0, 0, 1, 0, 0, 0]);
+            assert_eq!(
+                inventory.retained_capacities,
+                [0, 0, 0, 0, rows.capacity(), 0, 0, 0]
+            );
+        }
+        #[test]
+        fn c3_t1_retained_path_shapes_and_stored_identities_are_independent() {
+            for length in [1, 64] {
+                let mut inventory = storage::TypedInventory::new();
+                let work = WorkMeter::new(1 + length as u64);
+                projection(&mut inventory, &path(length), &records(), &work, at()).unwrap();
+                assert_eq!(
+                    (
+                        inventory.path_vectors,
+                        inventory.path_length_fields,
+                        inventory.path_capacity_fields
+                    ),
+                    (1, length, length)
+                );
+                assert_eq!(work.used(), 1 + length as u64);
+            }
+            // Each malformed ordinary value keeps unrelated prerequisites valid.
+            for mutant in 0..9 {
+                let mut value = path(1);
+                let mut records = records();
+                match mutant {
+                    0 => value.path.clear(),
+                    1 => value = path(65),
+                    2 => {
+                        value.path = Vec::with_capacity(2);
+                        value.path.push(id());
+                        assert!(value.path.capacity() > value.path.len());
+                    }
+                    3 => value.field.index = 1,
+                    4 => {
+                        value.path[0].record = RecordId(1);
+                        value.field = value.path[0];
+                    }
+                    5 => {
+                        value.path[0].index = 1;
+                        value.field = value.path[0];
+                    }
+                    6 => records[0].id = RecordId(1),
+                    7 => records[0].fields[0].id.record = RecordId(1),
+                    _ => records[0].fields[0].id.index = 1,
+                }
+                let mut inventory = storage::TypedInventory::new();
+                let before = snapshot(&inventory);
+                let work = WorkMeter::new(100);
+                assert_eq!(
+                    projection(&mut inventory, &value, &records, &work, at())
+                        .unwrap_err()
+                        .code,
+                    "E0500"
+                );
+                assert_eq!(snapshot(&inventory), before);
+                assert_eq!(work.used(), if mutant < 4 { 1 } else { 2 });
+            }
+        }
+        #[test]
+        fn c3_t1_retained_path_work_precedes_inspection_and_counters_commit_atomically() {
+            let records = records();
+            let value = path(2);
+            for limit in 0..3 {
+                let mut inventory = storage::TypedInventory::new();
+                let before = snapshot(&inventory);
+                let work = WorkMeter::new(limit);
+                let error = projection(&mut inventory, &value, &records, &work, at()).unwrap_err();
+                assert_eq!(error.message, "declaration index work limit exceeded");
+                assert_eq!(work.used(), limit);
+                assert_eq!(snapshot(&inventory), before);
+            }
+            let mut inventory = storage::TypedInventory::new();
+            for (value, records, limit) in [(path(0), &records[..], 0), (path(1), &[][..], 1)] {
+                let error = projection(
+                    &mut inventory,
+                    &value,
+                    records,
+                    &WorkMeter::new(limit),
+                    at(),
+                )
+                .unwrap_err();
+                assert_eq!(error.message, "declaration index work limit exceeded");
+            }
+            assert_eq!(
+                projection(&mut inventory, &path(1), &[], &WorkMeter::new(2), at())
+                    .unwrap_err()
+                    .code,
+                "E0500"
+            );
+            for mutant in 0..3 {
+                let mut inventory = storage::TypedInventory::new();
+                inventory.path_vectors = if mutant == 0 { usize::MAX } else { 3 };
+                inventory.path_length_fields = if mutant == 1 { usize::MAX } else { 5 };
+                inventory.path_capacity_fields = if mutant == 2 { usize::MAX } else { 5 };
+                let before = snapshot(&inventory);
+                let work = WorkMeter::new(3);
+                assert_eq!(
+                    projection(&mut inventory, &value, &records, &work, at())
+                        .unwrap_err()
+                        .code,
+                    "E0400"
+                );
+                assert_eq!(work.used(), 3);
+                assert_eq!(snapshot(&inventory), before);
+            }
+            inventory.path_vectors = 3;
+            inventory.path_length_fields = 5;
+            inventory.path_capacity_fields = 5;
+            let work = WorkMeter::new(3);
+            work.enable_observation();
+            projection(&mut inventory, &value, &records, &work, at()).unwrap();
+            assert_eq!(
+                (
+                    inventory.path_vectors,
+                    inventory.path_length_fields,
+                    inventory.path_capacity_fields
+                ),
+                (4, 7, 7)
+            );
+            let events = work.events.borrow();
+            assert_eq!(events.len(), 3);
+            for (index, event) in events.iter().enumerate() {
+                assert_eq!(
+                    event.operation,
+                    if index == 0 {
+                        "typed retained path"
+                    } else {
+                        "typed retained path field"
+                    }
+                );
+                assert_eq!(event.units, 1);
+                assert_eq!(event.origin, at());
+            }
+        }
+
+        macro_rules! roles {
+            ($model:ty, $count:expr; $( $field:ident : $ty:ty ),+ $(,)?) => {{
+                $(let _: for<'a> fn(&'a $model) -> &'a $ty = |model| &model.$field;)+
+                let roles = [$( (std::mem::offset_of!($model, $field), size_of::<$ty>(), align_of::<$ty>()) ),+];
+                assert_eq!(roles.len(), $count);
+                let mut occupied = 0;
+                for (i, (offset, bytes, alignment)) in roles.iter().copied().enumerate() {
+                    assert_eq!(offset % alignment, 0);
+                    assert!(offset + bytes <= size_of::<$model>());
+                    occupied += bytes;
+                    for (j, (other, width, _)) in roles.iter().copied().enumerate() {
+                        if i != j && bytes != 0 && width != 0 {
+                            assert!(offset + bytes <= other || other + width <= offset);
+                        }
+                    }
+                }
+                assert!(occupied <= size_of::<$model>());
+                println!("C3_T1_INVENTORY_ROLES {} fields={} typed_bytes={} padding={}", stringify!($model), roles.len(), occupied, size_of::<$model>() - occupied);
+            }};
+        }
+        #[test]
+        fn c3_t1_retained_walk_role_schemas_cover_actual_transport_fields() {
+            roles!(PathInventoryCarriers, 28;
+                inventory: &'static mut storage::TypedInventory, value: &'static Projection,
+                records: &'static [Record], work: &'static WorkMeter, origin: Span,
+                length: usize, capacity: usize, range: std::ops::RangeInclusive<usize>,
+                range_input: &'static usize, range_return: bool, last: Option<&'static FieldId>,
+                expected_last: Option<&'static FieldId>, fields: std::slice::Iter<'static, FieldId>,
+                next: Option<&'static FieldId>, field: &'static FieldId,
+                record_option: Option<&'static Record>, record_return: Result<&'static Record, Box<Diagnostic>>,
+                record: &'static Record, declared_option: Option<&'static Field>,
+                declared_return: Result<&'static Field, Box<Diagnostic>>, declared: &'static Field,
+                debit_returns: [Result<(), Box<Diagnostic>>; 2], sum_returns: [Result<usize, Box<Diagnostic>>; 3],
+                vectors: usize, lengths: usize, capacities: usize,
+                returned: Result<(), Box<Diagnostic>>, caller_result: Result<(), Box<Diagnostic>>);
+            roles!(BodyInventoryCarriers, 46;
+                program: &'static ResolvedOwnedProgram<'static>, bodies: &'static Vec<TypedBody>,
+                work_return: &'static WorkMeter, work: &'static WorkMeter,
+                source_owner: crate::frontend::declaration_index::SourceOwner<'static>, origin: Span,
+                inventory: storage::TypedInventory, functions: std::iter::Enumerate<std::slice::Iter<'static, Function>>,
+                function_next: Option<(usize, &'static Function)>, function_tuple: (usize, &'static Function),
+                ordinal: usize, function: &'static Function, body_option: Option<&'static TypedBody>,
+                body_return: Result<&'static TypedBody, Box<Diagnostic>>, body: &'static TypedBody,
+                function_origin: Span, expression_slots: std::slice::Iter<'static, Option<Projection>>,
+                expression_next: Option<&'static Option<Projection>>, expression_slot: &'static Option<Projection>,
+                expression_projection: &'static Projection,
+                rows: std::iter::Enumerate<std::slice::Iter<'static, Vec<Option<Projection>>>>,
+                row_next: Option<(usize, &'static Vec<Option<Projection>>)>, row_tuple: (usize, &'static Vec<Option<Projection>>),
+                block: usize, row: &'static Vec<Option<Projection>>, source_option: Option<&'static BodyBlock>,
+                source_return: Result<&'static BodyBlock, Box<Diagnostic>>, source: &'static BodyBlock,
+                statement_slots: std::slice::Iter<'static, Option<Projection>>, statement_next: Option<&'static Option<Projection>>,
+                statement_slot: &'static Option<Projection>, statement_projection: &'static Projection,
+                previous: Option<(usize, usize)>, entries: std::slice::Iter<'static, BorrowProjection>,
+                entry_next: Option<&'static BorrowProjection>, entry: &'static BorrowProjection, key: (usize, usize),
+                previous_pattern: (usize, usize), expression_option: Option<&'static Expr>,
+                expression_return: Result<&'static Expr, Box<Diagnostic>>, expression: &'static Expr,
+                arguments: &'static Vec<Argument>, argument_option: Option<&'static Argument>,
+                previous_assignment: Option<(usize, usize)>, debit_returns: [Result<(), Box<Diagnostic>>; 5],
+                returned: Result<storage::TypedInventory, Box<Diagnostic>>);
+            roles!(SumCarriers, 5; left: usize, right: usize, origin: Span,
+                addition: Option<usize>, returned: Result<usize, Box<Diagnostic>>);
+        }
     }
     // Only the getter's existing plain-return role is used here. A later pricing
     // caller or whole observation receiver is a separately authored obligation.
