@@ -6,7 +6,7 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent
 ROOT = PACKAGE.parents[2]
-IDENTITY_SHA = '6c8bf1dd92e9975c18f77fe492ff1b98d8ca09752f9bbcd6f284f9366d1c7709'
+IDENTITY_SHA = '7d71ec9d28019197209d19a4c66bdf7a2ab86a1377aa55c3199947abcf871ffe'
 raw = (PACKAGE / 'identity.json').read_bytes()
 if hashlib.sha256(raw).hexdigest() != IDENTITY_SHA:
     raise ValueError('changed projected observer identity')

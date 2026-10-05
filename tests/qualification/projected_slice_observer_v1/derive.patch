@@ -575,10 +575,10 @@ index df6041d..5984493 100644
  #[cfg(test)]
  pub(super) fn native_module_with_fuel(
 diff --git a/src/frontend/oir/owned/source/array_typing_observer.rs b/src/frontend/oir/owned/source/array_typing_observer.rs
-index e8ff4e8..e69de29 100644
+index 8bce7d4..e69de29 100644
 --- a/src/frontend/oir/owned/source/array_typing_observer.rs
 +++ b/src/frontend/oir/owned/source/array_typing_observer.rs
-@@ -1,887 +0,0 @@
+@@ -1,888 +0,0 @@
 -//! Source-only bounded observations. No count/lower/ownership/execute calls.
 -use super::{hir::*, resolve, typeck};
 -use crate::frontend::{ast, declaration_index as di, diagnostic, project, source};
@@ -921,6 +921,7 @@ index e8ff4e8..e69de29 100644
 - ExprKind::IndexRead{base,base_span,index}=>write!(f,"\"kind\":\"IndexRead\",\"base\":{},\"base_origin\":{},\"index\":{}",base.0,S(*base_span,map),index.0),
 - ExprKind::ArrayLength{base,base_span}=>write!(f,"\"kind\":\"ArrayLength\",\"base\":{},\"base_origin\":{}",base.0,S(*base_span,map)),
 - ExprKind::FieldRead{base,base_span,field_span}=>write!(f,"\"kind\":\"FieldRead\",\"base\":{},\"base_origin\":{},\"field_origin\":{}",base.0,S(*base_span,map),S(*field_span,map)),
+- ExprKind::Negate{operand,operator_span}=>write!(f,"\"kind\":\"Negate\",\"operand\":{},\"operator_origin\":{}",operand.0,S(*operator_span,map)),
 - ExprKind::Not{operand,operator_span}=>write!(f,"\"kind\":\"Not\",\"operand\":{},\"operator_origin\":{}",operand.0,S(*operator_span,map)),
 - ExprKind::Logical{op,left,right,operator_span}=>write!(f,"\"kind\":\"Logical\",\"operator\":\"{op:?}\",\"left\":{},\"right\":{},\"operator_origin\":{}",left.0,right.0,S(*operator_span,map)),
 - ExprKind::Comparison{op,left,right,operator_span}=>write!(f,"\"kind\":\"Comparison\",\"operator\":\"{op:?}\",\"left\":{},\"right\":{},\"operator_origin\":{}",left.0,right.0,S(*operator_span,map)),
@@ -1627,10 +1628,10 @@ index c77ded0..05330f7 100644
 -#[cfg(test)]
 -mod array_typing_observer;
 diff --git a/src/frontend/oir/owned/unit3_raw_owned.rs b/src/frontend/oir/owned/unit3_raw_owned.rs
-index 098bd77..e69de29 100644
+index 1dfb15b..e69de29 100644
 --- a/src/frontend/oir/owned/unit3_raw_owned.rs
 +++ b/src/frontend/oir/owned/unit3_raw_owned.rs
-@@ -1,178 +0,0 @@
+@@ -1,197 +0,0 @@
 -//! Independent exhaustive raw owned span-address registry.
 -use super::*;
 -use super::super::unit3_raw_scalar::{declaration,merge,span,statement};
@@ -1681,6 +1682,7 @@ index 098bd77..e69de29 100644
 -            assert!(matches!(reference.referent(), BorrowedTy::Exact(AggregateTy::Record(_))), "{ERROR}");
 -        }
 -        for loan in &function.loans {
+-            assert!(loan.projection.is_empty(), "{ERROR}");
 -            assert!(matches!(loan.referent(), BorrowedTy::Exact(AggregateTy::Record(_))), "{ERROR}");
 -        }
 -        for block in &function.blocks {
@@ -1807,6 +1809,24 @@ index 098bd77..e69de29 100644
 -        assert!(!journal::enabled());
 -        let mut f = function(); f.result = ValueTy::Owned(AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, 1).unwrap()));
 -        register(&RawOwnedProgram { records: vec![], functions: vec![f] });
+-    }
+-}
+-
+-#[cfg(test)]
+-mod projected_domain_controls {
+-    use super::*;
+-    #[test]
+-    fn projected_observer_nonempty_raw_loan_path_is_not_scalar_record() {
+-        let s = Span { file: crate::frontend::source::SourceFileId(0), start: 0, end: 0 };
+-        let f = RawOwnedFunction { id: hir::DefId(0), span: s,
+-            result: ValueTy::Scalar(hir::Ty::Unit), parameters: vec![], locals: vec![],
+-            places: vec![], owners: vec![], references: vec![], calls: vec![],
+-            loans: vec![LoanDecl { call: CallSiteId(0), argument: 0,
+-                authority: AccessBase::Owner(OwnerPlaceId(0)), projection: vec![FieldId { record: RecordId(0), index: 0 }],
+-                kind: BorrowKind::Shared, referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(), span: s }],
+-            entry: BlockId(0), blocks: vec![] };
+-        let raw = RawOwnedProgram { records: vec![], functions: vec![f] };
+-        assert!(std::panic::catch_unwind(|| historical_domain(&raw)).is_err());
 -    }
 -}
 diff --git a/src/frontend/oir/source/association.rs b/src/frontend/oir/source/association.rs
@@ -1974,7 +1994,7 @@ index 0a24f9e..6c14a4b 100644
      let summary =
          || CheckedProjectTypes::new(route, frozen.function_count(), frozen.record_count(), entry);
 diff --git a/src/frontend/oir/unit3_raw_scalar.rs b/src/frontend/oir/unit3_raw_scalar.rs
-index 9966ec6..e69de29 100644
+index 65880d8..e69de29 100644
 --- a/src/frontend/oir/unit3_raw_scalar.rs
 +++ b/src/frontend/oir/unit3_raw_scalar.rs
 @@ -1,56 +0,0 @@
@@ -1994,7 +2014,7 @@ index 9966ec6..e69de29 100644
 -            match &v.value {
 -                Rvalue::Load(v)=>span(&v.span,format!("{p}.place.span")),
 -                Rvalue::Copy(v)=>span(&v.span,format!("{p}.operand.span")),
--                Rvalue::NotBool{operand,operator_span}=>{
+-                Rvalue::CheckedNegateI32{operand,operator_span}|Rvalue::NotBool{operand,operator_span}=>{
 -                    span(&operand.span,format!("{p}.operand.span"));span(operator_span,format!("{p}.operator_span"));
 -                }
 -                Rvalue::CompareScalar{left,right,operator_span,..}|Rvalue::CheckedI32{left,right,operator_span,..}=>{
