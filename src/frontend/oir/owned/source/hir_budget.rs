@@ -276,8 +276,13 @@ impl HirPlan {
         charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;
         charge::<Vec<ParameterTy>>(&mut resolver_scratch, c.functions, at)?;
         charge::<Vec<BodyBlock>>(&mut resolver_scratch, c.functions, at)?;
-        // Record duplicate checks on the future paid lane must use borrowed
-        // bounded scans, not acquire unpriced std HashMap backing storage.
+        // The paid duplicate branches retain empty local legacy map headers,
+        // never their backing tables. Count those changed complete headers.
+        charge::<std::collections::HashMap<&str, Span>>(
+            &mut resolver_scratch,
+            add(c.records, c.record_literals, at)?,
+            at,
+        )?;
 
         let mut typeck_scratch = 0;
         charge::<typeck::TypeFrame>(&mut typeck_scratch, c.type_frames, at)?;

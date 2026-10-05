@@ -1,5 +1,6 @@
 //! Complete declaration/name resolution. No ownership or loan analysis.
 use super::hir::*;
+use super::resolver_storage::{self as storage, Kind, PaidStorage};
 use crate::frontend::{
     ast,
     declaration_index::{
@@ -221,6 +222,18 @@ fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
     }
 }
 
+fn deny_checkpoint_enum(ty: &ValueTy, span: Span) -> Result<(), Box<Diagnostic>> {
+    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
+        Err(error(
+            "E0101",
+            format_args!("enum value types are unavailable in this resolver-storage checkpoint"),
+            span,
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn parameter_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
@@ -358,9 +371,29 @@ fn resolve_index(
     index
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
+    resolve_index_impl(index, work, allocator, None)
+}
+// The ordinary wrapper above retains its source gate. A paid caller is not yet
+// connected; the explicit phase fence below prevents partial paid success.
+fn resolve_index_impl(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+    mut paid: Option<&mut PaidStorage>,
+) -> Result<ResolvedParts, Vec<Diagnostic>> {
     let sources = index.sources();
     let mut diagnostics = Vec::new();
-    let mut records = Vec::new();
+    let mut records = match paid.as_deref_mut() {
+        Some(paid) => paid
+            .reserve(
+                allocator,
+                Kind::Records,
+                index.record_count(),
+                sources.eof(),
+            )
+            .map_err(|e| vec![*e])?,
+        None => Vec::new(),
+    };
     work.phase("record-fields");
     for id in 0..index.record_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
@@ -370,16 +403,30 @@ fn resolve_index(
         let record = &sources.ast(module).map_err(|e| vec![*e])?.records[key.index];
         work.record_start(RecordId(id), record.name);
         let result = (|| {
-            let mut fields = Vec::new();
+            let mut fields = match paid.as_deref_mut() {
+                Some(paid) => {
+                    paid.reserve(allocator, Kind::Fields, record.fields.len(), record.span)?
+                }
+                None => Vec::new(),
+            };
             let mut names = HashMap::new();
-            for field in &record.fields {
-                if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
+            for (position, field) in record.fields.iter().enumerate() {
+                if paid.is_some() {
+                    for earlier in &record.fields[..position] {
+                        if storage::compare(index, work, earlier.name, field.name)?
+                            == std::cmp::Ordering::Equal
+                        {
+                            return Err(duplicate(field.name, earlier.name));
+                        }
+                    }
+                } else if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
                 let ty = record_field_type(
                     value_type(&mut index.query(work), module, field.ty)?,
                     field.span,
                 )?;
+                storage::room(&fields, fields.capacity(), paid.is_some(), field.span)?;
                 fields.push(Field {
                     id: FieldId {
                         record: RecordId(id),
@@ -399,7 +446,11 @@ fn resolve_index(
             })
         })();
         match result {
-            Ok(record) => records.push(record),
+            Ok(record) => {
+                storage::room(&records, records.capacity(), paid.is_some(), record.span)
+                    .map_err(|e| vec![*e])?;
+                records.push(record);
+            }
             Err(error) => {
                 work.record_error(&error);
                 diagnostics.push(*error)
@@ -407,7 +458,17 @@ fn resolve_index(
         }
     }
     work.phase("signatures");
-    let mut signatures = Vec::new();
+    let mut signatures = match paid.as_deref_mut() {
+        Some(paid) => paid
+            .reserve(
+                allocator,
+                Kind::Signatures,
+                index.function_count(),
+                sources.eof(),
+            )
+            .map_err(|e| vec![*e])?,
+        None => Vec::new(),
+    };
     for id in 0..index.function_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
@@ -416,12 +477,33 @@ fn resolve_index(
         let function = &sources.ast(module).map_err(|e| vec![*e])?.functions[key.index];
         work.signature_start(DefId(id), function.name);
         let result: Result<Signature, Box<Diagnostic>> = (|| {
-            let params = function
-                .params
-                .iter()
-                .map(|p| parameter_type(&mut index.query(work), module, p.ty))
-                .collect::<Result<Vec<_>, _>>()?;
+            let params = if let Some(paid) = paid.as_deref_mut() {
+                let mut params = paid.reserve(
+                    allocator,
+                    Kind::Parameters,
+                    function.params.len(),
+                    function.name,
+                )?;
+                for parameter in &function.params {
+                    let ty = parameter_type(&mut index.query(work), module, parameter.ty)?;
+                    if let ParameterTy::Value(value) = &ty {
+                        deny_checkpoint_enum(value, parameter.ty.span)?;
+                    }
+                    storage::room(&params, params.capacity(), true, parameter.ty.span)?;
+                    params.push(ty);
+                }
+                params
+            } else {
+                function
+                    .params
+                    .iter()
+                    .map(|p| parameter_type(&mut index.query(work), module, p.ty))
+                    .collect::<Result<Vec<_>, _>>()?
+            };
             let result = value_type(&mut index.query(work), module, function.result)?;
+            if paid.is_some() {
+                deny_checkpoint_enum(&result, function.result.span)?;
+            }
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
@@ -429,7 +511,10 @@ fn resolve_index(
                         ..
                     } = statement.kind
                     {
-                        value_type(&mut index.query(work), module, ty)?;
+                        let resolved = value_type(&mut index.query(work), module, ty)?;
+                        if paid.is_some() {
+                            deny_checkpoint_enum(&resolved, ty.span)?;
+                        }
                     }
                 }
             }
@@ -440,7 +525,16 @@ fn resolve_index(
             })
         })();
         match result {
-            Ok(signature) => signatures.push(signature),
+            Ok(signature) => {
+                storage::room(
+                    &signatures,
+                    signatures.capacity(),
+                    paid.is_some(),
+                    signature.span,
+                )
+                .map_err(|e| vec![*e])?;
+                signatures.push(signature);
+            }
             Err(error) => {
                 work.record_error(&error);
                 diagnostics.push(*error)
@@ -562,6 +656,15 @@ fn resolve_index(
     }
     if !diagnostics.is_empty() {
         return Err(diagnostics);
+    }
+    // Closed checkpoint: body storage has not yet been connected to the paid
+    // account. Never return partially paid parts, even to an internal test.
+    if paid.is_some() {
+        return Err(vec![*error(
+            "E0101",
+            format_args!("paid resolver body storage is not connected"),
+            sources.eof(),
+        )]);
     }
     work.phase("body-resolution");
     let mut functions = Vec::new();
@@ -1413,3 +1516,7 @@ mod enum_index_layout_tests {
 pub(super) const fn resolver_carrier_bytes() -> usize {
     std::mem::size_of::<Resolver<'_, '_>>()
 }
+
+#[cfg(test)]
+#[path = "resolver_paid_tests.rs"]
+mod paid_tests;

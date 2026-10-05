@@ -404,6 +404,10 @@ impl PaidScope {
 type ResolvedParts = (Vec<Record>, Vec<Signature>, Vec<Function>);
 struct FixedCarriers {
     storage: [PaidStorage; 2],
+    // Shared implementation argument and probe's temporary Some borrow. These
+    // are distinct from the policy embedded in each complete Resolver.
+    shared_paid_borrows: [Option<&'static mut PaidStorage>; 2],
+    type_guard_borrow: &'static ValueTy,
     counts: [HirCounts; 2],
     quota_arrays: [[usize; KINDS]; 4],
     // The paid wrapper adds one nested vector-return layer above Capacity.
