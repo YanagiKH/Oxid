@@ -3430,7 +3430,15 @@ mod typed_inventory {
             for length in [1, 64] {
                 let mut inventory = storage::TypedInventory::new();
                 let work = WorkMeter::new(1 + length as u64);
-                projection(&mut inventory, &path(length), &records(), &work, at()).unwrap();
+                let value = path(length);
+                let records = records();
+                // Fixtures are already allocated and work tracing stays off.
+                let (result, measured) =
+                    super::super::super::reviewer_source::integration_measured(|| {
+                        projection(&mut inventory, &value, &records, &work, at())
+                    });
+                result.unwrap();
+                assert_eq!(measured, (0, 0, 0));
                 assert_eq!(
                     (
                         inventory.path_vectors,
