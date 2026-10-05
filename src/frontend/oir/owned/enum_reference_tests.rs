@@ -844,3 +844,283 @@ fn enum_reference_available_lifetime_end_and_frame_teardown_ignore_poison() {
         }
     }
 }
+
+#[test]
+fn enum_reference_changed_variant_replacement_every_fuel_and_active_bytes() {
+    let (sources, s) = f::context();
+    for (initial, replacement) in e::REPLACEMENT_PAIRS {
+        for moved in [false, true] {
+            let (raw, schedule) = e::replacement_case(initial, replacement, moved, s(0));
+            let witness = verify_owned(raw, &sources).unwrap();
+            for fuel in 0..=schedule.fuel() {
+                let observed = observe(&witness, fuel, ObservationControl::default());
+                assert_oracle(&observed, &schedule, fuel);
+                let paid_replace = observed.events.iter().any(
+                    |event| matches!(event, Event::Charge(span, 5) if *span == e::at(s(0), 12)),
+                );
+                assert_eq!(transfer_count(&observed), usize::from(paid_replace));
+            }
+            let replace = schedule
+                .events
+                .iter()
+                .position(|event| *event == (e::at(s(0), 12), 5))
+                .unwrap();
+            let prefix: usize = schedule.events[..replace].iter().map(|event| event.1).sum();
+            let old_identity = if moved { (3, 3) } else { (2, 2) };
+            for paid in [false, true] {
+                let observed = observe(
+                    &witness,
+                    prefix + if paid { 5 } else { 4 },
+                    ObservationControl::default(),
+                );
+                let destination = failure_owner(&observed, 0, 0);
+                let source = failure_owner(&observed, 0, 1);
+                assert_eq!(
+                    (destination.state, destination.key.generation),
+                    if paid {
+                        (2, old_identity.1 + 1)
+                    } else {
+                        old_identity
+                    },
+                );
+                assert_eq!(
+                    (source.state, source.key.generation),
+                    if paid { (3, 3) } else { (2, 2) }
+                );
+                assert_eq!(
+                    &destination.bytes[..4],
+                    &(if paid { replacement } else { initial } as u32).to_le_bytes()
+                );
+                assert_eq!(bindings(&observed), 0);
+            }
+            for poison_destinations in [false, true] {
+                let observed = observe(
+                    &witness,
+                    schedule.fuel(),
+                    ObservationControl {
+                        poison_destinations,
+                        ..ObservationControl::default()
+                    },
+                );
+                assert_oracle(&observed, &schedule, schedule.fuel());
+                let old = observed
+                    .storage
+                    .iter()
+                    .find(|row| row.kind == StorageKind::Construction && row.key.owner == 0)
+                    .unwrap();
+                let source = observed
+                    .storage
+                    .iter()
+                    .find(|row| row.kind == StorageKind::Construction && row.key.owner == 1)
+                    .unwrap();
+                let replaced = observed
+                    .storage
+                    .iter()
+                    .find(|row| row.kind == StorageKind::Transfer)
+                    .unwrap();
+                assert_eq!((replaced.state, replaced.key.generation), old_identity);
+                assert_eq!(&replaced.bytes[..4], &(replacement as u32).to_le_bytes());
+                let active_end = match e::MIXED[replacement] {
+                    None => 4,
+                    Some(hir::Ty::Bool | hir::Ty::Unit) => 5,
+                    Some(hir::Ty::I32) => 8,
+                };
+                assert_eq!(&replaced.bytes[4..active_end], &source.bytes[4..active_end]);
+                if poison_destinations {
+                    // Inactive bytes retain the observer's destination poison,
+                    // even when they held an active payload in the old value.
+                    assert!(replaced.bytes[active_end..]
+                        .iter()
+                        .all(|byte| *byte == 0xa5));
+                } else {
+                    assert_eq!(&replaced.bytes[active_end..], &old.bytes[active_end..]);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn enum_reference_changed_variant_replacement_fault_preserves_old_destination() {
+    let (sources, s) = f::context();
+    for (initial, replacement) in e::REPLACEMENT_PAIRS {
+        for moved in [false, true] {
+            let (raw, schedule) = e::replacement_case(initial, replacement, moved, s(0));
+            let witness = verify_owned(raw, &sources).unwrap();
+            let mut faults = vec![(
+                FaultKind::EnumOwnerTag {
+                    owner: OwnerPlaceId(1),
+                    tag: u32::MAX,
+                },
+                "enum tag",
+            )];
+            if matches!(e::MIXED[replacement], Some(hir::Ty::Bool | hir::Ty::Unit)) {
+                faults.push((
+                    FaultKind::EnumOwnerByte {
+                        owner: OwnerPlaceId(1),
+                        offset: 4,
+                        byte: 255,
+                    },
+                    "enum payload",
+                ));
+            }
+            for (kind, error) in faults {
+                let observed = fault(&witness, e::at(s(0), 12), kind);
+                assert_eq!(
+                    observed.result,
+                    Err(OwnedRunFailure::Invariant(error, Some(e::at(s(0), 12))))
+                );
+                assert_eq!((transfer_count(&observed), bindings(&observed)), (0, 0));
+                let old = observed
+                    .storage
+                    .iter()
+                    .find(|row| row.kind == StorageKind::Construction && row.key.owner == 0)
+                    .unwrap();
+                let destination = failure_owner(&observed, 0, 0);
+                let source = failure_owner(&observed, 0, 1);
+                assert_eq!(
+                    (destination.state, destination.key.generation),
+                    if moved { (3, 3) } else { (2, 2) }
+                );
+                assert_eq!(destination.bytes, old.bytes);
+                assert_eq!((source.state, source.key.generation), (2, 2));
+            }
+            if moved {
+                // A moved destination's previous tag and payload are dead.
+                let observed = fault(
+                    &witness,
+                    e::at(s(0), 12),
+                    FaultKind::EnumOwnerPoison {
+                        owner: OwnerPlaceId(0),
+                    },
+                );
+                assert_eq!(observed.result, Ok(schedule.result));
+                assert_eq!(transfer_count(&observed), 1);
+            }
+        }
+    }
+}
+
+#[test]
+fn enum_reference_later_owned_input_fault_preserves_caller_and_blocks_body() {
+    let (sources, s) = f::context();
+    for second in [1, 3] {
+        let (raw, schedule) = e::two_owned_case(second, s(0));
+        let witness = verify_owned(raw, &sources).unwrap();
+        for fuel in 0..=schedule.fuel() {
+            assert_oracle(
+                &observe(&witness, fuel, ObservationControl::default()),
+                &schedule,
+                fuel,
+            );
+        }
+        let invoke = schedule
+            .events
+            .iter()
+            .position(|event| *event == (e::at(s(0), 10), 20))
+            .unwrap();
+        let prefix: usize = schedule.events[..invoke].iter().map(|event| event.1).sum();
+        for (kind, error) in [
+            (
+                FaultKind::EnumOwnerTag {
+                    owner: OwnerPlaceId(3),
+                    tag: u32::MAX,
+                },
+                "enum tag",
+            ),
+            (
+                FaultKind::EnumOwnerByte {
+                    owner: OwnerPlaceId(3),
+                    offset: 4,
+                    byte: 255,
+                },
+                "enum payload",
+            ),
+        ] {
+            let control = ObservationControl {
+                fault: Some(FaultInjection {
+                    at: e::at(s(0), 10),
+                    kind,
+                }),
+                ..ObservationControl::default()
+            };
+            let unpaid = observe(&witness, prefix + 19, control);
+            assert_oracle(&unpaid, &schedule, prefix + 19);
+            assert_eq!(
+                unpaid.result,
+                Err(OwnedRunFailure::Scalar(RunFailure::Fuel(e::at(s(0), 10))))
+            );
+            assert_eq!(transfer_count(&unpaid), 2);
+            assert!(!unpaid
+                .storage
+                .iter()
+                .any(|row| row.kind == StorageKind::Incoming));
+            for observed in [
+                observe(&witness, prefix + 20, control),
+                fault(&witness, e::at(s(0), 10), kind),
+            ] {
+                assert!(observed.fault_applied && !observed.truncated);
+                assert_eq!(
+                    observed.result,
+                    Err(OwnedRunFailure::Invariant(error, Some(e::at(s(0), 30))))
+                );
+                assert!(!observed.events.iter().any(|event| matches!(
+                    event,
+                    Event::Enter(hir::DefId(1), _) | Event::Return(hir::DefId(1))
+                )));
+                assert!(!observed.events.iter().any(
+                    |event| matches!(event, Event::Charge(span, _) if *span == e::at(s(0), 40))
+                ));
+                for stage in [2, 3] {
+                    for snapshot in [
+                        failure_owner(&unpaid, 0, stage),
+                        failure_owner(&observed, 0, stage),
+                    ] {
+                        assert_eq!((snapshot.state, snapshot.key.generation), (2, 2));
+                    }
+                }
+                assert_eq!(
+                    failure_owner(&observed, 0, 2).bytes,
+                    failure_owner(&unpaid, 0, 2).bytes
+                );
+                let mut expected_second = failure_owner(&unpaid, 0, 3).bytes.clone();
+                match kind {
+                    FaultKind::EnumOwnerTag { tag, .. } => {
+                        expected_second[..4].copy_from_slice(&tag.to_le_bytes())
+                    }
+                    FaultKind::EnumOwnerByte { offset, byte, .. } => expected_second[offset] = byte,
+                    _ => unreachable!(),
+                }
+                assert_eq!(failure_owner(&observed, 0, 3).bytes, expected_second);
+                // The first input may already have been copied into a private,
+                // uninstalled child. These test observations are not caller
+                // ownership transitions or language-visible callee effects.
+                assert_eq!(transfer_count(&observed), 3);
+                let incoming: Vec<_> = observed
+                    .storage
+                    .iter()
+                    .filter(|row| row.kind == StorageKind::Incoming)
+                    .collect();
+                assert_eq!(incoming.len(), 1);
+                assert_eq!(
+                    (
+                        incoming[0].key.frame,
+                        incoming[0].key.owner,
+                        incoming[0].key.generation
+                    ),
+                    (1, 0, 1)
+                );
+                assert_eq!(incoming[0].bytes, failure_owner(&unpaid, 0, 2).bytes);
+                assert!(observed
+                    .storage
+                    .iter()
+                    .filter(|row| row.kind == StorageKind::Failure)
+                    .all(|row| row.key.frame == 0));
+                assert!(observed
+                    .storage
+                    .iter()
+                    .all(|row| row.guards_before == row.guards_after));
+            }
+        }
+    }
+}

@@ -643,3 +643,270 @@ pub(super) fn discard_case(payload: Option<hir::Ty>, span: Span) -> (RawOwnedPro
         },
     )
 }
+
+/// A bounded cycle covers each payload kind as both old and new storage.
+pub(super) const REPLACEMENT_PAIRS: [(usize, usize); 4] = [(0, 1), (1, 2), (2, 3), (3, 0)];
+
+/// Replace an available or moved destination with a different variant, then
+/// consume the new tag/payload. Spans: fallback1, new payload2, old live3,
+/// match5, cleanup6, return7, old payload8, old constructor9, new live10,
+/// new constructor11, replace12, optional old discard19.
+pub(super) fn replacement_case(
+    initial: usize,
+    replacement: usize,
+    moved_destination: bool,
+    span: Span,
+) -> (RawOwnedProgram, f::Schedule) {
+    assert_ne!(initial, replacement);
+    let result = MIXED[replacement].unwrap_or(hir::Ty::I32);
+    let (mut raw, base) = mixed_case(&MIXED, &[3, 0, 2, 1], replacement, result, span);
+    let function = &mut raw.functions[0];
+    function.owners[0].kind = OwnerKind::Local { mutable: true };
+    function
+        .owners
+        .push(owner(OwnerKind::Temporary, at(span, 10)));
+    let mut new_statements = std::mem::take(&mut function.blocks[0].statements);
+    let new_constructor = new_statements.pop().unwrap();
+    let OwnedInstruction::ConstructEnum { payload, .. } = new_constructor.kind else {
+        unreachable!("mixed fixture constructor")
+    };
+    new_statements.pop(); // The old destination has its own StorageLive below.
+    let new_payload = if payload.is_some() {
+        Some(new_statements.pop().unwrap())
+    } else {
+        None
+    };
+    let mut statements = new_statements; // The independently assigned fallback.
+    let old_payload = MIXED[initial].map(|ty| {
+        let id = local(function, ty, LocalKind::Temporary, at(span, 8));
+        statements.push(f::assign(id.0, literal(scalar_value(ty)), at(span, 8)));
+        f::operand(id.0, at(span, 9))
+    });
+    statements.extend([
+        f::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(0)), at(span, 3)),
+        f::instruction(
+            OwnedInstruction::ConstructEnum {
+                destination: OwnerPlaceId(0),
+                variant: variant(initial),
+                payload: old_payload,
+            },
+            at(span, 9),
+        ),
+    ]);
+    if moved_destination {
+        statements.push(f::instruction(
+            OwnedInstruction::Discard(OwnerPlaceId(0)),
+            at(span, 19),
+        ));
+    }
+    statements.extend(new_payload);
+    statements.extend([
+        f::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(1)), at(span, 10)),
+        f::instruction(
+            OwnedInstruction::ConstructEnum {
+                destination: OwnerPlaceId(1),
+                variant: variant(replacement),
+                payload,
+            },
+            at(span, 11),
+        ),
+        f::instruction(
+            OwnedInstruction::Replace {
+                destination: OwnerPlaceId(0),
+                source: OwnerPlaceId(1),
+            },
+            at(span, 12),
+        ),
+    ]);
+    function.blocks[0].statements = statements;
+    for entry in &mut function.blocks[4..] {
+        entry.statements.push(f::instruction(
+            OwnedInstruction::StorageEnd(OwnerPlaceId(1)),
+            at(span, 6),
+        ));
+    }
+    // One root entry + two (2-value + 4-state) owners + every scalar local.
+    // The written arm order, cleanup widths and return inventory are fixed.
+    let mut events = vec![(span, 13 + function.locals.len()), (at(span, 1), 1)];
+    if old_payload.is_some() {
+        events.push((at(span, 8), 1));
+    }
+    events.extend([(at(span, 3), 1), (at(span, 9), 3)]);
+    if moved_destination {
+        events.push((at(span, 19), 3));
+    }
+    if payload.is_some() {
+        events.push((at(span, 2), 1));
+    }
+    events.extend([(at(span, 10), 1), (at(span, 11), 3), (at(span, 12), 5)]);
+    let selected = [3, 0, 2, 1]
+        .iter()
+        .position(|&index| index == replacement)
+        .unwrap();
+    events.extend((0..=selected).map(|_| (at(span, 5), 1)));
+    events.extend([
+        (at(span, 5), 3),
+        (at(span, 6), 3),
+        (at(span, 6), 3),
+        (at(span, 7), 5),
+    ]);
+    (
+        raw,
+        f::Schedule {
+            entry: base.entry,
+            result: base.result,
+            events,
+        },
+    )
+}
+
+/// Two owned inputs: an i32 enum first and a bool/unit enum second. Caller
+/// owners0/1 stage into owners2/3; the callee owns parameters0/1. Spans:
+/// scalar1/2, live3/5, constructor4/6, open7, prepare8/9, Invoke10,
+/// cleanup11/12, caller return13, callee origin30, first body effect40,
+/// callee discard41/42 and return43. Incoming faults retain origin30.
+pub(super) fn two_owned_case(second: usize, span: Span) -> (RawOwnedProgram, f::Schedule) {
+    assert!(second == 1 || second == 3);
+    let mut caller = f::function(0, ValueTy::Scalar(hir::Ty::I32), span);
+    caller.locals = vec![
+        f::scalar(hir::Ty::I32, at(span, 1)),
+        f::scalar(MIXED[second].unwrap(), at(span, 2)),
+        f::scalar(hir::Ty::I32, at(span, 10)),
+    ];
+    for _ in 0..2 {
+        caller
+            .owners
+            .push(owner(OwnerKind::Local { mutable: false }, span));
+    }
+    for argument in 0..2 {
+        caller.owners.push(owner(
+            OwnerKind::StagedArgument {
+                call: CallSiteId(0),
+                argument,
+            },
+            at(span, 7),
+        ));
+    }
+    caller.calls.push(CallDecl {
+        target: hir::DefId(1),
+        arguments: vec![
+            ArgumentSlot::Owned(OwnerPlaceId(2)),
+            ArgumentSlot::Owned(OwnerPlaceId(3)),
+        ],
+        result: CallResult::Scalar(LocalId(2)),
+        parent: None,
+        span: at(span, 7),
+    });
+    let mut statements = vec![
+        f::assign(0, Rvalue::I32(-71), at(span, 1)),
+        f::assign(
+            1,
+            literal(scalar_value(MIXED[second].unwrap())),
+            at(span, 2),
+        ),
+    ];
+    for (destination, constructed, live, construct) in [(0, 2, 3, 4), (1, second, 5, 6)] {
+        statements.extend([
+            f::instruction(
+                OwnedInstruction::StorageLive(OwnerPlaceId(destination)),
+                at(span, live),
+            ),
+            f::instruction(
+                OwnedInstruction::ConstructEnum {
+                    destination: OwnerPlaceId(destination),
+                    variant: variant(constructed),
+                    payload: Some(f::operand(destination, at(span, construct))),
+                },
+                at(span, construct),
+            ),
+        ]);
+    }
+    statements.push(f::instruction(
+        OwnedInstruction::OpenCall(CallSiteId(0)),
+        at(span, 7),
+    ));
+    for argument in 0..2 {
+        statements.push(f::instruction(
+            OwnedInstruction::PrepareOwned {
+                call: CallSiteId(0),
+                argument,
+                source: OwnerPlaceId(argument),
+            },
+            at(span, 8 + argument),
+        ));
+    }
+    caller.blocks.push(block(
+        statements,
+        OwnedTerminatorKind::Invoke {
+            call: CallSiteId(0),
+            continuation: BlockId(1),
+        },
+        at(span, 10),
+    ));
+    caller.blocks.push(block(
+        vec![
+            f::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(0)), at(span, 11)),
+            f::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(1)), at(span, 12)),
+        ],
+        OwnedTerminatorKind::ReturnScalar(f::operand(2, at(span, 13))),
+        at(span, 13),
+    ));
+    let mut callee = f::function(1, ValueTy::Scalar(hir::Ty::I32), at(span, 30));
+    callee.locals.push(f::scalar(hir::Ty::I32, at(span, 40)));
+    for position in 0..2 {
+        callee
+            .parameters
+            .push(ParameterBinding::Owned(OwnerPlaceId(position)));
+        callee
+            .owners
+            .push(owner(OwnerKind::Parameter { position }, at(span, 30)));
+    }
+    callee.blocks.push(block(
+        vec![
+            f::assign(0, Rvalue::I32(73), at(span, 40)),
+            f::instruction(OwnedInstruction::Discard(OwnerPlaceId(0)), at(span, 41)),
+            f::instruction(OwnedInstruction::Discard(OwnerPlaceId(1)), at(span, 42)),
+        ],
+        OwnedTerminatorKind::ReturnScalar(f::operand(0, at(span, 43))),
+        at(span, 43),
+    ));
+    // Root: 1 entry + 3 locals + 4*6 owner cells + 2 argument snapshots
+    // + 2 call-state cells = 32. Invoke: 1 + 2 arguments + (1 local +
+    // 2*6 owner cells) child activation + 2*2 incoming value cells = 20.
+    // Callee return costs 1+4; caller return costs 1+8+1 call = 10.
+    let mut events = vec![(span, 32)];
+    events.extend(
+        [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 3),
+            (5, 1),
+            (6, 3),
+            (7, 3),
+            (8, 3),
+            (9, 3),
+            (10, 20),
+            (40, 1),
+            (41, 3),
+            (42, 3),
+            (43, 5),
+            (11, 3),
+            (12, 3),
+            (13, 10),
+        ]
+        .map(|(ordinal, cost)| (at(span, ordinal), cost)),
+    );
+    (
+        RawOwnedProgram {
+            enums: vec![enumeration(&MIXED, span)],
+            records: vec![],
+            functions: vec![caller, callee],
+        },
+        f::Schedule {
+            entry: hir::DefId(0),
+            result: Scalar::I32(73),
+            events,
+        },
+    )
+}

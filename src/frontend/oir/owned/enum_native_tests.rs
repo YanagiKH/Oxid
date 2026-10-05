@@ -1335,3 +1335,146 @@ fn native_enums_source_free_guards_precede_every_binding_and_transfer_effect() {
         "discard",
     );
 }
+
+#[test]
+fn native_enums_changed_variants_and_later_owned_input_boundary_modules() {
+    let (sources, s) = fixtures::context();
+    for (initial, replacement) in e::REPLACEMENT_PAIRS {
+        for moved in [false, true] {
+            for guarded in [false, true] {
+                let (raw, schedule) = e::replacement_case(initial, replacement, moved, s(0));
+                let witness = checked(raw, &sources, guarded);
+                assert_eq!(
+                    execute::run(&witness, Some(schedule.entry)),
+                    Ok(schedule.result)
+                );
+                let module = native_module(&witness, Some(schedule.entry), &sources).unwrap();
+                assert_eq!(module.contains("%fuel = alloca"), guarded);
+                assert!(module.contains(&format!("store i32 {initial}, ptr %o0, align 1")));
+                assert!(module.contains(&format!("store i32 {replacement}, ptr %o1, align 1")));
+                assert_eq!(module.matches("switch i32").count(), 1 + usize::from(moved));
+            }
+        }
+    }
+    for second in [1, 3] {
+        for guarded in [false, true] {
+            let (raw, schedule) = e::two_owned_case(second, s(0));
+            let witness = checked(raw, &sources, guarded);
+            assert_eq!(
+                execute::run(&witness, Some(schedule.entry)),
+                Ok(schedule.result)
+            );
+            let module = native_module(&witness, Some(schedule.entry), &sources).unwrap();
+            let first = module.find("%f1_param0_tag = load i32, ptr %arg0").unwrap();
+            let first_copied = module.find("f1_param0_enum_ok:\n").unwrap();
+            let second = module.find("%f1_param1_tag = load i32, ptr %arg1").unwrap();
+            let second_copied = module.find("f1_param1_enum_ok:\n").unwrap();
+            let body = module
+                .find("%f1_b0_i0_store_wide = zext i32 73 to i64")
+                .unwrap();
+            assert!(
+                first < first_copied
+                    && first_copied < second
+                    && second < second_copied
+                    && second_copied < body
+            );
+            assert_eq!(module.contains("%fuel = alloca"), guarded);
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
+fn native_enums_source_free_changed_variants_and_later_owned_input_boundary() {
+    let scratch = Scratch::new();
+    let (sources, s) = fixtures::context();
+    let mut processes = 0;
+    for (initial, replacement) in e::REPLACEMENT_PAIRS {
+        for moved in [false, true] {
+            processes += exercise(
+                &scratch,
+                &sources,
+                &format!("boundary-replace-{initial}-{replacement}-{moved}"),
+                || e::replacement_case(initial, replacement, moved, s(0)),
+            );
+        }
+    }
+    for second in [1, 3] {
+        processes += exercise(
+            &scratch,
+            &sources,
+            &format!("boundary-two-owned-{second}"),
+            || e::two_owned_case(second, s(0)),
+        );
+        for guarded in [false, true] {
+            let (raw, schedule) = e::two_owned_case(second, s(0));
+            let witness = checked(raw, &sources, guarded);
+            let module = if guarded {
+                native_module_with_fuel(&witness, schedule.entry, &sources, schedule.fuel())
+                    .unwrap()
+            } else {
+                native_module(&witness, Some(schedule.entry), &sources).unwrap()
+            };
+            // 701 observes a private first-parameter copy, before the child
+            // body. 777 observes the first body effect. Neither marker is a
+            // language operation; the valid control proves both are reachable.
+            let copied = "f1_param0_enum_ok:\n";
+            let marked = before(&module, copied, "").replacen(
+                copied,
+                &format!("{copied}  %test_private_copy = call i32 @__oxid_print_i32(i32 701)\n"),
+                1,
+            );
+            let marked = before(
+                &marked,
+                "  %f1_b0_i0_store_wide = zext i32 73 to i64\n",
+                "  %test_body_effect = call i32 @__oxid_print_i32(i32 777)\n",
+            );
+            let binary = scratch.compile(
+                &marked,
+                &format!("enum-boundary-two-owned-markers-{second}-{guarded}"),
+            );
+            assert_result(scratch.run(&binary, &[]), b"701\n777\n73\n", b"", 0);
+            processes += 1;
+            let invoke_line = module
+                .lines()
+                .find(|line| line.contains("%f0_b0_term_result = call i32 @__oxid_owned_fn_1("))
+                .unwrap();
+            let invoke = schedule
+                .events
+                .iter()
+                .position(|event| *event == (e::at(s(0), 10), 20))
+                .unwrap();
+            let prefix: usize = schedule.events[..invoke].iter().map(|event| event.1).sum();
+            for (kind, insertion) in [
+                ("enum tag", "  store i32 -1, ptr %o3, align 1\n"),
+                ("enum payload", "  %test_second_active = getelementptr i8, ptr %o3, i64 4\n  store i8 255, ptr %test_second_active, align 1\n"),
+            ] {
+                let mutant = before(&marked, invoke_line, insertion);
+                if guarded {
+                    let harness = argv_fuel_harness(&mutant, schedule.fuel());
+                    let binary = scratch.compile(&harness, &format!("enum-boundary-later-input-{second}-{guarded}-{kind}"));
+                    for fuel in [prefix + 19, prefix + 20, schedule.fuel()] {
+                        if fuel == prefix + 19 {
+                            // Invoke must be paid before mutation/callee work;
+                            // its fuel diagnostic belongs to the caller site.
+                            let diagnostic = RunFailure::Fuel(e::at(s(0), 10)).diagnostic(&sources).render_human(&sources);
+                            assert_result(scratch.run(&binary, &[fuel.to_string()]), b"", diagnostic.as_bytes(), 1);
+                        } else {
+                            // A later input may fail after a private copy, but
+                            // the body marker must never execute. Incoming
+                            // invariant diagnostics keep the callee origin.
+                            assert_result(scratch.run(&binary, &[fuel.to_string()]), b"701\n", invariant(kind, e::at(s(0), 30), &sources).as_bytes(), 1);
+                        }
+                        processes += 1;
+                    }
+                } else {
+                    let binary = scratch.compile(&mutant, &format!("enum-boundary-later-input-{second}-{guarded}-{kind}"));
+                    assert_result(scratch.run(&binary, &[]), b"701\n", invariant(kind, e::at(s(0), 30), &sources).as_bytes(), 1);
+                    processes += 1;
+                }
+            }
+        }
+    }
+    eprintln!("native enum boundaries:8 changed-variant replacement cases,2 two-owned-input cases,32 compiled source-free artifacts,{processes} ELF executions including independent every-fuel schedules and later-input fault boundaries");
+}
