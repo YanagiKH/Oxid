@@ -1187,6 +1187,9 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+                return Err(bad("enum execution disabled", span));
+            }
             OwnedInstruction::ConstructComposite {
                 destination,
                 fields,
@@ -1935,6 +1938,9 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
             self.charge(cost, end.span)?;
             match end.kind {
+                OwnedTerminatorKind::MatchDispatch { .. } => {
+                    return Err(bad("enum execution disabled", end.span))
+                }
                 OwnedTerminatorKind::Branch {
                     condition,
                     then_block,

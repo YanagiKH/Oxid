@@ -78,6 +78,7 @@ fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![],
     }

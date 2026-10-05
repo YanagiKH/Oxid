@@ -60,13 +60,18 @@ pub(super) fn active(f: &RawOwnedFunction) -> bool {
         || !f.references.is_empty()
         || !f.calls.is_empty()
         || !f.loans.is_empty()
+        || !f.matches.is_empty()
         || f.blocks.iter().any(|b| {
             b.statements
                 .iter()
                 .any(|s| !matches!(s.kind, OwnedInstruction::Scalar(_)))
                 || matches!(
                     b.terminator.as_ref().map(|e| &e.kind),
-                    Some(OwnedTerminatorKind::ReturnOwned(_) | OwnedTerminatorKind::Invoke { .. })
+                    Some(
+                        OwnedTerminatorKind::ReturnOwned(_)
+                            | OwnedTerminatorKind::Invoke { .. }
+                            | OwnedTerminatorKind::MatchDispatch { .. }
+                    )
                 )
         })
 }
@@ -81,6 +86,9 @@ pub(super) struct FunctionCounts {
     pub parameters: usize,
     pub calls: usize,
     pub loans: usize,
+    pub matches: usize,
+    pub match_arms: usize,
+    pub max_match_arms: usize,
     pub blocks: usize,
     pub edges: usize,
     pub statements: usize,
@@ -164,16 +172,31 @@ pub(super) fn account_function(
     )?;
     let s = add(c.statements, c.merges)?;
     program.statements = cap(add(program.statements, s)?, MAX_ASSIGNMENTS, "assignments")?;
-    if !c.ownership_active && c.diagnostic_origins == 0 {
+    // The new vector header is retained even by scalar-only old functions.
+    let match_metadata = add(
+        size_of::<Vec<MatchDecl>>(),
+        add(
+            mul(c.matches, size_of::<MatchDecl>())?,
+            mul(c.match_arms, size_of::<MatchArm>())?,
+        )?,
+    )?;
+    program.usage.metadata_bytes = cap(
+        add(program.usage.metadata_bytes, match_metadata)?,
+        limits.metadata,
+        "ownership metadata",
+    )?;
+    cap(c.max_match_arms, 256, "match arms")?;
+    let ownership_active = c.ownership_active || c.matches != 0 || c.match_arms != 0;
+    if !ownership_active && c.diagnostic_origins == 0 {
         return Ok(());
     }
     let u = &mut program.usage;
-    let mut work = mul(if c.ownership_active { 4 } else { 2 }, c.diagnostic_origins)?;
+    let mut work = mul(if ownership_active { 4 } else { 2 }, c.diagnostic_origins)?;
     let mut metadata = mul(
         add(c.statements, c.blocks)?,
         size_of::<Option<DiagnosticOrigins>>(),
     )?;
-    if c.ownership_active {
+    if ownership_active {
         let a = add(c.descriptor_arguments, c.preparations)?;
         let composition = add(c.composite_fields, c.projection_fields)?;
         u.owners = cap(add(u.owners, c.owners)?, limits.owners, "owners")?;
@@ -182,7 +205,10 @@ pub(super) fn account_function(
                 u.expanded_events,
                 add(
                     add(add(s, a)?, c.constructed_fields)?,
-                    add(c.constructed_elements, composition)?,
+                    add(
+                        add(c.constructed_elements, composition)?,
+                        add(c.matches, c.match_arms)?,
+                    )?,
                 )?,
             )?,
             limits.events,
@@ -197,6 +223,8 @@ pub(super) fn account_function(
             c.constructed_fields,
             c.constructed_elements,
             composition,
+            c.matches,
+            mul(3, c.match_arms)?,
             c.owners,
             c.loans,
             c.calls,
@@ -234,7 +262,7 @@ pub(super) fn account_function(
         limits.metadata,
         "ownership metadata",
     )?;
-    if c.ownership_active {
+    if ownership_active {
         // Availability queue is dropped before reverse-path reconstruction.
         let availability = mul(c.blocks, 1 + 4 * size_of::<usize>())?;
         let reconstruction = add(
@@ -244,9 +272,18 @@ pub(super) fn account_function(
                 size_of::<usize>(),
             )?,
         )?;
+        let match_scratch = if c.matches == 0 {
+            0
+        } else {
+            add(
+                mul(c.blocks, size_of::<shape::MatchBlockRole>())?,
+                c.max_match_arms,
+            )?
+        };
         let scratch = availability
             .max(reconstruction)
-            .max(c.max_constructor_fields.min(1024));
+            .max(c.max_constructor_fields.min(1024))
+            .max(match_scratch);
         u.scratch_bytes = cap(
             u.scratch_bytes.max(scratch),
             limits.scratch,
@@ -296,13 +333,25 @@ pub(super) fn preflight(
             parameters: f.parameters.len(),
             calls: f.calls.len(),
             loans: f.loans.len(),
+            matches: f.matches.len(),
             blocks: f.blocks.len(),
             ownership_active: !f.owners.is_empty()
                 || !f.references.is_empty()
                 || !f.calls.is_empty()
-                || !f.loans.is_empty(),
+                || !f.loans.is_empty()
+                || !f.matches.is_empty(),
             ..FunctionCounts::default()
         };
+        cap(
+            f.matches.len(),
+            limits.bounded().events,
+            "expanded ownership events",
+        )?;
+        for descriptor in &f.matches {
+            cap(descriptor.arms.len(), 256, "match arms")?;
+            c.match_arms = add(c.match_arms, descriptor.arms.len())?;
+            c.max_match_arms = c.max_match_arms.max(descriptor.arms.len());
+        }
         for loan in &f.loans {
             cap(
                 loan.projection.len(),
@@ -331,13 +380,24 @@ pub(super) fn preflight(
                     c.edges,
                     match end.kind {
                         OwnedTerminatorKind::Branch { .. } => 2,
+                        OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
+                            // Read only actual carrier lengths; malformed IDs
+                            // are rejected later by authoritative shape proof.
+                            1 + usize::from(arm.checked_add(1).is_some_and(|next| {
+                                f.matches
+                                    .get(match_id.0)
+                                    .is_some_and(|m| next < m.arms.len())
+                            }))
+                        }
                         OwnedTerminatorKind::Goto(_) | OwnedTerminatorKind::Invoke { .. } => 1,
                         _ => 0,
                     },
                 )?;
                 c.ownership_active |= matches!(
                     end.kind,
-                    OwnedTerminatorKind::Invoke { .. } | OwnedTerminatorKind::ReturnOwned(_)
+                    OwnedTerminatorKind::Invoke { .. }
+                        | OwnedTerminatorKind::ReturnOwned(_)
+                        | OwnedTerminatorKind::MatchDispatch { .. }
                 );
             }
             for i in &b.statements {

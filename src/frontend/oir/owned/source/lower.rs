@@ -173,6 +173,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                     references: budget::reserve(c.references)?,
                     calls: budget::reserve(c.calls)?,
                     loans: budget::reserve(c.loans)?,
+                    matches: Vec::new(),
                     entry: BlockId(0),
                     blocks: budget::reserve(c.blocks)?,
                 },
@@ -1908,6 +1909,10 @@ pub(super) fn lower_with_limits(
                 && f.references.len() == count.references
                 && f.calls.len() == count.calls
                 && f.loans.len() == count.loans
+                && f.matches.is_empty()
+                && count.matches == 0
+                && count.match_arms == 0
+                && count.max_match_arms == 0
                 && f.blocks.len() == count.blocks,
             view.signature().span,
         )?;

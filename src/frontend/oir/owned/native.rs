@@ -666,6 +666,7 @@ fn admit_accounted(
 }
 fn successors(kind: &OwnedTerminatorKind) -> impl Iterator<Item = BlockId> {
     let targets = match kind {
+        OwnedTerminatorKind::MatchDispatch { .. } => unreachable!("enum execution disabled"),
         OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_) => [None, None],
         OwnedTerminatorKind::Goto(target) => [Some(*target), None],
         OwnedTerminatorKind::Invoke { continuation, .. } => [Some(*continuation), None],
@@ -1608,6 +1609,9 @@ impl Continuation {
 /// Exhaustive classification shared by operation emission and phi predecessors.
 fn continuation(instruction: &OwnedInstruction) -> Continuation {
     match instruction {
+        OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+            unreachable!("enum execution disabled")
+        }
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
                 Rvalue::CheckedI32 { .. } | Rvalue::CheckedNegateI32 { .. } => {
@@ -1932,6 +1936,11 @@ fn emit_statement(
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     match &statement.kind {
+        OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+            // Unreachable through the sealed executable boundary. Fail closed
+            // rather than silently emitting a partially implemented operation.
+            out.exceeded = true;
+        }
         OwnedInstruction::ConstructArray {
             destination,
             elements,
@@ -2463,6 +2472,9 @@ fn emit_terminator(
     out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     match term {
+        OwnedTerminatorKind::MatchDispatch { .. } => {
+            out.exceeded = true;
+        }
         OwnedTerminatorKind::Goto(target) => writeln!(out, "  br label %b{}", target.0).unwrap(),
         OwnedTerminatorKind::Branch {
             condition,

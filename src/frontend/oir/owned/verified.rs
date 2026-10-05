@@ -71,11 +71,59 @@ fn validate(
     usage: &mut OwnershipUsage,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
-    // Declaration identity/layout does not authorize executable enum values.
-    // This fence is shared by production and all qualification probes.
+    executable_feature_gate(raw, declarations)?;
+    validate_proof(raw, declarations, sources, usage, meter)
+}
+
+/// Every witness-building route crosses this fence, including executable test
+/// probes. Merely adding or forging an operation/carrier cannot bypass it.
+fn executable_feature_gate(
+    raw: &RawOwnedProgram,
+    declarations: &Declarations,
+) -> Result<(), OwnedFailure> {
     if let Some(enumeration) = raw.enums.first() {
         return Err(OwnedFailure::malformed(Malformed::Type, enumeration.span));
     }
+    for f in &raw.functions {
+        // Preserve checked nominal-identity denials for undeclared carriers.
+        if matches!(f.result, ValueTy::Owned(AggregateTy::Enum(_))) {
+            declarations.check_value_type(f.result)?;
+            return Err(OwnedFailure::malformed(Malformed::Type, f.span));
+        }
+        for owner in &f.owners {
+            if matches!(owner.aggregate(), AggregateTy::Enum(_)) {
+                declarations.check_aggregate_type(owner.aggregate())?;
+                return Err(OwnedFailure::malformed(Malformed::Type, owner.span));
+            }
+        }
+        if !f.matches.is_empty()
+            || f.blocks.iter().any(|b| {
+                b.statements.iter().any(|i| {
+                    matches!(
+                        i.kind,
+                        OwnedInstruction::ConstructEnum { .. }
+                            | OwnedInstruction::ConsumeVariant { .. }
+                    )
+                }) || matches!(
+                    b.terminator.as_ref().map(|e| &e.kind),
+                    Some(OwnedTerminatorKind::MatchDispatch { .. })
+                )
+            })
+        {
+            return Err(OwnedFailure::malformed(Malformed::Type, f.span));
+        }
+    }
+    Ok(())
+}
+
+/// Shared authoritative shape/CFG/owner proof; it never constructs a witness.
+fn validate_proof(
+    raw: &RawOwnedProgram,
+    declarations: &Declarations,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
     shape::signatures(raw, declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
@@ -102,6 +150,21 @@ fn validate(
         }
     }
     Ok(())
+}
+
+/// Non-executable enum checkpoint: only inert usage or denial escapes. This
+/// continues the exact production proof past its closed feature gate, with no
+/// enum witness, plan, raw data, declarations or consumer callback exposed.
+#[cfg(test)]
+pub(super) fn probe_enum_validation(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
+    inventory_carriers(raw, &mut meter)?;
+    validate_proof(raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(usage)
 }
 
 /// Observe the authoritative checks without acquiring execution authority.
@@ -194,6 +257,12 @@ fn inventory_carriers(
         }
     }
     for f in &raw.functions {
+        for descriptor in &f.matches {
+            meter.visit()?;
+            for _ in &descriptor.arms {
+                meter.visit()?;
+            }
+        }
         for _ in &f.owners {
             meter.visit()?;
         }

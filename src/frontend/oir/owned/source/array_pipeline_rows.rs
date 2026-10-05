@@ -931,6 +931,7 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
+            I::ConstructEnum { .. } | I::ConsumeVariant { .. } => unreachable!("enum source gate"),
             I::ConstructComposite {
                 destination,
                 fields,
@@ -1074,6 +1075,7 @@ struct TerminatorRow<'a>(&'a OwnedTerminatorKind);
 impl fmt::Display for TerminatorRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            OwnedTerminatorKind::MatchDispatch { .. } => unreachable!("enum source gate"),
             OwnedTerminatorKind::Branch {
                 condition,
                 then_block,

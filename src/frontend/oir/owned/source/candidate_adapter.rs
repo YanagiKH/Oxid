@@ -269,6 +269,9 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
+        OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+            unreachable!("enum source gate")
+        }
         // This frozen scalar-record observer is not the composition qualification path.
         OwnedInstruction::ConstructComposite { .. }
         | OwnedInstruction::ReadProjection { .. }
@@ -380,6 +383,7 @@ fn instruction(value: &OwnedInstruction) -> String {
 
 fn terminator(value: &OwnedTerminatorKind) -> String {
     match value {
+        OwnedTerminatorKind::MatchDispatch { .. } => unreachable!("enum source gate"),
         OwnedTerminatorKind::Branch {
             condition,
             then_block,

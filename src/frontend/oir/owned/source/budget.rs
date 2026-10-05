@@ -104,6 +104,8 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.references, size_of::<ReferenceDecl>()),
         (c.calls, size_of::<CallDecl>()),
         (c.loans, size_of::<LoanDecl>()),
+        (c.matches, size_of::<MatchDecl>()),
+        (c.match_arms, size_of::<MatchArm>()),
         (c.descriptor_arguments, size_of::<ArgumentSlot>()),
         (c.blocks, size_of::<OwnedBlock>()),
         (c.statements, size_of::<OwnedStatement>()),
@@ -131,7 +133,7 @@ fn unit2b_q_adds_only_actual_operand_payload_to_source_inventory() {
         );
     }
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 160);
+    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 184);
 }
 pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,

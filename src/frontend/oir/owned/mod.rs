@@ -22,6 +22,20 @@ use verified::{verify_owned, verify_with_limits};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReferenceParamId(usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MatchId(usize);
+#[derive(Clone, Debug)]
+struct MatchDecl {
+    source: OwnerPlaceId,
+    arms: Vec<MatchArm>,
+    span: Span,
+}
+#[derive(Clone, Copy, Debug)]
+struct MatchArm {
+    variant: VariantId,
+    dispatch: BlockId,
+    entry: BlockId,
+}
 #[derive(Debug)]
 struct RawOwnedProgram {
     enums: Vec<RawEnumDecl>,
@@ -40,6 +54,7 @@ struct RawOwnedFunction {
     references: Vec<ReferenceDecl>,
     calls: Vec<CallDecl>,
     loans: Vec<LoanDecl>,
+    matches: Vec<MatchDecl>,
     entry: BlockId,
     blocks: Vec<OwnedBlock>,
 }
@@ -155,6 +170,16 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    ConstructEnum {
+        destination: OwnerPlaceId,
+        variant: VariantId,
+        payload: Option<Operand>,
+    },
+    ConsumeVariant {
+        match_id: MatchId,
+        arm: usize,
+        destination: Option<LocalId>,
+    },
     ConstructComposite {
         destination: OwnerPlaceId,
         fields: Vec<(FieldId, FieldInitializer)>,
@@ -253,6 +278,11 @@ impl OwnedTerminator {
 }
 #[derive(Clone, Debug)]
 enum OwnedTerminatorKind {
+    /// Even the final arm tests its expected checked tag; it is never a Goto.
+    MatchDispatch {
+        match_id: MatchId,
+        arm: usize,
+    },
     Branch {
         condition: Operand,
         then_block: BlockId,
@@ -433,3 +463,6 @@ mod enum_layout_tests;
 
 #[cfg(test)]
 mod enum_admission_tests;
+
+#[cfg(test)]
+mod enum_match_tests;

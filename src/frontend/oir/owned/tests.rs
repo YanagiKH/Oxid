@@ -39,6 +39,7 @@ fn subject(span: Span) -> RawOwnedProgram {
             references: vec![],
             calls: vec![],
             loans: vec![],
+            matches: Vec::new(),
             entry: BlockId(0),
             blocks: vec![OwnedBlock {
                 merge: None,
@@ -122,6 +123,7 @@ fn unit_function(id: usize, span: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![OwnedBlock {
             span,
@@ -646,7 +648,8 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
                 events: 0,
                 work: 0,
                 scratch: 0,
-                metadata: std::mem::size_of::<Vec<RawEnumDecl>>()
+                metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
+                    + std::mem::size_of::<Vec<MatchDecl>>())
             }
         )
         .is_ok());

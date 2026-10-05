@@ -79,6 +79,7 @@ pub(super) fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFuncti
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![],
     }

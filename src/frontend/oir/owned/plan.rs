@@ -3,6 +3,9 @@
 use super::{storage::*, verified::VerifiedOwnedProgram, *};
 use std::mem::size_of;
 
+pub(super) const ENUM_VALUE_COST: usize = 3;
+pub(super) const MATCH_DISPATCH_COST: usize = 1;
+
 pub(super) const MAX_PLAN_BYTES: usize = 32 * 1024 * 1024;
 pub(super) const MAX_FUEL: usize = 1_000_000;
 pub(super) const MAX_FRAMES: usize = 1_024;
@@ -145,6 +148,9 @@ impl<'a> ExecutionPlan<'a> {
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
+            OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+                ENUM_VALUE_COST
+            }
             OwnedInstruction::StorageEnd(o) | OwnedInstruction::Discard(o) => {
                 1 + self.owner_width(f, *o)
             }
@@ -164,6 +170,7 @@ impl<'a> ExecutionPlan<'a> {
         let function = &self.witness.functions()[f.0];
         let usage = self.function(f).usage;
         match terminator {
+            OwnedTerminatorKind::MatchDispatch { .. } => MATCH_DISPATCH_COST,
             OwnedTerminatorKind::Invoke { call, .. } => {
                 let descriptor = &function.calls[call.0];
                 let c = self.function(f).call(*call);
@@ -452,7 +459,10 @@ mod tests {
             ParameterTy => 24,
             Option<ParameterTy> => 24,
             RawOwnedProgram => 48 + size_of::<Vec<RawEnumDecl>>(),
-            RawOwnedFunction => 248,
+            RawOwnedFunction => 248 + size_of::<Vec<MatchDecl>>(),
+            MatchDecl => 56,
+            MatchArm => 32,
+            shape::MatchBlockRole => 24,
             OwnerDecl => 56,
             ReferenceDecl => 48,
             LoanDecl => 96,

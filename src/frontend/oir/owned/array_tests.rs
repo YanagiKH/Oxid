@@ -485,7 +485,8 @@ fn unit2b_raw_q_limits_and_payload_are_independent_and_allocation_free() {
     assert_eq!(u.expanded_events, 11);
     assert_eq!(u.work, 36 * (1 + 2 + 9 + 2 + 1 + 5));
     assert_eq!(u.scratch_bytes, 33);
-    let expected_metadata = std::mem::size_of::<Vec<RawEnumDecl>>()
+    let expected_metadata = (std::mem::size_of::<Vec<RawEnumDecl>>()
+        + std::mem::size_of::<Vec<MatchDecl>>())
         + 10 * std::mem::size_of::<Option<DiagnosticOrigins>>()
         + std::mem::size_of::<shape::OwnerSites>()
         + 2 * std::mem::size_of::<Operand>();
@@ -756,19 +757,21 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         events: 0,
         work: 0,
         scratch: 0,
-        metadata: std::mem::size_of::<Vec<RawEnumDecl>>(),
+        metadata: (std::mem::size_of::<Vec<RawEnumDecl>>() + std::mem::size_of::<Vec<MatchDecl>>()),
     };
     assert_eq!(
         verified::probe_array_validation(&raw, &sources, zero).unwrap(),
         OwnershipUsage {
-            metadata_bytes: std::mem::size_of::<Vec<RawEnumDecl>>(),
+            metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
+                + std::mem::size_of::<Vec<MatchDecl>>()),
             ..OwnershipUsage::default()
         }
     );
     assert_eq!(
         verify_with_limits(raw, &sources, zero).unwrap().usage(),
         OwnershipUsage {
-            metadata_bytes: std::mem::size_of::<Vec<RawEnumDecl>>(),
+            metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
+                + std::mem::size_of::<Vec<MatchDecl>>()),
             ..OwnershipUsage::default()
         }
     );
@@ -835,7 +838,7 @@ fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
     assert_eq!(admitted.work, 32 * (1 + 2 + 99 + 99_901 + 1));
     assert_eq!(
         admitted.metadata_bytes,
-        std::mem::size_of::<Vec<RawEnumDecl>>()
+        (std::mem::size_of::<Vec<RawEnumDecl>>() + std::mem::size_of::<Vec<MatchDecl>>())
             + 100 * std::mem::size_of::<Option<DiagnosticOrigins>>()
             + 99_901 * std::mem::size_of::<Operand>()
     );

@@ -25,6 +25,9 @@ fn origins(
     Ok(())
 }
 fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<(), Box<Diagnostic>> {
+    if !function.matches.is_empty() {
+        return Err(bad());
+    }
     visitor.declaration()?;
     visitor.span(function.span)?;
     for local in &function.locals {
@@ -54,6 +57,8 @@ fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<()
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
+                OwnedInstruction::ConstructEnum { .. }
+                | OwnedInstruction::ConsumeVariant { .. } => return Err(bad()),
                 OwnedInstruction::Scalar(statement) => visitor.statement(statement)?,
                 OwnedInstruction::Construct { fields, .. } => {
                     for (_, operand) in fields {
@@ -107,6 +112,7 @@ fn function(function: &RawOwnedFunction, visitor: &mut Visitor<'_>) -> Result<()
             visitor.span(terminator.span)?;
             origins(terminator.diagnostic_origins, visitor)?;
             match &terminator.kind {
+                OwnedTerminatorKind::MatchDispatch { .. } => return Err(bad()),
                 OwnedTerminatorKind::Branch { condition, .. } => visitor.span(condition.span)?,
                 OwnedTerminatorKind::ReturnScalar(operand) => visitor.span(operand.span)?,
                 OwnedTerminatorKind::Goto(_)
@@ -122,6 +128,9 @@ pub(super) fn check(
     index: &DeclarationIndex<'_>,
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
+    if !raw.enums.is_empty() {
+        return Err(bad());
+    }
     let mut count = Visitor::count();
     for declaration in &raw.records {
         record(declaration, &mut count)?;

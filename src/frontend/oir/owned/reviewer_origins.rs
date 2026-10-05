@@ -79,6 +79,7 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![OwnedBlock {
             span: s,
@@ -342,7 +343,13 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
             u.metadata_bytes,
             u.scratch_bytes
         ),
-        (1, 1, 262, 312, 33)
+        (
+            1,
+            1,
+            262,
+            312 + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
+            33
+        )
     );
     let d = Declarations::check(&p.records, &sm).unwrap();
     let mut meter = budget::Meter {
@@ -362,7 +369,9 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         owners: 1,
         events: 1,
         work: 262,
-        metadata: 288 + std::mem::size_of::<Vec<RawEnumDecl>>(),
+        metadata: 288
+            + std::mem::size_of::<Vec<RawEnumDecl>>()
+            + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
         scratch: 33,
     };
     assert!(verify_with_limits(clone_raw(&p), &sm, exact).is_ok());
@@ -375,7 +384,9 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         (budget::Limits { work: 261, ..exact }, "ownership work"),
         (
             budget::Limits {
-                metadata: 287 + std::mem::size_of::<Vec<RawEnumDecl>>(),
+                metadata: 287
+                    + std::mem::size_of::<Vec<RawEnumDecl>>()
+                    + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
                 ..exact
             },
             "ownership metadata",
@@ -422,7 +433,13 @@ fn heldout_oversized_raw_preflight_allocates_nothing_and_ignores_false_source_co
         &mut false_counts,
     )
     .unwrap();
-    assert_eq!(false_counts.usage(), OwnershipUsage::default());
+    assert_eq!(
+        false_counts.usage(),
+        OwnershipUsage {
+            metadata_bytes: std::mem::size_of::<Vec<MatchDecl>>(),
+            ..OwnershipUsage::default()
+        }
+    );
     let (result, allocations) = counted(|| verify_owned(p, &sm));
     assert_eq!(allocations, 0);
     assert_eq!(

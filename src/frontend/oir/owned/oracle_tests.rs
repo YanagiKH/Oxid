@@ -433,6 +433,7 @@ fn empty_function(id: usize, span: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![],
     }
