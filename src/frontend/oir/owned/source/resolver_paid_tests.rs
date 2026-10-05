@@ -1399,3 +1399,542 @@ fn c3_t1_enum_free_tiny_twins_preserve_preused_storage_and_observation_state() {
         }
     }
 }
+
+// Frozen independent rich-success ledger, reviewed before selector execution.
+// This is test data only; no per-function observation table enters the checker.
+struct TypedRichSuccessCase {
+    id: &'static str,
+    text: &'static str,
+    source_bytes: usize,
+    source_sha256: &'static str,
+    counts: super::super::hir_budget::HirCounts,
+    resolver_requests: [usize; 17],
+    resolver_capacities: [usize; 17],
+    resolver_lengths: [usize; 12],
+    resolver_zero_requests: [usize; 17],
+    typed_requests: [usize; 14],
+    typed_capacities: [usize; 14],
+    typed_lengths: [usize; 8],
+    typed_zero_requests: [usize; 14],
+    attempts: (usize, usize),
+    backing_64bit: [usize; 5],
+}
+const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
+    TypedRichSuccessCase {
+        id: "A1_nested_scalar_calls",
+        text: "enum Unused{V} fn zero()->i32{return 0;} fn id(x:i32)->i32{return x;} fn pair(a:i32,b:i32)->i32{return a+b;} fn main()->i32{return pair(id(zero()),id(2));}",
+        source_sha256: "8a5dbc4845c38416c39f5a2e76a14fea42bb66b8121a1f7f9b9ad542acfd053b",
+        source_bytes: 155,
+        counts: super::super::hir_budget::HirCounts {
+            records: 0,
+            record_fields: 0,
+            max_record_fields: 0,
+            functions: 4,
+            parameters: 3,
+            bindings: 3,
+            expressions: 10,
+            blocks: 4,
+            statements: 4,
+            calls: 4,
+            call_arguments: 4,
+            borrow_arguments: 0,
+            record_literals: 0,
+            field_initializers: 0,
+            array_literals: 0,
+            array_entries: 0,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 4,
+            loop_slots: 4,
+            resolve_frames: 48,
+            type_frames: 44,
+            max_expression_depth: 3,
+            max_body_depth: 1,
+        },
+        resolver_requests: [1, 0, 1, 4, 1, 4, 4, 4, 4, 4, 0, 0, 4, 4, 4, 4, 4],
+        resolver_capacities: [0, 0, 4, 3, 4, 3, 10, 4, 4, 4, 0, 0, 3, 3, 4, 4, 48],
+        resolver_lengths: [0, 0, 4, 3, 4, 3, 10, 4, 4, 4, 0, 0],
+        resolver_zero_requests: [1, 0, 0, 2, 0, 2, 0, 0, 0, 1, 0, 0, 2, 2, 0, 0, 0],
+        typed_requests: [1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 4],
+        typed_capacities: [4, 3, 10, 4, 10, 4, 4, 0, 44, 4, 0, 3, 4, 10],
+        typed_lengths: [4, 10, 4, 4, 0, 3, 4, 10],
+        typed_zero_requests: [0, 2, 0, 0, 0, 0, 0, 4, 0, 1, 0, 2, 0, 0],
+        attempts: (47, 49),
+        backing_64bit: [3152, 1360, 1704, 248, 3008],
+    },
+    TypedRichSuccessCase {
+        id: "A2_nested_records_root_borrow",
+        text: "enum Unused{V} struct Empty{} struct Leaf{x:i32} struct Pair{left:Leaf,right:bool} struct Wide{a:i32,b:i32,c:i32,d:i32} fn take(p:&Pair)->(){return;} fn main()->i32{let e=Empty{};let p=Pair{right:true,left:Leaf{x:7}};take(&p);return 0;}",
+        source_sha256: "f55171861463d4ad26788ed9e5996d3e7ec9b468a704a2c9492b9743232075df",
+        source_bytes: 236,
+        counts: super::super::hir_budget::HirCounts {
+            records: 4,
+            record_fields: 7,
+            max_record_fields: 4,
+            functions: 2,
+            parameters: 1,
+            bindings: 3,
+            expressions: 7,
+            blocks: 2,
+            statements: 5,
+            calls: 1,
+            call_arguments: 1,
+            borrow_arguments: 1,
+            record_literals: 3,
+            field_initializers: 3,
+            array_literals: 0,
+            array_entries: 0,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 2,
+            loop_slots: 2,
+            resolve_frames: 24,
+            type_frames: 22,
+            max_expression_depth: 3,
+            max_body_depth: 1,
+        },
+        resolver_requests: [1, 4, 1, 2, 1, 2, 2, 2, 2, 1, 3, 0, 2, 2, 2, 2, 2],
+        resolver_capacities: [4, 7, 2, 1, 2, 3, 7, 2, 5, 1, 3, 0, 3, 3, 2, 2, 24],
+        resolver_lengths: [4, 7, 2, 1, 2, 3, 7, 2, 5, 1, 3, 0],
+        resolver_zero_requests: [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        typed_requests: [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 3, 2, 2, 2],
+        typed_capacities: [2, 3, 7, 2, 7, 2, 5, 1, 22, 1, 3, 3, 2, 7],
+        typed_lengths: [2, 7, 2, 5, 0, 3, 2, 7],
+        typed_zero_requests: [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+        attempts: (31, 27),
+        backing_64bit: [3296, 752, 1272, 192, 1459],
+    },
+    TypedRichSuccessCase {
+        id: "A3_empty_branches_loop_transfers",
+        text: "enum Unused{V} fn main()->i32{let mut n=0;if true{}else{}while n<2{n=n+1;if n==1{continue;}else{break;}}return n;}",
+        source_sha256: "1ca17707b5ca27e4c0db66094e99fff3ef257f9656b45a9c1cb62683558ed69c",
+        source_bytes: 114,
+        counts: super::super::hir_budget::HirCounts {
+            records: 0,
+            record_fields: 0,
+            max_record_fields: 0,
+            functions: 1,
+            parameters: 0,
+            bindings: 1,
+            expressions: 12,
+            blocks: 6,
+            statements: 8,
+            calls: 0,
+            call_arguments: 0,
+            borrow_arguments: 0,
+            record_literals: 0,
+            field_initializers: 0,
+            array_literals: 0,
+            array_entries: 0,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 3,
+            loop_slots: 3,
+            resolve_frames: 20,
+            type_frames: 17,
+            max_expression_depth: 2,
+            max_body_depth: 3,
+        },
+        resolver_requests: [1, 0, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 1, 1, 1, 1, 1],
+        resolver_capacities: [0, 0, 1, 0, 1, 1, 12, 6, 8, 0, 0, 0, 1, 1, 3, 3, 20],
+        resolver_lengths: [0, 0, 1, 0, 1, 1, 12, 6, 8, 0, 0, 0],
+        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+        typed_requests: [1, 1, 1, 1, 1, 1, 6, 1, 1, 0, 0, 1, 1, 1],
+        typed_capacities: [1, 1, 12, 6, 12, 6, 8, 0, 17, 0, 0, 1, 6, 12],
+        typed_lengths: [1, 12, 6, 8, 0, 1, 6, 12],
+        typed_zero_requests: [0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0],
+        attempts: (18, 17),
+        backing_64bit: [2888, 576, 1648, 240, 1088],
+    },
+    TypedRichSuccessCase {
+        id: "A4_grouped_empty_array_cache",
+        text: "enum Unused{V} fn main()->i32{let a:[i32;0]=(([]));return a.len();}",
+        source_sha256: "7e4e77f1779d55275c51be91dbe8f169e42340acd5e44c9882dfa1f43c3d8b71",
+        source_bytes: 67,
+        counts: super::super::hir_budget::HirCounts {
+            records: 0,
+            record_fields: 0,
+            max_record_fields: 0,
+            functions: 1,
+            parameters: 0,
+            bindings: 1,
+            expressions: 4,
+            blocks: 1,
+            statements: 2,
+            calls: 0,
+            call_arguments: 0,
+            borrow_arguments: 0,
+            record_literals: 0,
+            field_initializers: 0,
+            array_literals: 1,
+            array_entries: 0,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 1,
+            loop_slots: 1,
+            resolve_frames: 12,
+            type_frames: 11,
+            max_expression_depth: 3,
+            max_body_depth: 1,
+        },
+        resolver_requests: [1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1],
+        resolver_capacities: [0, 0, 1, 0, 1, 1, 4, 1, 2, 0, 0, 0, 1, 1, 1, 1, 12],
+        resolver_lengths: [0, 0, 1, 0, 1, 1, 4, 1, 2, 0, 0, 0],
+        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        typed_requests: [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1],
+        typed_capacities: [1, 1, 4, 1, 4, 1, 2, 0, 11, 0, 0, 1, 1, 4],
+        typed_lengths: [1, 4, 1, 2, 0, 1, 1, 4],
+        typed_zero_requests: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        attempts: (14, 12),
+        backing_64bit: [960, 352, 596, 92, 704],
+    },
+];
+
+#[test]
+fn c3_t1_path_free_rich_sources_reconcile_all_kinds_and_release_new_backing() {
+    use super::super::{
+        hir_budget::ScopeName,
+        typeck::{BorrowProjection, FlowSummary, TypeFrame, TypedBody},
+    };
+    use std::mem::size_of;
+    // Literal label/type maps independently cross-check trace request identity;
+    // they never provide observed Vec capacities to the implementation.
+    let resolver_kinds = [
+        ("paid HIR records", size_of::<Record>()),
+        ("paid HIR record fields", size_of::<Field>()),
+        ("paid HIR signatures", size_of::<Signature>()),
+        ("paid HIR parameters", size_of::<ParameterTy>()),
+        ("paid HIR functions", size_of::<Function>()),
+        ("paid HIR bindings", size_of::<Binding>()),
+        ("paid HIR expressions", size_of::<Expr>()),
+        ("paid HIR blocks", size_of::<BodyBlock>()),
+        ("paid HIR statements", size_of::<Stmt>()),
+        ("paid HIR call arguments", size_of::<Argument>()),
+        ("paid HIR field initializers", size_of::<FieldInit>()),
+        ("paid HIR array entries", size_of::<ExprId>()),
+        ("paid HIR scope names", size_of::<ScopeName>()),
+        ("paid HIR scope exits", size_of::<usize>()),
+        ("paid HIR scope marks", size_of::<usize>()),
+        ("paid HIR loop targets", size_of::<LoopId>()),
+        ("paid HIR resolve frames", size_of::<ResolveFrame>()),
+    ];
+    let typed_kinds = [
+        ("paid typed bodies", size_of::<TypedBody>()),
+        ("paid typed binding stage", size_of::<Option<ParameterTy>>()),
+        ("paid typed expression stage", size_of::<Option<ValueTy>>()),
+        ("paid typed flow stage", size_of::<Option<FlowSummary>>()),
+        (
+            "paid typed expression projections",
+            size_of::<Option<Projection>>(),
+        ),
+        (
+            "paid typed statement rows",
+            size_of::<Vec<Option<Projection>>>(),
+        ),
+        (
+            "paid typed statement projections",
+            size_of::<Option<Projection>>(),
+        ),
+        (
+            "paid typed borrow projections",
+            size_of::<BorrowProjection>(),
+        ),
+        ("paid typed frames", size_of::<TypeFrame>()),
+        ("paid typed call actuals", size_of::<(ParameterTy, Span)>()),
+        ("paid typed record presence", size_of::<bool>()),
+        ("paid typed final bindings", size_of::<ParameterTy>()),
+        ("paid typed final flows", size_of::<FlowSummary>()),
+        ("paid typed final expressions", size_of::<ValueTy>()),
+    ];
+    for case in &TYPED_RICH_SUCCESS_A {
+        assert_eq!(case.text.len(), case.source_bytes);
+        for preused in [false, true] {
+            with_index(case.text, |index| {
+                let mut allocator = Allocator::default();
+                allocator.observer_trace_bound(128).unwrap();
+                let mut sentinel = Vec::<u8>::new();
+                if preused {
+                    allocator
+                        .vector_exact(&mut sentinel, 3, "rich typed sentinel")
+                        .unwrap();
+                    sentinel.extend_from_slice(&[31, 47, 83]);
+                }
+                let before = allocator.attempts;
+                let prefix = allocator.trace.len();
+                let capacities = (allocator.trace.capacity(), sentinel.capacity());
+                let work = WorkMeter::default();
+                let (result, heap) = super::super::reviewer_source::integration_measured(|| {
+                    probe_enum_type_storage(index, &work, &mut allocator)
+                });
+                let facts = result.unwrap().unwrap();
+                assert_eq!(heap.1, 0, "{} preused={preused}", case.id);
+                assert!(heap.0 > 0 && heap.2 > 0);
+                assert!(!work.observing());
+                assert!(work.events.borrow().is_empty() && work.observations.borrow().is_empty());
+                assert_eq!(
+                    (allocator.trace.capacity(), sentinel.capacity()),
+                    capacities
+                );
+                assert_eq!(
+                    sentinel.as_slice(),
+                    if preused { &[31, 47, 83][..] } else { &[][..] }
+                );
+                assert_eq!(
+                    (before, prefix),
+                    (usize::from(preused), usize::from(preused))
+                );
+                if preused {
+                    let row = &allocator.trace[0];
+                    assert_eq!(
+                        (row.kind, row.length, row.element_bytes, row.success),
+                        ("rich typed sentinel", 3, 1, true)
+                    );
+                }
+                assert!(!allocator.observer_trace_overflow);
+                let suffix = &allocator.trace[prefix..];
+                assert!(suffix.iter().all(|row| row.success));
+                assert_eq!(facts.resolver.plan.counts, case.counts);
+                assert_eq!(
+                    (
+                        facts.resolver.reservation_attempts,
+                        facts.typed.typed_attempts
+                    ),
+                    case.attempts
+                );
+                assert_eq!(
+                    allocator.attempts.checked_sub(before).unwrap(),
+                    facts
+                        .resolver
+                        .reservation_attempts
+                        .checked_add(facts.typed.typed_attempts)
+                        .unwrap()
+                );
+                assert_eq!(suffix.len(), case.attempts.0 + case.attempts.1);
+                assert_eq!(facts.resolver.retained_counts, case.resolver_lengths);
+                assert_eq!(facts.resolver.capacities, case.resolver_capacities);
+                assert_eq!(facts.typed.materialized_vectors, case.typed_requests);
+                assert_eq!(facts.typed.capacities, case.typed_capacities);
+                assert_eq!(facts.typed.retained_lengths, case.typed_lengths);
+                for (k, (label, width)) in resolver_kinds.iter().copied().enumerate() {
+                    let rows = suffix.iter().filter(|row| row.kind == label);
+                    assert_eq!(
+                        rows.clone().count(),
+                        case.resolver_requests[k],
+                        "{} {label}",
+                        case.id
+                    );
+                    assert_eq!(
+                        rows.clone().filter(|row| row.length == 0).count(),
+                        case.resolver_zero_requests[k]
+                    );
+                    assert!(rows.clone().all(|row| row.element_bytes == width));
+                    assert_eq!(
+                        rows.map(|row| row.length).sum::<usize>(),
+                        case.resolver_capacities[k]
+                    );
+                }
+                for (k, (label, width)) in typed_kinds.iter().copied().enumerate() {
+                    let rows = suffix.iter().filter(|row| row.kind == label);
+                    assert_eq!(
+                        rows.clone().count(),
+                        case.typed_requests[k],
+                        "{} {label}",
+                        case.id
+                    );
+                    assert_eq!(
+                        rows.clone().filter(|row| row.length == 0).count(),
+                        case.typed_zero_requests[k]
+                    );
+                    assert!(rows.clone().all(|row| row.element_bytes == width));
+                    assert_eq!(
+                        rows.map(|row| row.length).sum::<usize>(),
+                        case.typed_capacities[k]
+                    );
+                }
+                assert_eq!(
+                    case.resolver_requests.iter().sum::<usize>(),
+                    case.attempts.0
+                );
+                assert_eq!(case.typed_requests.iter().sum::<usize>(), case.attempts.1);
+                let resolver_backing = (0..12)
+                    .map(|k| case.resolver_capacities[k] * resolver_kinds[k].1)
+                    .sum::<usize>();
+                let resolver_scratch = (12..17)
+                    .map(|k| case.resolver_capacities[k] * resolver_kinds[k].1)
+                    .sum::<usize>();
+                let typed_backing = [0, 4, 5, 6, 7, 11, 12, 13]
+                    .into_iter()
+                    .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
+                    .sum::<usize>();
+                let staging = [1, 2, 3]
+                    .into_iter()
+                    .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
+                    .sum::<usize>();
+                let scratch = [8, 9, 10]
+                    .into_iter()
+                    .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
+                    .sum::<usize>();
+                let backing = [
+                    resolver_backing,
+                    resolver_scratch,
+                    typed_backing,
+                    staging,
+                    scratch,
+                ];
+                assert_eq!(
+                    [
+                        facts.resolver.retained_bytes,
+                        facts.resolver.scratch_capacity_bytes,
+                        facts.typed.retained_backing_bytes,
+                        facts.typed.staging_backing_bytes,
+                        facts.typed.scratch_backing_bytes
+                    ],
+                    backing
+                );
+                #[cfg(target_pointer_width = "64")]
+                assert_eq!(backing, case.backing_64bit);
+                assert_eq!(resolver_backing, facts.resolver.plan.resolved);
+                assert_eq!(typed_backing, facts.resolver.plan.typed);
+                assert_eq!(
+                    facts.resolver.plan.staging - staging,
+                    case.counts.functions
+                        * (size_of::<Vec<Option<ValueTy>>>()
+                            + size_of::<Vec<Option<ParameterTy>>>()
+                            + size_of::<Vec<Option<FlowSummary>>>())
+                );
+                assert!(resolver_scratch <= facts.resolver.plan.resolver_scratch);
+                assert!(scratch <= facts.resolver.plan.typeck_scratch);
+                assert_eq!(
+                    (
+                        facts.typed.path_vectors,
+                        facts.typed.path_length_fields,
+                        facts.typed.path_capacity_fields
+                    ),
+                    (0, 0, 0)
+                );
+                assert_eq!(
+                    (
+                        facts.typed.materialized_path_bytes,
+                        facts.typed.retained_path_bytes,
+                        facts.typed.precharged_path_bytes
+                    ),
+                    (0, 0, 0)
+                );
+                assert_eq!(facts.typed.final_cell, facts.resolver.plan.total);
+                assert!(suffix
+                    .iter()
+                    .all(|row| row.kind != "paid typed projection fields"));
+                if case.id == "A2_nested_records_root_borrow" {
+                    assert!(facts.typed.capacities.iter().all(|capacity| *capacity > 0));
+                    assert_eq!(
+                        (facts.typed.capacities[7], facts.typed.retained_lengths[4]),
+                        (1, 0)
+                    );
+                    assert_eq!(
+                        (
+                            facts.typed.capacities[10],
+                            case.counts.record_literals * case.counts.max_record_fields
+                        ),
+                        (3, 12)
+                    );
+                }
+                println!("C3_T1_RICH_A case={} expected_source_sha256={} preused={preused} resolver_attempts={} typed_attempts={} whole={} backing={backing:?} live={} peak={}",
+                    case.id, case.source_sha256, case.attempts.0, case.attempts.1, suffix.len(), heap.1, heap.2);
+            });
+        }
+    }
+}
+
+#[test]
+fn c3_t1_rich_root_borrow_and_grouped_empty_array_events_are_independent_runs() {
+    // Event logs intentionally grow in these separate runs. They are not
+    // included in, or subtracted from, the clean-drop heap measurements above.
+    for case_index in [1, 3] {
+        let case = &TYPED_RICH_SUCCESS_A[case_index];
+        with_index(case.text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let work = WorkMeter::default();
+            work.enable_observation();
+            let facts = probe_enum_type_storage(index, &work, &mut allocator)
+                .unwrap()
+                .unwrap();
+            assert_eq!(allocator.attempts, case.attempts.0 + case.attempts.1);
+            assert!(!allocator.observer_trace_overflow);
+            assert_eq!(
+                (facts.typed.path_vectors, facts.typed.precharged_path_bytes),
+                (0, 0)
+            );
+            assert!(allocator
+                .trace
+                .iter()
+                .all(|row| row.kind != "paid typed projection fields"));
+            let observations = work.observations.borrow();
+            assert!(!observations
+                .iter()
+                .any(|event| matches!(event, index::Observation::Projection { .. })));
+            if case_index == 1 {
+                let mut borrows = 0;
+                for event in observations.iter() {
+                    if let index::Observation::BorrowArgument {
+                        function,
+                        origin,
+                        binding,
+                        ty,
+                    } = event
+                    {
+                        borrows += 1;
+                        assert_eq!((*function, *binding), (DefId(1), 1));
+                        assert_eq!(index.sources().text(*origin).unwrap(), "&p");
+                        assert_eq!(
+                            *ty,
+                            ParameterTy::Reference {
+                                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(2))),
+                                kind: BorrowKind::Shared,
+                            }
+                        );
+                    }
+                }
+                assert_eq!(borrows, 1);
+                assert_eq!(
+                    (facts.typed.capacities[7], facts.typed.retained_lengths[4]),
+                    (1, 0)
+                );
+                let presence_requests: Vec<_> = allocator
+                    .trace
+                    .iter()
+                    .filter(|row| row.kind == "paid typed record presence")
+                    .map(|row| row.length)
+                    .collect();
+                assert_eq!(presence_requests, [0, 2, 1]);
+            } else {
+                let array = ValueTy::Owned(AggregateTy::FixedArray(
+                    FixedArrayTy::check(Ty::I32, 0).unwrap(),
+                ));
+                let expected_spans = ["[]", "([])", "(([]))", "a.len()"];
+                let expected_types = [array, array, array, ValueTy::Scalar(Ty::I32)];
+                let mut next = 0;
+                for event in observations.iter() {
+                    if let index::Observation::Expression {
+                        function,
+                        origin,
+                        ty,
+                        field,
+                    } = event
+                    {
+                        assert!(next < expected_spans.len());
+                        assert_eq!(*function, DefId(0));
+                        assert_eq!(index.sources().text(*origin).unwrap(), expected_spans[next]);
+                        assert_eq!(*ty, expected_types[next]);
+                        assert!(field.is_none());
+                        next += 1;
+                    }
+                }
+                assert_eq!(next, 4); // The pretyped leaf's cache revisit emits no fifth event.
+                assert!(!observations
+                    .iter()
+                    .any(|event| matches!(event, index::Observation::BorrowArgument { .. })));
+            }
+        });
+    }
+}
