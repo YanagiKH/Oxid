@@ -1,7 +1,7 @@
 # RFC 0021: checked i32 unary negation
 
 Status: bounded experimental increment under delegated language development;
-implementation and independent review pending. This extends RFCs 0005, 0006,
+implemented and independently reviewed for the bounded local scope. This extends RFCs 0005, 0006,
 0008 and 0020 without claiming a stable language, completed milestone or v1.0.
 Baseline is PR34 head c4c4ec0958a31fc7878bdc4031e93b204ff14acb,
 tree b53f5e4969ed6036db79c1c0456f6d541301b0b0. Baseline CI was running, not
@@ -26,7 +26,9 @@ The operand is fully evaluated exactly once before the operation. First-error
 and short-circuit ordering are unchanged. The mathematical negation must fit
 i32: MIN fails with existing E0604/oir-run and message `checked i32 arithmetic
 overflow`, at the one-byte prefix minus. A bool, unit or owned value fails E0300
-at its operand span. The full unary expression span includes all trivia and
+at its operand span. A missing operand after a general prefix is E0100 at the next token (a
+zero-width EOF origin at end of input), instead of the historical literal-only
+E0101 at the minus. The full unary expression span includes all trivia and
 operand grouping. Existing reference-parameter value restrictions still apply.
 
 ## Representation and resources
@@ -67,3 +69,6 @@ Rejected alternatives: lowering to a synthetic `0 - operand` expression adds
 costs or unauthenticated origins; duplicating the operand in a binary node risks
 repeated evaluation; folding signs changes overflow/fuel; extending positive
 literal range through grouping violates the existing literal validity contract.
+
+[Local validation](../docs/architecture/checked-unary-negation-validation.md) records
+actual evidence and outstanding source-binding/hosted qualification.

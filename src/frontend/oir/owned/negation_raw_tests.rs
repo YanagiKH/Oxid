@@ -3,7 +3,17 @@ use super::consumer_fixtures as fixtures;
 use super::*;
 
 fn raw(value: i32, guarded: bool) -> (SourceMap, RawOwnedProgram, Span) {
-    let (sources, span) = fixtures::context();
+    let mut sources = SourceMap::new();
+    let file = sources.add(
+        "raw-owned-negation-雪.ox".into(),
+        "// 雪\r\nentry input result - return cycle".into(),
+    );
+    let source = sources.get(file);
+    let origins = ["entry", "input", "result", "-", "return", "cycle"].map(|word| {
+        let start = source.text().find(word).unwrap();
+        source.span(start, start + word.len())
+    });
+    let span = |i: usize| origins[i];
     let mut f = fixtures::function(0, ValueTy::Scalar(hir::Ty::I32), span(0));
     f.locals = vec![
         fixtures::scalar(hir::Ty::I32, span(1)),
@@ -212,7 +222,13 @@ fn raw_negation_owned_witnesses_use_real_llvm() {
             };
             assert_eq!(
                 execute::run(&witness, Some(hir::DefId(0))),
-                expected.clone().map_err(execute::OwnedRunFailure::Scalar)
+                if value == i32::MIN {
+                    Err(execute::OwnedRunFailure::Scalar(RunFailure::Overflow(
+                        minus,
+                    )))
+                } else {
+                    Ok(Scalar::I32(-value))
+                }
             );
             super::super::negation_raw_tests::run_native(&module, &expected, &sources);
             if guarded {
@@ -236,5 +252,120 @@ fn raw_negation_owned_witnesses_use_real_llvm() {
                 }
             }
         }
+    }
+}
+
+fn phi_raw(guarded: bool) -> (SourceMap, RawOwnedProgram) {
+    let (sources, mut p, minus) = raw(7, guarded);
+    let f = &mut p.functions[0];
+    let span = f.span;
+    let negate = f.blocks[0].statements.pop().unwrap();
+    f.result = ValueTy::Scalar(hir::Ty::Bool);
+    f.locals
+        .extend((2..6).map(|_| fixtures::scalar(hir::Ty::Bool, span)));
+    let operand = |local| fixtures::operand(local, span);
+    let end = |kind| fixtures::end(kind, span);
+    f.blocks[0]
+        .statements
+        .push(fixtures::assign(2, Rvalue::Bool(true), span));
+    f.blocks[0].terminator = end(OwnedTerminatorKind::Branch {
+        condition: operand(2),
+        then_block: BlockId(1),
+        else_block: BlockId(2),
+    });
+    f.blocks.extend([
+        OwnedBlock {
+            merge: None,
+            span,
+            statements: vec![
+                negate,
+                fixtures::assign(
+                    3,
+                    Rvalue::CompareScalar {
+                        op: hir::ComparisonOp::Less,
+                        left: operand(1),
+                        right: operand(0),
+                        operator_span: minus,
+                    },
+                    span,
+                ),
+            ],
+            terminator: end(OwnedTerminatorKind::Goto(BlockId(3))),
+        },
+        OwnedBlock {
+            merge: None,
+            span,
+            statements: vec![fixtures::assign(4, Rvalue::Bool(false), span)],
+            terminator: end(OwnedTerminatorKind::Goto(BlockId(3))),
+        },
+        OwnedBlock {
+            merge: Some(BoolMerge {
+                operator_span: minus,
+                destination: LocalId(5),
+                incoming: [
+                    MergeInput {
+                        predecessor: BlockId(1),
+                        value: operand(3),
+                    },
+                    MergeInput {
+                        predecessor: BlockId(2),
+                        value: operand(4),
+                    },
+                ],
+                span,
+            }),
+            span,
+            statements: vec![],
+            terminator: end(OwnedTerminatorKind::ReturnScalar(operand(5))),
+        },
+    ]);
+    (sources, p)
+}
+
+#[test]
+fn raw_negation_owned_native_phi_exits_and_branch_dominance() {
+    for guarded in [false, true] {
+        let (sources, p) = phi_raw(guarded);
+        let witness = verify_owned(p, &sources).unwrap();
+        assert_eq!(
+            execute::run(&witness, Some(hir::DefId(0))),
+            Ok(Scalar::Bool(true))
+        );
+        let module = native::native_module(&witness, Some(hir::DefId(0)), &sources).unwrap();
+        let label = if guarded {
+            "f0_b1_g3_ok"
+        } else {
+            "f0_b1_i0_checked_ok"
+        };
+        assert!(module.contains(&format!("[ %s3, %{label} ]")), "{module}");
+    }
+    let (sources, mut p) = phi_raw(false);
+    let span = p.functions[0].span;
+    let OwnedInstruction::Scalar(Statement::Assign(a)) =
+        &mut p.functions[0].blocks[2].statements[0].kind
+    else {
+        unreachable!()
+    };
+    a.value = Rvalue::CompareScalar {
+        op: hir::ComparisonOp::Less,
+        left: fixtures::operand(1, span),
+        right: fixtures::operand(0, span),
+        operator_span: span,
+    };
+    assert_eq!(
+        verify_owned(p, &sources).unwrap_err().kind,
+        OwnedFailureKind::Malformed(Malformed::Scalar(FailureKind::Uninitialized))
+    );
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
+fn raw_negation_owned_phi_uses_real_llvm() {
+    for guarded in [false, true] {
+        let (sources, p) = phi_raw(guarded);
+        let witness = verify_owned(p, &sources).unwrap();
+        let module = native::native_module(&witness, Some(hir::DefId(0)), &sources).unwrap();
+        super::super::negation_raw_tests::run_native(&module, &Ok(Scalar::Bool(true)), &sources);
     }
 }

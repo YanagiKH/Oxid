@@ -40,7 +40,9 @@ entry, with runtime overflow errors identical in debug and release. Other numeri
 operations remain deferred. Checked i32 division and remainder extend that
 experimental arithmetic contract in [RFC 0018](../../rfcs/0018-checked-i32-division.md):
 truncation toward zero, dividend-signed remainder, explicit zero-divisor errors,
-and checked MIN/-1 overflow.
+and checked MIN/-1 overflow. General checked i32 prefix negation is the bounded
+extension in [RFC 0021](../../rfcs/0021-checked-i32-unary-negation.md), preserving
+existing signed-literal conversion, spans and costs.
 
 The optional LLVM native preview is separately tracked as experimental. It accepts
 a stricter bounded nonrecursive scalar subset, emits Linux x86_64 PIE executables,

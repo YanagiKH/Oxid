@@ -59,7 +59,9 @@ Arithmetic follows the ordered, checked-overflow semantics in
 [RFC 0006](../rfcs/0006-checked-i32-arithmetic.md) and
 [RFC 0008](../rfcs/0008-native-checked-i32.md), extended by
 [RFC 0018](../rfcs/0018-checked-i32-division.md). Comparisons follow
-[RFC 0009](../rfcs/0009-scalar-comparisons.md). Boolean logic follows
+[RFC 0009](../rfcs/0009-scalar-comparisons.md). General checked i32 prefix negation follows
+[RFC 0021](../rfcs/0021-checked-i32-unary-negation.md), preserving signed-literal
+costs and using checked subtraction from zero only after operand evaluation. Boolean logic follows
 [RFC 0010](../rfcs/0010-boolean-logical-operators.md), and mutable scalar storage
 follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports nominal structs containing scalars,
 records and fixed scalar arrays under [RFC 0020](../rfcs/0020-owned-record-composition.md),
