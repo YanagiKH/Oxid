@@ -1488,7 +1488,8 @@ fn enum_formatter_independent_fingerprint_covers_qualified_values_and_match_orig
         "identical stars must retain distinct source origins"
     );
 
-    let mutations: &[(&str, fn(&mut Program))] = &[
+    type NamedMutation = (&'static str, fn(&mut Program));
+    let mutations: &[NamedMutation] = &[
         ("match arm variant paths", |program| {
             // Swap only path edges, keeping written arm/body/binding order and
             // every arena occurrence reachable for the unchanged completeness oracle.
