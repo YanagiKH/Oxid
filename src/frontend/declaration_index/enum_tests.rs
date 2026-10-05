@@ -641,3 +641,433 @@ fn enum_index_tiny_new_and_widened_rows_have_exact_capacity() {
         );
     }
 }
+
+type ImportSnapshot = (
+    bool,
+    Option<NominalId>,
+    Option<DefId>,
+    Vec<NominalAliasObservation>,
+    Vec<SeenObservation>,
+);
+fn nominal_snapshots(work: &WorkMeter) -> Vec<ImportSnapshot> {
+    work.observations
+        .borrow()
+        .iter()
+        .filter_map(|event| {
+            if let Observation::NominalImport {
+                committed,
+                ty,
+                value,
+                aliases,
+                seen,
+                ..
+            } = event
+            {
+                Some((*committed, *ty, *value, aliases.clone(), seen.clone()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+fn empty_alias_snapshot(snapshot: &ImportSnapshot) {
+    assert!(!snapshot.0);
+    assert_eq!((snapshot.1, snapshot.2), (None, None));
+    assert!(snapshot.3.iter().all(|row| row.ty.is_none()
+        && row.value.is_none()
+        && row.type_first.is_none()
+        && row.value_first.is_none()));
+    assert!(snapshot
+        .4
+        .iter()
+        .all(|row| row.type_first.is_none() && row.value_first.is_none()));
+}
+
+#[test]
+fn enum_index_paired_second_lane_and_privacy_failures_commit_nothing() {
+    for (root, child, code) in [
+        (
+            "mod m; use crate::m::Pair as A; fn A()->(){return;} fn main()->(){return;}",
+            "pub enum Pair{V} pub fn Pair()->i32{return 1;}",
+            "E0201",
+        ),
+        (
+            "mod m; use crate::m::Pair as A; fn main()->(){return;}",
+            "pub enum Pair{V} fn Pair()->i32{return 1;}",
+            "E0206",
+        ),
+        (
+            "mod m; use crate::m::Pair as A; fn main()->(){return;}",
+            "enum Pair{V} pub fn Pair()->i32{return 1;}",
+            "E0206",
+        ),
+    ] {
+        let fixture = Fixture::new(&[("main.ox", root), ("m.ox", child)]);
+        let project = fixture.load();
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        let errors = collect(&project, &work, &mut allocator)
+            .finish(&work, &mut allocator)
+            .unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, code);
+        let snapshots = nominal_snapshots(&work);
+        assert_eq!(snapshots.len(), 1);
+        empty_alias_snapshot(&snapshots[0]);
+        assert!(!work
+            .observations
+            .borrow()
+            .iter()
+            .any(|e| matches!(e, Observation::Frozen { .. })));
+    }
+}
+
+#[test]
+fn enum_index_second_alias_lane_collision_preserves_the_first_value() {
+    let fixture = Fixture::new(&[
+        (
+            "main.ox",
+            "mod m; use crate::m::Only as A; use crate::m::Pair as A; fn main()->(){return;}",
+        ),
+        (
+            "m.ox",
+            "pub fn Only()->(){return;} pub enum Pair{V} pub fn Pair()->(){return;}",
+        ),
+    ]);
+    let project = fixture.load();
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let mut allocator = Allocator::default();
+    let errors = collect(&project, &work, &mut allocator)
+        .finish(&work, &mut allocator)
+        .unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, "E0201");
+    let snapshots = nominal_snapshots(&work);
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(
+        (snapshots[0].0, snapshots[0].1, snapshots[0].2),
+        (true, None, Some(DefId(1)))
+    );
+    assert_eq!(
+        (snapshots[1].0, snapshots[1].1, snapshots[1].2),
+        (false, None, None)
+    );
+    for snapshot in &snapshots {
+        assert_eq!(snapshot.3.len(), 1);
+        let alias = &snapshot.3[0];
+        assert_eq!(
+            (alias.ty, alias.value, alias.type_first, alias.value_first),
+            (None, Some(DefId(1)), None, Some(0))
+        );
+        assert_eq!(snapshot.4.len(), 2);
+        assert_eq!(
+            (snapshot.4[0].type_first, snapshot.4[0].value_first),
+            (None, Some(0))
+        );
+        assert_eq!(
+            (snapshot.4[1].type_first, snapshot.4[1].value_first),
+            (None, None)
+        );
+    }
+}
+
+#[test]
+fn enum_index_repeated_pair_target_preserves_prior_alias_and_seen() {
+    let fixture = Fixture::new(&[
+        (
+            "main.ox",
+            "mod m; use crate::m::Pair as A; use crate::m::Pair as B; fn main()->(){return;}",
+        ),
+        ("m.ox", "pub enum Pair{V} pub fn Pair()->(){return;}"),
+    ]);
+    let project = fixture.load();
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let mut allocator = Allocator::default();
+    let errors = collect(&project, &work, &mut allocator)
+        .finish(&work, &mut allocator)
+        .unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, "E0201");
+    let snapshots = nominal_snapshots(&work);
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(
+        (snapshots[0].0, snapshots[0].1, snapshots[0].2),
+        (true, Some(NominalId::Enum(EnumId(0))), Some(DefId(1)))
+    );
+    assert!(!snapshots[1].0);
+    for snapshot in &snapshots {
+        assert_eq!(snapshot.3.len(), 2);
+        let first = &snapshot.3[0];
+        let second = &snapshot.3[1];
+        assert_eq!(
+            (first.ty, first.value, first.type_first, first.value_first),
+            (
+                Some(NominalId::Enum(EnumId(0))),
+                Some(DefId(1)),
+                Some(0),
+                Some(0)
+            )
+        );
+        assert_eq!(
+            (
+                second.ty,
+                second.value,
+                second.type_first,
+                second.value_first
+            ),
+            (None, None, None, None)
+        );
+        assert_eq!(snapshot.4.len(), 1);
+        assert_eq!(
+            (snapshot.4[0].type_first, snapshot.4[0].value_first),
+            (Some(0), Some(0))
+        );
+    }
+}
+
+#[test]
+fn enum_index_every_import_stage_debit_failure_has_atomic_snapshots() {
+    let fixture=Fixture::new(&[("main.ox","mod m; use crate::m::Pair as A; use crate::m::Other as B; fn main()->(){return;}"),("m.ox","pub enum Pair{V} pub fn Pair()->(){return;} pub enum Other{W} pub fn Other()->(){return;}")]);
+    let project = fixture.load();
+    let baseline = WorkMeter::default();
+    baseline.enable_observation();
+    let mut allocator = Allocator::default();
+    let facts = collect(&project, &baseline, &mut allocator);
+    let collected_work = baseline.used();
+    let event_start = baseline.events.borrow().len();
+    facts.finish(&baseline, &mut allocator).unwrap();
+    let mut boundaries = Vec::new();
+    let mut consumed = collected_work;
+    let mut active = None;
+    let mut transaction = 0;
+    for event in &baseline.events.borrow()[event_start..] {
+        if event.operation == "import transaction" {
+            active = Some(transaction);
+            transaction += 1;
+        }
+        if let Some(id) = active {
+            assert!(event.units > 0);
+            boundaries.push((
+                consumed + event.units - 1,
+                event.origin,
+                id,
+                event.operation,
+            ));
+        }
+        consumed += event.units;
+        if event.operation == "import staging" {
+            active = None;
+        }
+    }
+    assert_eq!(transaction, 2);
+    assert!(boundaries.iter().any(|row| row.3 == "target permission"));
+    assert!(boundaries
+        .iter()
+        .any(|row| row.3 == "import repeated target"));
+    assert!(boundaries.iter().any(|row| row.3 == "import staging"));
+    for (limit, origin, failing_import, operation) in boundaries {
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        let facts = collect(&project, &work, &mut allocator);
+        assert_eq!(work.used(), collected_work);
+        // Stage-local boundary: collection was admitted under the default meter.
+        work.restrict(limit);
+        let errors = facts.finish(&work, &mut allocator).unwrap_err();
+        assert_eq!(errors[0].code, "E0400", "{operation}");
+        assert_eq!(errors[0].primary, Some(origin), "{operation}");
+        let snapshots = nominal_snapshots(&work);
+        assert_eq!(snapshots.len(), failing_import + 1, "{operation}");
+        let last = snapshots.last().unwrap();
+        assert_eq!((last.0, last.1, last.2), (false, None, None));
+        if failing_import == 0 {
+            empty_alias_snapshot(last);
+        } else {
+            assert_eq!(last.3.len(), 2);
+            assert_eq!(
+                (
+                    last.3[0].ty,
+                    last.3[0].value,
+                    last.3[0].type_first,
+                    last.3[0].value_first
+                ),
+                (
+                    Some(NominalId::Enum(EnumId(0))),
+                    Some(DefId(1)),
+                    Some(0),
+                    Some(0)
+                )
+            );
+            assert_eq!(
+                (
+                    last.3[1].ty,
+                    last.3[1].value,
+                    last.3[1].type_first,
+                    last.3[1].value_first
+                ),
+                (None, None, None, None)
+            );
+            assert_eq!(
+                (last.4[0].type_first, last.4[0].value_first),
+                (Some(0), Some(0))
+            );
+            assert_eq!((last.4[1].type_first, last.4[1].value_first), (None, None));
+        }
+        assert!(!work
+            .observations
+            .borrow()
+            .iter()
+            .any(|e| matches!(e, Observation::Frozen { .. })));
+    }
+}
+
+fn exact_gate(error: &Diagnostic, origin: Span) {
+    assert_eq!(
+        (
+            error.code,
+            error.stage,
+            error.message.as_str(),
+            error.primary
+        ),
+        (
+            "E0101",
+            "resolve",
+            "enum source syntax is unavailable",
+            Some(origin)
+        )
+    );
+    assert!(error.secondary.is_empty());
+}
+#[test]
+fn enum_index_stored_origin_is_exact_at_facts_and_scalar_producer_gates() {
+    for (text, fragment) in [
+        ("enum E{V} fn main()->(){return;}", "enum E{V}"),
+        ("fn main()->(){E::V;return;}", "E::V"),
+        (
+            "fn main()->(){match x{E::V=>{}} return;}",
+            "match x{E::V=>{}}",
+        ),
+        (
+            "fn helper()->(){return;} fn main()->(){crate::helper();return;}",
+            "crate::helper()",
+        ),
+    ] {
+        let fixture = Fixture::new(&[("main.ox", text)]);
+        let project = fixture.load();
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        let start = text.find(fragment).unwrap();
+        let origin = Span {
+            file: SourceFileId(0),
+            start,
+            end: start + fragment.len(),
+        };
+        let facts = collect(&project, &work, &mut allocator);
+        exact_gate(
+            &facts.require_current_source_pipeline().unwrap_err(),
+            origin,
+        );
+        exact_gate(
+            &hir::original_signatures(&facts, &work).unwrap_err()[0],
+            origin,
+        );
+        let index = facts.finish(&work, &mut allocator).unwrap();
+        exact_gate(
+            &index.require_current_source_pipeline().unwrap_err(),
+            origin,
+        );
+        exact_gate(&hir::resolve_project(&index, &work).unwrap_err()[0], origin);
+        exact_gate(
+            &hir::resolve_bodies(&index, &work, Vec::new()).unwrap_err()[0],
+            origin,
+        );
+        assert!(!work.observations.borrow().iter().any(|e| matches!(
+            e,
+            Observation::SignatureStart { .. } | Observation::RecordStart { .. }
+        )));
+    }
+    let fixture = Fixture::new(&[
+        ("main.ox", "mod child; fn main()->(){return;}"),
+        ("child.ox", "enum Unused{V}"),
+    ]);
+    let project = fixture.load();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    exact_gate(
+        &collect(&project, &work, &mut allocator)
+            .require_current_source_pipeline()
+            .unwrap_err(),
+        Span {
+            file: SourceFileId(1),
+            start: 0,
+            end: 14,
+        },
+    );
+}
+
+#[test]
+fn enum_index_mandatory_build_work_threshold_precedes_all_reservations() {
+    let fixture = identity_fixture();
+    let project = fixture.load();
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let mut allocator = Allocator::default();
+    let facts = collect(&project, &work, &mut allocator);
+    let plan = facts.plan();
+    // Literal fixture counts: original-name bytes81, aliases17, two path weights21+23.
+    assert_eq!(
+        (
+            plan.counts.original_bytes,
+            plan.counts.alias_bytes,
+            plan.counts.path_weight
+        ),
+        (81, 17, 44)
+    );
+    // 30 visits*16 +128 +14 duplicate bound +96*5 +19*2 +46*2 +30+324.
+    assert_eq!(plan.build_work, 1586);
+    let preflight: u64 = work
+        .events
+        .borrow()
+        .iter()
+        .filter(|event| event.operation == "preflight visit")
+        .map(|event| event.units)
+        .sum();
+    let mandatory = preflight + 1586;
+    facts.finish(&work, &mut allocator).unwrap();
+    // This is a whole-pipeline single-meter control, separate from staged rollback tests.
+    assert!(work.used() <= mandatory);
+    for (limit, ok) in [
+        (mandatory - 1, false),
+        (mandatory, true),
+        (mandatory + 1, true),
+    ] {
+        let work = WorkMeter::new(limit);
+        let mut allocator = Allocator::default();
+        let result = collect_enum_candidate(
+            SourceOwner::project(&project),
+            IndexLimits {
+                work: limit,
+                ..IndexLimits::default()
+            },
+            &work,
+            &mut allocator,
+        );
+        assert_eq!(result.is_ok(), ok);
+        if !ok {
+            assert_eq!(result.unwrap_err().code, "E0400");
+            assert_eq!(allocator.attempts, 0);
+        } else {
+            assert_eq!(allocator.attempts, 16);
+        }
+    }
+}
+
+#[test]
+fn enum_index_changed_carrier_alignments_are_measured() {
+    use std::mem::align_of;
+    println!("enum-index-alignment Index={} Facts={} Tables={} EnumRow={} VariantRow={} ModuleRow={} EnumView={} VariantView={} EnumViewOption={} VariantViewOption={} Counts={} IndexPlan={}",align_of::<DeclarationIndex<'_>>(),align_of::<DeclarationFacts<'_>>(),align_of::<Tables<'_>>(),align_of::<EnumRow>(),align_of::<VariantRow>(),align_of::<ModuleRow>(),align_of::<EnumView<'_>>(),align_of::<VariantView<'_>>(),align_of::<Option<EnumView<'_>>>(),align_of::<Option<VariantView<'_>>>(),align_of::<Counts>(),align_of::<IndexPlan>());
+}
