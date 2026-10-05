@@ -2322,7 +2322,7 @@ fn c3_t1_quota_and_plan_completion_are_read_only_metered_rights_checks() {
 }
 
 #[test]
-fn c3_t1_observation_primitive_carriers_are_unpriced_and_t0_shapes_unchanged() {
+fn c3_t1_observation_primitive_carriers_keep_t0_shapes_unchanged() {
     macro_rules! layout {
         ($($ty:ty),* $(,)?) => { $(
             println!("C3_T1_OBSERVATION_PRIMITIVE_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
@@ -2497,6 +2497,16 @@ fn c3_t1_non_test_sample_size_surface_uses_actual_generic_components() {
     assert_eq!(
         counts_access_carrier_bytes(),
         size_of::<CountsAccessCarriers>()
+    );
+    assert_eq!(path_sample_carrier_bytes(), size_of::<PathSampleCarriers>());
+    assert_eq!(completion_carrier_bytes(), size_of::<CompletionCarriers>());
+    assert_eq!(
+        quota_completion_carrier_bytes(),
+        size_of::<QuotaCompletionCarriers>()
+    );
+    assert_eq!(
+        plan_completion_carrier_bytes(),
+        size_of::<PlanCompletionCarriers>()
     );
     println!(
         "C3_T1_OBSERVATION_PRIMITIVE_LAYOUT SampleSizingCarriers {} {}",
@@ -2743,7 +2753,7 @@ fn c3_t1_reconciliation_independently_rejects_scalar_shape_and_final_fact_mismat
 }
 
 #[test]
-fn c3_t1_inventory_and_reconciliation_actual_models_remain_unpriced() {
+fn c3_t1_inventory_and_reconciliation_actual_models_match_layout_forcing() {
     macro_rules! layout {
         ($($ty:ty),* $(,)?) => { $(
             println!("C3_T1_INVENTORY_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());

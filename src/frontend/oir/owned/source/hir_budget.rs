@@ -391,6 +391,32 @@ impl HirPlan {
             c.record_literals,
             at,
         )?;
+        // Observation source-call banks. BodyPaid's already-enclosed growth
+        // remains in PaidBodyControls above, never added again here.
+        increment(
+            &mut typeck_scratch,
+            mul(c.functions, typeck::body_completion_control_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(c.functions, typeck::body_sampling_control_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(c.calls, typeck::call_sampling_control_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(
+                c.record_literals,
+                typeck::literal_sampling_control_bytes(),
+                at,
+            )?,
+            at,
+        )?;
 
         let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
@@ -412,8 +438,8 @@ impl HirPlan {
         // This does not yet admit a successful paid checker or fresh owner.
         increment(&mut fixed, typeck::borrowed_check_carrier_bytes(), at)?;
         increment(&mut fixed, resolve::denied_type_probe_carrier_bytes(), at)?;
-        // Passive checker-only fixed bank. Future ProgramPaid construction,
-        // owner/seed and statistics carriers remain a separate denied stage.
+        // Passive checker-only fixed bank. Observation additions are separate
+        // below; payment does not make either private source helper reachable.
         charge::<typeck::PaidProgramControls>(&mut fixed, 1, at)?;
         charge::<typeck::semantic_carriers::ProjectionSemanticCarriers>(&mut fixed, 1, at)?;
         charge::<typeck::semantic_carriers::PredicateInvocationCarriers>(&mut fixed, 1, at)?;
@@ -433,6 +459,68 @@ impl HirPlan {
             at,
         )?;
         charge::<typeck::PaidExpressionReborrows>(&mut fixed, MAX_NESTING, at)?;
+        // Twenty actual observation banks, including complete embedded return
+        // types exactly once. Generic maxima stay within each helper family.
+        // Nonrecursive completion/sampling/inventory state is fixed; F/C/L
+        // source selections are charged separately above. No pricing array or
+        // new caller aggregate is constructed. The sizeof helper return and
+        // existing checked arithmetic transports retain their stated banks.
+        increment(
+            &mut fixed,
+            type_storage::observed_construction_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, type_storage::sample_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            type_storage::endpoint_sample_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, type_storage::path_sample_carrier_bytes(), at)?;
+        increment(&mut fixed, type_storage::completion_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            type_storage::quota_completion_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            type_storage::plan_completion_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, type_storage::counts_access_carrier_bytes(), at)?;
+        increment(&mut fixed, type_storage::sample_sizing_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            type_storage::inventory_construction_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            type_storage::retained_sample_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            type_storage::typed_reconciliation_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, typeck::body_inventory_carrier_bytes(), at)?;
+        increment(&mut fixed, typeck::path_inventory_carrier_bytes(), at)?;
+        increment(&mut fixed, typeck::inventory_sum_carrier_bytes(), at)?;
+        increment(&mut fixed, typeck::program_observation_control_bytes(), at)?;
+        increment(&mut fixed, typeck::projection_sampling_control_bytes(), at)?;
+        increment(
+            &mut fixed,
+            resolve::fresh_type_observation_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, resolve::type_storage_cell_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            typeck::borrowed_type_observation_carrier_bytes(),
+            at,
+        )?;
         // The witnessed ValueTy::Scalar function-item local is zero-sized;
         // there is no function pointer or additional receiver to invent.
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;

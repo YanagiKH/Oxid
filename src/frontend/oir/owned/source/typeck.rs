@@ -13,6 +13,12 @@ use crate::frontend::{
     project::budget::Allocator,
     source::Span,
 };
+// Visibility-only aliases: no wrapper return or owner/inventory entry is added.
+pub(super) use self::typed_inventory::{
+    bodies_carrier_bytes as body_inventory_carrier_bytes,
+    path_carrier_bytes as path_inventory_carrier_bytes,
+    sum_carrier_bytes as inventory_sum_carrier_bytes,
+};
 
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct TypedOwnedProgram<'src> {
@@ -296,8 +302,8 @@ struct BodyPaid<'borrow> {
     observed: &'borrow mut storage::TypedObserved,
 }
 // Explicit checker-only context/receiver surfaces. HirPlan passively prices
-// these once after source selection. The actual ProgramPaid caller construction,
-// fresh owner/seed and standalone observation transports remain unpriced;
+// these once after source selection. ProgramPaid construction, fresh-owner
+// and observation transports have separate passive banks; the entry is denied;
 // no paid checker caller or source observation is enabled by this accounting.
 // Existing T0 stage/frame/actuals/presence/quota/Bodies receivers stay assigned
 // there; retained cache headers cannot pay these independent local receivers.
@@ -351,7 +357,7 @@ pub(super) struct PaidExpressionReborrows {
     room: Result<(), Box<Diagnostic>>,
 }
 
-// Stage C's newly authored source-call roles are UNPRICED. The existing
+// Stage C's source-call roles have separate passive charges. The existing
 // PaidBodyControls embeds the actual enlarged BodyPaid once, so its sizeof
 // necessarily grows; that does not pay these separate outcomes/selections.
 // Stage A already models sampler/completion inputs and full helper/caller
@@ -374,7 +380,7 @@ struct BodyCompletionControls {
     body_succeeded: bool,
     quota_work_return: &'static crate::frontend::declaration_index::WorkMeter,
 }
-// Remaining Stage C source selections, still UNPRICED. Helper inputs and
+// Remaining Stage C source selections, passively charged. Helper inputs and
 // complete sample/endpoint/path Results stay in their actual Stage A models.
 #[allow(dead_code)]
 struct BodySamplingControls {
@@ -403,7 +409,7 @@ struct ProjectionSamplingControls {
     reborrow: Option<&'static mut BodyPaid<'static>>,
     selected: &'static mut BodyPaid<'static>,
 }
-// No-value non-test forcing, with only the existing unpriced sizing helper's
+// No-value sizing, with only the existing fixed sizing helper's
 // plain-return role. No pricing array or future owner/context constructor.
 #[allow(dead_code)]
 pub(super) const fn program_observation_control_bytes() -> usize {
@@ -536,7 +542,7 @@ pub(super) fn observe_enum_type_storage(
     Ok(typed_observation)
 }
 
-// Stage D's new caller/return roles only, still UNPRICED. PreparationCarriers
+// Stage D's separately prepaid caller/return roles. PreparationCarriers
 // already owns the caller TypePlan and BorrowedCheckCarriers the caller Bodies;
 // Stage A owns the observed constructor/return and count-access transports;
 // Stage B owns inventory/reconciliation full boxed-error returns. The narrow
@@ -3588,7 +3594,7 @@ mod typed_inventory {
         Ok(inventory)
     }
     // Complete actual walk controls, not universal inherited helper internals.
-    // They remain unpriced; the future whole inventory caller is not added here.
+    // The separate whole caller is in BorrowedTypeObservationCarriers, not here.
     struct PathInventoryCarriers {
         inventory: &'static mut storage::TypedInventory,
         value: &'static Projection,
@@ -3674,13 +3680,13 @@ mod typed_inventory {
         addition: Option<usize>,
         returned: Result<usize, Box<Diagnostic>>,
     }
-    pub(super) const fn path_carrier_bytes() -> usize {
+    pub(in crate::frontend::oir::owned::source) const fn path_carrier_bytes() -> usize {
         std::mem::size_of::<PathInventoryCarriers>()
     }
-    pub(super) const fn bodies_carrier_bytes() -> usize {
+    pub(in crate::frontend::oir::owned::source) const fn bodies_carrier_bytes() -> usize {
         std::mem::size_of::<BodyInventoryCarriers>()
     }
-    pub(super) const fn sum_carrier_bytes() -> usize {
+    pub(in crate::frontend::oir::owned::source) const fn sum_carrier_bytes() -> usize {
         std::mem::size_of::<SumCarriers>()
     }
     #[test]

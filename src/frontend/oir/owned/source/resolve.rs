@@ -581,7 +581,7 @@ fn fresh_enum_type_storage<'s>(
     }
 }
 
-// Stage D's additional actual roles, all UNPRICED. Existing resolver fixed,
+// Stage D's separately prepaid actual roles. Existing resolver fixed,
 // inventory and ProbeCarriers retain the plan/account/parts and resolver-fact
 // pattern/caller roles plus the initial resolver interval controls. The primary
 // local owner is the role already embedded in TypedOwnedProgram; only its new
@@ -619,7 +619,7 @@ struct TypeStorageCellCarriers {
     returned: &'static std::cell::Cell<usize>,
     caller: &'static std::cell::Cell<usize>,
 }
-// Pure non-test forcing. The existing unpriced sizing-helper return role is
+// Pure sizeof getters. The existing fixed sizing-helper return role is
 // reused; no future selector/caller role or production pricing array is implied.
 #[allow(dead_code)]
 pub(super) const fn fresh_type_observation_carrier_bytes() -> usize {

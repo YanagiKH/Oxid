@@ -73,6 +73,39 @@ fn checker_only_components() -> (usize, usize, usize, usize, usize) {
     )
 }
 
+// Independent test-side A–D composition. Its tuple and grouped additions are
+// test machinery, not a production price array or source observation.
+fn observation_components() -> (usize, usize, usize, usize) {
+    let construction = resolve::fresh_type_observation_carrier_bytes()
+        + resolve::type_storage_cell_carrier_bytes()
+        + typeck::borrowed_type_observation_carrier_bytes();
+    let inventory = type_storage::inventory_construction_carrier_bytes()
+        + type_storage::retained_sample_carrier_bytes()
+        + type_storage::typed_reconciliation_carrier_bytes()
+        + typeck::body_inventory_carrier_bytes()
+        + typeck::path_inventory_carrier_bytes()
+        + typeck::inventory_sum_carrier_bytes();
+    let samples = type_storage::observed_construction_carrier_bytes()
+        + type_storage::sample_carrier_bytes()
+        + type_storage::endpoint_sample_carrier_bytes()
+        + type_storage::path_sample_carrier_bytes()
+        + type_storage::completion_carrier_bytes()
+        + type_storage::quota_completion_carrier_bytes()
+        + type_storage::plan_completion_carrier_bytes()
+        + type_storage::counts_access_carrier_bytes()
+        + type_storage::sample_sizing_carrier_bytes();
+    (
+        construction
+            + inventory
+            + samples
+            + typeck::program_observation_control_bytes()
+            + typeck::projection_sampling_control_bytes(),
+        typeck::body_completion_control_bytes() + typeck::body_sampling_control_bytes(),
+        typeck::call_sampling_control_bytes(),
+        typeck::literal_sampling_control_bytes(),
+    )
+}
+
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";
 
 #[test]
@@ -671,7 +704,8 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
             - legacy_fixed
             - typeck::borrowed_check_carrier_bytes()
             - resolve::denied_type_probe_carrier_bytes()
-            - checker_only_components().0,
+            - checker_only_components().0
+            - observation_components().0,
         type_storage::fixed_control_carrier_bytes()
     );
     for functions in [0, 1, 2] {
@@ -690,7 +724,8 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
                 * (size_of::<Vec<typeck::TypeFrame>>()
                     + size_of::<type_storage::FunctionQuota>()
                     + typeck::borrowed_body_return_carrier_bytes()
-                    + checker_only_components().1)
+                    + checker_only_components().1
+                    + observation_components().1)
         );
     }
     for count in [0, 1, 2] {
@@ -705,7 +740,10 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         assert_eq!(calls.fixed, base.fixed);
         assert_eq!(
             calls.typeck_scratch,
-            count * (size_of::<Vec<(ParameterTy, Span)>>() + checker_only_components().3)
+            count
+                * (size_of::<Vec<(ParameterTy, Span)>>()
+                    + checker_only_components().3
+                    + observation_components().2)
         );
         let literals = HirPlan::calculate(
             HirCounts {
@@ -719,7 +757,11 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         assert_eq!(literals.fixed, base.fixed);
         assert_eq!(
             literals.typeck_scratch,
-            count * (3 * size_of::<bool>() + size_of::<Vec<bool>>() + checker_only_components().4)
+            count
+                * (3 * size_of::<bool>()
+                    + size_of::<Vec<bool>>()
+                    + checker_only_components().4
+                    + observation_components().3)
         );
         let other = HirPlan::calculate(
             HirCounts {
@@ -822,8 +864,12 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
                     + typeck::borrowed_body_return_carrier_bytes())
                 + c.calls * size_of::<Vec<(ParameterTy, Span)>>()
                 + c.record_literals * size_of::<Vec<bool>>();
+            let observation = observation_components();
+            let observed = c.functions * observation.1
+                + c.calls * observation.2
+                + c.record_literals * observation.3;
             assert_eq!(
-                plan.typeck_scratch - old,
+                plan.typeck_scratch - old - observed,
                 c.functions * components.1
                     + c.blocks * components.2
                     + c.calls * components.3
@@ -970,4 +1016,123 @@ fn c3_t1_passive_checker_price_does_not_change_enum_free_selection_or_denial() {
             "E0101"
         );
     });
+}
+
+#[test]
+fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let observation = observation_components();
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(observation, (11792, 320, 24, 24));
+    let checker = checker_only_components();
+    let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
+    let before_observation = size_of::<typeck::TypedOwnedProgram<'_>>()
+        + size_of::<PlanReturnEnvelope>()
+        + size_of::<CapacityReturnEnvelope>()
+        + size_of::<CursorTemporaries>()
+        + size_of::<ScalarReturnEnvelope>()
+        + resolver_storage::fixed_carrier_bytes()
+        + VECTOR_RETURN_ENVELOPE_BYTES
+        + type_storage::fixed_control_carrier_bytes()
+        + typeck::borrowed_check_carrier_bytes()
+        + resolve::denied_type_probe_carrier_bytes()
+        + checker.0
+        + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
+        + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
+    assert_eq!(base.fixed - before_observation, observation.0);
+    for scale in [0, 1, 2, 3] {
+        // Scalar resource arithmetic only, not a forged source/HIR witness.
+        let c = HirCounts {
+            functions: scale,
+            blocks: 2 * scale,
+            calls: 3 * scale,
+            record_literals: 4 * scale,
+            type_frames: 5 * scale,
+            call_arguments: 6 * scale,
+            max_record_fields: 7,
+            matches: 8 * scale,
+            ..HirCounts::default()
+        };
+        let plan = HirPlan::calculate(c, at).unwrap();
+        let inherited = c.type_frames * size_of::<typeck::TypeFrame>()
+            + c.call_arguments * size_of::<(ParameterTy, Span)>()
+            + c.record_literals * c.max_record_fields * size_of::<bool>()
+            + c.matches * size_of::<[u64; 4]>()
+            + c.functions
+                * (size_of::<Vec<typeck::TypeFrame>>()
+                    + size_of::<type_storage::FunctionQuota>()
+                    + typeck::borrowed_body_return_carrier_bytes()
+                    + checker.1)
+            + c.blocks * checker.2
+            + c.calls * (size_of::<Vec<(ParameterTy, Span)>>() + checker.3)
+            + c.record_literals * (size_of::<Vec<bool>>() + checker.4);
+        assert_eq!(plan.fixed, base.fixed);
+        assert_eq!(
+            plan.typeck_scratch - inherited,
+            c.functions * observation.1
+                + c.calls * observation.2
+                + c.record_literals * observation.3
+        );
+    }
+    println!(
+        "C3_T1_OBSERVATION_FORMULA fixed={} function={} call={} literal={}",
+        observation.0, observation.1, observation.2, observation.3
+    );
+}
+
+#[test]
+fn c3_t1_observation_price_products_aggregation_and_shared_cap_are_checked() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let observation = observation_components();
+    for width in [observation.1, observation.2, observation.3] {
+        assert_eq!(
+            mul(usize::MAX / width + 1, width, at).unwrap_err().code,
+            "E0400"
+        );
+        assert!(mul(usize::MAX / width, width, at).is_ok());
+    }
+    let mut bytes = usize::MAX - observation.0 + 1;
+    let before = bytes;
+    assert_eq!(
+        increment(&mut bytes, observation.0, at).unwrap_err().code,
+        "E0400"
+    );
+    assert_eq!(bytes, before);
+    bytes = usize::MAX - observation.0;
+    increment(&mut bytes, observation.0, at).unwrap();
+    assert_eq!(bytes, usize::MAX);
+    let plan = HirPlan::calculate(
+        HirCounts {
+            functions: 2,
+            calls: 3,
+            record_literals: 4,
+            ..HirCounts::default()
+        },
+        at,
+    )
+    .unwrap();
+    let remaining = MAX_HIR_BYTES - plan.total;
+    assert_eq!(
+        plan.with_dynamic(remaining - 1, at).unwrap(),
+        MAX_HIR_BYTES - 1
+    );
+    assert_eq!(plan.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+    assert_eq!(
+        plan.with_dynamic(remaining + 1, at).unwrap_err().code,
+        "E0400"
+    );
+    assert_eq!(plan.with_dynamic(usize::MAX, at).unwrap_err().code, "E0400");
+    // Independent primitive projection reservation sees this complete seed;
+    // there is no paid checker context or fresh owner in this control.
+    let total = std::cell::Cell::new(plan.total);
+    let mut allocator = Allocator::default();
+    let work = WorkMeter::new(0);
+    let path =
+        type_storage::projection_fields_metered(&total, &mut allocator, 1, &work, at).unwrap();
+    assert_eq!(path.capacity(), 1);
+    assert_eq!(
+        total.get(),
+        plan.with_dynamic(size_of::<FieldId>(), at).unwrap()
+    );
+    assert_eq!((allocator.attempts, work.used()), (1, 0));
 }

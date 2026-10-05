@@ -1,7 +1,7 @@
 //! Disconnected T0 typed-buffer helpers, not source or typing admission.
 //!
 //! The disconnected paid checker names these helpers but has no admitted caller.
-//! HirPlan prepays the measured T0 controls; complete T1 pricing stays gated.
+//! HirPlan prepays the authored helper banks; source entry remains gated.
 //! The local quotas do not prove the origin of a caller-supplied byte cell.
 //! Diagnostics, observer traces, allocator metadata and machine stack/RSS are
 //! outside this named-buffer model. All ordinary source routes are unchanged.
@@ -891,8 +891,8 @@ impl TypePlan<'_> {
     }
 }
 
-// Complete Stage A helper surfaces, still disconnected and UNPRICED. No owned
-// sampler receiver in a future source helper or context field is invented here.
+// Complete Stage A helper surfaces, passively prepaid. The owned sampler
+// caller belongs to BorrowedTypeObservationCarriers, not another copy here.
 struct ObservedConstructionCarriers {
     constructed: TypedObserved,
     returned: TypedObserved,
@@ -1023,9 +1023,9 @@ pub(super) const fn endpoint_sample_carrier_bytes() -> usize {
     );
     largest
 }
-// Getter-local accumulator/candidate/return roles. A future pricing caller's
-// separately named receiver remains a later authored obligation, not implied
-// authority from this unpriced measurement helper.
+// Getter-local accumulator/candidate/return roles. Current pricing passes
+// these returns directly to existing checked arithmetic; no additional named
+// receiver or array is implied by this sizing bank.
 struct SampleSizingCarriers {
     largest: usize,
     bytes: usize,
@@ -1036,7 +1036,7 @@ pub(super) const fn sample_sizing_carrier_bytes() -> usize {
     size_of::<SampleSizingCarriers>()
 }
 // Standalone actual models also need non-test layout forcing. These pure
-// getters use the same unpriced plain-return sizing-helper role; no values or
+// getters use the same fixed plain-return sizing-helper role; no values or
 // new pricing arrays/caller receivers are constructed by this surface.
 pub(super) const fn observed_construction_carrier_bytes() -> usize {
     size_of::<ObservedConstructionCarriers>()
@@ -1044,9 +1044,21 @@ pub(super) const fn observed_construction_carrier_bytes() -> usize {
 pub(super) const fn counts_access_carrier_bytes() -> usize {
     size_of::<CountsAccessCarriers>()
 }
+pub(super) const fn path_sample_carrier_bytes() -> usize {
+    size_of::<PathSampleCarriers>()
+}
+pub(super) const fn completion_carrier_bytes() -> usize {
+    size_of::<CompletionCarriers>()
+}
+pub(super) const fn quota_completion_carrier_bytes() -> usize {
+    size_of::<QuotaCompletionCarriers>()
+}
+pub(super) const fn plan_completion_carrier_bytes() -> usize {
+    size_of::<PlanCompletionCarriers>()
+}
 
 // Stage B fixed facts and scalar reconciliation. These helpers remain
-// disconnected/unpriced and cannot establish fresh source/owner provenance.
+// unreachable from a selectable source entry and prove no owner provenance.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct TypedInventory {
     pub(super) retained_vectors: [usize; 8],
@@ -1265,7 +1277,7 @@ pub(super) fn reconcile_typed_storage(
     })
 }
 
-// Stage B actual helper/return surfaces, still UNPRICED. Generic retained
+// Stage B separately prepaid helper/return surfaces. Generic retained
 // sampler models use real Vec types; no source owner/model value is fabricated.
 struct InventoryConstructionCarriers {
     constructed: TypedInventory,
@@ -1342,7 +1354,7 @@ struct TypedReconciliationCarriers {
     path_slots: usize,
     constructed: TypeStorageObservation,
     returned: Result<TypeStorageObservation, Box<Diagnostic>>,
-    // A future statistics caller's whole result receiver is not authored yet.
+    // Caller pattern/receiver roles are in BorrowedTypeObservationCarriers.
 }
 pub(super) const fn inventory_construction_carrier_bytes() -> usize {
     size_of::<InventoryConstructionCarriers>()
@@ -1370,7 +1382,7 @@ pub(super) const fn typed_reconciliation_carrier_bytes() -> usize {
     size_of::<TypedReconciliationCarriers>()
 }
 // Force the fixed facts and their complete Result representations without
-// constructing values. These helper-local sizing roles are still unpriced.
+// constructing values. Result roles are already embedded in complete banks.
 pub(super) const fn inventory_result_carrier_bytes() -> usize {
     size_of::<TypedInventory>()
 }
@@ -1384,7 +1396,7 @@ pub(super) const fn observation_return_carrier_bytes() -> usize {
     size_of::<Result<TypeStorageObservation, Box<Diagnostic>>>()
 }
 // These no-value sizing getters reuse SampleSizingCarriers' getter-owned
-// roles. Their eventual separately named pricing callers remain unpriced.
+// roles. Current pricing adds no separately named caller or pricing array.
 
 // Complete NEW type_storage named controls, plus explicitly selected existing
 // Capacity transports. Unchanged Capacity/Allocator internals are not modeled as
@@ -1837,7 +1849,7 @@ const fn fill_control_bytes() -> usize {
 /// once. Generic Vec caller roles are excluded from these cores: the reserve
 /// receiver is the enclosing fill/finalize's local `values`, or Bodies' receiver.
 /// Existing C actuals/L presence/three F stage/F frame headers pay those known
-/// outer receivers. Remaining T1 cache/branch/final/path receivers are UNPAID.
+/// outer receivers. T1 cache/branch/final/path receivers are paid separately.
 /// In particular, a returned FieldId Vec receiver is separate from Projection
 /// builder/Result and cache-embedded path headers; none implies its admission.
 pub(super) const fn fixed_control_carrier_bytes() -> usize {
