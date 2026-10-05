@@ -1,7 +1,7 @@
 //! Disconnected T0 typed-buffer helpers, not source or typing admission.
 //!
-//! No checker or owner calls these helpers. The active HirPlan does NOT yet pay
-//! their new carrier envelopes; measured passive integration is a separate gate.
+//! No checker or owner calls these helpers. HirPlan prepays only the measured T0
+//! controls below; actual checker/owner/admission and receiver pricing stay gated.
 //! The local quotas do not prove the origin of a caller-supplied byte cell.
 //! Diagnostics, observer traces, allocator metadata and machine stack/RSS are
 //! outside this named-buffer model. All ordinary source routes are unchanged.
@@ -9,7 +9,7 @@
 
 use super::{
     hir::*,
-    hir_budget::{Capacity, HirPlan, MAX_HIR_BYTES},
+    hir_budget::{Capacity, CapacityReturnEnvelope, HirPlan, VectorReturnEnvelope, MAX_HIR_BYTES},
     typeck::{BorrowProjection, FlowSummary, TypeFrame, TypedBody},
 };
 use crate::frontend::{
@@ -677,19 +677,29 @@ impl TypePlan<'_> {
 // models of this stated surface: passive integration must reconcile the selected
 // existing Capacity envelopes rather than blindly adding already-accounted
 // primitive carriers a second time.
-struct AccountCarriers {
-    counts: TypeCounts,
+// Caller-owned counts and the account receiver belong to their call sites;
+// retain the separate constructor and return values in the execution controls.
+struct AccountControls {
     count_borrows: [&'static TypeCounts; 3],
-    // Constructor, return slot and caller; scalar-only, no heap payload.
-    accounts: [PaidStorage; 3],
-    // slots/requests array construction and complete returned arrays.
+    constructed: PaidStorage,
+    returned: PaidStorage,
     arrays: [[usize; KINDS]; 4],
 }
-struct ReserveCarriers<T: 'static> {
+struct AccountCarriers {
+    controls: AccountControls,
+    counts: TypeCounts,
+    caller: PaidStorage,
+}
+// Reuse the exact already-priced primitive carrier definitions, not an estimated
+// duplicate. Their one fixed bank is shared by nonrecursive helper invocations.
+struct PrimitiveTransports<T> {
+    capacity: CapacityReturnEnvelope,
+    vector: VectorReturnEnvelope<T>,
+}
+struct ReserveControls<T: 'static> {
     storage: &'static mut PaidStorage,
     allocator: &'static mut Allocator,
     kind: Kind,
-    // Explicit call inputs and named checked intermediates.
     slots: usize,
     expected: usize,
     origin: Span,
@@ -699,15 +709,14 @@ struct ReserveCarriers<T: 'static> {
     bytes: usize,
     arithmetic_options: [Option<usize>; 3],
     arithmetic_results: [Result<usize, Box<Diagnostic>>; 3],
-    // Capacity constructor, caller, consumed reserve input and nested check.
-    capacities: [Capacity; 4],
-    capacity_return: Result<Capacity, Box<Diagnostic>>,
     fresh: Vec<T>,
-    primitive_input: Vec<T>,
-    primitive_return: Result<Vec<T>, Box<Diagnostic>>,
     returned: Result<Vec<T>, Box<Diagnostic>>,
-    caller: Vec<T>,
     scalar_returns: [Result<(), Box<Diagnostic>>; 3],
+}
+struct ReserveCarriers<T: 'static> {
+    controls: ReserveControls<T>,
+    primitive: PrimitiveTransports<T>,
+    caller: Vec<T>,
 }
 // The room helper has its own by-value inputs and actual-capacity local. Its
 // origin copy and Vec borrow do not reuse an outer fill/finalize input slot.
@@ -718,7 +727,7 @@ struct RoomCarriers<T: 'static> {
     capacity: usize,
     returned: Result<(), Box<Diagnostic>>,
 }
-struct FillCarriers<T: 'static> {
+struct FillControls<T: 'static> {
     storage: &'static mut PaidStorage,
     allocator: &'static mut Allocator,
     kind: Kind,
@@ -727,12 +736,15 @@ struct FillCarriers<T: 'static> {
     values: Vec<T>,
     reserved: Result<Vec<T>, Box<Diagnostic>>,
     returned: Result<Vec<T>, Box<Diagnostic>>,
-    caller: Vec<T>,
     pending_row: T,
     room: RoomCarriers<T>,
     room_return: Result<(), Box<Diagnostic>>,
 }
-struct FinalizeCarriers<T: 'static> {
+struct FillCarriers<T: 'static> {
+    controls: FillControls<T>,
+    caller: Vec<T>,
+}
+struct FinalizeControls<T: 'static> {
     storage: &'static mut PaidStorage,
     allocator: &'static mut Allocator,
     kind: Kind,
@@ -741,7 +753,6 @@ struct FinalizeCarriers<T: 'static> {
     values: Vec<T>,
     reserved: Result<Vec<T>, Box<Diagnostic>>,
     returned: Result<Vec<T>, Box<Diagnostic>>,
-    caller: Vec<T>,
     iterator: std::slice::Iter<'static, Option<T>>,
     next: Option<&'static Option<T>>,
     slot: &'static Option<T>,
@@ -751,7 +762,11 @@ struct FinalizeCarriers<T: 'static> {
     room: RoomCarriers<T>,
     room_return: Result<(), Box<Diagnostic>>,
 }
-struct ProjectionCarriers {
+struct FinalizeCarriers<T: 'static> {
+    controls: FinalizeControls<T>,
+    caller: Vec<T>,
+}
+struct ProjectionControls {
     total: &'static Cell<usize>,
     allocator: &'static mut Allocator,
     slots: usize,
@@ -761,14 +776,14 @@ struct ProjectionCarriers {
     next: usize,
     arithmetic_options: [Option<usize>; 3],
     arithmetic_results: [Result<usize, Box<Diagnostic>>; 2],
-    capacities: [Capacity; 4],
-    capacity_return: Result<Capacity, Box<Diagnostic>>,
     fresh: Vec<FieldId>,
-    primitive_input: Vec<FieldId>,
-    primitive_return: Result<Vec<FieldId>, Box<Diagnostic>>,
     returned: Result<Vec<FieldId>, Box<Diagnostic>>,
-    caller: Vec<FieldId>,
     scalar_returns: [Result<(), Box<Diagnostic>>; 3],
+}
+struct ProjectionCarriers {
+    controls: ProjectionControls,
+    primitive: PrimitiveTransports<FieldId>,
+    caller: Vec<FieldId>,
 }
 
 pub(super) const fn account_carrier_bytes() -> usize {
@@ -825,8 +840,8 @@ pub(super) const fn projection_carrier_bytes() -> usize {
     size_of::<ProjectionCarriers>()
 }
 
-// The count/partition phase is still disconnected and NOT included in active
-// HirPlan admission. These models enumerate its new named inputs, cursors and
+// The count/partition phase stays disconnected. HirPlan now prepays its T0
+// controls only. These models enumerate new named inputs, cursors and
 // complete returns without claiming inherited WorkMeter internals or all stack.
 struct SliceLoop<T: 'static> {
     cursor: std::slice::Iter<'static, T>,
@@ -964,7 +979,7 @@ struct PreparationCarriers {
     record_field_addition: Result<usize, Box<Diagnostic>>,
     guard_returns: [Result<(), Box<Diagnostic>>; 5],
 }
-struct PartitionCarriers {
+struct PartitionControls {
     plan: &'static mut TypePlan<'static>,
     work: &'static WorkMeter,
     origin: Span,
@@ -987,8 +1002,11 @@ struct PartitionCarriers {
     ordinal: usize,
     quota: FunctionQuota,
     returned: Result<FunctionQuota, Box<Diagnostic>>,
-    caller: FunctionQuota,
     visit_returns: [Result<(), Box<Diagnostic>>; 2],
+}
+struct PartitionCarriers {
+    controls: PartitionControls,
+    caller: FunctionQuota,
 }
 struct BodiesReserveCarriers {
     plan: &'static mut TypePlan<'static>,
@@ -1008,6 +1026,80 @@ pub(super) const fn preparation_carrier_bytes() -> usize {
 }
 pub(super) const fn partition_carrier_bytes() -> usize {
     size_of::<PartitionCarriers>() + size_of::<BodiesReserveCarriers>()
+}
+
+const fn reserve_control_bytes() -> usize {
+    let mut largest = 0;
+    macro_rules! include {
+        ($($ty:ty),* $(,)?) => { $(
+            let bytes = size_of::<ReserveControls<$ty>>();
+            if bytes > largest { largest = bytes; }
+        )* };
+    }
+    include!(
+        TypedBody,
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    largest
+}
+const fn fill_control_bytes() -> usize {
+    let mut largest = 0;
+    macro_rules! include {
+        ($($ty:ty),* $(,)?) => { $(
+            let bytes = size_of::<FillControls<$ty>>();
+            if bytes > largest { largest = bytes; }
+        )* };
+    }
+    include!(
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        bool
+    );
+    largest
+}
+/// One nonrecursive T0 execution bank, not complete checker/stack admission.
+/// The construction must retain exactly one TypePlan and one Bodies receiver.
+/// prepare is repeatable and does NOT enforce that multiplicity or confer
+/// source association/one-shot authority. A future T1 entry must enforce it.
+///
+/// Existing HirPlan.fixed pays the selected Capacity/primitive Vec transports
+/// once. Generic Vec caller roles are excluded from these cores: the reserve
+/// receiver is the enclosing fill/finalize's local `values`, or Bodies' receiver.
+/// Existing C actuals/L presence/three F stage/F frame headers pay those known
+/// outer receivers. Remaining T1 cache/branch/final/path receivers are UNPAID.
+/// In particular, a returned FieldId Vec receiver is separate from Projection
+/// builder/Result and cache-embedded path headers; none implies its admission.
+pub(super) const fn fixed_control_carrier_bytes() -> usize {
+    size_of::<AccountControls>()
+        + count_carrier_bytes()
+        + preparation_carrier_bytes()
+        + size_of::<PartitionControls>()
+        + size_of::<BodiesReserveCarriers>()
+        + reserve_control_bytes()
+        + fill_control_bytes()
+        + size_of::<FinalizeControls<ParameterTy>>()
+        + size_of::<FinalizeControls<FlowSummary>>()
+        + size_of::<FinalizeControls<ValueTy>>()
+        + size_of::<ProjectionControls>()
+}
+/// Conservative per-function output allowance, not permission for a plan table.
+/// Remove the same caller role from the fixed PartitionControls; keep its
+/// distinct constructed quota and complete fallible return inside that bank.
+pub(super) const fn function_output_carrier_bytes() -> usize {
+    size_of::<FunctionQuota>()
 }
 
 #[cfg(test)]

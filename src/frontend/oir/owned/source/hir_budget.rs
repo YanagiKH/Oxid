@@ -2,7 +2,8 @@
 //!
 //! Only a cfg(test) resolver-storage observation consumes this plan. It accounts
 //! complete known carriers, cumulative scratch and Option-to-final coexistence.
-//! Typechecking, match cursor frames and later allocation paths must be priced
+//! T0 preparation controls are prepaid without being called. Actual typechecker
+//! admission/receivers, match cursor frames and later allocation paths must be priced
 //! before they become reachable; the current frame types are not placeholders
 //! for those later types. There is deliberately no retained enum table or ledger.
 //!
@@ -11,7 +12,7 @@
 //! stack/allocator metadata are separate. This is not a global HIR or RSS cap.
 #![allow(dead_code)] // Production source/consumer activation remains closed.
 
-use super::{hir::*, lower, resolve, resolver_storage, typeck};
+use super::{hir::*, lower, resolve, resolver_storage, type_storage, typeck};
 use crate::frontend::{
     ast,
     declaration_index::{DeclarationIndex, WorkMeter},
@@ -91,7 +92,7 @@ struct PlanReturnEnvelope {
     mapped_option: Option<HirPlan>,
     preflight_return: Result<Option<HirPlan>, Box<Diagnostic>>,
 }
-struct CapacityReturnEnvelope {
+pub(super) struct CapacityReturnEnvelope {
     // new's Self construction, one caller ticket, reserve's by-value self and
     // check_observed's nested by-value self. The Result embeds its own payload.
     capacities: [Capacity; 4],
@@ -118,7 +119,7 @@ struct ScalarReturnEnvelope {
     sizes: [Result<usize, Box<Diagnostic>>; 3],
     work_conversion: Result<u64, Box<Diagnostic>>,
 }
-struct VectorReturnEnvelope<T> {
+pub(super) struct VectorReturnEnvelope<T> {
     // reserve's owned input header and its complete fallible return carrier;
     // backing capacity is separately charged, not included in this fixed model.
     local: Vec<T>,
@@ -138,6 +139,7 @@ pub(super) const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
     include!(
         Record,
         Field,
+        FieldId,
         Signature,
         Function,
         ParameterTy,
@@ -333,6 +335,9 @@ impl HirPlan {
         )?;
         charge::<Vec<bool>>(&mut typeck_scratch, c.record_literals, at)?;
         charge::<[u64; 4]>(&mut typeck_scratch, c.matches, at)?;
+        // T0 output objects only. No retained per-function plan table, paid
+        // checker invocation or T1 owner/admission/receiver claim follows.
+        charge::<type_storage::FunctionQuota>(&mut typeck_scratch, c.functions, at)?;
 
         let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
@@ -346,6 +351,9 @@ impl HirPlan {
         charge::<ScalarReturnEnvelope>(&mut fixed, 1, at)?;
         increment(&mut fixed, resolver_storage::fixed_carrier_bytes(), at)?;
         increment(&mut fixed, VECTOR_RETURN_ENVELOPE_BYTES, at)?;
+        // The explicit T0 core excludes the selected Capacity/Vec transports
+        // above. Future T1 checker/admission/receiver carriers remain unpriced.
+        increment(&mut fixed, type_storage::fixed_control_carrier_bytes(), at)?;
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;
         charge::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>(&mut fixed, 1, at)?;
         let mut lower_fixed = 0;

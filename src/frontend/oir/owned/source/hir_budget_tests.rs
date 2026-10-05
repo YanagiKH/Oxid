@@ -367,6 +367,7 @@ fn c3a_actual_source_hir_cache_staging_and_scope_layouts() {
         ast::MatchArmSyntax,
         Record,
         Field,
+        FieldId,
         Signature,
         Function,
         Binding,
@@ -521,6 +522,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
             + size_of::<ScalarReturnEnvelope>()
             + resolver_storage::fixed_carrier_bytes()
             + VECTOR_RETURN_ENVELOPE_BYTES
+            + type_storage::fixed_control_carrier_bytes()
             + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
             + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
     );
@@ -540,6 +542,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
     vector!(
         Record,
         Field,
+        FieldId,
         Signature,
         Function,
         ParameterTy,
@@ -614,4 +617,130 @@ fn c3a_paid_branch_header_formula_keeps_old_and_new_buffers_separate() {
     );
     assert_eq!(plan.resolver_scratch, existing + added);
     println!("C3A_PAID_BRANCH_HEADER_FORMULA functions=2 blocks=3 calls=4 existing={existing} added={added} resolver_scratch={}", plan.resolver_scratch);
+}
+
+#[test]
+fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
+    let legacy_fixed = size_of::<typeck::TypedOwnedProgram<'_>>()
+        + size_of::<PlanReturnEnvelope>()
+        + size_of::<CapacityReturnEnvelope>()
+        + size_of::<CursorTemporaries>()
+        + size_of::<ScalarReturnEnvelope>()
+        + resolver_storage::fixed_carrier_bytes()
+        + VECTOR_RETURN_ENVELOPE_BYTES
+        + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
+        + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
+    assert_eq!(
+        base.fixed - legacy_fixed,
+        type_storage::fixed_control_carrier_bytes()
+    );
+    for functions in [0, 1, 2] {
+        let plan = HirPlan::calculate(
+            HirCounts {
+                functions,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(plan.fixed, base.fixed);
+        assert_eq!(
+            plan.typeck_scratch,
+            functions
+                * (size_of::<Vec<typeck::TypeFrame>>() + size_of::<type_storage::FunctionQuota>())
+        );
+    }
+    for count in [0, 1, 2] {
+        let calls = HirPlan::calculate(
+            HirCounts {
+                calls: count,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(calls.fixed, base.fixed);
+        assert_eq!(
+            calls.typeck_scratch,
+            count * size_of::<Vec<(ParameterTy, Span)>>()
+        );
+        let literals = HirPlan::calculate(
+            HirCounts {
+                record_literals: count,
+                max_record_fields: 3,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(literals.fixed, base.fixed);
+        assert_eq!(
+            literals.typeck_scratch,
+            count * (3 * size_of::<bool>() + size_of::<Vec<bool>>())
+        );
+        let other = HirPlan::calculate(
+            HirCounts {
+                expressions: count,
+                statements: count,
+                borrow_arguments: count,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(other.fixed, base.fixed);
+        assert_eq!(other.typeck_scratch, 0);
+    }
+}
+
+#[test]
+fn c3_t0_new_surcharge_uses_the_existing_checked_capacity_boundary() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let plan = HirPlan::calculate(
+        HirCounts {
+            functions: 2,
+            ..HirCounts::default()
+        },
+        at,
+    )
+    .unwrap();
+    let remaining = MAX_HIR_BYTES - plan.total;
+    assert_eq!(
+        plan.with_dynamic(remaining - 1, at).unwrap(),
+        MAX_HIR_BYTES - 1
+    );
+    assert_eq!(plan.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+    assert!(plan.with_dynamic(remaining + 1, at).is_err());
+    let mut unchanged = 7;
+    assert!(charge::<type_storage::FunctionQuota>(&mut unchanged, usize::MAX, at).is_err());
+    assert_eq!(unchanged, 7);
+    let mut near_overflow = usize::MAX;
+    assert!(increment(
+        &mut near_overflow,
+        type_storage::fixed_control_carrier_bytes(),
+        at
+    )
+    .is_err());
+    assert_eq!(near_overflow, usize::MAX);
+    assert!(HirPlan::calculate(
+        HirCounts {
+            functions: usize::MAX,
+            ..HirCounts::default()
+        },
+        at
+    )
+    .is_err());
+}
+
+#[test]
+fn c3_t0_real_enum_free_index_does_not_enter_the_new_control_admission() {
+    with_index("struct Empty{} struct Wide{a:i32,b:bool} fn helper()->(){Empty{};return;} fn main()->i32{return 0;}", |index| {
+        let work = WorkMeter::new(0);
+        let (result, stats) = super::super::reviewer_source::integration_measured(|| preflight_enum_hir(index, &work));
+        assert!(result.unwrap().is_none());
+        assert_eq!(work.used(), 0);
+        assert_eq!(stats, (0, 0, 0));
+    });
 }

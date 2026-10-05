@@ -550,7 +550,7 @@ fn c3_t0_projection_failed_reserve_keeps_spent_charge_and_all_buffers_drop() {
 }
 
 #[test]
-fn c3_t0_actual_helper_carriers_are_measured_without_changing_active_hir_plan() {
+fn c3_t0_actual_helper_carriers_are_measured_without_checker_admission() {
     macro_rules! layout {
         ($($ty:ty),* $(,)?) => { $(
             println!("T0_LAYOUT {} size={} align={}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
@@ -1030,7 +1030,7 @@ fn c3_t0_partition_work_and_late_quota_failures_preserve_all_global_rights() {
 }
 
 #[test]
-fn c3_t0_hir_count_and_partition_carriers_are_measured_before_integration() {
+fn c3_t0_hir_count_and_partition_carriers_are_measured_before_checker_integration() {
     macro_rules! layout {
         ($($ty:ty),* $(,)?) => { $(println!("T0_COUNT_LAYOUT {} size={} align={}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());)* };
     }
@@ -1690,4 +1690,136 @@ fn c3_t0_each_count_sum_overflow_leaves_both_scalar_inputs_unchanged() {
         assert_eq!(left, before);
         assert_eq!(right, one());
     }
+}
+
+#[test]
+fn c3_t0_control_components_preserve_full_models_and_map_shared_transports_once() {
+    assert_eq!(
+        size_of::<AccountCarriers>(),
+        size_of::<AccountControls>() + size_of::<TypeCounts>() + size_of::<PaidStorage>()
+    );
+    assert_eq!(
+        size_of::<PartitionCarriers>(),
+        size_of::<PartitionControls>() + size_of::<FunctionQuota>()
+    );
+    macro_rules! reserve {
+        ($($ty:ty),* $(,)?) => { $(
+            assert_eq!(size_of::<PrimitiveTransports<$ty>>(), size_of::<CapacityReturnEnvelope>() + size_of::<VectorReturnEnvelope<$ty>>());
+            assert!(size_of::<VectorReturnEnvelope<$ty>>() <= super::super::hir_budget::VECTOR_RETURN_ENVELOPE_BYTES);
+            assert_eq!(size_of::<ReserveCarriers<$ty>>(), size_of::<ReserveControls<$ty>>() + size_of::<PrimitiveTransports<$ty>>() + size_of::<Vec<$ty>>());
+            println!("T0_CONTROL_LAYOUT reserve<{}>={} primitive<{}>={}", stringify!($ty), size_of::<ReserveControls<$ty>>(), stringify!($ty), size_of::<PrimitiveTransports<$ty>>());
+        )* };
+    }
+    reserve!(
+        TypedBody,
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    macro_rules! fill {
+        ($($ty:ty),* $(,)?) => { $(
+            assert_eq!(size_of::<FillCarriers<$ty>>(), size_of::<FillControls<$ty>>() + size_of::<Vec<$ty>>());
+            println!("T0_CONTROL_LAYOUT fill<{}>={}", stringify!($ty), size_of::<FillControls<$ty>>());
+        )* };
+    }
+    fill!(
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        bool
+    );
+    macro_rules! finalize {
+        ($($ty:ty),* $(,)?) => { $(
+            assert_eq!(size_of::<FinalizeCarriers<$ty>>(), size_of::<FinalizeControls<$ty>>() + size_of::<Vec<$ty>>());
+            println!("T0_CONTROL_LAYOUT finalize<{}>={}", stringify!($ty), size_of::<FinalizeControls<$ty>>());
+        )* };
+    }
+    finalize!(ParameterTy, FlowSummary, ValueTy);
+    assert_eq!(
+        size_of::<PrimitiveTransports<FieldId>>(),
+        size_of::<CapacityReturnEnvelope>() + size_of::<VectorReturnEnvelope<FieldId>>()
+    );
+    assert!(
+        size_of::<VectorReturnEnvelope<FieldId>>()
+            <= super::super::hir_budget::VECTOR_RETURN_ENVELOPE_BYTES
+    );
+    assert_eq!(
+        size_of::<ProjectionCarriers>(),
+        size_of::<ProjectionControls>()
+            + size_of::<PrimitiveTransports<FieldId>>()
+            + size_of::<Vec<FieldId>>()
+    );
+    println!(
+        "T0_CONTROL_LAYOUT account={} partition={} projection={} path-primitive={}",
+        size_of::<AccountControls>(),
+        size_of::<PartitionControls>(),
+        size_of::<ProjectionControls>(),
+        size_of::<PrimitiveTransports<FieldId>>()
+    );
+}
+
+#[test]
+fn c3_t0_fixed_control_formula_is_an_independent_sum_of_actual_components() {
+    let reserve = [
+        size_of::<ReserveControls<TypedBody>>(),
+        size_of::<ReserveControls<Option<ParameterTy>>>(),
+        size_of::<ReserveControls<Option<ValueTy>>>(),
+        size_of::<ReserveControls<Option<FlowSummary>>>(),
+        size_of::<ReserveControls<Option<Projection>>>(),
+        size_of::<ReserveControls<Vec<Option<Projection>>>>(),
+        size_of::<ReserveControls<BorrowProjection>>(),
+        size_of::<ReserveControls<TypeFrame>>(),
+        size_of::<ReserveControls<(ParameterTy, Span)>>(),
+        size_of::<ReserveControls<bool>>(),
+        size_of::<ReserveControls<ParameterTy>>(),
+        size_of::<ReserveControls<FlowSummary>>(),
+        size_of::<ReserveControls<ValueTy>>(),
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+    let fill = [
+        size_of::<FillControls<Option<ParameterTy>>>(),
+        size_of::<FillControls<Option<ValueTy>>>(),
+        size_of::<FillControls<Option<FlowSummary>>>(),
+        size_of::<FillControls<Option<Projection>>>(),
+        size_of::<FillControls<bool>>(),
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+    let expected = size_of::<AccountControls>()
+        + size_of::<CountReturnCarriers>()
+        + size_of::<CountGuardCarriers>()
+        + size_of::<BodyCountCarriers>()
+        + size_of::<FunctionCountCarriers>()
+        + size_of::<PreparationCarriers>()
+        + size_of::<ReconcileCarriers>()
+        + size_of::<PartitionControls>()
+        + size_of::<BodiesReserveCarriers>()
+        + reserve
+        + fill
+        + size_of::<FinalizeControls<ParameterTy>>()
+        + size_of::<FinalizeControls<FlowSummary>>()
+        + size_of::<FinalizeControls<ValueTy>>()
+        + size_of::<ProjectionControls>();
+    assert_eq!(fixed_control_carrier_bytes(), expected);
+    assert_eq!(function_output_carrier_bytes(), size_of::<FunctionQuota>());
+    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+    assert_eq!((expected, function_output_carrier_bytes()), (11584, 320));
+    println!(
+        "T0_PASSIVE_SURCHARGE fixed={} per-function={}",
+        expected,
+        function_output_carrier_bytes()
+    );
 }
