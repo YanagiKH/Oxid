@@ -434,9 +434,20 @@ struct FunctionCarriers {
     names: [ScopeName; 2],
     comparison: Result<Ordering, Box<Diagnostic>>,
     row: Result<Option<usize>, Box<Diagnostic>>,
-    active: Result<Option<BindingId>, Box<Diagnostic>>,
+    // PaidScope::active and Resolver::active each have a complete return slot;
+    // forwarding does not assume that the compiler reuses either carrier.
+    active: [Result<Option<BindingId>, Box<Diagnostic>>; 2],
     scalar_returns: [Result<(), Box<Diagnostic>>; 5],
     capacity_array: [usize; KINDS - RETAINED_KINDS],
+    legacy_scope_header: Vec<Vec<&'static str>>,
+    binding_row: Option<usize>,
+}
+struct ArgumentCarriers {
+    row: Argument,
+    returned: Result<Argument, Box<Diagnostic>>,
+}
+pub(super) const fn argument_carrier_bytes() -> usize {
+    size_of::<ArgumentCarriers>()
 }
 pub(super) const fn fixed_carrier_bytes() -> usize {
     size_of::<FixedCarriers>()

@@ -1,4 +1,4 @@
-//! Closed paid declaration/signature slice. All successful body probes are fenced.
+//! Closed paid resolver controls. No successful observation or owner can escape.
 use super::*;
 use crate::frontend::{lexer, parser, source::SourceFileId};
 
@@ -129,7 +129,7 @@ fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative
 const PREFIX: &str =
     "enum E{V} struct R{x:i32,y:bool} fn take(value:R)->R{return value;} fn main()->i32{return 0;}";
 #[test]
-fn c3a_paid_resolver_partial_prefix_never_returns_success_or_reaches_bodies() {
+fn c3a_paid_resolver_prefix_order_is_preserved_behind_final_observation_fence() {
     with_index(PREFIX, |index| {
         let mut allocator = Allocator::default();
         allocator.observer_trace_bound(32).unwrap();
@@ -139,12 +139,13 @@ fn c3a_paid_resolver_partial_prefix_never_returns_success_or_reaches_bodies() {
         assert_eq!(errors[0].code, "E0101");
         assert_eq!(
             errors[0].message,
-            "paid resolver body storage is not connected"
+            "paid resolver observations are not connected"
         );
         assert_eq!(
             allocator
                 .trace
                 .iter()
+                .take(5)
                 .map(|event| (event.kind, event.length))
                 .collect::<Vec<_>>(),
             [
@@ -155,8 +156,8 @@ fn c3a_paid_resolver_partial_prefix_never_returns_success_or_reaches_bodies() {
                 ("paid HIR parameters", 0),
             ]
         );
-        assert_eq!(allocator.attempts, 5);
-        prefix_only(&allocator);
+        assert_eq!(allocator.attempts, 24);
+        assert!(!allocator.observer_trace_overflow);
         let mut denied = Allocator::default();
         assert_eq!(
             resolve_index(index, &WorkMeter::default(), &mut denied).unwrap_err()[0].code,
@@ -186,14 +187,16 @@ fn c3a_paid_resolver_prefix_each_reserve_failure_drops_private_parts() {
                 } else {
                     assert_eq!(
                         errors[0].message,
-                        "paid resolver body storage is not connected"
+                        "paid resolver observations are not connected"
                     );
                 }
                 drop(errors);
             });
             assert_eq!(live, 0, "prefix leak after reserve failure {fail_at:?}");
             assert!(peak > 0);
-            prefix_only(&allocator);
+            if fail_at.is_some() {
+                prefix_only(&allocator);
+            }
             if let Some(ordinal) = fail_at {
                 assert!(!allocator.trace[ordinal - 1].success);
             }
@@ -310,15 +313,123 @@ fn c3a_paid_resolver_declaration_long_prefix_scan_work_boundaries_drop_storage()
                 } else {
                     assert_eq!(
                         errors[0].message,
-                        "paid resolver body storage is not connected"
+                        "paid resolver observations are not connected"
                     );
                 }
                 drop(errors);
             });
             assert_eq!(live, 0, "declaration scan leaked at work limit {limit}");
             assert!(peak > 0);
-            assert_eq!(allocator.attempts, 3);
-            prefix_only(&allocator);
+            assert_eq!(allocator.attempts, if limit < 13 { 3 } else { 4 });
+            if limit < 13 {
+                prefix_only(&allocator);
+            } else {
+                assert_eq!(allocator.trace.last().unwrap().kind, "paid HIR functions");
+            }
+        }
+    });
+}
+
+#[test]
+fn c3a_paid_resolver_closed_body_matches_independent_small_request_oracles() {
+    // Fixed before integration in independent-small-oracles.md. These are
+    // logical exact reserve requests, including all zero-capacity requests.
+    for (text, expected_attempts, expected_slots) in [
+        ("enum Only { V }", 3, [0; 17]),
+        ("enum Unused { V } fn main() -> i32 { return 0; }", 13,
+            [0,0,1,0,1,0,1,1,1,0,0,0,0,0,1,1,12]),
+        ("enum Unused { V } fn id(x: i32) -> i32 { return x; } fn main() -> i32 { let n = id(7); return n; }", 24,
+            [0,0,2,1,2,2,4,2,3,1,0,0,2,2,2,2,24]),
+    ] {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(64).unwrap();
+            let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+                assert_eq!(errors.len(), 1);
+                assert_eq!(errors[0].message, "paid resolver observations are not connected");
+                drop(errors);
+            });
+            assert_eq!(live, 0);
+            assert_eq!(allocator.attempts, expected_attempts);
+            let labels = ["paid HIR records", "paid HIR record fields", "paid HIR signatures",
+                "paid HIR parameters", "paid HIR functions", "paid HIR bindings", "paid HIR expressions",
+                "paid HIR blocks", "paid HIR statements", "paid HIR arguments", "paid HIR field initializers",
+                "paid HIR array entries", "paid HIR scope names", "paid HIR scope exits", "paid HIR scope marks",
+                "paid HIR loops", "paid HIR resolve frames"];
+            let mut slots = [0; 17];
+            for event in &allocator.trace {
+                assert!(event.success);
+                let kind = labels.iter().position(|label| *label == event.kind).expect("only paid requests");
+                slots[kind] += event.length;
+            }
+            assert_eq!(slots, expected_slots);
+            assert!(!allocator.observer_trace_overflow);
+        });
+    }
+}
+
+const MIXED_BODY: &str = "enum Unused{V} struct R{x:i32} struct O{r:R,a:[i32;2]} fn read(p:&R)->i32{return p.x;} fn relay(p:&R)->i32{return read(&*p);} fn id(x:i32)->i32{return x;} fn main()->i32{let r=R{x:id(id(1))};let o=O{r:r,a:[1,2]};let mut a=[3,4];let mut n=0;while n<2{if n==0{let same=relay(&o.r);n=n+1;continue;}else{let same=id(n);a[n]=same;}break;}return a[0]+o.r.x;}";
+#[test]
+fn c3a_paid_resolver_closed_mixed_body_pays_every_kind_and_every_failure_drops() {
+    with_index(MIXED_BODY, |index| {
+        let mut successful = Allocator::default();
+        successful.observer_trace_bound(256).unwrap();
+        let errors = closed_attempt(index, &WorkMeter::default(), &mut successful);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].message,
+            "paid resolver observations are not connected"
+        );
+        let attempts = successful.attempts;
+        let labels = [
+            "paid HIR records",
+            "paid HIR record fields",
+            "paid HIR signatures",
+            "paid HIR parameters",
+            "paid HIR functions",
+            "paid HIR bindings",
+            "paid HIR expressions",
+            "paid HIR blocks",
+            "paid HIR statements",
+            "paid HIR arguments",
+            "paid HIR field initializers",
+            "paid HIR array entries",
+            "paid HIR scope names",
+            "paid HIR scope exits",
+            "paid HIR scope marks",
+            "paid HIR loops",
+            "paid HIR resolve frames",
+        ];
+        for label in labels {
+            assert!(
+                successful
+                    .trace
+                    .iter()
+                    .any(|event| event.kind == label && event.length > 0),
+                "missing {label}"
+            );
+        }
+        assert!(!successful
+            .trace
+            .iter()
+            .any(|event| event.kind == "array HIR elements"));
+        assert!(!successful.observer_trace_overflow);
+        for fail_at in 1..=attempts {
+            let mut allocator = Allocator {
+                fail_at: Some(fail_at),
+                ..Allocator::default()
+            };
+            allocator.observer_trace_bound(256).unwrap();
+            let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+                let errors = closed_attempt(index, &WorkMeter::default(), &mut allocator);
+                assert!(errors.iter().any(|error| error.code == "E0400"));
+                drop(errors);
+            });
+            assert_eq!(live, 0, "closed body leaked at request {fail_at}");
+            assert!(peak > 0);
+            assert!(!allocator.trace[fail_at - 1].success);
+            assert!(!allocator.observer_trace_overflow);
         }
     });
 }

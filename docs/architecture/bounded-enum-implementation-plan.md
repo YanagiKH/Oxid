@@ -47,9 +47,9 @@ D. Feature acceptance: compile-fail matrix, loop/join/all-path-return, inactive
    storage mutations, every-fuel cases, actual enclosing sizes, independently
    recomputed resource inventory and allocation failures; ordinary regressions.
 E. Separate qualification: source identity binding, independent review and native
-   source-free execution evidence; root owns publication/exact-head CI/merge.
+   source-free execution evidence, followed by publication and exact-head CI.
 
 Candidate measurements on x86_64 rustc 1.99.0: aggregate carrier 16 -> 16 bytes,
 compact owner slot 8 -> 8 bytes, u32-tag/four-byte-payload 8 bytes, alignment 4.
-Actual source-carrier measurements remain checkpoint A/B work; candidate
-measurements alone do not establish consumer admission correctness.
+Actual source-carrier measurements are required at each implementation stage;
+candidate measurements alone do not establish consumer admission correctness.

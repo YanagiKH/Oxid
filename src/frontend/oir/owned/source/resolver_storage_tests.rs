@@ -333,7 +333,7 @@ fn c3a_paid_helper_complete_carriers_are_measured_before_consumer_activation() {
         HirCounts, Option<HirCounts>, Result<HirCounts, Box<Diagnostic>>,
         Result<PaidScope, Box<Diagnostic>>, Option<PaidScope>, ScopeName,
         Result<Ordering, Box<Diagnostic>>, Result<Option<usize>, Box<Diagnostic>>,
-        Result<Option<BindingId>, Box<Diagnostic>>, FixedCarriers, FunctionCarriers);
+        Result<Option<BindingId>, Box<Diagnostic>>, FixedCarriers, FunctionCarriers, ArgumentCarriers);
     assert!(
         fixed_carrier_bytes()
             >= 2 * size_of::<PaidStorage>()

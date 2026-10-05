@@ -374,7 +374,7 @@ fn resolve_index(
     resolve_index_impl(index, work, allocator, None)
 }
 // The ordinary wrapper above retains its source gate. A paid caller is not yet
-// connected; the explicit phase fence below prevents partial paid success.
+// connected; the explicit final fence below prevents paid success.
 fn resolve_index_impl(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
@@ -657,17 +657,18 @@ fn resolve_index_impl(
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
-    // Closed checkpoint: body storage has not yet been connected to the paid
-    // account. Never return partially paid parts, even to an internal test.
-    if paid.is_some() {
-        return Err(vec![*error(
-            "E0101",
-            format_args!("paid resolver body storage is not connected"),
-            sources.eof(),
-        )]);
-    }
     work.phase("body-resolution");
-    let mut functions = Vec::new();
+    let mut functions = match paid.as_deref_mut() {
+        Some(paid) => paid
+            .reserve(
+                allocator,
+                Kind::Functions,
+                index.function_count(),
+                sources.eof(),
+            )
+            .map_err(|e| vec![*e])?,
+        None => Vec::new(),
+    };
     let mut array_entries = 0usize;
     for id in 0..index.function_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
@@ -684,12 +685,24 @@ fn resolve_index_impl(
             requester,
             records: &records,
             scope: HashMap::new(),
-            storage: super::resolver_storage::ResolverStorage::legacy(),
+            storage: storage::ResolverStorage {
+                paid: paid.as_deref_mut(),
+                scope: None,
+            },
             bindings: Vec::new(),
             expressions: Vec::new(),
         };
         match resolver.function(DefId(id), &ast.functions[key.index]) {
-            Ok(function) => functions.push(function),
+            Ok(function) => {
+                storage::room(
+                    &functions,
+                    functions.capacity(),
+                    resolver.storage.paid.is_some(),
+                    function.end,
+                )
+                .map_err(|e| vec![*e])?;
+                functions.push(function);
+            }
             Err(error) => {
                 work.record_error(&error);
                 diagnostics.push(*error)
@@ -697,6 +710,15 @@ fn resolve_index_impl(
         }
     }
     if diagnostics.is_empty() {
+        // Closed body checkpoint: observation/reconciliation is not connected.
+        // This fence also dominates the zero-function path and drops all parts.
+        if paid.is_some() {
+            return Err(vec![*error(
+                "E0101",
+                format_args!("paid resolver observations are not connected"),
+                sources.eof(),
+            )]);
+        }
         Ok((records, signatures, functions))
     } else {
         Err(diagnostics)
@@ -717,8 +739,7 @@ struct Resolver<'i, 'a> {
     requester: ModuleId,
     records: &'i [Record],
     scope: HashMap<&'a str, (BindingId, Span)>,
-    // Measured before activation; ordinary resolution retains the legacy branch.
-    #[allow(dead_code)]
+    // Construction-local policy; no returned program owner contains it.
     storage: super::resolver_storage::ResolverStorage<'i>,
     bindings: Vec<Binding>,
     expressions: Vec<Expr>,
@@ -729,6 +750,12 @@ impl<'a> Resolver<'_, 'a> {
             .sources()
             .text(span)
             .expect("validated source span")
+    }
+    fn active(&self, span: Span) -> Result<Option<BindingId>, Box<Diagnostic>> {
+        match &self.storage.scope {
+            Some(scope) => scope.active(self.index, self.work, span),
+            None => Ok(self.scope.get(self.text(span)).map(|entry| entry.0)),
+        }
     }
     fn lookup(&self, span: Span) -> Result<BindingId, Box<Diagnostic>> {
         // Projected array access and borrowing retain the named-root path in their
@@ -743,19 +770,16 @@ impl<'a> Resolver<'_, 'a> {
             .get(start)
             .map(|token| token.span)
             .unwrap_or(span);
-        self.scope
-            .get(self.text(root))
-            .map(|entry| entry.0)
-            .ok_or_else(|| {
-                error(
-                    "E0200",
-                    format_args!(
-                        "unknown local `{}`",
-                        owned_diagnostic::name(self.text(span))
-                    ),
-                    span,
-                )
-            })
+        self.active(root)?.ok_or_else(|| {
+            error(
+                "E0200",
+                format_args!(
+                    "unknown local `{}`",
+                    owned_diagnostic::name(self.text(span))
+                ),
+                span,
+            )
+        })
     }
     fn bind(
         &mut self,
@@ -766,8 +790,8 @@ impl<'a> Resolver<'_, 'a> {
         parameter_position: Option<usize>,
     ) -> Result<BindingId, Box<Diagnostic>> {
         let name = self.text(span);
-        if let Some((_, previous)) = self.scope.get(name) {
-            return Err(duplicate(span, *previous));
+        if let Some(previous) = self.active(span)? {
+            return Err(duplicate(span, self.bindings[previous.0].span));
         }
         if let Some(previous) = self
             .index
@@ -776,7 +800,23 @@ impl<'a> Resolver<'_, 'a> {
         {
             return Err(duplicate(span, previous));
         }
+        let row = match &self.storage.scope {
+            Some(scope) => Some(scope.row(self.index, self.work, span)?.ok_or_else(|| {
+                error(
+                    "E0500",
+                    format_args!("missing inventoried paid scope name"),
+                    span,
+                )
+            })?),
+            None => None,
+        };
         let id = BindingId(self.bindings.len());
+        storage::room(
+            &self.bindings,
+            self.bindings.capacity(),
+            self.storage.paid.is_some(),
+            span,
+        )?;
         self.bindings.push(Binding {
             span,
             annotation,
@@ -784,7 +824,11 @@ impl<'a> Resolver<'_, 'a> {
             scope,
             parameter_position,
         });
-        self.scope.insert(name, (id, span));
+        if let (Some(scope), Some(row)) = (&mut self.storage.scope, row) {
+            scope.activate(row, id, span)?;
+        } else {
+            self.scope.insert(name, (id, span));
+        }
         Ok(id)
     }
     fn function(
@@ -792,6 +836,33 @@ impl<'a> Resolver<'_, 'a> {
         id: DefId,
         function: &ast::Function,
     ) -> Result<Function, Box<Diagnostic>> {
+        let counts = if let Some(paid) = self.storage.paid.as_deref_mut() {
+            let mut counts = super::hir_budget::HirCounts::default();
+            super::hir_budget::count_function(self.ast, function, self.work, &mut counts)?;
+            self.bindings = paid.reserve(
+                self.allocator,
+                Kind::Bindings,
+                counts.bindings,
+                function.name,
+            )?;
+            self.expressions = paid.reserve(
+                self.allocator,
+                Kind::Expressions,
+                counts.expressions,
+                function.name,
+            )?;
+            self.storage.scope = Some(storage::PaidScope::new(
+                self.index,
+                self.work,
+                function,
+                &counts,
+                paid,
+                self.allocator,
+            )?);
+            Some(counts)
+        } else {
+            None
+        };
         for (position, param) in function.params.iter().enumerate() {
             self.bind(
                 param.name,
@@ -804,29 +875,99 @@ impl<'a> Resolver<'_, 'a> {
         // Keep block IDs stable while resolving statements depth first. Only
         // currently active names stay in the lookup table; each scope removes
         // its own names on exit, so neither cloning nor ancestor scans are needed.
-        let mut blocks: Vec<_> = function
-            .blocks
-            .iter()
-            .map(|block| BodyBlock {
-                body: Vec::with_capacity(block.body.len()),
-                span: block.span,
-                end: block.end,
-            })
-            .collect();
+        let mut blocks: Vec<BodyBlock> = if let Some(paid) = self.storage.paid.as_deref_mut() {
+            let mut blocks = paid.reserve(
+                self.allocator,
+                Kind::Blocks,
+                function.blocks.len(),
+                function.name,
+            )?;
+            for block in &function.blocks {
+                let body = paid.reserve(
+                    self.allocator,
+                    Kind::Statements,
+                    block.body.len(),
+                    block.span,
+                )?;
+                storage::room(&blocks, blocks.capacity(), true, block.span)?;
+                blocks.push(BodyBlock {
+                    body,
+                    span: block.span,
+                    end: block.end,
+                });
+            }
+            blocks
+        } else {
+            function
+                .blocks
+                .iter()
+                .map(|block| BodyBlock {
+                    body: Vec::with_capacity(block.body.len()),
+                    span: block.span,
+                    end: block.end,
+                })
+                .collect()
+        };
+        // The paid branch never pushes into this legacy lexical-name carrier.
         let mut scopes: Vec<Vec<&'a str>> = Vec::new();
-        let mut loops = Vec::new();
-        let mut frames = vec![ResolveFrame::Enter(function.body)];
+        let mut loops = if let (Some(paid), Some(counts)) =
+            (self.storage.paid.as_deref_mut(), counts.as_ref())
+        {
+            paid.reserve(
+                self.allocator,
+                Kind::Loops,
+                counts.loop_slots,
+                function.name,
+            )?
+        } else {
+            Vec::new()
+        };
+        let mut frames = if let (Some(paid), Some(counts)) =
+            (self.storage.paid.as_deref_mut(), counts.as_ref())
+        {
+            let mut frames = paid.reserve(
+                self.allocator,
+                Kind::Frames,
+                counts.resolve_frames,
+                function.name,
+            )?;
+            storage::room(&frames, frames.capacity(), true, function.name)?;
+            frames.push(ResolveFrame::Enter(function.body));
+            frames
+        } else {
+            vec![ResolveFrame::Enter(function.body)]
+        };
         while let Some(frame) = frames.pop() {
             let (block, index) = match frame {
                 ResolveFrame::Enter(block) => {
-                    scopes.push(Vec::new());
+                    if let Some(scope) = &mut self.storage.scope {
+                        scope.enter(function.blocks[block.0].span)?;
+                    } else {
+                        scopes.push(Vec::new());
+                    }
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        function.name,
+                    )?;
                     frames.push(ResolveFrame::Leave);
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        function.name,
+                    )?;
                     frames.push(ResolveFrame::Next(block, 0));
                     continue;
                 }
                 ResolveFrame::Leave => {
-                    for name in scopes.pop().expect("entered scope") {
-                        self.scope.remove(name);
+                    if let Some(scope) = &mut self.storage.scope {
+                        scope.leave(self.work, function.name)?;
+                    } else {
+                        for name in scopes.pop().expect("entered scope") {
+                            self.scope.remove(name);
+                        }
                     }
                     continue;
                 }
@@ -839,6 +980,12 @@ impl<'a> Resolver<'_, 'a> {
             let Some(statement) = function.blocks[block.0].body.get(index) else {
                 continue;
             };
+            storage::room(
+                &frames,
+                frames.capacity(),
+                self.storage.paid.is_some(),
+                statement.span,
+            )?;
             frames.push(ResolveFrame::Next(block, index + 1));
             let kind = match &statement.kind {
                 ast::StmtKind::Let {
@@ -849,14 +996,23 @@ impl<'a> Resolver<'_, 'a> {
                 } => {
                     let init = self.expression(*init)?;
                     let annotation = annotation
-                        .map(|ty| value_type(&mut self.index.query(self.work), self.requester, ty))
+                        .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
+                            let value =
+                                value_type(&mut self.index.query(self.work), self.requester, ty)?;
+                            if self.storage.paid.is_some() {
+                                deny_checkpoint_enum(&value, ty.span)?;
+                            }
+                            Ok(value)
+                        })
                         .transpose()?;
                     let local =
                         self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
-                    scopes
-                        .last_mut()
-                        .expect("active body scope")
-                        .push(self.text(*name));
+                    if self.storage.paid.is_none() {
+                        scopes
+                            .last_mut()
+                            .expect("active body scope")
+                            .push(self.text(*name));
+                    }
                     StmtKind::Let {
                         binding: local,
                         init,
@@ -868,18 +1024,14 @@ impl<'a> Resolver<'_, 'a> {
                     value,
                 } => {
                     let text = self.text(*name);
-                    let local = self
-                        .scope
-                        .get(text)
-                        .ok_or_else(|| {
-                            diagnostic(
-                                "E0200",
-                                "resolve",
-                                format_args!("unknown local `{}`", owned_diagnostic::name(text)),
-                                Some(*name),
-                            )
-                        })?
-                        .0;
+                    let local = self.active(*name)?.ok_or_else(|| {
+                        diagnostic(
+                            "E0200",
+                            "resolve",
+                            format_args!("unknown local `{}`", owned_diagnostic::name(text)),
+                            Some(*name),
+                        )
+                    })?;
                     StmtKind::Assign {
                         binding: local,
                         target_span: *name,
@@ -964,8 +1116,26 @@ impl<'a> Resolver<'_, 'a> {
                 ast::StmtKind::While { condition, body } => {
                     let condition = self.expression(*condition)?;
                     let loop_id = LoopId(body.0);
+                    storage::room(
+                        &loops,
+                        loops.capacity(),
+                        self.storage.paid.is_some(),
+                        statement.span,
+                    )?;
                     loops.push(loop_id);
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        statement.span,
+                    )?;
                     frames.push(ResolveFrame::LeaveLoop);
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        statement.span,
+                    )?;
                     frames.push(ResolveFrame::Enter(*body));
                     StmtKind::While {
                         loop_id,
@@ -980,8 +1150,20 @@ impl<'a> Resolver<'_, 'a> {
                 } => {
                     let condition = self.expression(*condition)?;
                     if let Some(otherwise) = else_block {
+                        storage::room(
+                            &frames,
+                            frames.capacity(),
+                            self.storage.paid.is_some(),
+                            statement.span,
+                        )?;
                         frames.push(ResolveFrame::Enter(*otherwise));
                     }
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        statement.span,
+                    )?;
                     frames.push(ResolveFrame::Enter(*then_block));
                     StmtKind::If {
                         condition,
@@ -990,10 +1172,24 @@ impl<'a> Resolver<'_, 'a> {
                     }
                 }
             };
+            storage::room(
+                &blocks[block.0].body,
+                blocks[block.0].body.capacity(),
+                self.storage.paid.is_some(),
+                statement.span,
+            )?;
             blocks[block.0].body.push(Stmt {
                 kind,
                 span: statement.span,
             });
+        }
+        if let (Some(paid), Some(scope)) = (
+            self.storage.paid.as_deref_mut(),
+            self.storage.scope.as_ref(),
+        ) {
+            // Exactly once, at this function's successful scratch lifetime end.
+            // An observation error aborts; partial counters are never retried.
+            paid.observe_scratch(scope, &loops, &frames, function.end)?;
         }
         Ok(Function {
             id,
@@ -1003,6 +1199,39 @@ impl<'a> Resolver<'_, 'a> {
             blocks,
             end: function.end,
         })
+    }
+    fn argument(&mut self, arg: &ast::Argument) -> Result<Argument, Box<Diagnostic>> {
+        match arg {
+            ast::Argument::Value(id) => self.expression(*id).map(Argument::Value),
+            ast::Argument::Borrow {
+                mutable,
+                place,
+                span,
+            } => {
+                let (name_span, star_span) = match place {
+                    ast::BorrowPlace::OwnerName(name) => (*name, None),
+                    ast::BorrowPlace::ForwardedParameter { name, star_span } => {
+                        (*name, Some(*star_span))
+                    }
+                };
+                let binding = self.lookup(name_span)?;
+                Ok(Argument::Borrow {
+                    kind: if *mutable {
+                        BorrowKind::Exclusive
+                    } else {
+                        BorrowKind::Shared
+                    },
+                    place: if star_span.is_some() {
+                        BorrowPlace::Forwarded(binding)
+                    } else {
+                        BorrowPlace::Owner(binding)
+                    },
+                    span: *span,
+                    name_span,
+                    star_span,
+                })
+            }
+        }
     }
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
@@ -1018,14 +1247,31 @@ impl<'a> Resolver<'_, 'a> {
                 self.work.debit(1, expr.span, "array resolve literal")?;
                 let requested = checked_array_entries(*self.array_entries, elements.len())
                     .map_err(|failure| array_reserve_error(failure, expr.span))?;
-                let mut resolved = Vec::new();
-                self.allocator
-                    .vector_exact(&mut resolved, elements.len(), "array HIR elements")
-                    .map_err(|failure| array_reserve_error(failure, expr.span))?;
+                let mut resolved = if let Some(paid) = self.storage.paid.as_deref_mut() {
+                    paid.reserve(
+                        self.allocator,
+                        Kind::ArrayEntries,
+                        elements.len(),
+                        expr.span,
+                    )?
+                } else {
+                    let mut resolved = Vec::new();
+                    self.allocator
+                        .vector_exact(&mut resolved, elements.len(), "array HIR elements")
+                        .map_err(|failure| array_reserve_error(failure, expr.span))?;
+                    resolved
+                };
                 *self.array_entries = requested;
                 for element in elements {
                     self.work.debit(1, expr.span, "array resolve edge")?;
-                    resolved.push(self.expression(*element)?);
+                    let element = self.expression(*element)?;
+                    storage::room(
+                        &resolved,
+                        resolved.capacity(),
+                        self.storage.paid.is_some(),
+                        expr.span,
+                    )?;
+                    resolved.push(element);
                 }
                 ExprKind::ArrayLiteral { elements: resolved }
             }
@@ -1088,29 +1334,70 @@ impl<'a> Resolver<'_, 'a> {
                 }
                 let declared = &self.records[record.0];
                 let mut seen = HashMap::new();
-                let mut resolved = Vec::new();
-                for field in fields {
+                let mut resolved = match self.storage.paid.as_deref_mut() {
+                    Some(paid) => paid.reserve(
+                        self.allocator,
+                        Kind::FieldInitializers,
+                        fields.len(),
+                        expr.span,
+                    )?,
+                    None => Vec::new(),
+                };
+                for (position, field) in fields.iter().enumerate() {
                     let spelling = self.text(field.name);
-                    let target = declared
-                        .fields
-                        .iter()
-                        .find(|f| self.text(f.name_span) == spelling)
-                        .ok_or_else(|| {
-                            error(
-                                "E0200",
-                                format_args!(
-                                    "unknown literal field `{}`",
-                                    owned_diagnostic::name(spelling)
-                                ),
+                    let target = if self.storage.paid.is_some() {
+                        let mut target = None;
+                        for declared in &declared.fields {
+                            if storage::compare(
+                                self.index,
+                                self.work,
+                                declared.name_span,
                                 field.name,
-                            )
-                        })?;
-                    if let Some(first) = seen.insert(spelling, field.name) {
+                            )? == std::cmp::Ordering::Equal
+                            {
+                                target = Some(declared);
+                                break;
+                            }
+                        }
+                        target
+                    } else {
+                        declared
+                            .fields
+                            .iter()
+                            .find(|f| self.text(f.name_span) == spelling)
+                    }
+                    .ok_or_else(|| {
+                        error(
+                            "E0200",
+                            format_args!(
+                                "unknown literal field `{}`",
+                                owned_diagnostic::name(spelling)
+                            ),
+                            field.name,
+                        )
+                    })?
+                    .id;
+                    if self.storage.paid.is_some() {
+                        for earlier in &fields[..position] {
+                            if storage::compare(self.index, self.work, earlier.name, field.name)?
+                                == std::cmp::Ordering::Equal
+                            {
+                                return Err(duplicate(field.name, earlier.name));
+                            }
+                        }
+                    } else if let Some(first) = seen.insert(spelling, field.name) {
                         return Err(duplicate(field.name, first));
                     }
+                    let value = self.expression(field.value)?;
+                    storage::room(
+                        &resolved,
+                        resolved.capacity(),
+                        self.storage.paid.is_some(),
+                        field.span,
+                    )?;
                     resolved.push(FieldInit {
-                        field: target.id,
-                        value: self.expression(field.value)?,
+                        field: target,
+                        value,
                         span: field.span,
                     });
                 }
@@ -1134,7 +1421,7 @@ impl<'a> Resolver<'_, 'a> {
             ast::ExprKind::Unit => ExprKind::Unit,
             ast::ExprKind::Name(span) => {
                 let name = self.text(*span);
-                let local = self.scope.get(name).ok_or_else(|| {
+                let local = self.active(*span)?.ok_or_else(|| {
                     diagnostic(
                         "E0200",
                         "resolve",
@@ -1142,7 +1429,7 @@ impl<'a> Resolver<'_, 'a> {
                         Some(*span),
                     )
                 })?;
-                ExprKind::Binding(local.0)
+                ExprKind::Binding(local)
             }
             ast::ExprKind::Call { callee, args } => {
                 let target = self.index.query(self.work).callee(
@@ -1153,40 +1440,20 @@ impl<'a> Resolver<'_, 'a> {
                     },
                     false,
                 )?;
-                let args = args
-                    .iter()
-                    .map(|arg| match arg {
-                        ast::Argument::Value(id) => self.expression(*id).map(Argument::Value),
-                        ast::Argument::Borrow {
-                            mutable,
-                            place,
-                            span,
-                        } => {
-                            let (name_span, star_span) = match place {
-                                ast::BorrowPlace::OwnerName(name) => (*name, None),
-                                ast::BorrowPlace::ForwardedParameter { name, star_span } => {
-                                    (*name, Some(*star_span))
-                                }
-                            };
-                            let binding = self.lookup(name_span)?;
-                            Ok(Argument::Borrow {
-                                kind: if *mutable {
-                                    BorrowKind::Exclusive
-                                } else {
-                                    BorrowKind::Shared
-                                },
-                                place: if star_span.is_some() {
-                                    BorrowPlace::Forwarded(binding)
-                                } else {
-                                    BorrowPlace::Owner(binding)
-                                },
-                                span: *span,
-                                name_span,
-                                star_span,
-                            })
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+                let args = if let Some(paid) = self.storage.paid.as_deref_mut() {
+                    let mut resolved =
+                        paid.reserve(self.allocator, Kind::Arguments, args.len(), expr.span)?;
+                    for arg in args {
+                        let arg = self.argument(arg)?;
+                        storage::room(&resolved, resolved.capacity(), true, expr.span)?;
+                        resolved.push(arg);
+                    }
+                    resolved
+                } else {
+                    args.iter()
+                        .map(|arg| self.argument(arg))
+                        .collect::<Result<Vec<_>, _>>()?
+                };
                 ExprKind::Call { target, args }
             }
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
@@ -1252,6 +1519,12 @@ impl<'a> Resolver<'_, 'a> {
             }
         };
         let id = ExprId(self.expressions.len());
+        storage::room(
+            &self.expressions,
+            self.expressions.capacity(),
+            self.storage.paid.is_some(),
+            expr.span,
+        )?;
         self.expressions.push(Expr {
             kind,
             span: expr.span,

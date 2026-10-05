@@ -2,9 +2,7 @@
 
 Status: accepted bounded experimental implementation contract, 2026-10-05.
 Implementation and qualification are pending.
-Base: local `4641352646f5f04fa790efdb5dab6943c0d15190`, tree
-`f8c7f42287116b2a55326cc8aea57cd5c390f2a1` (published main equivalent
-`c37a09f332ad68ab401f1c6936e2e17afa430e90`).
+Design base: main `c37a09f332ad68ab401f1c6936e2e17afa430e90`.
 
 ## Boundary
 

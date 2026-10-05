@@ -271,6 +271,16 @@ impl HirPlan {
         // Pending local vector headers coexist with complete prepaid HIR rows.
         // Sum across visits rather than assume only the largest nested call.
         charge::<Vec<Argument>>(&mut resolver_scratch, c.calls, at)?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.call_arguments,
+                resolver_storage::argument_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        charge::<Option<&Field>>(&mut resolver_scratch, c.record_literals, at)?;
         charge::<Vec<FieldInit>>(&mut resolver_scratch, c.record_literals, at)?;
         charge::<Vec<ExprId>>(&mut resolver_scratch, c.array_literals, at)?;
         charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;
