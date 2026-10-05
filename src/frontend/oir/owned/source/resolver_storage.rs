@@ -442,6 +442,17 @@ struct FunctionCarriers {
     legacy_scope_header: Vec<Vec<&'static str>>,
     binding_row: Option<usize>,
 }
+// Inner branch-local vectors are named separately from the old outer pending
+// vectors. Moving headers does not authorize assuming compiler slot reuse.
+struct FunctionBranchHeaders {
+    parameters: Vec<ParameterTy>,
+    blocks: Vec<BodyBlock>,
+    frames: Vec<ResolveFrame>,
+}
+pub(super) const fn function_branch_header_bytes() -> usize {
+    size_of::<FunctionBranchHeaders>()
+}
+
 struct ArgumentCarriers {
     row: Argument,
     returned: Result<Argument, Box<Diagnostic>>,

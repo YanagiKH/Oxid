@@ -579,3 +579,39 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
         size_of::<CursorTemporaries>(), size_of::<ScalarReturnEnvelope>(),
         VECTOR_RETURN_ENVELOPE_BYTES, plan.fixed, plan.total);
 }
+
+#[test]
+fn c3a_paid_branch_header_formula_keeps_old_and_new_buffers_separate() {
+    let sources = sources("x");
+    let at = sources.get(SourceFileId(0)).span(0, 1);
+    // Synthetic arithmetic-only counters isolate 3F + B + Calls extra headers.
+    // No source traversal, allocations or inferred consumer output is involved.
+    let counts = HirCounts {
+        functions: 2,
+        blocks: 3,
+        calls: 4,
+        ..HirCounts::default()
+    };
+    let plan = HirPlan::calculate(counts, at).unwrap();
+    let existing = 2
+        * (resolver_storage::function_carrier_bytes()
+            + resolve::resolver_carrier_bytes()
+            + size_of::<Vec<LoopId>>()
+            + size_of::<Vec<resolve::ResolveFrame>>()
+            + size_of::<Vec<ParameterTy>>()
+            + size_of::<Vec<BodyBlock>>())
+        + 4 * size_of::<Vec<Argument>>();
+    let added = 2 * resolver_storage::function_branch_header_bytes()
+        + 3 * size_of::<Vec<Stmt>>()
+        + 4 * size_of::<Vec<Argument>>();
+    assert_eq!(
+        added,
+        2 * (size_of::<Vec<ParameterTy>>()
+            + size_of::<Vec<BodyBlock>>()
+            + size_of::<Vec<resolve::ResolveFrame>>())
+            + 3 * size_of::<Vec<Stmt>>()
+            + 4 * size_of::<Vec<Argument>>()
+    );
+    assert_eq!(plan.resolver_scratch, existing + added);
+    println!("C3A_PAID_BRANCH_HEADER_FORMULA functions=2 blocks=3 calls=4 existing={existing} added={added} resolver_scratch={}", plan.resolver_scratch);
+}

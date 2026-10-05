@@ -112,7 +112,9 @@ struct ScalarReturnEnvelope {
     // is the longest unit-return chain; increment/charge paths are shorter.
     units: [Result<(), Box<Diagnostic>>; 5],
     // Covers add -> admit -> with_dynamic and saved/intermediate arithmetic
-    // values in charge/coexist without assuming return-slot reuse.
+    // values in charge/coexist without assuming return-slot reuse. The same
+    // saved-scalar bank covers post-child ExprId guard/append temporaries: those
+    // arise after recursion returns, not as another pending recursive value.
     sizes: [Result<usize, Box<Diagnostic>>; 3],
     work_conversion: Result<u64, Box<Diagnostic>>,
 }
@@ -294,6 +296,20 @@ impl HirPlan {
         charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;
         charge::<Vec<ParameterTy>>(&mut resolver_scratch, c.functions, at)?;
         charge::<Vec<BodyBlock>>(&mut resolver_scratch, c.functions, at)?;
+        // Paid branches additionally name inner params/blocks/frames before
+        // transfer to the existing outer buffers, plus each block body and
+        // each call's resolved-arguments builder. Keep the old charges above.
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.functions,
+                resolver_storage::function_branch_header_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        charge::<Vec<Stmt>>(&mut resolver_scratch, c.blocks, at)?;
+        charge::<Vec<Argument>>(&mut resolver_scratch, c.calls, at)?;
         // The paid duplicate branches retain empty local legacy map headers,
         // never their backing tables. Count those changed complete headers.
         charge::<std::collections::HashMap<&str, Span>>(

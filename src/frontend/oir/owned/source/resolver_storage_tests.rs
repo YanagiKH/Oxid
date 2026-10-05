@@ -333,7 +333,7 @@ fn c3a_paid_helper_complete_carriers_are_measured_before_consumer_activation() {
         HirCounts, Option<HirCounts>, Result<HirCounts, Box<Diagnostic>>,
         Result<PaidScope, Box<Diagnostic>>, Option<PaidScope>, ScopeName,
         Result<Ordering, Box<Diagnostic>>, Result<Option<usize>, Box<Diagnostic>>,
-        Result<Option<BindingId>, Box<Diagnostic>>, FixedCarriers, FunctionCarriers, ArgumentCarriers, LiteralLookupCarriers,
+        Result<Option<BindingId>, Box<Diagnostic>>, FixedCarriers, FunctionCarriers, FunctionBranchHeaders, ArgumentCarriers, LiteralLookupCarriers,
         Option<&Field>, FieldId, Result<&Field, Box<Diagnostic>>);
     assert!(
         fixed_carrier_bytes()
@@ -585,4 +585,16 @@ fn c3a_paid_helper_literal_lookup_keeps_selected_and_fallible_carriers_paid() {
         size_of::<Result<&Field, Box<Diagnostic>>>(),
         literal_lookup_carrier_bytes()
     );
+}
+
+#[test]
+fn c3a_paid_helper_branch_headers_are_complete_typed_carriers() {
+    let members = size_of::<Vec<ParameterTy>>()
+        + size_of::<Vec<BodyBlock>>()
+        + size_of::<Vec<ResolveFrame>>();
+    assert!(function_branch_header_bytes() >= members);
+    println!("C3A_PAID_BRANCH_HEADERS function={} params={} blocks={} frames={} block_body={} call_arguments={}",
+        function_branch_header_bytes(), size_of::<Vec<ParameterTy>>(),
+        size_of::<Vec<BodyBlock>>(), size_of::<Vec<ResolveFrame>>(),
+        size_of::<Vec<Stmt>>(), size_of::<Vec<Argument>>());
 }
