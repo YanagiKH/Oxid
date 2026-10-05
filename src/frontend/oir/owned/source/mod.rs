@@ -9,6 +9,7 @@ pub(in crate::frontend::oir) mod resolve;
 mod resolver_storage;
 #[cfg(test)]
 mod tests;
+mod type_storage;
 pub(in crate::frontend::oir) mod typeck;
 pub(in crate::frontend::oir) use program::{check_typed, SourceProgram};
 mod diagnostic;
