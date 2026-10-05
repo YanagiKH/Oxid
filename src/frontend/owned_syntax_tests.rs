@@ -45,10 +45,8 @@ fn grammar_rejects_reference_storage_unsupported_roots_and_partial_borrows() {
         "fn f() -> () { (&p); return; }",
         "fn f() -> () { f((&p)); return; }",
         "fn f() -> () { f(&(p)); return; }",
-        "fn f() -> () { f(&p.field); return; }",
         "fn f() -> () { f(&C {}); return; }",
         "fn f() -> () { f(&make()); return; }",
-        "fn f() -> () { f(&*p.field); return; }",
         "fn f() -> () { f(&p + 1); return; }",
         "fn f() -> () { (p).field; return; }",
         "fn f() -> () { (*p).field; return; }",
@@ -308,6 +306,89 @@ fn borrow_arguments_and_reference_parameters_keep_256_limit() {
             if let Err(errors) = result {
                 assert_eq!(errors[0].code, "E0400");
             }
+        }
+    }
+}
+
+#[test]
+fn projected_borrow_grammar_keeps_named_roots_and_explicit_reborrow_spans() {
+    use super::ast::{Argument, BorrowPlace, ExprKind};
+    let text =
+        "fn relay() -> () { f(&root /* a */ . inner . samples, &mut *p.inner.samples); return; }";
+    let mut sources = SourceMap::new();
+    let file = sources.add("projected.ox".into(), text.into());
+    let source = sources.get(file);
+    let ast = parser::parse_with_mode(
+        source,
+        lexer::lex(source).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+    )
+    .unwrap();
+    let ExprKind::Call { args, .. } = &ast.expressions[0].kind else {
+        panic!("call")
+    };
+    let Argument::Borrow {
+        place: BorrowPlace::OwnerName(name),
+        span,
+        ..
+    } = &args[0]
+    else {
+        panic!("owner path")
+    };
+    assert_eq!(source.text_at(*name), "root /* a */ . inner . samples");
+    assert_eq!(source.text_at(*span), "&root /* a */ . inner . samples");
+    let Argument::Borrow {
+        mutable: true,
+        place: BorrowPlace::ForwardedParameter { name, star_span },
+        span,
+    } = &args[1]
+    else {
+        panic!("explicit projected reborrow")
+    };
+    assert_eq!(source.text_at(*name), "p.inner.samples");
+    assert_eq!(source.text_at(*star_span), "*");
+    assert_eq!(source.text_at(*span), "&mut *p.inner.samples");
+    for spelling in [
+        "&(r.samples)",
+        "&(*p).samples",
+        "&*(p.samples)",
+        "&mut *(p).samples",
+        "&r.samples[0]",
+        "&r.samples.len()",
+        "&make().samples",
+    ] {
+        assert!(
+            parsed(
+                &format!("fn f()->(){{f({spelling});return;}}"),
+                parser::SourceMode::OwnedCandidate
+            )
+            .is_err(),
+            "{spelling}"
+        );
+    }
+    // The star is narrowly part of a complete borrow argument, never a general
+    // dereference expression or changed field-access precedence elsewhere.
+    for expression in ["*p.samples", "(*p).samples", "*(p.samples)"] {
+        assert!(
+            parsed(
+                &format!("fn f()->(){{{expression};return;}}"),
+                parser::SourceMode::OwnedCandidate
+            )
+            .is_err(),
+            "{expression}"
+        );
+    }
+}
+
+#[test]
+fn projected_borrow_paths_have_the_inclusive_64_hop_bound() {
+    for (hops, accepted) in [(64, true), (65, false)] {
+        let text = format!("fn f()->(){{f(&root{});return;}}", ".field".repeat(hops));
+        let result = parsed(&text, parser::SourceMode::OwnedCandidate);
+        if accepted {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            assert_eq!(result.unwrap_err()[0].code, "E0400");
         }
     }
 }

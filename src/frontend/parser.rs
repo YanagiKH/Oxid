@@ -771,9 +771,26 @@ impl Parser<'_> {
             let start = self.bump().span.start;
             let mutable = self.take(Kind::Mut).is_some();
             let star = self.take(Kind::Star);
-            let name = self
+            let mut name = self
                 .expect(Kind::Ident, "borrow argument requires a binding name")?
                 .span;
+            let mut hops = 0;
+            while self.take(Kind::Dot).is_some() {
+                if hops >= 64 {
+                    return Err(self.diagnostic(
+                        "E0400",
+                        "parse",
+                        "record access path depth limit exceeded",
+                        Some(self.peek().span),
+                    ));
+                }
+                self.node()?;
+                name.end = self
+                    .expect(Kind::Ident, "expected field name after `.`")?
+                    .span
+                    .end;
+                hops += 1;
+            }
             if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
                 self.project_recovery = true;
                 return Err(self.diagnostic(

@@ -89,6 +89,7 @@ struct LoanDecl {
     call: CallSiteId,
     argument: usize,
     authority: AccessBase,
+    projection: Vec<FieldId>,
     kind: BorrowKind,
     referent: BorrowedSlot,
     span: Span,

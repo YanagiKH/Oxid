@@ -42,6 +42,7 @@ pub(super) enum Argument {
         kind: BorrowKind,
         place: BorrowPlace,
         span: Span,
+        // Complete named-root path; no separately allocated syntactic path.
         name_span: Span,
         star_span: Option<Span>,
     },

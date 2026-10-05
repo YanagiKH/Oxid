@@ -51,3 +51,6 @@ aggregate extraction/replacement and projected borrowing remain excluded.
 
 [RFC 0021](0021-checked-i32-unary-negation.md) extends checked i32 arithmetic
 with general prefix negation while preserving signed decimal literal behavior.
+
+[RFC 0022](0022-projected-array-slices.md) connects record-contained fixed scalar
+arrays to call-only slice helpers, retaining conservative whole-root authority.

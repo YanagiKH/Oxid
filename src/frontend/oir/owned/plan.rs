@@ -353,8 +353,8 @@ fn usage(
     )?;
     for (count, cells, bytes) in [
         (u.owners, 4, size_of::<OwnerRuntime>()),
-        (u.references, 8, size_of::<ReferenceHandle>()),
-        (u.loans, 12, size_of::<LoanRuntime>()),
+        (u.references, 10, size_of::<ReferenceHandle>()),
+        (u.loans, 14, size_of::<LoanRuntime>()),
         (u.calls, 2, size_of::<CallRuntime>()),
     ] {
         u.expanded_cells = add(u.expanded_cells, mul(count, cells)?)?;

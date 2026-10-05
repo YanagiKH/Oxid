@@ -81,6 +81,8 @@ pub(super) struct NativeMetrics {
     pub render_ordinary_visits: usize,
     pub count_predecessor_visits: usize,
     pub render_predecessor_visits: usize,
+    pub count_borrow_projection_visits: usize,
+    pub render_borrow_projection_visits: usize,
 }
 #[derive(Default)]
 struct Accounting {
@@ -390,6 +392,7 @@ fn native_module_accounted(
     accounting.metrics.count_expansion_kinds = count.expansion_kinds;
     accounting.metrics.count_ordinary_visits = count.ordinary_visits;
     accounting.metrics.count_predecessor_visits = count.predecessor_visits;
+    accounting.metrics.count_borrow_projection_visits = count.borrow_projection_visits;
     accounting.metrics.count_call_scratch_peak = count.call_scratch_peak;
     if count.exceeded {
         return Err(reject(
@@ -426,6 +429,7 @@ fn native_module_accounted(
     accounting.metrics.render_expansion_kinds = output.expansion_kinds;
     accounting.metrics.render_ordinary_visits = output.ordinary_visits;
     accounting.metrics.render_predecessor_visits = output.predecessor_visits;
+    accounting.metrics.render_borrow_projection_visits = output.borrow_projection_visits;
     accounting.metrics.render_call_scratch_peak = output.call_scratch_peak;
     if output.exceeded
         || output.len != count.len
@@ -433,6 +437,7 @@ fn native_module_accounted(
         || output.expansion_kinds != count.expansion_kinds
         || output.ordinary_visits != count.ordinary_visits
         || output.predecessor_visits != count.predecessor_visits
+        || output.borrow_projection_visits != count.borrow_projection_visits
     {
         return Err(Diagnostic::new(
             "E0500",
@@ -727,6 +732,7 @@ struct Emission {
     expansion_kinds: [usize; 3],
     ordinary_visits: usize,
     predecessor_visits: usize,
+    borrow_projection_visits: usize,
     #[cfg(test)]
     field_visits: usize,
 }
@@ -760,6 +766,7 @@ impl Emission {
             expansion_kinds: [0; 3],
             ordinary_visits: 0,
             predecessor_visits: 0,
+            borrow_projection_visits: 0,
             #[cfg(test)]
             field_visits: 0,
         }
@@ -2243,17 +2250,41 @@ fn emit_statement(
             );
         }
         OwnedInstruction::PrepareBorrow { loan, .. } => {
-            let pointer = base_pointer(out, name, f.loans[loan.0].authority);
+            let declaration = &f.loans[loan.0];
+            let base = base_pointer(out, name, declaration.authority);
+            if out.exceeded {
+                return;
+            }
+            let (pointer, projected_length) = if declaration.projection.is_empty() {
+                (base, None)
+            } else {
+                // A checked path selects a view, never independent authority.
+                // Resolve against the witness's nominal root and retain only
+                // its address and actual array length in the existing slots.
+                out.borrow_projection_visits += declaration.projection.len();
+                let (value, offset) =
+                    projection(plan, f, declaration.authority, &declaration.projection);
+                let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
+                    unreachable!("verified projected array slice")
+                };
+                (
+                    field_pointer(out, &format!("{name}_borrow_projection"), &base, offset),
+                    Some(array.length()),
+                )
+            };
             writeln!(
                 out,
                 "  store ptr {pointer}, ptr %r{}, align 8",
                 f.references.len() + loan.0
             )
             .unwrap();
-            if matches!(f.loans[loan.0].referent(), BorrowedTy::ScalarSlice(_)) {
+            if matches!(declaration.referent(), BorrowedTy::ScalarSlice(_)) {
                 // Stage the target view's length when its loan begins, alongside
                 // the pointer, before evaluating any later call argument.
-                let length = index_length(out, f, name, f.loans[loan.0].authority);
+                let length = projected_length.map_or_else(
+                    || index_length(out, f, name, declaration.authority),
+                    |length| length.to_string(),
+                );
                 writeln!(out, "  store i32 {length}, ptr %ll{}, align 4", loan.0).unwrap();
             }
         }

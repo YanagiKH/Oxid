@@ -259,6 +259,14 @@ pub(super) fn preflight(
                 || !f.loans.is_empty(),
             ..FunctionCounts::default()
         };
+        for loan in &f.loans {
+            cap(
+                loan.projection.len(),
+                MAX_CONTAINMENT_DEPTH,
+                "loan projection depth",
+            )?;
+            c.projection_fields = add(c.projection_fields, loan.projection.len())?;
+        }
         for call in &f.calls {
             cap(
                 call.arguments.len(),

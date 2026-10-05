@@ -351,6 +351,7 @@ fn rv_alias(
     }];
     f.loans = (0..2)
         .map(|i| LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: i,
             authority: AccessBase::Owner(OwnerPlaceId(roots[i])),
@@ -750,6 +751,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
         span: s,
     }];
     f.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -1158,6 +1160,7 @@ fn rv_chain(
             next += 1;
             f.loans = (0..count)
                 .map(|i| LoanDecl {
+                    projection: Vec::new(),
                     call: CallSiteId(0),
                     argument: i,
                     authority: base,
@@ -1341,6 +1344,7 @@ fn rv_probe_trace(
         let h = ReferenceHandle {
             root: p.root,
             permission: p.key,
+            view: m.loan(p.key, span).unwrap().view,
         };
         assert_eq!(
             m.validate_handle(h, Access::Read, span).is_ok(),
@@ -1460,6 +1464,7 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
             .collect();
         raw.functions[0].loans = (0..count)
             .map(|i| LoanDecl {
+                projection: Vec::new(),
                 call: CallSiteId(0),
                 argument: i,
                 authority: AccessBase::Owner(OwnerPlaceId(0)),

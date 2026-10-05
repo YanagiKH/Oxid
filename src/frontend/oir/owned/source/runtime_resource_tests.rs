@@ -273,7 +273,7 @@ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
 fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
     // Record payload incl. alignment is <=4 bytes per owner cell. Scalar
     // snapshots are8bytes/cell and runtime metadata is exactly8bytes/cell:
-    // owners32/4, references64/8, loans96/12, calls16/2. Thus Dref<=8*X.
+    // owners32/4, references80/10, loans112/14, calls16/2. Thus Dref<=8*X.
     // The production byte cap cannot be independently reached under X200000;
     // the preceding tests deliberately establish only lowered byte seams.
     assert_eq!(size_of::<Option<Scalar>>(), 8);
@@ -284,7 +284,7 @@ fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
             size_of::<LoanRuntime>(),
             size_of::<CallRuntime>()
         ),
-        (32, 64, 96, 16)
+        (32, 80, 112, 16)
     );
     let upper =
         plan::MAX_FRAMES * size_of::<Frame>() + size_of::<Scalar>() + 8 * plan::MAX_EXPANDED_CELLS;

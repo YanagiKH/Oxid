@@ -169,6 +169,7 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
     for (i, (owner, kind)) in specs.iter().enumerate() {
         let t = at(s, 40 + i);
         f.loans.push(LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: i,
             authority: AccessBase::Owner(OwnerPlaceId(*owner)),
@@ -728,6 +729,7 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
                     span: s,
                 });
                 f.loans.push(LoanDecl {
+                    projection: Vec::new(),
                     call: CallSiteId(0),
                     argument: 0,
                     authority: AccessBase::Parameter(ReferenceParamId(0)),
@@ -818,6 +820,7 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
         .push(ins(OwnedInstruction::OpenCall(CallSiteId(0)), s));
     for i in 0..2 {
         f.loans.push(LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: i,
             authority: AccessBase::Parameter(ReferenceParamId(i)),

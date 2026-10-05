@@ -139,6 +139,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
         span: at(s, 5),
     });
     f.loans.push(LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Owner(source),
@@ -670,6 +671,7 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
         f.loans[0].authority = authority;
         f.calls[0].arguments.push(ArgumentSlot::Borrow(LoanId(1)));
         f.loans.push(LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: 1,
             authority,

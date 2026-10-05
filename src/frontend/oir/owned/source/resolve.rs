@@ -58,7 +58,7 @@ enum MeterOwner<'src> {
 }
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
-    projection_fields: std::cell::Cell<usize>,
+    projection_bytes: std::cell::Cell<usize>,
     admission: SourceAdmission,
     index: IndexOwner<'src>,
     work: MeterOwner<'src>,
@@ -84,16 +84,8 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 span,
             ));
         }
-        let total = self
-            .projection_fields
-            .get()
-            .checked_add(length)
-            .and_then(|total| {
-                total
-                    .checked_mul(std::mem::size_of::<FieldId>())
-                    .map(|bytes| (total, bytes))
-            })
-            .filter(|(_, bytes)| *bytes <= super::budget::MAX_RAW_BYTES)
+        let bytes = length
+            .checked_mul(std::mem::size_of::<FieldId>())
             .ok_or_else(|| {
                 error(
                     "E0400",
@@ -101,12 +93,34 @@ impl<'src> ResolvedOwnedProgram<'src> {
                     span,
                 )
             })?;
+        self.admit_projection_metadata(bytes, span)?;
         // Existing one-hop fields retain their permission-query work charge.
         if length > 1 {
             self.work()
                 .debit(length as u64, span, "record projection path")?;
         }
-        self.projection_fields.set(total.0);
+        Ok(())
+    }
+    /// Sparse borrow-path lookup entries and path fields share a cumulative byte
+    /// cap. Admit each complete requested reservation before any growth.
+    pub(super) fn admit_projection_metadata(
+        &self,
+        bytes: usize,
+        span: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let total = self
+            .projection_bytes
+            .get()
+            .checked_add(bytes)
+            .filter(|bytes| *bytes <= super::budget::MAX_RAW_BYTES)
+            .ok_or_else(|| {
+                error(
+                    "E0400",
+                    format_args!("typed record projection payload limit exceeded"),
+                    span,
+                )
+            })?;
+        self.projection_bytes.set(total);
         Ok(())
     }
     pub(super) fn admission(&self) -> SourceAdmission {
@@ -241,7 +255,7 @@ pub(in crate::frontend) fn resolve_sources(
         resolve_source_parts(sources, &work, &mut allocator, IndexLimits::default())?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
-        projection_fields: std::cell::Cell::new(0),
+        projection_bytes: std::cell::Cell::new(0),
         admission: SourceAdmission::Executable,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -265,7 +279,7 @@ pub(in crate::frontend::oir) fn resolve_observed<'s>(
         resolve_source_parts(sources, work, allocator, IndexLimits::default())?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
-        projection_fields: std::cell::Cell::new(0),
+        projection_bytes: std::cell::Cell::new(0),
         admission: SourceAdmission::Executable,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -294,7 +308,7 @@ pub(in crate::frontend) fn resolve_project<'s>(
     let mut allocator = Allocator::default();
     let (records, signatures, functions) = resolve_index(index, work, &mut allocator)?;
     Ok(ResolvedOwnedProgram {
-        projection_fields: std::cell::Cell::new(0),
+        projection_bytes: std::cell::Cell::new(0),
         admission: SourceAdmission::Executable,
         sources: index.sources().view(),
         index: IndexOwner::Borrowed(index),
@@ -568,7 +582,7 @@ impl<'a> Resolver<'_, 'a> {
             .expect("validated source span")
     }
     fn lookup(&self, span: Span) -> Result<BindingId, Box<Diagnostic>> {
-        // Projected array access retains the complete named-root path in its
+        // Projected array access and borrowing retain the named-root path in their
         // base span; only its first identifier participates in local lookup.
         let start = self
             .ast
@@ -1105,17 +1119,37 @@ mod source_identity_tests {
         .unwrap();
         let program = resolve(source, &ast).unwrap();
         let span = source.span(0, 0);
-        let maximum = super::super::budget::MAX_RAW_BYTES / std::mem::size_of::<FieldId>();
-        program.projection_fields.set(maximum - 1);
+        let maximum = super::super::budget::MAX_RAW_BYTES;
+        program
+            .projection_bytes
+            .set(maximum - std::mem::size_of::<FieldId>());
         program.admit_projection(1, span).unwrap();
         assert_eq!(program.admit_projection(1, span).unwrap_err().code, "E0400");
-        assert_eq!(program.projection_fields.get(), maximum);
-        program.projection_fields.set(0);
+        assert_eq!(program.projection_bytes.get(), maximum);
+        program.projection_bytes.set(0);
         assert_eq!(
             program.admit_projection(65, span).unwrap_err().code,
             "E0400"
         );
-        assert_eq!(program.projection_fields.get(), 0);
+        assert_eq!(program.projection_bytes.get(), 0);
+        let metadata = std::mem::size_of::<Vec<FieldId>>();
+        program.admit_projection_metadata(metadata, span).unwrap();
+        program.admit_projection(2, span).unwrap();
+        assert_eq!(
+            program.projection_bytes.get(),
+            metadata + 2 * std::mem::size_of::<FieldId>()
+        );
+        assert_eq!(
+            program
+                .admit_projection_metadata(usize::MAX, span)
+                .unwrap_err()
+                .code,
+            "E0400"
+        );
+        assert_eq!(
+            program.projection_bytes.get(),
+            metadata + 2 * std::mem::size_of::<FieldId>()
+        );
     }
     #[test]
     fn resolved_owned_names_select_each_original_file() {
@@ -1176,7 +1210,7 @@ pub(super) fn resolve_array_types<'s>(
         resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
-        projection_fields: std::cell::Cell::new(0),
+        projection_bytes: std::cell::Cell::new(0),
         admission: SourceAdmission::ObserveArrayTypes,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -1201,7 +1235,7 @@ pub(super) fn resolve_array_pipeline<'s>(
         resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
-        projection_fields: std::cell::Cell::new(0),
+        projection_bytes: std::cell::Cell::new(0),
         admission: SourceAdmission::ObserveArrayPipeline,
         sources: sources.view(),
         index: IndexOwner::Owned(index),
@@ -1226,7 +1260,7 @@ pub(super) fn resolve_array_consumer<'s>(
         resolve_source_parts(sources, work, allocator, limits)?;
     let entry = index.root_original_main();
     Ok(ResolvedOwnedProgram {
-        projection_fields: std::cell::Cell::new(0),
+        projection_bytes: std::cell::Cell::new(0),
         admission: SourceAdmission::ArrayConsumer,
         sources: sources.view(),
         index: IndexOwner::Owned(index),

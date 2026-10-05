@@ -106,6 +106,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram) {
         },
     ];
     main.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(1),
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(7)),

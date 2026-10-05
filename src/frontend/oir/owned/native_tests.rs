@@ -2363,3 +2363,6 @@ mod slices;
 
 #[path = "composition_native_tests.rs"]
 mod composition;
+
+#[path = "projected_slice_native_tests.rs"]
+mod projected_slices;

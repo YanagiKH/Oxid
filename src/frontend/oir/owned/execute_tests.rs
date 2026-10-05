@@ -278,6 +278,20 @@ fn stale_identity_and_nested_permission_checks_are_transition_inductive() {
     assert_eq!(m.frames[0].loans[1], before); // child-active ancestor cannot end
     for corrupted in [
         ReferenceHandle {
+            view: BorrowView {
+                offset: u64::MAX,
+                ..child.view
+            },
+            ..child
+        },
+        ReferenceHandle {
+            view: BorrowView {
+                aggregate: None,
+                ..child.view
+            },
+            ..child
+        },
+        ReferenceHandle {
             root: OwnerKey {
                 activation: child.root.activation + 1,
                 ..child.root
@@ -931,6 +945,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         span: s(1),
     }];
     main.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Owner(OwnerPlaceId(0)),
@@ -996,6 +1011,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
         span: s(6),
     }];
     recursive.loans = vec![LoanDecl {
+        projection: Vec::new(),
         call: CallSiteId(0),
         argument: 0,
         authority: AccessBase::Parameter(ReferenceParamId(0)),

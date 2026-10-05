@@ -651,6 +651,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
         };
         let acquisition = at(span, 400 + position);
         caller.loans.push(LoanDecl {
+            projection: Vec::new(),
             call: CallSiteId(0),
             argument: position,
             authority: AccessBase::Owner(OwnerPlaceId(root)),
@@ -1960,6 +1961,7 @@ impl NestedRawBuilder<'_> {
                         nested_model::Mode::Exclusive => BorrowKind::Exclusive,
                     };
                     self.raw.loans.push(LoanDecl {
+                        projection: Vec::new(),
                         call,
                         argument,
                         authority,

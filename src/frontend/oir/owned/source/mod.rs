@@ -44,3 +44,6 @@ mod array_consumer_tests;
 mod slice_raw_tests;
 #[cfg(test)]
 mod slice_tests;
+
+#[cfg(test)]
+mod projected_slice_raw_tests;
