@@ -1609,13 +1609,13 @@ fn c3_t1_path_free_rich_sources_reconcile_all_kinds_and_release_new_backing() {
         ("paid HIR expressions", size_of::<Expr>()),
         ("paid HIR blocks", size_of::<BodyBlock>()),
         ("paid HIR statements", size_of::<Stmt>()),
-        ("paid HIR call arguments", size_of::<Argument>()),
+        ("paid HIR arguments", size_of::<Argument>()),
         ("paid HIR field initializers", size_of::<FieldInit>()),
         ("paid HIR array entries", size_of::<ExprId>()),
         ("paid HIR scope names", size_of::<ScopeName>()),
         ("paid HIR scope exits", size_of::<usize>()),
         ("paid HIR scope marks", size_of::<usize>()),
-        ("paid HIR loop targets", size_of::<LoopId>()),
+        ("paid HIR loops", size_of::<LoopId>()),
         ("paid HIR resolve frames", size_of::<ResolveFrame>()),
     ];
     let typed_kinds = [
