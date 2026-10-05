@@ -389,47 +389,51 @@ pub(super) fn probe_enum_resolver_storage(
     // Existing allocation-free index query state remains a separate ledger.
     // Retain only the Span, never a new SourceOwner/owner wrapper.
     let at = index.sources().eof();
-    let plan = match super::hir_budget::preflight_enum_hir(index, work) {
-        Ok(Some(plan)) => plan,
-        Ok(None) => {
-            return Err(vec![*error(
-                "E0500",
-                format_args!("missing enum HIR preflight for resolver observation"),
-                at,
-            )])
+    // Tail matches keep each success-pattern payload as the sole caller value;
+    // there is no second outer plan, inventory or delta transfer slot.
+    match super::hir_budget::preflight_enum_hir(index, work) {
+        Ok(Some(plan)) => {
+            let observation = {
+                let mut paid = PaidStorage::new(plan.counts);
+                let parts = resolve_index_impl(index, work, allocator, Some(&mut paid))?;
+                match storage::inventory_parts(&parts, work, at) {
+                    Ok(inventory) => {
+                        let attempts_after = allocator.attempts;
+                        let delta_option = attempts_after.checked_sub(attempts_before);
+                        match delta_option {
+                            Some(delta) => {
+                                match paid.reconcile(&plan, inventory, delta, work, at) {
+                                    Ok(observation) => {
+                                        drop(parts);
+                                        // The scalar-only account leaves this enclosing
+                                        // scope too; only this pattern and outer fixed
+                                        // observation slots are independently held.
+                                        observation
+                                    }
+                                    Err(error) => return Err(vec![*error]),
+                                }
+                            }
+                            None => {
+                                return Err(vec![*error(
+                                    "E0400",
+                                    format_args!("resolver allocation attempt counter regressed"),
+                                    at,
+                                )])
+                            }
+                        }
+                    }
+                    Err(error) => return Err(vec![*error]),
+                }
+            };
+            Ok(Some(observation))
         }
-        Err(error) => return Err(vec![*error]),
-    };
-    let observation = {
-        let mut paid = PaidStorage::new(plan.counts);
-        let parts = resolve_index_impl(index, work, allocator, Some(&mut paid))?;
-        let inventory = match storage::inventory_parts(&parts, work, at) {
-            Ok(inventory) => inventory,
-            Err(error) => return Err(vec![*error]),
-        };
-        let attempts_after = allocator.attempts;
-        let delta_option = attempts_after.checked_sub(attempts_before);
-        let delta = match delta_option {
-            Some(delta) => delta,
-            None => {
-                return Err(vec![*error(
-                    "E0400",
-                    format_args!("resolver allocation attempt counter regressed"),
-                    at,
-                )])
-            }
-        };
-        match paid.reconcile(&plan, inventory, delta, work, at) {
-            Ok(observation) => {
-                drop(parts);
-                // The scalar-only quota account leaves this enclosing scope
-                // too. Only the pattern and outer observation slots are held.
-                observation
-            }
-            Err(error) => return Err(vec![*error]),
-        }
-    };
-    Ok(Some(observation))
+        Ok(None) => Err(vec![*error(
+            "E0500",
+            format_args!("missing enum HIR preflight for resolver observation"),
+            at,
+        )]),
+        Err(error) => Err(vec![*error]),
+    }
 }
 
 // The ordinary wrapper retains its source gate and absent paid policy. Only the

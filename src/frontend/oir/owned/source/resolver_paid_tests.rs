@@ -890,3 +890,47 @@ fn c3a_paid_resolver_imported_unused_enum_selects_inert_project_observation() {
         "E0101"
     );
 }
+
+#[test]
+fn c3a_paid_resolver_allocator_counter_overflow_is_separate_from_injected_failures() {
+    for text in [
+        "fn main()->i32{return 0;}",
+        "enum Unused{V} fn main()->i32{return 0;}",
+    ] {
+        with_index(text, |index| {
+            let enum_bearing = index.enum_count() != 0;
+            let work = if enum_bearing {
+                WorkMeter::default()
+            } else {
+                WorkMeter::new(0)
+            };
+            let mut allocator = Allocator {
+                attempts: usize::MAX,
+                ..Allocator::default()
+            };
+            allocator.observer_trace_bound(1).unwrap();
+            let (_, stats) = super::super::reviewer_source::integration_measured(|| {
+                let result = probe_enum_resolver_storage(index, &work, &mut allocator);
+                if enum_bearing {
+                    let errors = result.as_ref().unwrap_err();
+                    assert_eq!(errors.len(), 1);
+                    assert_eq!(errors[0].code, "E0400");
+                    assert!(errors[0].message.contains("overflow"));
+                } else {
+                    assert!(result.as_ref().unwrap().is_none());
+                }
+                drop(result);
+            });
+            assert_eq!(stats.1, 0);
+            if !enum_bearing {
+                assert_eq!(stats, (0, 0, 0));
+                assert_eq!(work.used(), 0);
+            }
+            // request() rejects checked counter addition before try_reserve or
+            // a ReserveEvent. This is not an injected allocation-failure row.
+            assert_eq!(allocator.attempts, usize::MAX);
+            assert!(allocator.trace.is_empty());
+            assert!(!allocator.observer_trace_overflow);
+        });
+    }
+}
