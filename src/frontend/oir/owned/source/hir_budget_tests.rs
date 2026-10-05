@@ -791,7 +791,18 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
     let at = sources("x").get(SourceFileId(0)).span(0, 1);
     let components = checker_only_components();
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(components, (33448, 1920, 24, 784, 88));
+    // Stage C enlarges the one already embedded BodyPaid by its observation
+    // borrow. This automatic sizeof growth is not payment of new source banks.
+    assert_eq!(
+        components,
+        (
+            33448,
+            1920 + size_of::<&mut type_storage::TypedObserved>(),
+            24,
+            784,
+            88
+        )
+    );
     assert_eq!(MAX_NESTING, 64);
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
     for count in [0, 1, 2] {

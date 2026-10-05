@@ -287,15 +287,18 @@ struct ProgramPaid<'borrow, 'hir> {
     plan: &'borrow mut storage::TypePlan<'hir>,
     allocator: &'borrow mut Allocator,
     projection_bytes: &'borrow std::cell::Cell<usize>,
+    observed: &'borrow mut storage::TypedObserved,
 }
 struct BodyPaid<'borrow> {
     quota: &'borrow mut storage::FunctionQuota,
     allocator: &'borrow mut Allocator,
     projection_bytes: &'borrow std::cell::Cell<usize>,
+    #[allow(dead_code)] // Remaining disconnected body samples are a later slice.
+    observed: &'borrow mut storage::TypedObserved,
 }
 // Explicit checker-only context/receiver surfaces. HirPlan passively prices
 // these once after source selection. The actual ProgramPaid caller construction,
-// fresh owner/seed and observation transports remain unimplemented/unpriced;
+// fresh owner/seed and standalone observation transports remain unpriced;
 // no paid checker caller or source observation is enabled by this accounting.
 // Existing T0 stage/frame/actuals/presence/quota/Bodies receivers stay assigned
 // there; retained cache headers cannot pay these independent local receivers.
@@ -349,6 +352,48 @@ pub(super) struct PaidExpressionReborrows {
     room: Result<(), Box<Diagnostic>>,
 }
 
+// Stage C's newly authored source-call roles are UNPRICED. The existing
+// PaidBodyControls embeds the actual enlarged BodyPaid once, so its sizeof
+// necessarily grows; that does not pay these separate outcomes/selections.
+// Stage A already models sampler/completion inputs and full helper/caller
+// Results. Do not duplicate those complete transports in these source banks.
+#[allow(dead_code)]
+struct ProgramObservationControls {
+    bodies_reborrow: Option<&'static mut ProgramPaid<'static, 'static>>,
+    bodies_selected: &'static mut ProgramPaid<'static, 'static>,
+    bodies_source: crate::frontend::declaration_index::SourceOwner<'static>,
+    bodies_origin: Span,
+    plan_selected: &'static mut ProgramPaid<'static, 'static>,
+    plan_work_return: &'static crate::frontend::declaration_index::WorkMeter,
+    plan_source: crate::frontend::declaration_index::SourceOwner<'static>,
+    plan_origin: Span,
+}
+#[allow(dead_code)]
+struct BodyCompletionControls {
+    // Separate from both check_body's full return and the outer checked local.
+    body_result: Result<TypedBody, Box<Diagnostic>>,
+    body_succeeded: bool,
+    quota_work_return: &'static crate::frontend::declaration_index::WorkMeter,
+}
+// No-value non-test forcing, with only the existing unpriced sizing helper's
+// plain-return role. No pricing array or future owner/context constructor.
+#[allow(dead_code)]
+pub(super) const fn program_observation_control_bytes() -> usize {
+    std::mem::size_of::<ProgramObservationControls>()
+}
+#[allow(dead_code)]
+pub(super) const fn body_completion_control_bytes() -> usize {
+    std::mem::size_of::<BodyCompletionControls>()
+}
+#[allow(dead_code)]
+pub(super) const fn observed_program_context_bytes() -> usize {
+    std::mem::size_of::<ProgramPaid<'static, 'static>>()
+}
+#[allow(dead_code)]
+pub(super) const fn observed_body_context_bytes() -> usize {
+    std::mem::size_of::<BodyPaid<'static>>()
+}
+
 fn paid_state(at: Span) -> Box<Diagnostic> {
     error("E0500", "invalid paid checker storage state", at)
 }
@@ -383,6 +428,17 @@ fn check_bodies(
             })?,
         None => Vec::new(),
     };
+    if let Some(paid) = paid.as_deref_mut() {
+        if let Err(error) =
+            paid.observed
+                .materialized(Kind::Bodies, &bodies, program.index().sources().eof())
+        {
+            // Adapt exactly once to the core's diagnostics boundary. No
+            // partial body collection or observation escapes this failure.
+            program.work().record_error(&error);
+            return Err(vec![*error]);
+        }
+    }
     let mut diagnostics = Vec::new();
     for function in program.functions() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
@@ -397,12 +453,25 @@ fn check_bodies(
                         diagnostics.push(*error);
                         break;
                     }
-                    let mut context = BodyPaid {
-                        quota: &mut quota,
-                        allocator: &mut *paid.allocator,
-                        projection_bytes: paid.projection_bytes,
+                    let body_result = {
+                        let mut context = BodyPaid {
+                            quota: &mut quota,
+                            allocator: &mut *paid.allocator,
+                            projection_bytes: paid.projection_bytes,
+                            observed: &mut *paid.observed,
+                        };
+                        check_body(program, function, Some(&mut context))
                     };
-                    check_body(program, function, Some(&mut context))
+                    // The context borrow has ended, but the completed body's
+                    // buffers remain owned by body_result during completion.
+                    if body_result.is_ok() {
+                        if let Err(error) = quota.complete(program.work(), function.end) {
+                            program.work().record_error(&error);
+                            diagnostics.push(*error);
+                            break;
+                        }
+                    }
+                    body_result
                 }
                 Err(error) => {
                     // A failed atomic partition leaves its ordinal unchanged.
@@ -436,6 +505,16 @@ fn check_bodies(
         }
     }
     if diagnostics.is_empty() {
+        if let Some(paid) = paid {
+            if let Err(error) = paid
+                .plan
+                .complete(program.work(), program.index().sources().eof())
+            {
+                program.work().record_error(&error);
+                diagnostics.push(*error);
+                return Err(diagnostics);
+            }
+        }
         Ok(bodies)
     } else {
         Err(diagnostics)
@@ -2937,18 +3016,22 @@ fn c3_t1_disconnected_paid_context_actual_layouts() {
         PaidBodyReceivers,
         PaidRowReceiver,
         PaidExpressionReborrows,
+        ProgramObservationControls,
+        BodyCompletionControls,
     );
     assert_eq!(
         size_of::<ProgramPaid<'_, '_>>(),
         size_of::<&mut storage::TypePlan<'_>>()
             + size_of::<&mut Allocator>()
             + size_of::<&std::cell::Cell<usize>>()
+            + size_of::<&mut storage::TypedObserved>()
     );
     assert_eq!(
         size_of::<BodyPaid<'_>>(),
         size_of::<&mut storage::FunctionQuota>()
             + size_of::<&mut Allocator>()
             + size_of::<&std::cell::Cell<usize>>()
+            + size_of::<&mut storage::TypedObserved>()
     );
     assert_eq!(
         size_of::<PaidBodyReceivers>(),
@@ -3629,4 +3712,66 @@ mod typed_inventory {
     }
     // Only the getter's existing plain-return role is used here. A later pricing
     // caller or whole observation receiver is a separately authored obligation.
+}
+
+#[test]
+fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
+    use crate::frontend::declaration_index::{SourceOwner, WorkMeter};
+    use std::mem::{align_of, size_of};
+    // No context values or checker calls: complete concrete types and fields
+    // alone establish these bounded model compositions.
+    macro_rules! roles {
+        ($model:ty, $count:expr; $( $field:ident : $ty:ty ),+ $(,)?) => {{
+            $(let _: for<'a> fn(&'a $model) -> &'a $ty = |model| &model.$field;)+
+            let roles = [$( (std::mem::offset_of!($model, $field), size_of::<$ty>(), align_of::<$ty>()) ),+];
+            assert_eq!(roles.len(), $count);
+            let mut occupied = 0;
+            for (i, (offset, bytes, alignment)) in roles.iter().copied().enumerate() {
+                assert_eq!(offset % alignment, 0);
+                assert!(offset + bytes <= size_of::<$model>());
+                occupied += bytes;
+                for (j, (other, width, _)) in roles.iter().copied().enumerate() {
+                    if i != j && bytes != 0 && width != 0 {
+                        assert!(offset + bytes <= other || other + width <= offset);
+                    }
+                }
+            }
+            assert!(occupied <= size_of::<$model>());
+            println!("C3_T1_CONTEXT_ROLES {} fields={} typed_bytes={} padding={}",
+                stringify!($model), roles.len(), occupied, size_of::<$model>() - occupied);
+        }};
+    }
+    roles!(ProgramPaid<'static, 'static>, 4;
+        plan: &'static mut storage::TypePlan<'static>, allocator: &'static mut Allocator,
+        projection_bytes: &'static std::cell::Cell<usize>, observed: &'static mut storage::TypedObserved);
+    roles!(BodyPaid<'static>, 4;
+        quota: &'static mut storage::FunctionQuota, allocator: &'static mut Allocator,
+        projection_bytes: &'static std::cell::Cell<usize>, observed: &'static mut storage::TypedObserved);
+    roles!(ProgramObservationControls, 8;
+        bodies_reborrow: Option<&'static mut ProgramPaid<'static, 'static>>,
+        bodies_selected: &'static mut ProgramPaid<'static, 'static>, bodies_source: SourceOwner<'static>,
+        bodies_origin: Span, plan_selected: &'static mut ProgramPaid<'static, 'static>,
+        plan_work_return: &'static WorkMeter, plan_source: SourceOwner<'static>, plan_origin: Span);
+    roles!(BodyCompletionControls, 3;
+        body_result: Result<TypedBody, Box<Diagnostic>>, body_succeeded: bool,
+        quota_work_return: &'static WorkMeter);
+    let _: for<'a> fn(&'a PaidBodyControls) -> &'a Result<TypedBody, Box<Diagnostic>> =
+        |model| &model.checked;
+    let _: for<'a> fn(&'a PaidBodyControls) -> &'a BodyPaid<'static> = |model| &model.constructed;
+    assert_eq!(
+        program_observation_control_bytes(),
+        size_of::<ProgramObservationControls>()
+    );
+    assert_eq!(
+        body_completion_control_bytes(),
+        size_of::<BodyCompletionControls>()
+    );
+    assert_eq!(
+        observed_program_context_bytes(),
+        size_of::<ProgramPaid<'static, 'static>>()
+    );
+    assert_eq!(
+        observed_body_context_bytes(),
+        size_of::<BodyPaid<'static>>()
+    );
 }
