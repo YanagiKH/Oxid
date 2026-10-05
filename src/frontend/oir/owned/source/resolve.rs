@@ -129,6 +129,12 @@ impl<'src> ResolvedOwnedProgram<'src> {
     pub(super) fn admission(&self) -> SourceAdmission {
         self.admission
     }
+    /// Interior-mutable authority for the one closed fresh statistics call.
+    /// This is not a seed setter or an admission/source-association proof.
+    #[cfg(test)]
+    pub(super) fn type_storage_cell(&self) -> &std::cell::Cell<usize> {
+        &self.projection_bytes
+    }
     pub(super) fn index(&self) -> &DeclarationIndex<'src> {
         match &self.index {
             IndexOwner::Owned(index) => index,
@@ -456,6 +462,184 @@ pub(super) fn probe_enum_type_storage(
         format_args!("paid enum type observation is not admitted"),
         index.sources().eof(),
     )])
+}
+
+/// Fixed facts only. The one source plan stays inside the resolver member.
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(super) struct EnumTypeStorageObservation {
+    pub(super) resolver: storage::ResolverStorageObservation,
+    pub(super) typed: super::type_storage::TypeStorageObservation,
+}
+
+/// Deliberately uncalled until every new carrier and this closed call graph is
+/// prepaid and reviewed. The selectable probe above remains uninhabited.
+#[cfg(test)]
+#[allow(dead_code)]
+fn fresh_enum_type_storage<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>> {
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    let attempts_before = allocator.attempts;
+    let at = index.sources().eof();
+    match super::hir_budget::preflight_enum_hir(index, work) {
+        Ok(Some(plan)) => {
+            let parts;
+            let resolver_observation;
+            {
+                let mut paid = PaidStorage::new(plan.counts);
+                parts = resolve_index_impl(index, work, allocator, Some(&mut paid))?;
+                match storage::inventory_parts(&parts, work, at) {
+                    Ok(inventory) => {
+                        let attempts_after = allocator.attempts;
+                        let delta_option = attempts_after.checked_sub(attempts_before);
+                        match delta_option {
+                            Some(delta) => {
+                                match paid.reconcile(&plan, inventory, delta, work, at) {
+                                    Ok(observation) => resolver_observation = observation,
+                                    Err(error) => return Err(vec![*error]),
+                                }
+                            }
+                            None => {
+                                return Err(vec![*error(
+                                    "E0400",
+                                    format_args!("resolver allocation attempt counter regressed"),
+                                    at,
+                                )])
+                            }
+                        }
+                    }
+                    Err(error) => return Err(vec![*error]),
+                }
+            }
+            // The resolver account and inventory borrows have ended. Move the
+            // exact fresh parts directly into one owner; never upgrade a prior
+            // executable owner or accept a caller-chosen seed/context.
+            let typed_observation;
+            {
+                let (records, signatures, functions) = parts;
+                let program = ResolvedOwnedProgram {
+                    projection_bytes: std::cell::Cell::new(plan.total),
+                    admission: SourceAdmission::ObserveEnumTypes,
+                    index: IndexOwner::Borrowed(index),
+                    work: MeterOwner::Borrowed(work),
+                    sources: index.sources().view(),
+                    records,
+                    signatures,
+                    functions,
+                    entry: index.root_original_main(),
+                };
+                typed_observation =
+                    super::typeck::observe_enum_type_storage(&program, &plan, &mut *allocator)?;
+            }
+            // The owner is gone before any combined facts are constructed.
+            let attempts_final = allocator.attempts;
+            let total_delta_option = attempts_final.checked_sub(attempts_before);
+            match total_delta_option {
+                Some(total_delta) => {
+                    let phase_delta_option = resolver_observation
+                        .reservation_attempts
+                        .checked_add(typed_observation.typed_attempts);
+                    match phase_delta_option {
+                        Some(phase_delta) => {
+                            if total_delta != phase_delta {
+                                return Err(vec![*error(
+                                    "E0500",
+                                    format_args!("typed observation allocation interval mismatch"),
+                                    at,
+                                )]);
+                            }
+                            Ok(Some(EnumTypeStorageObservation {
+                                resolver: resolver_observation,
+                                typed: typed_observation,
+                            }))
+                        }
+                        None => Err(vec![*error(
+                            "E0400",
+                            format_args!("typed observation allocation interval overflow"),
+                            at,
+                        )]),
+                    }
+                }
+                None => Err(vec![*error(
+                    "E0400",
+                    format_args!("typed observation allocation counter regressed"),
+                    at,
+                )]),
+            }
+        }
+        Ok(None) => Err(vec![*error(
+            "E0500",
+            format_args!("missing enum HIR preflight for typed observation"),
+            at,
+        )]),
+        Err(error) => Err(vec![*error]),
+    }
+}
+
+// Stage D's additional actual roles, all UNPRICED. Existing resolver fixed,
+// inventory and ProbeCarriers retain the plan/account/parts and resolver-fact
+// pattern/caller roles plus the initial resolver interval controls. The primary
+// local owner is the role already embedded in TypedOwnedProgram; only its new
+// complete inline construction is added here. No owner Result/Option exists.
+#[allow(dead_code)]
+struct FreshTypeObservationCarriers {
+    enum_count: usize,
+    eof_source: SourceOwner<'static>,
+    records: Vec<Record>,
+    signatures: Vec<Signature>,
+    functions: Vec<Function>,
+    constructed_owner: ResolvedOwnedProgram<'static>,
+    view_source: SourceOwner<'static>,
+    view_return: SourceView<'static>,
+    entry_return: Option<DefId>,
+    seed: usize,
+    cell_return: std::cell::Cell<usize>,
+    owner_borrow: &'static ResolvedOwnedProgram<'static>,
+    plan_borrow: &'static super::hir_budget::HirPlan,
+    allocator_reborrow: &'static mut Allocator,
+    typed_observation: super::type_storage::TypeStorageObservation,
+    attempts_final: usize,
+    total_delta_option: Option<usize>,
+    total_delta: usize,
+    phase_delta_option: Option<usize>,
+    phase_delta: usize,
+    interval_mismatch: bool,
+    constructed: EnumTypeStorageObservation,
+    optional: Option<EnumTypeStorageObservation>,
+    returned: Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>,
+}
+#[allow(dead_code)]
+struct TypeStorageCellCarriers {
+    program: &'static ResolvedOwnedProgram<'static>,
+    returned: &'static std::cell::Cell<usize>,
+    caller: &'static std::cell::Cell<usize>,
+}
+// Pure non-test forcing. The existing unpriced sizing-helper return role is
+// reused; no future selector/caller role or production pricing array is implied.
+#[allow(dead_code)]
+pub(super) const fn fresh_type_observation_carrier_bytes() -> usize {
+    std::mem::size_of::<FreshTypeObservationCarriers>()
+}
+#[allow(dead_code)]
+pub(super) const fn type_storage_cell_carrier_bytes() -> usize {
+    std::mem::size_of::<TypeStorageCellCarriers>()
+}
+#[allow(dead_code)]
+pub(super) const fn enum_type_observation_bytes() -> usize {
+    std::mem::size_of::<EnumTypeStorageObservation>()
+}
+#[allow(dead_code)]
+pub(super) const fn enum_type_observation_option_bytes() -> usize {
+    std::mem::size_of::<Option<EnumTypeStorageObservation>>()
+}
+#[allow(dead_code)]
+pub(super) const fn enum_type_observation_return_bytes() -> usize {
+    std::mem::size_of::<Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>>()
 }
 
 // This complete model describes only the denied probe above, not the future
@@ -1886,3 +2070,85 @@ pub(super) const fn resolver_carrier_bytes() -> usize {
 #[cfg(test)]
 #[path = "resolver_paid_tests.rs"]
 mod paid_tests;
+
+#[cfg(test)]
+mod fresh_type_observation_layout_tests {
+    use super::*;
+    use std::mem::{align_of, size_of};
+
+    #[test]
+    fn c3_t1_uncalled_fresh_observation_models_have_explicit_roles() {
+        // Type-only schemas. Never invoke the fresh helper or assemble an owner.
+        macro_rules! roles {
+            ($model:ty, $count:expr; $( $field:ident : $ty:ty ),+ $(,)?) => {{
+                $(let _: for<'a> fn(&'a $model) -> &'a $ty = |model| &model.$field;)+
+                let roles = [$( (std::mem::offset_of!($model, $field), size_of::<$ty>(), align_of::<$ty>()) ),+];
+                assert_eq!(roles.len(), $count);
+                let mut occupied = 0;
+                for (i, (offset, bytes, alignment)) in roles.iter().copied().enumerate() {
+                    assert_eq!(offset % alignment, 0);
+                    assert!(offset + bytes <= size_of::<$model>());
+                    occupied += bytes;
+                    for (j, (other, width, _)) in roles.iter().copied().enumerate() {
+                        if i != j && bytes != 0 && width != 0 {
+                            assert!(offset + bytes <= other || other + width <= offset);
+                        }
+                    }
+                }
+                assert!(occupied <= size_of::<$model>());
+                println!("C3_T1_FRESH_ROLES {} fields={} typed_bytes={} padding={}",
+                    stringify!($model), roles.len(), occupied, size_of::<$model>() - occupied);
+            }};
+        }
+        roles!(EnumTypeStorageObservation, 2;
+            resolver: storage::ResolverStorageObservation,
+            typed: super::super::type_storage::TypeStorageObservation);
+        roles!(FreshTypeObservationCarriers, 24;
+            enum_count: usize, eof_source: SourceOwner<'static>, records: Vec<Record>,
+            signatures: Vec<Signature>, functions: Vec<Function>,
+            constructed_owner: ResolvedOwnedProgram<'static>, view_source: SourceOwner<'static>,
+            view_return: SourceView<'static>, entry_return: Option<DefId>, seed: usize,
+            cell_return: std::cell::Cell<usize>, owner_borrow: &'static ResolvedOwnedProgram<'static>,
+            plan_borrow: &'static super::super::hir_budget::HirPlan, allocator_reborrow: &'static mut Allocator,
+            typed_observation: super::super::type_storage::TypeStorageObservation,
+            attempts_final: usize, total_delta_option: Option<usize>, total_delta: usize,
+            phase_delta_option: Option<usize>, phase_delta: usize, interval_mismatch: bool,
+            constructed: EnumTypeStorageObservation, optional: Option<EnumTypeStorageObservation>,
+            returned: Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>);
+        roles!(TypeStorageCellCarriers, 3;
+            program: &'static ResolvedOwnedProgram<'static>,
+            returned: &'static std::cell::Cell<usize>, caller: &'static std::cell::Cell<usize>);
+        macro_rules! layout {
+            ($($ty:ty),* $(,)?) => { $(
+                println!("C3_T1_FRESH_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
+            )* };
+        }
+        layout!(
+            EnumTypeStorageObservation,
+            Option<EnumTypeStorageObservation>,
+            Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>,
+            FreshTypeObservationCarriers,
+            TypeStorageCellCarriers
+        );
+        assert_eq!(
+            fresh_type_observation_carrier_bytes(),
+            size_of::<FreshTypeObservationCarriers>()
+        );
+        assert_eq!(
+            type_storage_cell_carrier_bytes(),
+            size_of::<TypeStorageCellCarriers>()
+        );
+        assert_eq!(
+            enum_type_observation_bytes(),
+            size_of::<EnumTypeStorageObservation>()
+        );
+        assert_eq!(
+            enum_type_observation_option_bytes(),
+            size_of::<Option<EnumTypeStorageObservation>>()
+        );
+        assert_eq!(
+            enum_type_observation_return_bytes(),
+            size_of::<Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>>()
+        );
+    }
+}

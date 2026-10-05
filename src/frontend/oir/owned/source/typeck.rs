@@ -442,6 +442,145 @@ fn paid_state(at: Span) -> Box<Diagnostic> {
     error("E0500", "invalid paid checker storage state", at)
 }
 
+/// Sole caller is resolve's private, uncalled fresh construction. Admission and
+/// seed equality are consistency checks, not authority to reuse another owner.
+#[cfg(test)]
+#[allow(dead_code)]
+pub(super) fn observe_enum_type_storage(
+    program: &ResolvedOwnedProgram<'_>,
+    source: &super::hir_budget::HirPlan,
+    allocator: &mut Allocator,
+) -> Result<storage::TypeStorageObservation, Vec<Diagnostic>> {
+    let work = program.work();
+    let at = program.index().sources().eof();
+    if program.admission() != SourceAdmission::ObserveEnumTypes {
+        let error = paid_state(at);
+        work.record_error(&error);
+        return Err(vec![*error]);
+    }
+    let total = program.type_storage_cell();
+    if total.get() != source.total {
+        let error = paid_state(at);
+        work.record_error(&error);
+        return Err(vec![*error]);
+    }
+    let attempts_before = allocator.attempts;
+    let typed_observation;
+    {
+        match storage::prepare(
+            program.records(),
+            program.signatures(),
+            program.functions(),
+            source,
+            work,
+            at,
+        ) {
+            Ok(mut plan) => {
+                let mut observed = storage::TypedObserved::new();
+                let bodies = {
+                    let mut context = ProgramPaid {
+                        plan: &mut plan,
+                        allocator: &mut *allocator,
+                        projection_bytes: total,
+                        observed: &mut observed,
+                    };
+                    // A Vec failure was already recorded by the shared core.
+                    check_bodies(program, Some(&mut context))?
+                };
+                match typed_inventory::bodies(program, &bodies) {
+                    Ok(inventory) => {
+                        let attempts_after = allocator.attempts;
+                        let delta_option = attempts_after.checked_sub(attempts_before);
+                        match delta_option {
+                            Some(delta) => match storage::reconcile_typed_storage(
+                                &observed,
+                                &inventory,
+                                plan.counts(),
+                                source,
+                                total,
+                                delta,
+                                work,
+                                at,
+                            ) {
+                                Ok(observation) => typed_observation = observation,
+                                Err(error) => {
+                                    work.record_error(&error);
+                                    return Err(vec![*error]);
+                                }
+                            },
+                            None => {
+                                let error = error(
+                                    "E0400",
+                                    "typed allocation attempt counter regressed",
+                                    at,
+                                );
+                                work.record_error(&error);
+                                return Err(vec![*error]);
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        work.record_error(&error);
+                        return Err(vec![*error]);
+                    }
+                }
+            }
+            Err(error) => {
+                work.record_error(&error);
+                return Err(vec![*error]);
+            }
+        }
+    }
+    // Bodies, inventory, local rights and online samples dropped at the lexical
+    // scope boundary; only lifetime-free fixed facts reach this return.
+    Ok(typed_observation)
+}
+
+// Stage D's new caller/return roles only, still UNPRICED. PreparationCarriers
+// already owns the caller TypePlan and BorrowedCheckCarriers the caller Bodies;
+// Stage A owns the observed constructor/return and count-access transports;
+// Stage B owns inventory/reconciliation full boxed-error returns. The narrow
+// cell accessor owns its returned/caller reference, not a new owned Cell here.
+#[allow(dead_code)]
+struct BorrowedTypeObservationCarriers {
+    program: &'static ResolvedOwnedProgram<'static>,
+    source: &'static super::hir_budget::HirPlan,
+    allocator: &'static mut Allocator,
+    work_return: &'static crate::frontend::declaration_index::WorkMeter,
+    work: &'static crate::frontend::declaration_index::WorkMeter,
+    sources: crate::frontend::declaration_index::SourceOwner<'static>,
+    origin: Span,
+    admission_return: SourceAdmission,
+    admission_mismatch: bool,
+    initial_cell: usize,
+    seed_mismatch: bool,
+    attempts_before: usize,
+    records_return: &'static [Record],
+    signatures_return: &'static [Signature],
+    functions_return: &'static [Function],
+    observed: storage::TypedObserved,
+    context: ProgramPaid<'static, 'static>,
+    context_borrow: &'static mut ProgramPaid<'static, 'static>,
+    context_option: Option<&'static mut ProgramPaid<'static, 'static>>,
+    inventory: storage::TypedInventory,
+    observed_borrow: &'static storage::TypedObserved,
+    inventory_borrow: &'static storage::TypedInventory,
+    attempts_after: usize,
+    delta_option: Option<usize>,
+    delta: usize,
+    observation_pattern: storage::TypeStorageObservation,
+    typed_observation: storage::TypeStorageObservation,
+    returned: Result<storage::TypeStorageObservation, Vec<Diagnostic>>,
+}
+#[allow(dead_code)]
+pub(super) const fn borrowed_type_observation_carrier_bytes() -> usize {
+    std::mem::size_of::<BorrowedTypeObservationCarriers>()
+}
+#[allow(dead_code)]
+pub(super) const fn borrowed_type_observation_return_bytes() -> usize {
+    std::mem::size_of::<Result<storage::TypeStorageObservation, Vec<Diagnostic>>>()
+}
+
 /// One borrowed semantic checker. Paid branches remain disconnected behind the
 /// uninhabited observer result. Matching policy/context alone will never prove
 /// fresh owner/plan/Cell provenance; the later entrypoint must establish that.
@@ -3142,6 +3281,8 @@ fn c3_t1_disconnected_paid_context_actual_layouts() {
         CallSamplingControls,
         LiteralSamplingControls,
         ProjectionSamplingControls,
+        BorrowedTypeObservationCarriers,
+        Result<storage::TypeStorageObservation, Vec<Diagnostic>>,
     );
     assert_eq!(
         size_of::<ProgramPaid<'_, '_>>(),
@@ -3907,6 +4048,28 @@ fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
     assert_eq!(
         projection_sampling_control_bytes(),
         size_of::<ProjectionSamplingControls>()
+    );
+    roles!(BorrowedTypeObservationCarriers, 28;
+        program: &'static ResolvedOwnedProgram<'static>, source: &'static super::hir_budget::HirPlan,
+        allocator: &'static mut Allocator, work_return: &'static WorkMeter, work: &'static WorkMeter,
+        sources: SourceOwner<'static>, origin: Span, admission_return: SourceAdmission,
+        admission_mismatch: bool, initial_cell: usize, seed_mismatch: bool, attempts_before: usize,
+        records_return: &'static [Record], signatures_return: &'static [Signature], functions_return: &'static [Function],
+        observed: storage::TypedObserved, context: ProgramPaid<'static, 'static>,
+        context_borrow: &'static mut ProgramPaid<'static, 'static>,
+        context_option: Option<&'static mut ProgramPaid<'static, 'static>>,
+        inventory: storage::TypedInventory, observed_borrow: &'static storage::TypedObserved,
+        inventory_borrow: &'static storage::TypedInventory, attempts_after: usize,
+        delta_option: Option<usize>, delta: usize,
+        observation_pattern: storage::TypeStorageObservation, typed_observation: storage::TypeStorageObservation,
+        returned: Result<storage::TypeStorageObservation, Vec<Diagnostic>>);
+    assert_eq!(
+        borrowed_type_observation_carrier_bytes(),
+        size_of::<BorrowedTypeObservationCarriers>()
+    );
+    assert_eq!(
+        borrowed_type_observation_return_bytes(),
+        size_of::<Result<storage::TypeStorageObservation, Vec<Diagnostic>>>()
     );
     let _: for<'a> fn(&'a PaidBodyControls) -> &'a Result<TypedBody, Box<Diagnostic>> =
         |model| &model.checked;
