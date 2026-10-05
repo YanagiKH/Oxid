@@ -466,3 +466,8 @@ mod enum_admission_tests;
 
 #[cfg(test)]
 mod enum_match_tests;
+
+#[cfg(test)]
+mod enum_consumer_fixtures;
+#[cfg(test)]
+mod enum_reference_tests;

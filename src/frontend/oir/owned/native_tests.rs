@@ -2376,3 +2376,6 @@ mod composition;
 
 #[path = "projected_slice_native_tests.rs"]
 mod projected_slices;
+
+#[path = "enum_native_tests.rs"]
+mod enums;

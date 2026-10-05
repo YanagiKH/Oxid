@@ -287,6 +287,9 @@ fn loan_key(key: storage::LoanKey) -> String {
 fn event(value: &execute::Event) -> String {
     use execute::Event;
     match value {
+        Event::EnumTagRead(..) | Event::EnumPayloadRead(..) | Event::EnumBind(..) => {
+            unreachable!("enum events are outside this predecessor qualification schema")
+        }
         Event::ReadIndex(..) | Event::WriteIndex(..) | Event::ArrayLength(..) => {
             unreachable!("source arrays and production array witnesses remain gated")
         }

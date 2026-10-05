@@ -130,6 +130,15 @@ impl<'a> ExecutionPlan<'a> {
     pub fn build(witness: &'a VerifiedOwnedProgram) -> Result<Self, AdmissionFailure> {
         Self::build_with_limit(witness, MAX_PLAN_BYTES)
     }
+    /// Test-only lower admission limit; it never raises the production ceiling
+    /// or constructs execution authority independently of the supplied witness.
+    #[cfg(test)]
+    pub(super) fn build_with_test_limit(
+        witness: &'a VerifiedOwnedProgram,
+        limit: usize,
+    ) -> Result<Self, AdmissionFailure> {
+        Self::build_with_limit(witness, limit.min(MAX_PLAN_BYTES))
+    }
     pub fn witness(&self) -> &'a VerifiedOwnedProgram {
         self.witness
     }

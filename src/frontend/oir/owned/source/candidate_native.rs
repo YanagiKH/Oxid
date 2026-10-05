@@ -49,6 +49,11 @@ fn event_receipts(events: &[execute::Event]) -> String {
     array(events.iter().enumerate().map(|(index, event)| {
         let mut values = vec![("index", index.to_string())];
         match event {
+            execute::Event::EnumTagRead(..)
+            | execute::Event::EnumPayloadRead(..)
+            | execute::Event::EnumBind(..) => {
+                unreachable!("enum events are outside this predecessor qualification schema")
+            }
             execute::Event::ReadIndex(..)
             | execute::Event::WriteIndex(..)
             | execute::Event::ArrayLength(..) => {
