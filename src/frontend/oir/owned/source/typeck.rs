@@ -3006,3 +3006,95 @@ fn c3_t1_remaining_explicit_semantic_banks_are_measurement_only() {
     println!("C3_T1_SEMANTIC_BANK_LAYOUT map_or={} align={} witness={} else_closure={} return_closure={}",
         map_or[0], map_or[1], map_or[2], map_or[3], map_or[4]);
 }
+
+#[test]
+fn c3_t1_actual_retained_shapes_and_nonempty_frame_endpoint_use_valid_values() {
+    // Private FlowSummary values stay in their owning module. These are only
+    // standalone sample buffers, never a resolved/typed owner or paid context.
+    let at = Span {
+        file: crate::frontend::source::SourceFileId(0),
+        start: 0,
+        end: 1,
+    };
+    let mut observed = storage::TypedObserved::new();
+    macro_rules! retained {
+        ($kind:ident, $values:expr) => {{
+            let values = $values;
+            let capacity = values.capacity();
+            assert!(capacity > 0);
+            let (result, measured) = super::reviewer_source::integration_measured(|| {
+                observed.materialized(Kind::$kind, &values, at)
+            });
+            result.unwrap();
+            assert_eq!(measured, (0, 0, 0));
+            assert_eq!(observed.materialized_vectors[Kind::$kind as usize], 1);
+            assert_eq!(
+                observed.materialized_capacity[Kind::$kind as usize],
+                capacity
+            );
+        }};
+    }
+    retained!(Bodies, Vec::<TypedBody>::with_capacity(2));
+    retained!(ExpressionProjections, vec![None::<Projection>; 3]);
+    retained!(
+        StatementRows,
+        Vec::<Vec<Option<Projection>>>::with_capacity(4)
+    );
+    retained!(StatementProjections, vec![None::<Projection>; 5]);
+    retained!(BorrowProjections, Vec::<BorrowProjection>::with_capacity(6));
+    retained!(
+        BindingFinal,
+        vec![ParameterTy::Value(ValueTy::Scalar(Ty::I32)); 7]
+    );
+    retained!(FlowFinal, vec![FlowSummary::RETURN; 8]);
+    retained!(ExpressionFinal, vec![ValueTy::Scalar(Ty::Bool); 9]);
+    let before = (
+        observed.materialized_vectors,
+        observed.materialized_capacity,
+        observed.scratch_endpoints,
+        observed.scratch_endpoint_capacity,
+        observed.path_vectors,
+        observed.path_capacity_fields,
+    );
+    // Correct element widths ensure these exercise shape denial specifically.
+    let unfilled = Vec::<Option<Projection>>::with_capacity(1);
+    assert_eq!(
+        observed
+            .materialized(Kind::ExpressionProjections, &unfilled, at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    let filled_rows = vec![Vec::<Option<Projection>>::new()];
+    assert_eq!(
+        observed
+            .materialized(Kind::StatementRows, &filled_rows, at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    let frames = vec![TypeFrame::Block {
+        block: BodyBlockId(0),
+        index: 0,
+        flow: FlowSummary::FALLTHROUGH,
+        active_loop: None,
+    }];
+    assert_eq!(
+        observed
+            .scratch_endpoint(Kind::TypeFrames, &frames, at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(
+        (
+            observed.materialized_vectors,
+            observed.materialized_capacity,
+            observed.scratch_endpoints,
+            observed.scratch_endpoint_capacity,
+            observed.path_vectors,
+            observed.path_capacity_fields
+        ),
+        before
+    );
+}

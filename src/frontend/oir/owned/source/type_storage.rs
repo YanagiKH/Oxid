@@ -977,6 +977,65 @@ struct CountsAccessCarriers {
     caller: &'static TypeCounts,
 }
 
+// Non-test measurement-only forcing surface for each real generic sampler
+// type. No source caller uses these getters and no new bank is priced here.
+// There is no synthetic Vec/owner value, callback, or production pricing array.
+pub(super) const fn sample_carrier_bytes() -> usize {
+    let mut largest = 0;
+    macro_rules! include {
+        ($($ty:ty),* $(,)?) => { $(
+            let bytes = size_of::<SampleCarriers<$ty>>();
+            if bytes > largest { largest = bytes; }
+        )* };
+    }
+    include!(
+        TypedBody,
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    largest
+}
+pub(super) const fn endpoint_sample_carrier_bytes() -> usize {
+    let mut largest = 0;
+    macro_rules! include {
+        ($($ty:ty),* $(,)?) => { $(
+            let bytes = size_of::<EndpointSampleCarriers<$ty>>();
+            if bytes > largest { largest = bytes; }
+        )* };
+    }
+    include!(
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool
+    );
+    largest
+}
+// Getter-local accumulator/candidate/return roles. A future pricing caller's
+// separately named receiver remains a later authored obligation, not implied
+// authority from this unpriced measurement helper.
+struct SampleSizingCarriers {
+    largest: usize,
+    bytes: usize,
+    comparison: bool,
+    returned: usize,
+}
+pub(super) const fn sample_sizing_carrier_bytes() -> usize {
+    size_of::<SampleSizingCarriers>()
+}
+
 // Complete NEW type_storage named controls, plus explicitly selected existing
 // Capacity transports. Unchanged Capacity/Allocator internals are not modeled as
 // a complete all-call-chain envelope. These are not instantiated compiler frames

@@ -2413,3 +2413,91 @@ fn c3_t1_zero_function_plan_still_requires_its_one_empty_bodies_request() {
     plan.complete(&WorkMeter::new(KINDS as u64 + 1), at)
         .unwrap();
 }
+
+#[test]
+fn c3_t1_endpoint_and_path_event_count_overflows_are_atomic() {
+    let at = origin();
+    let mut observed = TypedObserved::new();
+    let stage = vec![None::<ValueTy>; 1];
+    observed.scratch_endpoints[1] = usize::MAX;
+    let before = sample_snapshot(&observed);
+    assert_eq!(
+        observed
+            .scratch_endpoint(Kind::ExpressionStage, &stage, at)
+            .unwrap_err()
+            .code,
+        "E0400"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+    observed.path_vectors = usize::MAX;
+    let path = Vec::<FieldId>::with_capacity(1);
+    let before = sample_snapshot(&observed);
+    assert_eq!(observed.path(&path, at).unwrap_err().code, "E0400");
+    assert_eq!(sample_snapshot(&observed), before);
+    // This has a correct filled endpoint shape; only the element width is wrong.
+    assert_eq!(
+        observed
+            .scratch_endpoint(Kind::ExpressionStage, &vec![0u8], at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(sample_snapshot(&observed), before);
+}
+
+#[test]
+fn c3_t1_non_test_sample_size_surface_uses_actual_generic_components() {
+    macro_rules! materialized {
+        ($($ty:ty),* $(,)?) => { $(
+            assert!(sample_carrier_bytes() >= size_of::<SampleCarriers<$ty>>());
+        )* };
+    }
+    materialized!(
+        TypedBody,
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    macro_rules! endpoint {
+        ($($ty:ty),* $(,)?) => { $(
+            assert!(endpoint_sample_carrier_bytes() >= size_of::<EndpointSampleCarriers<$ty>>());
+            assert_eq!(size_of::<EndpointSampleCarriers<$ty>>(),
+                size_of::<SampleCarriers<$ty>>() + size_of::<KindMappingCarriers>());
+        )* };
+    }
+    endpoint!(
+        Option<ParameterTy>,
+        Option<ValueTy>,
+        Option<FlowSummary>,
+        TypeFrame,
+        (ParameterTy, Span),
+        bool
+    );
+    assert_eq!(
+        size_of::<ObservedConstructionCarriers>(),
+        2 * size_of::<TypedObserved>()
+    );
+    assert_eq!(
+        sample_sizing_carrier_bytes(),
+        size_of::<SampleSizingCarriers>()
+    );
+    println!(
+        "C3_T1_OBSERVATION_PRIMITIVE_LAYOUT SampleSizingCarriers {} {}",
+        size_of::<SampleSizingCarriers>(),
+        align_of::<SampleSizingCarriers>()
+    );
+    println!(
+        "C3_T1_OBSERVATION_PRIMITIVE_MAX materialized={} endpoint={}",
+        sample_carrier_bytes(),
+        endpoint_sample_carrier_bytes()
+    );
+}
