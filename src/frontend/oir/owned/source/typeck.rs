@@ -3098,3 +3098,258 @@ fn c3_t1_actual_retained_shapes_and_nonempty_frame_endpoint_use_valid_values() {
         before
     );
 }
+
+// Stage B retained walk only: no caller, owner fixture or source gate reaches
+// this module. Its scalar equality checks cannot prove fresh source provenance.
+#[allow(dead_code)]
+mod typed_inventory {
+    use super::*;
+    use crate::frontend::declaration_index::WorkMeter;
+
+    fn invalid(at: Span) -> Box<Diagnostic> {
+        error("E0500", "invalid typed retained inventory", at)
+    }
+    fn sum(left: usize, right: usize, at: Span) -> Result<usize, Box<Diagnostic>> {
+        left.checked_add(right)
+            .ok_or_else(|| error("E0400", "typed retained inventory overflow", at))
+    }
+    fn projection(
+        inventory: &mut storage::TypedInventory,
+        value: &Projection,
+        records: &[Record],
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        work.debit(1, at, "typed retained path")?;
+        let length = value.path.len();
+        let capacity = value.path.capacity();
+        if !(1..=64).contains(&length)
+            || capacity != length
+            || value.path.last() != Some(&value.field)
+        {
+            return Err(invalid(at));
+        }
+        for field in &value.path {
+            work.debit(1, at, "typed retained path field")?;
+            let record = records.get(field.record.0).ok_or_else(|| invalid(at))?;
+            let declared = record.fields.get(field.index).ok_or_else(|| invalid(at))?;
+            if record.id != field.record || declared.id != *field {
+                return Err(invalid(at));
+            }
+        }
+        let vectors = sum(inventory.path_vectors, 1, at)?;
+        let lengths = sum(inventory.path_length_fields, length, at)?;
+        let capacities = sum(inventory.path_capacity_fields, capacity, at)?;
+        inventory.path_vectors = vectors;
+        inventory.path_length_fields = lengths;
+        inventory.path_capacity_fields = capacities;
+        Ok(())
+    }
+    pub(super) fn bodies(
+        program: &ResolvedOwnedProgram<'_>,
+        bodies: &Vec<TypedBody>,
+    ) -> Result<storage::TypedInventory, Box<Diagnostic>> {
+        let work = program.work();
+        let at = program.index().sources().eof();
+        work.debit(1, at, "typed retained inventory")?;
+        if bodies.len() != program.functions().len() || bodies.capacity() != bodies.len() {
+            return Err(invalid(at));
+        }
+        let mut inventory = storage::TypedInventory::new();
+        inventory.retained(Kind::Bodies, bodies, work, at)?;
+        for (ordinal, function) in program.functions().iter().enumerate() {
+            work.debit(1, at, "typed retained function")?;
+            let body = bodies.get(ordinal).ok_or_else(|| invalid(at))?;
+            let origin = function.end;
+            if body.bindings.len() != function.bindings.len()
+                || body.expressions.len() != function.expressions.len()
+                || body.block_flows.len() != function.blocks.len()
+                || body.projections.len() != function.expressions.len()
+                || body.statement_projections.len() != function.blocks.len()
+            {
+                return Err(invalid(origin));
+            }
+            inventory.retained(Kind::BindingFinal, &body.bindings, work, origin)?;
+            inventory.retained(Kind::ExpressionFinal, &body.expressions, work, origin)?;
+            inventory.retained(Kind::FlowFinal, &body.block_flows, work, origin)?;
+            inventory.retained(Kind::ExpressionProjections, &body.projections, work, origin)?;
+            inventory.retained(
+                Kind::StatementRows,
+                &body.statement_projections,
+                work,
+                origin,
+            )?;
+            inventory.retained(
+                Kind::BorrowProjections,
+                &body.borrow_projections,
+                work,
+                origin,
+            )?;
+            for slot in &body.projections {
+                work.debit(1, origin, "typed retained projection slot")?;
+                if let Some(value) = slot {
+                    projection(&mut inventory, value, program.records(), work, origin)?;
+                }
+            }
+            for (block, row) in body.statement_projections.iter().enumerate() {
+                // The vector visit pays this row before its shape/source read.
+                inventory.retained(Kind::StatementProjections, row, work, origin)?;
+                let source = function.blocks.get(block).ok_or_else(|| invalid(origin))?;
+                if row.len() != source.body.len() {
+                    return Err(invalid(origin));
+                }
+                for slot in row {
+                    work.debit(1, origin, "typed retained projection slot")?;
+                    if let Some(value) = slot {
+                        projection(&mut inventory, value, program.records(), work, origin)?;
+                    }
+                }
+            }
+            let mut previous = None;
+            for entry in &body.borrow_projections {
+                work.debit(1, origin, "typed retained borrow row")?;
+                let key = (entry.expression.0, entry.argument);
+                if let Some(previous) = previous {
+                    if previous >= key {
+                        return Err(invalid(origin));
+                    }
+                }
+                let expression = function
+                    .expressions
+                    .get(entry.expression.0)
+                    .ok_or_else(|| invalid(origin))?;
+                let ExprKind::Call { args, .. } = &expression.kind else {
+                    return Err(invalid(origin));
+                };
+                if !matches!(args.get(entry.argument), Some(Argument::Borrow { .. })) {
+                    return Err(invalid(origin));
+                }
+                projection(
+                    &mut inventory,
+                    &entry.projection,
+                    program.records(),
+                    work,
+                    origin,
+                )?;
+                previous = Some(key);
+            }
+        }
+        Ok(inventory)
+    }
+    // Complete actual walk controls, not universal inherited helper internals.
+    // They remain unpriced; the future whole inventory caller is not added here.
+    struct PathInventoryCarriers {
+        inventory: &'static mut storage::TypedInventory,
+        value: &'static Projection,
+        records: &'static [Record],
+        work: &'static WorkMeter,
+        origin: Span,
+        length: usize,
+        capacity: usize,
+        range: std::ops::RangeInclusive<usize>,
+        range_input: &'static usize,
+        range_return: bool,
+        last: Option<&'static FieldId>,
+        expected_last: Option<&'static FieldId>,
+        fields: std::slice::Iter<'static, FieldId>,
+        next: Option<&'static FieldId>,
+        field: &'static FieldId,
+        record_option: Option<&'static Record>,
+        record_return: Result<&'static Record, Box<Diagnostic>>,
+        record: &'static Record,
+        declared_option: Option<&'static Field>,
+        declared_return: Result<&'static Field, Box<Diagnostic>>,
+        declared: &'static Field,
+        debit_returns: [Result<(), Box<Diagnostic>>; 2],
+        sum_returns: [Result<usize, Box<Diagnostic>>; 3],
+        vectors: usize,
+        lengths: usize,
+        capacities: usize,
+        returned: Result<(), Box<Diagnostic>>,
+        caller_result: Result<(), Box<Diagnostic>>,
+    }
+    struct BodyInventoryCarriers {
+        program: &'static ResolvedOwnedProgram<'static>,
+        bodies: &'static Vec<TypedBody>,
+        work_return: &'static WorkMeter,
+        work: &'static WorkMeter,
+        source_owner: crate::frontend::declaration_index::SourceOwner<'static>,
+        origin: Span,
+        inventory: storage::TypedInventory,
+        functions: std::iter::Enumerate<std::slice::Iter<'static, Function>>,
+        function_next: Option<(usize, &'static Function)>,
+        function_tuple: (usize, &'static Function),
+        ordinal: usize,
+        function: &'static Function,
+        body_option: Option<&'static TypedBody>,
+        body_return: Result<&'static TypedBody, Box<Diagnostic>>,
+        body: &'static TypedBody,
+        function_origin: Span,
+        expression_slots: std::slice::Iter<'static, Option<Projection>>,
+        expression_next: Option<&'static Option<Projection>>,
+        expression_slot: &'static Option<Projection>,
+        expression_projection: &'static Projection,
+        rows: std::iter::Enumerate<std::slice::Iter<'static, Vec<Option<Projection>>>>,
+        row_next: Option<(usize, &'static Vec<Option<Projection>>)>,
+        row_tuple: (usize, &'static Vec<Option<Projection>>),
+        block: usize,
+        row: &'static Vec<Option<Projection>>,
+        source_option: Option<&'static BodyBlock>,
+        source_return: Result<&'static BodyBlock, Box<Diagnostic>>,
+        source: &'static BodyBlock,
+        statement_slots: std::slice::Iter<'static, Option<Projection>>,
+        statement_next: Option<&'static Option<Projection>>,
+        statement_slot: &'static Option<Projection>,
+        statement_projection: &'static Projection,
+        previous: Option<(usize, usize)>,
+        entries: std::slice::Iter<'static, BorrowProjection>,
+        entry_next: Option<&'static BorrowProjection>,
+        entry: &'static BorrowProjection,
+        key: (usize, usize),
+        previous_pattern: (usize, usize),
+        expression_option: Option<&'static Expr>,
+        expression_return: Result<&'static Expr, Box<Diagnostic>>,
+        expression: &'static Expr,
+        arguments: &'static Vec<Argument>,
+        argument_option: Option<&'static Argument>,
+        previous_assignment: Option<(usize, usize)>,
+        debit_returns: [Result<(), Box<Diagnostic>>; 4],
+        returned: Result<storage::TypedInventory, Box<Diagnostic>>,
+    }
+    struct SumCarriers {
+        left: usize,
+        right: usize,
+        origin: Span,
+        addition: Option<usize>,
+        returned: Result<usize, Box<Diagnostic>>,
+    }
+    pub(super) const fn path_carrier_bytes() -> usize {
+        std::mem::size_of::<PathInventoryCarriers>()
+    }
+    pub(super) const fn bodies_carrier_bytes() -> usize {
+        std::mem::size_of::<BodyInventoryCarriers>()
+    }
+    pub(super) const fn sum_carrier_bytes() -> usize {
+        std::mem::size_of::<SumCarriers>()
+    }
+    #[test]
+    fn c3_t1_retained_walk_carriers_are_measured_without_an_owner_fixture() {
+        macro_rules! layout {
+            ($($ty:ty),* $(,)?) => { $(
+                println!("C3_T1_INVENTORY_LAYOUT {} {} {}", stringify!($ty), std::mem::size_of::<$ty>(), std::mem::align_of::<$ty>());
+            )* };
+        }
+        layout!(PathInventoryCarriers, BodyInventoryCarriers, SumCarriers);
+        assert_eq!(
+            path_carrier_bytes(),
+            std::mem::size_of::<PathInventoryCarriers>()
+        );
+        assert_eq!(
+            bodies_carrier_bytes(),
+            std::mem::size_of::<BodyInventoryCarriers>()
+        );
+        assert_eq!(sum_carrier_bytes(), std::mem::size_of::<SumCarriers>());
+    }
+    // Only the getter's existing plain-return role is used here. A later pricing
+    // caller or whole observation receiver is a separately authored obligation.
+}

@@ -1045,6 +1045,331 @@ pub(super) const fn counts_access_carrier_bytes() -> usize {
     size_of::<CountsAccessCarriers>()
 }
 
+// Stage B fixed facts and scalar reconciliation. These helpers remain
+// disconnected/unpriced and cannot establish fresh source/owner provenance.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct TypedInventory {
+    pub(super) retained_vectors: [usize; 8],
+    pub(super) retained_lengths: [usize; 8],
+    pub(super) retained_capacities: [usize; 8],
+    pub(super) path_vectors: usize,
+    pub(super) path_length_fields: usize,
+    pub(super) path_capacity_fields: usize,
+}
+impl TypedInventory {
+    pub(super) fn new() -> Self {
+        Self {
+            retained_vectors: [0; 8],
+            retained_lengths: [0; 8],
+            retained_capacities: [0; 8],
+            path_vectors: 0,
+            path_length_fields: 0,
+            path_capacity_fields: 0,
+        }
+    }
+    /// One visit before inspecting actual backing. No expected/quota capacity
+    /// argument exists. Fixed retained vectors are exact; sparse borrows may not
+    /// fill every reserved row. All candidates commit together after arithmetic.
+    pub(super) fn retained<T>(
+        &mut self,
+        kind: Kind,
+        values: &Vec<T>,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        work.debit(1, at, "typed retained vector")?;
+        let slot = retained_index(kind).ok_or_else(|| invalid(at))?;
+        let k = kind as usize;
+        let len = values.len();
+        let capacity = values.capacity();
+        let width = size_of::<T>();
+        if width != WIDTHS[k]
+            || len > capacity
+            || (kind != Kind::BorrowProjections && len != capacity)
+        {
+            return Err(invalid(at));
+        }
+        let vectors = add(self.retained_vectors[slot], 1, at)?;
+        let lengths = add(self.retained_lengths[slot], len, at)?;
+        let capacities = add(self.retained_capacities[slot], capacity, at)?;
+        self.retained_vectors[slot] = vectors;
+        self.retained_lengths[slot] = lengths;
+        self.retained_capacities[slot] = capacities;
+        Ok(())
+    }
+}
+/// Complete successful fixed facts, never a source/type/ownership witness.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct TypeStorageObservation {
+    pub(super) materialized_vectors: [usize; KINDS],
+    pub(super) capacities: [usize; KINDS],
+    pub(super) retained_lengths: [usize; 8],
+    pub(super) retained_backing_bytes: usize,
+    pub(super) staging_backing_bytes: usize,
+    pub(super) scratch_backing_bytes: usize,
+    pub(super) path_vectors: usize,
+    pub(super) path_length_fields: usize,
+    pub(super) path_capacity_fields: usize,
+    pub(super) materialized_path_bytes: usize,
+    pub(super) retained_path_bytes: usize,
+    pub(super) precharged_path_bytes: usize,
+    pub(super) final_cell: usize,
+    pub(super) typed_attempts: usize,
+}
+#[allow(clippy::too_many_arguments)] // Explicit immutable facts, no new owner/context API.
+pub(super) fn reconcile_typed_storage(
+    observed: &TypedObserved,
+    inventory: &TypedInventory,
+    counts: &TypeCounts,
+    source: &HirPlan,
+    total: &Cell<usize>,
+    typed_attempts: usize,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<TypeStorageObservation, Box<Diagnostic>> {
+    // Matching fresh T0/source provenance and audited no-clone/no-successful-
+    // drop insertion are caller prerequisites, NOT conclusions from equality.
+    work.debit(1, at, "typed storage reconciliation")?;
+    let expected_slots = counts.slots();
+    let expected_requests = counts.requests();
+    let mut capacities = [0usize; KINDS];
+    let mut retained_bytes = 0usize;
+    let mut staging_bytes = 0usize;
+    let mut scratch_bytes = 0usize;
+    let mut vector_events = 0usize;
+    for k in 0..KINDS {
+        work.debit(1, at, "typed storage reconciliation kind")?;
+        if observed.materialized_vectors[k] != expected_requests[k]
+            || observed.materialized_capacity[k] != expected_slots[k]
+        {
+            return Err(invalid(at));
+        }
+        // The two static maps partition all14 kinds. Match the actual repr
+        // ordinal directly: there is no nested data-dependent search loop.
+        let kind = match k {
+            0 => Kind::Bodies,
+            1 => Kind::BindingStage,
+            2 => Kind::ExpressionStage,
+            3 => Kind::FlowStage,
+            4 => Kind::ExpressionProjections,
+            5 => Kind::StatementRows,
+            6 => Kind::StatementProjections,
+            7 => Kind::BorrowProjections,
+            8 => Kind::TypeFrames,
+            9 => Kind::CallActuals,
+            10 => Kind::RecordPresence,
+            11 => Kind::BindingFinal,
+            12 => Kind::FlowFinal,
+            13 => Kind::ExpressionFinal,
+            _ => return Err(invalid(at)),
+        };
+        if let Some(slot) = retained_index(kind) {
+            if inventory.retained_vectors[slot] != observed.materialized_vectors[k]
+                || inventory.retained_capacities[slot] != observed.materialized_capacity[k]
+                || inventory.retained_lengths[slot] > inventory.retained_capacities[slot]
+                || (kind != Kind::BorrowProjections
+                    && inventory.retained_lengths[slot] != inventory.retained_capacities[slot])
+            {
+                return Err(invalid(at));
+            }
+            capacities[k] = inventory.retained_capacities[slot];
+            let bytes = capacities[k]
+                .checked_mul(WIDTHS[k])
+                .ok_or_else(|| failure("typed observed backing overflow", at))?;
+            retained_bytes = add(retained_bytes, bytes, at)?;
+        } else {
+            let slot = scratch_index(kind).ok_or_else(|| invalid(at))?;
+            if observed.scratch_endpoints[slot] != observed.materialized_vectors[k]
+                || observed.scratch_endpoint_capacity[slot] != observed.materialized_capacity[k]
+            {
+                return Err(invalid(at));
+            }
+            capacities[k] = observed.scratch_endpoint_capacity[slot];
+            let bytes = capacities[k]
+                .checked_mul(WIDTHS[k])
+                .ok_or_else(|| failure("typed observed backing overflow", at))?;
+            if matches!(
+                kind,
+                Kind::BindingStage | Kind::ExpressionStage | Kind::FlowStage
+            ) {
+                staging_bytes = add(staging_bytes, bytes, at)?;
+            } else {
+                scratch_bytes = add(scratch_bytes, bytes, at)?;
+            }
+        }
+        vector_events = add(vector_events, observed.materialized_vectors[k], at)?;
+    }
+    // This final debit deliberately precedes every path/cell/attempt check and
+    // the successful result construction, including otherwise constant checks.
+    work.debit(1, at, "typed storage reconciliation completion")?;
+    if retained_bytes > source.typed
+        || staging_bytes > source.staging
+        || scratch_bytes > source.typeck_scratch
+    {
+        return Err(invalid(at));
+    }
+    let materialized_path_bytes = observed
+        .path_capacity_fields
+        .checked_mul(size_of::<FieldId>())
+        .ok_or_else(|| failure("typed observed path overflow", at))?;
+    let retained_path_bytes = inventory
+        .path_capacity_fields
+        .checked_mul(size_of::<FieldId>())
+        .ok_or_else(|| failure("typed retained path overflow", at))?;
+    let final_cell = total.get();
+    let precharged_path_bytes = final_cell
+        .checked_sub(source.total)
+        .ok_or_else(|| invalid(at))?;
+    let attempts = add(vector_events, observed.path_vectors, at)?;
+    let path_bound = inventory
+        .path_vectors
+        .checked_mul(64)
+        .ok_or_else(|| invalid(at))?;
+    let path_slots = add(
+        add(
+            inventory.retained_lengths[1],
+            inventory.retained_lengths[3],
+            at,
+        )?,
+        inventory.retained_lengths[4],
+        at,
+    )?;
+    if observed.path_vectors != inventory.path_vectors
+        || observed.path_capacity_fields != inventory.path_capacity_fields
+        || inventory.path_length_fields != inventory.path_capacity_fields
+        || inventory.path_capacity_fields < inventory.path_vectors
+        || inventory.path_capacity_fields > path_bound
+        || inventory.path_vectors > path_slots
+        || materialized_path_bytes != retained_path_bytes
+        || precharged_path_bytes != retained_path_bytes
+        || final_cell > MAX_HIR_BYTES
+        || attempts != typed_attempts
+    {
+        return Err(invalid(at));
+    }
+    Ok(TypeStorageObservation {
+        materialized_vectors: observed.materialized_vectors,
+        capacities,
+        retained_lengths: inventory.retained_lengths,
+        retained_backing_bytes: retained_bytes,
+        staging_backing_bytes: staging_bytes,
+        scratch_backing_bytes: scratch_bytes,
+        path_vectors: inventory.path_vectors,
+        path_length_fields: inventory.path_length_fields,
+        path_capacity_fields: inventory.path_capacity_fields,
+        materialized_path_bytes,
+        retained_path_bytes,
+        precharged_path_bytes,
+        final_cell,
+        typed_attempts,
+    })
+}
+
+// Stage B actual helper/return surfaces, still UNPRICED. Generic retained
+// sampler models use real Vec types; no source owner/model value is fabricated.
+struct InventoryConstructionCarriers {
+    constructed: TypedInventory,
+    returned: TypedInventory,
+}
+struct RetainedSampleCarriers<T: 'static> {
+    inventory: &'static mut TypedInventory,
+    kind: Kind,
+    values: &'static Vec<T>,
+    work: &'static WorkMeter,
+    origin: Span,
+    debit: Result<(), Box<Diagnostic>>,
+    mapping: KindMappingCarriers,
+    kind_index: usize,
+    len: usize,
+    capacity: usize,
+    width: usize,
+    additions: [Result<usize, Box<Diagnostic>>; 3],
+    vectors: usize,
+    lengths: usize,
+    capacities: usize,
+    returned: Result<(), Box<Diagnostic>>,
+    caller_result: Result<(), Box<Diagnostic>>,
+}
+struct TypedReconciliationCarriers {
+    observed: &'static TypedObserved,
+    inventory: &'static TypedInventory,
+    counts: &'static TypeCounts,
+    source: &'static HirPlan,
+    total: &'static Cell<usize>,
+    typed_attempts: usize,
+    work: &'static WorkMeter,
+    origin: Span,
+    expected_array_returns: [[usize; KINDS]; 2],
+    expected_arrays: [[usize; KINDS]; 2],
+    capacities: [usize; KINDS],
+    retained_bytes: usize,
+    staging_bytes: usize,
+    scratch_bytes: usize,
+    vector_events: usize,
+    kinds: std::ops::Range<usize>,
+    next: Option<usize>,
+    k: usize,
+    kind: Kind,
+    retained_map: Option<usize>,
+    retained_slot: usize,
+    scratch_mapping: KindMappingCarriers,
+    retained_product: Option<usize>,
+    retained_product_result: Result<usize, Box<Diagnostic>>,
+    retained_product_bytes: usize,
+    scratch_product: Option<usize>,
+    scratch_product_result: Result<usize, Box<Diagnostic>>,
+    scratch_product_bytes: usize,
+    backing_add_returns: [Result<usize, Box<Diagnostic>>; 3],
+    event_add_return: Result<usize, Box<Diagnostic>>,
+    debit_returns: [Result<(), Box<Diagnostic>>; 3],
+    path_products: [Option<usize>; 2],
+    path_product_returns: [Result<usize, Box<Diagnostic>>; 2],
+    materialized_path_bytes: usize,
+    retained_path_bytes: usize,
+    final_cell: usize,
+    precharge_subtraction: Option<usize>,
+    precharge_return: Result<usize, Box<Diagnostic>>,
+    precharged_path_bytes: usize,
+    attempt_return: Result<usize, Box<Diagnostic>>,
+    attempts: usize,
+    path_bound_option: Option<usize>,
+    path_bound_return: Result<usize, Box<Diagnostic>>,
+    path_bound: usize,
+    path_slot_returns: [Result<usize, Box<Diagnostic>>; 2],
+    path_slot_inner: usize,
+    path_slots: usize,
+    constructed: TypeStorageObservation,
+    returned: Result<TypeStorageObservation, Box<Diagnostic>>,
+    // A future statistics caller's whole result receiver is not authored yet.
+}
+pub(super) const fn inventory_construction_carrier_bytes() -> usize {
+    size_of::<InventoryConstructionCarriers>()
+}
+pub(super) const fn retained_sample_carrier_bytes() -> usize {
+    let mut largest = 0;
+    macro_rules! include {
+        ($($ty:ty),* $(,)?) => { $(
+            let bytes = size_of::<RetainedSampleCarriers<$ty>>();
+            if bytes > largest { largest = bytes; }
+        )* };
+    }
+    include!(
+        TypedBody,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    largest
+}
+pub(super) const fn typed_reconciliation_carrier_bytes() -> usize {
+    size_of::<TypedReconciliationCarriers>()
+}
+// These no-value sizing getters reuse SampleSizingCarriers' getter-owned
+// roles. Their eventual separately named pricing callers remain unpriced.
+
 // Complete NEW type_storage named controls, plus explicitly selected existing
 // Capacity transports. Unchanged Capacity/Allocator internals are not modeled as
 // a complete all-call-chain envelope. These are not instantiated compiler frames

@@ -2509,3 +2509,270 @@ fn c3_t1_non_test_sample_size_surface_uses_actual_generic_components() {
         endpoint_sample_carrier_bytes()
     );
 }
+
+fn empty_inventory_primitive() -> (
+    TypedObserved,
+    TypedInventory,
+    TypeCounts,
+    HirPlan,
+    Cell<usize>,
+) {
+    // Actual empty buffer plus scalar T0 bounds only, not a source owner or
+    // proof of the fresh-source prerequisites of the later closed observer.
+    let bodies = Vec::<TypedBody>::new();
+    let mut observed = TypedObserved::new();
+    observed
+        .materialized(Kind::Bodies, &bodies, origin())
+        .unwrap();
+    let mut inventory = TypedInventory::new();
+    inventory
+        .retained(Kind::Bodies, &bodies, &WorkMeter::new(1), origin())
+        .unwrap();
+    let counts = TypeCounts::default();
+    (
+        observed,
+        inventory,
+        counts,
+        source_bounds(counts),
+        Cell::new(0),
+    )
+}
+
+#[test]
+fn c3_t1_retained_vector_inventory_reads_actual_shapes_after_its_debit() {
+    let at = origin();
+    let mut inventory = TypedInventory::new();
+    let bad_width = vec![0u8];
+    let work = WorkMeter::new(0);
+    let error = inventory
+        .retained(Kind::BindingFinal, &bad_width, &work, at)
+        .unwrap_err();
+    assert_eq!(error.message, "declaration index work limit exceeded");
+    assert_eq!(inventory, TypedInventory::new());
+    assert_eq!(
+        inventory
+            .retained(Kind::BindingFinal, &bad_width, &WorkMeter::new(1), at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    assert_eq!(inventory, TypedInventory::new());
+    let unfilled_bodies = Vec::<TypedBody>::with_capacity(1);
+    assert_eq!(
+        inventory
+            .retained(Kind::Bodies, &unfilled_bodies, &WorkMeter::new(1), at)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    let sparse = Vec::<BorrowProjection>::with_capacity(3);
+    let work = WorkMeter::new(1);
+    let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+        inventory.retained(Kind::BorrowProjections, &sparse, &work, at)
+    });
+    result.unwrap();
+    assert_eq!(measured, (0, 0, 0));
+    let slot = retained_index(Kind::BorrowProjections).unwrap();
+    assert_eq!(
+        (
+            inventory.retained_vectors[slot],
+            inventory.retained_lengths[slot],
+            inventory.retained_capacities[slot]
+        ),
+        (1, 0, sparse.capacity())
+    );
+    inventory.retained_capacities[slot] = usize::MAX;
+    let before = (
+        inventory.retained_vectors,
+        inventory.retained_lengths,
+        inventory.retained_capacities,
+    );
+    assert_eq!(
+        inventory
+            .retained(Kind::BorrowProjections, &sparse, &WorkMeter::new(1), at)
+            .unwrap_err()
+            .code,
+        "E0400"
+    );
+    assert_eq!(
+        (
+            inventory.retained_vectors,
+            inventory.retained_lengths,
+            inventory.retained_capacities
+        ),
+        before
+    );
+}
+
+#[test]
+fn c3_t1_scalar_reconciliation_has_exact_metered_schedule_and_no_heap() {
+    let (observed, inventory, counts, source, total) = empty_inventory_primitive();
+    for limit in 0..16 {
+        let work = WorkMeter::new(limit);
+        assert_eq!(
+            reconcile_typed_storage(
+                &observed,
+                &inventory,
+                &counts,
+                &source,
+                &total,
+                1,
+                &work,
+                origin()
+            )
+            .unwrap_err()
+            .code,
+            "E0400"
+        );
+        assert_eq!(work.used(), limit);
+    }
+    let work = WorkMeter::new(16);
+    work.enable_observation();
+    // Work trace is separate instrumentation; disable it for the heap check.
+    let (result, measured) = super::super::reviewer_source::integration_measured(|| {
+        reconcile_typed_storage(
+            &observed,
+            &inventory,
+            &counts,
+            &source,
+            &total,
+            1,
+            &WorkMeter::new(16),
+            origin(),
+        )
+    });
+    let result = result.unwrap();
+    assert_eq!(measured, (0, 0, 0));
+    assert_eq!(result.materialized_vectors[Kind::Bodies as usize], 1);
+    assert_eq!(result.capacities, [0; KINDS]);
+    assert_eq!(result.retained_lengths, [0; 8]);
+    assert_eq!(
+        (
+            result.final_cell,
+            result.typed_attempts,
+            result.retained_backing_bytes,
+            result.staging_backing_bytes,
+            result.scratch_backing_bytes
+        ),
+        (0, 1, 0, 0, 0)
+    );
+    reconcile_typed_storage(
+        &observed,
+        &inventory,
+        &counts,
+        &source,
+        &total,
+        1,
+        &work,
+        origin(),
+    )
+    .unwrap();
+    assert_eq!(work.used(), 16);
+    let events = work.events.borrow();
+    assert_eq!(events.len(), 16);
+    assert_eq!(events[0].operation, "typed storage reconciliation");
+    assert!(events[1..15]
+        .iter()
+        .all(|event| event.operation == "typed storage reconciliation kind"));
+    assert_eq!(
+        events[15].operation,
+        "typed storage reconciliation completion"
+    );
+}
+
+#[test]
+fn c3_t1_reconciliation_independently_rejects_scalar_shape_and_final_fact_mismatches() {
+    for mutant in 0..7 {
+        let (mut observed, mut inventory, counts, source, total) = empty_inventory_primitive();
+        match mutant {
+            0 => inventory.retained_lengths[0] = 1,
+            1 => inventory.retained_vectors[0] = 0,
+            2 => observed.materialized_vectors[Kind::Bodies as usize] = 0,
+            3 => observed.scratch_endpoints[0] = 1,
+            4 => total.set(1),
+            5 => inventory.path_vectors = 1,
+            _ => inventory.path_capacity_fields = 1,
+        }
+        assert_eq!(
+            reconcile_typed_storage(
+                &observed,
+                &inventory,
+                &counts,
+                &source,
+                &total,
+                1,
+                &WorkMeter::new(16),
+                origin()
+            )
+            .unwrap_err()
+            .code,
+            "E0500"
+        );
+    }
+    let (observed, inventory, counts, source, total) = empty_inventory_primitive();
+    // A wrong final attempt count is not read before the last authorized visit.
+    let work = WorkMeter::new(15);
+    let error = reconcile_typed_storage(
+        &observed,
+        &inventory,
+        &counts,
+        &source,
+        &total,
+        0,
+        &work,
+        origin(),
+    )
+    .unwrap_err();
+    assert_eq!(error.message, "declaration index work limit exceeded");
+    assert_eq!(work.used(), 15);
+    assert_eq!(
+        reconcile_typed_storage(
+            &observed,
+            &inventory,
+            &counts,
+            &source,
+            &total,
+            0,
+            &WorkMeter::new(16),
+            origin()
+        )
+        .unwrap_err()
+        .code,
+        "E0500"
+    );
+}
+
+#[test]
+fn c3_t1_inventory_and_reconciliation_actual_models_remain_unpriced() {
+    macro_rules! layout {
+        ($($ty:ty),* $(,)?) => { $(
+            println!("C3_T1_INVENTORY_LAYOUT {} {} {}", stringify!($ty), size_of::<$ty>(), align_of::<$ty>());
+        )* };
+    }
+    layout!(TypedInventory, TypeStorageObservation, InventoryConstructionCarriers,
+        TypedReconciliationCarriers, Result<TypedInventory, Box<Diagnostic>>,
+        Result<TypeStorageObservation, Box<Diagnostic>>);
+    macro_rules! sample {
+        ($($ty:ty),* $(,)?) => { $(
+            layout!(RetainedSampleCarriers<$ty>);
+            assert!(retained_sample_carrier_bytes() >= size_of::<RetainedSampleCarriers<$ty>>());
+        )* };
+    }
+    sample!(
+        TypedBody,
+        Option<Projection>,
+        Vec<Option<Projection>>,
+        BorrowProjection,
+        ParameterTy,
+        FlowSummary,
+        ValueTy
+    );
+    assert_eq!(
+        inventory_construction_carrier_bytes(),
+        size_of::<InventoryConstructionCarriers>()
+    );
+    assert_eq!(
+        typed_reconciliation_carrier_bytes(),
+        size_of::<TypedReconciliationCarriers>()
+    );
+}
