@@ -322,6 +322,26 @@ mod enum_carrier_tests {
     use crate::frontend::{lexer, parser, source::SourceMap};
 
     #[test]
+    fn enum_carrier_qualified_path_view_layout_is_explicit() {
+        use std::mem::{align_of, size_of};
+        println!(
+            "qualified-path-state view={} align={} handle={} align={}",
+            size_of::<QualifiedPathView<'static>>(),
+            align_of::<QualifiedPathView<'static>>(),
+            size_of::<QualifiedPathRef>(),
+            align_of::<QualifiedPathRef>(),
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(
+            (
+                size_of::<QualifiedPathView<'static>>(),
+                size_of::<QualifiedPathRef>()
+            ),
+            (48, 16),
+        );
+    }
+
+    #[test]
     fn enum_carrier_absolute_segments_reject_local_and_forged_roots() {
         let mut sources = SourceMap::new();
         let file = sources.add("paths.ox".into(), "/* E::V */ fn f()->(){return;}".into());
