@@ -214,26 +214,24 @@ private-candidate guard has a complete fixed carrier in its existing paid bank.
 Measured source/type dispatch increases from 3272/2560 to 3320/2608 bytes;
 association increases from 640 to 672. The private input/output caller envelopes
 therefore increase from 3144/5592 to 3176/5624. Lower invocation controls increase
-from 4672 to 4776. Resolved608, typed632, signature376, identity440, canonical
-producer6584 and the index fixed4096 remain unchanged. No new origin flag or
+from 4672 to 4776. Resolved/typed carriers 608/632, signature/identity carriers 376/440, canonical
+producer 6584 and the index fixed bank 4096 remain unchanged. No new origin flag or
 policy field is retained in a checked source owner.
 
-The same one-input-function fixture now admits HIR151313 instead of151185:
-its base149353 becomes149449, and the production builtin extra880 becomes912.
-The exact private/current work endpoint remains739. This measured +128 is a
-named admission difference under the existing64MiB HIR ceiling; it is not an
+The same one-input-function fixture now admits HIR 151313 instead of 151185:
+its base 149353 becomes 149449, and the production builtin extra 880 becomes 912.
+The exact private/current work endpoint remains 739. This measured +128 is a
+named admission difference under the existing 64 MiB HIR ceiling; it is not an
 increase to that ceiling or a claim about whole-process memory. The lower
 invocation change is separately charged by its existing raw/source preflights.
 
-The scalar emitter's transient `Emission` carrier is40 bytes instead of32;
-entry policy is1 byte, and its diagnostic key/table carriers remain32/48.
-Process mode applies the existing16MiB diagnostic and64MiB LLVM-text caps even
+The scalar emitter's transient `Emission` carrier is 40 bytes instead of 32;
+entry policy is 1 byte, and its diagnostic key/table carriers remain 32/48.
+Process mode applies the existing 16 MiB diagnostic and 64 MiB LLVM-text caps even
 to acyclic programs, while preserving their body ABI and fuel schedule.
-The source process failure/result carriers are8/16 bytes, signature return40,
-and checked owner320 with zero stored policy fields. The non-test argv scanner
-increases from2 to5 bytes; Route remains56 and its scanner-result envelope56.
-These are measurements of
-named transient roles, not new retained HIR allocations or a stack/RSS bound.
+The source process failure/result carriers are 8/16 bytes, signature return 40,
+and checked owner 320 with zero stored policy fields. The non-test argv scanner
+increases from 2 to 5 bytes; Route remains 56 and its scanner-result envelope 56. These are measurements of named transient roles, not new retained HIR allocations or a stack/RSS bound.
 
 ## Concrete acceptance and stopping point
 

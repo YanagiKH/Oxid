@@ -24,7 +24,7 @@ spec = importlib.util.spec_from_file_location("bounded_stdin_controls", HELPERS 
 controls = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(controls)
 require = controls.require
-REVIEWED_SOURCE_SHA256 = "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f"
+REVIEWED_SOURCE_SHA256 = "b7bac981c6c2a1bcabe23a2e149c5e847411d54b1dcd1c55fb1773a386b10ef4"
 MANIFEST_PATH = "tests/fixtures/typed_project_source_binding/current-source.json"
 CORE_PATHS = ("src", "native", "Cargo.toml", "Cargo.lock", "build.rs")
 HELPER_FILES = ("controls.py", "read_retry_shim.c", "calibration_probe.c", "smoke.txt", "test_controller.py")
@@ -36,8 +36,8 @@ def source_manifest(repo, digest):
     require(hashlib.sha256(data).hexdigest() == digest, "current source manifest seal differs")
     manifest = json.loads(data)
     rows = manifest["files"]
-    require(len(rows) == 252 and len({row["path"] for row in rows}) == 252,
-            "current source authority requires exactly 252 unique members")
+    require(len(rows) == 262 and len({row["path"] for row in rows}) == 262,
+            "current source authority requires exactly 262 unique members")
     for row in rows:
         path = Path(row["path"])
         require(not path.is_absolute() and path.as_posix() == row["path"]
@@ -50,7 +50,7 @@ def source_identity(repo, manifest, tracked_core):
     core = {name for name in expected if name.startswith(("src/", "native/"))
             or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     actual_core = [os.fsdecode(name) for name in tracked_core.split(b"\0") if name]
-    require(len(core) == 197 and len(actual_core) == len(set(actual_core))
+    require(len(core) == 207 and len(actual_core) == len(set(actual_core))
             and set(actual_core) == core, "compiler/native tracked source closure differs")
     observed = []
     for name, row in expected.items():

@@ -74,8 +74,7 @@ array ABI, element references or heap allocation is exposed. Indexed writes keep
 RHS-before-index snapshots, and guarded access charges fuel before bounds.
 Invalid executed indexes emit the exact reference E0606/oir-owned-run diagnostic,
 including source origin, with empty stdout and exit 1. No element pointer is
-formed before the signed bounds check succeeds. The only source I/O operation
-is bounded stdin input as specified below. Address values, heap containers,
+formed before the signed bounds check succeeds. Source I/O is limited to the bounded stdin and stdout operations specified below. Address values, heap containers,
 indirect calls, module initialization and implicit legacy adapters remain absent.
 Bounded declaration-only modules, direct imports and visibility are resolved before
 emission, as specified by [RFC 0015](../rfcs/0015-bounded-typed-projects.md).
@@ -124,6 +123,37 @@ input host gate. The [stdin expression application](../fixtures/typed-expression
 has passed the local 28-case reference/native runner, including 39 and 63 from
 one unchanged ELF. Full current-source qualification and exact-head hosted CI
 remain separate gates.
+
+### Explicit process output
+
+`--entry-mode=process` compiles the original zero-argument i32 main as a process:
+0..255 are exact exit statuses and no scalar/JSON trailer is printed. The emitted
+entry establishes SIGPIPE-ignore before root fuel/activation; setup failure
+returns silent 74. Arithmetic, fuel and result-range failures use fallible stderr
+and status 1, or 74 if reporting cannot finish. Scalar body ABI/fuel stays on its
+existing route; Process diagnostics and LLVM text use the existing 16/64 MiB caps
+even for acyclic modules. Default Result emission remains unchanged.
+
+The owned route also admits `write_stdout(&[i32]) -> WriteStatus` under
+[RFC 0025](../rfcs/0025-bounded-stdout-process-entry.md). It validates and stages
+the complete 0..1024-cell view before one-byte writes, with exact `4 + C + A`
+core fuel, no hidden retries, and known-prefix IoError results. Output requires
+Process even for an unused function import. Public Result Compile rejects with
+E0609 before emission; independent raw native admission retains E0700. Status-only
+imports need no Process policy. No runtime sidecar or new public native ABI is
+introduced. Source effects cannot be rolled back after bytes are accepted.
+
+Run/Compile share the source-level zero-argument i32 entry rule. Check remains
+library-capable. Process Compile executes no signal setup or source I/O, and JSON
+remains its ordinary build report. Execution still targets Linux x86_64; other
+Process Compile hosts report E0608 before source loading/output creation.
+Process Run terminal portability is narrower and explicitly specified in the
+[typed contract](typed-preview.md#bounded-stdout-and-process-entry).
+
+The [persistent OXS1 component](../fixtures/typed-expression-samples/README.md)
+produces exactly 80 bytes and has separate Oxid/external consumers. Local tests
+exercise 39/63, malformed frames, capacity, checked overflow and publication
+failure; current-source qualification and exact-head hosted CI are separate.
 
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.

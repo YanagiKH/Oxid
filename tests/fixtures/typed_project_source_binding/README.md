@@ -1,4 +1,34 @@
-# Bounded enum current-source successor
+# Bounded stdout current-source successor
+
+The active `current-source.json` binds compiler checkpoint
+`4939b54a96db50ba29cf8197742387dd9491054d`, full tree
+`d1fca6e3e57ec96beea3915e1d682ec4588ef74f`: 262 inputs, comprising all
+204 `src/` and `native/` members and 58 retained non-source inputs. Including
+Cargo/build inputs gives 207 compiler bodies. Its exact SHA-256 is
+`b7bac981c6c2a1bcabe23a2e149c5e847411d54b1dcd1c55fb1773a386b10ef4`.
+
+`stdin-source.json` preserves the complete previous 252-member manifest,
+48,300 bytes, SHA-256
+`bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f`.
+The new stdout authority and exact transition patch bind 53 changed paths:
+43 retained members and ten additions, with no removals. Admission verifies
+all current bytes and modes, complete compiler/build membership, literal
+checkpoint and tree, full Git blob identities and exact before/after rosters.
+The first inverse recovers every byte of the retained stdin input view before
+the unchanged stdin → enum → projected → unary → composition → slices →
+division → combined → formatter → predecessor → archive chain runs.
+The final 117 archived members and every frozen oracle remain unchanged.
+
+`inputs` and `current` expose stdout; `stdin_inputs` and `stdin_source` expose
+its byte-identical historical predecessor. Current Unit2 executes the stdout
+compiler, preserving six observer controls, 3,603 semantic cases and 21 logical
+resource tests per profile. Existing enum semantic expectations remain bound
+to `enum-source.json`. Admission and archive preparation execute no compiler;
+they do not establish a semantic, native, or both-profile execution pass.
+
+The following sections describe retained historical transitions.
+
+## Historical bounded enum source successor
 
 The active manifest binds feature checkpoint
 `78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd`, full tree

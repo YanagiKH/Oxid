@@ -45,6 +45,15 @@ input operation. Exact rows and malformed instruction fixtures establish this
 small producer/consumer boundary; they do not establish a production backend or
 self-hosting.
 
+The [bounded stdout/process contract](../rfcs/0025-bounded-stdout-process-entry.md)
+turns the component into a persistent producer/consumer boundary: one executable
+writes an exact 80-byte artifact, and separate Oxid and external readers validate
+and execute only saved bytes. This adds reusable process output and explicit exit
+statuses without extending the sample ISA. The next acceptance gate is current
+source and exact-head hosted qualification, not another instruction-set demo.
+General file management, a production compiler provider and self-hosting remain
+separate roadmap work.
+
 ## Native AI work
 
 Native AI support needs typed buffers and CPU tensors first, followed by automatic differentiation, optimizers, and complete training loops. GPU execution, tensor compilation, multi-device training, and resumable checkpoints add separate hardware and correctness requirements. Calling an external framework through a process adapter does not satisfy these milestones.
