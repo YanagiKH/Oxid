@@ -167,10 +167,13 @@ pub(super) fn check(
     index: &DeclarationIndex<'_>,
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    check_impl(raw, index, sources, false)
+    // Reuse the same provenance helper/result as fresh typing, after that
+    // invocation has ended. Candidate-marked indices stay on the private seam.
+    index.require_current_source_pipeline()?;
+    check_impl(raw, index, sources, index.enum_count() != 0)
 }
 
-/// Kept separate from the production association gate until source activation.
+/// Private qualification also accepts intentionally candidate-marked indices.
 #[cfg(test)]
 pub(super) fn check_enum_candidate(
     raw: &RawOwnedProgram,

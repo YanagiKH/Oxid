@@ -290,6 +290,14 @@ pub(super) fn original_signatures(
     facts
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
+    if facts.enum_count() != 0 {
+        return Err(vec![*Diagnostic::new(
+            "E0101",
+            "resolve",
+            "enum source requires fresh paid typing",
+            Some(facts.sources().eof()),
+        )]);
+    }
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
     for index in 0..facts.function_count() {
@@ -332,6 +340,14 @@ pub(super) fn resolve_project(
     index
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
+    if index.enum_count() != 0 {
+        return Err(vec![*Diagnostic::new(
+            "E0101",
+            "resolve",
+            "enum source requires fresh paid typing",
+            Some(index.sources().eof()),
+        )]);
+    }
     work.phase("signatures");
     let mut signatures = Vec::new();
     let mut diagnostics = Vec::new();
@@ -364,6 +380,14 @@ pub(super) fn resolve_bodies(
     index
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
+    if index.enum_count() != 0 {
+        return Err(vec![*Diagnostic::new(
+            "E0101",
+            "resolve",
+            "enum source requires fresh paid typing",
+            Some(index.sources().eof()),
+        )]);
+    }
     work.phase("body-resolution");
     let mut functions = Vec::new();
     let mut diagnostics = Vec::new();

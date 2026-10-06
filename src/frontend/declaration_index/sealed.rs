@@ -44,6 +44,8 @@ pub(in crate::frontend) fn collect_enum_candidate<'s>(
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CollectionSyntax {
     Closed,
+    #[allow(dead_code)]
+    Enabled,
     #[cfg(test)]
     EnumCandidate,
 }
@@ -59,9 +61,12 @@ fn collect<'s>(
     let at = sources.eof();
     // The old aggregate declaration envelope keeps its original first position.
     let mut remaining = 0usize;
+    let mut has_enums = false;
     for module in 0..sources.count() {
+        let ast = sources.ast(ModuleId(module))?;
+        has_enums |= !ast.enums.is_empty();
         remaining = remaining
-            .checked_add(sources.ast(ModuleId(module))?.records.len())
+            .checked_add(ast.records.len())
             .ok_or_else(|| overflow(at))?;
     }
     let fields = RecordFieldCounts {
@@ -80,7 +85,7 @@ fn collect<'s>(
     };
     let record_usage = super::super::oir::owned_types::admit_declaration_counts(fields)
         .map_err(|_| declaration_limit())?;
-    if syntax != CollectionSyntax::Closed {
+    if syntax != CollectionSyntax::Closed && has_enums {
         let mut remaining = 0usize;
         for module in 0..sources.count() {
             work.preflight(at)?;
@@ -103,6 +108,7 @@ fn collect<'s>(
         )
         .map_err(|_| declaration_limit())?;
     }
+    #[allow(unused_mut)]
     let mut candidate_source_origin = None;
     let mut c = Counts {
         modules: u64::try_from(sources.count()).map_err(|_| overflow(at))?,
@@ -145,7 +151,8 @@ fn collect<'s>(
                     span,
                 ));
             }
-            if candidate_source_origin.is_none() {
+            #[cfg(test)]
+            if syntax == CollectionSyntax::EnumCandidate && candidate_source_origin.is_none() {
                 candidate_source_origin = Some(CompactSpan::new(span)?);
             }
         }
@@ -1476,4 +1483,15 @@ fn observe_nominal_import(
         aliases,
         seen,
     });
+}
+
+#[test]
+fn bounded_enum_production_collection_policy_layout() {
+    println!(
+        "ENUM_PRODUCTION_COLLECTION_LAYOUT policy={} index={} facts={}",
+        size_of::<CollectionSyntax>(),
+        size_of::<DeclarationIndex<'_>>(),
+        size_of::<DeclarationFacts<'_>>()
+    );
+    assert_eq!(size_of::<CollectionSyntax>(), 1);
 }

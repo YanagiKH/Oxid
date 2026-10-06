@@ -231,3 +231,5 @@ mod tests {
         error.render_json(&substitute);
     }
 }
+
+pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;

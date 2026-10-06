@@ -2,9 +2,8 @@
 use super::super::{execute, native, verified, *};
 use super::{diagnostic, lower, resolve, typeck};
 use crate::frontend::{ast, source::SourceFile};
-#[cfg(test)]
 use crate::frontend::{
-    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
+    declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
     project::budget::Allocator,
 };
 
@@ -20,6 +19,21 @@ pub(in crate::frontend::oir) fn check_source(
 ) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
     let resolved = resolve::resolve_in_map(source, ast, sources)?;
     let typed = typeck::check(resolved)?;
+    let entry = typed.entry();
+    Ok((check_typed(&typed)?, entry))
+}
+
+/// Keep the fresh index and paid typed owner local until ordinary source
+/// lowering, association and the complete raw verifier have finished.
+pub(in crate::frontend::oir) fn check_enum_source(
+    owner: SourceOwner<'_>,
+) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let facts = index::collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+        .map_err(|error| vec![*error])?;
+    let index = facts.finish(&work, &mut allocator)?;
+    let typed = resolve::type_enum_source(&index, &work, &mut allocator)?;
     let entry = typed.entry();
     Ok((check_typed(&typed)?, entry))
 }
@@ -355,4 +369,38 @@ struct EnumPipelineProgramCarriers {
 }
 pub(super) const fn enum_pipeline_program_carrier_bytes() -> usize {
     std::mem::size_of::<EnumPipelineProgramCarriers>()
+}
+
+// New original-file caller surfaces. The index's collection/finish prefix is
+// independently admitted by IndexPlan. These owners remain live during fresh
+// paid typing; downstream raw/lower/verifier roles keep their existing banks.
+#[allow(dead_code)]
+struct ProductionProgramCarriers {
+    owner: SourceOwner<'static>,
+    work: WorkMeter,
+    allocator: Allocator,
+    index: index::DeclarationIndex<'static>,
+    index_borrow: &'static index::DeclarationIndex<'static>,
+    work_borrow: &'static WorkMeter,
+    allocator_borrow: &'static mut Allocator,
+    typed_return: Result<typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    typed: typeck::TypedOwnedProgram<'static>,
+    typed_borrow: &'static typeck::TypedOwnedProgram<'static>,
+    entry: Option<hir::DefId>,
+    program_return: Result<SourceProgram, Vec<Diagnostic>>,
+    program: SourceProgram,
+    tuple: (SourceProgram, Option<hir::DefId>),
+    returned: Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>>,
+}
+pub(super) const fn production_program_carrier_bytes() -> usize {
+    std::mem::size_of::<ProductionProgramCarriers>()
+}
+
+#[test]
+fn bounded_enum_production_program_caller_layout() {
+    println!(
+        "ENUM_PRODUCTION_PROGRAM_LAYOUT controls={} source={}",
+        production_program_carrier_bytes(),
+        std::mem::size_of::<SourceProgram>()
+    );
 }

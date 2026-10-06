@@ -113,9 +113,7 @@ impl SourceMap {
         Ok(id)
     }
 
-    /// Exact, singleton source owner for private formatter qualification only.
-    /// The text buffer is moved, never cloned; ordinary loader behavior is unchanged.
-    #[cfg(test)]
+    /// Exact singleton formatter source owner. The text buffer is moved, never cloned.
     pub(super) fn try_add_format_candidate(
         &mut self,
         text: String,

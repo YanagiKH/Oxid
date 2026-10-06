@@ -28,6 +28,8 @@ impl Limits {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FormatSyntax {
     Closed,
+    #[allow(dead_code)]
+    Enabled,
     #[cfg(test)]
     EnumCandidate,
 }
@@ -35,6 +37,7 @@ impl FormatSyntax {
     fn candidate(self) -> bool {
         match self {
             Self::Closed => false,
+            Self::Enabled => true,
             #[cfg(test)]
             Self::EnumCandidate => true,
         }
@@ -211,8 +214,7 @@ fn format_with_syntax_inner(
     let mut candidates = SourceMap::new();
     let id = match syntax {
         FormatSyntax::Closed => candidates.try_add(String::new(), output, allocator),
-        #[cfg(test)]
-        FormatSyntax::EnumCandidate => {
+        _ => {
             let lines = output
                 .bytes()
                 .filter(|&byte| byte == b'\n')
@@ -224,11 +226,15 @@ fn format_with_syntax_inner(
                 .and_then(|n| n.checked_add(std::mem::size_of::<SourceFile>()))
                 .and_then(|n| n.checked_add(output.capacity()))
                 .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            #[cfg(test)]
             metrics
                 .first_ast_heap
                 .checked_add(owner_target)
                 .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            #[cfg(not(test))]
+            let _ = owner_target;
             let id = candidates.try_add_format_candidate(output, allocator);
+            #[cfg(test)]
             if id.is_ok() && candidates.heap_capacity_bytes() != Some(owner_target) {
                 return Err(resource(
                     "formatted source owner capacity exceeded admission",
@@ -304,8 +310,7 @@ fn parse_with_syntax(
         FormatSyntax::Closed => {
             parse(source, allocator).map(|program| (program, ParseMetrics::default()))
         }
-        #[cfg(test)]
-        FormatSyntax::EnumCandidate => {
+        _ => {
             let tokens =
                 lexer::lex_with_limit(source, lexer::MAX_TOKENS).map_err(|error| vec![*error])?;
             let token_bytes = tokens
@@ -313,14 +318,26 @@ fn parse_with_syntax(
                 .checked_mul(std::mem::size_of::<Token>())
                 .ok_or_else(|| resource("formatter capacity count overflow"))?;
             let mut storage = Default::default();
-            let (program, _) = parser::parse_enum_candidate_counted(
-                source,
-                tokens,
-                SourceMode::ProjectCandidate,
-                parser::MAX_NODES,
-                allocator,
-                &mut storage,
-            )?;
+            let (program, _) = match syntax {
+                FormatSyntax::Enabled => parser::parse_typed_counted(
+                    source,
+                    tokens,
+                    SourceMode::ProjectCandidate,
+                    parser::MAX_NODES,
+                    allocator,
+                    &mut storage,
+                ),
+                #[cfg(test)]
+                FormatSyntax::EnumCandidate => parser::parse_enum_candidate_counted(
+                    source,
+                    tokens,
+                    SourceMode::ProjectCandidate,
+                    parser::MAX_NODES,
+                    allocator,
+                    &mut storage,
+                ),
+                FormatSyntax::Closed => return Err(invariant("invalid formatter syntax policy")),
+            }?;
             let ast_heap = storage
                 .retained_capacity
                 .checked_add(token_bytes)
@@ -329,11 +346,16 @@ fn parse_with_syntax(
                 .peak_capacity_bound
                 .checked_add(token_bytes)
                 .ok_or_else(|| resource("formatter capacity count overflow"))?;
+            #[cfg(not(test))]
+            let _ = (ast_heap, peak_bound);
             Ok((
                 program,
                 ParseMetrics {
+                    #[cfg(test)]
                     ast_heap,
+                    #[cfg(test)]
                     tokens: token_bytes,
+                    #[cfg(test)]
                     peak_bound,
                 },
             ))
@@ -696,3 +718,33 @@ mod ast_tests;
 #[cfg(test)]
 #[path = "format/enum_candidate_tests.rs"]
 mod enum_candidate_tests;
+
+// Named production parse/owner controls, measured separately from test-only
+// heap observations. Each reserve still uses its existing checked count.
+#[allow(dead_code)]
+struct ProductionFormatControls {
+    syntax: FormatSyntax,
+    parse_storage: parser::SyntaxStorage,
+    parse_metrics: ParseMetrics,
+    token_bytes: usize,
+    ast_heap: usize,
+    peak_bound: usize,
+    owner_lines: usize,
+    owner_target: usize,
+    owner_return: Result<super::source::SourceFileId, super::project::budget::ReserveFailure>,
+}
+#[allow(dead_code)]
+const fn production_format_control_bytes() -> usize {
+    std::mem::size_of::<ProductionFormatControls>()
+}
+#[test]
+fn bounded_enum_production_formatter_policy_layout() {
+    println!(
+        "ENUM_PRODUCTION_FORMAT_LAYOUT policy={} controls={} parse_metrics={} format_metrics={}",
+        std::mem::size_of::<FormatSyntax>(),
+        production_format_control_bytes(),
+        std::mem::size_of::<ParseMetrics>(),
+        std::mem::size_of::<EnumFormatMetrics>()
+    );
+    assert_eq!(std::mem::size_of::<FormatSyntax>(), 1);
+}

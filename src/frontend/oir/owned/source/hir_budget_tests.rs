@@ -114,7 +114,10 @@ fn pipeline_components() -> usize {
         + super::super::program::enum_pipeline_program_carrier_bytes()
 }
 fn production_entry_components() -> usize {
-    resolve::production_source_carrier_bytes() + typeck::production_type_carrier_bytes()
+    resolve::production_source_carrier_bytes()
+        + typeck::production_type_carrier_bytes()
+        + super::super::program::production_program_carrier_bytes()
+        + crate::frontend::oir::source::enum_facade_carrier_bytes()
 }
 
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";

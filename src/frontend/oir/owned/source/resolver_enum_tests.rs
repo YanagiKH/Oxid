@@ -582,3 +582,20 @@ fn bounded_enum_resolver_match_work_boundaries_fail_before_arm_visits() {
         }
     });
 }
+
+#[test]
+fn bounded_enum_production_fresh_entry_rejects_zero_and_candidate_without_reserve() {
+    for (text, code) in [
+        ("fn main()->i32{return 0;}", "E0500"),
+        ("enum E{N} fn main()->i32{return 0;}", "E0101"),
+    ] {
+        with_index(text, |index| {
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let errors = type_enum_source(index, &work, &mut allocator).unwrap_err();
+            assert_eq!(errors[0].code, code);
+            assert_eq!(work.used(), 0);
+            assert_eq!(allocator.attempts, 0);
+        });
+    }
+}

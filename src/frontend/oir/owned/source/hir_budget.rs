@@ -553,6 +553,16 @@ impl HirPlan {
         // independent of private statistics/artifact output envelopes.
         increment(&mut fixed, resolve::production_source_carrier_bytes(), at)?;
         increment(&mut fixed, typeck::production_type_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            super::program::production_program_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            crate::frontend::oir::source::enum_facade_carrier_bytes(),
+            at,
+        )?;
         // The witnessed ValueTy::Scalar function-item local is zero-sized;
         // there is no function pointer or additional receiver to invent.
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;

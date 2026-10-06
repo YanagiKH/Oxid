@@ -382,7 +382,7 @@ fn resolve_index(
 /// before storage, and no owner, seed, plan or admission is supplied by callers.
 /// Public collection/parser defaults remain closed in this precursor.
 #[allow(dead_code)]
-pub(in crate::frontend) fn type_enum_source<'s>(
+pub(in crate::frontend::oir) fn type_enum_source<'s>(
     index: &'s DeclarationIndex<'s>,
     work: &'s WorkMeter,
     allocator: &mut Allocator,

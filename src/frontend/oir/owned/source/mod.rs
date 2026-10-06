@@ -11,7 +11,7 @@ mod resolver_storage;
 mod tests;
 mod type_storage;
 pub(in crate::frontend::oir) mod typeck;
-pub(in crate::frontend::oir) use program::{check_typed, SourceProgram};
+pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
 mod diagnostic;
 
 #[cfg(test)]

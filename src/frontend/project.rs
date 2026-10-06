@@ -579,6 +579,8 @@ fn io_error(error: io::Error, display: &str, origin: Option<Span>) -> Box<Diagno
 #[derive(Clone, Copy)]
 enum ProjectEnumSyntax {
     Closed,
+    #[allow(dead_code)]
+    Enabled,
     #[cfg(test)]
     Candidate,
 }
@@ -857,6 +859,14 @@ impl SourceSetBuilder<'_> {
                     )?
                 }
             }
+            ProjectEnumSyntax::Enabled => parser::parse_typed_counted(
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                &mut Default::default(),
+            )?,
             #[cfg(test)]
             ProjectEnumSyntax::Candidate => parser::parse_enum_candidate_counted(
                 source,
@@ -1121,4 +1131,15 @@ impl ChildDimensions {
         }
         Ok(())
     }
+}
+
+#[test]
+fn bounded_enum_production_project_policy_layout() {
+    println!(
+        "ENUM_PRODUCTION_PROJECT_LAYOUT policy={} builder={} sources={}",
+        std::mem::size_of::<ProjectEnumSyntax>(),
+        std::mem::size_of::<SourceSetBuilder<'_>>(),
+        std::mem::size_of::<ProjectSources>()
+    );
+    assert_eq!(std::mem::size_of::<ProjectEnumSyntax>(), 1);
 }

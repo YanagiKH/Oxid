@@ -83,10 +83,11 @@ impl ArraySyntaxPolicy {
         }
     }
 }
-/// A private parser candidate only; no production entrypoint accepts this policy.
+/// Typed syntax admission stays distinct from private qualification policy.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EnumSyntaxPolicy {
     Closed,
+    Enabled,
     #[cfg(test)]
     Candidate,
 }
@@ -94,6 +95,7 @@ impl EnumSyntaxPolicy {
     fn enabled(self) -> bool {
         match self {
             Self::Closed => false,
+            Self::Enabled => true,
             #[cfg(test)]
             Self::Candidate => true,
         }
@@ -169,6 +171,28 @@ pub(super) fn parse_counted_with_arrays(
         arrays,
         EnumSyntaxPolicy::Closed,
         &mut enums::SyntaxStorage::default(),
+    )
+}
+
+/// Bounded production typed grammar; callers select this explicitly.
+#[allow(dead_code)]
+pub(super) fn parse_typed_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Enabled,
+        storage,
     )
 }
 
@@ -1729,6 +1753,7 @@ impl Parser<'_> {
 mod arrays;
 #[path = "parser/enums.rs"]
 mod enums;
+pub(super) use enums::SyntaxStorage;
 
 #[cfg(test)]
 #[path = "parser/array_syntax_tests.rs"]
@@ -1754,3 +1779,15 @@ mod project_tests;
 #[cfg(test)]
 #[path = "parser/activation_tests.rs"]
 mod activation_tests;
+
+#[test]
+fn bounded_enum_production_parser_policy_layout() {
+    println!(
+        "ENUM_PRODUCTION_PARSER_LAYOUT policy={} parser={} storage={} parse_result={}",
+        std::mem::size_of::<EnumSyntaxPolicy>(),
+        std::mem::size_of::<Parser<'_>>(),
+        std::mem::size_of::<enums::SyntaxStorage>(),
+        std::mem::size_of::<Result<(Program, usize), Vec<Diagnostic>>>()
+    );
+    assert_eq!(std::mem::size_of::<EnumSyntaxPolicy>(), 1);
+}
