@@ -567,8 +567,8 @@ fn fresh_enum_type_storage<'s>(
     }
 }
 
-/// Denied precursor: the complete fixed return type is priced and measured
-/// before this selector may call the one closed fresh pipeline construction.
+/// Private source-only selection through the measured closed construction.
+/// Only fixed facts escape; public executable admission remains unchanged.
 #[cfg(test)]
 #[allow(dead_code)]
 pub(super) fn probe_enum_pipeline<'s>(
@@ -579,12 +579,7 @@ pub(super) fn probe_enum_pipeline<'s>(
     if index.enum_count() == 0 {
         return Ok(None);
     }
-    let _ = (work, allocator);
-    Err(vec![*error(
-        "E0500",
-        format_args!("enum pipeline precursor is not admitted"),
-        index.sources().eof(),
-    )])
+    fresh_enum_pipeline(index, work, allocator)
 }
 
 #[derive(Debug, PartialEq, Eq)]
