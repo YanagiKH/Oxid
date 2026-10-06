@@ -445,7 +445,7 @@ mod controls {
     fn real_null_initial_observer_fields_have_typed_layouts() {
         macro_rules! fields {
             ($model:ty; $($field:ident: $ty:ty),+ $(,)?) => {{
-                $(let _: fn(&$model) -> &$ty = |model| &model.$field;)+
+                $(let _: for<'a> fn(&'a $model) -> &'a $ty = |model| &model.$field;)+
                 let offsets = [$(std::mem::offset_of!($model, $field)),+];
                 for offset in offsets { assert!(offset <= std::mem::size_of::<$model>()); }
                 offsets.len()
