@@ -5,13 +5,15 @@ an iterative parser for decimal integers, `+`, `*` and parentheses, a 15-node
 record-backed expression arena, and a separate iterative evaluator. It is not
 compiler self-hosting or a language extension.
 
-The initial checkpoint exercises only arena construction and scalar storage:
-`main.ox` stores and returns 39. It does not yet parse an expression. Public
-check, reference run, LLVM native compilation and execution have passed for that
-small admission probe using the current PR37 compiler and LLVM 19.1.7 on Linux
-x86_64. Complete parser/evaluator admission and boundary controls remain pending.
+The first complete parser/evaluator checkpoint passes public check, reference
+run, LLVM native compilation and ELF execution for `main.ox`: it constructs
+seven nodes for `12 + 3 * (4 + 5)` and returns 39. These focused results use the
+current PR37 compiler and LLVM 19.1.7 on Linux x86_64. The parser/evaluator uses
+21 functions and passes the existing native admission gates without cap changes.
+Full boundary controls and independent review are still pending. `cases.json`
+contains hand-derived expectations, not a claim that those cases have run.
 
-The intended expression `12 + 3 * (4 + 5)` must produce seven nodes and evaluate
+The example expression `12 + 3 * (4 + 5)` must produce seven nodes and evaluate
 to 39. `*` has greater precedence than `+`; both associate left. Input is bounded
 to 128 character codes, and node/operator/operand capacities are independently
 bounded at 15. Syntax and capacity failures return position-carrying enums;
