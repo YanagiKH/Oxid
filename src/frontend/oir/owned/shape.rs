@@ -1,4 +1,5 @@
 use super::*;
+use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 use budget::{add, filled, reserve};
 const NONE: usize = usize::MAX;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,24 +430,47 @@ pub(super) fn check(
                 OwnedInstruction::ReadStdin {
                     buffer,
                     destination,
+                }
+                | OwnedInstruction::WriteStdout {
+                    buffer,
+                    destination,
                 } => {
                     // Full canonical suffix validation precedes ordinary shape.
                     // Recheck the claimed ordinal here without repeating that
                     // descriptor walk in each ownership pass.
-                    if raw.builtins != BuiltinOrigins::ReadStdin
-                        || raw.functions.len().checked_sub(1) != Some(f.id.0)
-                    {
+                    let (function_kind, enum_kind, borrow_kind) = match instruction.kind {
+                        OwnedInstruction::ReadStdin { .. } => (
+                            BuiltinFunction::ReadStdin,
+                            BuiltinEnum::ReadStatus,
+                            BorrowKind::Exclusive,
+                        ),
+                        OwnedInstruction::WriteStdout { .. } => (
+                            BuiltinFunction::WriteStdout,
+                            BuiltinEnum::WriteStatus,
+                            BorrowKind::Shared,
+                        ),
+                        _ => unreachable!("matched builtin operation"),
+                    };
+                    let expected_function = raw
+                        .functions
+                        .len()
+                        .checked_sub(raw.builtins.extra_functions())
+                        .and_then(|base| {
+                            base.checked_add(raw.builtins.function_rank(function_kind)?)
+                        });
+                    if expected_function != Some(f.id.0) {
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
                     let expected_enum = raw
                         .enums
                         .len()
-                        .checked_sub(1)
+                        .checked_sub(raw.builtins.extra_enums())
+                        .and_then(|base| base.checked_add(raw.builtins.enum_rank(enum_kind)?))
                         .map(EnumId)
                         .ok_or_else(|| bad(Malformed::Binding, s))?;
                     let reference = reference(f, *buffer, s)?;
                     let o = ordinary(f, *destination, s)?;
-                    if reference.kind != BorrowKind::Exclusive
+                    if reference.kind != borrow_kind
                         || reference.referent() != BorrowedTy::ScalarSlice(hir::Ty::I32)
                         || o.kind != OwnerKind::Temporary
                         || enumeration(o.aggregate(), s)? != expected_enum

@@ -13,7 +13,10 @@ mod execute;
 mod flow;
 mod input;
 mod native;
+mod output;
 mod plan;
+#[allow(dead_code)] // Closed process precursor; no public caller exists.
+mod process;
 mod shape;
 pub(super) mod source;
 pub(super) use source::SourceProgram;
@@ -190,6 +193,11 @@ enum FieldInitializer {
 enum OwnedInstruction {
     // Atomic input is confined to the verified canonical builtin body.
     ReadStdin {
+        buffer: ReferenceParamId,
+        destination: OwnerPlaceId,
+    },
+    // Output remains confined to the verified canonical builtin body.
+    WriteStdout {
         buffer: ReferenceParamId,
         destination: OwnerPlaceId,
     },
@@ -452,6 +460,10 @@ mod builtin_input_fixtures;
 mod builtin_input_tests;
 #[cfg(test)]
 mod builtin_origin_tests;
+#[cfg(test)]
+mod builtin_output_descriptor_tests;
+#[cfg(test)]
+mod builtin_output_fixtures;
 #[cfg(test)]
 mod tests;
 

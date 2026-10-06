@@ -33,6 +33,27 @@ impl VerifiedOwnedProgram {
             .checked_add(rank)
             .map(EnumId)
     }
+    pub(super) fn builtin_output_function(&self) -> Option<hir::DefId> {
+        let rank = self
+            .program
+            .builtins
+            .function_rank(BuiltinFunction::WriteStdout)?;
+        self.program
+            .functions
+            .len()
+            .checked_sub(self.program.builtins.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
+    }
+    pub(super) fn builtin_output_enumeration(&self) -> Option<EnumId> {
+        let rank = self.program.builtins.enum_rank(BuiltinEnum::WriteStatus)?;
+        self.program
+            .enums
+            .len()
+            .checked_sub(self.program.builtins.extra_enums())?
+            .checked_add(rank)
+            .map(EnumId)
+    }
     pub(super) fn has_builtin_origins(&self) -> bool {
         self.program.builtins != BuiltinOrigins::None
     }
@@ -149,6 +170,29 @@ pub(super) fn probe_enum_validation(
     limits: budget::Limits,
 ) -> Result<OwnershipUsage, OwnedFailure> {
     let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
+    inventory_carriers(raw, &mut meter)?;
+    validate_proof(raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(usage)
+}
+
+/// Closed output observation shares the authoritative proof, but returns only
+/// inert usage. It cannot construct a witness or enable an effect consumer.
+#[cfg(test)]
+pub(super) fn probe_output_validation(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    let mut usage = budget::preflight(raw, limits)?;
+    builtins::check_candidate(raw)?;
+    let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
+    let mut meter = budget::Meter {
+        visits: 0,
+        ceiling: usage.work,
+    };
+    for _ in 0..builtins::descriptor_visits(raw.builtins) {
+        meter.visit()?;
+    }
     inventory_carriers(raw, &mut meter)?;
     validate_proof(raw, &declarations, sources, &mut usage, &mut meter)?;
     Ok(usage)

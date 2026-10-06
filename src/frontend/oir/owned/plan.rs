@@ -164,14 +164,28 @@ impl<'a> ExecutionPlan<'a> {
         let start = end.checked_sub(builtins::INPUT_SCRATCH_BYTES)?;
         Some(start..end)
     }
+    /// Output staging belongs only to its own canonical activation, even when
+    /// an input activation is present in the same program. This is physical
+    /// scratch, outside the language result owner's nominal extent.
+    pub(super) fn output_scratch_range(
+        &self,
+        function: hir::DefId,
+    ) -> Option<std::ops::Range<usize>> {
+        if self.witness.builtin_output_function() != Some(function) {
+            return None;
+        }
+        let end = self.functions.get(function.0)?.usage.payload_bytes;
+        let start = end.checked_sub(builtins::OUTPUT_SCRATCH_BYTES)?;
+        Some(start..end)
+    }
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
     }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
-            // The consumer charges the validated capacity and each read attempt.
-            OwnedInstruction::ReadStdin { .. } => 0,
+            // The consumer charges the validated capacity and each I/O attempt.
+            OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
             }
@@ -368,6 +382,23 @@ fn usage(
     witness: &VerifiedOwnedProgram,
     f: &RawOwnedFunction,
 ) -> Result<FrameUsage, AdmissionFailure> {
+    let mut scratch_bytes = 0;
+    if witness.builtin_function() == Some(f.id) {
+        scratch_bytes = add(scratch_bytes, builtins::INPUT_SCRATCH_BYTES)?;
+    }
+    if witness.builtin_output_function() == Some(f.id) {
+        scratch_bytes = add(scratch_bytes, builtins::OUTPUT_SCRATCH_BYTES)?;
+    }
+    frame_usage(witness.declarations(), f, scratch_bytes)
+}
+
+/// Inert physical arithmetic shared by production witness-bound planning and
+/// precursor measurement. It cannot construct a plan or executable authority.
+fn frame_usage(
+    declarations: &Declarations,
+    f: &RawOwnedFunction,
+    scratch_bytes: usize,
+) -> Result<FrameUsage, AdmissionFailure> {
     let mut u = FrameUsage {
         scalar_slots: add(f.locals.len(), f.places.len())?,
         owners: f.owners.len(),
@@ -379,17 +410,19 @@ fn usage(
     for c in &f.calls {
         u.arguments = add(u.arguments, c.arguments.len())?;
     }
-    for (index, owner) in f.owners.iter().enumerate() {
-        let layout = witness
-            .declarations()
+    for owner in &f.owners {
+        let layout = declarations
             .aggregate_layout(owner.aggregate())
             .expect("verified record");
-        u.owner_cells = add(u.owner_cells, width(witness, f, OwnerPlaceId(index)))?;
+        u.owner_cells = add(
+            u.owner_cells,
+            declarations
+                .aggregate_width(owner.aggregate())
+                .expect("verified record"),
+        )?;
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
     }
-    if witness.builtin_function() == Some(f.id) {
-        u.payload_bytes = add(u.payload_bytes, builtins::INPUT_SCRATCH_BYTES)?;
-    }
+    u.payload_bytes = add(u.payload_bytes, scratch_bytes)?;
     u.expanded_cells = add(add(u.scalar_slots, u.arguments)?, u.owner_cells)?;
     u.reference_bytes = add(
         mul(
@@ -428,6 +461,33 @@ fn usage(
         .count();
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
     Ok(u)
+}
+
+/// Returns only measured counters after the complete ordinary precursor proof.
+/// Neither a witness nor an execution plan can escape this test observation.
+#[cfg(test)]
+pub(super) fn probe_builtin_frame_usage(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    function: hir::DefId,
+) -> Result<FrameUsage, OwnedFailure> {
+    use crate::frontend::builtin_catalog::BuiltinFunction;
+    verified::probe_output_validation(raw, sources, budget::Limits::DEFAULT)?;
+    let ids = builtins::check_candidate(raw)?;
+    let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
+    let f = raw
+        .functions
+        .get(function.0)
+        .ok_or_else(|| OwnedFailure::resource("missing measurement function"))?;
+    let mut scratch_bytes = 0;
+    if ids.function(BuiltinFunction::ReadStdin) == Some(function) {
+        scratch_bytes += builtins::INPUT_SCRATCH_BYTES;
+    }
+    if ids.function(BuiltinFunction::WriteStdout) == Some(function) {
+        scratch_bytes += builtins::OUTPUT_SCRATCH_BYTES;
+    }
+    frame_usage(&declarations, f, scratch_bytes)
+        .map_err(|failure| OwnedFailure::resource(failure.name))
 }
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {

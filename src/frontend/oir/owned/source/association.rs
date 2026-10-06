@@ -83,6 +83,8 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
+                // No source route may associate the closed output instruction.
+                OwnedInstruction::WriteStdout { .. } => return Err(bad()),
                 OwnedInstruction::ReadStdin { .. } => {
                     if !allow_input {
                         return Err(bad());

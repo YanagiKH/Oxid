@@ -5,11 +5,12 @@ use super::*;
 use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 
 pub(super) const INPUT_SCRATCH_BYTES: usize = 1024;
+pub(super) const OUTPUT_SCRATCH_BYTES: usize = 1024;
 
 /// Header + enum + three variants; the function adds its declaration,
 /// reference, owner, block, two statements and terminator. Work units count
-/// these fixed descriptor visits, not individual scalar comparisons. Output
-/// inventory is only conservatively priced here; this grants no admission.
+/// these fixed descriptor visits, not individual scalar comparisons. Each
+/// family's descriptor has the same finite shape; this grants no admission.
 pub(super) fn descriptor_visits(origin: BuiltinOrigins) -> usize {
     if origin == BuiltinOrigins::None {
         0
@@ -43,11 +44,18 @@ impl BuiltinIds {
 /// claim. In particular, ordinary declarations with matching shapes never
 /// acquire builtin identity, and the None case does not visit any raw row.
 pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
-    // This transport-only stage has no output descriptor/effect proof. Reject
+    // Output consumers are not activated yet. Reject
     // every output family claim before reading even the first descriptor row.
     if raw.builtins.has_output() {
         return Err(missing());
     }
+    check_candidate(raw)
+}
+
+/// Complete inert descriptor validation, including the denied output candidate.
+/// This cannot produce an executable witness or bypass ordinary proofs. The
+/// production entry above remains the sole builtin admission gate.
+pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
     let ids = BuiltinIds {
         enumeration_base: EnumId(
             raw.enums
@@ -67,17 +75,42 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
         return Ok(ids);
     }
 
-    let enumeration_id = ids
-        .enumeration(BuiltinEnum::ReadStatus)
-        .ok_or_else(missing)?;
-    let enumeration = raw.enums.get(enumeration_id.0).ok_or_else(missing)?;
+    for kind in BuiltinEnum::ALL {
+        if let Some(id) = ids.enumeration(kind) {
+            check_enumeration(raw.enums.get(id.0).ok_or_else(missing)?, id, kind)?;
+        }
+    }
+    for kind in BuiltinFunction::ALL {
+        if let Some(id) = ids.function(kind) {
+            let enumeration = ids
+                .enumeration(match kind {
+                    BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
+                    BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
+                })
+                .ok_or_else(missing)?;
+            check_function(
+                raw.functions.get(id.0).ok_or_else(missing)?,
+                id,
+                enumeration,
+                kind,
+            )?;
+        }
+    }
+    Ok(ids)
+}
+
+fn check_enumeration(
+    enumeration: &RawEnumDecl,
+    enumeration_id: EnumId,
+    kind: BuiltinEnum,
+) -> Result<(), OwnedFailure> {
     if enumeration.id != enumeration_id {
         return Err(OwnedFailure::malformed(
             Malformed::Binding,
             enumeration.span,
         ));
     }
-    let [eof, full, io_error] = enumeration.variants.as_slice() else {
+    let [first, second, third] = enumeration.variants.as_slice() else {
         return Err(OwnedFailure::malformed(
             Malformed::Binding,
             enumeration.span,
@@ -85,15 +118,13 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
     };
     // The catalog's names are not raw data. Identity is the enum plus these
     // three fixed member ordinals, never the diagnostic anchor's spelling.
-    for (index, variant, payload) in [
-        (
-            0,
-            eof,
-            Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32))),
-        ),
-        (1, full, None),
-        (2, io_error, None),
-    ] {
+    let payload_member = match kind {
+        BuiltinEnum::ReadStatus => 0,
+        BuiltinEnum::WriteStatus => 2,
+    };
+    for (index, variant) in [first, second, third].into_iter().enumerate() {
+        let payload =
+            (index == payload_member).then_some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32)));
         if variant.id
             != (VariantId {
                 enumeration: enumeration_id,
@@ -111,11 +142,7 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
         }
     }
 
-    if let Some(function_id) = ids.function(BuiltinFunction::ReadStdin) {
-        let function = raw.functions.get(function_id.0).ok_or_else(missing)?;
-        check_function(function, function_id, enumeration_id)?;
-    }
-    Ok(ids)
+    Ok(())
 }
 
 fn missing() -> OwnedFailure {
@@ -132,6 +159,7 @@ fn check_function(
     function: &RawOwnedFunction,
     function_id: hir::DefId,
     enumeration_id: EnumId,
+    kind: BuiltinFunction,
 ) -> Result<(), OwnedFailure> {
     let binding = || OwnedFailure::malformed(Malformed::Binding, function.span);
     let site = |span| OwnedFailure::malformed(Malformed::CanonicalSite, span);
@@ -156,7 +184,11 @@ fn check_function(
         return Err(binding());
     };
     if reference.position != 0
-        || reference.kind != BorrowKind::Exclusive
+        || reference.kind
+            != match kind {
+                BuiltinFunction::ReadStdin => BorrowKind::Exclusive,
+                BuiltinFunction::WriteStdout => BorrowKind::Shared,
+            }
         || reference.referent() != BorrowedTy::ScalarSlice(hir::Ty::I32)
         || owner.kind != OwnerKind::Temporary
         || owner.aggregate() != AggregateTy::Enum(enumeration_id)
@@ -178,22 +210,31 @@ fn check_function(
     if block.span != function.span {
         return Err(site(block.span));
     }
-    let [live, read] = block.statements.as_slice() else {
+    let [live, operation] = block.statements.as_slice() else {
         return Err(site(block.span));
     };
     if !matches!(live.kind, OwnedInstruction::StorageLive(OwnerPlaceId(0))) {
         return Err(site(live.span));
     }
     if !matches!(
-        read.kind,
-        OwnedInstruction::ReadStdin {
-            buffer: ReferenceParamId(0),
-            destination: OwnerPlaceId(0),
-        }
+        (kind, &operation.kind),
+        (
+            BuiltinFunction::ReadStdin,
+            OwnedInstruction::ReadStdin {
+                buffer: ReferenceParamId(0),
+                destination: OwnerPlaceId(0),
+            }
+        ) | (
+            BuiltinFunction::WriteStdout,
+            OwnedInstruction::WriteStdout {
+                buffer: ReferenceParamId(0),
+                destination: OwnerPlaceId(0),
+            }
+        )
     ) {
-        return Err(site(read.span));
+        return Err(site(operation.span));
     }
-    for statement in [live, read] {
+    for statement in [live, operation] {
         if statement.span != function.span || statement.diagnostic_origins.is_some() {
             return Err(site(statement.span));
         }

@@ -37,6 +37,8 @@ fn add(a: usize, b: usize) -> Result<usize, Box<Diagnostic>> {
 const DIAGNOSTIC_TRANSIENT_BYTES: usize = size_of::<Diagnostic>() + 64;
 const INPUT_CAPACITY_INVARIANT: &str =
     "internal compiler error: owned execution invariant input capacity";
+const OUTPUT_CAPACITY_INVARIANT: &str =
+    "internal compiler error: owned execution invariant output capacity";
 // Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
 // resolution and composite emission never retain an expanded leaf collection.
 const EMITTER_TRANSIENT_BYTES: usize = 32_768;
@@ -263,6 +265,33 @@ pub(super) fn run_array_observed(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeEntryPolicy {
+    Result,
+    Process,
+}
+
+// Closed while the independent raw/output consumer review is incomplete.
+const PROCESS_ENTRY_ENABLED: bool = false;
+
+#[cfg(test)]
+pub(super) fn native_process_module_with_fuel(
+    witness: &VerifiedOwnedProgram,
+    entry: hir::DefId,
+    sources: &SourceMap,
+    fuel: usize,
+) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted(
+        witness,
+        Some(entry),
+        sources,
+        fuel,
+        Limits::DEFAULT,
+        NativeEntryPolicy::Process,
+        &mut Accounting::default(),
+    )
+}
+
 pub(super) fn native_module(
     witness: &VerifiedOwnedProgram,
     entry: Option<hir::DefId>,
@@ -303,6 +332,33 @@ fn native_module_accounted(
     limits: Limits,
     accounting: &mut Accounting,
 ) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted(
+        witness,
+        entry,
+        sources,
+        fuel,
+        limits,
+        NativeEntryPolicy::Result,
+        accounting,
+    )
+}
+fn native_module_policy_accounted(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    fuel: usize,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+) -> Result<String, Box<Diagnostic>> {
+    // Inventory policy precedes plan allocation or emitted effects, including
+    // unused output functions. Status-only declarations do not require it.
+    if policy == NativeEntryPolicy::Result && witness.builtin_output_function().is_some() {
+        return Err(reject("write_stdout requires process entry", None));
+    }
+    if policy == NativeEntryPolicy::Process && !PROCESS_ENTRY_ENABLED {
+        return Err(reject("native process entry is not enabled", None));
+    }
     // Entry denial is deliberately before plan construction, diagnostics,
     // output text or tools. An invalid identity is an internal error.
     let id = entry.ok_or_else(|| {
@@ -332,11 +388,14 @@ fn native_module_accounted(
     if !matches!(root.result, ValueTy::Scalar(_)) {
         return Err(reject("native main must return a scalar", Some(root.span)));
     }
+    if policy == NativeEntryPolicy::Process && root.result != ValueTy::Scalar(hir::Ty::I32) {
+        return Err(reject("process main must return i32", Some(root.span)));
+    }
     let plan = ExecutionPlan::build(witness).map_err(|e| reject(e.name, e.span))?;
     accounting.metrics.plan_bytes = plan.metadata_bytes();
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(plan.metadata_bytes());
     let limits = limits.bounded();
-    let bounds = admit_accounted(&plan, limits, accounting)?;
+    let bounds = admit_policy_accounted(&plan, limits, policy, accounting)?;
     let admission_metadata = add(
         plan.metadata_bytes(),
         accounting.metrics.admission_scratch_peak,
@@ -348,12 +407,13 @@ fn native_module_accounted(
         "admission metadata bytes",
         root.span,
     )?;
-    let guarded = bounds.iter().any(|b| b.cyclic);
-    let diagnostics = Diagnostics::new_accounted(
+    let guarded = policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic);
+    let diagnostics = Diagnostics::new_policy_accounted(
         &plan,
         id,
         sources,
         guarded,
+        policy,
         limits.diagnostic_bytes,
         limits.metadata_bytes,
         accounting,
@@ -382,7 +442,10 @@ fn native_module_accounted(
     let (transfer_cells, transfer_visits) = transfer_inventory(&plan)?;
     accounting.metrics.transfer_cells = transfer_cells;
     accounting.metrics.transfer_inventory_visits = transfer_visits;
-    let mut count = Emission::count(limits.ir_bytes);
+    let mut count = Emission {
+        policy,
+        ..Emission::count(limits.ir_bytes)
+    };
     emit(
         &plan,
         id,
@@ -418,6 +481,7 @@ fn native_module_accounted(
     let text = accounting.string(count.len, "LLVM")?;
     let mut output = Emission {
         text: Some(text),
+        policy,
         ..Emission::count(count.len)
     };
     emit(
@@ -459,6 +523,14 @@ fn admit(plan: &ExecutionPlan<'_>, limits: Limits) -> Result<Vec<Bound>, Box<Dia
 fn admit_accounted(
     plan: &ExecutionPlan<'_>,
     limits: Limits,
+    accounting: &mut Accounting,
+) -> Result<Vec<Bound>, Box<Diagnostic>> {
+    admit_policy_accounted(plan, limits, NativeEntryPolicy::Result, accounting)
+}
+fn admit_policy_accounted(
+    plan: &ExecutionPlan<'_>,
+    limits: Limits,
+    policy: NativeEntryPolicy,
     accounting: &mut Accounting,
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
     let functions = plan.witness().functions();
@@ -567,6 +639,7 @@ fn admit_accounted(
         accounting.admission_peak(scratch)?;
         let cyclic = local_cycle
             || plan.witness().builtin_function() == Some(f.id)
+            || plan.witness().builtin_output_function() == Some(f.id)
             || f.blocks.iter().any(|b| {
                 match &b.terminator.as_ref().expect("verified terminator").kind {
                     OwnedTerminatorKind::Invoke { call, .. } => {
@@ -648,7 +721,7 @@ fn admit_accounted(
             .expect("cycle member")];
         return Err(reject("native preview does not support recursive call graphs, including unused functions and unchosen branches", Some(f.span)));
     }
-    let fuel_bytes = if bounds.iter().any(|b| b.cyclic) {
+    let fuel_bytes = if policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic) {
         8
     } else {
         0
@@ -740,6 +813,7 @@ struct Emission {
     text: Option<String>,
     maximum: usize,
     exceeded: bool,
+    policy: NativeEntryPolicy,
     call_scratch_peak: usize,
     expansions: usize,
     expansion_kinds: [usize; 3],
@@ -774,6 +848,7 @@ impl Emission {
             text: None,
             maximum,
             exceeded: false,
+            policy: NativeEntryPolicy::Result,
             call_scratch_peak: 0,
             expansions: 0,
             expansion_kinds: [0; 3],
@@ -836,13 +911,15 @@ enum FailureKind {
     EnumTag,
     EnumPayload,
     InputCapacity,
+    OutputCapacity,
+    ProcessStatus,
 }
 impl FailureKind {
     fn transient_bytes(self) -> usize {
-        if self == Self::InputCapacity {
-            size_of::<Diagnostic>() + INPUT_CAPACITY_INVARIANT.len()
-        } else {
-            DIAGNOSTIC_TRANSIENT_BYTES
+        match self {
+            Self::InputCapacity => size_of::<Diagnostic>() + INPUT_CAPACITY_INVARIANT.len(),
+            Self::OutputCapacity => size_of::<Diagnostic>() + OUTPUT_CAPACITY_INVARIANT.len(),
+            _ => DIAGNOSTIC_TRANSIENT_BYTES,
         }
     }
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
@@ -851,21 +928,32 @@ impl FailureKind {
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
-            // Input capacity alone needs a 65-byte literal; inventory charges
-            // that envelope only for modules that contain the input effect.
-            Self::EnumTag | Self::EnumPayload | Self::InputCapacity => Diagnostic::new(
-                "E0500",
-                "oir-owned-run",
-                match self {
-                    Self::EnumTag => "internal compiler error: owned execution invariant enum tag",
-                    Self::EnumPayload => {
-                        "internal compiler error: owned execution invariant enum payload"
-                    }
-                    Self::InputCapacity => INPUT_CAPACITY_INVARIANT,
-                    _ => unreachable!("enum invariant"),
-                },
+            Self::ProcessStatus => Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return a status in 0..255",
                 Some(span).filter(|span| sources.is_valid_span(*span)),
             ),
+            // Input capacity alone needs a 65-byte literal; inventory charges
+            // that envelope only for modules that contain the input effect.
+            Self::EnumTag | Self::EnumPayload | Self::InputCapacity | Self::OutputCapacity => {
+                Diagnostic::new(
+                    "E0500",
+                    "oir-owned-run",
+                    match self {
+                        Self::EnumTag => {
+                            "internal compiler error: owned execution invariant enum tag"
+                        }
+                        Self::EnumPayload => {
+                            "internal compiler error: owned execution invariant enum payload"
+                        }
+                        Self::InputCapacity => INPUT_CAPACITY_INVARIANT,
+                        Self::OutputCapacity => OUTPUT_CAPACITY_INVARIANT,
+                        _ => unreachable!("enum invariant"),
+                    },
+                    Some(span).filter(|span| sources.is_valid_span(*span)),
+                )
+            }
         }
     }
 }
@@ -921,8 +1009,15 @@ fn diagnostic_occurrences(
     plan: &ExecutionPlan<'_>,
     entry: hir::DefId,
     guarded: bool,
+    policy: NativeEntryPolicy,
     mut visit: impl FnMut(FailureKind, Span) -> Result<(), Box<Diagnostic>>,
 ) -> Result<(), Box<Diagnostic>> {
+    if policy == NativeEntryPolicy::Process {
+        visit(
+            FailureKind::ProcessStatus,
+            plan.witness().functions()[entry.0].span,
+        )?;
+    }
     if guarded {
         visit(FailureKind::Fuel, plan.witness().functions()[entry.0].span)?;
     }
@@ -948,6 +1043,10 @@ fn diagnostic_occurrences(
                 match &statement.kind {
                     OwnedInstruction::ReadStdin { .. } => visit(
                         FailureKind::InputCapacity,
+                        plan::instruction_span(statement),
+                    )?,
+                    OwnedInstruction::WriteStdout { .. } => visit(
+                        FailureKind::OutputCapacity,
                         plan::instruction_span(statement),
                     )?,
                     OwnedInstruction::ConsumeVariant { match_id, .. } => {
@@ -1040,9 +1139,30 @@ impl Diagnostics {
         metadata_maximum: usize,
         accounting: &mut Accounting,
     ) -> Result<Self, Box<Diagnostic>> {
+        Self::new_policy_accounted(
+            plan,
+            entry,
+            sources,
+            guarded,
+            NativeEntryPolicy::Result,
+            maximum,
+            metadata_maximum,
+            accounting,
+        )
+    }
+    fn new_policy_accounted(
+        plan: &ExecutionPlan<'_>,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        guarded: bool,
+        policy: NativeEntryPolicy,
+        maximum: usize,
+        metadata_maximum: usize,
+        accounting: &mut Accounting,
+    ) -> Result<Self, Box<Diagnostic>> {
         let mut count = 0;
         let mut diagnostic_transient = DIAGNOSTIC_TRANSIENT_BYTES;
-        diagnostic_occurrences(plan, entry, guarded, |kind, _| {
+        diagnostic_occurrences(plan, entry, guarded, policy, |kind, _| {
             count = add(count, 1)?;
             diagnostic_transient = diagnostic_transient.max(kind.transient_bytes());
             Ok(())
@@ -1084,7 +1204,7 @@ impl Diagnostics {
             .metrics
             .metadata_peak
             .max(add(retained, occurrence_bytes)?);
-        diagnostic_occurrences(plan, entry, guarded, |kind, span| {
+        diagnostic_occurrences(plan, entry, guarded, policy, |kind, span| {
             rows.push(DiagnosticOccurrence {
                 key: (kind, span.file.0, span.start, span.end),
                 encounter: rows.len(),
@@ -1266,9 +1386,13 @@ impl Diagnostics {
 }
 fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind, span: Span) {
     let (id, len) = diagnostics.get(kind, span);
+    let helper = match out.policy {
+        NativeEntryPolicy::Result => "__oxid_overflow",
+        NativeEntryPolicy::Process => "__oxid_process_failure",
+    };
     writeln!(
         out,
-        "  call void @__oxid_overflow(ptr @__oxid_owned_error_{id}, i64 {len})\n  unreachable"
+        "  call void @{helper}(ptr @__oxid_owned_error_{id}, i64 {len})\n  unreachable"
     )
     .unwrap();
 }
@@ -1496,6 +1620,12 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         // Fixed result branches: Eof tag/payload, Full tag,
                         // IoError tag. The bounded commit loop is fixed text,
                         // not a capacity-sized scalar expansion.
+                        cells = add(cells, 4)?;
+                        None
+                    }
+                    OwnedInstruction::WriteStdout { .. } => {
+                        // Complete/InvalidInput tags and IoError tag/payload.
+                        // Staging and one-byte attempts remain fixed loop text.
                         cells = add(cells, 4)?;
                         None
                     }
@@ -1860,6 +1990,14 @@ fn emit(
         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
             .unwrap();
     }
+    if plan.witness().builtin_output_function().is_some() {
+        out.write_str("declare i32 @__oxid_write_stdout_byte(ptr)\n")
+            .unwrap();
+    }
+    if out.policy == NativeEntryPolicy::Process {
+        out.write_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n")
+            .unwrap();
+    }
     for (id, message) in diagnostics.messages.iter().enumerate() {
         if out.exceeded {
             return;
@@ -1894,6 +2032,10 @@ fn emit(
         unreachable!("entry gate")
     };
     out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
+    if out.policy == NativeEntryPolicy::Process {
+        // Signal safety precedes even the root activation/fuel diagnostic.
+        out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();
+    }
     if guarded {
         writeln!(
             out,
@@ -1916,6 +2058,14 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
+    if out.policy == NativeEntryPolicy::Process {
+        // Unsigned comparison rejects negatives without truncating i32 status.
+        out.write_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_complete, label %process_status_error\nprocess_status_error:\n").unwrap();
+        emit_failure(out, diagnostics, FailureKind::ProcessStatus, root.span);
+        out.write_str("process_complete:\n  ret i32 %value\n}\n")
+            .unwrap();
+        return;
+    }
     match result {
         hir::Ty::Bool => out.write_str("  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n").unwrap(),
         hir::Ty::I32 => out.write_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n").unwrap(),
@@ -1931,6 +2081,7 @@ enum Continuation {
     Bounds,
     Enum,
     Input,
+    Output,
 }
 impl Continuation {
     fn suffix(self) -> Option<&'static str> {
@@ -1940,6 +2091,7 @@ impl Continuation {
             Self::Bounds => Some("bounds_ok"),
             Self::Enum => Some("enum_ok"),
             Self::Input => Some("input_ok"),
+            Self::Output => Some("output_ok"),
         }
     }
 }
@@ -1947,6 +2099,7 @@ impl Continuation {
 fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
     match instruction {
         OwnedInstruction::ReadStdin { .. } => Continuation::Input,
+        OwnedInstruction::WriteStdout { .. } => Continuation::Output,
         OwnedInstruction::ConsumeVariant { .. } => Continuation::Enum,
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::Replace { source, .. }
@@ -2081,6 +2234,17 @@ fn emit_function(
         writeln!(
             out,
             "  %input_scratch = getelementptr i8, ptr %owners, i64 {}",
+            scratch.start
+        )
+        .unwrap();
+    }
+    if let Some(scratch) = plan.output_scratch_range(id) {
+        debug_assert_eq!(scratch.len(), 1024);
+        // A distinct builtin activation owns output staging. It cannot alias
+        // the source view or input scratch, and is admitted before any effect.
+        writeln!(
+            out,
+            "  %output_scratch = getelementptr i8, ptr %owners, i64 {}",
             scratch.start
         )
         .unwrap();
@@ -2239,7 +2403,12 @@ fn emit_function(
             }
             out.ordinary_visits += 1;
             let name = format!("f{}_b{b}_i{i}", id.0);
-            if guarded && !matches!(statement.kind, OwnedInstruction::ReadStdin { .. }) {
+            if guarded
+                && !matches!(
+                    statement.kind,
+                    OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. }
+                )
+            {
                 emit_guard(
                     out,
                     diagnostics,
@@ -2380,6 +2549,111 @@ fn emit_read_stdin(
     .unwrap();
 }
 
+/// The canonical shared view is already bound by the verified internal ABI.
+/// Capacity and storage are preflighted before reads; the complete validated
+/// byte image is staged before any attempt. The only post-effect failure point
+/// in the effect itself is the deliberately metered next-attempt fuel guard.
+fn emit_write_stdout(
+    plan: &ExecutionPlan<'_>,
+    id: hir::DefId,
+    name: &str,
+    places: (ReferenceParamId, OwnerPlaceId),
+    failure: (&Diagnostics, Span),
+    out: &mut Emission,
+) {
+    let (buffer, destination) = places;
+    let (diagnostics, span) = failure;
+    let scratch = plan
+        .output_scratch_range(id)
+        .expect("verified output scratch suffix");
+    debug_assert_eq!(plan.witness().builtin_output_function(), Some(id));
+    debug_assert_eq!(scratch.len(), 1024);
+    debug_assert_eq!(out.policy, NativeEntryPolicy::Process);
+    let enumeration = plan
+        .witness()
+        .builtin_output_enumeration()
+        .expect("verified output enum");
+    let variants = plan
+        .witness()
+        .declarations()
+        .enums()
+        .variants(enumeration)
+        .expect("verified output variants");
+    let [complete, invalid_input, io_error] = variants else {
+        unreachable!("verified output result shape")
+    };
+    let result = format!("%o{}", destination.0);
+    let result_extent = plan
+        .witness()
+        .declarations()
+        .aggregate_layout(AggregateTy::Enum(enumeration))
+        .expect("verified output result layout")
+        .size();
+    debug_assert!(plan.function(id).owner_offset(destination) + result_extent <= scratch.start);
+    let suffix = continuation(
+        &plan.witness().functions()[id.0],
+        &OwnedInstruction::WriteStdout {
+            buffer,
+            destination,
+        },
+    )
+    .suffix()
+    .expect("output continuation");
+    // Unsigned <= rejects negative i32 lengths and malformed oversized views.
+    writeln!(out, "  %{name}_capacity = load i32, ptr %rl{}, align 4\n  %{name}_capacity_valid = icmp ule i32 %{name}_capacity, 1024\n  br i1 %{name}_capacity_valid, label %{name}_capacity_ok, label %{name}_capacity_error\n{name}_capacity_error:", buffer.0).unwrap();
+    emit_failure(out, diagnostics, FailureKind::OutputCapacity, span);
+    writeln!(out, "{name}_capacity_ok:\n  %{name}_capacity64 = zext i32 %{name}_capacity to i64\n  %{name}_core_cost = add i64 %{name}_capacity64, 4").unwrap();
+    emit_guard_value(
+        out,
+        diagnostics,
+        &format!("{name}_core"),
+        format!("%{name}_core_cost"),
+        span,
+    );
+    // Validation includes the last cell. Neither invalid input nor an empty
+    // view reaches the byte helper, and no source cell is read after staging.
+    writeln!(out, "  %{name}_buffer = load ptr, ptr %r{}, align 8\n  br label %{name}_stage_check\n{name}_stage_check:\n  %{name}_validated = phi i32 [ 0, %{name}_core_ok ], [ %{name}_stage_next, %{name}_stage_byte ]\n  %{name}_all_validated = icmp eq i32 %{name}_validated, %{name}_capacity\n  br i1 %{name}_all_validated, label %{name}_staged, label %{name}_validate\n{name}_validate:\n  %{name}_validated64 = zext i32 %{name}_validated to i64\n  %{name}_cell_ptr = getelementptr i32, ptr %{name}_buffer, i64 %{name}_validated64\n  %{name}_cell = load i32, ptr %{name}_cell_ptr, align 1\n  %{name}_cell_valid = icmp ule i32 %{name}_cell, 255\n  br i1 %{name}_cell_valid, label %{name}_stage_byte, label %{name}_invalid_input\n{name}_stage_byte:\n  %{name}_stage_ptr = getelementptr i8, ptr %output_scratch, i64 %{name}_validated64\n  %{name}_byte_value = trunc i32 %{name}_cell to i8\n  store i8 %{name}_byte_value, ptr %{name}_stage_ptr, align 1\n  %{name}_stage_next = add i32 %{name}_validated, 1\n  br label %{name}_stage_check\n{name}_staged:\n  br label %{name}_write_check\n{name}_write_check:\n  %{name}_accepted = phi i32 [ 0, %{name}_staged ], [ %{name}_next, %{name}_byte ], [ %{name}_accepted, %{name}_retry ]\n  %{name}_at_capacity = icmp eq i32 %{name}_accepted, %{name}_capacity\n  br i1 %{name}_at_capacity, label %{name}_complete, label %{name}_attempt\n{name}_attempt:", buffer.0).unwrap();
+    emit_guard(out, diagnostics, &format!("{name}_write"), 1, span);
+    // Exactly one attempt per debit, including EINTR, zero progress and every
+    // error. Only accepted bytes advance the exact progress prefix.
+    writeln!(out, "  %{name}_accepted64 = zext i32 %{name}_accepted to i64\n  %{name}_byte_ptr = getelementptr i8, ptr %output_scratch, i64 %{name}_accepted64\n  %{name}_status = call i32 @__oxid_write_stdout_byte(ptr %{name}_byte_ptr)\n  switch i32 %{name}_status, label %{name}_io_error [\n    i32 1, label %{name}_byte\n    i32 -1, label %{name}_retry\n  ]\n{name}_byte:\n  %{name}_next = add i32 %{name}_accepted, 1\n  br label %{name}_write_check\n{name}_retry:\n  br label %{name}_write_check\n{name}_complete:").unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    writeln!(
+        out,
+        "  store i32 {}, ptr {result}, align 1\n  br label %{name}_{suffix}\n{name}_invalid_input:",
+        complete.tag()
+    )
+    .unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    // Nullary results never touch inactive payload bytes or padding.
+    writeln!(
+        out,
+        "  store i32 {}, ptr {result}, align 1\n  br label %{name}_{suffix}\n{name}_io_error:",
+        invalid_input.tag()
+    )
+    .unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    writeln!(out, "  store i32 {}, ptr {result}, align 1", io_error.tag()).unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    enum_payload_store(
+        out,
+        &format!("{name}_io_error_result"),
+        &result,
+        io_error.payload().expect("verified IoError payload"),
+        &format!("%{name}_accepted"),
+        io_error.payload_offset().expect("verified IoError offset"),
+    );
+    writeln!(out, "  br label %{name}_{suffix}\n{name}_{suffix}:").unwrap();
+}
+
 fn emit_statement(
     plan: &ExecutionPlan<'_>,
     id: hir::DefId,
@@ -2399,6 +2673,17 @@ fn emit_statement(
             buffer,
             destination,
         } => emit_read_stdin(
+            plan,
+            id,
+            name,
+            (*buffer, *destination),
+            (diagnostics, plan::instruction_span(statement)),
+            out,
+        ),
+        OwnedInstruction::WriteStdout {
+            buffer,
+            destination,
+        } => emit_write_stdout(
             plan,
             id,
             name,
@@ -3155,6 +3440,9 @@ fn emit_terminator(
 #[cfg(test)]
 #[path = "builtin_input_native_tests.rs"]
 mod builtin_input_tests;
+#[cfg(test)]
+#[path = "builtin_output_native_tests.rs"]
+mod builtin_output_tests;
 #[cfg(test)]
 #[path = "native_tests.rs"]
 mod tests;

@@ -377,6 +377,7 @@ fn step(
         | OwnedInstruction::ConstructArray { destination, .. }
         | OwnedInstruction::ConstructEnum { destination, .. }
         | OwnedInstruction::ReadStdin { destination, .. }
+        | OwnedInstruction::WriteStdout { destination, .. }
         | OwnedInstruction::ConstructComposite { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
@@ -810,6 +811,21 @@ fn accesses(
     mut visit: impl FnMut(AccessBase, Access, DeniedRole) -> Result<(), OwnedFailure>,
 ) -> Result<(), OwnedFailure> {
     match i {
+        OwnedInstruction::WriteStdout {
+            buffer,
+            destination,
+        } => {
+            visit(
+                AccessBase::Parameter(*buffer),
+                Access::Read,
+                DeniedRole::ArrayBase,
+            )?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
+        }
         OwnedInstruction::ReadStdin {
             buffer,
             destination,
