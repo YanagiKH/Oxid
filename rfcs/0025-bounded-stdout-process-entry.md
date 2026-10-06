@@ -19,7 +19,8 @@ Default result mode keeps all existing bool/i32/unit rendering, JSON records,
 exit statuses, admission and fuel behavior. Process mode requires the original
 resolved zero-argument `main() -> i32`; values 0..255 become exact process exit
 statuses without a scalar trailer. Other values produce a runtime diagnostic
-and nonzero status, never truncation. A source main called as an ordinary
+and status 1 when that diagnostic completes, or 74 if its stderr output fails;
+all earlier stdout bytes remain. Never truncate the result. A source main called as an ordinary
 function retains its ordinary i32 semantics.
 
 Reject process-mode run combined with JSON reporting before source execution,
@@ -40,12 +41,21 @@ Before process source activation, establish ignored SIGPIPE. Setup failure exits
 74 silently before source effects: attempting a diagnostic before signal safety
 is established could itself terminate on SIGPIPE. Individual byte helpers do not
 modify signal policy. No signal-mask fallback is introduced.
-Explicit setup-failure reporting and reference/native diagnostic-write failure
+Silent setup-failure behavior and reference/native diagnostic-write failure
 parity are required review gates; the existing Rust macro reporters and the
 unmetered native scalar printer are not sufficient evidence for the new mode.
-The proposed I/O failure status is 74; ordinary runtime faults remain status 1
-when their diagnostic can be delivered. The final failure matrix is pending
-independent runtime review.
+The I/O failure status is 74; ordinary runtime faults remain status 1 when their
+diagnostic can be delivered. Terminal stderr reporting retries EINTR and positive
+short progress, stops on zero progress or any other error with status 74, and
+never recursively reports that failure.
+
+On the qualified host, pure argv classification may precede policy setup, but
+setup precedes every process-run diagnostic and the root activation/fuel guard.
+Thus an invalid process/JSON combination can establish SIGPIPE policy before
+reporting its rejection, while performing no source execution or byte-output
+builtin effect. Native process entry uses the same pre-guard setup order.
+Compilation only reports a build and does not execute this process-entry setup.
+Unsupported-host diagnostic ordering remains a separate review item.
 
 ## Whole-view output
 

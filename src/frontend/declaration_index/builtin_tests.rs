@@ -613,3 +613,292 @@ fn builtin_index_allocation_injection_precedes_frozen_identity() {
         assert_eq!(allocator.attempts, failure);
     }
 }
+
+/// Disconnected RFC 0025 layouts. These types are never constructed by
+/// collection, admitted by a ledger, or used by an effect consumer. New anchor
+/// projection/control roles remain unpriced: residual space is not admission.
+#[allow(dead_code)]
+mod output_layout_feasibility {
+    use super::*;
+    use std::mem::align_of;
+
+    enum Inventory {
+        None,
+        ReadStatus,
+        ReadStdin,
+        WriteStatus,
+        ReadStatusWriteStatus,
+        ReadStdinWriteStatus,
+        WriteStdout,
+        ReadStatusWriteStdout,
+        ReadStdinWriteStdout,
+    }
+    enum Enumeration {
+        ReadStatus,
+        WriteStatus,
+    }
+    enum Function {
+        ReadStdin,
+        WriteStdout,
+    }
+    enum NestedItem {
+        Enum(Enumeration),
+        Function(Function),
+    }
+    enum FlatItem {
+        ReadStatus,
+        ReadStdin,
+        WriteStatus,
+        WriteStdout,
+    }
+    enum NestedOrigin {
+        Source,
+        Builtin(NestedItem),
+    }
+    enum FlatOrigin {
+        Source,
+        Builtin(FlatItem),
+    }
+    enum NestedProjection {
+        SourceOriginal(u32),
+        Builtin(NestedItem),
+    }
+    enum FlatProjection {
+        SourceOriginal(u32),
+        Builtin(FlatItem),
+    }
+    // Exactly the current admission's per-family payload alternatives.
+    enum FamilySpanState {
+        None,
+        Status(CompactSpan),
+        Function {
+            status: CompactSpan,
+            function: CompactSpan,
+        },
+    }
+    struct DuplicatedSpanAdmission {
+        families: [FamilySpanState; 2],
+    }
+    // A future sealed constructor must establish dependency closure and the
+    // exact retained ImportRow association. NONE marks absent anchor slots.
+    struct FamilyImportAnchors {
+        enumeration: u32,
+        function: u32,
+    }
+    struct ImportOrdinalAdmission {
+        families: [FamilyImportAnchors; 2],
+    }
+
+    // Complete actual Tables fields, in actual declaration order. Each macro
+    // expansion is a disconnected private type; production is not generalized.
+    macro_rules! tables_model {
+        ($name:ident, $admission:ty) => {
+            struct $name<'s> {
+                sources: SourceOwner<'s>,
+                originals: Vec<OriginalRow>,
+                original_order: Vec<u32>,
+                functions: Vec<FunctionRow>,
+                records: Vec<RecordRow>,
+                fields: Vec<FieldRow>,
+                enums: Vec<EnumRow>,
+                variants: Vec<VariantRow>,
+                modules: Vec<ModuleRow>,
+                children: Vec<u32>,
+                imports: Vec<ImportRow>,
+                aliases: Vec<AliasCell>,
+                alias_order: Vec<u32>,
+                root_main: u32,
+                candidate_source_origin: CandidateOrigin,
+                builtins: $admission,
+            }
+        };
+    }
+    tables_model!(BaselineTables, BuiltinAdmission);
+    tables_model!(SpanTables, DuplicatedSpanAdmission);
+    tables_model!(OrdinalTables, ImportOrdinalAdmission);
+    macro_rules! enclosing_models {
+        ($index:ident, $facts:ident, $tables:ident) => {
+            struct $index<'s> {
+                tables: $tables<'s>,
+            }
+            struct $facts<'s> {
+                tables: $tables<'s>,
+                scratch: Scratch,
+                plan: IndexPlan,
+            }
+        };
+    }
+    enclosing_models!(BaselineIndex, BaselineFacts, BaselineTables);
+    enclosing_models!(SpanIndex, SpanFacts, SpanTables);
+    enclosing_models!(OrdinalIndex, OrdinalFacts, OrdinalTables);
+
+    fn same_layout<T, U>() {
+        assert_eq!(size_of::<T>(), size_of::<U>());
+        assert_eq!(align_of::<T>(), align_of::<U>());
+    }
+    fn report<T>(name: &str) {
+        println!(
+            "OUTPUT_INDEX_LAYOUT {name} bytes={} align={}",
+            size_of::<T>(),
+            align_of::<T>()
+        );
+    }
+    fn substituted_fixed<TablesModel, Admission, Projection, Item, Origin>() -> usize {
+        // Start from the complete actual bank. Embedded admission is replaced
+        // once through Tables; the collection-local admission is separate.
+        let old = size_of::<Tables<'static>>()
+            + size_of::<BuiltinAdmission>()
+            + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
+            + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
+            + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>();
+        let new = size_of::<TablesModel>()
+            + size_of::<Admission>()
+            + size_of::<Result<Projection, Box<Diagnostic>>>()
+            + size_of::<Result<Item, Box<Diagnostic>>>()
+            + size_of::<Result<Origin, Box<Diagnostic>>>();
+        FIXED_SCRATCH
+            .checked_sub(old)
+            .unwrap()
+            .checked_add(new)
+            .unwrap()
+    }
+    fn candidate(name: &str, substituted: usize) {
+        let headroom = 4096i128 - substituted as i128;
+        let delta = substituted as i128 - FIXED_SCRATCH as i128;
+        println!(
+            "OUTPUT_INDEX_CANDIDATE {name} actual_fixed={FIXED_SCRATCH} \
+             substituted_fixed={substituted} delta={delta} ceiling=4096 \
+             headroom_before_new_roles={headroom} new_projection_control_bytes=UNPRICED \
+             admission=NOT_ESTABLISHED"
+        );
+    }
+
+    #[test]
+    fn bounded_stdout_index_disconnected_enclosing_layout_feasibility() {
+        same_layout::<BaselineTables<'static>, Tables<'static>>();
+        same_layout::<BaselineIndex<'static>, DeclarationIndex<'static>>();
+        same_layout::<BaselineFacts<'static>, DeclarationFacts<'static>>();
+        same_layout::<FamilySpanState, BuiltinAdmission>();
+        same_layout::<
+            Result<BaselineTables<'static>, Box<Diagnostic>>,
+            Result<Tables<'static>, Box<Diagnostic>>,
+        >();
+        same_layout::<
+            Result<BaselineIndex<'static>, Box<Diagnostic>>,
+            Result<DeclarationIndex<'static>, Box<Diagnostic>>,
+        >();
+        same_layout::<
+            Result<BaselineFacts<'static>, Box<Diagnostic>>,
+            Result<DeclarationFacts<'static>, Box<Diagnostic>>,
+        >();
+        same_layout::<
+            Result<BaselineIndex<'static>, Vec<Diagnostic>>,
+            Result<DeclarationIndex<'static>, Vec<Diagnostic>>,
+        >();
+        assert_eq!(size_of::<ImportOrdinalAdmission>(), 4 * size_of::<u32>());
+        assert_eq!(
+            substituted_fixed::<
+                BaselineTables<'static>,
+                BuiltinAdmission,
+                DeclarationProjection,
+                BuiltinItem,
+                DeclarationOrigin,
+            >(),
+            FIXED_SCRATCH
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(FIXED_SCRATCH, 4094);
+        const { assert!(FIXED_SCRATCH <= 4096) };
+
+        macro_rules! layouts {
+            ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
+        }
+        macro_rules! envelopes {
+            ($tables:ident, $index:ident, $facts:ident) => {
+                layouts!(
+                    $tables<'static>,
+                    $index<'static>,
+                    $facts<'static>,
+                    Result<$tables<'static>, Box<Diagnostic>>,
+                    Result<$index<'static>, Box<Diagnostic>>,
+                    Result<$facts<'static>, Box<Diagnostic>>,
+                    Result<$index<'static>, Vec<Diagnostic>>,
+                );
+            };
+        }
+        layouts!(
+            BuiltinSet, BuiltinEnum, BuiltinFunction, BuiltinItem,
+            DeclarationOrigin, DeclarationProjection, BuiltinAdmission,
+            Result<DeclarationProjection, Box<Diagnostic>>,
+            Result<BuiltinItem, Box<Diagnostic>>,
+            Result<DeclarationOrigin, Box<Diagnostic>>,
+            PreparedTypeName<'static>, Option<PreparedTypeName<'static>>,
+            sealed::EnumSourceCounts<'static>, Inventory, Enumeration, Function,
+            NestedItem, FlatItem, NestedOrigin, FlatOrigin,
+            NestedProjection, FlatProjection,
+            Result<NestedItem, Box<Diagnostic>>, Result<FlatItem, Box<Diagnostic>>,
+            Result<NestedOrigin, Box<Diagnostic>>, Result<FlatOrigin, Box<Diagnostic>>,
+            Result<NestedProjection, Box<Diagnostic>>, Result<FlatProjection, Box<Diagnostic>>,
+            FamilySpanState, DuplicatedSpanAdmission,
+            FamilyImportAnchors, ImportOrdinalAdmission,
+        );
+        envelopes!(Tables, DeclarationIndex, DeclarationFacts);
+        envelopes!(BaselineTables, BaselineIndex, BaselineFacts);
+        envelopes!(SpanTables, SpanIndex, SpanFacts);
+        envelopes!(OrdinalTables, OrdinalIndex, OrdinalFacts);
+
+        candidate(
+            "duplicated_spans_nested_item",
+            substituted_fixed::<
+                SpanTables<'static>,
+                DuplicatedSpanAdmission,
+                NestedProjection,
+                NestedItem,
+                NestedOrigin,
+            >(),
+        );
+        candidate(
+            "duplicated_spans_flat_item",
+            substituted_fixed::<
+                SpanTables<'static>,
+                DuplicatedSpanAdmission,
+                FlatProjection,
+                FlatItem,
+                FlatOrigin,
+            >(),
+        );
+        candidate(
+            "four_import_ordinals_nested_item",
+            substituted_fixed::<
+                OrdinalTables<'static>,
+                ImportOrdinalAdmission,
+                NestedProjection,
+                NestedItem,
+                NestedOrigin,
+            >(),
+        );
+        candidate(
+            "four_import_ordinals_flat_item",
+            substituted_fixed::<
+                OrdinalTables<'static>,
+                ImportOrdinalAdmission,
+                FlatProjection,
+                FlatItem,
+                FlatOrigin,
+            >(),
+        );
+        println!(
+            "OUTPUT_INDEX_UNPRICED_ROLES collection_import_ordinal_cursor; \
+             checked_ordinal_conversion_and_return; anchor_selector_and_return; \
+             retained_import_row_projection_and_return; source_ast_path_projection; \
+             checked_endpoint_projection_and_return; caller_anchor_return; \
+             family_iteration_current_next_and_rank; \
+             any_changed_EnumSourceCounts_or_PreparedTypeName_carriers"
+        );
+        println!(
+            "OUTPUT_INDEX_SCOPE disconnected_compiled_type_layouts_only; \
+             no_collection_no_source_association_no_effect_no_consumer_authority; \
+             no_claim_of_complete_retained_scratch_coexistence"
+        );
+    }
+}
