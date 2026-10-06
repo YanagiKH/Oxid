@@ -50,6 +50,7 @@ fn prepare(
     sources: &SourceMap,
     limits: budget::Limits,
 ) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
+    raw.builtins.require_none()?;
     let usage = budget::preflight(raw, limits)?;
     let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
     Ok((

@@ -254,6 +254,7 @@ fn sequence_fixture(
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![f],
@@ -555,6 +556,7 @@ fn chain_fixture(ty: hir::Ty, n: usize) -> (SourceMap, RawOwnedProgram, Vec<(Spa
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record],
             functions: vec![f, g],
@@ -983,6 +985,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions,
@@ -1680,6 +1683,7 @@ fn observer_scalar_cap_fixture(statements: usize) -> (SourceMap, RawOwnedProgram
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![f],
@@ -1724,6 +1728,7 @@ fn observer_storage_cap_fixture(owners: usize, n: usize) -> (SourceMap, RawOwned
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![f],

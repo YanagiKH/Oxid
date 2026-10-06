@@ -26,6 +26,7 @@ fn raw(span: Span) -> RawOwnedProgram {
         terminator: f::end(OwnedTerminatorKind::ReturnScalar(f::operand(0, span)), span),
     });
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![function],

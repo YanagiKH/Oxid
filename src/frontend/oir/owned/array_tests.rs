@@ -748,6 +748,7 @@ fn unit2b_index_dominance_uses_real_branch_edges() {
 fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
     let (sources, s) = context();
     let raw = RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![unit_function(0, s)],
@@ -776,6 +777,7 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         }
     );
     let mut raw = RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![unit_function(0, s)],
@@ -817,6 +819,7 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
 fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
     let (sources, s) = context();
     let mut raw = RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![unit_function(0, s)],
@@ -887,6 +890,7 @@ fn unit2b_valid_arrays_reach_expanded_event_ceiling_inclusively() {
         ]);
     }
     let mut raw = RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![function],

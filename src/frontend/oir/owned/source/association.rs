@@ -189,6 +189,7 @@ fn check_impl(
     sources: &SourceMap,
     allow_enums: bool,
 ) -> Result<BindUsage, Box<Diagnostic>> {
+    raw.builtins.require_none().map_err(|_| bad())?;
     if !allow_enums && (!raw.enums.is_empty() || index.enum_count() != 0) {
         return Err(bad());
     }
@@ -445,6 +446,7 @@ mod enum_tests {
         let declaration = &ast.enums[0];
         let span = ast.functions[0].name;
         let mut raw = RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![RawEnumDecl {
                 id: EnumId(0),
                 span: declaration.name,
@@ -546,6 +548,16 @@ mod enum_tests {
         assert_eq!(usage.count, usage.validation);
         assert_eq!((usage.count.declarations, usage.count.spans), (7, 17));
         assert_eq!(usage.dimensions, 4);
+        for origin in [BuiltinOrigins::ReadStatus, BuiltinOrigins::ReadStdin] {
+            raw.builtins = origin;
+            let (denied, allocations) =
+                super::super::super::reviewer_origins::integration_counted(|| {
+                    check_enum_candidate(&raw, &index, &sources)
+                });
+            assert!(denied.is_err());
+            assert_eq!(allocations, 0);
+        }
+        raw.builtins = BuiltinOrigins::None;
         assert!(check(&raw, &index, &sources).is_err());
 
         // A scalar type mutation is still a valid independent raw declaration,

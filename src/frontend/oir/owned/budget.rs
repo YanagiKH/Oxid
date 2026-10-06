@@ -127,7 +127,12 @@ pub(super) fn account_enum_declarations(
     let limits = limits.bounded();
     let events = add(enums.enums, enums.variants)?;
     let bytes = add(
-        std::mem::size_of::<Vec<RawEnumDecl>>(),
+        add(
+            size_of::<Vec<RawEnumDecl>>(),
+            // Charge complete padded header growth beyond the three existing
+            // Vec headers. Source raw-byte admission counts the full carrier.
+            size_of::<RawOwnedProgram>() - 3 * size_of::<Vec<()>>(),
+        )?,
         add(
             mul(enums.enums, size_of::<RawEnumDecl>())?,
             mul(enums.variants, size_of::<RawVariantDecl>())?,

@@ -2231,6 +2231,7 @@ pub(super) fn lower_with_limits(
         return Err(error);
     }
     Ok(RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums,
         records,
         functions,

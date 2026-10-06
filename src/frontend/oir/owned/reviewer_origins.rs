@@ -104,6 +104,7 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
     (
         sm,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![RawRecordDecl {
                 id: RecordId(0),
@@ -513,6 +514,7 @@ fn heldout_origins_preserve_all_frozen_reference_fuel_and_native_modules() {
 
 fn clone_raw(p: &RawOwnedProgram) -> RawOwnedProgram {
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: p.enums.clone(),
         records: p
             .records

@@ -187,6 +187,7 @@ pub(super) fn mixed_case(
     };
     (
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![enumeration(payloads, span)],
             records: vec![],
             functions: vec![function],
@@ -561,6 +562,7 @@ pub(super) fn loop_case(span: Span) -> (RawOwnedProgram, f::Schedule) {
     events.extend([(6, 1), (7, 1), (8, 1), (16, 3)].map(|(i, cost)| (at(span, i), cost)));
     (
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![enumeration(&[None, Some(hir::Ty::I32)], span)],
             records: vec![],
             functions: vec![function],
@@ -632,6 +634,7 @@ pub(super) fn discard_case(payload: Option<hir::Ty>, span: Span) -> (RawOwnedPro
     );
     (
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![enumeration(&[payload], span)],
             records: vec![],
             functions: vec![function],
@@ -899,6 +902,7 @@ pub(super) fn two_owned_case(second: usize, span: Span) -> (RawOwnedProgram, f::
     );
     (
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![enumeration(&MIXED, span)],
             records: vec![],
             functions: vec![caller, callee],

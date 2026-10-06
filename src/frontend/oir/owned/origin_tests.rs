@@ -75,6 +75,7 @@ pub(super) fn function(id: usize, s: Span) -> RawOwnedFunction {
 }
 pub(super) fn raw(s: Span) -> RawOwnedProgram {
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![RawRecordDecl {
             id: RecordId(0),

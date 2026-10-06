@@ -147,6 +147,7 @@ fn fixture(
         ));
     }
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![enumeration(payloads, span)],
         records: vec![],
         functions: vec![function],
@@ -1111,6 +1112,7 @@ fn scalar_program(span: Span) -> RawOwnedProgram {
         span,
     ));
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![function],

@@ -178,6 +178,7 @@ fn wide_parameter(length: usize) -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records,
             functions: vec![main, f],

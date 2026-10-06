@@ -332,6 +332,7 @@ impl Core {
             s(50),
         ));
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![f],
@@ -728,6 +729,7 @@ impl Transfer {
             s(61),
         ));
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![caller, callee],
@@ -1013,6 +1015,7 @@ impl Continuation {
             span: s(300),
         });
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![f],
@@ -1268,6 +1271,7 @@ impl Effects {
             s(16),
         ));
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions: vec![caller, helper],

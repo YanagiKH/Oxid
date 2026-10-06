@@ -492,6 +492,7 @@ fn phi_case(
     functions.insert(0, f);
     (
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![e::enumeration(
                 &[Some(hir::Ty::Bool), Some(hir::Ty::Bool)],
                 span,

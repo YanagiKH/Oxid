@@ -40,6 +40,7 @@ fn scalar_raw(spans: &[Span]) -> RawOwnedProgram {
         origin,
     ));
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![function],
@@ -792,6 +793,7 @@ fn array_core(origin: Span, length: usize, access: bool) -> RawOwnedProgram {
         origin,
     ));
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
         functions: vec![function],

@@ -36,8 +36,31 @@ struct MatchArm {
     dispatch: BlockId,
     entry: BlockId,
 }
+/// Closed origin claims, not execution authority. Non-None remains denied at
+/// all admission seams until canonical builtin identity and body proofs exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BuiltinOrigins {
+    None,
+    ReadStatus,
+    ReadStdin,
+}
+impl BuiltinOrigins {
+    fn require_none(self) -> Result<(), OwnedFailure> {
+        if self == Self::None {
+            return Ok(());
+        }
+        Err(OwnedFailure {
+            kind: OwnedFailureKind::Malformed(Malformed::Binding),
+            primary: Origin::NONE,
+            related: Origin::NONE,
+            declaration: Origin::NONE,
+            context: None,
+        })
+    }
+}
 #[derive(Debug)]
 struct RawOwnedProgram {
+    builtins: BuiltinOrigins,
     enums: Vec<RawEnumDecl>,
     records: Vec<RawRecordDecl>,
     functions: Vec<RawOwnedFunction>,
@@ -421,6 +444,8 @@ struct OwnershipUsage {
     owner_cells: usize,
     owner_layout_bytes: usize,
 }
+#[cfg(test)]
+mod builtin_origin_tests;
 #[cfg(test)]
 mod tests;
 
