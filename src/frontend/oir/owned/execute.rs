@@ -1423,7 +1423,12 @@ impl<'p, 'w> Machine<'p, 'w> {
         if tag != 2 {
             let prefix = &current.payload[scratch.start..scratch.start + staged];
             let destination_bytes = &mut ancestors[root_frame].payload[buffer_start..buffer_end];
-            for (cell, byte) in destination_bytes.chunks_exact_mut(4).zip(prefix) {
+            for (cell, byte) in destination_bytes
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(prefix)
+            {
                 cell.copy_from_slice(&i32::from(*byte).to_le_bytes());
             }
         }

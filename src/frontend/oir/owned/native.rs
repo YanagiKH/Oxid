@@ -2332,7 +2332,7 @@ fn emit_read_stdin(
         out,
         diagnostics,
         &format!("{name}_core"),
-        &format!("%{name}_core_cost"),
+        format!("%{name}_core_cost"),
         span,
     );
     // All storage is already reserved in this frame. No allocation or fallible
