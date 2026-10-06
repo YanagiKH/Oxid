@@ -74,8 +74,9 @@ array ABI, element references or heap allocation is exposed. Indexed writes keep
 RHS-before-index snapshots, and guarded access charges fuel before bounds.
 Invalid executed indexes emit the exact reference E0606/oir-owned-run diagnostic,
 including source origin, with empty stdout and exit 1. No element pointer is
-formed before the signed bounds check succeeds. There are no source I/O operations, address values, heap containers,
-indirect calls, module initialization or implicit legacy adapters in this subset.
+formed before the signed bounds check succeeds. The only source I/O operation
+is bounded stdin input as specified below. Address values, heap containers,
+indirect calls, module initialization and implicit legacy adapters remain absent.
 Bounded declaration-only modules, direct imports and visibility are resolved before
 emission, as specified by [RFC 0015](../rfcs/0015-bounded-typed-projects.md).
 Their metadata adds no runtime import, entry call or fuel charge. The required
@@ -94,6 +95,35 @@ or uninitialized enum payloads. This introduces no source-visible layout or ABI.
 The [two-file scanner](../tests/fixtures/bounded_enum_scanner/main.ox) returns
 115 through public reference/native paths; separate current-source qualification
 and exact-head hosted CI remain pending.
+
+The owned route accepts the two finite [bounded stdin imports](typed-preview.md#bounded-stdin-input)
+under [RFC 0024](../rfcs/0024-bounded-stdin-input.md). `read_stdin` takes an existing
+exclusive i32 slice of capacity 0..1024 and returns nominal `ReadStatus::Eof(n)`,
+`Full` or `IoError`. Individual aliases work; this adds no prelude, general `std`
+lookup, direct `std::...` expression/type paths or grouped/glob imports.
+
+The emitted adapter makes one unbuffered one-byte fd-0 read per charged attempt,
+retrying EINTR through the shared fuel counter. The core charge is `4 + C + A`,
+where C is capacity and A counts all attempts, including EOF, errors and EINTR.
+Ordinary call/return charges remain
+additional. Eof commits only the staged prefix and preserves the tail. Full
+commits exactly C cells without an extra read; C = 0 returns Full without reading.
+IoError and pre-commit resource/fuel failure preserve the complete destination,
+although consumed input cannot be restored. All storage is prepared before reads;
+from the first destination store through result materialization there is no
+fallible operation or extra fuel debit. Later return/caller fuel failure can
+still follow a successful commit. Blocking reads have no fuel-based time bound.
+
+Reads use fd 0 at operation time; startup may repair a descriptor closed before
+launch, so such a launch is not a cross-runtime IoError guarantee. Check, format
+and compile consume no program stdin. The native host/toolchain/target policy
+and zero-argument scalar main are unchanged. Reference input execution also
+requires Linux x86_64 and otherwise reports E0608 before activation, including
+unused input imports and zero-capacity calls; importing ReadStatus alone has no
+input host gate. The [stdin expression application](../fixtures/typed-expression-samples/README.md#bounded-stdin-entry)
+has passed the local 28-case reference/native runner, including 39 and 63 from
+one unchanged ELF. Full current-source qualification and exact-head hosted CI
+remain separate gates.
 
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
@@ -155,8 +185,8 @@ requires:
 | Owned resource | Inclusive maximum |
 | --- | ---: |
 | Scalar slots plus all owner slots per function, `S + O` | 256 |
-| Sum of expanded cells X over all functions | 8,192 |
-| Maximum call-path sum of X | 8,192 |
+| Sum of admitted expanded cells Xphysical over all functions | 8,192 |
+| Maximum call-path sum of Xphysical | 8,192 |
 | Sum of explicit native arena bytes, including any wrapper fuel cell | 1 MiB |
 | Maximum call-path explicit arena bytes, including any wrapper fuel cell | 1 MiB |
 | Owned diagnostic data, including acyclic overflow diagnostics | 16 MiB |
@@ -167,35 +197,48 @@ descriptors, O all owners, R incoming references, L loans, C calls, and
 P the sum of checked recursive owner widths: records use
 `max(1, sum(field widths))`, fixed arrays use `max(1, N)` (including empty and
 unit arrays), and enums use 2. B is the aligned owner arena including parameter, local, temporary, staged-argument and result
-storage, with inter-owner padding. On the qualified x86_64 representation:
+storage, with inter-owner padding. Let Q count slice references and slice loans,
+and I be 1024 for the canonical input builtin and 0 otherwise. On the qualified
+x86_64 representation:
 
 ```text
 X = S + A + P + 4O + 8R + 12L + 2C
-Dnative = 8(S+A) + 8(R+L) + align4(B)
+Xphysical = X + 2(R+L)
+Dnative = 8(S+A) + 8(R+L) + 4Q + align4(B+I)
 ```
 
+X is logical activation fuel; Xphysical includes the existing view metadata
+used for expanded-cell admission. Slice-length slots and input scratch add
+physical bytes, not logical activation fuel. The input scratch is a suffix of
+the builtin's entry allocation, reused through retries and unreachable through
+ordinary owner extents. Its result, scratch, reference pointer and length total
+1,044 native bytes; no-input functions reserve no scratch.
+
 Byte sums/path sums use Dnative and add one 8-byte wrapper fuel cell when any
-function has cyclic cost. The cell is added once to each whole-module/path
-bound, not once per function. Scalar field layout is declaration order, bool
+function has cyclic or input-dependent cost. The cell is added once to each
+whole-module/path bound, not once per function. Scalar field layout is declaration order, bool
 and unit 1-byte size/alignment, i32 4-byte size/alignment, with checked natural
 padding. An empty struct has one private identity byte. Arrays use element
 stride 1 for bool/unit and 4 for i32, with positive size
 `align_up(max(1, N * stride), alignment)`. Zero-array sentinel bytes and unit
-storage are initialized and never exposed as invalid elements. Since B ≤ 4P, Dnative
-≤ 8X on this representation; the existing cell ceiling bounds total explicit
-native storage by 65,544 bytes including the guarded fuel cell. The separate
-1 MiB byte checks remain as defenses against representation changes. These
-figures exclude LLVM spills, ABI stack use, machine code, tool memory and RSS.
+storage are initialized and never exposed as invalid elements. Since B ≤ 4P
+and Q ≤ R+L, Dnative ≤ 8Xphysical + I on this representation. With at most one
+canonical builtin and no recursive call paths, the existing cell ceiling bounds
+total explicit native storage by 65,544 bytes without input scratch, or 66,568
+with it, including the guarded fuel cell. The separate 1 MiB byte checks remain
+unchanged as defenses against representation changes. These figures exclude LLVM spills, ABI stack use, machine code, tool memory and RSS.
 
 For a transitively acyclic function, start its conservative cost at X, then
 sum every merge, statement and terminator using the owned ledger in
 [typed preview](typed-preview.md#owned-verification-execution-and-accounting).
 At each Invoke substitute the callee's total cost for the callee-X term already
 included in the Invoke charge. Require `1 + cost(F) <= 100,000`. Both conditional
-arms and every call site are included. A cyclic CFG or transitive cyclic callee
-has unknown static cost; it does not gain a guessed finite bound. If any function
-is cyclic, all functions share the 1,000,000-operation guarded budget. Guarding
-uses these owned costs, including expanded transfers and normal-edge release,
+arms and every call site are included. A cyclic CFG, input builtin or transitive
+callee with either property has unknown static cost; it does not gain a guessed
+finite bound. If any function is cyclic or input-dependent, all functions share
+the 1,000,000-operation guarded budget. An unused input import enables guards
+but does not exempt unrelated acyclic functions from static cost admission.
+Guarding uses these owned costs, including expanded transfers and normal-edge release,
 rather than the scalar-only call/root/return formulas below.
 
 The ownership emitter uses entry-prologue owner byte arenas, i64 scalar/snapshot
@@ -223,10 +266,11 @@ not source measurements.
 
 ## Cyclic modules and shared runtime fuel
 
-A cyclic intraprocedural CFG or cyclic transitive callee has unknown static cost.
-It never uses a one-pass sum as an execution bound. If any function is cyclic,
-including an unused function, all emitted functions share one private i64 fuel
-counter through a hidden pointer. For scalar-only modules, root allocation costs 1+slots; statements,
+A cyclic intraprocedural CFG, input builtin or transitive callee with either
+property has unknown static cost. It never uses a one-pass sum as an execution
+bound. If any function is cyclic or input-dependent, including an unused input
+builtin, all emitted functions share one private i64 fuel counter through a
+hidden pointer. For scalar-only modules, root allocation costs 1+slots; statements,
 merges and noncall terminators cost 1; calls cost 1+arguments+callee slots, before
 callee execution. Each executed iteration consumes fuel. Failure before the next
 operation is E0601 at that exact reference origin. Empty infinite loops therefore

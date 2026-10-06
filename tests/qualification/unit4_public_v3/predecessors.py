@@ -16,6 +16,7 @@ import tarfile
 from pathlib import Path
 from contracts import need, sha, load, binding, verify, save
 from compare import envelope, diagnostic_vector, valid_origins, policy_bounds
+from authority import CURRENT_SOURCE_SHA, ENUM_SOURCE_SHA
 
 QUALIFIED_PATHS_HELPER_SHA = '999e9f8cd75ae2010a11d20a40c357bf28d42b658d6293e93cb73a36cb665288'
 
@@ -125,18 +126,29 @@ class Predecessors:
 
         if amendment_root is not None:
             root = Path(amendment_root)
+            execution_raw = Path(source_manifest).read_bytes()
+            need(not Path(source_manifest).is_symlink() and sha(execution_raw) == CURRENT_SOURCE_SHA,
+                 'public predecessor current execution source identity')
+            execution = load(source_manifest)
+            need(execution['enum_source_sha256'] == ENUM_SOURCE_SHA and len(execution['files']) == 252,
+                 'public predecessor exact semantic source link')
+            semantic_manifest = root / 'enum-source.json'
+            need(not semantic_manifest.is_symlink() and sha(semantic_manifest.read_bytes()) == ENUM_SOURCE_SHA,
+                 'public predecessor enum semantic source identity')
             helper = root / 'enum_enabled_qualified_values_v1.py'
             need(helper.is_file() and not helper.is_symlink() and sha(helper.read_bytes()) == QUALIFIED_PATHS_HELPER_SHA,
                  'enum qualified-path helper identity')
             spec = importlib.util.spec_from_file_location('enum_enabled_qualified_values_v1', helper)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            amendment = module.Amendment(source_manifest, u2, root / 'enum-enabled-qualified-values-v1.json')
+            amendment = module.Amendment(semantic_manifest, u2, root / 'enum-enabled-qualified-values-v1.json')
             module.bound_bytes(contracts.root / 'predecessor-public-projections-replacement-v3.json.gz',
                                amendment.descriptor['public_predecessors'], 'frozen public predecessors')
             amendment.admit_public_rows(contracts.tables['predecessors']['rows'])
             self._qualified_paths = amendment
             self.qualified_paths_amendment = {**amendment.receipt(), 'implementation_sha256': QUALIFIED_PATHS_HELPER_SHA,
+                'execution_source_manifest': {'bytes': len(execution_raw), 'sha256': sha(execution_raw),
+                    'members': len(execution['files']), 'reviewed_source_head': execution['reviewed_source_head']},
                 'rows': [{'case': case_id,
                           'frozen_public_row_canonical_sha256': amendment.rows[case_id]['public_row_canonical_sha256'],
                           'frozen_expected_projection_sha256': amendment.rows[case_id]['frozen_expected_canonical_sha256'],

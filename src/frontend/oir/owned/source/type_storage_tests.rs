@@ -638,6 +638,7 @@ fn source_bounds(counts: TypeCounts) -> HirPlan {
     HirPlan {
         counts: super::super::hir_budget::HirCounts {
             functions: counts.functions,
+            signatures: counts.functions,
             bindings: counts.bindings,
             expressions: counts.expressions,
             blocks: counts.blocks,

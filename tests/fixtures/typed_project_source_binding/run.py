@@ -38,16 +38,43 @@ OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
 ENUM_RESOURCE_SEAM = b'mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,enums:EnumSyntaxPolicy::Closed,storage:enums::SyntaxStorage::default(),tokens,cursor:0'
+STDIN_RESOURCE_SEAM = b'mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,enums:EnumSyntaxPolicy::Closed,std_imports:StdImportPolicy::Closed,storage:enums::SyntaxStorage::default(),tokens,cursor:0'
+STDIN_RESOURCE_ADAPTER = {
+    "version": "unit2-closed-stdin-parser-resource-v1",
+    "predecessor_version": "unit2-closed-enum-parser-resource-v1",
+    "predecessor": {"path": RESOURCE, "bytes": 2078,
+                    "sha256": "b79e045596fab2a54ddc888435e10a12986c950658a68d3686bc0d339c4a9b23"},
+    "derived": {"path": RESOURCE, "bytes": 2114,
+                "sha256": "e3081188e6dfb0bd171e806992091f3a58b9b463d38a194b481341ff3064a2b5"},
+    "substitution": {"old_sha256": "3d98537500bc2c6e8083523cc8d14e07142019c8ed0e3805b3fcb96939c3ca71",
+                     "new_sha256": "579627d44b8b65e7a5a4ff18a99060a123ab1e8e4d5a5ebcba8e7a708573d990", "count": 1},
+    "scope": "Add only the closed std-import policy to the exact enum-era direct Parser initializer; frozen resource controls and expectations remain unchanged.",
+}
 SLICES_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
 SLICES_SOURCE_BYTES = 35876
 COMPOSITION_SOURCE_SHA = 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16'
 UNARY_SOURCE_SHA = 'd9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220'
 PROJECTED_SOURCE_SHA = '850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304'
 PROJECTED_SOURCE_BYTES = 38636
-CURRENT_SOURCE_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 COMPOSITION_SOURCE_BYTES = 37404
 UNARY_SOURCE_BYTES = 38090
-CURRENT_SOURCE_BYTES = 45493
+ENUM_SOURCE_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
+ENUM_SOURCE_BYTES = 45493
+CURRENT_SOURCE_SHA = 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f'
+CURRENT_SOURCE_BYTES = 48300
+STDIN_AUTHORITY_SHA = 'ff9f806e0211367c8c31d1084ce5aa80f3175b0e65c54a0d3860df0ced8cac08'
+STDIN_AUTHORITY_BYTES = 150228
+STDIN_PATCH_SHA = '3bebb1cb45dab0cc5a24c6d1f7aac0b011ef543f35cab984b51fa2dd91e518e8'
+STDIN_PATCH_BYTES = 429695
+STDIN_BASE = '78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd'
+STDIN_HEAD = 'c1d73740268d64d4e908ad86ed9dabaa48dd1c23'
+STDIN_TREE = 'b19991275b22426397d708ac0afa1874e6511b00'
+STDIN_PATHS = ('native/typed_preview.c', 'src/frontend/ast.rs', 'src/frontend/builtin_catalog.rs', 'src/frontend/declaration_index.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/declaration_index/enum_query_tests.rs', 'src/frontend/declaration_index/enum_tests.rs', 'src/frontend/declaration_index/enum_views.rs', 'src/frontend/declaration_index/sealed.rs', 'src/frontend/declaration_index/source_owner.rs', 'src/frontend/format.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/format_cli.rs', 'src/frontend/mod.rs', 'src/frontend/oir/owned/array_native_resource_tests.rs', 'src/frontend/oir/owned/array_native_tests.rs', 'src/frontend/oir/owned/array_reference_tests.rs', 'src/frontend/oir/owned/array_tests.rs', 'src/frontend/oir/owned/budget.rs', 'src/frontend/oir/owned/builtin_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_input_fixtures.rs', 'src/frontend/oir/owned/builtin_input_native_tests.rs', 'src/frontend/oir/owned/builtin_input_tests.rs', 'src/frontend/oir/owned/builtin_origin_tests.rs', 'src/frontend/oir/owned/builtins.rs', 'src/frontend/oir/owned/composition_native_tests.rs', 'src/frontend/oir/owned/composition_reference_tests.rs', 'src/frontend/oir/owned/consumer_fixtures.rs', 'src/frontend/oir/owned/consumer_pilot.rs', 'src/frontend/oir/owned/enum_admission_tests.rs', 'src/frontend/oir/owned/enum_consumer_fixtures.rs', 'src/frontend/oir/owned/enum_match_tests.rs', 'src/frontend/oir/owned/enum_native_tests.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/execute_tests.rs', 'src/frontend/oir/owned/flow.rs', 'src/frontend/oir/owned/input.rs', 'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/native_heldout_review.rs', 'src/frontend/oir/owned/native_tests.rs', 'src/frontend/oir/owned/negation_raw_tests.rs', 'src/frontend/oir/owned/oracle_tests.rs', 'src/frontend/oir/owned/origin_tests.rs', 'src/frontend/oir/owned/plan.rs', 'src/frontend/oir/owned/reviewer_array_reference_tests.rs', 'src/frontend/oir/owned/reviewer_heldout.rs', 'src/frontend/oir/owned/reviewer_origins.rs', 'src/frontend/oir/owned/reviewer_reference_tests.rs', 'src/frontend/oir/owned/shape.rs', 'src/frontend/oir/owned/source/array_pipeline_rows.rs', 'src/frontend/oir/owned/source/association.rs', 'src/frontend/oir/owned/source/budget.rs', 'src/frontend/oir/owned/source/budget_tests.rs', 'src/frontend/oir/owned/source/builtin_lower.rs', 'src/frontend/oir/owned/source/builtin_signature_tests.rs', 'src/frontend/oir/owned/source/builtin_source_tests.rs', 'src/frontend/oir/owned/source/candidate_adapter.rs', 'src/frontend/oir/owned/source/candidate_native.rs', 'src/frontend/oir/owned/source/hir_budget.rs', 'src/frontend/oir/owned/source/hir_budget_tests.rs', 'src/frontend/oir/owned/source/lower.rs', 'src/frontend/oir/owned/source/mod.rs', 'src/frontend/oir/owned/source/program.rs', 'src/frontend/oir/owned/source/resolve.rs', 'src/frontend/oir/owned/source/resolver_paid_tests.rs', 'src/frontend/oir/owned/source/resolver_storage.rs', 'src/frontend/oir/owned/source/resolver_storage_tests.rs', 'src/frontend/oir/owned/source/reviewer_source.rs', 'src/frontend/oir/owned/source/type_storage.rs', 'src/frontend/oir/owned/source/type_storage_tests.rs', 'src/frontend/oir/owned/source/typeck.rs', 'src/frontend/oir/owned/tests.rs', 'src/frontend/oir/owned/verified.rs', 'src/frontend/oir/source/sealed.rs', 'src/frontend/parser.rs', 'src/frontend/parser/builtin_tests.rs', 'src/frontend/parser/enum_syntax_tests.rs', 'src/frontend/parser/project_tests.rs', 'src/frontend/project.rs', 'src/frontend/project/builtin_tests.rs', 'src/frontend/stdin_public_tests.rs')
+STDIN_ADDITIONS = ('src/frontend/builtin_catalog.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/oir/owned/builtin_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_input_fixtures.rs', 'src/frontend/oir/owned/builtin_input_native_tests.rs', 'src/frontend/oir/owned/builtin_input_tests.rs', 'src/frontend/oir/owned/builtin_origin_tests.rs', 'src/frontend/oir/owned/builtins.rs', 'src/frontend/oir/owned/input.rs', 'src/frontend/oir/owned/source/builtin_lower.rs', 'src/frontend/oir/owned/source/builtin_signature_tests.rs', 'src/frontend/oir/owned/source/builtin_source_tests.rs', 'src/frontend/parser/builtin_tests.rs', 'src/frontend/project/builtin_tests.rs', 'src/frontend/stdin_public_tests.rs')
+STDIN_COMPARATOR_OLD = b"amendment=enum_module.Amendment(ROOT.parent/'source-inputs.json',ROOT/'corpus.jsonl.gz',ROOT/'enum-enabled-qualified-values-v1.json')"
+STDIN_COMPARATOR_NEW = b"amendment=enum_module.Amendment(ROOT.parent/'enum-source.json',ROOT/'corpus.jsonl.gz',ROOT/'enum-enabled-qualified-values-v1.json')"
+STDIN_COMPARATOR_DERIVED_SHA = '65e1d7b5885428e37f1c893992868bad448223c46712812d34f9a81fe90a964d'
+STDIN_COMPARATOR_DERIVED_BYTES = 8296
 ENUM_AUTHORITY_SHA = 'e539957635eaa99b1ca806f73ecc04e99a05d7319231f2385c213c63902a9923'
 ENUM_AUTHORITY_BYTES = 156306
 ENUM_PATCH_SHA = '57b5f94476c5c419c66dae9dd609de4350a1e224209290221bf80190c8b39204'
@@ -865,6 +892,11 @@ def inverse_enum_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, ENUM_PATCH_SHA, ENUM_PATCH_BYTES, ENUM_PATHS)
 
 
+def inverse_stdin_patch(inputs, patch):
+    """Restore exactly the frozen bounded-enum source view."""
+    return apply_inverse_patch(inputs, patch, STDIN_PATCH_SHA, STDIN_PATCH_BYTES, STDIN_PATHS)
+
+
 def inverse_projected_patch(inputs, patch):
     """Restore exactly the frozen unary source view."""
     return apply_inverse_patch(inputs, patch, PROJECTED_PATCH_SHA, PROJECTED_PATCH_BYTES, PROJECTED_PATHS)
@@ -997,6 +1029,22 @@ def adapt_borrowed_unit2_observer(aggregate):
     return result
 
 
+def adapt_stdin_parser_resource(data, *, reverse=False):
+    """Add only a closed std policy, preserving the exact enum predecessor."""
+    before, after = (("derived", "predecessor") if reverse else ("predecessor", "derived"))
+    old, new = ((STDIN_RESOURCE_SEAM, ENUM_RESOURCE_SEAM) if reverse
+                else (ENUM_RESOURCE_SEAM, STDIN_RESOURCE_SEAM))
+    require(entry(RESOURCE, data) == STDIN_RESOURCE_ADAPTER[before], "wrong stdin parser resource input")
+    require(STDIN_RESOURCE_ADAPTER["substitution"] == {
+        "old_sha256": digest(ENUM_RESOURCE_SEAM), "new_sha256": digest(STDIN_RESOURCE_SEAM), "count": 1,
+    }, "stdin parser resource substitution identity differs")
+    require(data.count(old) == 1 and new not in data, "stdin parser resource seam drift")
+    result = data.replace(old, new, 1)
+    require(entry(RESOURCE, result) == STDIN_RESOURCE_ADAPTER[after], "wrong stdin parser resource output")
+    require(result.replace(new, old, 1) == data, "stdin parser resource reverse identity differs")
+    return result
+
+
 def adapt_enum_unit2_observer(borrowed):
     """Keep frozen scalar/record observations and reject each new enum projection."""
     require(digest(borrowed) == BORROWED_OBSERVER_DERIVED_SHA
@@ -1052,6 +1100,22 @@ def adapt_enum_unit2_comparator(original):
     return derived
 
 
+def adapt_stdin_unit2_comparator(data, *, reverse=False):
+    """Bind the unchanged enum amendment to its exact predecessor manifest."""
+    predecessor_sha = UNIT2_COMPARATOR_DERIVED_SHA
+    old, new = ((STDIN_COMPARATOR_NEW, STDIN_COMPARATOR_OLD) if reverse
+                else (STDIN_COMPARATOR_OLD, STDIN_COMPARATOR_NEW))
+    require(digest(data) == (STDIN_COMPARATOR_DERIVED_SHA if reverse else predecessor_sha),
+            "wrong stdin Unit2 comparator input")
+    require(data.count(old) == 1 and new not in data, "stdin Unit2 comparator seam drift")
+    derived = data.replace(old, new)
+    require(digest(derived) == (predecessor_sha if reverse else STDIN_COMPARATOR_DERIVED_SHA)
+            and (reverse or len(derived) == STDIN_COMPARATOR_DERIVED_BYTES),
+            "wrong stdin Unit2 comparator output")
+    require(derived.replace(new, old) == data, "stdin Unit2 comparator reverse identity differs")
+    return derived
+
+
 def compile_fixture_paths(source, *, combined=False):
     """Verify the exact published includer and its literal compile-time dependencies."""
     expected_sha = COMBINED_COMPILE_FIXTURE_SOURCE_SHA if combined else COMPILE_FIXTURE_SOURCE_SHA
@@ -1078,6 +1142,12 @@ def preflight(repo, package=PACKAGE):
     require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA
             and len(package_bytes["current-source.json"]) == CURRENT_SOURCE_BYTES,
             "unapproved current source manifest")
+    require(digest(package_bytes["enum-source.json"]) == ENUM_SOURCE_SHA
+            and len(package_bytes["enum-source.json"]) == ENUM_SOURCE_BYTES,
+            "unapproved enum source manifest")
+    require(digest(package_bytes["stdin-authority.json"]) == STDIN_AUTHORITY_SHA
+            and len(package_bytes["stdin-authority.json"]) == STDIN_AUTHORITY_BYTES,
+            "stale stdin authority")
     require(digest(package_bytes["combined-source.json"]) == COMBINED_SOURCE_SHA
             and len(package_bytes["combined-source.json"]) == COMBINED_SOURCE_BYTES,
             "unapproved combined source manifest")
@@ -1275,7 +1345,62 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    enum_current = json.loads(package_bytes["current-source.json"])
+    stdin_current = json.loads(package_bytes["current-source.json"])
+    enum_current = json.loads(package_bytes["enum-source.json"])
+    stdin_authority = json.loads(package_bytes["stdin-authority.json"])
+    require(stdin_authority["schema"] == "oxid-bounded-stdin-source-transition-v1"
+            and stdin_authority["base_head"] == stdin_current["stdin_base_head"] == STDIN_BASE == ENUM_HEAD
+            and stdin_authority["reviewed_source_head"] == stdin_current["reviewed_source_head"] == STDIN_HEAD
+            and stdin_authority["source_only_tree"] == stdin_current["source_only_tree"] == STDIN_TREE
+            and stdin_authority["recipe"] == SOURCE_DELTA_RECIPE
+            and stdin_authority["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and stdin_authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and stdin_authority["enum_source_sha256"] == stdin_current["enum_source_sha256"] == ENUM_SOURCE_SHA
+            and stdin_authority["enum_source_bytes"] == ENUM_SOURCE_BYTES
+            and stdin_authority["enum_authority_sha256"] == ENUM_AUTHORITY_SHA
+            and stdin_authority["transition_patch_sha256"] == STDIN_PATCH_SHA
+            and stdin_authority["transition_patch_bytes"] == STDIN_PATCH_BYTES
+            and stdin_authority["transition_paths"] == list(STDIN_PATHS)
+            and stdin_authority["additions"] == list(STDIN_ADDITIONS)
+            and stdin_authority["removed_paths"] == []
+            and (stdin_authority["current_source_members"], stdin_authority["enum_source_members"],
+                 stdin_authority["compiler_source_members"], stdin_authority["compiler_bodies"]) == (252, 237, 194, 197),
+            "stale stdin transition authority")
+    require({key: value for key, value in stdin_current.items()
+             if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree",
+                            "stdin_base_head", "enum_source_sha256")}
+            == {key: value for key, value in enum_current.items()
+                if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
+            "stale stdin checkpoint provenance")
+    stdin_inputs = check_entries(repo, stdin_current["files"])
+    enum_rows = {row["path"]: row for row in enum_current["files"]}
+    require(set(stdin_inputs) == set(enum_rows) | set(STDIN_ADDITIONS),
+            "unexpected stdin source membership")
+    require([row["path"] for row in stdin_current["files"] if row != enum_rows.get(row["path"])]
+            == list(STDIN_PATHS), "unexpected stdin source delta")
+    require(stdin_authority["current_input_git_modes"] == [
+        {"path": row["path"], "mode": "100644"} for row in stdin_current["files"]],
+        "unexpected stdin input modes")
+    stdin_identities = []
+    for name, data in stdin_inputs.items():
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, "changed input mode: " + name)
+        stdin_identities.append({**entry(name, data), "mode": "100644",
+            "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
+    require(stdin_authority["current_input_identities"] == stdin_identities,
+            "stale stdin complete input identities")
+    enum_inputs, stdin_touched = inverse_stdin_patch(stdin_inputs, package_bytes["stdin-transition.patch"])
+    check_bytes(enum_inputs, enum_current["files"])
+    stdin_transition = []
+    for name in STDIN_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", enum_inputs), ("after", stdin_inputs)):
+            data = source_inputs.get(name)
+            identities[label] = None if data is None else {
+                **entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        stdin_transition.append(identities)
+    require(stdin_authority["transition_inputs"] == stdin_transition,
+            "stale stdin transition input identities")
     require(digest(package_bytes["projected-source.json"]) == PROJECTED_SOURCE_SHA
             and len(package_bytes["projected-source.json"]) == PROJECTED_SOURCE_BYTES,
             "unapproved projected source manifest")
@@ -1289,8 +1414,8 @@ def preflight(repo, package=PACKAGE):
             and enumeration["reviewed_source_head"] == enum_current["reviewed_source_head"] == ENUM_HEAD
             and enumeration["source_only_tree"] == enum_current["source_only_tree"] == ENUM_TREE
             and enumeration["recipe"] == SOURCE_DELTA_RECIPE
-            and enumeration["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and enumeration["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and enumeration["current_source_sha256"] == ENUM_SOURCE_SHA
+            and enumeration["current_source_bytes"] == ENUM_SOURCE_BYTES
             and enumeration["projected_source_sha256"] == enum_current["projected_source_sha256"] == PROJECTED_SOURCE_SHA
             and enumeration["projected_source_bytes"] == PROJECTED_SOURCE_BYTES
             and enumeration["projected_authority_sha256"] == PROJECTED_AUTHORITY_SHA
@@ -1302,7 +1427,6 @@ def preflight(repo, package=PACKAGE):
             and (enumeration["current_source_members"], enumeration["projected_source_members"],
                  enumeration["compiler_source_members"], enumeration["compiler_bodies"]) == (237, 201, 179, 182),
             "stale enum transition authority")
-    enum_inputs = check_entries(repo, enum_current["files"])
     projected_rows = {r["path"]: r for r in projected_current["files"]}
     require(set(enum_inputs) == set(projected_rows) | set(ENUM_ADDITIONS),
             "unexpected enum source membership")
@@ -1449,7 +1573,7 @@ def preflight(repo, package=PACKAGE):
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [x for x in enum_inputs if x.startswith(("src/", "native/"))]
+    expected = [x for x in stdin_inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
@@ -1519,6 +1643,9 @@ def preflight(repo, package=PACKAGE):
         "scope": "Add only closed enum syntax policy and empty syntax storage to the direct Parser initializer; existing resource controls and expectations remain unchanged.",
     } and enum_resource.replace(ENUM_RESOURCE_SEAM, NEW_SEAM) == adapted_resource,
             "derived enum resource drift")
+    require(stdin_authority["resource_adapter"] == STDIN_RESOURCE_ADAPTER,
+            "unapproved stdin parser resource adapter")
+    stdin_resource = adapt_stdin_parser_resource(enum_resource)
     adapted_observer = adapt_unit2_observer(historical_bytes[OBSERVER])
     require(authority["unit2_observer_adapter"] == {
         "version": OBSERVER_ADAPTER_VERSION,
@@ -1548,7 +1675,7 @@ def preflight(repo, package=PACKAGE):
     enum_rows = {row["path"]: row for row in enum_current["files"]}
     require(index_resource_authority["schema"] == "oxid-unit2-enum-free-index-resource-v1"
             and index_resource_authority["version"] == ENUM_INDEX_RESOURCE_VERSION
-            and index_resource_authority["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and index_resource_authority["current_source_sha256"] == ENUM_SOURCE_SHA
             and index_resource_authority["reviewed_source_head"] == ENUM_HEAD
             and index_resource_authority["source_only_tree"] == ENUM_TREE
             and index_resource_authority["original"] == entry(INDEX_RESOURCE, historical_bytes[INDEX_RESOURCE])
@@ -1567,7 +1694,7 @@ def preflight(repo, package=PACKAGE):
     semantic_module = types.ModuleType("current_enum_semantic_amendment")
     semantic_module.__file__ = str(package / SEMANTIC_HELPER)
     exec(compile(package_bytes[SEMANTIC_HELPER], semantic_module.__file__, "exec"), semantic_module.__dict__)
-    semantic_amendment = semantic_module.Amendment(package / "current-source.json",
+    semantic_amendment = semantic_module.Amendment(package / "enum-source.json",
         repo / U2 / "semantic/corpus.jsonl.gz", package / SEMANTIC_DESCRIPTOR)
     semantic_receipt = semantic_amendment.receipt()
     semantic_report = {**semantic_receipt, "rows": [
@@ -1577,7 +1704,17 @@ def preflight(repo, package=PACKAGE):
          "current_expected": semantic_amendment.rows[case_id]["current_unit2_expected"],
          "current_result": semantic_amendment.rows[case_id]["current_unit2_result"]}
         for case_id in semantic_module.CASE_IDS]}
-    unit2_comparator = adapt_enum_unit2_comparator(historical_bytes[UNIT2_COMPARATOR])
+    enum_unit2_comparator = adapt_enum_unit2_comparator(historical_bytes[UNIT2_COMPARATOR])
+    unit2_comparator = adapt_stdin_unit2_comparator(enum_unit2_comparator)
+    require(stdin_authority["unit2_semantic_adapter"] == {
+        "version": "unit2-stdin-enum-predecessor-semantic-binding-v1",
+        "predecessor": entry(UNIT2_COMPARATOR, enum_unit2_comparator),
+        "derived": entry(UNIT2_COMPARATOR, unit2_comparator),
+        "substitution": {"old_sha256": digest(STDIN_COMPARATOR_OLD),
+                         "new_sha256": digest(STDIN_COMPARATOR_NEW), "count": 1},
+        "enum_source": entry("enum-source.json", package_bytes["enum-source.json"]),
+        "scope": "Redirect only the exact enum semantic amendment constructor to the byte-identical enum predecessor manifest. Preserve its four-row roster, descriptor, helper, frozen comparison, and all observations.",
+    }, "unapproved stdin Unit2 semantic adapter")
     enum_observer = adapt_enum_unit2_observer(borrowed_observer)
     require(enumeration["unit2_observer_adapter"] == {
         "version": ENUM_OBSERVER_ADAPTER_VERSION, "predecessor_version": BORROWED_OBSERVER_ADAPTER_VERSION,
@@ -1590,7 +1727,9 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": enum_current, "enum_authority": enumeration, "enum_touched": enum_touched,
+    return {"current": stdin_current, "enum_source": enum_current, "enum_inputs": enum_inputs,
+            "enum_authority": enumeration, "enum_touched": enum_touched,
+            "stdin_authority": stdin_authority, "stdin_touched": stdin_touched,
             "projected_source": projected_current, "projected_inputs": projected_inputs, "unary_source": unary_current,
             "projected_authority": projected, "projected_touched": projected_touched,
             "unary_inputs": unary_inputs, "composition_source": composition_current,
@@ -1598,10 +1737,12 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": enum_inputs, "archived": reconstructed, "references": references,
-            "historical_bytes": historical_bytes, "resource": enum_resource, "combined_resource": adapted_resource,
+            "inputs": stdin_inputs, "archived": reconstructed, "references": references,
+            "historical_bytes": historical_bytes, "resource": stdin_resource,
+            "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
-            "unit2_comparator": unit2_comparator, "semantic_amendment": semantic_receipt,
+            "unit2_comparator": unit2_comparator, "enum_unit2_comparator": enum_unit2_comparator,
+            "semantic_amendment": semantic_receipt,
             "semantic_report": semantic_report,
             "observer": enum_observer, "borrowed_observer": borrowed_observer, "aggregate_observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
@@ -1649,6 +1790,9 @@ def prepare_archived(output, captured):
             "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
+            "stdin_inverse_patch_sha256": STDIN_PATCH_SHA,
+            "stdin_inverse_touched": captured["stdin_touched"],
+            "enum_source_sha256": ENUM_SOURCE_SHA,
             "enum_inverse_patch_sha256": ENUM_PATCH_SHA,
             "enum_inverse_touched": captured["enum_touched"],
             "projected_source_sha256": PROJECTED_SOURCE_SHA,
@@ -1673,10 +1817,11 @@ def prepare_unit2(output, captured):
     inputs[UNIT2_FROZEN_COMPARATOR] = captured["historical_bytes"][UNIT2_COMPARATOR]
     inputs[UNIT2_SEMANTIC_HELPER] = captured["package_bytes"][SEMANTIC_HELPER]
     inputs[UNIT2_SEMANTIC_DESCRIPTOR] = captured["package_bytes"][SEMANTIC_DESCRIPTOR]
+    inputs["enum-source.json"] = captured["package_bytes"]["enum-source.json"]
     inputs[OBSERVER] = captured["observer"]
     require({name for name, data in inputs.items() if data != captured["historical_bytes"].get(name)}
             == {RESOURCE, INDEX_RESOURCE, OBSERVER, UNIT2_COMPARATOR, UNIT2_FROZEN_COMPARATOR,
-                UNIT2_SEMANTIC_HELPER, UNIT2_SEMANTIC_DESCRIPTOR}, "unexpected current Unit2 adapter member changes")
+                UNIT2_SEMANTIC_HELPER, UNIT2_SEMANTIC_DESCRIPTOR, "enum-source.json"}, "unexpected current Unit2 adapter member changes")
     manifest = {**captured["historical"], "files": [entry(name, data) for name, data in sorted(inputs.items())]}
     inputs["package-inputs.json"] = encoded(manifest)
     root = output / "compatibility" / "typed_project_unit2_independent"
@@ -1685,13 +1830,16 @@ def prepare_unit2(output, captured):
     materialize(compat, {"run.py": captured["references"][COMPAT]})
     return {"resource_package_root": str(root), "resource_package_inputs_sha256": digest(inputs["package-inputs.json"]),
             "resource_package_changes": [RESOURCE, INDEX_RESOURCE, OBSERVER, UNIT2_COMPARATOR, UNIT2_FROZEN_COMPARATOR,
-                                         UNIT2_SEMANTIC_HELPER, UNIT2_SEMANTIC_DESCRIPTOR, "package-inputs.json"],
+                                         UNIT2_SEMANTIC_HELPER, UNIT2_SEMANTIC_DESCRIPTOR, "enum-source.json", "package-inputs.json"],
             "semantic_amendment": captured["semantic_amendment"],
+            "stdin_semantic_adapter": captured["stdin_authority"]["unit2_semantic_adapter"],
             "index_resource_adapter": captured["index_resource_authority"],
             "observer_adapter": captured["enum_authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_predecessor": captured["authority"]["derived_resource"],
-            "resource_after": captured["enum_authority"]["resource_adapter"]["derived"],
+            "resource_enum_predecessor": captured["enum_authority"]["resource_adapter"]["derived"],
+            "resource_adapter": captured["stdin_authority"]["resource_adapter"],
+            "resource_after": captured["stdin_authority"]["resource_adapter"]["derived"],
             "compatibility_runner": str(compat / "run.py"), "files": manifest["files"]}
 
 
@@ -1890,6 +2038,8 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      stdin_authority_sha256=STDIN_AUTHORITY_SHA,
+                      enum_source_sha256=ENUM_SOURCE_SHA,
                       enum_authority_sha256=ENUM_AUTHORITY_SHA,
                       enum_index_resource_authority_sha256=ENUM_INDEX_RESOURCE_AUTHORITY_SHA,
                       semantic_amendment=captured["semantic_amendment"],
@@ -1906,6 +2056,7 @@ def main():
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
                 "current_source_members": len(captured["inputs"]),
+                "enum_source_members": len(captured["enum_inputs"]),
                 "projected_source_members": len(captured["projected_inputs"]),
                 "enum_scanner_fixture_members": 2, "enum_scanner_fixture_references": 4,
                 "slices_source_members": len(captured["slices_inputs"]),

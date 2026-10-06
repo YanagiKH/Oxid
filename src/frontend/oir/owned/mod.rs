@@ -7,9 +7,11 @@
 #![allow(clippy::result_large_err)]
 use super::{owned_types::*, *};
 mod budget;
+mod builtins;
 mod cfg;
 mod execute;
 mod flow;
+mod input;
 mod native;
 mod plan;
 mod shape;
@@ -36,8 +38,24 @@ struct MatchArm {
     dispatch: BlockId,
     entry: BlockId,
 }
+use crate::frontend::builtin_catalog::BuiltinSet as BuiltinOrigins;
+impl BuiltinOrigins {
+    fn require_none(self) -> Result<(), OwnedFailure> {
+        if self == Self::None {
+            return Ok(());
+        }
+        Err(OwnedFailure {
+            kind: OwnedFailureKind::Malformed(Malformed::Binding),
+            primary: Origin::NONE,
+            related: Origin::NONE,
+            declaration: Origin::NONE,
+            context: None,
+        })
+    }
+}
 #[derive(Debug)]
 struct RawOwnedProgram {
+    builtins: BuiltinOrigins,
     enums: Vec<RawEnumDecl>,
     records: Vec<RawRecordDecl>,
     functions: Vec<RawOwnedFunction>,
@@ -170,6 +188,11 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    // Atomic input is confined to the verified canonical builtin body.
+    ReadStdin {
+        buffer: ReferenceParamId,
+        destination: OwnerPlaceId,
+    },
     ConstructEnum {
         destination: OwnerPlaceId,
         variant: VariantId,
@@ -421,6 +444,14 @@ struct OwnershipUsage {
     owner_cells: usize,
     owner_layout_bytes: usize,
 }
+#[cfg(test)]
+mod builtin_descriptor_tests;
+#[cfg(test)]
+mod builtin_input_fixtures;
+#[cfg(test)]
+mod builtin_input_tests;
+#[cfg(test)]
+mod builtin_origin_tests;
 #[cfg(test)]
 mod tests;
 

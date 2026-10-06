@@ -11,6 +11,23 @@ pub(super) struct VerifiedOwnedProgram {
 #[derive(Debug)]
 struct OwnershipSeal;
 impl VerifiedOwnedProgram {
+    pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
+        if self.program.builtins == BuiltinOrigins::ReadStdin {
+            self.program.functions.len().checked_sub(1).map(hir::DefId)
+        } else {
+            None
+        }
+    }
+    pub(super) fn builtin_enumeration(&self) -> Option<EnumId> {
+        if self.program.builtins != BuiltinOrigins::None {
+            self.program.enums.len().checked_sub(1).map(EnumId)
+        } else {
+            None
+        }
+    }
+    pub(super) fn has_builtin_origins(&self) -> bool {
+        self.program.builtins != BuiltinOrigins::None
+    }
     pub(super) fn functions(&self) -> &[RawOwnedFunction] {
         &self.program.functions
     }
@@ -51,15 +68,18 @@ fn prepare(
     limits: budget::Limits,
 ) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
     let usage = budget::preflight(raw, limits)?;
+    // Canonical builtin descriptors are an additional untrusted-raw check;
+    // declarations and every ordinary shape/CFG/ownership pass still follow.
+    builtins::check(raw)?;
     let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
-    Ok((
-        usage,
-        declarations,
-        budget::Meter {
-            visits: 0,
-            ceiling: usage.work,
-        },
-    ))
+    let mut meter = budget::Meter {
+        visits: 0,
+        ceiling: usage.work,
+    };
+    for _ in 0..builtins::descriptor_visits(raw.builtins) {
+        meter.visit()?;
+    }
+    Ok((usage, declarations, meter))
 }
 
 /// One authoritative continuation for production and the non-executable test

@@ -288,6 +288,58 @@ mod tests {
     }
 
     #[test]
+    fn builtin_current_formatter_cli_uses_real_file_without_module_discovery() {
+        let source = Source::new();
+        let original = "mod absent;use std::io::read_stdin as input;use std::io::ReadStatus as S;fn main()->(){return;}";
+        fs::write(&source.0, original).unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            process_with_io(
+                source.path(),
+                false,
+                &mut stdout,
+                &mut stderr,
+                &mut Allocator::default()
+            ),
+            0
+        );
+        assert!(stderr.is_empty());
+        assert_eq!(fs::read_to_string(&source.0).unwrap(), original);
+        let formatted = String::from_utf8(stdout).unwrap();
+        assert!(formatted.contains("use std::io::read_stdin as input;"));
+        fs::write(&source.0, formatted).unwrap();
+        let mut stdout = Vec::new();
+        assert_eq!(
+            process_with_io(
+                source.path(),
+                true,
+                &mut stdout,
+                &mut stderr,
+                &mut Allocator::default()
+            ),
+            0
+        );
+        assert!(stdout.is_empty());
+        assert!(stderr.is_empty());
+        fs::write(&source.0, "use std::io::missing; fn main()->(){return;}").unwrap();
+        assert_eq!(
+            process_with_io(
+                source.path(),
+                false,
+                &mut stdout,
+                &mut stderr,
+                &mut Allocator::default()
+            ),
+            2
+        );
+        assert!(stdout.is_empty());
+        assert!(String::from_utf8(stderr)
+            .unwrap()
+            .contains("unsupported standard library import"));
+    }
+
+    #[test]
     fn every_reader_source_owner_reservation_fails_closed() {
         let source = Source::new();
         let mut successful = Allocator::default();

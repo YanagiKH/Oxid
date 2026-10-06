@@ -40,9 +40,10 @@ SCANNER_HASHES = {
     "scanner.ox": "d13847eaecd69667031e54bb6f3f329365427a483e0bff537d0b28882516ac14",
 }
 ELF_ENV = {"PATH": "/no-tools"}
-# Approved 237-member input authority for CI-fix 78651228, not a caller-supplied
-# roster. A reduced/rehashed manifest cannot redefine this gate's source closure.
-REVIEWED_SOURCE_SHA256 = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
+# Reviewed stdin successor executes the unchanged enum roster. The exact
+# 237-member enum predecessor remains in enum-source.json; current execution
+# uses the complete 252-member authority, never a caller-supplied subset.
+REVIEWED_SOURCE_SHA256 = 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f'
 
 
 def require(condition, message):

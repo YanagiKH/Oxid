@@ -10,6 +10,7 @@ pub enum ItemPath {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PathRoot {
     Crate,
+    Std,
     LocalType,
 }
 #[derive(Clone, Copy, Debug)]
@@ -315,6 +316,37 @@ pub struct Function {
     pub blocks: Vec<BodyBlock>,
     pub end: Span,
 }
+/// Parsed feature summary, reconciled by the counted source-validation walk.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum ProjectSyntax {
+    Original,
+    Project,
+    StdImports,
+}
+impl ProjectSyntax {
+    fn new(project: bool, std_imports: bool) -> Self {
+        if std_imports {
+            Self::StdImports
+        } else if project {
+            Self::Project
+        } else {
+            Self::Original
+        }
+    }
+}
+impl std::fmt::Debug for ProjectSyntax {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // This explicit representation conversion preserves the historical
+        // project_syntax boolean. Std roots remain visible in every AST path.
+        std::fmt::Debug::fmt(&(*self != Self::Original), formatter)
+    }
+}
+const _: () = {
+    assert!(std::mem::size_of::<ProjectSyntax>() == std::mem::size_of::<bool>());
+    assert!(std::mem::align_of::<ProjectSyntax>() == std::mem::align_of::<bool>());
+};
+
 #[derive(Debug)]
 pub struct Program {
     /// The complete lossless token tape, not a full public CST.
@@ -329,7 +361,7 @@ pub struct Program {
     pub path_segments: Vec<Span>,
     pub imports: Vec<ImportDecl>,
     source: super::parser::SourceProvenance,
-    project_syntax: bool,
+    project_syntax: ProjectSyntax,
 }
 
 impl Program {
@@ -347,10 +379,15 @@ impl Program {
         path_segments: Vec<Span>,
         imports: Vec<ImportDecl>,
     ) -> Self {
-        let project_syntax = !modules.is_empty()
-            || !imports.is_empty()
-            || paths.iter().any(|path| path.root == PathRoot::Crate)
-            || functions.iter().any(|function| function.public.is_some())
+        let mut project_syntax = !modules.is_empty() || !imports.is_empty();
+        let mut std_import_syntax = false;
+        // Both private summaries are derived during bounded AST construction.
+        // The index never needs an unmetered path/import scan to read them.
+        for path in &paths {
+            project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
+            std_import_syntax |= path.root == PathRoot::Std;
+        }
+        project_syntax |= functions.iter().any(|function| function.public.is_some())
             || records.iter().any(|record| {
                 record.public.is_some() || record.fields.iter().any(|field| field.public.is_some())
             })
@@ -367,7 +404,7 @@ impl Program {
             path_segments,
             imports,
             source,
-            project_syntax,
+            project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax),
         }
     }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
@@ -393,7 +430,10 @@ impl Program {
         )
     }
     pub(super) fn uses_project_syntax(&self) -> bool {
-        self.project_syntax
+        self.project_syntax != ProjectSyntax::Original
+    }
+    pub(super) fn uses_std_imports(&self) -> bool {
+        self.project_syntax == ProjectSyntax::StdImports
     }
     /// Visit every retained source-span occurrence once, and check every arena
     /// edge without indexing it first. Source identity and UTF-8 policy belong
@@ -413,12 +453,28 @@ impl Program {
     }
     /// Report the closed feature during the already counted structural walk.
     /// This avoids another unmetered scan of every pre-existing source node.
+    #[cfg(test)]
     pub(super) fn validate_spans_and_ids_counted_with_enum_syntax(
         &self,
         inspect: impl FnMut(Option<Span>) -> bool,
         enum_syntax: &mut Option<Span>,
     ) -> bool {
+        self.validate_spans_and_ids_counted_with_syntax(
+            inspect,
+            enum_syntax,
+            super::parser::StdImportPolicy::Closed,
+            &mut false,
+        )
+    }
+    pub(super) fn validate_spans_and_ids_counted_with_syntax(
+        &self,
+        inspect: impl FnMut(Option<Span>) -> bool,
+        enum_syntax: &mut Option<Span>,
+        std_policy: super::parser::StdImportPolicy,
+        std_syntax: &mut bool,
+    ) -> bool {
         *enum_syntax = None;
+        *std_syntax = false;
         let inspect = std::cell::RefCell::new(inspect);
         let mut valid = |span| (inspect.borrow_mut())(Some(span));
         let visit = || (inspect.borrow_mut())(None);
@@ -447,6 +503,8 @@ impl Program {
                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
                 }
         };
+        let mut std_paths = 0usize;
+        let mut std_imports = 0usize;
         let mut path_end = 0;
         let mut previous_path: Option<Span> = None;
         for (index, path) in self.paths.iter().enumerate() {
@@ -454,7 +512,17 @@ impl Program {
                 return false;
             }
             let length = usize::from(path.segment_len);
-            project_syntax |= path.root == PathRoot::Crate;
+            project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
+            if path.root == PathRoot::Std {
+                *std_syntax = true;
+                if !std_policy.enabled() {
+                    return false;
+                }
+                let Some(next) = std_paths.checked_add(1) else {
+                    return false;
+                };
+                std_paths = next;
+            }
             if path.segment_start != path_end
                 || previous_path.is_some_and(|previous| {
                     previous.file != path.span.file || previous.end > path.span.start
@@ -522,15 +590,28 @@ impl Program {
             if !visit() {
                 return false;
             }
-            if !self
+            if self
                 .paths
                 .get(import.path.0)
-                .is_some_and(|path| path.root == PathRoot::Crate)
-                || !valid(import.alias)
+                .is_some_and(|path| path.root == PathRoot::Std)
+            {
+                let Some(next) = std_imports.checked_add(1) else {
+                    return false;
+                };
+                std_imports = next;
+            }
+            if !self.paths.get(import.path.0).is_some_and(|path| {
+                path.root == PathRoot::Crate || (std_policy.enabled() && path.root == PathRoot::Std)
+            }) || !valid(import.alias)
                 || !valid(import.span)
             {
                 return false;
             }
+        }
+        // The checked import inventory separately checks strict source order,
+        // so these equal cardinalities also exclude detached/reused std rows.
+        if std_paths != std_imports {
+            return false;
         }
         let mut counts = [0usize; 5];
         for item in &self.items {
@@ -727,7 +808,8 @@ impl Program {
                                         && visit()
                                         && self.paths.get(arm.variant.0).is_some_and(|path| {
                                             path.root == PathRoot::LocalType
-                                                || path.segment_len >= 3
+                                                || (path.root == PathRoot::Crate
+                                                    && path.segment_len >= 3)
                                         })
                                         && arm.binding.is_none_or(valid)
                                         && valid(arm.span)
@@ -802,7 +884,10 @@ impl Program {
                 ExprKind::QualifiedValue { path, args } => {
                     enum_syntax.get_or_insert(expression.span);
                     visit()
-                        && self.paths.get(path.0).is_some()
+                        && self
+                            .paths
+                            .get(path.0)
+                            .is_some_and(|path| path.root != PathRoot::Std)
                         && args.as_ref().is_none_or(|args| {
                             args.len() <= super::parser::MAX_PARAMS
                                 && args.iter().all(|arg| {
@@ -847,7 +932,7 @@ impl Program {
                 return false;
             }
         }
-        visit() && project_syntax == self.project_syntax
+        visit() && ProjectSyntax::new(project_syntax, *std_syntax) == self.project_syntax
     }
     #[allow(dead_code)] // Used by private qualification until source dispatch activates.
     pub(super) fn uses_owned_syntax(&self, source: &super::source::SourceFile) -> bool {
@@ -864,6 +949,7 @@ impl Program {
         };
         !self.records.is_empty()
             || !self.enums.is_empty()
+            || self.uses_std_imports()
             || self.functions.iter().any(|f| {
                 owned_type(&f.result)
                     || f.params.iter().any(|p| owned_type(&p.ty))
@@ -900,5 +986,61 @@ impl Program {
                 }
                 _ => false,
             })
+    }
+}
+
+#[cfg(test)]
+mod builtin_feature_tests {
+    use super::*;
+    use crate::frontend::{lexer, parser, project::budget::Allocator, source::SourceMap};
+
+    #[test]
+    fn builtin_parsed_feature_summary_is_exact_and_has_one_byte_layout() {
+        for text in [
+            "fn main()->(){return;}",
+            "use crate::m::f; fn main()->(){return;}",
+            "use std::io::read_stdin; fn main()->(){return;}",
+        ] {
+            let mut sources = SourceMap::new();
+            let file = sources.add("feature-summary.ox".into(), text.into());
+            let source = sources.get(file);
+            let (mut program, _) = parser::parse_typed_counted(
+                source,
+                lexer::lex(source).unwrap(),
+                parser::SourceMode::ProjectCandidate,
+                parser::MAX_NODES,
+                &mut Allocator::default(),
+                &mut Default::default(),
+            )
+            .unwrap();
+            let expected = program.project_syntax;
+            for state in [
+                ProjectSyntax::Original,
+                ProjectSyntax::Project,
+                ProjectSyntax::StdImports,
+            ] {
+                program.project_syntax = state;
+                let valid = program.validate_spans_and_ids_counted_with_syntax(
+                    |at| at.is_none_or(|at| source.try_text(at).is_some()),
+                    &mut None,
+                    parser::StdImportPolicy::Enabled,
+                    &mut false,
+                );
+                assert_eq!(valid, state == expected);
+            }
+            program.project_syntax = expected;
+            assert_eq!(
+                format!("{:?}", program.project_syntax),
+                format!("{}", program.uses_project_syntax())
+            );
+        }
+        println!(
+            "builtin-feature-layout feature={}/{} program={}/{}",
+            std::mem::size_of::<ProjectSyntax>(),
+            std::mem::align_of::<ProjectSyntax>(),
+            std::mem::size_of::<Program>(),
+            std::mem::align_of::<Program>()
+        );
+        assert_eq!(std::mem::size_of::<ProjectSyntax>(), 1);
     }
 }

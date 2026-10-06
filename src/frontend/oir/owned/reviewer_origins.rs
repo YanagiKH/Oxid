@@ -104,6 +104,7 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
     (
         sm,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![RawRecordDecl {
                 id: RecordId(0),
@@ -347,7 +348,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
             1,
             1,
             262,
-            312 + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
+            320 + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
             33
         )
     );
@@ -369,7 +370,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         owners: 1,
         events: 1,
         work: 262,
-        metadata: 288
+        metadata: 296
             + std::mem::size_of::<Vec<RawEnumDecl>>()
             + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
         scratch: 33,
@@ -384,7 +385,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         (budget::Limits { work: 261, ..exact }, "ownership work"),
         (
             budget::Limits {
-                metadata: 287
+                metadata: 295
                     + std::mem::size_of::<Vec<RawEnumDecl>>()
                     + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
                 ..exact
@@ -513,6 +514,7 @@ fn heldout_origins_preserve_all_frozen_reference_fuel_and_native_modules() {
 
 fn clone_raw(p: &RawOwnedProgram) -> RawOwnedProgram {
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: p.enums.clone(),
         records: p
             .records

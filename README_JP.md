@@ -136,3 +136,5 @@ Windows、リリースアーカイブ、Cargo インストール、Docker につ
 実験的な[配列フィールドのスライス借用](rfcs/0022-projected-array-slices.md)では、`bump(&mut batch.samples)` のように固定長スカラー配列フィールドをスライス補助関数に渡せます。入れ子のフィールドパスとレコード全体の参照からの明示的な再借用でも、所有者全体の競合規則、可視性、呼び出し限定の寿命を維持します。リソース上限とネイティブ対象は変更しません。
 
 実験的な[上限付き列挙型と消費型マッチ](spec/typed-preview.md#bounded-nominal-enums-and-consuming-match)は、データなし、または bool/i32/unit を一つ持つバリアントからなる公称型のムーブ専用値と、名前付き所有者を網羅する match 文を追加します。typed-preview を明示した check/run/ネイティブ compile と整形がこの契約をサポートします。[2 ファイルのスキャナー](tests/fixtures/bounded_enum_scanner/main.ox)は 115 を返します。列挙型の借用、集約型ペイロード、match 式は対象外です。現在のソースの検証と正確なコミットに対するホスト型 CI は、別途完了が必要です。セルフホスティングの達成を意味しません。
+
+実験的な[上限付き標準入力](spec/typed-preview.md#bounded-stdin-input)は、別名も使える個別の `std::io::read_stdin` と `std::io::ReadStatus` インポートだけを追加します。既存の排他的 i32 スライスに生バイトを読み込み、`Eof(n)`、余分な読み取りを行わない `Full`、または書き込み先を変更しない `IoError` を返します。消費済みの入力は巻き戻せません。Linux x86_64 では、[128 バイトの式処理プログラム](fixtures/typed-expression-samples/README.md#bounded-stdin-entry)がローカルの 28 ケースの参照／ネイティブ検証で、同じ未変更の ELF から 39 と 63 を返しました。現在のソース全体の検証と正確なコミットに対するホスト型 CI は別の関門です。一般的な `std`、文字列、他の入力実行環境、セルフホスティングは今回の対象外です。

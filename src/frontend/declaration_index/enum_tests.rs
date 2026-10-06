@@ -133,11 +133,11 @@ fn enum_index_interleaved_identity_views_and_original_alias_targets() {
     let mut query = index.query(&work);
     assert_eq!(
         query.select(ModuleId(0), bound(&project, 0), true).unwrap(),
-        Some(8)
+        Some(DeclarationHandle(8))
     );
     assert_eq!(
         query.select(ModuleId(0), bound(&project, 1), true).unwrap(),
-        Some(6)
+        Some(DeclarationHandle(6))
     );
     assert_eq!(
         query
@@ -317,7 +317,7 @@ fn enum_index_observation_schema_uses_complete_enum_identity_table_only() {
                 .query(&work)
                 .select(ModuleId(0), bound(&project, 0), true)
                 .unwrap(),
-            Some(4)
+            Some(DeclarationHandle(4))
         );
         let events = work.observations.borrow();
         if with_enum {

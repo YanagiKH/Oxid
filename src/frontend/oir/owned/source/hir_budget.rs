@@ -1,16 +1,14 @@
 //! C3a affected-HIR sizing. This is not source admission authority.
 //!
-//! Only a cfg(test) resolver-storage observation consumes this plan. It accounts
-//! complete known carriers, cumulative scratch and Option-to-final coexistence.
-//! T0 preparation controls are prepaid without being called. Actual typechecker
-//! admission/receivers, match cursor frames and later allocation paths must be priced
-//! before they become reachable; the current frame types are not placeholders
-//! for those later types. There is deliberately no retained enum table or ledger.
+//! Fresh paid source typing and private observations consume this plan through
+//! separate provenance guards. It accounts complete known carriers, cumulative
+//! scratch and Option-to-final coexistence. New allocation paths must be priced
+//! before they become reachable. There is no retained enum table or ledger.
 //!
 //! AST/text, immutable index payload/query scratch, unchanged record-layout
 //! graph scratch, diagnostics, observation logs, raw/consumer plans and machine
 //! stack/allocator metadata are separate. This is not a global HIR or RSS cap.
-#![allow(dead_code)] // Production source/consumer activation remains closed.
+#![allow(dead_code)] // Some named accounting models are measured without construction.
 
 use super::{hir::*, lower, resolve, resolver_storage, type_storage, typeck};
 use crate::frontend::{
@@ -44,6 +42,8 @@ pub(super) struct HirCounts {
     pub(super) record_fields: usize,
     pub(super) max_record_fields: usize,
     pub(super) functions: usize,
+    /// Complete callable signature slots, including the admitted builtin suffix.
+    pub(super) signatures: usize,
     pub(super) parameters: usize,
     pub(super) bindings: usize,
     pub(super) expressions: usize,
@@ -82,6 +82,8 @@ pub(super) struct HirPlan {
 /// Distinct fields cover separate construction/transfer/caller storage without
 /// assuming that Rust elides a Copy, a return slot or an Option construction.
 struct PlanReturnEnvelope {
+    builtin_candidate: bool,
+    provenance_return: Result<(), Box<Diagnostic>>,
     // preflight's accumulator and calculate's by-value argument.
     counts: [HirCounts; 2],
     // calculate's Self construction, map's input payload, one caller-retained
@@ -91,6 +93,31 @@ struct PlanReturnEnvelope {
     calculate_return: Result<HirPlan, Box<Diagnostic>>,
     mapped_option: Option<HirPlan>,
     preflight_return: Result<Option<HirPlan>, Box<Diagnostic>>,
+    forwarded_preflight_return: Result<Option<HirPlan>, Box<Diagnostic>>,
+}
+/// The builtin-only count suffix has a checked import-anchor projection and
+/// checked fixed-bank additions, with no synthetic source function/body state.
+#[allow(dead_code)]
+struct BuiltinPreflightCarriers {
+    anchor: Span,
+    anchor_return: Result<Span, Box<Diagnostic>>,
+    work_return: Result<(), Box<Diagnostic>>,
+    increments: [Result<(), Box<Diagnostic>>; 2],
+}
+#[allow(dead_code)]
+struct CandidatePreflightCarriers {
+    extra: usize,
+    extra_return: Result<usize, Box<Diagnostic>>,
+    additions: [Result<usize, Box<Diagnostic>>; 3],
+}
+/// Current source has its own preflight arithmetic roles. The complete
+/// production owner/caller banks are already in calculate's fixed charge;
+/// builtin identity and association add only their actual extra roles here.
+#[allow(dead_code)]
+struct ProductionBuiltinPreflightCarriers {
+    extra: usize,
+    extra_return: Result<usize, Box<Diagnostic>>,
+    additions: [Result<usize, Box<Diagnostic>>; 3],
 }
 pub(super) struct CapacityReturnEnvelope {
     // new's Self construction, one caller ticket, reserve's by-value self and
@@ -215,10 +242,13 @@ fn admit(total: usize, extra: usize, limit: usize, at: Span) -> Result<usize, Bo
 }
 impl HirPlan {
     fn calculate(c: HirCounts, at: Span) -> Result<Self, Box<Diagnostic>> {
+        if c.signatures < c.functions || c.signatures - c.functions > 1 {
+            return Err(invalid(at));
+        }
         let mut resolved = 0;
         charge::<Record>(&mut resolved, c.records, at)?;
         charge::<Field>(&mut resolved, c.record_fields, at)?;
-        charge::<Signature>(&mut resolved, c.functions, at)?;
+        charge::<Signature>(&mut resolved, c.signatures, at)?;
         charge::<Function>(&mut resolved, c.functions, at)?;
         charge::<ParameterTy>(&mut resolved, c.parameters, at)?;
         charge::<Binding>(&mut resolved, c.bindings, at)?;
@@ -272,6 +302,18 @@ impl HirPlan {
             mul(c.functions, resolve::resolver_carrier_bytes(), at)?,
             at,
         )?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.signatures
+                    .checked_sub(c.functions)
+                    .ok_or_else(|| invalid(at))?,
+                resolve::builtin_signature_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        charge::<BuiltinPreflightCarriers>(&mut resolver_scratch, c.signatures - c.functions, at)?;
         // Pending local vector headers coexist with complete prepaid HIR rows.
         // Sum across visits rather than assume only the largest nested call.
         charge::<Vec<Argument>>(&mut resolver_scratch, c.calls, at)?;
@@ -313,7 +355,7 @@ impl HirPlan {
         charge::<Vec<FieldInit>>(&mut resolver_scratch, c.record_literals, at)?;
         charge::<Vec<ExprId>>(&mut resolver_scratch, c.array_literals, at)?;
         charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;
-        charge::<Vec<ParameterTy>>(&mut resolver_scratch, c.functions, at)?;
+        charge::<Vec<ParameterTy>>(&mut resolver_scratch, c.signatures, at)?;
         charge::<Vec<BodyBlock>>(&mut resolver_scratch, c.functions, at)?;
         // Paid branches additionally name inner params/blocks/frames before
         // transfer to the existing outer buffers, plus each block body and
@@ -620,9 +662,42 @@ pub(super) fn preflight_enum_hir(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    index.require_no_builtin_candidate()?;
     if index.enum_count() == 0 {
         return Ok(None);
     }
+    preflight_hir(index, work, false)
+}
+
+/// Only current source can select the executable paid lane. The complete
+/// immutable index includes dependency enums for admitted builtin imports.
+/// Keep the older enum observer guard independent of this production entry.
+pub(super) fn preflight_current_hir(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    index.require_current_source_pipeline()?;
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    preflight_hir(index, work, false)
+}
+
+/// Private candidate selection remains paid even without imports or source enums.
+#[cfg(test)]
+pub(super) fn preflight_builtin_hir(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    index.require_builtin_candidate_pipeline()?;
+    preflight_hir(index, work, true)
+}
+
+fn preflight_hir(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    builtin_candidate: bool,
+) -> Result<Option<HirPlan>, Box<Diagnostic>> {
     let sources = index.sources();
     let at = sources.eof();
     let mut counts = HirCounts::default();
@@ -635,13 +710,40 @@ pub(super) fn preflight_enum_hir(
         increment(&mut counts.record_fields, record.fields.len(), record.span)?;
         counts.max_record_fields = counts.max_record_fields.max(record.fields.len());
     }
-    for id in 0..index.function_count() {
+    for id in 0..index.source_function_count() {
         visit(work, 1, at)?;
         let (key, module) = index.function(DefId(id))?;
         let ast = sources.ast(module)?;
         count_function(ast, &ast.functions[key.index], work, &mut counts)?;
     }
-    HirPlan::calculate(counts, at).map(Some)
+    if index.builtin_set() == crate::frontend::builtin_catalog::BuiltinSet::ReadStdin {
+        let anchor = index.builtin_function_anchor(
+            crate::frontend::builtin_catalog::BuiltinFunction::ReadStdin,
+        )?;
+        visit(work, 2, anchor)?;
+        increment(&mut counts.signatures, 1, anchor)?;
+        increment(&mut counts.parameters, 1, anchor)?;
+    }
+    let mut plan = HirPlan::calculate(counts, at)?;
+    if builtin_candidate {
+        // Both full identity-check invocations are prepaid, including the
+        // no-import private marker. Production no-import work is unaffected.
+        let extra = mul(2, resolve::signature_identity_carrier_bytes(), at)?;
+        let extra = add(extra, size_of::<CandidatePreflightCarriers>(), at)?;
+        #[cfg(test)]
+        let extra = add(extra, super::program::builtin_program_carrier_bytes(), at)?;
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    } else if index.builtin_set() != crate::frontend::builtin_catalog::BuiltinSet::None {
+        // Fresh production typing and pre-lowering each check the full F/I
+        // identity. Existing enum-only source pays no new work or bytes.
+        let extra = mul(2, resolve::signature_identity_carrier_bytes(), at)?;
+        let extra = add(extra, size_of::<ProductionBuiltinPreflightCarriers>(), at)?;
+        let extra = add(extra, super::program::builtin_production_extra_bytes(), at)?;
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
+    Ok(Some(plan))
 }
 
 pub(super) fn count_function(
@@ -652,6 +754,7 @@ pub(super) fn count_function(
 ) -> Result<(), Box<Diagnostic>> {
     let at = function.name;
     increment(&mut c.functions, 1, at)?;
+    increment(&mut c.signatures, 1, at)?;
     visit(work, function.params.len(), at)?;
     increment(&mut c.parameters, function.params.len(), at)?;
     increment(&mut c.bindings, function.params.len(), at)?;

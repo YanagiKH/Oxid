@@ -1,12 +1,13 @@
 # Current-source Unit4 parser qualification
 
-This adapter admits bounded-enum feature source checkpoint
-`78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd`, full tree
-`4970ee660f670cfcb23f42a9cb182a4ca7996388`, while retaining the byte-identical
+This adapter admits bounded-stdin feature source checkpoint
+`c1d73740268d64d4e908ad86ed9dabaa48dd1c23`, full tree
+`b19991275b22426397d708ac0afa1874e6511b00`, while retaining the byte-identical
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` package.
 
 The replay uses the historical `parse_counted` entry, whose current implementation
-selects `ArraySyntaxPolicy::Closed` and `EnumSyntaxPolicy::Closed`. It qualifies
+selects `ArraySyntaxPolicy::Closed`, `EnumSyntaxPolicy::Closed` and
+`StdImportPolicy::Closed`. It qualifies
 that policy on current compiler bodies. Positive public enabled-enum grammar is
 qualified by the separate feature/public gates; this historical-policy replay
 must not be represented as positive public enum parser coverage.
@@ -14,11 +15,11 @@ must not be represented as positive public enum parser coverage.
 ## Exact source and preparation boundaries
 
 The historical authority binds 283 base inputs, 113 compiler bodies and two
-286-member derived views. Current source admission binds 237 inputs, including
-179 `src/` and `native/` members, 56 retained non-source inputs and both scanner
-fixtures. The historical-to-current override has 194 members: 77 changed
-historical inputs and 117 additions. The current parser binds 400 base inputs,
-182 compiler bodies and two 403-member derived views. These inventories have
+286-member derived views. Current source admission binds 252 inputs, including
+194 `src/` and `native/` members, 56 retained non-source inputs and both scanner
+fixtures. The historical-to-current override has 210 members: 78 changed
+historical inputs and 132 additions. The current parser binds 415 base inputs,
+197 compiler bodies and two 418-member derived views. These inventories have
 different purposes and must not be substituted for one another.
 
 `authority.json` pins the complete current maps, source checkpoint, immutable
@@ -27,6 +28,11 @@ compatibility adapters. Every load derives both complete current maps again.
 Unknown members, missing inputs, compiler deletions, reordered paths, changed
 bytes and coherently rehashed input tails remain rejected. Scanner include
 closure belongs to the separately pinned source-binding authority.
+
+The stdin transition overlaps observer/control instrumentation only at AST and
+parser. Exact stdin patch sections first restore their preserved 237-input
+enum-source identities. The separately pinned stdin authority binds current
+execution source; the enum authority keeps its own original checkpoint.
 
 Five enum transition paths overlap observer instrumentation: AST, parser,
 source-map, namespace-resource and allocator-budget bodies. Only AST and parser
@@ -49,8 +55,10 @@ at its moved prefix-loop location. Exact reversal restores every frozen helper
 byte. The derived observer parser has an explicit panic bridge for new enum-only
 `node()` routes, which are outside its closed-policy observation domain; the
 control parser keeps the production method. The direct overflow probe initializer
-adds closed array/enum policies and empty syntax storage. Removing that single
-exact initializer insertion restores the complete frozen observer. No frozen
+retains the exact enum initializer predecessor, then adds closed std imports.
+Reversing the separately pinned std insertion restores the enum initializer;
+reversing its closed array/enum policies and empty syntax storage insertion
+restores the complete frozen observer. No frozen
 helper or instrumentation patch is edited.
 
 Preparation validates historical input bytes against exact `d9e6b9bf` Git objects

@@ -43,6 +43,7 @@ fn c3a_paid_helper_each_kind_quota_is_consumable_and_exact() {
         records: 1,
         record_fields: 1,
         functions: 1,
+        signatures: 1,
         parameters: 1,
         bindings: 1,
         expressions: 1,

@@ -26,6 +26,9 @@ RUNNABLE_PACKAGE_FILES = (
 # Exact typed fixture inventory; all other checked-in .ox files retain their
 # existing legacy checks. Never exclude an entire fixture directory.
 TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
+# Effectful roots are checked here, but run only by dedicated verifiers that
+# supply their input explicitly. Shared modules remain registered once below.
+TYPED_CHECK_ONLY_FILES = ("fixtures/typed-expression-samples/stdin.ox",)
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
@@ -138,7 +141,11 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     fixture_data = fixture_data_sources(root)
     available = set(sources)
     typed_entries = [root / relative for relative in TYPED_SOURCE_FILES]
+    typed_check_only = [root / relative for relative in TYPED_CHECK_ONLY_FILES]
     typed_members = set(typed_entries)
+    if len(typed_check_only) != len(set(typed_check_only)) or typed_members & set(typed_check_only):
+        raise RuntimeError("overlapping typed source inventories")
+    typed_members.update(typed_check_only)
     for entry, members in TYPED_PROJECTS.items():
         if entry not in members or len(members) != len(set(members)):
             raise RuntimeError("invalid explicit typed project inventory")
@@ -154,7 +161,7 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     if fixture_data & (typed_members | set(runnable_sources(root))):
         raise RuntimeError("source-only fixture data overlaps a typed or runnable inventory")
     legacy = [(source, False) for source in sources if source not in typed_members | fixture_data]
-    return legacy + [(source, True) for source in typed_entries], typed_entries, len(typed_members)
+    return legacy + [(source, True) for source in typed_entries + typed_check_only], typed_entries, len(typed_members)
 
 
 def verify_test_fixture_registration(root: Path = ROOT) -> None:
@@ -189,7 +196,7 @@ def main() -> int:
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
     checks, typed_entries, typed_member_count = source_plan(sources, ROOT)
     verify_test_fixture_registration(ROOT)
-    language_source_count = len(checks) + typed_member_count - len(typed_entries)
+    language_source_count = sum(not typed for _, typed in checks) + typed_member_count
     print(
         f"fixture-data validation passed: {len(sources) - language_source_count} source-only files "
         "(frozen manifest/body identities only; no compiler checks, executions or feature claim)"

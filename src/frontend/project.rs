@@ -4,6 +4,10 @@
 #![allow(dead_code)] // Historical qualification adapters retain their private API.
 
 #[cfg(test)]
+#[path = "project/builtin_tests.rs"]
+mod builtin_tests;
+
+#[cfg(test)]
 #[path = "project/array_syntax_tests.rs"]
 mod array_syntax_tests;
 pub(super) mod budget;
@@ -184,6 +188,21 @@ impl ProjectSources {
             ProjectEnumSyntax::Enabled,
         )
     }
+    /// Preserve the typed grammar before standard imports for gate controls.
+    #[cfg(test)]
+    pub(super) fn load_typed_closed_std(
+        entry: &str,
+        limits: ProjectLimits,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            &mut Allocator::default(),
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::StdClosed,
+        )
+    }
     /// Historical qualification adapter for the same typed loader.
     pub fn load_project_candidate(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
         Self::load_typed(entry, limits)
@@ -229,6 +248,21 @@ impl ProjectSources {
             allocator,
             parser::ArraySyntaxPolicy::Enabled,
             ProjectEnumSyntax::Candidate,
+        )
+    }
+    #[cfg(test)]
+    pub(super) fn load_builtin_candidate(
+        entry: &str,
+        limits: ProjectLimits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            allocator,
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::BuiltinCandidate,
         )
     }
     fn load_with_arrays(
@@ -579,6 +613,10 @@ fn io_error(error: io::Error, display: &str, origin: Option<Span>) -> Box<Diagno
 
 #[derive(Clone, Copy)]
 enum ProjectEnumSyntax {
+    #[cfg(test)]
+    BuiltinCandidate,
+    #[cfg(test)]
+    StdClosed,
     Closed,
     #[allow(dead_code)]
     Enabled,
@@ -840,6 +878,24 @@ impl SourceSetBuilder<'_> {
             .checked_sub(self.project.usage.syntax_nodes)
             .ok_or_else(|| one(overflow(origin)))?;
         let (program, nodes) = match self.enums {
+            #[cfg(test)]
+            ProjectEnumSyntax::StdClosed => parser::parse_typed_closed_std_counted(
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                &mut Default::default(),
+            )?,
+            #[cfg(test)]
+            ProjectEnumSyntax::BuiltinCandidate => parser::parse_builtin_candidate_counted(
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                &mut Default::default(),
+            )?,
             ProjectEnumSyntax::Closed => {
                 if self.arrays == parser::ArraySyntaxPolicy::Closed {
                     parser::parse_counted(

@@ -591,7 +591,7 @@ pub(super) fn prepare<'hir>(
     at: Span,
 ) -> Result<TypePlan<'hir>, Box<Diagnostic>> {
     visit(work, at)?;
-    if functions.len() != signatures.len()
+    if signatures.len() != source.counts.signatures
         || functions.len() != source.counts.functions
         || records.len() != source.counts.records
     {

@@ -82,23 +82,23 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its 194 reviewed source/input changes include six explicitly admitted observer
+Its 210 reviewed source/input changes include six explicitly admitted observer
 instrumentation overlaps: ast.rs, lexer.rs, parser.rs, project/budget.rs, source.rs
 and declaration_index/resource.rs.
 The AST and parser also overlap control instrumentation. Each current composition
 is pinned and preserves the historical transforms; unlisted overlaps reject.
-Historical283/current400 base maps, historical286/current403 derived maps and
-historical113/current182 compiler rosters remain separate identity domains.
-The source-binding transition separately verifies 201 projected inputs, 199 unary inputs, 196 composition inputs, 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
+Historical283/current415 base maps, historical286/current418 derived maps and
+historical113/current197 compiler rosters remain separate identity domains.
+The source-binding transition separately verifies 237 enum inputs, 201 projected inputs, 199 unary inputs, 196 composition inputs, 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
 predecessor inputs and 117 archived inputs. Sessions explicitly deny historical
-source equivalence and bind the current237 manifest, reviewed source checkpoint
+source equivalence and bind the current252 manifest, reviewed source checkpoint
 and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 403-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 400-member base map. Compact omission is limited to the
-other 402 derived-tree members per role and four binaries, for 808 omitted identities.
+belong to the 418-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 415-member base map. Compact omission is limited to the
+other 417 derived-tree members per role and four binaries, for 838 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.
@@ -142,3 +142,8 @@ case and independently derives the projection receipt, including both row hashes
 changed-row indices and exact adapter identity. No source/diagnostic expectation
 is rewritten to match observed behavior. Bounded tests prove admission and
 transport only; fresh debug/release execution remains mandatory.
+
+The current stdin transition restores exact enum AST/parser bodies before the
+existing inverse chain. Public qualified-values semantics still use the immutable
+enum descriptor/helper and 237-input enum manifest, while execution receipts bind
+the 252-input current manifest. Join validation checks both roles independently.

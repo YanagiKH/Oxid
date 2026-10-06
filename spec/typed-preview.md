@@ -24,7 +24,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md) and
 [RFC 0019](../rfcs/0019-borrowed-scalar-slices.md) and
 [RFC 0020](../rfcs/0020-owned-record-composition.md) and
-[RFC 0023](../rfcs/0023-bounded-enum-match.md).
+[RFC 0023](../rfcs/0023-bounded-enum-match.md) and
+[RFC 0024](../rfcs/0024-bounded-stdin-input.md).
 
 ## Command and compatibility boundary
 
@@ -336,6 +337,94 @@ makes no production-provider or self-hosting claim. The
 source path; separate current-source qualification and exact-head hosted CI
 remain pending.
 
+## Bounded stdin input
+
+Explicit typed-preview `check`, reference `run`, native `compile --backend llvm`
+and syntax-only `fmt` accept exactly these individual compiler-owned imports,
+with optional aliases:
+
+```text
+use std::io::read_stdin as read;
+use std::io::ReadStatus as Status;
+
+fn main() -> i32 {
+    let mut bytes = [0, 0, 0, 0];
+    let status = read(&mut bytes);
+    match status {
+        Status::Eof(count) => { return count; },
+        Status::Full => { return 4; },
+        Status::IoError => { return -5; },
+    }
+}
+```
+
+The signature is `read_stdin(buffer: &mut [i32]) -> ReadStatus`.
+`ReadStatus` is a compiler-owned nominal move-only enum with `Eof(i32)`, `Full`
+and `IoError`; the existing constructor, whole-value transfer and consuming-match
+rules apply. All permitted aliases refer to the same compilation-local identity.
+A user enum with identical names is a different type, and a user function named
+`read_stdin` remains an ordinary function. Existing duplicate-name and alias rules
+apply. Importing the function alone admits its result type internally without
+binding a local `ReadStatus` name; importing the type alone admits no input function.
+
+There is no prelude, general `std` lookup, direct `std::...` call/type/variant
+path, grouped/glob import or separate variant import. Use the imported names in
+source. Existing `crate::std` source modules keep their meaning. Checking,
+formatting and compilation do not consume program stdin.
+
+The argument uses existing call-only exclusive borrowing of a whole fixed i32
+array, supported projected array field, or explicit reborrow. Its checked
+capacity C is 0..1024; the operation stages raw bytes privately until capacity,
+EOF or a read error:
+
+- `Eof(n)`, where `0 <= n < C`, commits exactly n bytes as i32 values 0..255 and
+  preserves every destination cell from n onward
+- `Full` commits exactly C bytes without attempting a read past capacity; it does
+  not assert that more input exists
+- `IoError` leaves every destination cell unchanged, including after earlier
+  successful reads; consumed input is not rolled back
+- C = 0 returns `Full` after the core charge of 4, without a host read; ordinary
+  builtin-frame admission still applies
+
+Each host attempt requests one byte from fd 0 as it exists at operation time.
+There is no prefetch, newline handling or encoding conversion. Interrupted reads
+retry; other errors, including nonblocking errors, produce `IoError`. Process
+startup can repair closed standard descriptors, so closing fd 0 before launch
+does not guarantee equivalent reference/native failure behavior. A blocking read
+has no wall-clock bound from execution fuel.
+
+The core operation costs **4 + C + A**, where A counts every attempted read,
+including EOF, error and EINTR returns. It debits 4 + C before reads and mutation,
+preparing all storage before the first attempt, then debits one before each
+attempt. This prepays maximum commit work and ordinary width-2 result construction.
+Ordinary argument evaluation, loans, calls, return transfers and cleanup retain
+their additional charges. A skipped call performs no read or core debit.
+
+Validation, resource or fuel failure before commit leaves the destination
+unchanged, even if earlier attempts consumed bytes. After the first destination
+store, commit and result materialization contain no fallible helper, allocation,
+validation or extra fuel debit. A later builtin return or caller operation can
+still exhaust fuel after the successful commit; earlier effects remain.
+
+Input-bearing reference execution is Linux x86_64 only. Other hosts report
+E0608/oir-owned-run, exactly `bounded stdin execution requires Linux x86_64`, at
+the admitted input import before entry validation or activation. This applies
+to unused function imports and zero-capacity calls. `ReadStatus`-only use remains
+portable under the existing project-loading rules; native compilation retains
+its Linux x86_64 LLVM/Clang/LLD 19.1.7 at O0 policy. No new main ABI, strings,
+file API, general standard library or increased compiler/runtime ceiling is added.
+
+The [expression stdin entry](../fixtures/typed-expression-samples/README.md#bounded-stdin-entry)
+uses 129 cells for a 128-byte grammar plus one explicit limit witness. It scans
+only the `Eof(n)` prefix; `Full` returns -4 and leaves any 130th byte unread.
+Its original parser/scanner wrappers, 15-node arena and 15-entry stacks remain.
+The same ELF has returned 39 and 63 for distinct streams in the local 28-case
+runner, with public reference/native parity. Syntax and node/stack failures return
+-1, invalid arenas -3, input-limit failures -4 and I/O failures -5; overflow remains
+E0604. These scalar values use the existing result printer. Full current-source
+qualification and exact-head hosted CI remain separate acceptance gates. See
+[RFC 0024](../rfcs/0024-bounded-stdin-input.md) for the complete effect contract.
+
 ## Single-file formatting
 
 ```sh
@@ -393,9 +482,11 @@ result is 816. Exact execution coverage is recorded in the
 A declaration `mod state;` in the root maps only to the entry directory's
 `state.ox`; `mod jobs;` within state maps only to `state/jobs.ox`. There is no
 package search, alternate `mod.ox`, implicit directory discovery or import alias
-chasing. Imports target original functions and/or structs; module imports,
-reexports, grouped/glob imports and `self::`/`super::` relative paths are absent.
-A function and a struct can share a spelling and import together atomically.
+chasing. Crate imports target original functions and/or nominal types; module
+imports, reexports, grouped/glob imports and `self::`/`super::` relative paths
+are absent. A function and a nominal type can share a spelling and import together
+atomically. The two individual `std::io` imports described above are a closed
+compiler-owned exception; they perform no source-file discovery.
 
 A private declaration is accessible to its declaring module and descendants.
 A private module restricts its contents to its parent's subtree. Public exposure
@@ -435,7 +526,8 @@ remain in RFC 0015 and its implementation ledgers.
 file           := item*
 item           := function | struct_decl | enum_decl | module_decl | import_decl
 module_decl    := "pub"? "mod" name ";"
-import_decl    := "use" absolute_path ("as" name)? ";"
+import_decl    := "use" import_path ("as" name)? ";"
+import_path    := absolute_path | "std" "::" "io" "::" ("read_stdin" | "ReadStatus")
 absolute_path  := "crate" "::" name ("::" name)*
 item_path      := name | absolute_path
 function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
@@ -786,9 +878,10 @@ The source program has its own lowering/fuel schedule; the historical raw
 adaptation's 1,086 fuel is not its cost.
 
 Strings, null, package imports, module initialization, macros, heap containers, for/loop and other
-control flow, other operators, async, closures, generics, FFI, host I/O,
-and undeclared builtins are unavailable. Recognized unsupported syntax produces
-E0101; other invalid syntax produces E0100 or a resolution error. There is no
+control flow, other operators, async, closures, generics, FFI, host I/O beyond
+the bounded stdin operation, and undeclared builtins are unavailable. Recognized
+unsupported syntax produces E0101; other invalid syntax produces E0100 or a
+resolution error. There is no
 silent approximation or legacy execution of these features. Now-recognized if/else/while/break/continue
 keywords in invalid positions produce ordinary syntax errors (E0100), replacing
 the predecessor's unsupported-keyword E0101 for those newly enabled keywords.
@@ -806,9 +899,10 @@ resolved HIR → typed HIR → verified OIR. The source integration selects one
 route for the entire parsed project. Any struct or enum declaration, non-scalar named
 type annotation/signature, reference parameter, struct literal, field access,
 borrow argument, fixed-array type/literal, indexing, length access, enum
-construction or match selects owned HIR and owned OIR for every function. This
-includes unused declarations and statically skipped paths; comments containing
-owned spellings do not select that route. Unknown nominal names also select it
+construction, match or either admitted compiler-owned `std::io` import selects
+owned HIR and owned OIR for every function. This includes unused declarations
+and statically skipped paths; comments containing owned spellings do not select
+that route. Unknown nominal names also select it
 and fail resolution. Scalar-only modules retain the existing scalar pipeline,
 diagnostics, costs and native admission. There is no per-file or per-function mixture and
 no fallback after an owned parse, resolution, type, verification, runtime or
@@ -996,6 +1090,7 @@ characters instead of emitting source-controlled terminal commands.
 | E0607 | Checked i32 division or remainder by zero at its operator |
 | E0605 | Owned execution-plan, expanded-cell, requested-byte or allocation limit (oir-owned-run stage) |
 | E0606 | Signed array/slice index out of bounds at the complete access or store target (oir-owned-run stage) |
+| E0608 | Bounded stdin execution requires Linux x86_64, before activation (oir-owned-run stage) |
 
 For check, exit 0 means successful type checking, lowering and OIR verification of this
 subset; for run it additionally means a bool/i32/unit result (including false, zero and negatives); ordinary source/CLI/resource failures still exit 1. Scalar lowering budget errors use E0400 with stage `oir-lower`; owned source
@@ -1038,7 +1133,9 @@ including statically erroneous unchosen branches. Run then requires a declared
 `fn main() -> bool`, `fn main() -> i32` or `fn main() -> ()`. Missing main is E0600 without a location;
 main parameters produce E0600 at the main name, and an owned result also fails E0600. Checking itself has no entry
 requirement. The compiler carries main's resolved DefId; the runner inspects the
-verified signature instead of reconstructing names from OIR spans.
+verified signature instead of reconstructing names from OIR spans. On unsupported
+hosts, a program importing `read_stdin` reports E0608 before these entry checks
+or any activation, even when the import is unused.
 
 On text success stdout is exactly `true\n`, `false\n`, `()\n` or a canonical
 signed decimal i32 followed by newline; each exits 0. Numeric results are never
@@ -1093,8 +1190,8 @@ allocation. Counter overflow/invariant failure is E0500, distinct from resource
 exhaustion. No entry override, program arguments or budget flags are exposed.
 Fuel measures deterministic reference work, not wall-clock time, source-level
 complexity or a stable profiling ABI. Source reads, compiler work, allocation
-success and output-pipe behavior are not bounded by fuel. This is not an OS
-sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution.md).
+success, blocking stdin reads and output-pipe behavior are not bounded by fuel.
+This is not an OS sandbox. Full details are in [RFC 0004](../rfcs/0004-bounded-reference-execution.md).
 
 ## Owned verification, execution and accounting
 
@@ -1112,16 +1209,23 @@ sites, and P the sum of each owner's checked recursive width: scalar leaves
 count 1, records use `max(1, sum(field widths))`, fixed arrays use `max(1, N)`,
 and enums use 2. This includes zero-length and unit arrays. B is the
 checked aligned owner arena, including parameters, locals, expression temporaries,
-argument staging, call results and inter-owner padding. All declared storage is
-counted, including unused/skipped work. On the qualified x86_64 representation:
+argument staging, call results and inter-owner padding. Let I be 1024 for the
+canonical input builtin and 0 otherwise; it reserves private scratch in the same
+payload allocation, outside all owner extents. All declared storage is counted,
+including unused/skipped work. On the qualified x86_64 representation:
 
 ```text
 X = S + A + P + 4O + 8R + 12L + 2C
-Dref = 8(S+A) + B + 32O + 64R + 96L + 16C
+Xphysical = X + 2(R+L)
+Dref = 8(S+A) + B + I + 32O + 80R + 112L + 16C
 ```
 
+X is the logical activation-fuel count. Xphysical includes the existing
+reference/loan view metadata and is the expanded-cell admission count; the
+metadata and input scratch do not add logical activation fuel.
+
 Reference execution retains 1,000,000 fuel, 1,024 live frames and 200,000 live
-scalar slots, and additionally caps live X at 200,000 and requested runtime
+scalar slots, and additionally caps live Xphysical at 200,000 and requested runtime
 storage at 16 MiB. Requested bytes include reserved frame-header capacity,
 active Dref and one 8-byte scalar scratch cell. On the qualified representation
 each header is 272 bytes; these formulas are not portable layout promises.
@@ -1140,6 +1244,7 @@ as defined above (2 for an enum), and r be the call's number of borrowed argumen
 | Each enum match dispatch / selected arm consumption | `1` / `1 + w` |
 | Array/slice index read/write, after all operands | `1` before bounds and load/store |
 | Array/slice length | `1` before consumer validation and result |
+| Bounded stdin core, capacity C and A attempted reads | `4 + C + A`; result construction and commit prepaid |
 | Whole replacement | `1 + 2w` |
 | OpenCall | `1 + owned_argument_count` |
 | Invoke | `1 + argc + X(callee) + sum(owned_argument_widths) + r(r-1)/2` |
@@ -1172,7 +1277,7 @@ operator span.
 
 | Resource | Current maximum |
 | --- | --- |
-| Input bytes | 1,048,576; reader stops after maximum + 1 bytes |
+| Source bytes | 1,048,576; reader stops after maximum + 1 bytes |
 | Non-EOF tokens, including trivia | 100,000 |
 | Bytes in one token, including whitespace/comment tokens | 65,536 |
 | Syntax nodes counted by parser | 100,000 |

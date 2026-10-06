@@ -34,18 +34,18 @@ class SourceAuthorityControls(unittest.TestCase):
             build.prepare(SimpleNamespace(
                 source_root=cls.repo,
                 manifest=cls.repo / 'tests/fixtures/typed_project_source_binding/current-source.json',
-                observer_patch=cls.package / 'observer-enum-v1.patch',
+                observer_patch=cls.package / 'observer-stdin-v1.patch',
                 observer_patch_sha256=build.LIFECYCLE_PATCH_SHA,
                 out=cls.output))
         cls.manifest = json.loads((cls.output / 'observer-source.json').read_bytes())
 
-    def test_enum_current_and_derived_maps_are_exact(self):
+    def test_stdin_current_and_derived_maps_are_exact(self):
         import authority
         original = json.loads((self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes())
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-        self.assertEqual(len(original['files']), 237)
+        self.assertEqual(len(original['files']), 252)
         self.assertEqual(sha(canonical(original['files'])), authority.CURRENT_FILES_SHA)
-        self.assertEqual(len(self.manifest['files']), 238)
+        self.assertEqual(len(self.manifest['files']), 253)
         self.assertEqual(sha(canonical(self.manifest['files'])), authority.OBSERVER_FILES_SHA)
         self.assertEqual(set(self.manifest['changed_paths']), {
             'src/frontend/mod.rs', 'src/frontend/project.rs', 'src/frontend/lexer.rs',
@@ -55,7 +55,7 @@ class SourceAuthorityControls(unittest.TestCase):
         self.assertEqual(json.loads((self.output / 'prepared.json').read_bytes())['compiler_invocations'], 0)
 
     def test_lifecycle_successor_restores_exact_historical_patch(self):
-        current = (self.package / 'observer-enum-v1.patch').read_bytes()
+        current = (self.package / 'observer-stdin-v1.patch').read_bytes()
         projected = (self.package / 'observer-combined-v1.patch').read_bytes()
         self.assertEqual(sha(projected), self.builder.PROJECTED_LIFECYCLE_PATCH_SHA)
         historical = (self.repo / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
@@ -90,7 +90,8 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('enum_qualified_paths_controls', helper)
         cls.helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.helper)
-        cls.manifest = cls.repo / 'tests/fixtures/typed_project_source_binding/current-source.json'
+        cls.manifest = cls.repo / 'tests/fixtures/typed_project_source_binding/enum-source.json'
+        cls.execution_manifest = cls.repo / 'tests/fixtures/typed_project_source_binding/current-source.json'
         cls.corpus = cls.repo / 'tests/fixtures/typed_project_unit2_independent/semantic/corpus.jsonl.gz'
         cls.descriptor = cls.amendment_root / 'enum-enabled-qualified-values-v1.json'
         transport_root = cls.repo / 'tests/fixtures/typed_project_unit4_contracts'
@@ -230,7 +231,7 @@ class EnumQualifiedPathsControls(unittest.TestCase):
 
     def test_public_amendment_preserves_first_code_stage_domain(self):
         from predecessors import Predecessors
-        current = Predecessors(self.contracts, self.manifest, self.amendment_root)
+        current = Predecessors(self.contracts, self.execution_manifest, self.amendment_root)
         historical = Predecessors(self.contracts)
         policy = {'applies_to': []}
         before = copy.deepcopy(current.rows)
@@ -261,6 +262,21 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         self.assertEqual(current.rows, before)
         self.assertIsNone(historical.qualified_paths_amendment)
         self.assertEqual(len(current.qualified_paths_amendment['rows']), 4)
+
+    def test_semantic_and_execution_sources_have_distinct_exact_roles(self):
+        from predecessors import Predecessors
+        import authority
+        current = Predecessors(self.contracts, self.execution_manifest, self.amendment_root)
+        receipt = current.qualified_paths_amendment
+        self.assertEqual(receipt['source_manifest']['sha256'], authority.ENUM_SOURCE_SHA)
+        self.assertEqual(receipt['source_manifest']['members'], 237)
+        self.assertEqual(receipt['execution_source_manifest']['sha256'], authority.CURRENT_SOURCE_SHA)
+        self.assertEqual(receipt['execution_source_manifest']['members'], 252)
+        self.assertEqual(self.helper.sha(self.manifest.read_bytes()), authority.ENUM_SOURCE_SHA)
+        with self.assertRaisesRegex(Reject, 'current execution source identity'):
+            Predecessors(self.contracts, self.manifest, self.amendment_root)
+        with self.assertRaisesRegex(ValueError, 'source manifest'):
+            self.helper.Amendment(self.execution_manifest, self.corpus, self.descriptor)
 
     def test_public_source_expected_host_profile_and_operation_drift_reject(self):
         amendment = self.amendment()

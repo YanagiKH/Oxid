@@ -52,6 +52,7 @@ fn raw(value: i32, guarded: bool) -> (SourceMap, RawOwnedProgram, Span) {
     (
         sources,
         RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
             functions,

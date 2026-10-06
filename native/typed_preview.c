@@ -5,6 +5,17 @@
 #include <stdint.h>
 #include <unistd.h>
 
+/* Private bounded-input adapter. Exactly one unbuffered one-byte attempt;
+ * retries and their fuel belong to the verified caller. Never change stdin,
+ * process signal policy, or descriptor flags here. The byte is valid only on 1.
+ */
+int32_t __oxid_read_stdin_byte(uint8_t *byte) {
+    ssize_t done = read(STDIN_FILENO, byte, 1);
+    if (done == 1) return 1;
+    if (done == 0) return 0;
+    return errno == EINTR ? -1 : -2;
+}
+
 static int output(int fd, const char *bytes, size_t length) {
     /* Broken pipes are reported as EX_IOERR, not an asynchronous SIGPIPE exit. */
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) return 74;

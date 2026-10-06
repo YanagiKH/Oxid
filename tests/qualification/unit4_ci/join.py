@@ -82,6 +82,10 @@ def verify_qualified_paths_receipts(run, predecessors, rows, values, policy, aut
     """Reconstruct both semantics from admitted sources and raw process observations."""
     q.need(q.canonical(authority) == q.canonical(predecessors.qualified_paths_amendment) and authority is not None,
            'public predecessor semantic amendment authority differs')
+    q.need(authority['source_manifest']['sha256'] == q.ENUM_SHA and authority['source_manifest']['members'] == 237 and
+           authority['execution_source_manifest']['sha256'] == q.CURRENT_SHA and
+           authority['execution_source_manifest']['members'] == 252,
+           'public predecessor semantic and execution source roles differ')
     try:
         q.need(len(rows) == len(values), 'public predecessor semantic receipt count')
         for row, value in zip(rows, values):

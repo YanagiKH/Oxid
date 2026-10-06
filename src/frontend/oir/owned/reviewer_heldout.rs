@@ -132,6 +132,7 @@ fn base(s: Span, owners: usize) -> RawOwnedProgram {
         f.blocks[0].statements.push(construct(id, s));
     }
     RawOwnedProgram {
+        builtins: BuiltinOrigins::None,
         enums: vec![],
         records,
         functions: vec![f],

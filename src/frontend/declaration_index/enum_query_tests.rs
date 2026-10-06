@@ -335,7 +335,7 @@ fn enum_query_actual_fixed_and_prepared_name_carriers_are_measured() {
     const { assert!(FIXED_SCRATCH > 3968) };
     const { assert!(FIXED_SCRATCH <= 4096) };
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(size_of::<PreparedTypeName<'_>>(), 576);
+    assert_eq!(size_of::<PreparedTypeName<'_>>(), 464);
 }
 
 #[cfg(target_os = "linux")]
@@ -582,16 +582,29 @@ fn enum_query_utf8_display_preserves_boundaries_without_source_identifiers() {
     // Direct formatter data, deliberately not a claim of Unicode source identifiers.
     let module = "é".repeat(100);
     let terminal = "λ".repeat(40);
-    let mut names = [""; 33];
-    names[0] = module.as_str();
+    let mut map = crate::frontend::source::SourceMap::new();
+    map.add("formatter.ox".into(), format!("//{module}\n"));
+    let file = map.get(SourceFileId(0));
+    let ast =
+        crate::frontend::parser::parse(file, crate::frontend::lexer::lex(file).unwrap()).unwrap();
+    let owner = SourceOwner::original(
+        file,
+        &ast,
+        crate::frontend::source::SourceView::Single(file),
+    )
+    .unwrap();
+    let mut names = [CompactSpan::default(); 32];
+    names[0] = CompactSpan::new(file.span(2, 2 + module.len())).unwrap();
     let prepared = PreparedTypeName {
         names,
+        sources: owner,
         count: 1,
         terminal: &terminal,
         ordinal: 0,
         total: 7 + module.len() + 2 + terminal.len(),
         original: false,
         is_enum: true,
+        builtin: false,
     };
     let display = prepared.to_string();
     assert!(display.len() <= 160);
@@ -675,10 +688,16 @@ fn enum_query_full_path_limit_counts_member_and_function_endpoints() {
             expected
         );
         let last = project.try_file_ast(SourceFileId(depth)).unwrap().enums[0].name;
-        assert!(index
+        let prepared = index
             .query(&WorkMeter::default())
             .prepare_nominal_type_name(NominalId::Enum(EnumId(0)), last)
-            .is_ok());
+            .unwrap();
+        let mut expected = String::from("crate");
+        for level in 0..depth {
+            expected.push_str(&format!("::m{level}"));
+        }
+        expected.push_str("::E");
+        assert_eq!(prepared.to_string(), expected);
     }
 }
 
@@ -892,7 +911,27 @@ fn enum_query_complete_return_carriers_fit_the_explicit_fixed_ledger() {
         + size_of::<Result<NominalId, Box<Diagnostic>>>()
         + size_of::<&ItemPathRef>();
     println!("enum-query-return-layout PrefixResult={} EndpointResult={} NominalExposureResult={} NominalIdResult={} LegacyExposureResult={} UseSpan={} LegacyEnvelope={} Added={} Fixed={}",size_of::<Result<AbsolutePrefix,Box<Diagnostic>>>(),size_of::<Result<QualifiedValueEndpoint,Box<Diagnostic>>>(),size_of::<Result<NominalExposure,Box<Diagnostic>>>(),size_of::<Result<NominalId,Box<Diagnostic>>>(),old,at,size_of::<[Span;4]>(),added,FIXED_SCRATCH);
-    assert_eq!(FIXED_SCRATCH, 3968 + added);
+    // Keep the earlier literal baseline and disclose each scoped carrier delta.
+    let builtin = size_of::<BuiltinAdmission>()
+        + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
+        + size_of::<Result<Option<DeclarationHandle>, Box<Diagnostic>>>()
+        + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
+        + size_of::<Option<&ast::EnumDecl>>()
+        + size_of::<Option<&ast::EnumVariantSyntax>>()
+        + size_of::<source_owner::QualifiedPathView<'_>>()
+        + size_of::<bool>()
+        + size_of::<Option<usize>>()
+        + size_of::<super::super::parser::StdImportPolicy>()
+        + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>()
+        + size_of::<[usize; 2]>()
+        + size_of::<Option<&str>>();
+    let table_growth = size_of::<Tables<'_>>() - 344;
+    let names_saved = 2 * (576 - size_of::<PreparedTypeName<'_>>());
+    assert_eq!(
+        FIXED_SCRATCH,
+        3968 + added + table_growth + builtin - names_saved
+    );
+    println!("builtin-index-fixed-breakdown baseline=4088 table_growth={table_growth} new_carriers={builtin} name_savings={names_saved} complete={FIXED_SCRATCH}");
 }
 
 #[test]
@@ -996,4 +1035,27 @@ fn enum_query_bounded_variant_scan_has_literal_costs_through_256_members() {
             .any(|event| matches!(event, Observation::VariantTarget { .. })));
     }
     println!("enum-query-item-handles ItemPathRef={} FourHandles={} BankHandleWords={} RemainingBankWords={} ExtraHelperReference={} Fixed={}",size_of::<ItemPathRef>(),size_of::<[ItemPathRef;4]>(),ITEM_HANDLE_WORDS,128-ITEM_HANDLE_WORDS,size_of::<&ItemPathRef>(),FIXED_SCRATCH);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn builtin_compact_prepared_name_preserves_32_module_boundary() {
+    let fixture = deep_fixture(33, false, false);
+    // Avoid the separate qualified-path segment gate: this tests loader depth.
+    fs::write(
+        fixture.0.join("main.ox"),
+        "pub mod m0;fn root()->(){return;}",
+    )
+    .unwrap();
+    let failure = ProjectSources::load_builtin_candidate(
+        fixture.0.join("main.ox").to_str().unwrap(),
+        ProjectLimits::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap_err();
+    assert_eq!(failure.diagnostics[0].code, "E0400");
+    assert_eq!(
+        failure.diagnostics[0].message,
+        "module depth limit exceeded"
+    );
 }

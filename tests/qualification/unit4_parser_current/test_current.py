@@ -33,15 +33,17 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [400, 403, 403])
-        self.assertEqual(len(a['current_source']['files']), 237)
-        self.assertEqual(len(p.compiler_map(a)), 182)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [415, 418, 418])
+        self.assertEqual(len(a['current_source']['files']), 252)
+        self.assertEqual(len(p.compiler_map(a)), 197)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 194)
+        self.assertEqual(len(a['current']['source_delta']), 210)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
+ 'src/frontend/builtin_catalog.rs',
+ 'src/frontend/declaration_index/builtin_tests.rs',
  'src/frontend/declaration_index/enum_query_tests.rs',
  'src/frontend/declaration_index/enum_tests.rs',
  'src/frontend/declaration_index/enum_views.rs',
@@ -58,6 +60,12 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/array_reference_boundary_tests.rs',
  'src/frontend/oir/owned/array_reference_tests.rs',
  'src/frontend/oir/owned/array_tests.rs',
+ 'src/frontend/oir/owned/builtin_descriptor_tests.rs',
+ 'src/frontend/oir/owned/builtin_input_fixtures.rs',
+ 'src/frontend/oir/owned/builtin_input_native_tests.rs',
+ 'src/frontend/oir/owned/builtin_input_tests.rs',
+ 'src/frontend/oir/owned/builtin_origin_tests.rs',
+ 'src/frontend/oir/owned/builtins.rs',
  'src/frontend/oir/owned/composition_native_tests.rs',
  'src/frontend/oir/owned/composition_reference_tests.rs',
  'src/frontend/oir/owned/composition_verifier_tests.rs',
@@ -71,6 +79,7 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/enum_parser_allocation_tests.rs',
  'src/frontend/oir/owned/enum_query_allocation_tests.rs',
  'src/frontend/oir/owned/enum_reference_tests.rs',
+ 'src/frontend/oir/owned/input.rs',
  'src/frontend/oir/owned/negation_raw_tests.rs',
  'src/frontend/oir/owned/projected_slice_native_tests.rs',
  'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
@@ -83,6 +92,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/source/array_pipeline_transport.rs',
  'src/frontend/oir/owned/source/array_type_controls.rs',
  'src/frontend/oir/owned/source/array_types_tests.rs',
+ 'src/frontend/oir/owned/source/builtin_lower.rs',
+ 'src/frontend/oir/owned/source/builtin_signature_tests.rs',
+ 'src/frontend/oir/owned/source/builtin_source_tests.rs',
  'src/frontend/oir/owned/source/enum_native_source_tests.rs',
  'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
  'src/frontend/oir/owned/source/enum_type_tests.rs',
@@ -105,12 +117,15 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/unary_source_tests.rs',
  'src/frontend/parser/array_syntax_tests.rs',
  'src/frontend/parser/arrays.rs',
+ 'src/frontend/parser/builtin_tests.rs',
  'src/frontend/parser/enum_syntax_tests.rs',
  'src/frontend/parser/enums.rs',
  'src/frontend/project/array_syntax_tests.rs',
  'src/frontend/project/budget_real_null_observer.rs',
+ 'src/frontend/project/builtin_tests.rs',
  'src/frontend/project/enum_carrier_tests.rs',
  'src/frontend/project/enum_index_tests.rs',
+ 'src/frontend/stdin_public_tests.rs',
  'tests/fixtures/bounded_enum_scanner/main.ox',
  'tests/fixtures/bounded_enum_scanner/scanner.ox',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
@@ -156,9 +171,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 77)
-        self.assertEqual(a['current']['reviewed_source_head'], '78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd')
-        self.assertEqual(a['current']['source_only_tree'], '4970ee660f670cfcb23f42a9cb182a4ca7996388')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 78)
+        self.assertEqual(a['current']['reviewed_source_head'], 'c1d73740268d64d4e908ad86ed9dabaa48dd1c23')
+        self.assertEqual(a['current']['source_only_tree'], 'b19991275b22426397d708ac0afa1874e6511b00')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -167,7 +182,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -206,7 +221,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 400)
+        self.assertEqual(len(candidate['files']), 415)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -375,7 +390,7 @@ class ArrayCompositionControls(unittest.TestCase):
             a = copy.deepcopy(self.a)
             raw = (p.REPOSITORY / name).read_bytes() + b'// changed historical tail\n'
             next(row for row in a['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            message = ('enum transition must recover exact projected source' if name in p.UNARY_INSTRUMENTATION_PATHS
+            message = ('stdin transition must recover exact enum source' if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source' if name in p.DIVISION_INSTRUMENTATION_PATHS
                        else 'enum transition must recover exact projected source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
@@ -397,6 +412,7 @@ class ArrayCompositionControls(unittest.TestCase):
         raw = p.compose_observer_initializer(self.a)
         insertion = (b'            arrays: ArraySyntaxPolicy::Closed,\n'
                      b'            enums: EnumSyntaxPolicy::Closed,\n'
+                     b'            std_imports: StdImportPolicy::Closed,\n'
                      b'            storage: enums::SyntaxStorage::default(),\n')
         self.assertEqual(raw.count(insertion), 1)
         self.assertEqual(raw.replace(insertion, b'', 1), (p.FROZEN / 'frozen/helpers/observer.rs').read_bytes())
@@ -455,7 +471,7 @@ class DivisionCompositionControls(unittest.TestCase):
                 p.restore_division_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            message = ('enum transition must recover exact projected source' if name in p.UNARY_INSTRUMENTATION_PATHS
+            message = ('stdin transition must recover exact enum source' if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
                 p.restore_division_source(altered, name, raw)
@@ -507,7 +523,7 @@ class SlicesCompositionControls(unittest.TestCase):
                 p.restore_slices_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'stdin transition must recover exact enum source' if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
                 p.restore_slices_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -549,7 +565,7 @@ class RecordCompositionControls(unittest.TestCase):
                 p.restore_composition_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'stdin transition must recover exact enum source' if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
                 p.restore_composition_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -591,7 +607,7 @@ class UnaryCompositionControls(unittest.TestCase):
                 p.restore_unary_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'stdin transition must recover exact enum source' if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
                 p.restore_unary_source(altered, name, raw)
 
     def test_unary_patch_and_predecessor_identity_reject_before_transform(self):
@@ -633,7 +649,7 @@ class ProjectedCompositionControls(unittest.TestCase):
                 p.restore_projected_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'stdin transition must recover exact enum source' if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
                 p.restore_projected_source(altered, name, raw)
 
     def test_projected_patch_and_predecessor_identity_reject_before_transform(self):
@@ -654,6 +670,50 @@ class ProjectedCompositionControls(unittest.TestCase):
         for name in ('src/frontend/lexer.rs', 'src/frontend/source.rs', 'src/frontend/project/budget.rs'):
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unapproved projected instrumentation path'):
                 p.restore_projected_source(self.a, name, b'')
+
+
+class StdinCompositionControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a = p.authority()
+
+    def test_exact_stdin_overlap_roster_and_enum_predecessors(self):
+        self.assertEqual(p.STDIN_INSTRUMENTATION_PATHS,
+                         ('src/frontend/ast.rs', 'src/frontend/parser.rs'))
+        before = p.read(p.REPOSITORY / self.a['current']['enum_source_manifest']['path'])
+        self.assertEqual(len(before['files']), 237)
+        for name in p.STDIN_INSTRUMENTATION_PATHS:
+            restored = p.restore_stdin_source(self.a, name, (p.REPOSITORY / name).read_bytes())
+            self.assertEqual({'path': name, 'bytes': len(restored), 'sha256': p.sha(restored)},
+                             next(row for row in before['files'] if row['path'] == name))
+
+    def test_changed_and_coherently_rehashed_stdin_source_rejects(self):
+        for name in p.STDIN_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes() + b'// unauthorized stdin tail\n'
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'composition current stdin identity'):
+                p.restore_stdin_source(self.a, name, raw)
+            altered = copy.deepcopy(self.a)
+            next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'stdin transition must recover exact enum source'):
+                p.restore_stdin_source(altered, name, raw)
+
+    def test_stdin_transition_predecessor_and_runner_identity_reject_before_transform(self):
+        fields = ('source_binding_runner', 'stdin_transition_patch', 'enum_source_manifest')
+        for field in fields:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for key in fields:
+                    relative = self.a['current'][key]['path']
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((p.REPOSITORY / relative).read_bytes() + (b'\n' if key == field else b''))
+                raw = (p.REPOSITORY / 'src/frontend/ast.rs').read_bytes()
+                with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
+                    p.restore_stdin_source(self.a, 'src/frontend/ast.rs', raw)
+
+    def test_unknown_stdin_instrumentation_path_rejects(self):
+        with self.assertRaisesRegex(p.Rejected, 'unapproved stdin instrumentation path'):
+            p.restore_stdin_source(self.a, 'src/frontend/project/budget.rs', b'')
 
 
 class EnumCompositionControls(unittest.TestCase):
@@ -679,7 +739,7 @@ class EnumCompositionControls(unittest.TestCase):
                 p.restore_enum_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'stdin transition must recover exact enum source' if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
                 p.restore_enum_source(altered, name, raw)
 
     def test_enum_transition_predecessor_and_runner_identity_reject_before_transform(self):
@@ -725,7 +785,7 @@ class EnumCompositionControls(unittest.TestCase):
         self.assertNotIn(b'self.unit4_node("unary_with_prefixes")?;', current)
         control = p.compose_array_instrumentation(self.a, 'src/frontend/parser.rs', raw, True)
         self.assertEqual(control, raw + b'\n#[cfg(test)]\npub(super) mod unit4_observer;\n')
-        self.assertIn(b'        EnumSyntaxPolicy::Closed,\n        &mut enums::SyntaxStorage::default(),', raw)
+        self.assertIn(b'        EnumSyntaxPolicy::Closed,\n        StdImportPolicy::Closed,\n        &mut enums::SyntaxStorage::default(),', raw)
         enum_module = (p.REPOSITORY / 'src/frontend/parser/enums.rs').read_bytes()
         self.assertIn(b'pub(super) fn enum_qualified_ahead(&self) -> bool {\n        if !self.enums_enabled()', enum_module)
 
@@ -894,7 +954,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 182)
+        self.assertEqual(len(bound['compiler_files']), 197)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())

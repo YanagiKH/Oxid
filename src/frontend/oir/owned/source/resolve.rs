@@ -3,6 +3,7 @@ use super::hir::*;
 use super::resolver_storage::{self as storage, Kind, PaidStorage};
 use crate::frontend::{
     ast,
+    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinSet},
     declaration_index::{
         self as index, Access, DeclarationIndex, Exposure, IndexLimits, NominalExposure, NominalId,
         PreparedTypeName, QualifiedValueEndpoint, QuerySession, SourceOwner, TypeContext,
@@ -31,6 +32,8 @@ pub(super) enum SourceAdmission {
     #[cfg(test)]
     EnumPipeline,
     #[cfg(test)]
+    BuiltinPipeline,
+    #[cfg(test)]
     ObserveArrayPipeline,
     #[cfg(test)]
     ArrayConsumer,
@@ -43,7 +46,10 @@ impl SourceAdmission {
         match self {
             Self::Executable => true,
             #[cfg(test)]
-            Self::ObserveArrayPipeline | Self::ArrayConsumer | Self::EnumPipeline => true,
+            Self::ObserveArrayPipeline
+            | Self::ArrayConsumer
+            | Self::EnumPipeline
+            | Self::BuiltinPipeline => true,
             #[cfg(test)]
             Self::ObserveArrayTypes | Self::ObserveEnumTypes => false,
         }
@@ -177,6 +183,54 @@ impl<'src> ResolvedOwnedProgram<'src> {
     pub(super) fn entry(&self) -> Option<DefId> {
         self.entry
     }
+    /// Check the source-body prefix and sole catalog signature suffix against
+    /// the frozen index. Called before builtin paid typing and source lowering;
+    /// a signature vector's length or diagnostic spelling is never authority.
+    pub(super) fn validate_function_signatures(&self) -> Result<(), Box<Diagnostic>> {
+        let index = self.index();
+        let at = index.sources().eof();
+        self.work().debit(1, at, "source signature identity")?;
+        if self.functions.len() != index.source_function_count()
+            || self.signatures.len() != index.function_count()
+        {
+            return Err(invalid_signature_identity(at));
+        }
+        for (ordinal, function) in self.functions.iter().enumerate() {
+            self.work()
+                .debit(1, function.end, "source signature identity")?;
+            if function.id != DefId(ordinal) {
+                return Err(invalid_signature_identity(function.end));
+            }
+        }
+        if index.builtin_set() == BuiltinSet::ReadStdin {
+            let id = index.builtin_function_id(BuiltinFunction::ReadStdin)?;
+            let enumeration = index.builtin_enum_id(BuiltinEnum::ReadStatus)?;
+            let anchor = index.builtin_function_anchor(BuiltinFunction::ReadStdin)?;
+            let signature = self
+                .signatures
+                .get(id.0)
+                .ok_or_else(|| invalid_signature_identity(at))?;
+            let (parameter, result) = BuiltinFunction::ReadStdin.signature(enumeration);
+            self.work().debit(5, anchor, "builtin signature identity")?;
+            if id.0 != self.functions.len()
+                || signature.params.as_slice() != [parameter]
+                || signature.result != result
+                || signature.span != anchor
+            {
+                return Err(invalid_signature_identity(anchor));
+            }
+        } else if self.signatures.len() != self.functions.len() {
+            return Err(invalid_signature_identity(at));
+        }
+        Ok(())
+    }
+}
+fn invalid_signature_identity(at: Span) -> Box<Diagnostic> {
+    error(
+        "E0500",
+        format_args!("invalid source signature identity"),
+        at,
+    )
 }
 fn text(source: &SourceFile, span: Span) -> &str {
     source.text_at(span)
@@ -378,8 +432,9 @@ fn resolve_index(
     }
     resolve_index_impl(index, work, allocator, None)
 }
-/// Sole production enum typing construction. Source provenance is checked
-/// before storage, and no owner, seed, plan or admission is supplied by callers.
+/// Sole production enum-bearing typing construction, including builtin enums.
+/// Source provenance is checked before storage; callers supply no owner, seed,
+/// plan or admission.
 /// Public facades select this only for an enum-bearing frozen index.
 #[allow(dead_code)]
 pub(in crate::frontend::oir) fn type_enum_source<'s>(
@@ -398,16 +453,45 @@ pub(in crate::frontend::oir) fn type_enum_source<'s>(
             at,
         )]);
     }
+    type_paid_source(index, work, allocator, SourceAdmission::Executable)
+}
+
+/// Sole caller is program.rs's fresh private candidate continuation. The
+/// borrowed typed owner remains inside that continuation and never grants
+/// SourceProgram/executable authority, including a candidate without imports.
+#[cfg(test)]
+pub(super) fn type_builtin_source<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    index
+        .require_builtin_candidate_pipeline()
+        .map_err(|error| vec![*error])?;
+    type_paid_source(index, work, allocator, SourceAdmission::BuiltinPipeline)
+}
+
+fn type_paid_source<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+    admission: SourceAdmission,
+) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let at = index.sources().eof();
     let attempts_before = allocator.attempts;
-    let plan = super::hir_budget::preflight_enum_hir(index, work)
-        .map_err(|error| vec![*error])?
-        .ok_or_else(|| {
-            vec![*error(
-                "E0500",
-                format_args!("missing enum HIR preflight"),
-                at,
-            )]
-        })?;
+    let plan = match admission {
+        #[cfg(test)]
+        SourceAdmission::BuiltinPipeline => super::hir_budget::preflight_builtin_hir(index, work),
+        _ => super::hir_budget::preflight_current_hir(index, work),
+    }
+    .map_err(|error| vec![*error])?
+    .ok_or_else(|| {
+        vec![*error(
+            "E0500",
+            format_args!("missing enum HIR preflight"),
+            at,
+        )]
+    })?;
     let parts;
     let resolver_end;
     {
@@ -428,7 +512,7 @@ pub(in crate::frontend::oir) fn type_enum_source<'s>(
     let (records, signatures, functions) = parts;
     let program = ResolvedOwnedProgram {
         projection_bytes: std::cell::Cell::new(plan.total),
-        admission: SourceAdmission::Executable,
+        admission,
         sources: index.sources().view(),
         index: IndexOwner::Borrowed(index),
         work: MeterOwner::Borrowed(work),
@@ -439,7 +523,13 @@ pub(in crate::frontend::oir) fn type_enum_source<'s>(
     };
     // The scalar checkpoint detects any request inserted between reconciled
     // resolution and paid typing; it is not a caller-chosen seed or capability.
-    super::typeck::finish_enum_source(program, &plan, allocator, resolver_end)
+    match admission {
+        #[cfg(test)]
+        SourceAdmission::BuiltinPipeline => {
+            super::typeck::finish_builtin_source(program, &plan, allocator, resolver_end)
+        }
+        _ => super::typeck::finish_enum_source(program, &plan, allocator, resolver_end),
+    }
 }
 
 /// Test-only fixed statistics, never a source/typing/ownership witness. All
@@ -450,6 +540,9 @@ pub(super) fn probe_enum_resolver_storage(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<Option<storage::ResolverStorageObservation>, Vec<Diagnostic>> {
+    index
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     // The selector must precede every new query, phase, work debit or reserve.
     if index.enum_count() == 0 {
         return Ok(None);
@@ -514,6 +607,9 @@ pub(super) fn probe_enum_type_storage<'s>(
     work: &'s WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>> {
+    index
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     if index.enum_count() == 0 {
         return Ok(None);
     }
@@ -667,6 +763,9 @@ pub(super) fn probe_enum_pipeline<'s>(
     allocator: &mut Allocator,
     request: EnumPipelineRequest,
 ) -> Result<Option<EnumPipelineOutput>, Vec<Diagnostic>> {
+    index
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     if index.enum_count() == 0 {
         return Ok(None);
     }
@@ -932,6 +1031,9 @@ fn resolve_index_impl(
     allocator: &mut Allocator,
     mut paid: Option<&mut PaidStorage>,
 ) -> Result<ResolvedParts, Vec<Diagnostic>> {
+    if index.builtin_set() != BuiltinSet::None && paid.is_none() {
+        return Err(vec![*invalid_signature_identity(index.sources().eof())]);
+    }
     let sources = index.sources();
     let mut diagnostics = Vec::new();
     let mut records = match paid.as_deref_mut() {
@@ -1020,7 +1122,7 @@ fn resolve_index_impl(
             .map_err(|e| vec![*e])?,
         None => Vec::new(),
     };
-    for id in 0..index.function_count() {
+    for id in 0..index.source_function_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
@@ -1096,6 +1198,10 @@ fn resolve_index_impl(
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
+    if index.builtin_set() == BuiltinSet::ReadStdin {
+        append_builtin_signature(index, work, allocator, paid.as_deref_mut(), &mut signatures)
+            .map_err(|error| vec![*error])?;
+    }
     if records.iter().any(|record| {
         record
             .fields
@@ -1135,7 +1241,10 @@ fn resolve_index_impl(
     work.phase("exposure");
     // Exposure consumes already selected nominal identities; it does not resolve
     // signatures a second time or consult caller enumeration.
-    for (id, signature) in signatures.iter().enumerate() {
+    for (id, signature) in signatures[..index.source_function_count()]
+        .iter()
+        .enumerate()
+    {
         let (key, module) = index.function(DefId(id)).map_err(|e| vec![*e])?;
         let function = &sources.ast(module).map_err(|e| vec![*e])?.functions[key.index];
         let params = signature
@@ -1249,14 +1358,14 @@ fn resolve_index_impl(
             .reserve(
                 allocator,
                 Kind::Functions,
-                index.function_count(),
+                index.source_function_count(),
                 sources.eof(),
             )
             .map_err(|e| vec![*e])?,
         None => Vec::new(),
     };
     let mut array_entries = 0usize;
-    for id in 0..index.function_count() {
+    for id in 0..index.source_function_count() {
         if diagnostics.len() >= MAX_DIAGNOSTICS {
             break;
         }
@@ -1300,6 +1409,34 @@ fn resolve_index_impl(
     } else {
         Err(diagnostics)
     }
+}
+
+fn append_builtin_signature(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+    paid: Option<&mut PaidStorage>,
+    signatures: &mut Vec<Signature>,
+) -> Result<(), Box<Diagnostic>> {
+    let at = index.builtin_function_anchor(BuiltinFunction::ReadStdin)?;
+    let id = index.builtin_function_id(BuiltinFunction::ReadStdin)?;
+    if id.0 != signatures.len() || id.0 != index.source_function_count() {
+        return Err(invalid_signature_identity(at));
+    }
+    let enumeration = index.builtin_enum_id(BuiltinEnum::ReadStatus)?;
+    let (parameter, result) = BuiltinFunction::ReadStdin.signature(enumeration);
+    let paid = paid.ok_or_else(|| invalid_signature_identity(at))?;
+    work.debit(2, at, "builtin signature construction")?;
+    let mut params = paid.reserve(allocator, Kind::Parameters, 1, at)?;
+    storage::room(&params, params.capacity(), true, at)?;
+    params.push(parameter);
+    storage::room(signatures, signatures.capacity(), true, at)?;
+    signatures.push(Signature {
+        params,
+        result,
+        span: at,
+    });
+    Ok(())
 }
 // Real construction-local state, never retained in the returned program.
 // The vector backing is separately admitted by Kind::MatchArms.
@@ -2816,7 +2953,79 @@ struct ProductionSourceCarriers {
     reconciliation_normalized: Result<storage::ResolverStorageObservation, Vec<Diagnostic>>,
     discarded_observation: storage::ResolverStorageObservation,
     returned: Result<super::typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    // The source wrappers now transfer to one paid body. Both the wrapper and
+    // shared callee have named input/return roles; no tail-call elision assumed.
+    dispatch_inputs: (
+        &'static DeclarationIndex<'static>,
+        &'static WorkMeter,
+        &'static mut Allocator,
+        SourceAdmission,
+    ),
+    dispatch_return: Result<super::typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
 }
 pub(super) const fn production_source_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionSourceCarriers>()
 }
+
+/// New signature construction roles. The pending Vec<ParameterTy> is already
+/// priced by HirCounts.signatures; the retained header lives inside Signature.
+/// The complete constructed Signature is separate from both named headers.
+#[allow(dead_code)]
+struct BuiltinSignatureCarriers {
+    index: &'static DeclarationIndex<'static>,
+    work: &'static WorkMeter,
+    allocator: &'static mut Allocator,
+    paid_argument: Option<&'static mut PaidStorage>,
+    paid: &'static mut PaidStorage,
+    signatures: &'static mut Vec<Signature>,
+    anchor: Span,
+    function: DefId,
+    enumeration: crate::frontend::oir::owned_types::EnumId,
+    recipe: (ParameterTy, ValueTy),
+    recipe_return: (ParameterTy, ValueTy),
+    constructed: Signature,
+    anchor_return: Result<Span, Box<Diagnostic>>,
+    function_return: Result<DefId, Box<Diagnostic>>,
+    enum_return: Result<crate::frontend::oir::owned_types::EnumId, Box<Diagnostic>>,
+    paid_return: Result<&'static mut PaidStorage, Box<Diagnostic>>,
+    returns: [Result<(), Box<Diagnostic>>; 4],
+    normalized: Result<(), Vec<Diagnostic>>,
+}
+
+/// Two distinct caller families are summed in the conservative source envelope:
+/// fresh typing checks the resolved owner; pre-lowering checks the typed wrapper.
+/// Repeated nonrecursive preflight calls reuse the latter named control family.
+#[allow(dead_code)]
+struct SignatureIdentityCarriers {
+    program: &'static ResolvedOwnedProgram<'static>,
+    typed: &'static super::typeck::TypedOwnedProgram<'static>,
+    index: &'static DeclarationIndex<'static>,
+    at: Span,
+    functions: std::iter::Enumerate<std::slice::Iter<'static, Function>>,
+    next: Option<(usize, &'static Function)>,
+    current: (usize, &'static Function),
+    function: DefId,
+    enumeration: crate::frontend::oir::owned_types::EnumId,
+    anchor: Span,
+    signature: &'static Signature,
+    recipe: (ParameterTy, ValueTy),
+    recipe_return: (ParameterTy, ValueTy),
+    parameter_comparison: [ParameterTy; 1],
+    anchor_return: Result<Span, Box<Diagnostic>>,
+    function_return: Result<DefId, Box<Diagnostic>>,
+    enum_return: Result<crate::frontend::oir::owned_types::EnumId, Box<Diagnostic>>,
+    signature_option: Option<&'static Signature>,
+    signature_return: Result<&'static Signature, Box<Diagnostic>>,
+    returns: [Result<(), Box<Diagnostic>>; 4],
+    normalized: Result<(), Vec<Diagnostic>>,
+}
+pub(super) const fn builtin_signature_carrier_bytes() -> usize {
+    std::mem::size_of::<BuiltinSignatureCarriers>()
+}
+pub(super) const fn signature_identity_carrier_bytes() -> usize {
+    std::mem::size_of::<SignatureIdentityCarriers>()
+}
+
+#[cfg(test)]
+#[path = "builtin_signature_tests.rs"]
+mod builtin_signature_tests;

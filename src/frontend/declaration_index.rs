@@ -8,6 +8,8 @@ mod sealed;
 mod source_owner;
 pub(super) use source_owner::SourceOwner;
 #[cfg(test)]
+mod builtin_tests;
+#[cfg(test)]
 mod enum_query_tests;
 #[cfg(test)]
 mod enum_tests;
@@ -15,6 +17,7 @@ mod enum_tests;
 mod tests;
 use super::{
     ast,
+    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet, DeclarationOrigin},
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
     oir::owned_types::{
@@ -37,8 +40,11 @@ pub(super) use resource::{
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
 #[cfg(test)]
-pub(super) use sealed::{collect_closed, collect_enum_candidate};
+pub(super) use sealed::{
+    collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_std_closed,
+};
 pub(super) use sealed::{collect_originals, DeclarationFacts, DeclarationIndex};
+use sealed::{BuiltinAdmission, CandidateOrigin};
 use std::{cmp::Ordering, fmt, mem::size_of};
 
 const NONE: u32 = u32::MAX;
@@ -49,6 +55,16 @@ const MODULE: u32 = 2;
 const ENUM: u32 = 3;
 const KIND_MASK: u32 = 3;
 const PUBLIC: u32 = 4;
+
+/// Both alias lanes share the original-row prefix and checked builtin suffix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DeclarationHandle(u32);
+const NO_DECLARATION: DeclarationHandle = DeclarationHandle(NONE);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeclarationProjection {
+    SourceOriginal(u32),
+    Builtin(BuiltinItem),
+}
 
 fn diagnostic(
     code: &'static str,
@@ -191,16 +207,16 @@ struct ImportRow {
 #[derive(Clone, Copy, Debug)]
 struct AliasCell {
     // Original-row identity (RECORD or ENUM), never a record-table ordinal.
-    type_target: u32,
-    value_target: u32,
+    type_target: DeclarationHandle,
+    value_target: DeclarationHandle,
     type_first_import: u32,
     value_first_import: u32,
 }
 impl Default for AliasCell {
     fn default() -> Self {
         Self {
-            type_target: NONE,
-            value_target: NONE,
+            type_target: NO_DECLARATION,
+            value_target: NO_DECLARATION,
             type_first_import: NONE,
             value_first_import: NONE,
         }
@@ -249,7 +265,8 @@ struct Tables<'s> {
     aliases: Vec<AliasCell>,
     alias_order: Vec<u32>,
     root_main: u32,
-    candidate_source_origin: Option<CompactSpan>,
+    candidate_source_origin: CandidateOrigin,
+    builtins: BuiltinAdmission,
 }
 #[derive(Debug)]
 struct Scratch {
@@ -314,7 +331,26 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // The nominal request and reverse-map validation result can coexist.
     + size_of::<Result<NominalId, Box<Diagnostic>>>()
     // The shared nominal helper borrows a handle rather than making a fifth copy.
-    + size_of::<&ItemPathRef>();
+    + size_of::<&ItemPathRef>()
+    // Added import/identity state is priced in full, even when build/query
+    // phases do not overlap. The admission local is separate from Tables.
+    + size_of::<BuiltinAdmission>()
+    + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
+    + size_of::<Result<Option<DeclarationHandle>, Box<Diagnostic>>>()
+    + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
+    + size_of::<Option<&ast::EnumDecl>>()
+    + size_of::<Option<&ast::EnumVariantSyntax>>()
+    // Target grouping now holds two complete root-bearing path views.
+    + size_of::<source_owner::QualifiedPathView<'static>>()
+    // Std walk report and checked source-order inventory cursor.
+    + size_of::<bool>()
+    + size_of::<Option<usize>>()
+    + size_of::<super::parser::StdImportPolicy>()
+    + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>()
+    + size_of::<[usize; 2]>()
+    // Prepared display safely projects one checked span; Option<&str> and its
+    // consumed &str result have identical carriers and no boxed-error branch.
+    + size_of::<Option<&str>>();
 const _: () = {
     assert!(FIXED_SCRATCH <= 4096);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
@@ -336,15 +372,123 @@ enum AbsolutePrefix {
 
 impl Tables<'_> {
     fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
-        if let Some(origin) = self.candidate_source_origin {
+        if let Some(origin) = self.candidate_source_origin.span() {
             return Err(diagnostic(
                 "E0101",
                 "resolve",
-                "enum source syntax is unavailable",
-                origin.span(),
+                if self.candidate_source_origin.is_builtin() {
+                    "builtin source syntax is unavailable"
+                } else {
+                    "enum source syntax is unavailable"
+                },
+                origin,
             ));
         }
         Ok(())
+    }
+    fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> {
+        if self.candidate_source_origin.is_builtin() || self.builtins.set() != BuiltinSet::None {
+            return Err(diagnostic(
+                "E0101",
+                "resolve",
+                "builtin source syntax is unavailable",
+                self.candidate_source_origin
+                    .span()
+                    .unwrap_or(self.sources.eof()),
+            ));
+        }
+        Ok(())
+    }
+    fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        if !self.candidate_source_origin.is_builtin() {
+            return Err(bad(self.sources.eof()));
+        }
+        Ok(())
+    }
+    fn builtin_handle(&self, item: BuiltinItem) -> Result<DeclarationHandle, Box<Diagnostic>> {
+        let extra = match item {
+            BuiltinItem::Enum(_) if self.builtins.set().extra_enums() == 1 => 0,
+            BuiltinItem::Function(_) if self.builtins.set().extra_functions() == 1 => 1,
+            _ => return Err(bad(self.sources.eof())),
+        };
+        let target = self
+            .originals
+            .len()
+            .checked_add(extra)
+            .ok_or_else(|| overflow(self.sources.eof()))?;
+        Ok(DeclarationHandle(compact(target, self.sources.eof())?))
+    }
+    fn project_handle(
+        &self,
+        handle: DeclarationHandle,
+    ) -> Result<DeclarationProjection, Box<Diagnostic>> {
+        if (handle.0 as usize) < self.originals.len() {
+            return Ok(DeclarationProjection::SourceOriginal(handle.0));
+        }
+        for item in [
+            BuiltinItem::Enum(BuiltinEnum::ReadStatus),
+            BuiltinItem::Function(BuiltinFunction::ReadStdin),
+        ] {
+            if self
+                .builtin_handle(item)
+                .is_ok_and(|expected| expected == handle)
+            {
+                return Ok(DeclarationProjection::Builtin(item));
+            }
+        }
+        Err(bad(self.sources.eof()))
+    }
+    fn nominal_handle(&self, handle: DeclarationHandle) -> Result<NominalId, Box<Diagnostic>> {
+        match self.project_handle(handle)? {
+            DeclarationProjection::SourceOriginal(id) => self.nominal_original(id),
+            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                Ok(NominalId::Enum(EnumId(self.enums.len())))
+            }
+            _ => Err(bad(self.sources.eof())),
+        }
+    }
+    fn function_handle(&self, handle: DeclarationHandle) -> Result<DefId, Box<Diagnostic>> {
+        match self.project_handle(handle)? {
+            DeclarationProjection::SourceOriginal(id) => {
+                let row = self.original(id)?;
+                if row.flags & KIND_MASK != FUNCTION {
+                    return Err(bad(row.name.span()));
+                }
+                let target = DefId(row.target as usize);
+                if self
+                    .functions
+                    .get(target.0)
+                    .is_none_or(|row| row.original != id)
+                {
+                    return Err(bad(self.sources.eof()));
+                }
+                Ok(target)
+            }
+            DeclarationProjection::Builtin(BuiltinItem::Function(_)) => {
+                Ok(DefId(self.functions.len()))
+            }
+            _ => Err(bad(self.sources.eof())),
+        }
+    }
+    fn access_handle(
+        &self,
+        handle: DeclarationHandle,
+        requester: ModuleId,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        match self.project_handle(handle)? {
+            DeclarationProjection::SourceOriginal(id) => {
+                self.access_original(id, requester, work, at)
+            }
+            DeclarationProjection::Builtin(_) => {
+                work.debit(1, at, "target permission")?;
+                if !self.permission(NONE, requester, work, at)? {
+                    return Err(bad(at));
+                }
+                Ok(())
+            }
+        }
     }
     fn nominal_original(&self, id: u32) -> Result<NominalId, Box<Diagnostic>> {
         let original = self.original(id)?;
@@ -372,7 +516,16 @@ impl Tables<'_> {
             _ => Err(bad(original.name.span())),
         }
     }
-    fn original_for_nominal(&self, nominal: NominalId, at: Span) -> Result<u32, Box<Diagnostic>> {
+    fn original_for_nominal(
+        &self,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<DeclarationHandle, Box<Diagnostic>> {
+        if nominal == NominalId::Enum(EnumId(self.enums.len()))
+            && self.builtins.set().extra_enums() == 1
+        {
+            return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
+        }
         let original = match nominal {
             NominalId::Record(id) => self.records.get(id.0).map(|row| row.original),
             NominalId::Enum(id) => self.enums.get(id.0).map(|row| row.original),
@@ -381,7 +534,7 @@ impl Tables<'_> {
         if self.nominal_original(original)? != nominal {
             return Err(bad(at));
         }
-        Ok(original)
+        Ok(DeclarationHandle(original))
     }
     fn original(&self, id: u32) -> Result<&OriginalRow, Box<Diagnostic>> {
         self.originals
@@ -454,14 +607,19 @@ impl Tables<'_> {
         if order != Ordering::Equal {
             return Ok(order);
         }
-        let a = self.sources.segments(ItemPathRef {
+        let a = self.sources.import_path(QualifiedPathRef {
             file: SourceFileId(ra.file as usize),
-            path: ast::ItemPath::Absolute(self.import(a)?.path),
+            path: self.import(a)?.path,
         })?;
-        let b = self.sources.segments(ItemPathRef {
+        let b = self.sources.import_path(QualifiedPathRef {
             file: SourceFileId(rb.file as usize),
-            path: ast::ItemPath::Absolute(self.import(b)?.path),
+            path: self.import(b)?.path,
         })?;
+        let roots = (a.root() as u8).cmp(&(b.root() as u8));
+        if roots != Ordering::Equal {
+            return Ok(roots);
+        }
+        let (a, b) = (a.segments(), b.segments());
         for (a, b) in a.iter().zip(b) {
             work.debit(2, at, "path segment comparison")?;
             let (a, b) = (self.sources.text(*a)?, self.sources.text(*b)?);
@@ -658,6 +816,37 @@ impl Tables<'_> {
         member: Span,
         work: &WorkMeter,
     ) -> Result<VariantId, Box<Diagnostic>> {
+        if enumeration.0 == self.enums.len() && self.builtins.set().extra_enums() == 1 {
+            let spelling = self.sources.text(member)?;
+            for index in 0..BuiltinEnum::ReadStatus.variant_count() {
+                work.debit(1, member, "variant lookup probe")?;
+                if compare_bytes(
+                    BuiltinEnum::ReadStatus
+                        .member_name(index)
+                        .expect("closed member"),
+                    spelling,
+                    work,
+                    member,
+                )? == Ordering::Equal
+                {
+                    return Ok(VariantId { enumeration, index });
+                }
+            }
+            work.debit(
+                (spelling.len().min(64) + BuiltinEnum::ReadStatus.name().len()) as u64,
+                member,
+                "variant diagnostic name bytes",
+            )?;
+            return Err(owned_diagnostic::diagnostic(
+                "E0200",
+                "resolve",
+                format_args!(
+                    "unknown variant `{}` of enum `ReadStatus`",
+                    owned_diagnostic::name(spelling)
+                ),
+                Some(member),
+            ));
+        }
         let row = self.enums.get(enumeration.0).ok_or_else(|| bad(member))?;
         let end = (row.variant_start as usize)
             .checked_add(row.variant_len as usize)
@@ -707,7 +896,7 @@ impl Tables<'_> {
         path: ItemPathRef,
         work: &WorkMeter,
         importing: bool,
-    ) -> Result<(Option<u32>, Option<u32>), Box<Diagnostic>> {
+    ) -> Result<(Option<DeclarationHandle>, Option<DeclarationHandle>), Box<Diagnostic>> {
         let segments = self.sources.segments(path)?;
         let owner = match self.absolute_prefix(requester, segments, work, false)? {
             AbsolutePrefix::Module(owner) => owner,
@@ -747,7 +936,7 @@ impl Tables<'_> {
             }
             return Err(error);
         }
-        Ok((ty, value))
+        Ok((ty.map(DeclarationHandle), value.map(DeclarationHandle)))
     }
 }
 
@@ -805,7 +994,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         requester: ModuleId,
         path: ItemPathRef,
         type_lane: bool,
-    ) -> Result<Option<u32>, Box<Diagnostic>> {
+    ) -> Result<Option<DeclarationHandle>, Box<Diagnostic>> {
         let at = self.tables.sources.path_span(path)?;
         if requester.0 >= self.tables.modules.len()
             || self.tables.sources.module_for_file(path.file)? != requester
@@ -818,7 +1007,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     .tables
                     .lookup_original(requester, type_lane, name, self.work)?
                 {
-                    Some(id)
+                    Some(DeclarationHandle(id))
                 } else if let Some(alias) = self.tables.lookup_alias(requester, name, self.work)? {
                     let cell = self.tables.aliases[alias as usize];
                     let target = if type_lane {
@@ -826,15 +1015,15 @@ impl<'i, 's> QuerySession<'i, 's> {
                     } else {
                         cell.value_target
                     };
-                    if target == NONE {
+                    if target == NO_DECLARATION {
                         None
                     } else {
-                        Some(if type_lane {
-                            self.tables.nominal_original(target)?;
-                            target
+                        if type_lane {
+                            self.tables.nominal_handle(target)?;
                         } else {
-                            self.tables.functions[target as usize].original
-                        })
+                            self.tables.function_handle(target)?;
+                        }
+                        Some(target)
                     }
                 } else {
                     None
@@ -862,7 +1051,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 _ => at,
             };
             self.tables
-                .access_original(id, requester, self.work, use_at)?
+                .access_handle(id, requester, self.work, use_at)?
         }
         Ok(result)
     }
@@ -1031,8 +1220,16 @@ impl<'i, 's> QuerySession<'i, 's> {
             },
         )?;
         if let Some(id) = self.select(requester, *path, true)? {
-            let row = self.tables.original(id)?;
-            if row.flags & KIND_MASK == RECORD || (!records_only && row.flags & KIND_MASK == ENUM) {
+            let accepted = match self.tables.project_handle(id)? {
+                DeclarationProjection::SourceOriginal(original) => {
+                    let kind = self.tables.original(original)?.flags & KIND_MASK;
+                    kind == RECORD || (!records_only && kind == ENUM)
+                }
+                DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => !records_only,
+                DeclarationProjection::Builtin(BuiltinItem::Function(_)) => false,
+            };
+            if accepted {
+                let nominal = self.tables.nominal_handle(id)?;
                 #[cfg(test)]
                 self.work.observe(Observation::Target {
                     operation: match context {
@@ -1041,14 +1238,16 @@ impl<'i, 's> QuerySession<'i, 's> {
                         _ => "value-type",
                     },
                     origin: at,
-                    kind: if row.flags & KIND_MASK == RECORD {
-                        "record"
-                    } else {
-                        "enum"
+                    kind: match nominal {
+                        NominalId::Record(_) => "record",
+                        NominalId::Enum(_) => "enum",
                     },
-                    id: row.target as usize,
+                    id: match nominal {
+                        NominalId::Record(id) => id.0,
+                        NominalId::Enum(id) => id.0,
+                    },
                 });
-                return self.tables.nominal_original(id);
+                return Ok(nominal);
             }
         }
         let at = match path.path {
@@ -1092,7 +1291,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         let at = self.tables.sources.path_span(path)?;
         self.work.debit(1, at, "query callee")?;
         if let Some(id) = self.select(requester, path, false)? {
-            let target = self.tables.original(id)?.target as usize;
+            let target = self.tables.function_handle(id)?.0;
             #[cfg(test)]
             self.work.observe(Observation::Target {
                 operation: "callee",
@@ -1142,6 +1341,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         let segments = view.segments();
         let member = *segments.last().ok_or_else(|| bad(at))?;
         let enumeration = match view.root() {
+            ast::PathRoot::Std => return Err(bad(at)),
             ast::PathRoot::LocalType => {
                 let prefix = segments[0];
                 self.work.debit(1, prefix, "qualified path segment")?;
@@ -1164,7 +1364,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                         Some(prefix),
                     ));
                 };
-                if self.tables.original(original)?.flags & KIND_MASK != ENUM {
+                if !matches!(self.tables.nominal_handle(original)?, NominalId::Enum(_)) {
                     return Err(diagnostic(
                         "E0202",
                         "resolve",
@@ -1172,7 +1372,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                         prefix,
                     ));
                 }
-                match self.tables.nominal_original(original)? {
+                match self.tables.nominal_handle(original)? {
                     NominalId::Enum(enumeration) => enumeration,
                     NominalId::Record(_) => return Err(bad(prefix)),
                 }
@@ -1407,12 +1607,17 @@ impl<'i, 's> QuerySession<'i, 's> {
             .functions
             .get(function.0)
             .ok_or_else(|| bad(at))?;
-        let original = self.tables.original_for_nominal(nominal, at)?;
-        let (f, r) = (
-            self.tables.original(function.original)?,
-            self.tables.original(original)?,
-        );
+        let handle = self.tables.original_for_nominal(nominal, at)?;
+        let f = self.tables.original(function.original)?;
         self.requester(ModuleId(f.owner as usize), at)?;
+        let original = match self.tables.project_handle(handle)? {
+            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                return Ok(NominalExposure::Allowed)
+            }
+            DeclarationProjection::SourceOriginal(id) => id,
+            _ => return Err(bad(at)),
+        };
+        let r = self.tables.original(original)?;
         let allowed =
             r.domain == NONE || (f.domain != NONE && self.tables.ancestor(r.domain, f.domain)?);
         if allowed {
@@ -1442,10 +1647,28 @@ impl<'i, 's> QuerySession<'i, 's> {
     ) -> Result<PreparedTypeName<'s>, Box<Diagnostic>> {
         self.tables.sources.text(at)?;
         self.work.debit(1, at, "nominal format preparation")?;
-        let id = self.tables.original_for_nominal(nominal, at)?;
+        let handle = self.tables.original_for_nominal(nominal, at)?;
+        let id = match self.tables.project_handle(handle)? {
+            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                self.work.debit(19, at, "nominal display bytes")?;
+                return Ok(PreparedTypeName {
+                    names: [CompactSpan::default(); 32],
+                    sources: self.tables.sources,
+                    count: 0,
+                    terminal: "ReadStatus",
+                    ordinal: self.tables.enums.len(),
+                    total: 19,
+                    original: false,
+                    is_enum: true,
+                    builtin: true,
+                });
+            }
+            DeclarationProjection::SourceOriginal(id) => id,
+            _ => return Err(bad(at)),
+        };
         let original = self.tables.original(id)?;
         let terminal = self.tables.sources.text(original.name.span())?;
-        let mut names = [""; 33];
+        let mut names = [CompactSpan::default(); 32];
         let mut count = 0;
         let mut owner = original.owner;
         while owner != 0 {
@@ -1458,10 +1681,9 @@ impl<'i, 's> QuerySession<'i, 's> {
                 .modules
                 .get(owner as usize)
                 .ok_or_else(|| bad(at))?;
-            names[count] = self
-                .tables
-                .sources
-                .text(self.tables.original(module.original)?.name.span())?;
+            let name = self.tables.original(module.original)?.name;
+            self.tables.sources.text(name.span())?;
+            names[count] = name;
             count += 1;
             owner = module.parent;
         }
@@ -1471,7 +1693,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         for name in &names[..count] {
             total = total
                 .checked_add(2)
-                .and_then(|n| n.checked_add(name.len()))
+                .and_then(|n| n.checked_add(self.tables.sources.prepared_text(*name).len()))
                 .ok_or_else(|| overflow(at))?;
         }
         let original = self.tables.sources.flavor() == SyntaxFlavor::OriginalSingleFile;
@@ -1486,6 +1708,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         )?;
         Ok(PreparedTypeName {
             names,
+            sources: self.tables.sources,
             count,
             terminal,
             ordinal: match nominal {
@@ -1495,29 +1718,35 @@ impl<'i, 's> QuerySession<'i, 's> {
             total,
             original,
             is_enum: matches!(nominal, NominalId::Enum(_)),
+            builtin: false,
         })
     }
 }
 
 #[derive(Debug)]
 pub(super) struct PreparedTypeName<'s> {
-    names: [&'s str; 33],
+    names: [CompactSpan; 32],
+    sources: SourceOwner<'s>,
     count: usize,
     terminal: &'s str,
     ordinal: usize,
     total: usize,
     original: bool,
     is_enum: bool,
+    builtin: bool,
 }
 impl fmt::Display for PreparedTypeName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.builtin {
+            return f.write_str("std::io::ReadStatus");
+        }
         if self.original {
             return write!(f, "{}", owned_diagnostic::name(self.terminal));
         }
         if self.total <= 160 {
             f.write_str("crate")?;
             for name in self.names[..self.count].iter().rev() {
-                write!(f, "::{name}")?;
+                write!(f, "::{}", self.sources.prepared_text(*name))?;
             }
             return write!(f, "::{}", self.terminal);
         }
@@ -1545,7 +1774,7 @@ impl fmt::Display for PreparedTypeName<'_> {
         write_piece("crate")?;
         for name in self.names[..self.count].iter().rev() {
             write_piece("::")?;
-            write_piece(name)?;
+            write_piece(self.sources.prepared_text(*name))?;
         }
         if truncated {
             f.write_str("...")?;
@@ -1565,6 +1794,6 @@ struct ImportTxn {
     seen: usize,
     import: u32,
     // Original-row identity, matching AliasCell.type_target.
-    ty: u32,
-    value: u32,
+    ty: DeclarationHandle,
+    value: DeclarationHandle,
 }

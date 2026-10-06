@@ -223,7 +223,9 @@ fn bounded_enum_sealed_source_carrier_measurements() {
     // Baseline carriers contain the old inline record-only witness. The only
     // new stored data is its raw enum Vec header plus checked enum facade;
     // enclosing wrappers neither duplicate it nor introduce a heap allocation.
-    let growth = size_of::<Vec<RawEnumDecl>>() + size_of::<EnumDeclarations>();
+    // Closed builtin origins add one measured padded header word. None
+    // still denies every builtin entry; this is physical carrier accounting.
+    let growth = size_of::<Vec<RawEnumDecl>>() + size_of::<EnumDeclarations>() + size_of::<usize>();
     macro_rules! measured {
         ($($ty:ty => $baseline:expr),+ $(,)?) => { $(
             println!(

@@ -6,7 +6,15 @@ pub fn new_cursor() -> Cursor {
 }
 
 pub fn next_token(codes: &[i32], cursor: &mut Cursor) -> Token {
-    while cursor.position < codes.len() {
+    return next_token_prefix(&*codes, &mut *cursor, codes.len());
+}
+
+// The backing slice can include unused cells after the input's actual end.
+pub fn next_token_prefix(codes: &[i32], cursor: &mut Cursor, used: i32) -> Token {
+    if used < 0 || used > codes.len() || cursor.position < 0 || cursor.position > used {
+        return Token::Invalid(-1);
+    }
+    while cursor.position < used {
         let whitespace = codes[cursor.position];
         if whitespace == 9 || whitespace == 10 || whitespace == 13 || whitespace == 32 {
             cursor.position = cursor.position + 1;
@@ -15,13 +23,13 @@ pub fn next_token(codes: &[i32], cursor: &mut Cursor) -> Token {
         }
     }
     cursor.start = cursor.position;
-    if cursor.position == codes.len() {
+    if cursor.position == used {
         return Token::End;
     }
     let code = codes[cursor.position];
     if code >= 48 && code <= 57 {
         let mut value = 0;
-        while cursor.position < codes.len() {
+        while cursor.position < used {
             let digit = codes[cursor.position];
             if digit < 48 || digit > 57 {
                 break;

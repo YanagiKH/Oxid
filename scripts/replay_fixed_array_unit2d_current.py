@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Current Unit2D enum-carrier adapter; frozen runner and inputs stay unchanged.
+"""Current Unit2D carrier successors; frozen runner and inputs stay unchanged.
 
 Only the old non-enum harness receives empty carriers. Its two aggregate matches
 reject enums explicitly. Every transformation pins both byte identities and is
 reversible; no assertion, expectation, test selection, or compiler file changes.
+The stdin successor adds only explicit BuiltinOrigins::None after the preserved
+enum predecessor. Each stage retains its own identities and inverse operation.
 """
 import hashlib
 from pathlib import Path
@@ -54,22 +56,57 @@ RUNNER_REPLACEMENTS = (
      b'            and binding.get("enum_carrier_compatibility") == ENUM_CARRIER_COMPATIBILITY\n            and binding.get("enum_adapter_sha256") == ENUM_ADAPTER_SHA\n            and binding.get("module_sha256") == ENUM_CARRIER_COMPATIBILITY["members"]["reviewer"][1],', 1),
 )
 
+STDIN_VERSION = "unit2d-builtin-none-carriers-v1"
+STDIN_RUNNER_SHA = "02fa2da3c2406eb10c14f4acf513da6e5e12a735f946215005342633392ee430"
+STDIN_IDENTITIES = {
+    "reviewer": (IDENTITIES["reviewer"][1], "193ac9c0950e95c8130104a58017ec5bb85474a249e77b324c2e6c1e4333eaf5"),
+    "checkpoint1-heldout-v1.rs": (IDENTITIES["checkpoint1-heldout-v1.rs"][1], "ef7e30f0ee34ee7c4f81564ab71bc1b53a6aea88782c429d1570fe6b534b123a"),
+    "checkpoint1-partial-peak-v1.rs": (IDENTITIES["checkpoint1-partial-peak-v1.rs"][1], "e6861cc0d94afaa7146145b3c91114244453227630b9266406d4a0858d9279d5"),
+    "checkpoint1-early-denial-v1.rs": (IDENTITIES["checkpoint1-early-denial-v1.rs"][1], "1779a39d57137e31775101724371da02b078a71db7bdbec14f2e16faeeea32ef"),
+    "old-ir-export-v1.rs": (IDENTITIES["old-ir-export-v1.rs"][1],) * 2,
+}
+STDIN_REPLACEMENTS = {
+    "reviewer": (
+        (b"RawOwnedProgram {\n            enums:",
+         b"RawOwnedProgram {\n            builtins: BuiltinOrigins::None,\n            enums:", 5),
+        (b"RawOwnedProgram {\n        enums:",
+         b"RawOwnedProgram {\n        builtins: BuiltinOrigins::None,\n        enums:", 1),
+    ),
+    "checkpoint1-heldout-v1.rs": ((b"RawOwnedProgram{enums:vec![],records:vec![],functions}",
+                                  b"RawOwnedProgram{builtins:BuiltinOrigins::None,enums:vec![],records:vec![],functions}", 1),),
+    "checkpoint1-partial-peak-v1.rs": ((b"RawOwnedProgram{enums:vec![],records:vec![],functions:vec![f]}",
+                                       b"RawOwnedProgram{builtins:BuiltinOrigins::None,enums:vec![],records:vec![],functions:vec![f]}", 1),),
+    "checkpoint1-early-denial-v1.rs": ((b"RawOwnedProgram { enums: vec![], records: vec![], functions: vec![f] }",
+                                       b"RawOwnedProgram { builtins: BuiltinOrigins::None, enums: vec![], records: vec![], functions: vec![f] }", 1),),
+    "old-ir-export-v1.rs": (),
+}
+STDIN_RUNNER_REPLACEMENTS = (
+    (b'        current = enum_carrier_bytes("reviewer", current)',
+     b'        current = enum_carrier_bytes("reviewer", current)\n        current = stdin_carrier_bytes("reviewer", current)', 1),
+    (b'            control = enum_carrier_bytes(name, control)',
+     b'            control = enum_carrier_bytes(name, control)\n            control = stdin_carrier_bytes(name, control)', 1),
+    (b'                       enum_adapter_sha256=ENUM_ADAPTER_SHA,',
+     b'                       enum_adapter_sha256=ENUM_ADAPTER_SHA,\n                       stdin_carrier_compatibility=STDIN_CARRIER_COMPATIBILITY,\n                       stdin_adapter_sha256=STDIN_ADAPTER_SHA,', 1),
+    (b'            and binding.get("module_sha256") == ENUM_CARRIER_COMPATIBILITY["members"]["reviewer"][1],',
+     b'            and binding.get("stdin_carrier_compatibility") == STDIN_CARRIER_COMPATIBILITY\n            and binding.get("stdin_adapter_sha256") == STDIN_ADAPTER_SHA\n            and binding.get("module_sha256") == STDIN_CARRIER_COMPATIBILITY["members"]["reviewer"][1],', 1),
+)
+
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def exact_replace(data, identities, replacements, *, reverse=False):
+def exact_replace(data, identities, replacements, *, reverse=False, adapter="enum"):
     before, after = identities[::-1] if reverse else identities
     if digest(data) != before:
-        raise ValueError("Unit2D enum adapter input identity differs")
+        raise ValueError(f"Unit2D {adapter} adapter input identity differs")
     for old, new, count in (tuple((new, old, count) for old, new, count in reversed(replacements))
                             if reverse else replacements):
         if data.count(old) != count:
-            raise ValueError("Unit2D enum adapter replacement count differs")
+            raise ValueError(f"Unit2D {adapter} adapter replacement count differs")
         data = data.replace(old, new)
     if digest(data) != after:
-        raise ValueError("Unit2D enum adapter output identity differs")
+        raise ValueError(f"Unit2D {adapter} adapter output identity differs")
     return data
 
 
@@ -81,9 +118,19 @@ def current_runner_bytes(data, *, reverse=False):
     return exact_replace(data, (FROZEN_RUNNER_SHA, CURRENT_RUNNER_SHA), RUNNER_REPLACEMENTS, reverse=reverse)
 
 
+def stdin_carrier_bytes(name, data, *, reverse=False):
+    return exact_replace(data, STDIN_IDENTITIES[name], STDIN_REPLACEMENTS[name],
+                         reverse=reverse, adapter="stdin")
+
+
+def stdin_runner_bytes(data, *, reverse=False):
+    return exact_replace(data, (CURRENT_RUNNER_SHA, STDIN_RUNNER_SHA), STDIN_RUNNER_REPLACEMENTS,
+                         reverse=reverse, adapter="stdin")
+
+
 def load_runner(path=None):
     path = Path(path) if path is not None else Path(__file__).with_name("replay_fixed_array_unit2d.py")
-    module = types.ModuleType("unit2d_current_enum_carriers")
+    module = types.ModuleType("unit2d_current_stdin_carriers")
     module.__file__ = str(path)
     module.ENUM_CARRIER_COMPATIBILITY = {
         "adapter": VERSION, "runner_sha256": CURRENT_RUNNER_SHA,
@@ -91,7 +138,17 @@ def load_runner(path=None):
     }
     module.ENUM_ADAPTER_SHA = digest(Path(__file__).read_bytes())
     module.enum_carrier_bytes = enum_carrier_bytes
-    exec(compile(current_runner_bytes(path.read_bytes()), str(path), "exec"), module.__dict__)
+    module.STDIN_CARRIER_COMPATIBILITY = {
+        "adapter": STDIN_VERSION, "predecessor_adapter": VERSION,
+        "predecessor_runner_sha256": CURRENT_RUNNER_SHA, "runner_sha256": STDIN_RUNNER_SHA,
+        "members": {name: list(identities) for name, identities in STDIN_IDENTITIES.items()},
+        "substitutions": {name: [{"old_sha256": digest(old), "new_sha256": digest(new), "count": count}
+                                  for old, new, count in replacements]
+                          for name, replacements in STDIN_REPLACEMENTS.items()},
+    }
+    module.STDIN_ADAPTER_SHA = digest(Path(__file__).read_bytes())
+    module.stdin_carrier_bytes = stdin_carrier_bytes
+    exec(compile(stdin_runner_bytes(current_runner_bytes(path.read_bytes())), str(path), "exec"), module.__dict__)
     return module
 
 

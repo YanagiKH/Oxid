@@ -1,4 +1,4 @@
-//! Borrowed source declarations, not checked raw layouts or execution witnesses.
+//! Frozen declaration views; catalog facts do not themselves authorize execution.
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6,7 +6,6 @@ pub(in crate::frontend) enum NominalId {
     Record(RecordId),
     Enum(EnumId),
 }
-
 #[cfg(test)]
 impl NominalId {
     pub(super) fn legacy_record(self) -> RecordId {
@@ -16,89 +15,140 @@ impl NominalId {
         }
     }
 }
-
-#[derive(Debug)]
 pub(in crate::frontend) struct EnumView<'a> {
     id: EnumId,
-    syntax: &'a ast::EnumDecl,
+    index: &'a DeclarationIndex<'a>,
 }
-#[derive(Debug)]
 pub(in crate::frontend) struct VariantView<'a> {
     id: VariantId,
-    syntax: &'a ast::EnumVariantSyntax,
+    index: &'a DeclarationIndex<'a>,
+}
+impl fmt::Debug for EnumView<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EnumView").field("id", &self.id).finish()
+    }
+}
+impl fmt::Debug for VariantView<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VariantView").field("id", &self.id).finish()
+    }
 }
 impl<'a> EnumView<'a> {
-    // The only ID/syntax pairing accepts a frozen index, never caller syntax.
     pub(super) fn from_index(
         index: &'a DeclarationIndex<'_>,
         id: EnumId,
     ) -> Result<Self, Box<Diagnostic>> {
-        let (key, owner) = index.enumeration(id)?;
-        let syntax = &index.sources().ast(owner)?.enums[key.index];
-        Ok(Self { id, syntax })
+        index.enum_origin(id)?;
+        Ok(Self { id, index })
     }
-    // ID-only views confer neither requester visibility nor execution authority.
     pub fn id(&self) -> EnumId {
         self.id
     }
+    pub fn origin(&self) -> DeclarationOrigin {
+        self.index.frozen_enum_origin(self.id)
+    }
+    pub fn name(&self) -> &'a str {
+        self.index.frozen_enum_name(self.id)
+    }
+    pub fn diagnostic_span(&self) -> Span {
+        self.index.frozen_enum_anchor(self.id)
+    }
+    /// Source syntax exists only for the original prefix, never for builtins.
+    pub fn source_syntax(&self) -> Option<&'a ast::EnumDecl> {
+        self.index.frozen_enum_syntax(self.id)
+    }
     pub fn name_span(&self) -> Span {
-        self.syntax.name
+        self.source_syntax()
+            .expect("source-only enum name span")
+            .name
     }
     pub fn span(&self) -> Span {
-        self.syntax.span
+        self.source_syntax().expect("source-only enum span").span
     }
     pub fn end(&self) -> Span {
-        self.syntax.end
+        self.source_syntax().expect("source-only enum end").end
     }
     pub fn variant_count(&self) -> usize {
-        self.syntax.variants.len()
+        self.index.frozen_variant_count(self.id)
     }
-    pub fn variant(&self, id: VariantId) -> Result<VariantView<'_>, Box<Diagnostic>> {
-        if id.enumeration != self.id {
-            return Err(bad(self.syntax.name));
+    pub fn variant(&self, id: VariantId) -> Result<VariantView<'a>, Box<Diagnostic>> {
+        if id.enumeration != self.id || id.index >= self.variant_count() {
+            return Err(bad(self.diagnostic_span()));
         }
-        let syntax = self
-            .syntax
-            .variants
-            .get(id.index)
-            .ok_or_else(|| bad(self.syntax.name))?;
-        Ok(VariantView { id, syntax })
-    }
-}
-impl VariantView<'_> {
-    pub fn id(&self) -> VariantId {
-        self.id
-    }
-    pub fn name_span(&self) -> Span {
-        self.syntax.name
-    }
-    pub fn span(&self) -> Span {
-        self.syntax.span
-    }
-    pub fn payload_span(&self) -> Option<Span> {
-        self.syntax.payload.map(|payload| payload.span)
-    }
-    pub fn payload(&self) -> Option<Ty> {
-        self.syntax.payload.map(|payload| match payload.kind {
-            ast::ScalarTypeSyntax::Bool => Ty::Bool,
-            ast::ScalarTypeSyntax::I32 => Ty::I32,
-            ast::ScalarTypeSyntax::Unit => Ty::Unit,
+        Ok(VariantView {
+            id,
+            index: self.index,
         })
     }
 }
-
-/// Frozen row lengths only; users meter their surrounding traversal separately.
+impl<'a> VariantView<'a> {
+    pub fn id(&self) -> VariantId {
+        self.id
+    }
+    pub fn origin(&self) -> DeclarationOrigin {
+        self.index.frozen_enum_origin(self.id.enumeration)
+    }
+    pub fn name(&self) -> &'a str {
+        match self.source_syntax() {
+            Some(syntax) => self.index.sources().frozen_text(syntax.name),
+            None => BuiltinEnum::ReadStatus
+                .member_name(self.id.index)
+                .expect("checked builtin variant"),
+        }
+    }
+    pub fn diagnostic_span(&self) -> Span {
+        self.source_syntax().map_or_else(
+            || self.index.frozen_enum_anchor(self.id.enumeration),
+            |syntax| syntax.name,
+        )
+    }
+    pub fn source_syntax(&self) -> Option<&'a ast::EnumVariantSyntax> {
+        self.index
+            .frozen_enum_syntax(self.id.enumeration)
+            .map(|syntax| &syntax.variants[self.id.index])
+    }
+    pub fn name_span(&self) -> Span {
+        self.source_syntax()
+            .expect("source-only variant name span")
+            .name
+    }
+    pub fn span(&self) -> Span {
+        self.source_syntax().expect("source-only variant span").span
+    }
+    pub fn payload_span(&self) -> Option<Span> {
+        self.source_syntax()
+            .and_then(|syntax| syntax.payload.map(|payload| payload.span))
+    }
+    pub fn payload(&self) -> Option<Ty> {
+        match self.source_syntax() {
+            Some(syntax) => syntax.payload.map(|payload| match payload.kind {
+                ast::ScalarTypeSyntax::Bool => Ty::Bool,
+                ast::ScalarTypeSyntax::I32 => Ty::I32,
+                ast::ScalarTypeSyntax::Unit => Ty::Unit,
+            }),
+            None => BuiltinEnum::ReadStatus.member_payload(self.id.index),
+        }
+    }
+}
+/// Exact count of the frozen source prefix and the closed optional suffix.
 #[derive(Clone)]
 pub(in crate::frontend) struct EnumVariantCounts<'a> {
-    pub(super) rows: std::slice::Iter<'a, EnumRow>,
+    pub(super) index: &'a DeclarationIndex<'a>,
+    pub(super) next: usize,
 }
 impl Iterator for EnumVariantCounts<'_> {
     type Item = usize;
     fn next(&mut self) -> Option<usize> {
-        self.rows.next().map(|row| row.variant_len as usize)
+        if self.next == self.index.enum_count() {
+            return None;
+        }
+        let count = self.index.frozen_variant_count(EnumId(self.next));
+        self.next += 1;
+        Some(count)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.rows.size_hint()
+        let remaining = self.index.enum_count() - self.next;
+        (remaining, Some(remaining))
     }
 }
 impl ExactSizeIterator for EnumVariantCounts<'_> {}

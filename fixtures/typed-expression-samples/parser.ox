@@ -151,13 +151,18 @@ fn finish(work: &mut Work, arena: &mut crate::arena::Arena, position: i32) -> i3
 }
 
 pub fn parse(codes: &[i32], arena: &mut crate::arena::Arena) -> ParseResult {
+    return parse_prefix(&*codes, codes.len(), &mut *arena);
+}
+
+pub fn parse_prefix(codes: &[i32], used: i32, arena: &mut crate::arena::Arena) -> ParseResult {
     arena.count = 0;
-    if codes.len() > 128 { return ParseResult::InputLimit(128); }
+    if used < 0 || used > codes.len() { return ParseResult::InputLimit(used); }
+    if used > 128 { return ParseResult::InputLimit(128); }
     let mut work = new_work();
     let mut cursor = crate::scanner::new_cursor();
     let mut done = false;
     while !done {
-        let token = crate::scanner::next_token(&*codes, &mut cursor);
+        let token = crate::scanner::next_token_prefix(&*codes, &mut cursor, used);
         let position = crate::scanner::token_start(&cursor);
         let mut status = 0;
         match token {

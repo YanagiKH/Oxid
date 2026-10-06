@@ -197,13 +197,55 @@ pub(super) fn observe_enum_pipeline(
     if typed.admission() != resolve::SourceAdmission::EnumPipeline {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
+    observe_private_pipeline(typed, request)
+}
+
+/// One fresh source-owned entry. Candidate identity, paid typing, association
+/// and raw verification all remain inside this call; only fixed observations
+/// and bounded LLVM text can escape after those owners are dropped.
+#[cfg(test)]
+pub(super) fn run_builtin_source(
+    owner: SourceOwner<'_>,
+    request: resolve::EnumPipelineRequest,
+) -> Result<EnumPipelineProgramOutput, Vec<Diagnostic>> {
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let facts =
+        index::collect_builtin_candidate(owner, IndexLimits::default(), &work, &mut allocator)
+            .map_err(|error| vec![*error])?;
+    let index = facts.finish(&work, &mut allocator)?;
+    let typed = resolve::type_builtin_source(&index, &work, &mut allocator)?;
+    if typed.admission() != resolve::SourceAdmission::BuiltinPipeline {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    observe_private_pipeline(&typed, request)
+}
+
+#[cfg(test)]
+fn observe_private_pipeline(
+    typed: &typeck::TypedOwnedProgram<'_>,
+    request: resolve::EnumPipelineRequest,
+) -> Result<EnumPipelineProgramOutput, Vec<Diagnostic>> {
     let index = typed.index();
     let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     };
     let entry = index.root_original_main();
-    if typed.entry() != entry || index.enum_count() == 0 {
+    if typed.entry() != entry {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    match typed.admission() {
+        resolve::SourceAdmission::EnumPipeline if index.enum_count() != 0 => {
+            index
+                .require_no_builtin_candidate()
+                .map_err(|error| vec![*error])?;
+        }
+        resolve::SourceAdmission::BuiltinPipeline => {
+            index
+                .require_builtin_candidate_pipeline()
+                .map_err(|error| vec![*error])?;
+        }
+        _ => return Err(vec![*crate::frontend::oir::source::association::bad()]),
     }
     let source_seed_before = typed
         .source_storage_bytes()
@@ -216,7 +258,13 @@ pub(super) fn observe_enum_pipeline(
     if source_usage.analysis != raw_usage {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
-    super::association::check_enum_candidate(&raw, index, sources).map_err(|error| vec![*error])?;
+    match typed.admission() {
+        resolve::SourceAdmission::BuiltinPipeline => {
+            super::association::check_builtin_candidate(&raw, index, sources)
+        }
+        _ => super::association::check_enum_candidate(&raw, index, sources),
+    }
+    .map_err(|error| vec![*error])?;
     // Only fixed header facts are sampled here. This does not replace either
     // source association or the independent complete raw proof below.
     let enum_count = raw.enums.len();
@@ -306,9 +354,11 @@ pub(super) fn observe_enum_pipeline(
 // authoritative budgets; no inherited verifier/runtime stack is modeled here.
 #[allow(dead_code)]
 struct EnumPipelineProgramCarriers {
-    request: resolve::EnumPipelineRequest,
+    // Publicly inaccessible selector forwards these by value/reference to the
+    // common body; price both roles without relying on tail-call elimination.
+    request: [resolve::EnumPipelineRequest; 2],
     execution_limits: [execute::Limits; 3],
-    typed: &'static typeck::TypedOwnedProgram<'static>,
+    typed: [&'static typeck::TypedOwnedProgram<'static>; 2],
     index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
     source_owner: crate::frontend::declaration_index::SourceOwner<'static>,
     source_view: crate::frontend::source::SourceView<'static>,
@@ -394,6 +444,40 @@ struct ProductionProgramCarriers {
 }
 pub(super) const fn production_program_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionProgramCarriers>()
+}
+
+/// The private input caller's affected owner/return roles. Index collection is
+/// admitted separately by IndexPlan; source typing and the shared observation
+/// body keep their existing complete banks. No index or typed owner escapes.
+#[allow(dead_code)]
+struct BuiltinProgramCarriers {
+    owner: SourceOwner<'static>,
+    work: WorkMeter,
+    allocator: Allocator,
+    index: index::DeclarationIndex<'static>,
+    index_borrow: &'static index::DeclarationIndex<'static>,
+    work_borrow: &'static WorkMeter,
+    allocator_borrow: &'static mut Allocator,
+    typed_return: Result<typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    typed: typeck::TypedOwnedProgram<'static>,
+    typed_borrow: &'static typeck::TypedOwnedProgram<'static>,
+    request: resolve::EnumPipelineRequest,
+    gate: Result<(), Box<Diagnostic>>,
+    gate_normalized: Result<(), Vec<Diagnostic>>,
+    // Source preflight normalizes its typed identity check to OwnedFailure;
+    // the resolver's boxed/Vec diagnostic envelopes do not contain this role.
+    lower_identity_normalized: Result<(), OwnedFailure>,
+    returned: Result<EnumPipelineProgramOutput, Vec<Diagnostic>>,
+}
+pub(super) const fn builtin_program_carrier_bytes() -> usize {
+    std::mem::size_of::<BuiltinProgramCarriers>() + super::association::builtin_carrier_bytes()
+}
+
+/// Production uses the already-priced ordinary source caller, not the private
+/// observation driver. Only the builtin association and typed-to-raw identity
+/// normalization add new roles to that existing route.
+pub(super) const fn builtin_production_extra_bytes() -> usize {
+    super::association::builtin_carrier_bytes() + std::mem::size_of::<Result<(), OwnedFailure>>()
 }
 
 #[test]

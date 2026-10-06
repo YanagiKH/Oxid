@@ -120,7 +120,114 @@ fn production_entry_components() -> usize {
         + crate::frontend::oir::source::enum_facade_carrier_bytes()
 }
 
+#[test]
+fn bounded_stdin_hir_signature_suffix_prices_no_synthetic_body() {
+    let sources = sources("x");
+    let at = sources.get(SourceFileId(0)).span(0, 1);
+    let source = HirCounts {
+        functions: 2,
+        signatures: 2,
+        ..HirCounts::default()
+    };
+    let ordinary = HirPlan::calculate(source, at).unwrap();
+    let builtin = HirPlan::calculate(
+        HirCounts {
+            signatures: 3,
+            parameters: 1,
+            ..source
+        },
+        at,
+    )
+    .unwrap();
+    assert_eq!(
+        builtin.resolved - ordinary.resolved,
+        size_of::<Signature>() + size_of::<ParameterTy>()
+    );
+    assert_eq!(builtin.typed, ordinary.typed);
+    assert_eq!(builtin.staging, ordinary.staging);
+    assert_eq!(builtin.typeck_scratch, ordinary.typeck_scratch);
+    assert_eq!(
+        builtin.resolver_scratch - ordinary.resolver_scratch,
+        size_of::<Vec<ParameterTy>>()
+            + resolve::builtin_signature_carrier_bytes()
+            + size_of::<BuiltinPreflightCarriers>()
+    );
+    assert!(HirPlan::calculate(
+        HirCounts {
+            signatures: 4,
+            ..source
+        },
+        at
+    )
+    .is_err());
+    let remaining = MAX_HIR_BYTES - builtin.total;
+    assert_eq!(builtin.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+    assert_eq!(
+        builtin.with_dynamic(remaining + 1, at).unwrap_err().code,
+        "E0400"
+    );
+    println!("BUILTIN_HIR_LAYOUT counts={}/{} plan={}/{} plan_return={}/{} builtin_preflight={}/{} candidate_preflight={}/{} production_preflight={}/{} ordinary_total={} builtin_total={}",
+        size_of::<HirCounts>(), align_of::<HirCounts>(), size_of::<HirPlan>(), align_of::<HirPlan>(),
+        size_of::<PlanReturnEnvelope>(), align_of::<PlanReturnEnvelope>(), size_of::<BuiltinPreflightCarriers>(), align_of::<BuiltinPreflightCarriers>(),
+        size_of::<CandidatePreflightCarriers>(), align_of::<CandidatePreflightCarriers>(),
+        size_of::<ProductionBuiltinPreflightCarriers>(), align_of::<ProductionBuiltinPreflightCarriers>(),
+        ordinary.total, builtin.total);
+}
+
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";
+
+#[test]
+fn bounded_stdin_current_hir_prices_only_actual_production_extras() {
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let fixture = Fixture(
+        std::env::temp_dir().join(format!("oxid-current-hir-extras-{}", std::process::id())),
+    );
+    std::fs::create_dir(&fixture.0).unwrap();
+    std::fs::write(
+        fixture.0.join("main.ox"),
+        "use std::io::read_stdin; fn main()->i32{return 0;}",
+    )
+    .unwrap();
+    let project = ProjectSources::load_typed(
+        fixture.0.join("main.ox").to_str().unwrap(),
+        ProjectLimits::default(),
+    )
+    .unwrap();
+    let owner = SourceOwner::project(&project);
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let index = crate::frontend::declaration_index::collect_originals(
+        owner,
+        IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap()
+    .finish(&work, &mut allocator)
+    .unwrap();
+    let plan = preflight_current_hir(&index, &work).unwrap().unwrap();
+    let base = HirPlan::calculate(plan.counts, index.sources().eof()).unwrap();
+    let extra = 2 * resolve::signature_identity_carrier_bytes()
+        + size_of::<ProductionBuiltinPreflightCarriers>()
+        + super::super::program::builtin_production_extra_bytes();
+    assert_eq!(plan.fixed - base.fixed, extra);
+    assert_eq!(plan.total - base.total, extra);
+    assert_eq!(plan.resolved, base.resolved);
+    assert_eq!(plan.typed, base.typed);
+    assert_eq!(plan.staging, base.staging);
+    assert_eq!(plan.resolver_scratch, base.resolver_scratch);
+    assert_eq!(plan.typeck_scratch, base.typeck_scratch);
+    assert_eq!(plan.lower_fixed, base.lower_fixed);
+    println!("BUILTIN_CURRENT_HIR signature_identity={} production_preflight={} program_extra={} base={} total={}",
+        resolve::signature_identity_carrier_bytes(), size_of::<ProductionBuiltinPreflightCarriers>(),
+        super::super::program::builtin_production_extra_bytes(), base.total, plan.total);
+}
 
 #[test]
 fn c3a_counts_complete_mixed_hir_without_heap_allocation_or_activation() {
@@ -138,6 +245,7 @@ fn c3a_counts_complete_mixed_hir_without_heap_allocation_or_activation() {
                 record_fields: 2,
                 max_record_fields: 2,
                 functions: 2,
+                signatures: 2,
                 parameters: 1,
                 bindings: 3,
                 expressions: 6,
@@ -676,6 +784,7 @@ fn c3a_paid_branch_header_formula_keeps_old_and_new_buffers_separate() {
     // No source traversal, allocations or inferred consumer output is involved.
     let counts = HirCounts {
         functions: 2,
+        signatures: 2,
         blocks: 3,
         calls: 4,
         ..HirCounts::default()
@@ -732,6 +841,7 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         let plan = HirPlan::calculate(
             HirCounts {
                 functions,
+                signatures: functions,
                 ..HirCounts::default()
             },
             at,
@@ -804,6 +914,7 @@ fn c3_t0_new_surcharge_uses_the_existing_checked_capacity_boundary() {
     let plan = HirPlan::calculate(
         HirCounts {
             functions: 2,
+            signatures: 2,
             ..HirCounts::default()
         },
         at,
@@ -830,6 +941,7 @@ fn c3_t0_new_surcharge_uses_the_existing_checked_capacity_boundary() {
     assert!(HirPlan::calculate(
         HirCounts {
             functions: usize::MAX,
+            signatures: usize::MAX,
             ..HirCounts::default()
         },
         at
@@ -871,7 +983,10 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
         for which in 0..4 {
             let mut c = HirCounts::default();
             match which {
-                0 => c.functions = count,
+                0 => {
+                    c.functions = count;
+                    c.signatures = count;
+                }
                 1 => c.blocks = count,
                 2 => c.calls = count,
                 _ => c.record_literals = count,
@@ -954,6 +1069,7 @@ fn c3_t1_passive_checker_products_and_aggregate_cap_remain_checked() {
     let plan = HirPlan::calculate(
         HirCounts {
             functions: 2,
+            signatures: 2,
             blocks: 3,
             calls: 4,
             record_literals: 5,
@@ -976,6 +1092,7 @@ fn c3_t1_passive_checker_products_and_aggregate_cap_remain_checked() {
     for c in [
         HirCounts {
             functions: usize::MAX,
+            signatures: usize::MAX,
             ..HirCounts::default()
         },
         HirCounts {
@@ -1046,9 +1163,9 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
     let at = sources("x").get(SourceFileId(0)).span(0, 1);
     let observation = observation_components();
     #[cfg(target_pointer_width = "64")]
-    // MatchArms extends each complete constructed/Option/Result observation
-    // in FreshTypeObservationCarriers by two usize fields: 3 * 16 bytes.
-    assert_eq!(observation, (11792 + 3 * 16, 320, 24, 24));
+    // Measured 11840 -> 11888: the owned index carrier grows by 24 bytes,
+    // and HirCounts.signatures adds 8 to each of three complete observations.
+    assert_eq!(observation, (11888, 320, 24, 24));
     let checker = checker_only_components();
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
     let before_observation = size_of::<typeck::TypedOwnedProgram<'_>>()
@@ -1071,6 +1188,7 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
         // Scalar resource arithmetic only, not a forged source/HIR witness.
         let c = HirCounts {
             functions: scale,
+            signatures: scale,
             blocks: 2 * scale,
             calls: 3 * scale,
             record_literals: 4 * scale,
@@ -1131,6 +1249,7 @@ fn c3_t1_observation_price_products_aggregation_and_shared_cap_are_checked() {
     let plan = HirPlan::calculate(
         HirCounts {
             functions: 2,
+            signatures: 2,
             calls: 3,
             record_literals: 4,
             ..HirCounts::default()
@@ -1196,9 +1315,9 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
     assert_eq!(plan.fixed - old_fixed, delta);
     #[cfg(target_pointer_width = "64")]
     {
-        // MatchArms adds two usize slots to the returned resolver facts.
-        assert_eq!(delta, 888);
-        assert_eq!(observation_components(), (11792 + 3 * 16, 320, 24, 24));
+        // The added signature count widens the complete returned facts by 8.
+        assert_eq!(delta, 896);
+        assert_eq!(observation_components(), (11888, 320, 24, 24));
         assert_eq!(
             checker_only_components(),
             (33448 + 64 * 152, 1928 + 472, 24, 784, 88)

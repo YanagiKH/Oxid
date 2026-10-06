@@ -116,6 +116,20 @@ impl ProgramCounts {
         self.usage
     }
 }
+/// Fixed descriptor inventory, shared arithmetic only. Each producer supplies
+/// its independently established origin; this does not check a descriptor.
+pub(super) fn account_builtin_descriptors(
+    origin: BuiltinOrigins,
+    limits: Limits,
+    program: &mut ProgramCounts,
+) -> Result<(), OwnedFailure> {
+    program.usage.work = cap(
+        add(program.usage.work, builtins::descriptor_visits(origin))?,
+        limits.bounded().work,
+        "ownership work",
+    )?;
+    Ok(())
+}
 /// Additional raw declaration storage, independently inventoried from actual
 /// nested lengths. The enum vector header is retained even for old programs.
 /// Checked enum tables (including their headers) have their own 8 MiB gate.
@@ -127,7 +141,12 @@ pub(super) fn account_enum_declarations(
     let limits = limits.bounded();
     let events = add(enums.enums, enums.variants)?;
     let bytes = add(
-        std::mem::size_of::<Vec<RawEnumDecl>>(),
+        add(
+            size_of::<Vec<RawEnumDecl>>(),
+            // Charge complete padded header growth beyond the three existing
+            // Vec headers. Source raw-byte admission counts the full carrier.
+            size_of::<RawOwnedProgram>() - 3 * size_of::<Vec<()>>(),
+        )?,
         add(
             mul(enums.enums, size_of::<RawEnumDecl>())?,
             mul(enums.variants, size_of::<RawVariantDecl>())?,
@@ -309,6 +328,7 @@ pub(super) fn preflight(
     )
     .map_err(DeclarationError::from)?;
     account_enum_declarations(enums, limits, &mut program)?;
+    account_builtin_descriptors(raw.builtins, limits, &mut program)?;
     for f in &raw.functions {
         // Preserve the original early general-cap ordering before nested scans.
         cap(

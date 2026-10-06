@@ -2070,6 +2070,9 @@ pub(super) fn lower_with_limits(
     } else {
         budget::reserve(enum_count)?
     };
+    if typed.index().builtin_set() != BuiltinOrigins::None {
+        super::builtin_lower::check_capacity(&enums, enum_count)?;
+    }
     for ordinal in 0..enum_count {
         let id = EnumId(ordinal);
         let enumeration = typed
@@ -2077,6 +2080,9 @@ pub(super) fn lower_with_limits(
             .enum_view(id)
             .map_err(|_| invariant(typed.index().sources().eof()))?;
         let mut variants = budget::reserve(enumeration.variant_count())?;
+        if typed.index().builtin_set() != BuiltinOrigins::None {
+            super::builtin_lower::check_capacity(&variants, enumeration.variant_count())?;
+        }
         for index in 0..enumeration.variant_count() {
             let id = VariantId {
                 enumeration: id,
@@ -2084,7 +2090,7 @@ pub(super) fn lower_with_limits(
             };
             let variant = enumeration
                 .variant(id)
-                .map_err(|_| invariant(enumeration.name_span()))?;
+                .map_err(|_| invariant(enumeration.diagnostic_span()))?;
             budget::append(
                 &mut variants,
                 RawVariantDecl {
@@ -2092,21 +2098,21 @@ pub(super) fn lower_with_limits(
                     payload: variant
                         .payload()
                         .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty))),
-                    span: variant.name_span(),
+                    span: variant.diagnostic_span(),
                 },
                 enumeration.variant_count(),
-                variant.name_span(),
+                variant.diagnostic_span(),
             )?;
         }
         budget::append(
             &mut enums,
             RawEnumDecl {
                 id,
-                span: enumeration.name_span(),
+                span: enumeration.diagnostic_span(),
                 variants,
             },
             enum_count,
-            enumeration.name_span(),
+            enumeration.diagnostic_span(),
         )?;
     }
     let mut records = budget::reserve(typed.records().len())?;
@@ -2135,7 +2141,10 @@ pub(super) fn lower_with_limits(
             record.name_span,
         )?;
     }
-    let mut functions = budget::reserve(typed.functions().len())?;
+    let mut functions = budget::reserve(typed.index().function_count())?;
+    if typed.index().builtin_set() != BuiltinOrigins::None {
+        super::builtin_lower::check_capacity(&functions, typed.index().function_count())?;
+    }
     let mut bytes = budget::add(
         size_of::<RawOwnedProgram>(),
         budget::mul(records.len(), size_of::<RawRecordDecl>())?,
@@ -2221,8 +2230,21 @@ pub(super) fn lower_with_limits(
         budget::append(
             &mut functions,
             f,
-            typed.functions().len(),
+            typed.index().function_count(),
             view.signature().span,
+        )?;
+    }
+    if typed.index().builtin_set().extra_functions() != 0 {
+        let function = super::builtin_lower::function(typed.index())?;
+        bytes = budget::add(
+            bytes,
+            budget::function_bytes(super::builtin_lower::counts())?,
+        )?;
+        budget::append(
+            &mut functions,
+            function,
+            typed.index().function_count(),
+            typed.index().sources().eof(),
         )?;
     }
     if bytes != expected.raw_bytes {
@@ -2231,6 +2253,7 @@ pub(super) fn lower_with_limits(
         return Err(error);
     }
     Ok(RawOwnedProgram {
+        builtins: typed.index().builtin_set(),
         enums,
         records,
         functions,

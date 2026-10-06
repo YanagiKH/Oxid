@@ -102,6 +102,26 @@ impl EnumSyntaxPolicy {
     }
 }
 
+/// Std is recognized only at an import edge. Current source admits the closed
+/// catalog; the candidate policy retains its separate qualification route.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum StdImportPolicy {
+    Closed,
+    Enabled,
+    #[cfg(test)]
+    Candidate,
+}
+impl StdImportPolicy {
+    pub(super) fn enabled(self) -> bool {
+        match self {
+            Self::Closed => false,
+            Self::Enabled => true,
+            #[cfg(test)]
+            Self::Candidate => true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LiteralContext {
     Allowed,
@@ -170,6 +190,7 @@ pub(super) fn parse_counted_with_arrays(
         allocator,
         arrays,
         EnumSyntaxPolicy::Closed,
+        StdImportPolicy::Closed,
         &mut enums::SyntaxStorage::default(),
     )
 }
@@ -192,6 +213,30 @@ pub(super) fn parse_typed_counted(
         allocator,
         ArraySyntaxPolicy::Enabled,
         EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::Enabled,
+        storage,
+    )
+}
+
+/// Preserve the pre-stdin typed grammar for negative qualification controls.
+#[cfg(test)]
+pub(super) fn parse_typed_closed_std_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::Closed,
         storage,
     )
 }
@@ -213,6 +258,29 @@ pub(super) fn parse_enum_candidate_counted(
         allocator,
         ArraySyntaxPolicy::Enabled,
         EnumSyntaxPolicy::Candidate,
+        StdImportPolicy::Closed,
+        storage,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn parse_builtin_candidate_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::Candidate,
         storage,
     )
 }
@@ -226,6 +294,7 @@ fn parse_counted_with_policies(
     allocator: &mut Allocator,
     arrays: ArraySyntaxPolicy,
     enums: EnumSyntaxPolicy,
+    std_imports: StdImportPolicy,
     storage: &mut enums::SyntaxStorage,
 ) -> Result<(Program, usize), Vec<Diagnostic>> {
     *storage = enums::SyntaxStorage::default();
@@ -235,6 +304,7 @@ fn parse_counted_with_policies(
         mode,
         arrays,
         enums,
+        std_imports,
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         tokens,
@@ -427,6 +497,7 @@ struct Parser<'a> {
     mode: SourceMode,
     arrays: ArraySyntaxPolicy,
     enums: EnumSyntaxPolicy,
+    std_imports: StdImportPolicy,
     storage: enums::SyntaxStorage,
     // Sticky only after ordinary parsing enters project grammar. Recovery
     // scans never set it; successful source flavor comes from the AST instead.
@@ -521,6 +592,45 @@ impl Parser<'_> {
         let id = self.absolute_path(first)?;
         Ok((ItemPath::Absolute(id), self.paths[id.0].span))
     }
+    fn import_path(&mut self) -> Result<PathId, Box<Diagnostic>> {
+        let first = self
+            .expect(Kind::Ident, "expected absolute import path")?
+            .span;
+        if !self.double_colon() {
+            return Err(self.error("import requires an absolute `crate::` item path"));
+        }
+        let root = match self.source.text_at(first) {
+            "crate" => PathRoot::Crate,
+            "std" if self.std_imports.enabled() => PathRoot::Std,
+            _ => {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "only absolute item paths beginning with `crate::` are supported",
+                    Some(first),
+                ))
+            }
+        };
+        let id = self.qualified_segments(first, root)?;
+        if root == PathRoot::Std && self.std_imports == StdImportPolicy::Enabled {
+            use super::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+            let path = &self.paths[id.0];
+            let segments = &self.path_segments[path.segment_start..];
+            if segments.len() != 3
+                || self.source.text_at(segments[1]) != "io"
+                || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
+                    && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name())
+            {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "unsupported standard library import",
+                    Some(path.span),
+                ));
+            }
+        }
+        Ok(id)
+    }
     fn path_segment(
         &mut self,
         count: &mut usize,
@@ -575,6 +685,13 @@ impl Parser<'_> {
         Ok(())
     }
     fn absolute_path(&mut self, first: super::source::Span) -> Result<PathId, Box<Diagnostic>> {
+        self.qualified_segments(first, PathRoot::Crate)
+    }
+    fn qualified_segments(
+        &mut self,
+        first: super::source::Span,
+        root: PathRoot,
+    ) -> Result<PathId, Box<Diagnostic>> {
         let segment_start = self.path_segments.len();
         let mut segment_len = 0;
         self.path_segment(&mut segment_len, first)?;
@@ -620,7 +737,7 @@ impl Parser<'_> {
             span,
             segment_start,
             segment_len,
-            root: PathRoot::Crate,
+            root,
         });
         Ok(id)
     }
@@ -636,10 +753,7 @@ impl Parser<'_> {
                 Some(self.peek().span),
             ));
         }
-        let (path, _) = self.item_path("expected absolute import path", true)?;
-        let ItemPath::Absolute(path) = path else {
-            return Err(self.error("import requires an absolute `crate::` item path"));
-        };
+        let path = self.import_path()?;
         let alias =
             if self.peek().kind == Kind::Ident && self.source.text_at(self.peek().span) == "as" {
                 self.bump();
@@ -1754,6 +1868,10 @@ mod arrays;
 #[path = "parser/enums.rs"]
 mod enums;
 pub(super) use enums::SyntaxStorage;
+
+#[cfg(test)]
+#[path = "parser/builtin_tests.rs"]
+mod builtin_tests;
 
 #[cfg(test)]
 #[path = "parser/array_syntax_tests.rs"]

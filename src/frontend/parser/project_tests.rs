@@ -550,6 +550,7 @@ fn checked_segment_count_overflow_precedes_all_admission_and_reserves() {
         mode: SourceMode::ProjectCandidate,
         arrays: ArraySyntaxPolicy::Closed,
         enums: EnumSyntaxPolicy::Closed,
+        std_imports: StdImportPolicy::Closed,
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         tokens: super::super::lexer::lex(file).unwrap(),

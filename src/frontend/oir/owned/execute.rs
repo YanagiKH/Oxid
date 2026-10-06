@@ -20,6 +20,7 @@ pub(super) enum OwnedRunFailure {
     Scalar(RunFailure),
     EntryResult(Span),
     Bounds(Span),
+    InputHost(Span),
     Resource(plan::AdmissionFailure),
     Invariant(&'static str, Option<Span>),
 }
@@ -55,6 +56,12 @@ impl OwnedRunFailure {
                 "E0606",
                 "oir-owned-run",
                 "array index out of bounds",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::InputHost(span) => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "bounded stdin execution requires Linux x86_64",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::Resource(e) => Diagnostic::new(
@@ -1291,6 +1298,150 @@ impl<'p, 'w> Machine<'p, 'w> {
         };
         self.write(frame, assign.destination, value, assign.span)
     }
+    fn read_stdin(
+        &mut self,
+        frame: usize,
+        buffer: ReferenceParamId,
+        destination: OwnerPlaceId,
+        span: Span,
+    ) -> Result<()> {
+        let function = self.function(self.frames[frame].function);
+        if self.plan.witness().builtin_function() != Some(function.id)
+            || buffer != ReferenceParamId(0)
+            || destination != OwnerPlaceId(0)
+        {
+            return Err(bad("input builtin identity", span));
+        }
+        if !input::supported_host() {
+            return Err(OwnedRunFailure::InputHost(span));
+        }
+        function
+            .references
+            .get(buffer.0)
+            .filter(|reference| {
+                reference.kind == BorrowKind::Exclusive
+                    && reference.referent() == BorrowedTy::ScalarSlice(hir::Ty::I32)
+            })
+            .ok_or_else(|| bad("input reference type", span))?;
+        // Revalidate the active loan, epochs, exclusive authority, nominal
+        // projection provenance and complete view before deriving its capacity.
+        let (root, array, relative) =
+            self.array_base(frame, AccessBase::Parameter(buffer), Access::Write, span)?;
+        if matches!(self.aggregate(root, span)?, AggregateTy::Enum(_)) {
+            return Err(bad("input buffer type", span));
+        }
+        if array.element() != hir::Ty::I32 || array.length() > 1024 {
+            return Err(bad("input capacity", span));
+        }
+        let capacity = array.length();
+        let root_frame = index(root.frame, span)?;
+        if root_frame >= frame {
+            return Err(bad("input buffer activation", span));
+        }
+        let buffer_extent = self.owner_extent(root, span)?;
+        let buffer_start = buffer_extent
+            .start
+            .checked_add(relative)
+            .ok_or_else(|| bad("input buffer offset", span))?;
+        let buffer_end = capacity
+            .checked_mul(4)
+            .and_then(|bytes| buffer_start.checked_add(bytes))
+            .filter(|end| *end <= buffer_extent.end)
+            .ok_or_else(|| bad("input buffer extent", span))?;
+
+        self.expect_owner(frame, destination, &[UNINITIALIZED], span)?;
+        let result_key = self.raw_key(frame, destination);
+        let enumeration = self
+            .plan
+            .witness()
+            .builtin_enumeration()
+            .ok_or_else(|| bad("input result identity", span))?;
+        if result_key.generation == 0
+            || function.owners[destination.0].kind != OwnerKind::Temporary
+            || self.aggregate(result_key, span)? != AggregateTy::Enum(enumeration)
+        {
+            return Err(bad("input result owner", span));
+        }
+        let generation = epoch(result_key.generation, span)?;
+        let variants = self
+            .plan
+            .witness()
+            .declarations()
+            .enums()
+            .variants(enumeration)
+            .map_err(|_| bad("input result variants", span))?;
+        if variants.len() != 3
+            || variants[0].payload() != Some(hir::Ty::I32)
+            || variants[1].payload().is_some()
+            || variants[2].payload().is_some()
+        {
+            return Err(bad("input result variants", span));
+        }
+        let result_extent = self.owner_extent(result_key, span)?;
+        let tag_offset = scalar_offset(result_extent.clone(), 0, hir::Ty::I32, span)?;
+        let count_offset = scalar_offset(result_extent.clone(), 4, hir::Ty::I32, span)?;
+
+        // All result construction and maximum prefix stores are prepaid. The
+        // ordinary activation has already admitted and allocated its scratch.
+        self.charge(4 + capacity, span)?;
+        let scratch = self
+            .plan
+            .input_scratch_range(function.id)
+            .filter(|scratch| {
+                scratch.len() == 1024
+                    && scratch.end == self.frames[frame].payload.len()
+                    && result_extent.end <= scratch.start
+            })
+            .ok_or_else(|| bad("input scratch extent", span))?;
+
+        let mut staged = 0usize;
+        let mut tag = 1u32; // Full, including the zero-capacity case.
+        while staged < capacity {
+            self.charge(1, span)?;
+            match input::read_one() {
+                input::Attempt::Byte(byte) => {
+                    self.frames[frame].payload[scratch.start + staged] = byte;
+                    staged += 1;
+                }
+                input::Attempt::Eof => {
+                    tag = 0;
+                    break;
+                }
+                input::Attempt::Interrupted => {}
+                input::Attempt::Error => {
+                    tag = 2;
+                    break;
+                }
+            }
+        }
+
+        // The canonical builtin cannot invoke or mutate ownership while reading.
+        // Every range/epoch was checked above. From the first destination store
+        // onward there is no fallible helper, allocation, validation or fuel debit.
+        let (ancestors, current) = self.frames.split_at_mut(frame);
+        let current = &mut current[0];
+        if tag != 2 {
+            let prefix = &current.payload[scratch.start..scratch.start + staged];
+            let destination_bytes = &mut ancestors[root_frame].payload[buffer_start..buffer_end];
+            for (cell, byte) in destination_bytes
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(prefix)
+            {
+                cell.copy_from_slice(&i32::from(*byte).to_le_bytes());
+            }
+        }
+        current.payload[tag_offset..tag_offset + 4].copy_from_slice(&tag.to_le_bytes());
+        if tag == 0 {
+            current.payload[count_offset..count_offset + 4]
+                .copy_from_slice(&(staged as i32).to_le_bytes());
+        }
+        let result = &mut current.owners[destination.0];
+        result.generation = generation;
+        result.state = AVAILABLE;
+        Ok(())
+    }
     fn statement(
         &mut self,
         frame: usize,
@@ -1299,6 +1450,12 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ReadStdin {
+                buffer,
+                destination,
+            } => {
+                self.read_stdin(frame, *buffer, *destination, span)?;
+            }
             OwnedInstruction::ConstructEnum {
                 destination,
                 variant,
@@ -2110,7 +2267,9 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
             if let Some(statement) = b.statements.get(self.frames[frame].next) {
                 let span = plan::instruction_span(statement);
-                self.charge(self.plan.statement_cost(f.id, &statement.kind), span)?;
+                if !matches!(statement.kind, OwnedInstruction::ReadStdin { .. }) {
+                    self.charge(self.plan.statement_cost(f.id, &statement.kind), span)?;
+                }
                 #[cfg(test)]
                 self.inject_statement(frame, &statement.kind, span);
                 self.statement(frame, &statement.kind, span)?;
@@ -2318,6 +2477,13 @@ pub(super) fn run_limits(
     )
 }
 fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<hir::DefId> {
+    if !input::supported_host() {
+        if let Some(function) = witness.builtin_function() {
+            return Err(OwnedRunFailure::InputHost(
+                witness.functions()[function.0].span,
+            ));
+        }
+    }
     let entry = entry.ok_or(RunFailure::Entry(None))?;
     let f = witness
         .functions()

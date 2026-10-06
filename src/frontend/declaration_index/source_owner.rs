@@ -133,6 +133,29 @@ impl<'s> SourceOwner<'s> {
         }
         .ok_or_else(|| bad(self.eof()))
     }
+    /// Only prepared names from this immutable owner use this projection.
+    /// Preparation already checked file membership and UTF-8 boundaries. Keep
+    /// safe source access, without constructing a fallible diagnostic transport.
+    pub(super) fn prepared_text(&self, name: CompactSpan) -> &'s str {
+        self.frozen_text(name.span())
+    }
+    /// Frozen view constructors already validated this exact row key and source
+    /// association. Safe projections retain bounds/file checks without minting
+    /// a new boxed-error return inside each infallible getter.
+    pub(super) fn frozen_enum(&self, key: EnumAstKey) -> &'s ast::EnumDecl {
+        match &self.kind {
+            Kind::Original { ast, .. } => &ast.enums[key.index],
+            Kind::Project(project) => project.try_enum(key).expect("frozen enum association"),
+        }
+    }
+    /// Internal projection of a span already checked against this immutable
+    /// owner. This accepts no spelling as declaration or execution authority.
+    pub(super) fn frozen_text(&self, span: Span) -> &'s str {
+        match &self.kind {
+            Kind::Original { file, .. } => file.text_at(span),
+            Kind::Project(project) => project.sources().text(span),
+        }
+    }
     pub fn view(self) -> SourceView<'s> {
         match self.kind {
             Kind::Original { view, .. } => view,
@@ -184,6 +207,16 @@ impl<'s> SourceOwner<'s> {
         // rescan full paths inside each prefix comparison or semantic lookup.
         Ok(view.segments)
     }
+    pub fn import_path(
+        self,
+        path: QualifiedPathRef,
+    ) -> Result<QualifiedPathView<'s>, Box<Diagnostic>> {
+        let view = self.qualified_path(path)?;
+        if !matches!(view.root, ast::PathRoot::Crate | ast::PathRoot::Std) {
+            return Err(bad(self.eof()));
+        }
+        Ok(view)
+    }
     pub fn qualified_path(
         self,
         path: QualifiedPathRef,
@@ -207,6 +240,7 @@ impl<'s> SourceOwner<'s> {
             || first.start != row.span.start
             || last.end != row.span.end
             || (row.root == ast::PathRoot::Crate && self.text(*first)? != "crate")
+            || (row.root == ast::PathRoot::Std && self.text(*first)? != "std")
         {
             return Err(bad(self.eof()));
         }
@@ -225,6 +259,20 @@ impl<'s> SourceOwner<'s> {
             if !program.records.is_empty() || !program.enums.is_empty() {
                 owned = true;
                 continue;
+            }
+            // The private parsed summary avoids charging old crate imports for
+            // stdin discovery. Collection rechecks the summary before allocation.
+            if program.uses_std_imports() {
+                for import in &program.imports {
+                    work.preflight(import.span)?;
+                    owned |= self
+                        .import_path(QualifiedPathRef {
+                            file: import.span.file,
+                            path: import.path,
+                        })?
+                        .root()
+                        == ast::PathRoot::Std;
+                }
             }
             for function in &program.functions {
                 work.preflight(function.name)?;
@@ -362,7 +410,11 @@ mod enum_carrier_tests {
             file,
             path: ast::ItemPath::Absolute(ast::PathId(0)),
         };
-        for root in [ast::PathRoot::LocalType, ast::PathRoot::Crate] {
+        for root in [
+            ast::PathRoot::LocalType,
+            ast::PathRoot::Crate,
+            ast::PathRoot::Std,
+        ] {
             ast.paths[0].root = root;
             let owner = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
             assert!(owner.segments(handle).is_err(), "{root:?}");

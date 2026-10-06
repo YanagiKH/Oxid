@@ -136,3 +136,5 @@ Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指�
 實驗性的[陣列欄位切片借用](rfcs/0022-projected-array-slices.md)讓切片輔助函式借用固定長度純量陣列欄位，例如 `bump(&mut batch.samples)`。巢狀欄位路徑及透過整筆記錄參照的明確再借用，仍保留整個擁有者的衝突規則、可見性與僅限呼叫的生命週期。資源上限及原生目標不變。
 
 實驗性的[有界列舉與消耗式比對](spec/typed-preview.md#bounded-nominal-enums-and-consuming-match)加入具名、只能移動的列舉值；變體可不帶資料，或攜帶一個 bool/i32/unit 值，並以陳述式對具名擁有者進行完整比對。明確指定 typed-preview 的 check/run/原生 compile 與格式化支援此契約。[兩檔案掃描器](tests/fixtures/bounded_enum_scanner/main.ox)回傳 115；列舉借用、聚合型承載資料與比對運算式仍不在範圍內。目前原始碼驗證與精確版本的託管 CI 仍是待完成的獨立關卡；這不代表已實現自我託管。
+
+實驗性的[有界標準輸入](spec/typed-preview.md#bounded-stdin-input)僅加入可使用別名的個別 `std::io::read_stdin` 與 `std::io::ReadStatus` 匯入。它將原始位元組填入既有的獨占 i32 切片，回傳 `Eof(n)`、不多讀資料的 `Full`，或保持目的緩衝區不變的 `IoError`；已消耗的輸入無法還原。在 Linux x86_64 上，[128 位元組運算式程式](fixtures/typed-expression-samples/README.md#bounded-stdin-entry)已在本機 28 案例的參考／原生驗證中，以同一個未變更的 ELF 分別回傳 39 和 63。完整的目前原始碼驗證與精確版本的託管 CI 仍是獨立關卡；一般 `std`、字串、其他輸入執行平台及自我託管仍不在此次範圍內。
