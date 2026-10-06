@@ -15,6 +15,8 @@ import tempfile
 import unittest
 
 import verify_owned_array_native as admission
+import replay_fixed_array_unit2d_current as enum_adapter
+import replay_fixed_array_unit2d as frozen_replay
 
 
 SLICE_NAMES = (
@@ -91,6 +93,117 @@ def elf_fixture():
     struct.pack_into("<HHI", data, 16, 2, 62, 1)
     struct.pack_into("<H", data, 52, 64)
     return bytes(data)
+
+
+class Unit2DEnumCarrierTests(unittest.TestCase):
+    def previous_members(self):
+        fixture = Path(frozen_replay.__file__).resolve().parents[1] / frozen_replay.FIXTURE_REL
+        frozen = (fixture / frozen_replay.PUBLIC_ARRAY_ACTIVATION["frozen_module_path"]).read_bytes()
+        members = {"reviewer": frozen_replay.projected_loan_reviewer(
+            frozen_replay.borrowed_slot_reviewer(frozen_replay.public_array_reviewer(frozen)))}
+        for name in frozen_replay.CONTROL_FILES:
+            data = (fixture / "sources" / name).read_bytes()
+            members[name] = frozen_replay.old_ir_resource_exporter(data) if name == "old-ir-export-v1.rs" else data
+        return members
+
+    def test_exact_forward_reverse_preserves_every_other_rust_byte(self):
+        members = self.previous_members()
+        # Independent literal line edits in the unchanged projected-loan successor.
+        lines = members["reviewer"].splitlines(keepends=True)
+        additions = {
+            91: b"        matches: vec![],\n",
+            244: b"            enums: vec![],\n",
+            432: b"            enums: vec![],\n",
+            600: b"            enums: vec![],\n",
+            620: b'        AggregateTy::Enum(_) => panic!("Unit2D non-enum fixture received an enum"),\n',
+            639: b'        AggregateTy::Enum(_) => panic!("Unit2D non-enum fixture received an enum"),\n',
+            879: b"            enums: vec![],\n",
+            1076: b"        enums: vec![],\n",
+            1725: b"            enums: vec![],\n",
+        }
+        expected = b"".join(line + additions.get(number, b"") for number, line in enumerate(lines, 1))
+        self.assertEqual(enum_adapter.enum_carrier_bytes("reviewer", members["reviewer"]), expected)
+        for name, previous in members.items():
+            with self.subTest(name=name):
+                current = enum_adapter.enum_carrier_bytes(name, previous)
+                self.assertEqual(enum_adapter.enum_carrier_bytes(name, current, reverse=True), previous)
+                self.assertEqual([line for line in previous.splitlines() if b"assert" in line],
+                                 [line for line in current.splitlines() if b"assert" in line])
+                for data, reverse in ((previous + b"\n", False), (current + b"\n", True)):
+                    with self.assertRaisesRegex(ValueError, "input identity"):
+                        enum_adapter.enum_carrier_bytes(name, data, reverse=reverse)
+                if current != previous:
+                    with self.assertRaisesRegex(ValueError, "input identity"):
+                        enum_adapter.enum_carrier_bytes(name, current)
+        self.assertEqual(expected.count(b"enums: vec![],"), 6)
+        self.assertEqual(expected.count(b"matches: vec![],"), 1)
+        self.assertEqual(expected.count(b'AggregateTy::Enum(_) => panic!'), 2)
+
+    def test_mutated_defaults_or_enum_fail_closed_arms_are_rejected(self):
+        previous = self.previous_members()["reviewer"]
+        current = enum_adapter.enum_carrier_bytes("reviewer", previous)
+        for changed in (
+            current.replace(b"enums: vec![],", b"enums: vec![unexpected],", 1),
+            current.replace(b"matches: vec![],", b"matches: vec![unexpected],", 1),
+            current.replace(b"AggregateTy::Enum(_) =>", b"_ =>", 1),
+            current.replace(b'panic!("Unit2D non-enum fixture received an enum")', b"(hir::Ty::I32, 1)", 1),
+            current.replace(b"assert_eq!", b"assert_ne!", 1),
+        ):
+            with self.assertRaisesRegex(ValueError, "input identity"):
+                enum_adapter.enum_carrier_bytes("reviewer", changed, reverse=True)
+
+    def test_runner_is_reversible_and_preserves_frozen_phase_and_test_rosters(self):
+        frozen = Path(frozen_replay.__file__).read_bytes()
+        current = enum_adapter.current_runner_bytes(frozen)
+        self.assertEqual(enum_adapter.current_runner_bytes(current, reverse=True), frozen)
+        for data, reverse in ((frozen + b"\n", False), (current + b"\n", True), (current, False)):
+            with self.assertRaisesRegex(ValueError, "input identity"):
+                enum_adapter.current_runner_bytes(data, reverse=reverse)
+        schema = enum_adapter.load_runner()
+        for name in ("PHASES", "ORDINARY", "NATIVE", "PHYSICAL", "PROVENANCE", "CONTROL_FILES"):
+            self.assertEqual(getattr(schema, name), getattr(frozen_replay, name))
+        self.assertEqual(len(admission.ROSTER), 16)
+
+    def test_real_current_cli_prepares_bound_harness_with_default_frozen_inputs(self):
+        # Actual preparation and binding code, no Cargo/native execution.
+        with tempfile.TemporaryDirectory(prefix="unit2d-enum-prepare-") as temporary:
+            root = Path(temporary)
+            repo = root / "source checkout"
+            native = repo / frozen_replay.NATIVE_REL
+            native.parent.mkdir(parents=True)
+            original = b"// unchanged compiler test source\n"
+            native.write_bytes(original)
+            for arguments in (("init", "-q"), ("add", "."),
+                              ("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")):
+                subprocess.run(["git", "-C", str(repo), *arguments], check=True, capture_output=True)
+            head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+            output = root / "prepared"
+            completed = subprocess.run([sys.executable, "-B", enum_adapter.__file__, "--repo", str(repo),
+                "--commit", head, "--output", str(output), "--phase", "prepare"], capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            schema = enum_adapter.load_runner()
+            binding = admission.read_json(output / "evidence/source-binding.json")
+            schema.assert_current_module_binding(binding)
+            content = {key: value for key, value in binding.items() if key not in ("content_id", "marker", "prepared")}
+            self.assertEqual(binding["content_id"], admission.sha256(json.dumps(content, sort_keys=True, separators=(",", ":")).encode()))
+            injected = (output / "source" / schema.NATIVE_REL).read_bytes()
+            self.assertTrue(injected.startswith(original))
+            self.assertIn(binding["marker"].encode(), injected)
+            self.assertEqual(injected.count(b"enums:"), 3)
+            self.assertEqual(native.read_bytes(), original)
+            self.assertEqual((output / "source" / schema.MODULE_REL).read_bytes(),
+                             enum_adapter.enum_carrier_bytes("reviewer", self.previous_members()["reviewer"]))
+            schema.assert_manifest(output / "source", binding["prepared"])
+            schema.assert_manifest(output / "inputs", binding["inputs"])
+            for field in ("enum_carrier_compatibility", "enum_adapter_sha256", "module_sha256"):
+                changed = dict(binding)
+                changed[field] = "mutated"
+                with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
+                    schema.assert_current_module_binding(changed)
+            injected_path = output / "source" / schema.MODULE_REL
+            injected_path.write_bytes(injected_path.read_bytes() + b"\n")
+            with self.assertRaises(RuntimeError):
+                schema.assert_manifest(output / "source", binding["prepared"])
 
 
 class AdmissionTests(unittest.TestCase):
@@ -661,7 +774,8 @@ class PackageTests(unittest.TestCase):
                     "scripts/verify_owned_array_native.py", "scripts/test_owned_array_native.py",
                     "scripts/verify_owned_source_native.py", "scripts/verify_owned_source.py",
                     "scripts/preserve_unit3_ci_evidence.py", "docs/architecture/fixed-array-unit2e-native-ci.md",
-                    "scripts/replay_fixed_array_unit2d.py", "scripts/replay_unit2d_tool_capture.py",
+                    "scripts/replay_fixed_array_unit2d.py", "scripts/replay_fixed_array_unit2d_current.py",
+                    "scripts/replay_unit2d_tool_capture.py",
                     "scripts/test_replay_fixed_array_unit2d.py")
         for name in required:
             path = repo / name
@@ -1329,10 +1443,13 @@ class CombinedReceiptTests(unittest.TestCase):
         # This verifies the actual frozen runner SHA before importing it.
         cls.schema = admission.independent_schema(source_repo)
         frozen_runner = (source_repo / 'scripts/replay_fixed_array_unit2d.py').read_bytes()
+        current_adapter = (source_repo / 'scripts/replay_fixed_array_unit2d_current.py').read_bytes()
         original_write_text = Path.write_text
         def fixture_source(path, text, *args, **kwargs):
             if path.name == 'replay_fixed_array_unit2d.py' and text == 'synthetic receipt fixture, not executed\n':
                 return path.write_bytes(frozen_runner)
+            if path.name == 'replay_fixed_array_unit2d_current.py' and text == 'synthetic receipt fixture, not executed\n':
+                return path.write_bytes(current_adapter)
             return original_write_text(path, text, *args, **kwargs)
         # Replace only the synthetic source file's contents before its Git
         # commit/source capture; source and runner hash checks stay real.
@@ -1362,6 +1479,7 @@ class CombinedReceiptTests(unittest.TestCase):
         cls.auditor = cls.base / 'downloaded-checker' / 'scripts'
         cls.auditor.mkdir(parents=True)
         (cls.auditor / 'replay_fixed_array_unit2d.py').write_bytes(frozen_runner)
+        (cls.auditor / 'replay_fixed_array_unit2d_current.py').write_bytes(current_adapter)
         cls.module_patch = mock.patch.object(admission, '__file__', str(cls.auditor / 'verify_owned_array_native.py'))
         cls.module_patch.start()
         cls.addClassCleanup(cls.module_patch.stop)
@@ -1419,7 +1537,9 @@ class CombinedReceiptTests(unittest.TestCase):
             'borrowed_slot_compatibility': cls.schema.BORROWED_SLOT_COMPATIBILITY,
             'projected_loan_compatibility': cls.schema.PROJECTED_LOAN_COMPATIBILITY,
             'old_ir_resource_successor': cls.schema.OLD_IR_RESOURCE_SUCCESSOR,
-            'module_sha256': cls.schema.PROJECTED_LOAN_COMPATIBILITY['current_module_sha256'],
+            'enum_carrier_compatibility': cls.schema.ENUM_CARRIER_COMPATIBILITY,
+            'enum_adapter_sha256': cls.schema.ENUM_ADAPTER_SHA,
+            'module_sha256': cls.schema.ENUM_CARRIER_COMPATIBILITY['members']['reviewer'][1],
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
             'input_manifest_sha256': cls.input_digest, 'original_input_manifest_sha256': cls.input_digest,

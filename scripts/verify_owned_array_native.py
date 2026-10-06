@@ -682,7 +682,8 @@ def source_members(repo, tracked):
                   "scripts/verify_owned_array_native.py", "scripts/test_owned_array_native.py",
                   "scripts/verify_owned_source_native.py", "scripts/verify_owned_source.py",
                   "scripts/preserve_unit3_ci_evidence.py", "docs/architecture/fixed-array-unit2e-native-ci.md",
-                  "scripts/replay_fixed_array_unit2d.py", "scripts/replay_unit2d_tool_capture.py",
+                  "scripts/replay_fixed_array_unit2d.py", "scripts/replay_fixed_array_unit2d_current.py",
+                  "scripts/replay_unit2d_tool_capture.py",
                   "scripts/test_replay_fixed_array_unit2d.py"))
     require(not any(Path(name).name in ("credentials", "credentials.toml") for name in names),
             "credential files cannot be source or authority inputs")
@@ -1333,10 +1334,12 @@ def independent_schema(repo):
     path = repo / "scripts/replay_fixed_array_unit2d.py"
     data, _ = stable_bytes(path)
     require(sha256(data) == INDEPENDENT_RUNNER_SHA, "independent runner differs from frozen interface")
-    spec = importlib.util.spec_from_file_location("unit2e_frozen_replay_schema", path)
+    adapter = repo / "scripts/replay_fixed_array_unit2d_current.py"
+    data, _ = stable_bytes(adapter)
+    spec = importlib.util.spec_from_file_location("unit2e_current_replay_schema", adapter)
     module = importlib.util.module_from_spec(spec)
-    exec(compile(data, str(path), "exec"), module.__dict__)
-    return module
+    exec(compile(data, str(adapter), "exec"), module.__dict__)
+    return module.load_runner(path)
 
 
 def relative_member(value):
@@ -1754,7 +1757,7 @@ def independent_body(root, *, head, tree, profile, tools, schema, checkout):
 def independent_command(repo, root, profile, tools, producer):
     rust_bin = Path(tools["all_tools"]["rustc"]["path"]).parent
     require(Path(tools["all_tools"]["cargo"]["path"]).parent == rust_bin, "independent Cargo/rustc directories differ")
-    return [tools["all_tools"]["python"]["path"], "-B", str(repo / "scripts/replay_fixed_array_unit2d.py"),
+    return [tools["all_tools"]["python"]["path"], "-B", str(repo / "scripts/replay_fixed_array_unit2d_current.py"),
             "--repo", str(repo), "--commit", read_json(producer / "invocation.json")["ci"]["expected_head"],
             "--output", str(root), "--rust-bin", str(rust_bin), "--trusted-tools", str(producer / "independent-llvm-tools.json"),
             "--profile", profile, "--cargo-home", tools["effective_environment"]["CARGO_HOME"]]
