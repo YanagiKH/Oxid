@@ -1206,11 +1206,11 @@
       "sha256": "ce6f024ce4f42d9de2021983faade3804f5e36b4010377143c4ae817291d6763"
     },
     {
-      "bytes": 77864,
-      "git_blob": "5d343e196d318c8edf2aad50579dbeb16d579b9a",
+      "bytes": 79581,
+      "git_blob": "de5623b92842d27cc1cd1d6a809707b2eab5a77b",
       "mode": "100644",
       "path": "src/frontend/declaration_index/builtin_tests.rs",
-      "sha256": "a74322e82e54b158e7763cf3b5a82342c1c0afd526506ddc5a5522f2e4f1429a"
+      "sha256": "ca071c9faf70a89f5850f2e9056da11e62f245a016a8f006041c8a2f2ecbac63"
     },
     {
       "bytes": 45564,
@@ -2902,12 +2902,12 @@
   ],
   "current_source_bytes": 50310,
   "current_source_members": 262,
-  "current_source_sha256": "b7bac981c6c2a1bcabe23a2e149c5e847411d54b1dcd1c55fb1773a386b10ef4",
+  "current_source_sha256": "3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936",
   "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS",
   "removed_paths": [],
-  "reviewed_source_head": "4939b54a96db50ba29cf8197742387dd9491054d",
+  "reviewed_source_head": "63db2c290031d76b5925fdd672c38eac2ca50578",
   "schema": "oxid-bounded-stdout-source-transition-v1",
-  "source_only_tree": "d1fca6e3e57ec96beea3915e1d682ec4588ef74f",
+  "source_only_tree": "f01525a95f2e4b3dfa69237108cfbc67a1f43eab",
   "stdin_authority_sha256": "ff9f806e0211367c8c31d1084ce5aa80f3175b0e65c54a0d3860df0ced8cac08",
   "stdin_source_bytes": 48300,
   "stdin_source_members": 252,
@@ -2966,11 +2966,11 @@
     },
     {
       "after": {
-        "bytes": 77864,
-        "git_blob": "5d343e196d318c8edf2aad50579dbeb16d579b9a",
+        "bytes": 79581,
+        "git_blob": "de5623b92842d27cc1cd1d6a809707b2eab5a77b",
         "mode": "100644",
         "path": "src/frontend/declaration_index/builtin_tests.rs",
-        "sha256": "a74322e82e54b158e7763cf3b5a82342c1c0afd526506ddc5a5522f2e4f1429a"
+        "sha256": "ca071c9faf70a89f5850f2e9056da11e62f245a016a8f006041c8a2f2ecbac63"
       },
       "before": {
         "bytes": 23804,
@@ -3755,8 +3755,8 @@
       "path": "src/frontend/project.rs"
     }
   ],
-  "transition_patch_bytes": 525745,
-  "transition_patch_sha256": "1dc95eb28c1ee5b3ad10e5da2b418817b09fa548fb960ffabe1451152b2d75c4",
+  "transition_patch_bytes": 527951,
+  "transition_patch_sha256": "80dad62cc0e9fa87b026753401b3e5bb59e0bc200696b1fa825676cd662fb1ea",
   "transition_paths": [
     "native/typed_preview.c",
     "src/frontend/builtin_catalog.rs",

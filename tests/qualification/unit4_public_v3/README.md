@@ -197,7 +197,7 @@ and the frozen semantic amendment cannot be rebound to the new compiler. The
 final join independently validates both exact hashes and their roles.
 
 The bounded-stdout successor binds checkpoint
-`4939b54a96db50ba29cf8197742387dd9491054d`, 262 current inputs and a
+`63db2c290031d76b5925fdd672c38eac2ca50578`, 262 current inputs and a
 263-member lifecycle view. The exact `observer-stdin-v1.patch` still applies
 unchanged. Its predecessor reversals, logical hooks, selected LLVM runtime
 identity, semantic amendments and frozen public contracts remain unchanged.

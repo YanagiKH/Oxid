@@ -118,9 +118,9 @@ class SourceBindingTests(unittest.TestCase):
         compiler_paths = [name for name in self.captured["inputs"] if name.startswith(("src/", "native/"))]
         self.assertEqual(len(compiler_paths), 204)
         self.assertEqual(self.captured["current"]["reviewed_source_head"],
-                         "4939b54a96db50ba29cf8197742387dd9491054d")
+                         "63db2c290031d76b5925fdd672c38eac2ca50578")
         self.assertEqual(self.captured["current"]["source_only_tree"],
-                         "d1fca6e3e57ec96beea3915e1d682ec4588ef74f")
+                         "f01525a95f2e4b3dfa69237108cfbc67a1f43eab")
         self.assertEqual(binding.digest(self.captured["package_bytes"]["stdin-source.json"]),
                          "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f")
         output = self.root / "stdout-archive"

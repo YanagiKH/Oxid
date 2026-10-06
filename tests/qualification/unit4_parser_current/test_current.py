@@ -182,8 +182,8 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 78)
-        self.assertEqual(a['current']['reviewed_source_head'], '4939b54a96db50ba29cf8197742387dd9491054d')
-        self.assertEqual(a['current']['source_only_tree'], 'd1fca6e3e57ec96beea3915e1d682ec4588ef74f')
+        self.assertEqual(a['current']['reviewed_source_head'], '63db2c290031d76b5925fdd672c38eac2ca50578')
+        self.assertEqual(a['current']['source_only_tree'], 'f01525a95f2e4b3dfa69237108cfbc67a1f43eab')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()

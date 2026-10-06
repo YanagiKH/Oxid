@@ -1,11 +1,11 @@
 # Bounded stdout current-source successor
 
 The active `current-source.json` binds compiler checkpoint
-`4939b54a96db50ba29cf8197742387dd9491054d`, full tree
-`d1fca6e3e57ec96beea3915e1d682ec4588ef74f`: 262 inputs, comprising all
+`63db2c290031d76b5925fdd672c38eac2ca50578`, full tree
+`f01525a95f2e4b3dfa69237108cfbc67a1f43eab`: 262 inputs, comprising all
 204 `src/` and `native/` members and 58 retained non-source inputs. Including
 Cargo/build inputs gives 207 compiler bodies. Its exact SHA-256 is
-`b7bac981c6c2a1bcabe23a2e149c5e847411d54b1dcd1c55fb1773a386b10ef4`.
+`3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936`.
 
 `stdin-source.json` preserves the complete previous 252-member manifest,
 48,300 bytes, SHA-256

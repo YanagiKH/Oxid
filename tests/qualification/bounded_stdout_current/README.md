@@ -59,7 +59,7 @@ Full native gate, after the enum gate has produced both ordinary profiles:
     python3 -B scripts/verify_bounded_stdout_native.py \
       --repo "$PWD" --output "$OUT/stdout" --build-evidence "$OUT/enum" \
       --llvm-bin "$OXID_LLVM_BIN" --expected-head "$Q" --event-sha "$EVENT_SHA" \
-      --source-manifest-sha256 b7bac981c6c2a1bcabe23a2e149c5e847411d54b1dcd1c55fb1773a386b10ef4
+      --source-manifest-sha256 3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936
 
 CI always uploads the new stdout evidence directory, including nested public
 artifact evidence, even when qualification fails.

@@ -1,8 +1,8 @@
 # Current-source Unit4 parser qualification
 
 This adapter admits bounded-stdout feature source checkpoint
-`4939b54a96db50ba29cf8197742387dd9491054d`, full tree
-`d1fca6e3e57ec96beea3915e1d682ec4588ef74f`, while retaining the byte-identical
+`63db2c290031d76b5925fdd672c38eac2ca50578`, full tree
+`f01525a95f2e4b3dfa69237108cfbc67a1f43eab`, while retaining the byte-identical
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` package.
 
 The replay uses the historical `parse_counted` entry, whose current implementation

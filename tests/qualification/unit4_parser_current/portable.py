@@ -426,7 +426,7 @@ PROJECTED_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.r
 ENUM_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/declaration_index/resource.rs",
                               "src/frontend/parser.rs",
                               "src/frontend/project/budget.rs", "src/frontend/source.rs")
-AUTHORITY_SHA = '3830dc3732c7c157448f6461683bedd0e77a3099bcdbf48b694c3c4fd615c180'
+AUTHORITY_SHA = 'ea5c424c532faee332521f01e60e5f78b904ed1f119099bdc7b4238e3650cc6a'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"

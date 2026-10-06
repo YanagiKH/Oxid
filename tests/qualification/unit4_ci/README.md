@@ -1,7 +1,7 @@
 # Mandatory current Unit4 qualification
 
 This integration admits the exact component closure and the 262-input current
-compiler authority at feature checkpoint `4939b54a96db50ba29cf8197742387dd9491054d`.
+compiler authority at feature checkpoint `63db2c290031d76b5925fdd672c38eac2ca50578`.
 Its additive lifecycle observer contains 263 members. The named
 `observer-stdin-v1.patch` successor composes the existing logical event hooks onto
 current bodies and reverses exactly to the retained enum, projected and historical

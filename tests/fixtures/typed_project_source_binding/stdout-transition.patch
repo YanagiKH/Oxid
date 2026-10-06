@@ -598,10 +598,21 @@ index 57a0edc..9f7c970 100644
          if self.original {
              return write!(f, "{}", owned_diagnostic::name(self.terminal));
 diff --git a/src/frontend/declaration_index/builtin_tests.rs b/src/frontend/declaration_index/builtin_tests.rs
-index 18d119c..5d343e1 100644
+index 18d119c..de5623b 100644
 --- a/src/frontend/declaration_index/builtin_tests.rs
 +++ b/src/frontend/declaration_index/builtin_tests.rs
-@@ -31,6 +31,14 @@ impl Fixture {
+@@ -1,6 +1,9 @@
+ //! Current imports and the permanently private candidate share nominal facts.
+ use super::*;
+-use crate::frontend::{parser, project::ProjectLimits};
++use crate::frontend::{
++    parser,
++    project::{LoadFailure, ProjectLimits},
++};
+ use std::{
+     fs,
+     path::PathBuf,
+@@ -31,6 +34,14 @@ impl Fixture {
          )
          .unwrap()
      }
@@ -616,7 +627,31 @@ index 18d119c..5d343e1 100644
      fn load_current(&self) -> ProjectSources {
          ProjectSources::load_typed(
              self.0.join("main.ox").to_str().unwrap(),
-@@ -522,7 +530,7 @@ fn builtin_index_resource_endpoints_and_layouts_are_explicit() {
+@@ -44,6 +55,23 @@ impl Drop for Fixture {
+         fs::remove_dir_all(&self.0).unwrap();
+     }
+ }
++fn assert_module_policy_denial(failure: LoadFailure, primary: Span) {
++    assert_eq!(failure.diagnostics.len(), 1);
++    let diagnostic = &failure.diagnostics[0];
++    assert_eq!((diagnostic.code, diagnostic.stage), ("E0005", "source"));
++    assert_eq!(
++        diagnostic.message,
++        "module source policy is not qualified on this host"
++    );
++    assert_eq!(diagnostic.primary, Some(primary));
++    assert!(diagnostic.secondary.is_empty());
++    assert!(diagnostic.notes.is_empty());
++    assert_eq!(failure.sources.files().len(), 1);
++    assert_eq!(failure.usage.modules, 1);
++    assert_eq!(failure.usage.probes, 0);
++    assert_eq!(failure.usage.directory_entries, 0);
++    assert_eq!(failure.usage.directory_name_units, 0);
++}
+ fn collect<'a>(
+     project: &'a ProjectSources,
+     work: &WorkMeter,
+@@ -522,7 +550,7 @@ fn builtin_index_resource_endpoints_and_layouts_are_explicit() {
          }
      }
      println!("builtin-index-layout set={} admission={} marker={} handle={} projection={} projection-result={} handle-option={} handle-result={} item-result={} origin-result={} tables={} index={} facts={} counts={} plan={} prepared={} prepared-option={} enum-view={} enum-option={} enum-result={} variant-view={} variant-option={} variant-result={} enum-counts={} fixed={}",
@@ -625,7 +660,7 @@ index 18d119c..5d343e1 100644
      assert_eq!(size_of::<EnumView<'_>>(), 16);
      assert_eq!(size_of::<VariantView<'_>>(), 24);
      const { assert!(FIXED_SCRATCH <= 4096) };
-@@ -613,3 +621,1384 @@ fn builtin_index_allocation_injection_precedes_frozen_identity() {
+@@ -613,3 +641,1415 @@ fn builtin_index_allocation_injection_precedes_frozen_identity() {
          assert_eq!(allocator.attempts, failure);
      }
  }
@@ -1066,7 +1101,22 @@ index 18d119c..5d343e1 100644
 +                "use std::io::read_stdin as input; fn helper()->(){return;}",
 +            ),
 +        ]);
-+        let project = fixture.load_current();
++        let result = ProjectSources::load_typed(
++            fixture.0.join("main.ox").to_str().unwrap(),
++            ProjectLimits::default(),
++        );
++        if !cfg!(target_os = "linux") {
++            assert_module_policy_denial(
++                result.unwrap_err(),
++                Span {
++                    file: SourceFileId(0),
++                    start: 4,
++                    end: 9,
++                },
++            );
++            return;
++        }
++        let project = result.unwrap();
 +        let owner = SourceOwner::project(&project);
 +        let root_ast = owner.ast(ModuleId(0)).unwrap();
 +        let child_ast = owner.ast(ModuleId(1)).unwrap();
@@ -1795,7 +1845,23 @@ index 18d119c..5d343e1 100644
 +            "use std::io::read_stdin as input; use std::io::WriteStatus as OutStatus; pub fn helper()->(){return;}"
 +        };
 +        let fixture = Fixture::new(&[("main.ox", root), ("first.ox", child), ("second.ox", "use std::io::write_stdout as again; use std::io::read_stdin as input; pub fn other()->(){return;}")]);
-+        let project = fixture.load_output();
++        let result = ProjectSources::load_output_candidate(
++            fixture.0.join("main.ox").to_str().unwrap(),
++            ProjectLimits::default(),
++            &mut Allocator::default(),
++        );
++        if !cfg!(target_os = "linux") {
++            assert_module_policy_denial(
++                result.unwrap_err(),
++                Span {
++                    file: SourceFileId(0),
++                    start: 8,
++                    end: 13,
++                },
++            );
++            continue;
++        }
++        let project = result.unwrap();
 +        let owner = SourceOwner::project(&project);
 +        let endpoint = |module: usize, import: usize| {
 +            let ast = owner.ast(ModuleId(module)).unwrap();
