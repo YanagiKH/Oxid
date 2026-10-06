@@ -67,7 +67,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 237)
+        self.assertEqual(len(captured["inputs"]), 252)
+        self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
         self.assertEqual(len(captured["division_inputs"]), 185)
         self.assertEqual(len(captured["combined_inputs"]), 185)
@@ -91,19 +92,150 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_enum_inverse_restores_exact_projected_predecessor(self):
         restored, touched = binding.inverse_enum_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["enum-transition.patch"])
+            self.captured["enum_inputs"], self.captured["package_bytes"]["enum-transition.patch"])
         self.assertEqual(restored, self.captured["projected_inputs"])
         binding.check_bytes(restored, self.captured["projected_source"]["files"])
         self.assertEqual(touched, list(binding.ENUM_PATHS))
         self.assertEqual((len(touched), len(restored), len(binding.ENUM_ADDITIONS)), (102, 201, 36))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.ENUM_ADDITIONS))
-        self.assertEqual(len([p for p in self.captured["inputs"] if p.startswith(("src/", "native/"))]), 179)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(set(self.captured["enum_inputs"]) - set(restored), set(binding.ENUM_ADDITIONS))
+        self.assertEqual(len([p for p in self.captured["enum_inputs"] if p.startswith(("src/", "native/"))]), 179)
+        self.assertEqual(self.captured["enum_source"]["reviewed_source_head"],
                          "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["enum_source"]["source_only_tree"],
                          "4970ee660f670cfcb23f42a9cb182a4ca7996388")
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
+
+    def test_stdin_inverse_restores_exact_enum_predecessor_and_complete_chain(self):
+        restored, touched = binding.inverse_stdin_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["stdin-transition.patch"])
+        self.assertEqual(restored, self.captured["enum_inputs"])
+        binding.check_bytes(restored, self.captured["enum_source"]["files"])
+        self.assertEqual(touched, list(binding.STDIN_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.STDIN_ADDITIONS)), (82, 237, 15))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.STDIN_ADDITIONS))
+        compiler_paths = [name for name in self.captured["inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler_paths), 194)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+                         "c1d73740268d64d4e908ad86ed9dabaa48dd1c23")
+        self.assertEqual(self.captured["current"]["source_only_tree"],
+                         "b19991275b22426397d708ac0afa1874e6511b00")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["enum-source.json"]),
+                         "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669")
+        output = self.root / "stdin-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["stdin_inverse_touched"], list(binding.STDIN_PATHS))
+        self.assertEqual(receipt["stdin_inverse_patch_sha256"], binding.STDIN_PATCH_SHA)
+        self.assertEqual(receipt["enum_source_sha256"], binding.ENUM_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_stdin_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-enum"
+        binding.materialize(source, self.captured["enum_inputs"])
+        patch_path = self.package / "stdin-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+
+    def test_stdin_members_required_byte_and_mode_bound_before_inverse(self):
+        for name in binding.STDIN_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_stdin_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.STDIN_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.STDIN_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_stdin_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+
+    def test_stdin_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "stdin-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.ENUM_HEAD), ("source_only_tree", binding.ENUM_TREE),
+                           ("current_source_members", 237), ("compiler_source_members", 179),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("resource_adapter", {}), ("unit2_semantic_adapter", {})):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale stdin authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_stdin_enum_manifest_and_patch_coherent_tampering_reject(self):
+        for name, error in (("enum-source.json", "unapproved enum source manifest"),
+                            ("stdin-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "stdin-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_stdin_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["stdin-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 82)
+        for name, section in zip(binding.STDIN_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_stdin_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_stdin_patch(self.captured["enum_inputs"], original)
+
+    def test_stdin_inverse_scope_order_duplicates_unknown_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["stdin-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.STDIN_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.STDIN_PATHS)
+
+    def test_stdin_semantic_redirect_is_reversible_and_preserves_enum_authority(self):
+        original = self.captured["enum_unit2_comparator"]
+        derived = binding.adapt_stdin_unit2_comparator(original)
+        self.assertEqual(derived, self.captured["unit2_comparator"])
+        self.assertEqual(binding.adapt_stdin_unit2_comparator(derived, reverse=True), original)
+        self.assertIn(binding.STDIN_COMPARATOR_NEW, derived)
+        self.assertNotIn(binding.STDIN_COMPARATOR_OLD, derived)
+        compile(derived, "stdin-unit2-comparator", "exec")
+        for changed in (original + b"\n", original[:-1], derived):
+            with self.assertRaisesRegex(binding.BindingError, "wrong stdin Unit2 comparator input"):
+                binding.adapt_stdin_unit2_comparator(changed)
+        with patch.object(binding, "STDIN_COMPARATOR_NEW", binding.STDIN_COMPARATOR_NEW + b"# changed"):
+            with self.assertRaisesRegex(binding.BindingError, "wrong stdin Unit2 comparator output"):
+                binding.adapt_stdin_unit2_comparator(original)
+        self.assertEqual(self.captured["semantic_amendment"]["source_manifest"]["sha256"], binding.ENUM_SOURCE_SHA)
+        self.assertEqual(self.captured["index_resource_authority"]["current_source_sha256"], binding.ENUM_SOURCE_SHA)
 
     def test_enum_forward_patch_recreates_every_current_input(self):
         source = self.root / "forward-projected"
@@ -114,7 +246,7 @@ class SourceBindingTests(unittest.TestCase):
                                      'apply', *extra, str(patch_path)], cwd=source,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        binding.check_entries(source, self.captured["enum_source"]["files"], exact=True)
 
     def test_enum_members_required_byte_and_mode_bound(self):
         for name in binding.ENUM_PATHS:
@@ -165,7 +297,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(sections), 102)
         for name, section in zip(binding.ENUM_PATHS, sections):
             with self.subTest(name=name):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["enum_inputs"])
                 hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[name].splitlines(keepends=True)
@@ -183,7 +315,7 @@ class SourceBindingTests(unittest.TestCase):
         for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
                         original + sections[0], original + unknown, original + b"unexpected tail\n"):
             with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["enum_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.ENUM_PATHS)
 
     def test_enum_scanner_closure_is_separate_and_ordered(self):
@@ -290,7 +422,7 @@ class SourceBindingTests(unittest.TestCase):
     def test_enum_semantic_comparator_is_exact_reversible_and_retains_frozen_report(self):
         original = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
         current = binding.adapt_enum_unit2_comparator(original)
-        self.assertEqual(current, self.captured["unit2_comparator"])
+        self.assertEqual(current, self.captured["enum_unit2_comparator"])
         restored = current
         for old, new in reversed(binding.UNIT2_COMPARATOR_SEAMS):
             self.assertEqual(restored.count(new), 1)
@@ -305,7 +437,10 @@ class SourceBindingTests(unittest.TestCase):
         seam = binding.prepare_unit2(output, self.captured)
         prepared = Path(seam["resource_package_root"])
         self.assertEqual((prepared / binding.UNIT2_FROZEN_COMPARATOR).read_bytes(), original)
-        self.assertEqual((prepared / binding.UNIT2_COMPARATOR).read_bytes(), current)
+        self.assertEqual((prepared / binding.UNIT2_COMPARATOR).read_bytes(),
+                         binding.adapt_stdin_unit2_comparator(current))
+        self.assertEqual((prepared / "enum-source.json").read_bytes(),
+                         self.captured["package_bytes"]["enum-source.json"])
         self.assertEqual((prepared / "semantic/corpus.jsonl.gz").read_bytes(),
                          self.captured["historical_bytes"]["semantic/corpus.jsonl.gz"])
         self.assertEqual(seam["semantic_amendment"]["cases"], [
@@ -1588,7 +1723,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(seam["resource_package_changes"],
                          [binding.RESOURCE, binding.INDEX_RESOURCE, binding.OBSERVER, binding.UNIT2_COMPARATOR,
                           binding.UNIT2_FROZEN_COMPARATOR, binding.UNIT2_SEMANTIC_HELPER,
-                          binding.UNIT2_SEMANTIC_DESCRIPTOR, "package-inputs.json"])
+                          binding.UNIT2_SEMANTIC_DESCRIPTOR, "enum-source.json", "package-inputs.json"])
         self.assertEqual(seam["observer_adapter"], self.captured["enum_authority"]["unit2_observer_adapter"])
         self.assertEqual((root / binding.OBSERVER).read_bytes(), self.captured["observer"])
         modified = (root / binding.RESOURCE).read_bytes()
@@ -1834,7 +1969,10 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (237, 185, 185, 133, 129, 117))
+                         (252, 185, 185, 133, 129, 117))
+        self.assertEqual(plan["enum_source_members"], 237)
+        self.assertEqual(prepared["stdin_authority_sha256"], binding.STDIN_AUTHORITY_SHA)
+        self.assertEqual(prepared["enum_source_sha256"], binding.ENUM_SOURCE_SHA)
         self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
         self.assertEqual(plan["unit2_current_observer_controls_per_profile"], 6)
         self.assertEqual(prepared["slices_authority_sha256"], binding.SLICES_AUTHORITY_SHA)
@@ -1904,6 +2042,7 @@ class SourceBindingTests(unittest.TestCase):
         inputs[binding.UNIT2_FROZEN_COMPARATOR] = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
         inputs[binding.UNIT2_SEMANTIC_HELPER] = self.captured["package_bytes"][binding.SEMANTIC_HELPER]
         inputs[binding.UNIT2_SEMANTIC_DESCRIPTOR] = self.captured["package_bytes"][binding.SEMANTIC_DESCRIPTOR]
+        inputs["enum-source.json"] = self.captured["package_bytes"]["enum-source.json"]
         inputs[binding.OBSERVER] = self.captured["observer"]
         inputs["source-inputs.json"] = self.captured["package_bytes"]["current-source.json"]
         manifest = {**self.captured["historical"], "files": [binding.entry(n, d) for n, d in sorted(inputs.items())]}

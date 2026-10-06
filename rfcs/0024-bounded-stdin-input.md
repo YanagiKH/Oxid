@@ -1,23 +1,25 @@
 # RFC 0024: bounded stdin input into an existing i32 buffer
 
-Status: **public API proposal; no compiler or host-input activation**. Updated
-2026-10-06 against merged PR37 main `ad45dc1e6da6f9f4eb86aa85c738de256a02c0ee`
-and the PR38 expression tree `b57306e9e0cbb90a2df9fa8e0511bf01a9075a9f`.
-A separate disconnected Rust model exercises the internal byte/fuel/commit
-contract. That model is not a reference-runtime or native implementation.
-Public binding and measured production representation remain unresolved.
+Status: **implemented experimentally through the public typed-preview route;
+full current-source qualification and exact-head hosted CI remain separate
+acceptance gates**. Updated 2026-10-06. Public `check`, reference `run`, native
+`compile` and syntax-only `fmt` admit the finite imports below. The focused
+[expression runner](../scripts/verify_expression_stdin.py) has passed its 28
+cases locally, including one unchanged ELF returning 39 and 63 for different
+input streams and reference/native parity. These local results do not establish
+merge status, a full CI pass, other execution targets or compiler self-hosting.
 
 ## Outcome and boundary
 
-Compile the expression component once, then run that identical ELF with distinct
-stdin byte streams. It should return 39 for `12 + 3 * (4 + 5)` and 63 for
-`7*(8+1)`, with matching public reference execution. This removes its current
-source-generation/recompilation requirement without claiming compiler
-self-hosting or a production compiler provider.
+The [stdin expression entry](../fixtures/typed-expression-samples/stdin.ox)
+compiles once and runs with distinct stdin byte streams. The same ELF returns
+39 for `12 + 3 * (4 + 5)` and 63 for `7*(8+1)`, matching public reference
+execution. Input changes require no source generation or recompilation.
 
-Introduce one synchronous input operation on an existing exclusive `&mut [i32]`
-view. Keep zero-argument scalar main, the existing scalar result printer, current
-array capacities and all compiler/runtime ceilings. No strings, Unicode decoder,
+One synchronous input operation accepts an existing exclusive `&mut [i32]`
+view. Zero-argument scalar main, the existing scalar result printer, current
+array capacities and all compiler/runtime ceilings remain unchanged. No strings,
+Unicode decoder,
 file paths, arbitrary descriptors, general FFI, command-line argument API,
 output formatting, heap collection, enum aggregate payload or recursion feature
 is included. The operation is an input effect inside the existing verified owned
@@ -39,16 +41,16 @@ interactive line editor.
 
 ## Result and buffer semantics
 
-The conceptual signature is `read_stdin(buffer: &mut [i32]) -> ReadStatus` with
+The signature is `read_stdin(buffer: &mut [i32]) -> ReadStatus` with
 one compiler-owned nominal enum:
 
 ```text
 enum ReadStatus { Eof(i32), Full, IoError }
 ```
 
-These names illustrate the API; they are not permission to recognize an ordinary
-user function by its spelling. The binding choice below remains a blocking RFC
-question. Variants use the already accepted nullary/scalar enum rules.
+Individual imports bind these compiler-owned identities; an ordinary user
+function or enum with the same spelling remains distinct. Variants use the
+existing nullary/scalar enum and consuming-match rules.
 
 Let C be the checked slice capacity, 0..1024. The operation accumulates bytes in
 bounded private staging storage and has the following observable outcomes:
@@ -61,8 +63,9 @@ bounded private staging storage and has the following observable outcomes:
 - `IoError`: a non-interruption host read error occurred. Do not change any
   destination cell. Previously consumed input cannot be restored. Expose no
   platform-specific errno or undocumented partial-count convention.
-- C = 0: return Full after the operation's base charge, without staging bytes or touching stdin. It cannot establish EOF. A native
-  activation may already reserve shared scratch under its frame admission.
+- C = 0: return Full after the core charge of 4, without staging bytes or
+  touching stdin. It cannot establish EOF. Ordinary builtin-frame admission still
+  reserves the fixed input scratch before the core operation.
 
 When the stream has exactly C bytes followed by EOF, the result is Full. A later
 positive-capacity invocation can observe `Eof(0)`. This avoids hidden lookahead.
@@ -104,9 +107,14 @@ explicitly reviewed preservation rule; it is not silently interchangeable with
 this initial attempt/fuel contract.
 
 The operation does not close stdin, alter its flags or file position by seeking,
-change process signal policy, or install persistent input buffering. It operates
-on the inherited standard-input stream only. Nonblocking errors are IoError;
-this increment does not add polling or asynchronous scheduling.
+change process signal policy, or install persistent input buffering. It reads
+file descriptor 0 as it exists when the operation runs. Process startup may
+repair closed standard descriptors before source execution, so closing fd 0
+before launch is not a cross-runtime IoError guarantee. The qualified Rust
+reference startup can supply `/dev/null`, producing EOF, while the native
+startup can leave fd 0 closed. See the [application control](../fixtures/typed-expression-samples/README.md#bounded-stdin-entry).
+Nonblocking read errors are IoError; this increment adds no polling or
+asynchronous scheduling.
 
 ## Evaluation, borrowing and exact fuel order
 
@@ -123,14 +131,15 @@ preflights its destination/result storage before reading. It does not acquire a
 new runtime ownership or epoch sidecar. These are distinct enforcement paths;
 the standalone Rust slice model does not prove either one.
 
-Proposed core cost is **4 + C + A**, where A is the number of attempted
+Core cost is **4 + C + A**, where A is the number of attempted
 one-byte host reads, including EOF, interruption and error returns. This consists
-of 1 + C for the bounded operation/commit reservation, the existing width2 enum
+of 1 + C for the bounded operation/commit reservation, the existing width-2 enum
 construction amount of 3, and A for attempts. Ordinary call/loan handling and
 whole-result moves remain additional and unchanged. The result construction
 amount is prepaid here; lowering must not charge a second synthetic constructor.
 
-1. Debit 4 + C before staging admission, external reads or destination mutation.
+1. After view/result validation, debit 4 + C before external reads or
+   destination mutation and before confirming the prepared scratch range.
    The C component prepays maximum commit work, even for an early EOF/error;
    the additional 3 prepays result construction before the external effect.
 2. Confirm the complete staging reservation, result destination, and all
@@ -149,8 +158,10 @@ amount is prepaid here; lowering must not charge a second synthetic constructor.
    and materializes its prepaid enum result. Do not read unused staging bytes or
    the destination's preserved tail.
 
-There is no extra fuel debit during commit that could leave a partially changed
-buffer. Interruption retries cannot spin without fuel consumption, although a
+From the first destination store through result materialization there is no
+fallible helper, allocation, validation or further fuel debit. The ordinary
+builtin return and caller transfers remain charged afterward. Interruption retries
+cannot spin without fuel consumption, although a
 single blocking read has no promised time bound. A skipped call performs no read
 and no input-operation debit. Check/format/compile do not consume program stdin.
 Existing programs without the operation retain their fuel behavior and ceilings.
@@ -160,7 +171,8 @@ existing counter and ceiling with ordinary execution, including the existing
 guarded-entry wrapper cells and their admission charges; it gets no second fuel
 bucket or invented finite static retry bound. An unused input
 declaration must not let unrelated functions bypass existing static admission.
-The chosen lowering must make those properties explicit in native planning.
+Native planning records these properties; an unused input import still enables
+the shared guards, without waiving unrelated static admission.
 
 The source-level lowering must make this schedule reviewable: the new operation's
 charge, each adapter attempt, prepaid result construction and subsequent ordinary
@@ -170,43 +182,50 @@ function pointer, arbitrary descriptor, or a ready-made enum tag as authority.
 
 ## Supporting the current expression component
 
-The expression language still accepts at most 128 input bytes. Allocate an
-**explicit 129-cell input buffer** so the application, rather than an implicit
-runtime lookahead, owns its over-capacity witness:
+The expression language still accepts at most 128 input bytes. The application
+allocates an **explicit 129-cell input buffer**, making its last cell the
+application's over-capacity witness:
 
 - Eof(n), n <= 128: parse exactly n bytes.
-- Eof(129) is impossible for capacity129 under this operation's contract.
-- Full: 129 bytes were read, so report the application's InputLimit(128). Leave
-  any 130th and later byte unread.
-- IoError: report a distinct application input failure; do not parse the buffer.
+- Eof(129) is impossible for capacity 129 under this operation's contract.
+- Full: 129 bytes were read, so return the application's input-limit value -4.
+  Leave any 130th and later byte unread.
+- IoError: return the distinct input-failure value -5 without parsing the buffer.
 
-An exactly128-byte stream followed by EOF produces Eof(128); exactly129 bytes
+An exactly 128-byte stream followed by EOF produces Eof(128); exactly 129 bytes
 produce Full without asking whether EOF follows. This preserves the application's
 128-byte rule without a hidden read outside the operation's declared capacity.
 
-Slices currently expose full fixed-array capacity, not a subslice. Add an
-application-level used-length parameter (or cursor limit), validate
-0 <= used <= backing length and used <=128 before scanning, and use it for all
-index/EOF decisions. Do not pad unused cells with whitespace. Keep the old
-whole-input parser wrapper for existing fixtures if useful. Its fixed-input
-contract and the original enum scanner remain separately testable.
+Slices expose full fixed-array capacity, not a subslice. The application's
+`parse_prefix` and `next_token_prefix` take a used length, validate it before
+indexing, and apply it to every scan/EOF decision. Unused cells are not padded
+with whitespace or scanned. The original whole-input `parse` and `next_token`
+wrappers remain available, and the original enum scanner is unchanged.
+
+The 15-node arena and 15-entry operator/operand stack bounds remain unchanged.
+The stdin entry returns -1 for syntax and node/stack failures, -3 for invalid
+arena storage, -4 for input-limit failures, and -5 for input errors. These are
+ordinary scalar results, not process exit statuses. Checked decimal and
+evaluation overflow still report E0604 and exit unsuccessfully.
 
 ## Binding, representation and trust boundaries
 
-Recommended binding candidate for review: add an explicit compiler-owned
-`std` root **only in imports**, admitting precisely these two items initially:
+The compiler-owned `std` root is accepted **only in individual imports**, for
+precisely these two items:
 
 ```text
 use std::io::read_stdin;
 use std::io::ReadStatus;
 ```
 
-This is a proposed import extension, not currently supported syntax. Calls use
-the imported function/alias; matches use the imported nominal type/alias. Existing
+Each import may use an explicit alias, such as `use std::io::read_stdin as read;`
+and `use std::io::ReadStatus as Status;`. Calls use the imported function/alias;
+types, constructors and matches use the imported nominal type/alias. Existing
 crate-absolute imports and `crate::std` source modules keep their meaning. There
 is no implicit prelude, general standard-library discovery, filesystem probing,
-direct `std::...` expression path, glob import or user intrinsic declaration.
-Existing duplicate-name and alias rules should apply, rather than silently
+direct `std::...` expression/type path, grouped/glob import, variant import or
+user intrinsic declaration.
+Existing duplicate-name and alias rules apply, rather than silently
 reserving ordinary source function/type names.
 
 The resolver must bind these imports to compiler-owned declaration identities;
@@ -253,12 +272,13 @@ cannot grant an input effect. The raw validator independently checks the closed
 operation and body shape. The index, typing and lowering use explicit builtin
 identity; none acquires authority from a diagnostic anchor's text.
 
-Actual carrier growth and any old-program admission impact must be measured
-and disclosed, not hidden by raising a ceiling. Pricing covers the affected
-retained headers, descriptors, capacity reserves and scratch coexistence. No
-existing general standard library, external-call registry or intrinsic mechanism
-is assumed. Source parsing/typechecking activation remains gated until these
-identity and resource checks are implemented and independently validated.
+The admitted descriptors, retained headers, capacity reserves and scratch
+coexistence are included in existing resource accounts. This adds no general
+standard library, external-call registry or source intrinsic mechanism. The
+[descriptor controls](../src/frontend/oir/owned/builtin_descriptor_tests.rs) and
+[source association controls](../src/frontend/oir/owned/source/builtin_source_tests.rs)
+exercise these identity and admission boundaries; their definitions alone are
+not a full current-head qualification receipt.
 
 The independent raw validator must prove exclusive i32-buffer access, permitted
 capacity/view, known input operation, result shape/nominal identity, and normal
@@ -267,9 +287,9 @@ compiler-owned declaration. Native/reference implementations share this contract
 but independently enforce bytes, bounds, failure order and active result payload
 safety. No change grants arbitrary external calls through raw OIR.
 
-Measure the new/affected AST, HIR, raw, plan and runtime carriers before choosing
-staging representation. Charge full capacity and allocator slack where relevant,
-not only bytes eventually read. The selected staging design adds a checked 1024-byte scratch suffix after the
+The implementation charges full reserved capacity and allocator slack where
+relevant, not only bytes eventually read. It adds a checked 1024-byte scratch
+suffix after the
 builtin activation's ordinary owner payloads. The reference frame's existing
 payload allocation and native owner allocation both include this suffix; no
 second scratch allocation or new runtime ownership sidecar is needed. A plan
@@ -280,22 +300,26 @@ including zero-capacity calls. The operation then confirms this prepared range
 before its first read. Native storage is allocated once at function entry and
 reused through retries, so source loops do not accumulate dynamic allocations.
 
-Charge the complete 1024-byte reservation, allocator capacity and affected
-control carriers in existing physical-byte limits. This changes the applicable
-payload-byte bound by an explicit 1024-byte term for the builtin activation;
-no-input bounds stay unchanged. Scratch adds no language owner or logical cell,
-so it does not change ordinary logical activation fuel. Exact sizes and endpoint
-behavior remain to be measured; the reservation is not a measured layout claim. No new cap or general memory-accounting rewrite is
-part of this RFC. Old programs should not acquire an unused I/O reservation.
+The complete 1024-byte reservation and affected control carriers count toward
+existing physical-byte limits. Scratch adds no language owner or logical cell,
+so it does not change ordinary logical activation fuel. On the qualified x86_64
+representation, the canonical builtin has 1,032 payload bytes (8 result bytes
+plus scratch), 1,044 native bytes (including pointer and slice length), 16
+admitted expanded cells and 14 logical activation-fuel cells. The
+[native resource controls](../src/frontend/oir/owned/builtin_input_native_tests.rs)
+cover the exact inclusive byte endpoint and its one-byte-below rejection.
+Programs without the input function reserve no input scratch. No cap is raised.
 
-Initial OS execution qualification should be Linux x86_64 for both reference and
-LLVM19.1.7 O0 native routes. Define pre-consumption rejection on unqualified hosts
-before activation rather than silently assuming Unix descriptors or Windows
-console encodings. Parser/typechecker portability remains a separate scope.
-Reference input-bearing execution on other hosts rejects before activation with
-E0608 / oir-owned-run, "bounded stdin execution requires Linux x86_64", anchored
-to the admitted input import. E0607 retains its existing division-by-zero meaning.
-Native compile keeps its existing host gate. An invalid runtime capacity fails
+Input execution is limited to Linux x86_64 for both reference and
+LLVM/Clang/LLD 19.1.7 at O0 native routes. On other hosts, reference execution of
+any program importing the input function rejects before entry validation or
+activation with E0608 / oir-owned-run, "bounded stdin execution requires Linux x86_64",
+anchored to the admitted input import. This includes unused imports and
+zero-capacity calls. ReadStatus-only imports remain portable and admit no input
+function; existing declared-child loading and native compilation gates still
+apply. Checking and formatting do not consume input. E0607 retains its existing
+division-by-zero meaning. Native compile keeps its existing host gate. An invalid
+runtime capacity fails
 closed as the E0500 owned-execution invariant "input capacity" before any input;
 staging-resource denial keeps the existing resource-failure convention.
 The fixed native capacity diagnostic is 65 bytes; its existing transient message
@@ -316,7 +340,9 @@ envelope increases from 64 to 65 only for modules that contain this operation.
   after a successful commit. Poison unused destination/staging regions in
   consumer tests. Include partial progress before failure and repeated calls.
 - Use controlled byte adapters for short/interrupted/error results and real
-  pipes/closed-descriptor failures for OS coverage. Assert exact 4+C+A core debit plus ordinary call/transfer costs,
+  pipes and Linux directory-descriptor errors for OS coverage. Closed fd 0 at
+  process launch is not an equivalent reference/native failure control. Assert
+  exact 4+C+A core debit plus ordinary call/transfer costs,
   failure before the first and later attempted reads, and no effect from skipped
   calls/check/compile. Do not label controlled adapter faults as global OS proof.
 - Feed NUL/non-ASCII bytes and malformed EOF to the existing parser using actual
@@ -329,23 +355,23 @@ Stop at one bounded batch-input application and this one effect contract. File
 APIs, line/Unicode semantics, native recursion, richer enum payloads, unbounded
 parsing and compiler self-hosting remain separate proposals.
 
-## Implementation stages and acceptance status
+## Implementation and acceptance status
 
-1. A [disconnected controlled-event model](../tests/qualification/bounded_stdin_prototype/README.md)
-   exercises exact byte, fuel and commit behavior. Its tests do not establish OS,
-   runtime ownership, production memory admission or public API support.
-2. Add and measure the closed origin/descriptor representation, then private
-   identity and association controls. Keep public source imports denied while
-   canonical alias/dependency/body proofs are established.
-3. Connect the independently verified raw operation to reference and native
-   consumers, with shared fuel and complete pre-effect preparation. Validate
-   actual one-byte OS adapters and memory/no-overread controls.
-4. Activate the bounded source imports and run the same compiled expression
-   application on distinct input streams. Qualify the current source separately
-   from historical frozen suites, with explicit amendments where required.
-
-Internal effect-model prototyping is accepted; source/API activation is not.
-The compiler-owned identity design is a reviewed proposal for the next private
-implementation stage. The exact resource representation, host diagnostics and
-public activation acceptance remain open. This RFC does not claim stdin works
-in Oxid today.
+- The finite imports, compiler-owned nominal identity, canonical raw operation,
+  reference consumer and LLVM consumer are connected to public typed-preview.
+  [Public controls](../src/frontend/stdin_public_tests.rs) cover status-only use,
+  borrowing/nominal failures, unused imports and host rejection before activation.
+- The [stdin application](../fixtures/typed-expression-samples/README.md#bounded-stdin-entry)
+  passed the focused 28-case runner locally with public check, reference run and
+  native compile/ELF execution. One compiled ELF retained its hash across inputs,
+  including results 39 and 63. Pipe/file controllers checked unread tails and
+  check/compile sentinels; a directory descriptor exercised actual Linux I/O
+  failure. The reported scope includes E0604 parity and input/node/stack endpoints.
+- Controlled adapter and raw-consumer tests separately exercise interruptions,
+  partial reads before errors, exact fuel ordering, atomic commit and forged
+  metadata. The earlier [disconnected model](../tests/qualification/bounded_stdin_prototype/README.md)
+  remains historical model evidence, not an implementation oracle or OS proof.
+- Full current-source compatibility qualification, independent acceptance review
+  and all applicable CI checks on the exact PR head remain separate gates.
+  Public activation and the focused local pass do not claim a merged release,
+  completed roadmap milestone or compiler self-hosting.
