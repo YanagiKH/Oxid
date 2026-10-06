@@ -1,0 +1,133 @@
+//! Parsed-source enum typing through the closed fixed-statistics entry only.
+use super::*;
+use crate::frontend::{
+    declaration_index::{
+        collect_enum_candidate, DeclarationIndex, IndexLimits, Observation, SourceOwner, WorkMeter,
+    },
+    lexer, parser,
+    source::{SourceFileId, SourceMap, SourceView},
+};
+
+fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
+    let mut sources = SourceMap::new();
+    sources.add("enum-type.ox".into(), text.into());
+    let file = sources.get(SourceFileId(0));
+    let ast = parser::parse_enum_candidate_counted(
+        file,
+        lexer::lex(file).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+        parser::MAX_NODES,
+        &mut Allocator::default(),
+        &mut Default::default(),
+    )
+    .unwrap()
+    .0;
+    let owner = SourceOwner::original(file, &ast, SourceView::Map(&sources)).unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let index = collect_enum_candidate(owner, IndexLimits::default(), &work, &mut allocator)
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+    action(&index);
+}
+
+#[test]
+fn bounded_enum_type_parsed_values_payloads_nested_arms_and_loop_exits_succeed() {
+    let cases = [
+        "enum E{N,V(i32),B(bool),U(())} fn relay(x:E)->E{return x;} fn take(x:E)->i32{match x{E::N=>{return 0;},E::V(v)=>{return v;},E::B(b)=>{if b{return 1;}else{return 0;}},E::U(u)=>{u;return 0;}}} fn main()->i32{return take(relay(E::V(7)));}",
+        "enum E{A,B} fn take(x:E)->i32{match x{E::A=>{},E::B=>{return 1;}}return 0;} fn main()->i32{return take(E::A);}",
+        "enum E{A,B} fn take(x:E,y:E)->i32{match x{E::A=>{match y{E::A=>{return 1;},E::B=>{return 2;}}},E::B=>{return 3;}}} fn main()->i32{return take(E::A,E::B);}",
+        "enum E{N,V(i32)} fn take(x:E)->i32{let mut n=0;while n<2{match x{E::N=>{break;},E::V(v)=>{if v>0{return v;}else{n=n+1;continue;}}}}return n;} fn main()->i32{return take(E::N);}",
+        "enum E{A,U(())} fn take(x:E)->(){match x{E::A=>{return;},E::U(u)=>{return u;}}} fn main()->(){take(E::U(()));return;}",
+        "enum E{A,B} fn take(x:E)->i32{let mut y:E=x;y=E::B;match y{E::A=>{return 0;},E::B=>{return 1;}}} fn main()->i32{return take(E::A);}",
+    ];
+    for text in cases {
+        with_index(text, |index| {
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(256).unwrap();
+            let (result, (_, live, peak)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    super::super::resolve::probe_enum_type_storage(index, &work, &mut allocator)
+                });
+            let facts = result.unwrap().unwrap();
+            assert_eq!(live, 0, "{text}");
+            assert!(peak > 0);
+            assert_eq!(facts.typed.path_vectors, 0);
+            assert_eq!(facts.typed.final_cell, facts.resolver.plan.total);
+            assert_eq!(
+                allocator.attempts,
+                facts.resolver.reservation_attempts + facts.typed.typed_attempts
+            );
+            assert!(!allocator.observer_trace_overflow);
+        });
+    }
+}
+
+#[test]
+fn bounded_enum_type_parsed_negative_semantics_fail_without_owner_escape() {
+    let cases = [
+        ("enum E{V(i32)} fn main()->i32{let x=E::V(true);return 0;}", "E0300"),
+        ("enum E{N} fn main()->i32{let x=E::N(1);return 0;}", "E0300"),
+        ("enum E{V(i32)} fn main()->i32{let x=E::V;return 0;}", "E0300"),
+        ("enum E{A,B} enum F{A,B} fn take(x:E)->i32{match x{F::A=>{return 0;},F::B=>{return 1;}}} fn main()->i32{return 0;}", "E0300"),
+        ("enum E{A,B} fn take(x:E)->i32{match x{E::A=>{return 0;},E::A=>{return 1;}}} fn main()->i32{return 0;}", "E0300"),
+        ("enum E{A,B} fn take(x:E)->i32{match x{E::A=>{return 0;}}} fn main()->i32{return 0;}", "E0300"),
+        ("enum E{V(bool)} fn take(x:E)->i32{match x{E::V(v)=>{return v;}}} fn main()->i32{return 0;}", "E0300"),
+        ("enum E{A,B} fn take(x:E)->i32{match x{E::A=>{},E::B=>{return 1;}}} fn main()->i32{return 0;}", "E0302"),
+        ("enum E{A,B} fn take(x:E)->i32{match x{E::A=>{return 0;},E::B=>{return 1;}}return 2;} fn main()->i32{return 0;}", "E0303"),
+        ("enum E{V(i32)} fn take(x:E)->i32{match x{E::V(v)=>{v;}}return v;} fn main()->i32{return 0;}", "E0200"),
+        ("enum E{A} enum F{A} fn take()->E{return F::A;} fn main()->i32{return 0;}", "E0300"),
+    ];
+    for (text, code) in cases {
+        with_index(text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(256).unwrap();
+            let errors = super::super::resolve::probe_enum_type_storage(
+                index,
+                &WorkMeter::default(),
+                &mut allocator,
+            )
+            .unwrap_err();
+            assert!(
+                errors.iter().any(|error| error.code == code),
+                "{text}: {errors:?}"
+            );
+            assert!(!allocator.observer_trace_overflow);
+        });
+    }
+}
+
+#[test]
+fn bounded_enum_type_constructor_payload_and_arm_binding_are_observed_once() {
+    let text = "enum E{V(i32)} fn number()->i32{return 7;} fn main()->i32{let e=E::V(number());match e{E::V(v)=>{return v;}}}";
+    with_index(text, |index| {
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(128).unwrap();
+        super::super::resolve::probe_enum_type_storage(index, &work, &mut allocator)
+            .unwrap()
+            .unwrap();
+        let observations = work.observations.borrow();
+        let payloads = observations
+            .iter()
+            .filter(|event| {
+                matches!(event,
+            Observation::Expression { origin, ty: ValueTy::Scalar(Ty::I32), .. }
+                if index.sources().text(*origin).unwrap() == "number()" )
+            })
+            .count();
+        let binders = observations
+            .iter()
+            .filter(|event| {
+                matches!(event,
+            Observation::Binding { origin, ty: ParameterTy::Value(ValueTy::Scalar(Ty::I32)), .. }
+                if index.sources().text(*origin).unwrap() == "v" )
+            })
+            .count();
+        assert_eq!(payloads, 1);
+        assert_eq!(binders, 1);
+    });
+}

@@ -391,6 +391,11 @@ fn bounded_enum_resolver_allocation_failures_drop_arm_vectors_and_preused_state(
         for preused in [0, 1] {
             for ordinal in 1..=facts.reservation_attempts {
                 let mut allocator = Allocator::default();
+                // Observation backing is test-owned. Admit it before the heap
+                // window, including the optional preused sentinel reservation.
+                allocator
+                    .observer_trace_bound(facts.reservation_attempts + preused)
+                    .unwrap();
                 if preused != 0 {
                     allocator
                         .vector_exact(&mut Vec::<u8>::new(), 0, "preused resolver allocator")
@@ -407,6 +412,7 @@ fn bounded_enum_resolver_allocation_failures_drop_arm_vectors_and_preused_state(
                         .any(|error| error.code == "E0400"));
                 });
                 assert_eq!(live, 0, "preused={preused}, ordinal={ordinal}");
+                assert!(!allocator.observer_trace_overflow);
             }
         }
     });

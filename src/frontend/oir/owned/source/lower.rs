@@ -2297,7 +2297,7 @@ fn unit3b2_lowering_layout_without_source_observation() {
 }
 
 /// Invocation-local fixed storage only. Dynamic producer caches must be admitted
-/// separately by the future paid path after typed count mode. Output is inline
+/// separately by the invocation overlay after typed count mode. Output is inline
 /// in Walk and is not charged again.
 #[allow(dead_code)]
 pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
@@ -2318,7 +2318,10 @@ pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
 struct InvocationControls {
     // Caller-held preflight/count results and the standalone per-block cache
     // header coexist with Walk. Result envelopes include their inline payload.
+    source_program: &'static TypedOwnedProgram<'static>,
+    seed_return: Option<usize>,
     seed: Option<usize>,
+    scratch_admission: (usize, usize, Result<usize>),
     preflight_return: Result<budget::Usage>,
     preflight_usage: budget::Usage,
     count_return: Result<Counts>,
@@ -2341,14 +2344,29 @@ struct InvocationControls {
     >,
     enums: Vec<RawEnumDecl>,
     variants: Vec<RawVariantDecl>,
-    enumeration: RawEnumDecl,
-    variant: RawVariantDecl,
+    // reserve's local header and complete return envelope are distinct from
+    // caller-held headers. Each new concrete raw request type is named here.
+    enum_reserve: (Vec<RawEnumDecl>, Result<Vec<RawEnumDecl>>),
+    variant_reserve: (Vec<RawVariantDecl>, Result<Vec<RawVariantDecl>>),
+    match_reserve: (Vec<MatchDecl>, Result<Vec<MatchDecl>>),
+    arm_reserve: (Vec<MatchArm>, Result<Vec<MatchArm>>),
+    // Construction and append's by-value parameter without copy-elision claims.
+    enumerations: [RawEnumDecl; 2],
+    variants_transferred: [RawVariantDecl; 2],
     // These are temporary source-to-raw match builders, not retained plans.
     match_rows: Vec<MatchArm>,
-    match_row: MatchArm,
-    match_descriptor: MatchDecl,
-    match_cursor: MatchCursor,
+    match_rows_transferred: [MatchArm; 2],
+    match_descriptors: [MatchDecl; 2],
+    // Builder construction, received cursor and active sibling cursor. The
+    // complete Result owns its own payload; no extra payload is added for it.
+    match_cursors: [MatchCursor; 3],
     match_return: Result<MatchCursor>,
+    // Source frame construction, push's parameter and popped frame are outside
+    // the prepaid backing stack. Some insertion and pop return also have their
+    // own complete carriers, conservatively without return-slot reuse.
+    body_frames: [BodyFrame; 3],
+    body_frame_slots: [Option<BodyFrame>; 2],
+    body_push_return: Result<()>,
     match_arms: std::slice::Iter<'static, source::MatchArm>,
     match_rows_iter: std::iter::Enumerate<std::slice::Iter<'static, source::MatchArm>>,
     match_ordinals: std::ops::Range<usize>,

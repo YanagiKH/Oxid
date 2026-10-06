@@ -435,7 +435,7 @@ pub(super) fn probe_enum_resolver_storage(
 
 /// Private fixed statistics through the one reviewed fresh construction path.
 /// Enum-free selection stays inert. No source/type/ownership witness escapes,
-/// and executable/semantic enum admission remains closed.
+/// and executable enum admission remains closed.
 #[cfg(test)]
 pub(super) fn probe_enum_type_storage<'s>(
     index: &'s DeclarationIndex<'s>,
@@ -2512,3 +2512,7 @@ mod fresh_type_observation_layout_tests {
 #[cfg(test)]
 #[path = "resolver_enum_tests.rs"]
 mod enum_semantic_tests;
+
+#[cfg(test)]
+#[path = "enum_storage_failure_tests.rs"]
+mod enum_storage_failure_tests;

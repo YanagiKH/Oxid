@@ -4410,3 +4410,7 @@ fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
         size_of::<BodyPaid<'static>>()
     );
 }
+
+#[cfg(test)]
+#[path = "enum_type_tests.rs"]
+mod enum_type_tests;

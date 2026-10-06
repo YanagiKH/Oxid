@@ -415,7 +415,10 @@ fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), 
             }
         }
         let child = match &statement.kind {
-            StmtKind::Match { arms, .. } => arms.get(cursor.child).map(|arm| arm.body),
+            StmtKind::Match { arms, .. } => match arms.get(cursor.child) {
+                Some(arm) => Some(arm.body),
+                None => None,
+            },
             StmtKind::While { body, .. } if cursor.child == 0 => Some(*body),
             StmtKind::If {
                 then_block,
@@ -1649,12 +1652,17 @@ struct CountGuardCarriers {
     visit_origin: Span,
     visit_return: Result<(), Box<Diagnostic>>,
 }
-// Sum the distinct borrowed bindings in the disjoint While/If match arms.
+// Sum the distinct borrowed bindings in the disjoint While/If/Match branches.
 // They coexist with the selected child copy; no branch slot reuse is assumed.
 struct BodyChildBranches {
     while_body: &'static BodyBlockId,
     if_then: &'static BodyBlockId,
     if_else: &'static Option<BodyBlockId>,
+    match_guard_arms: &'static Vec<MatchArm>,
+    match_child_arms: &'static Vec<MatchArm>,
+    match_get_return: Option<&'static MatchArm>,
+    match_arm: &'static MatchArm,
+    match_branch_return: Option<BodyBlockId>,
 }
 struct BodyCountCarriers {
     function: &'static Function,

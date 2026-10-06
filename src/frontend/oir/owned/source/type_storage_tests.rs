@@ -3362,3 +3362,52 @@ fn c3_t1_nonzero_reconciliation_checked_arithmetic_fails_without_mutation() {
     // successful positive-width retained products and their checked total;
     // manufacturing that branch would require bypassing an earlier guard.
 }
+
+#[test]
+fn c3_t0_match_child_branch_roles_are_typed_and_charged() {
+    macro_rules! role {
+        ($field:ident: $ty:ty) => {{
+            let _: for<'a> fn(&'a BodyChildBranches) -> &'a $ty = |model| &model.$field;
+            (
+                std::mem::offset_of!(BodyChildBranches, $field),
+                size_of::<$ty>(),
+                align_of::<$ty>(),
+            )
+        }};
+    }
+    let roles = [
+        role!(while_body: &'static BodyBlockId),
+        role!(if_then: &'static BodyBlockId),
+        role!(if_else: &'static Option<BodyBlockId>),
+        role!(match_guard_arms: &'static Vec<MatchArm>),
+        role!(match_child_arms: &'static Vec<MatchArm>),
+        role!(match_get_return: Option<&'static MatchArm>),
+        role!(match_arm: &'static MatchArm),
+        role!(match_branch_return: Option<BodyBlockId>),
+    ];
+    assert_eq!(roles.len(), 8);
+    let mut occupied = 0;
+    for (position, &(offset, bytes, alignment)) in roles.iter().enumerate() {
+        assert_eq!(offset % alignment, 0);
+        assert!(offset + bytes <= size_of::<BodyChildBranches>());
+        occupied += bytes;
+        for &(other, width, _) in &roles[..position] {
+            assert!(offset + bytes <= other || other + width <= offset);
+        }
+    }
+    assert!(occupied <= size_of::<BodyChildBranches>());
+    assert_eq!(
+        count_carrier_bytes(),
+        size_of::<CountReturnCarriers>()
+            + size_of::<CountGuardCarriers>()
+            + size_of::<BodyCountCarriers>()
+            + size_of::<FunctionCountCarriers>()
+    );
+    println!(
+        "ENUM_BODY_COUNT_LAYOUT branches={} occupied={} body={} total={}",
+        size_of::<BodyChildBranches>(),
+        occupied,
+        size_of::<BodyCountCarriers>(),
+        count_carrier_bytes()
+    );
+}
