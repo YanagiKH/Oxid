@@ -132,7 +132,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
         self.assertEqual(len(reduced["files"]), 184)
-        self.assertEqual(reduced["reviewed_source_head"], "511df03975c2aa1a815f92155d673adb3571ff77")
+        self.assertEqual(reduced["reviewed_source_head"], "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")

@@ -153,7 +153,7 @@ comparison handlers and host rosters are unchanged. Only exact current source
 and derived observer identities change; historical outcomes are not relabeled.
 
 The bounded-enum successor binds source checkpoint
-`511df03975c2aa1a815f92155d673adb3571ff77`, its237-input current source manifest and
+`78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd`, its237-input current source manifest and
 238-input additive lifecycle view. The two scanner fixtures are admitted inputs.
 The current patch records index attempts in the shared collection body and parser
 attempts/completions in the shared policy-aware parse body. The new original enum

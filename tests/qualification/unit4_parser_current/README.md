@@ -1,8 +1,8 @@
 # Current-source Unit4 parser qualification
 
 This adapter admits bounded-enum feature source checkpoint
-`511df03975c2aa1a815f92155d673adb3571ff77`, full tree
-`7eb1fa1ef8e3107788ca93758f762882ea031d72`, while retaining the byte-identical
+`78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd`, full tree
+`4970ee660f670cfcb23f42a9cb182a4ca7996388`, while retaining the byte-identical
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` package.
 
 The replay uses the historical `parse_counted` entry, whose current implementation

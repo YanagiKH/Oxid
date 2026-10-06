@@ -1,8 +1,8 @@
 # Bounded enum current-source successor
 
 The active manifest binds feature checkpoint
-`511df03975c2aa1a815f92155d673adb3571ff77`, full tree
-`7eb1fa1ef8e3107788ca93758f762882ea031d72`: 237 inputs, comprising all 179
+`78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd`, full tree
+`4970ee660f670cfcb23f42a9cb182a4ca7996388`: 237 inputs, comprising all 179
 `src/` and `native/` members, 56 retained non-source inputs, and the two canonical
 scanner sources. Including Cargo/build inputs gives 182 compiler bodies.
 `projected-source.json` preserves the previous 201-input manifest byte-for-byte

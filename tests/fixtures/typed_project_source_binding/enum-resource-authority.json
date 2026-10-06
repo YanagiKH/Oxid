@@ -5,7 +5,7 @@
     "reviewer_fourteen_actual_index_reserve_failures",
     "reviewer_actual_layout_and_source_node_envelope"
   ],
-  "current_source_sha256": "53a54bbd2b41db1a7c666cd39362bf520697d2d5fb834cd47799e958b5cf77fd",
+  "current_source_sha256": "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669",
   "derived": {
     "bytes": 22732,
     "path": "archive/resource/resource-review-tests.rs",
@@ -18,7 +18,7 @@
     "measured_tree": "b758fd4555605e4da73c82548a7b7cee39ca9d79",
     "profile": "actual non-test frontend rustc1.99.0 emit=obj opt0 debuginfo0 link-dead-code print-type-sizes",
     "receipt_sha256": "7c861da79cc96a86b2fa8646527a798926e1819de772cab1eee8f0ce4b58d9d4",
-    "reuse_boundary": "Only the independently measured layout definitions checked unchanged through feature511df are reused. This is not fresh current execution or a claim that all compiler-generated rows are unchanged."
+    "reuse_boundary": "Only the independently measured layout definitions checked unchanged through feature511df and CI-fix7865122 are reused. The two sizing-helper macro renames invert to exact feature511df bytes. This is not fresh current execution or a claim that all compiler-generated rows are unchanged."
   },
   "logical_resource_tests": 21,
   "original": {
@@ -104,7 +104,7 @@
     ],
     "variant_row_bytes": 12
   },
-  "reviewed_source_head": "511df03975c2aa1a815f92155d673adb3571ff77",
+  "reviewed_source_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "schema": "oxid-unit2-enum-free-index-resource-v1",
   "scope": "Four enum-free current resource controls: module-row representation, retained payload arithmetic and complete actual reserve-position coverage. Preserve every frozen original, all twenty-one logical test identities, ten-lane enum-free row_lengths, semantics, work counts, origins and caps.",
   "source_dependencies": [
@@ -149,7 +149,7 @@
       "sha256": "38a69de7b01cc0d8160079e98d266a83af2feb969796417952663b5a2c69d176"
     }
   ],
-  "source_only_tree": "7eb1fa1ef8e3107788ca93758f762882ea031d72",
+  "source_only_tree": "4970ee660f670cfcb23f42a9cb182a4ca7996388",
   "substitutions": [
     {
       "count": 1,

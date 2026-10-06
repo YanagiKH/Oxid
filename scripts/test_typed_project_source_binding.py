@@ -99,9 +99,9 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.ENUM_ADDITIONS))
         self.assertEqual(len([p for p in self.captured["inputs"] if p.startswith(("src/", "native/"))]), 179)
         self.assertEqual(self.captured["current"]["reviewed_source_head"],
-                         "511df03975c2aa1a815f92155d673adb3571ff77")
+                         "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd")
         self.assertEqual(self.captured["current"]["source_only_tree"],
-                         "7eb1fa1ef8e3107788ca93758f762882ea031d72")
+                         "4970ee660f670cfcb23f42a9cb182a4ca7996388")
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 

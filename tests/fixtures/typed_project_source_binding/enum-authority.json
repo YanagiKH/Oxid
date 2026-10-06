@@ -1125,18 +1125,18 @@
       "sha256": "87adb9f6ab683d011ccda913e37826f37fcc3e97e1b2df6ce4d7e4a2841f4385"
     },
     {
-      "bytes": 33758,
-      "git_blob": "fd14a9b7684756ea516dab36f38b772908ee3ed1",
+      "bytes": 34372,
+      "git_blob": "dfe2cdffa8514d5da1bc238e0a755eafc8831fbe",
       "mode": "100644",
       "path": "src/frontend/declaration_index/enum_query_tests.rs",
-      "sha256": "809a773792b795460effe98606210ea4a574963a64de7d13bcce3068721c7205"
+      "sha256": "e3b2db7ef89b3813fc0ff9b0f166599de8beccdbb1a8f75968649b6b2cf994ad"
     },
     {
-      "bytes": 37419,
-      "git_blob": "6354aa7839ab6958b33659b5c24bb140215d2ed9",
+      "bytes": 38260,
+      "git_blob": "3de8e8f5fd2014f65b716019eb599b34b7be1c35",
       "mode": "100644",
       "path": "src/frontend/declaration_index/enum_tests.rs",
-      "sha256": "07e4369a514a3773a8156e21296a342b2e7eb4fcb3d6c79ce4a1f3e211b1455a"
+      "sha256": "ffda9bc7d063dfc12352e28a99e972dbba4e7e09aded3ca87facb25aa1da2ad0"
     },
     {
       "bytes": 3036,
@@ -1489,11 +1489,11 @@
       "sha256": "3dad6ad126deede2bd94f948b0f51eac5ab99990b0f9ac70d6e6a2336783f9c7"
     },
     {
-      "bytes": 25588,
-      "git_blob": "e61cf781bfc05c3a07f26b12735f47e3064a9266",
+      "bytes": 28284,
+      "git_blob": "ecac278e608e7017dfd11ee4d371aec40bdb4463",
       "mode": "100644",
       "path": "src/frontend/oir/owned/enum_index_allocation_tests.rs",
-      "sha256": "50fc8b4de7e30eb076f8c1a4d8988825c5845571a3a8f8fc206cd5359d60340b"
+      "sha256": "4a4df9686d92d70c8b385239471dc2b0fbc9e48ea40d0a8663adf2f98ca0d652"
     },
     {
       "bytes": 1240,
@@ -1797,11 +1797,11 @@
       "sha256": "1f783fd55e95d8cdbe5bd24a01b87620fc3a358b328a1038a0699ae3ad5c827b"
     },
     {
-      "bytes": 20890,
-      "git_blob": "fbac2ec4f90da49b03fdf4eb503d8697bfdefbd9",
+      "bytes": 21948,
+      "git_blob": "4e9e89e087b6ee31f8ea78f08717c963d94c71d1",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/enum_type_tests.rs",
-      "sha256": "32e6951ab6d45d6e90b8a6fd29bbbcf58ef1c3f1470f2ea11a6567d769061897"
+      "sha256": "834394d4cc3640534257c6b74a6200a824c78a8c4a2a36f2e0973800c3b68173"
     },
     {
       "bytes": 5862,
@@ -1811,18 +1811,18 @@
       "sha256": "e004ee057b4eadcb6b9a365a258945412e0098bb9949ca6b1de42ab9bcbaa759"
     },
     {
-      "bytes": 39366,
-      "git_blob": "6dd089a2f2662b895ae14e5df239eba1c3f2ead5",
+      "bytes": 39384,
+      "git_blob": "0d3786551a2342d71ead6ca0fbb40db3052d18c2",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/hir_budget.rs",
-      "sha256": "c4d6d53b8a5b4f4a5d98e4f7021a302c65198f0dffb2ac1060190c77ae0322ec"
+      "sha256": "a7fb8a563f7cd6ea9f923322f0cf7fa863242e5a8ba488117b0b732c903df301"
     },
     {
-      "bytes": 47538,
-      "git_blob": "9ee538c291810afab99ea3ea46445446bea2ecc4",
+      "bytes": 47566,
+      "git_blob": "dd551d5db949eb17d75dae241167c00b3ce34b50",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/hir_budget_tests.rs",
-      "sha256": "fc72614abdc3729ab9b13ab429d4afad2181a3324730636ace299cf225ce5d2b"
+      "sha256": "88a95c194a17b9a1614a17e5f813ac5dc4174d06939fe15d3b901fc84470664c"
     },
     {
       "bytes": 98264,
@@ -1874,11 +1874,11 @@
       "sha256": "4345a86e50ed52cb1e311c93ff6f3712719871e5c214130be68aa1d1589ecf5d"
     },
     {
-      "bytes": 23873,
-      "git_blob": "6e8bb2ec2fc062dc8c3b6d5696ae5b7ccccaafaa",
+      "bytes": 23989,
+      "git_blob": "a2f640b0478a43149c7e1d9bad04852c1be4ac34",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/resolver_enum_tests.rs",
-      "sha256": "889760ef2e097dff46e555ae6c11298ea2bbb2aab2c512969f08ca91635a20c0"
+      "sha256": "a753a284d8b5e0ab41b168123b359f504c2480089e336680e3281a478c0092fe"
     },
     {
       "bytes": 17772,
@@ -1888,11 +1888,11 @@
       "sha256": "99f51419dcf0fe03ec58edc4b69801ea6f06c879cc2a4fcafda5c51af6860296"
     },
     {
-      "bytes": 107749,
-      "git_blob": "aef3b6e284543700da662d31469c3f5755adb1ee",
+      "bytes": 107805,
+      "git_blob": "7ad0468d112564a0f7bee83e4857753ad9ea8a83",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/resolver_paid_tests.rs",
-      "sha256": "44281233857d467bf5ffe4a329a677427bb97a0382fe27830dfbf48beada6648"
+      "sha256": "92000cf006d03198651528fa38b6f23fd9bd2f84a2f2e72acf0d96f6b771368d"
     },
     {
       "bytes": 28972,
@@ -1972,11 +1972,11 @@
       "sha256": "686a67ca817c06462d573ed03cef5f77aafd5545f5a0e9065f8d829560be1a51"
     },
     {
-      "bytes": 68199,
-      "git_blob": "ff85e69535b5451f1bf9779ef565f3e36c57310b",
+      "bytes": 68325,
+      "git_blob": "0264573626e484cbb06f76e8af8f4e8df974a8c8",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/type_storage.rs",
-      "sha256": "babfed763d9d861e4bec97913692efb2e687fe5ab86b5f5d4109b6b9d19a047a"
+      "sha256": "e67f857411c2fd801bcc4de512fda4e512d6e77a36225139f151b9c25468e99b"
     },
     {
       "bytes": 117328,
@@ -2217,11 +2217,11 @@
       "sha256": "9856bb7846a44359deb46a7a9423522e108e2066ef143e0148aaf399b2df23ae"
     },
     {
-      "bytes": 5591,
-      "git_blob": "057ce279f6cdf26329498f0ca6d2e96948a0a99c",
+      "bytes": 9691,
+      "git_blob": "c88f755e31945d09232a7c68eb6e2bf06f0a7f7a",
       "mode": "100644",
       "path": "src/frontend/project/enum_index_tests.rs",
-      "sha256": "81c58d2e2265829e7dee573da864782bb76954c58f031143640969e9e752664c"
+      "sha256": "9e0d680d3b71f722ead3edc8c10d2d435eea2c11cc36a50c9e95b089fdbf4eda"
     },
     {
       "bytes": 5237,
@@ -2653,7 +2653,7 @@
   ],
   "current_source_bytes": 45493,
   "current_source_members": 237,
-  "current_source_sha256": "53a54bbd2b41db1a7c666cd39362bf520697d2d5fb834cd47799e958b5cf77fd",
+  "current_source_sha256": "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669",
   "projected_authority_sha256": "f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc",
   "projected_source_bytes": 38636,
   "projected_source_members": 201,
@@ -2679,7 +2679,7 @@
     },
     "version": "unit2-closed-enum-parser-resource-v1"
   },
-  "reviewed_source_head": "511df03975c2aa1a815f92155d673adb3571ff77",
+  "reviewed_source_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "scanner_include_closure": [
     {
       "includer": {
@@ -2705,7 +2705,7 @@
     }
   ],
   "schema": "oxid-bounded-enum-source-transition-v1",
-  "source_only_tree": "7eb1fa1ef8e3107788ca93758f762882ea031d72",
+  "source_only_tree": "4970ee660f670cfcb23f42a9cb182a4ca7996388",
   "transition_inputs": [
     {
       "after": {
@@ -2743,22 +2743,22 @@
     },
     {
       "after": {
-        "bytes": 33758,
-        "git_blob": "fd14a9b7684756ea516dab36f38b772908ee3ed1",
+        "bytes": 34372,
+        "git_blob": "dfe2cdffa8514d5da1bc238e0a755eafc8831fbe",
         "mode": "100644",
         "path": "src/frontend/declaration_index/enum_query_tests.rs",
-        "sha256": "809a773792b795460effe98606210ea4a574963a64de7d13bcce3068721c7205"
+        "sha256": "e3b2db7ef89b3813fc0ff9b0f166599de8beccdbb1a8f75968649b6b2cf994ad"
       },
       "before": null,
       "path": "src/frontend/declaration_index/enum_query_tests.rs"
     },
     {
       "after": {
-        "bytes": 37419,
-        "git_blob": "6354aa7839ab6958b33659b5c24bb140215d2ed9",
+        "bytes": 38260,
+        "git_blob": "3de8e8f5fd2014f65b716019eb599b34b7be1c35",
         "mode": "100644",
         "path": "src/frontend/declaration_index/enum_tests.rs",
-        "sha256": "07e4369a514a3773a8156e21296a342b2e7eb4fcb3d6c79ce4a1f3e211b1455a"
+        "sha256": "ffda9bc7d063dfc12352e28a99e972dbba4e7e09aded3ca87facb25aa1da2ad0"
       },
       "before": null,
       "path": "src/frontend/declaration_index/enum_tests.rs"
@@ -3171,11 +3171,11 @@
     },
     {
       "after": {
-        "bytes": 25588,
-        "git_blob": "e61cf781bfc05c3a07f26b12735f47e3064a9266",
+        "bytes": 28284,
+        "git_blob": "ecac278e608e7017dfd11ee4d371aec40bdb4463",
         "mode": "100644",
         "path": "src/frontend/oir/owned/enum_index_allocation_tests.rs",
-        "sha256": "50fc8b4de7e30eb076f8c1a4d8988825c5845571a3a8f8fc206cd5359d60340b"
+        "sha256": "4a4df9686d92d70c8b385239471dc2b0fbc9e48ea40d0a8663adf2f98ca0d652"
       },
       "before": null,
       "path": "src/frontend/oir/owned/enum_index_allocation_tests.rs"
@@ -3695,11 +3695,11 @@
     },
     {
       "after": {
-        "bytes": 20890,
-        "git_blob": "fbac2ec4f90da49b03fdf4eb503d8697bfdefbd9",
+        "bytes": 21948,
+        "git_blob": "4e9e89e087b6ee31f8ea78f08717c963d94c71d1",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/enum_type_tests.rs",
-        "sha256": "32e6951ab6d45d6e90b8a6fd29bbbcf58ef1c3f1470f2ea11a6567d769061897"
+        "sha256": "834394d4cc3640534257c6b74a6200a824c78a8c4a2a36f2e0973800c3b68173"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/enum_type_tests.rs"
@@ -3723,22 +3723,22 @@
     },
     {
       "after": {
-        "bytes": 39366,
-        "git_blob": "6dd089a2f2662b895ae14e5df239eba1c3f2ead5",
+        "bytes": 39384,
+        "git_blob": "0d3786551a2342d71ead6ca0fbb40db3052d18c2",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/hir_budget.rs",
-        "sha256": "c4d6d53b8a5b4f4a5d98e4f7021a302c65198f0dffb2ac1060190c77ae0322ec"
+        "sha256": "a7fb8a563f7cd6ea9f923322f0cf7fa863242e5a8ba488117b0b732c903df301"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/hir_budget.rs"
     },
     {
       "after": {
-        "bytes": 47538,
-        "git_blob": "9ee538c291810afab99ea3ea46445446bea2ecc4",
+        "bytes": 47566,
+        "git_blob": "dd551d5db949eb17d75dae241167c00b3ce34b50",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/hir_budget_tests.rs",
-        "sha256": "fc72614abdc3729ab9b13ab429d4afad2181a3324730636ace299cf225ce5d2b"
+        "sha256": "88a95c194a17b9a1614a17e5f813ac5dc4174d06939fe15d3b901fc84470664c"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/hir_budget_tests.rs"
@@ -3813,11 +3813,11 @@
     },
     {
       "after": {
-        "bytes": 23873,
-        "git_blob": "6e8bb2ec2fc062dc8c3b6d5696ae5b7ccccaafaa",
+        "bytes": 23989,
+        "git_blob": "a2f640b0478a43149c7e1d9bad04852c1be4ac34",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/resolver_enum_tests.rs",
-        "sha256": "889760ef2e097dff46e555ae6c11298ea2bbb2aab2c512969f08ca91635a20c0"
+        "sha256": "a753a284d8b5e0ab41b168123b359f504c2480089e336680e3281a478c0092fe"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/resolver_enum_tests.rs"
@@ -3835,11 +3835,11 @@
     },
     {
       "after": {
-        "bytes": 107749,
-        "git_blob": "aef3b6e284543700da662d31469c3f5755adb1ee",
+        "bytes": 107805,
+        "git_blob": "7ad0468d112564a0f7bee83e4857753ad9ea8a83",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/resolver_paid_tests.rs",
-        "sha256": "44281233857d467bf5ffe4a329a677427bb97a0382fe27830dfbf48beada6648"
+        "sha256": "92000cf006d03198651528fa38b6f23fd9bd2f84a2f2e72acf0d96f6b771368d"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/resolver_paid_tests.rs"
@@ -3885,11 +3885,11 @@
     },
     {
       "after": {
-        "bytes": 68199,
-        "git_blob": "ff85e69535b5451f1bf9779ef565f3e36c57310b",
+        "bytes": 68325,
+        "git_blob": "0264573626e484cbb06f76e8af8f4e8df974a8c8",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/type_storage.rs",
-        "sha256": "babfed763d9d861e4bec97913692efb2e687fe5ab86b5f5d4109b6b9d19a047a"
+        "sha256": "e67f857411c2fd801bcc4de512fda4e512d6e77a36225139f151b9c25468e99b"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/type_storage.rs"
@@ -4177,11 +4177,11 @@
     },
     {
       "after": {
-        "bytes": 5591,
-        "git_blob": "057ce279f6cdf26329498f0ca6d2e96948a0a99c",
+        "bytes": 9691,
+        "git_blob": "c88f755e31945d09232a7c68eb6e2bf06f0a7f7a",
         "mode": "100644",
         "path": "src/frontend/project/enum_index_tests.rs",
-        "sha256": "81c58d2e2265829e7dee573da864782bb76954c58f031143640969e9e752664c"
+        "sha256": "9e0d680d3b71f722ead3edc8c10d2d435eea2c11cc36a50c9e95b089fdbf4eda"
       },
       "before": null,
       "path": "src/frontend/project/enum_index_tests.rs"
@@ -4226,8 +4226,8 @@
       "path": "tests/fixtures/bounded_enum_scanner/scanner.ox"
     }
   ],
-  "transition_patch_bytes": 1795577,
-  "transition_patch_sha256": "0bc74b58160584cd3a83def80c4f671edb09da740aa2dc43bf6a7bede7554207",
+  "transition_patch_bytes": 1805505,
+  "transition_patch_sha256": "57b5f94476c5c419c66dae9dd609de4350a1e224209290221bf80190c8b39204",
   "transition_paths": [
     "src/frontend/ast.rs",
     "src/frontend/declaration_index.rs",

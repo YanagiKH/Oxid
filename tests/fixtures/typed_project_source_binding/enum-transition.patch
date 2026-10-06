@@ -1299,11 +1299,13 @@ index 1663dfc..70030e3 100644
  }
 diff --git a/src/frontend/declaration_index/enum_query_tests.rs b/src/frontend/declaration_index/enum_query_tests.rs
 new file mode 100644
-index 0000000..fd14a9b
+index 0000000..dfe2cdf
 --- /dev/null
 +++ b/src/frontend/declaration_index/enum_query_tests.rs
-@@ -0,0 +1,979 @@
+@@ -0,0 +1,999 @@
 +//! C2b pure index queries. Successful queries do not open source execution.
++//! Multi-file positive queries follow the production Linux filesystem policy;
++//! local queries, display carriers, and entry-file parse limits are portable.
 +use super::*;
 +use crate::frontend::project::ProjectLimits;
 +use std::{
@@ -1498,6 +1500,7 @@ index 0000000..fd14a9b
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_imported_alias_value_parameter_and_record_only_reference() {
 +    let fixture=Fixture::new(&[
@@ -1586,6 +1589,7 @@ index 0000000..fd14a9b
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_private_prefix_and_function_errors_never_fall_back() {
 +    let fixture = Fixture::new(&[
@@ -1639,6 +1643,7 @@ index 0000000..fd14a9b
 +    assert_eq!(size_of::<PreparedTypeName<'_>>(), 576);
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_exposure_matches_literal_subtree_inclusion_matrix() {
 +    let fixture=Fixture::new(&[
@@ -1707,6 +1712,7 @@ index 0000000..fd14a9b
 +    ));
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_ancestor_exposure_and_legacy_record_wrapper_agree() {
 +    let fixture=Fixture::new(&[
@@ -1779,6 +1785,7 @@ index 0000000..fd14a9b
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_bounded_names_preserve_kind_work_and_infallible_display() {
 +    let module = "m".repeat(200);
@@ -1826,6 +1833,7 @@ index 0000000..fd14a9b
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_name_length_boundaries_and_utf8_display_are_independent() {
 +    for length in [159, 160, 161] {
@@ -1872,6 +1880,10 @@ index 0000000..fd14a9b
 +        assert_eq!(display.len(), 160);
 +        assert!(display.ends_with(&format!("::{shown} [enum #0]")));
 +    }
++}
++
++#[test]
++fn enum_query_utf8_display_preserves_boundaries_without_source_identifiers() {
 +    // Direct formatter data, deliberately not a claim of Unicode source identifiers.
 +    let module = "é".repeat(100);
 +    let terminal = "λ".repeat(40);
@@ -1933,6 +1945,7 @@ index 0000000..fd14a9b
 +        .collect();
 +    Fixture::new(&borrowed)
 +}
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_full_path_limit_counts_member_and_function_endpoints() {
 +    for (depth, variant, expected) in [
@@ -1971,6 +1984,12 @@ index 0000000..fd14a9b
 +            .query(&WorkMeter::default())
 +            .prepare_nominal_type_name(NominalId::Enum(EnumId(0)), last)
 +            .is_ok());
++    }
++}
++
++#[test]
++fn enum_query_oversized_path_rejects_before_child_module_loading() {
++    for (depth, variant) in [(31, true), (32, false)] {
 +        let oversized = deep_fixture(depth, variant, true);
 +        let failure = ProjectSources::load_enum_index_candidate(
 +            oversized.0.join("main.ox").to_str().unwrap(),
@@ -1987,6 +2006,7 @@ index 0000000..fd14a9b
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_query_local_aliases_do_not_authorize_absolute_aliases_or_extra_members() {
 +    let fixture=Fixture::new(&[
@@ -2284,11 +2304,13 @@ index 0000000..fd14a9b
 +}
 diff --git a/src/frontend/declaration_index/enum_tests.rs b/src/frontend/declaration_index/enum_tests.rs
 new file mode 100644
-index 0000000..6354aa7
+index 0000000..3de8e8f
 --- /dev/null
 +++ b/src/frontend/declaration_index/enum_tests.rs
-@@ -0,0 +1,1073 @@
+@@ -0,0 +1,1104 @@
 +//! C2a index-only controls. No enum source executable witness is admitted.
++//! Real child-module inputs require the production Linux filesystem policy.
++//! Single-file index and carrier controls remain applicable on every host.
 +use super::*;
 +use crate::frontend::{hir, project::ProjectLimits};
 +use std::{
@@ -2340,6 +2362,7 @@ index 0000000..6354aa7
 +    )
 +    .unwrap()
 +}
++#[cfg(target_os = "linux")]
 +fn bound(project: &ProjectSources, alias: usize) -> ItemPathRef {
 +    let import = &project.try_file_ast(SourceFileId(0)).unwrap().imports[alias];
 +    ItemPathRef {
@@ -2347,6 +2370,7 @@ index 0000000..6354aa7
 +        path: ast::ItemPath::Unqualified(import.alias),
 +    }
 +}
++#[cfg(target_os = "linux")]
 +fn identity_fixture() -> Fixture {
 +    Fixture::new(&[
 +        ("main.ox", "fn pre()->i32{return 0;} enum RootE{Z,U(())} pub struct RootR{pub x:i32} pub mod branch; pub enum RootTail{B(bool)} use crate::branch::Pair as Imported; use crate::branch::ChildR as ImportedR; fn main()->i32{return 0;}"),
@@ -2354,6 +2378,7 @@ index 0000000..6354aa7
 +        ("branch/leaf.ox", "pub enum LeafE{L} pub struct LeafR{pub unit:()} pub fn leaf_fn()->(){return;}"),
 +    ])
 +}
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_interleaved_identity_views_and_original_alias_targets() {
 +    let fixture = identity_fixture();
@@ -2554,6 +2579,11 @@ index 0000000..6354aa7
 +            Observation::SignatureStart { .. } | Observation::RecordStart { .. }
 +        )));
 +    }
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn enum_index_closed_collection_reports_imported_enum_origin() {
 +    let fixture = Fixture::new(&[
 +        ("main.ox", "mod child; fn main()->(){return;}"),
 +        ("child.ox", "enum Unused{V}"),
@@ -2573,6 +2603,7 @@ index 0000000..6354aa7
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_observation_schema_uses_complete_enum_identity_table_only() {
 +    for with_enum in [false, true] {
@@ -2623,10 +2654,15 @@ index 0000000..6354aa7
 +                .any(|e| matches!(e, Observation::NominalImport { .. })));
 +        }
 +    }
++}
++
++#[test]
++fn enum_index_nominal_legacy_wrapper_rejects_enums() {
 +    assert_eq!(NominalId::Record(RecordId(7)).legacy_record(), RecordId(7));
 +    assert!(std::panic::catch_unwind(|| NominalId::Enum(EnumId(7)).legacy_record()).is_err());
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_paired_alias_rejection_does_not_poison_later_import() {
 +    let fixture = Fixture::new(&[
@@ -2699,6 +2735,7 @@ index 0000000..6354aa7
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_complete_rows_have_preallocation_caps_and_all_reserve_failures() {
 +    let fixture = identity_fixture();
@@ -2814,6 +2851,7 @@ index 0000000..6354aa7
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_combined_declaration_limit_spans_real_modules() {
 +    let mut root = String::from("mod child;");
@@ -2932,6 +2970,7 @@ index 0000000..6354aa7
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +type ImportSnapshot = (
 +    bool,
 +    Option<NominalId>,
@@ -2939,6 +2978,7 @@ index 0000000..6354aa7
 +    Vec<NominalAliasObservation>,
 +    Vec<SeenObservation>,
 +);
++#[cfg(target_os = "linux")]
 +fn nominal_snapshots(work: &WorkMeter) -> Vec<ImportSnapshot> {
 +    work.observations
 +        .borrow()
@@ -2960,6 +3000,7 @@ index 0000000..6354aa7
 +        })
 +        .collect()
 +}
++#[cfg(target_os = "linux")]
 +fn empty_alias_snapshot(snapshot: &ImportSnapshot) {
 +    assert!(!snapshot.0);
 +    assert_eq!((snapshot.1, snapshot.2), (None, None));
@@ -2973,6 +3014,7 @@ index 0000000..6354aa7
 +        .all(|row| row.type_first.is_none() && row.value_first.is_none()));
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_paired_second_lane_and_privacy_failures_commit_nothing() {
 +    for (root, child, code) in [
@@ -3013,6 +3055,7 @@ index 0000000..6354aa7
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_second_alias_lane_collision_preserves_the_first_value() {
 +    let fixture = Fixture::new(&[
@@ -3063,6 +3106,7 @@ index 0000000..6354aa7
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_repeated_pair_target_preserves_prior_alias_and_seen() {
 +    let fixture = Fixture::new(&[
@@ -3118,6 +3162,7 @@ index 0000000..6354aa7
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_every_import_stage_debit_failure_has_atomic_snapshots() {
 +    let fixture=Fixture::new(&[("main.ox","mod m; use crate::m::Pair as A; use crate::m::Other as B; fn main()->(){return;}"),("m.ox","pub enum Pair{V} pub fn Pair()->(){return;} pub enum Other{W} pub fn Other()->(){return;}")]);
@@ -3280,6 +3325,11 @@ index 0000000..6354aa7
 +            Observation::SignatureStart { .. } | Observation::RecordStart { .. }
 +        )));
 +    }
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn enum_index_stored_origin_is_exact_for_imported_enum() {
 +    let fixture = Fixture::new(&[
 +        ("main.ox", "mod child; fn main()->(){return;}"),
 +        ("child.ox", "enum Unused{V}"),
@@ -3299,6 +3349,7 @@ index 0000000..6354aa7
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_mandatory_build_work_threshold_precedes_all_reservations() {
 +    let fixture = identity_fixture();
@@ -9665,13 +9716,15 @@ index 0000000..2e7f222
 +}
 diff --git a/src/frontend/oir/owned/enum_index_allocation_tests.rs b/src/frontend/oir/owned/enum_index_allocation_tests.rs
 new file mode 100644
-index 0000000..e61cf78
+index 0000000..ecac278
 --- /dev/null
 +++ b/src/frontend/oir/owned/enum_index_allocation_tests.rs
-@@ -0,0 +1,654 @@
+@@ -0,0 +1,718 @@
 +//! Independent C2a index lifetimes through the existing real heap observer.
 +//! Source fixtures and instrumentation are outside every measured interval.
 +//! No executable/source-admission witness is constructed by these controls.
++//! Child-module successes require Linux; single-file and host-policy failure
++//! lifetimes remain measured on every applicable host.
 +use super::source::reviewer_source::{integration_enabled, integration_measured};
 +use crate::frontend::{
 +    declaration_index::{
@@ -9796,6 +9849,7 @@ index 0000000..e61cf78
 +    ]
 +}
 +
++#[cfg(target_os = "linux")]
 +fn mixed_inventory() -> [Row; REQUESTS] {
 +    // Source order: 5 functions, 3 records/fields, 5 enums/7 variants,
 +    // 3 modules, 2 imports; 15 originals and 2 child links.
@@ -9875,6 +9929,7 @@ index 0000000..e61cf78
 +#[test]
 +fn enum_index_lifecycle_collection_freeze_and_drop_match_independent_row_capacities() {
 +    for (name, files, rows, requested_retained, requested_scratch) in [
++        #[cfg(target_os = "linux")]
 +        ("mixed", MIXED, mixed_inventory(), 1268, 96),
 +        ("enum-free", ENUM_FREE, enum_free_inventory(), 120, 8),
 +    ] {
@@ -9975,6 +10030,7 @@ index 0000000..e61cf78
 +#[test]
 +fn enum_index_lifecycle_all_reserve_failures_leave_only_diagnostic_then_zero() {
 +    for (name, files, rows) in [
++        #[cfg(target_os = "linux")]
 +        ("mixed", MIXED, mixed_inventory()),
 +        ("enum-free", ENUM_FREE, enum_free_inventory()),
 +    ] {
@@ -10058,7 +10114,7 @@ index 0000000..e61cf78
 +        &'a str,
 +        usize,
 +    );
-+    let cases: [FailureCase<'_>; 2] = [
++    let cases: &[FailureCase<'_>] = &[
 +        (
 +            "duplicate variants",
 +            &[("main.ox", duplicate)],
@@ -10066,6 +10122,7 @@ index 0000000..e61cf78
 +            "E0201",
 +            1,
 +        ),
++        #[cfg(target_os = "linux")]
 +        (
 +            "paired alias builtin collision",
 +            &[
@@ -10077,7 +10134,7 @@ index 0000000..e61cf78
 +            0,
 +        ),
 +    ];
-+    for (name, files, lengths, code, labels) in cases {
++    for &(name, files, lengths, code, labels) in cases {
 +        let rows = inventory(lengths);
 +        let fixture = Fixture::new(files);
 +        let project = fixture.load();
@@ -10152,36 +10209,42 @@ index 0000000..e61cf78
 +
 +#[test]
 +fn enum_index_lifecycle_trace_exhaustion_is_not_production_allocation_failure() {
-+    let fixture = Fixture::new(MIXED);
-+    let project = fixture.load();
-+    let rows = mixed_inventory();
-+    for trace_rows in [0, REQUESTS - 1, REQUESTS] {
-+        let mut allocator = prepared_allocator(None, trace_rows);
-+        let trace_capacity = allocator.trace.capacity();
-+        let work = WorkMeter::default();
-+        let ((), (calls, live, peak)) = integration_measured(|| {
-+            let facts = collect_enum_candidate(
-+                SourceOwner::project(&project),
-+                IndexLimits::default(),
-+                &work,
-+                &mut allocator,
-+            )
-+            .unwrap();
-+            drop(facts.finish(&work, &mut allocator).unwrap());
-+        });
-+        assert_eq!(allocator.attempts, REQUESTS);
-+        assert_eq!(allocator.trace.capacity(), trace_capacity);
-+        assert_eq!(allocator.trace.len(), trace_rows);
-+        assert_eq!(allocator.observer_trace_overflow, trace_rows < REQUESTS);
-+        assert!(allocator.trace.iter().all(|event| event.success));
-+        assert_eq!(calls, real_allocations(&rows));
-+        assert_eq!(live, 0);
-+        assert_eq!(peak, isize::try_from(heap(&rows)).unwrap());
-+        quiet_work(&work);
-+        assert!(!integration_enabled());
++    for (files, rows) in [
++        #[cfg(target_os = "linux")]
++        (MIXED, mixed_inventory()),
++        (ENUM_FREE, enum_free_inventory()),
++    ] {
++        let fixture = Fixture::new(files);
++        let project = fixture.load();
++        for trace_rows in [0, REQUESTS - 1, REQUESTS] {
++            let mut allocator = prepared_allocator(None, trace_rows);
++            let trace_capacity = allocator.trace.capacity();
++            let work = WorkMeter::default();
++            let ((), (calls, live, peak)) = integration_measured(|| {
++                let facts = collect_enum_candidate(
++                    SourceOwner::project(&project),
++                    IndexLimits::default(),
++                    &work,
++                    &mut allocator,
++                )
++                .unwrap();
++                drop(facts.finish(&work, &mut allocator).unwrap());
++            });
++            assert_eq!(allocator.attempts, REQUESTS);
++            assert_eq!(allocator.trace.capacity(), trace_capacity);
++            assert_eq!(allocator.trace.len(), trace_rows);
++            assert_eq!(allocator.observer_trace_overflow, trace_rows < REQUESTS);
++            assert!(allocator.trace.iter().all(|event| event.success));
++            assert_eq!(calls, real_allocations(&rows));
++            assert_eq!(live, 0);
++            assert_eq!(peak, isize::try_from(heap(&rows)).unwrap());
++            quiet_work(&work);
++            assert!(!integration_enabled());
++        }
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop() {
 +    const TRACE_ROWS: usize = 512;
@@ -10322,6 +10385,58 @@ index 0000000..e61cf78
 +        "enum candidate loader: swept {} observed reserve ordinals; failure-owned source/AST/diagnostic payload drops to zero with caller trace preserved; maximum failure logical peak={maximum_failure_peak}",
 +        baseline.attempts
 +    );
++}
++
++#[cfg(not(target_os = "linux"))]
++#[test]
++fn enum_index_lifecycle_unqualified_host_drops_all_loader_owners() {
++    const TRACE_ROWS: usize = 512;
++    for files in [
++        MIXED,
++        &[("main.ox", "mod a;enum E{V}"), ("a.ox", "enum F{W}")],
++    ] {
++        let fixture = Fixture::new(files);
++        let entry = fixture.0.join("main.ox");
++        let entry = entry.to_str().unwrap();
++        let mut allocator = prepared_allocator(None, TRACE_ROWS);
++        let trace_capacity = allocator.trace.capacity();
++        let (receipt, (calls, live, peak)) = integration_measured(|| {
++            let mut failure = ProjectSources::load_enum_index_candidate(
++                entry,
++                ProjectLimits::default(),
++                &mut allocator,
++            )
++            .unwrap_err();
++            let error = &failure.diagnostics[0];
++            let receipt = (
++                error.code,
++                error.stage,
++                error.message == "module source policy is not qualified on this host",
++                error
++                    .primary
++                    .is_some_and(|span| failure.sources.try_text(span).is_some()),
++                failure.sources.files().len(),
++                failure.usage.modules,
++                failure.usage.probes,
++                failure.usage.directory_entries,
++            );
++            // The trace was prepaid before measurement. Recover it so a
++            // negative baseline cannot disguise retained loader storage.
++            std::mem::swap(&mut allocator, &mut failure.allocator);
++            drop(failure);
++            receipt
++        });
++        assert_eq!((receipt.0, receipt.1, receipt.2), ("E0005", "source", true));
++        assert!(receipt.3);
++        assert_eq!((receipt.4, receipt.5, receipt.6, receipt.7), (1, 1, 0, 0));
++        assert_eq!(live, 0);
++        assert!(calls > 0 && peak > 0);
++        assert_eq!(allocator.trace.capacity(), trace_capacity);
++        assert_eq!(allocator.trace.len(), allocator.attempts);
++        assert!(!allocator.observer_trace_overflow);
++        assert!(allocator.trace.iter().all(|event| event.success));
++        assert!(!integration_enabled());
++    }
 +}
 diff --git a/src/frontend/oir/owned/enum_layout_tests.rs b/src/frontend/oir/owned/enum_layout_tests.rs
 new file mode 100644
@@ -19365,10 +19480,10 @@ index 0000000..a8cae62
 +}
 diff --git a/src/frontend/oir/owned/source/enum_type_tests.rs b/src/frontend/oir/owned/source/enum_type_tests.rs
 new file mode 100644
-index 0000000..fbac2ec
+index 0000000..4e9e89e
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/enum_type_tests.rs
-@@ -0,0 +1,463 @@
+@@ -0,0 +1,494 @@
 +//! Parsed-source enum typing through the closed fixed-statistics entry only.
 +use super::*;
 +use crate::frontend::{
@@ -19644,6 +19759,7 @@ index 0000000..fbac2ec
 +    });
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
 +    use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -19832,6 +19948,36 @@ index 0000000..fbac2ec
 +        }
 +    });
 +}
++
++#[cfg(not(target_os = "linux"))]
++#[test]
++fn bounded_enum_pipeline_scanner_preserves_unqualified_host_diagnostic() {
++    use crate::frontend::project::{ProjectLimits, ProjectSources};
++    let failure = ProjectSources::load_enum_index_candidate(
++        concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/bounded_enum_scanner/main.ox"
++        ),
++        ProjectLimits::default(),
++        &mut Allocator::default(),
++    )
++    .unwrap_err();
++    assert_eq!(failure.diagnostics.len(), 1);
++    let error = &failure.diagnostics[0];
++    assert_eq!(
++        (error.code, error.stage, error.message.as_str()),
++        (
++            "E0005",
++            "source",
++            "module source policy is not qualified on this host"
++        )
++    );
++    let origin = error.primary.unwrap();
++    assert_eq!(origin.file, SourceFileId(0));
++    assert_eq!(failure.sources.text(origin), "scanner");
++    assert_eq!(failure.sources.files().len(), 1);
++    assert_eq!((failure.usage.modules, failure.usage.probes), (1, 0));
++}
 diff --git a/src/frontend/oir/owned/source/hir.rs b/src/frontend/oir/owned/source/hir.rs
 index 7710917..688ba08 100644
 --- a/src/frontend/oir/owned/source/hir.rs
@@ -19883,7 +20029,7 @@ index 7710917..688ba08 100644
          init: ExprId,
 diff --git a/src/frontend/oir/owned/source/hir_budget.rs b/src/frontend/oir/owned/source/hir_budget.rs
 new file mode 100644
-index 0000000..6dd089a
+index 0000000..0d37865
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/hir_budget.rs
 @@ -0,0 +1,951 @@
@@ -20019,13 +20165,13 @@ index 0000000..6dd089a
 +// generic Result<Vec<T>, _> layouts are identical. New uses must extend this set.
 +pub(super) const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<VectorReturnEnvelope<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        Record,
 +        Field,
 +        FieldId,
@@ -20840,10 +20986,10 @@ index 0000000..6dd089a
 +mod tests;
 diff --git a/src/frontend/oir/owned/source/hir_budget_tests.rs b/src/frontend/oir/owned/source/hir_budget_tests.rs
 new file mode 100644
-index 0000000..9ee538c
+index 0000000..dd551d5
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/hir_budget_tests.rs
-@@ -0,0 +1,1289 @@
+@@ -0,0 +1,1290 @@
 +//! C3a count-only controls. These never construct enum HIR or a source witness.
 +use super::*;
 +use crate::frontend::{
@@ -21356,6 +21502,7 @@ index 0000000..9ee538c
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn c3a_imported_unused_enum_selects_complete_index() {
 +    use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -25220,10 +25367,10 @@ index 6945fc8..906d712 100644
 +}
 diff --git a/src/frontend/oir/owned/source/resolver_enum_tests.rs b/src/frontend/oir/owned/source/resolver_enum_tests.rs
 new file mode 100644
-index 0000000..6e8bb2e
+index 0000000..a2f640b
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/resolver_enum_tests.rs
-@@ -0,0 +1,601 @@
+@@ -0,0 +1,605 @@
 +//! Private resolver semantics and independent storage controls, never executable admission.
 +use super::*;
 +use crate::frontend::{
@@ -25719,6 +25866,7 @@ index 0000000..6e8bb2e
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn bounded_enum_resolver_project_aliases_and_signature_privacy_use_nominal_index() {
 +    let fixture = ProjectFixture::new(&[
@@ -25741,7 +25889,10 @@ index 0000000..6e8bb2e
 +            .unwrap()
 +            .unwrap();
 +    assert_eq!(facts.retained_counts[Kind::MatchArms as usize], 2);
++}
 +
++#[test]
++fn bounded_enum_resolver_single_file_signature_privacy_uses_nominal_index() {
 +    for (source, code, expected) in [
 +        (
 +            "enum E{V} pub fn expose(value:E)->(){return;}",
@@ -26338,10 +26489,10 @@ index 0000000..eb1f555
 +}
 diff --git a/src/frontend/oir/owned/source/resolver_paid_tests.rs b/src/frontend/oir/owned/source/resolver_paid_tests.rs
 new file mode 100644
-index 0000000..aef3b6e
+index 0000000..7ad0468
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/resolver_paid_tests.rs
-@@ -0,0 +1,2619 @@
+@@ -0,0 +1,2621 @@
 +//! Fixed resolver observations only. No resolved owner or typed witness escapes.
 +use super::*;
 +use crate::frontend::{lexer, parser, source::SourceFileId};
@@ -27053,6 +27204,7 @@ index 0000000..aef3b6e
 +    );
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn c3a_paid_resolver_imported_enum_and_constructor_privacy_precede_payload_storage() {
 +    use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -27205,6 +27357,7 @@ index 0000000..aef3b6e
 +    });
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn c3a_paid_resolver_imported_unused_enum_selects_inert_project_observation() {
 +    use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -30374,7 +30527,7 @@ index d50a67f..b26281d 100644
                  typed,
 diff --git a/src/frontend/oir/owned/source/type_storage.rs b/src/frontend/oir/owned/source/type_storage.rs
 new file mode 100644
-index 0000000..ff85e69
+index 0000000..0264573
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/type_storage.rs
 @@ -0,0 +1,1886 @@
@@ -31366,13 +31519,13 @@ index 0000000..ff85e69
 +// There is no synthetic Vec/owner value, callback, or production pricing array.
 +pub(super) const fn sample_carrier_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<SampleCarriers<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        TypedBody,
 +        Option<ParameterTy>,
 +        Option<ValueTy>,
@@ -31391,13 +31544,13 @@ index 0000000..ff85e69
 +}
 +pub(super) const fn endpoint_sample_carrier_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<EndpointSampleCarriers<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        Option<ParameterTy>,
 +        Option<ValueTy>,
 +        Option<FlowSummary>,
@@ -31745,13 +31898,13 @@ index 0000000..ff85e69
 +}
 +pub(super) const fn retained_sample_carrier_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<RetainedSampleCarriers<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        TypedBody,
 +        Option<Projection>,
 +        Vec<Option<Projection>>,
@@ -31945,13 +32098,13 @@ index 0000000..ff85e69
 +}
 +pub(super) const fn reserve_carrier_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<ReserveCarriers<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        TypedBody,
 +        Option<ParameterTy>,
 +        Option<ValueTy>,
@@ -31970,13 +32123,13 @@ index 0000000..ff85e69
 +}
 +pub(super) const fn fill_carrier_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<FillCarriers<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        Option<ParameterTy>,
 +        Option<ValueTy>,
 +        Option<FlowSummary>,
@@ -32189,13 +32342,13 @@ index 0000000..ff85e69
 +
 +const fn reserve_control_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<ReserveControls<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        TypedBody,
 +        Option<ParameterTy>,
 +        Option<ValueTy>,
@@ -32214,13 +32367,13 @@ index 0000000..ff85e69
 +}
 +const fn fill_control_bytes() -> usize {
 +    let mut largest = 0;
-+    macro_rules! include {
++    macro_rules! measure_carriers {
 +        ($($ty:ty),* $(,)?) => { $(
 +            let bytes = size_of::<FillControls<$ty>>();
 +            if bytes > largest { largest = bytes; }
 +        )* };
 +    }
-+    include!(
++    measure_carriers!(
 +        Option<ParameterTy>,
 +        Option<ValueTy>,
 +        Option<FlowSummary>,
@@ -45562,10 +45715,10 @@ index 0000000..c4ed25a
 +}
 diff --git a/src/frontend/project/enum_index_tests.rs b/src/frontend/project/enum_index_tests.rs
 new file mode 100644
-index 0000000..057ce27
+index 0000000..c88f755
 --- /dev/null
 +++ b/src/frontend/project/enum_index_tests.rs
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,305 @@
 +//! Real multi-file C2a parser input; no declaration or executable witness shortcuts.
 +use super::*;
 +use std::{
@@ -45614,6 +45767,7 @@ index 0000000..057ce27
 +    }
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_loader_preserves_global_limits_and_real_file_association() {
 +    let fixture = Fixture::new();
@@ -45714,6 +45868,7 @@ index 0000000..057ce27
 +    .is_ok());
 +}
 +
++#[cfg(target_os = "linux")]
 +#[test]
 +fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
 +    let fixture = Fixture::new();
@@ -45748,6 +45903,126 @@ index 0000000..057ce27
 +#[test]
 +fn enum_index_loader_and_project_headers_are_measured() {
 +    println!("enum-index-loader-layout SourceSetBuilder={} ProjectSources={} ModuleHeader={} LoadFailure={} EnumPolicy={} Frame={}",size_of::<SourceSetBuilder<'_>>(),size_of::<ProjectSources>(),size_of::<ModuleHeader>(),size_of::<LoadFailure>(),size_of::<ProjectEnumSyntax>(),size_of::<Frame>());
++}
++
++// Child modules intentionally remain unavailable until this host's filesystem
++// policy is qualified. Both enum loader entry points must retain that boundary.
++#[cfg(not(target_os = "linux"))]
++#[test]
++fn enum_index_loader_unqualified_host_stops_before_child_io() {
++    let fixture = Fixture::new();
++    // If a loader enters the child, it would report a parse error instead.
++    fs::write(fixture.0.join("a.ox"), "@ child must not be parsed").unwrap();
++    for failure in [
++        fixture
++            .load(exact(), &mut Allocator::default())
++            .unwrap_err(),
++        ProjectSources::load_typed(fixture.0.join("main.ox").to_str().unwrap(), exact())
++            .unwrap_err(),
++    ] {
++        assert_eq!(failure.diagnostics.len(), 1);
++        let error = &failure.diagnostics[0];
++        assert_eq!(
++            (error.code, error.stage, error.message.as_str()),
++            (
++                "E0005",
++                "source",
++                "module source policy is not qualified on this host"
++            )
++        );
++        let origin = error.primary.unwrap();
++        assert_eq!(
++            origin,
++            Span {
++                file: SourceFileId(0),
++                start: 4,
++                end: 5
++            }
++        );
++        assert_eq!(failure.sources.text(origin), "a");
++        assert!(error.secondary.is_empty() && error.notes.is_empty());
++        assert_eq!(failure.sources.files().len(), 1);
++        assert_eq!(
++            failure.sources.get(SourceFileId(0)).text(),
++            "mod a;enum E{V}"
++        );
++        assert_eq!(
++            (
++                failure.usage.source_bytes,
++                failure.usage.non_eof_tokens,
++                failure.usage.syntax_nodes,
++                failure.usage.modules
++            ),
++            (15, 10, 3, 1)
++        );
++        assert_eq!(
++            (
++                failure.usage.probes,
++                failure.usage.directory_entries,
++                failure.usage.directory_name_units
++            ),
++            (0, 0, 0)
++        );
++        assert!(!failure
++            .allocator
++            .trace
++            .iter()
++            .any(|event| event.kind == "module probe path"));
++        assert!(failure.allocator.trace.iter().all(|event| event.success));
++        assert_eq!(failure.allocator.trace.len(), failure.allocator.attempts);
++    }
++}
++
++#[cfg(not(target_os = "linux"))]
++#[test]
++fn enum_index_loader_unqualified_host_reserve_failures_stop_at_the_paid_prefix() {
++    let fixture = Fixture::new();
++    let baseline = fixture
++        .load(exact(), &mut Allocator::default())
++        .unwrap_err();
++    assert_eq!(baseline.diagnostics[0].code, "E0005");
++    assert!(baseline.allocator.attempts > 0);
++    for fail_at in 1..=baseline.allocator.attempts {
++        let mut allocator = Allocator {
++            fail_at: Some(fail_at),
++            ..Allocator::default()
++        };
++        let failure = fixture.load(exact(), &mut allocator).unwrap_err();
++        assert_eq!(failure.diagnostics[0].code, "E0400");
++        assert!(matches!(
++            failure.diagnostics[0].stage,
++            "source-project" | "parse"
++        ));
++        assert_eq!(failure.allocator.attempts, fail_at);
++        assert_eq!(failure.allocator.trace.len(), fail_at);
++        assert!(failure.sources.files().len() <= 1);
++        assert_eq!(
++            (failure.usage.probes, failure.usage.directory_entries),
++            (0, 0)
++        );
++        for (position, (actual, expected)) in failure
++            .allocator
++            .trace
++            .iter()
++            .zip(&baseline.allocator.trace)
++            .enumerate()
++        {
++            assert_eq!(
++                (
++                    actual.kind,
++                    actual.length,
++                    actual.element_bytes,
++                    actual.success
++                ),
++                (
++                    expected.kind,
++                    expected.length,
++                    expected.element_bytes,
++                    position + 1 != fail_at
++                )
++            );
++        }
++    }
 +}
 diff --git a/src/frontend/source.rs b/src/frontend/source.rs
 index b6406af..02358a7 100644

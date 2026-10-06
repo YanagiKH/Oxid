@@ -109,14 +109,14 @@
       "sha256": "87adb9f6ab683d011ccda913e37826f37fcc3e97e1b2df6ce4d7e4a2841f4385"
     },
     {
-      "bytes": 33758,
+      "bytes": 34372,
       "path": "src/frontend/declaration_index/enum_query_tests.rs",
-      "sha256": "809a773792b795460effe98606210ea4a574963a64de7d13bcce3068721c7205"
+      "sha256": "e3b2db7ef89b3813fc0ff9b0f166599de8beccdbb1a8f75968649b6b2cf994ad"
     },
     {
-      "bytes": 37419,
+      "bytes": 38260,
       "path": "src/frontend/declaration_index/enum_tests.rs",
-      "sha256": "07e4369a514a3773a8156e21296a342b2e7eb4fcb3d6c79ce4a1f3e211b1455a"
+      "sha256": "ffda9bc7d063dfc12352e28a99e972dbba4e7e09aded3ca87facb25aa1da2ad0"
     },
     {
       "bytes": 3036,
@@ -369,9 +369,9 @@
       "sha256": "3dad6ad126deede2bd94f948b0f51eac5ab99990b0f9ac70d6e6a2336783f9c7"
     },
     {
-      "bytes": 25588,
+      "bytes": 28284,
       "path": "src/frontend/oir/owned/enum_index_allocation_tests.rs",
-      "sha256": "50fc8b4de7e30eb076f8c1a4d8988825c5845571a3a8f8fc206cd5359d60340b"
+      "sha256": "4a4df9686d92d70c8b385239471dc2b0fbc9e48ea40d0a8663adf2f98ca0d652"
     },
     {
       "bytes": 1240,
@@ -589,9 +589,9 @@
       "sha256": "1f783fd55e95d8cdbe5bd24a01b87620fc3a358b328a1038a0699ae3ad5c827b"
     },
     {
-      "bytes": 20890,
+      "bytes": 21948,
       "path": "src/frontend/oir/owned/source/enum_type_tests.rs",
-      "sha256": "32e6951ab6d45d6e90b8a6fd29bbbcf58ef1c3f1470f2ea11a6567d769061897"
+      "sha256": "834394d4cc3640534257c6b74a6200a824c78a8c4a2a36f2e0973800c3b68173"
     },
     {
       "bytes": 5862,
@@ -599,14 +599,14 @@
       "sha256": "e004ee057b4eadcb6b9a365a258945412e0098bb9949ca6b1de42ab9bcbaa759"
     },
     {
-      "bytes": 39366,
+      "bytes": 39384,
       "path": "src/frontend/oir/owned/source/hir_budget.rs",
-      "sha256": "c4d6d53b8a5b4f4a5d98e4f7021a302c65198f0dffb2ac1060190c77ae0322ec"
+      "sha256": "a7fb8a563f7cd6ea9f923322f0cf7fa863242e5a8ba488117b0b732c903df301"
     },
     {
-      "bytes": 47538,
+      "bytes": 47566,
       "path": "src/frontend/oir/owned/source/hir_budget_tests.rs",
-      "sha256": "fc72614abdc3729ab9b13ab429d4afad2181a3324730636ace299cf225ce5d2b"
+      "sha256": "88a95c194a17b9a1614a17e5f813ac5dc4174d06939fe15d3b901fc84470664c"
     },
     {
       "bytes": 98264,
@@ -644,9 +644,9 @@
       "sha256": "4345a86e50ed52cb1e311c93ff6f3712719871e5c214130be68aa1d1589ecf5d"
     },
     {
-      "bytes": 23873,
+      "bytes": 23989,
       "path": "src/frontend/oir/owned/source/resolver_enum_tests.rs",
-      "sha256": "889760ef2e097dff46e555ae6c11298ea2bbb2aab2c512969f08ca91635a20c0"
+      "sha256": "a753a284d8b5e0ab41b168123b359f504c2480089e336680e3281a478c0092fe"
     },
     {
       "bytes": 17772,
@@ -654,9 +654,9 @@
       "sha256": "99f51419dcf0fe03ec58edc4b69801ea6f06c879cc2a4fcafda5c51af6860296"
     },
     {
-      "bytes": 107749,
+      "bytes": 107805,
       "path": "src/frontend/oir/owned/source/resolver_paid_tests.rs",
-      "sha256": "44281233857d467bf5ffe4a329a677427bb97a0382fe27830dfbf48beada6648"
+      "sha256": "92000cf006d03198651528fa38b6f23fd9bd2f84a2f2e72acf0d96f6b771368d"
     },
     {
       "bytes": 28972,
@@ -714,9 +714,9 @@
       "sha256": "686a67ca817c06462d573ed03cef5f77aafd5545f5a0e9065f8d829560be1a51"
     },
     {
-      "bytes": 68199,
+      "bytes": 68325,
       "path": "src/frontend/oir/owned/source/type_storage.rs",
-      "sha256": "babfed763d9d861e4bec97913692efb2e687fe5ab86b5f5d4109b6b9d19a047a"
+      "sha256": "e67f857411c2fd801bcc4de512fda4e512d6e77a36225139f151b9c25468e99b"
     },
     {
       "bytes": 117328,
@@ -889,9 +889,9 @@
       "sha256": "9856bb7846a44359deb46a7a9423522e108e2066ef143e0148aaf399b2df23ae"
     },
     {
-      "bytes": 5591,
+      "bytes": 9691,
       "path": "src/frontend/project/enum_index_tests.rs",
-      "sha256": "81c58d2e2265829e7dee573da864782bb76954c58f031143640969e9e752664c"
+      "sha256": "9e0d680d3b71f722ead3edc8c10d2d435eea2c11cc36a50c9e95b089fdbf4eda"
     },
     {
       "bytes": 5237,
@@ -1205,11 +1205,11 @@
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
   "purpose": "Current bounded enum and exhaustive match source inputs; exact projected-array-slices predecessor retained separately",
-  "reviewed_source_head": "511df03975c2aa1a815f92155d673adb3571ff77",
+  "reviewed_source_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "7eb1fa1ef8e3107788ca93758f762882ea031d72",
+  "source_only_tree": "4970ee660f670cfcb23f42a9cb182a4ca7996388",
   "unary_base_head": "c4c4ec0958a31fc7878bdc4031e93b204ff14acb",
   "unary_source_sha256": "d9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220"
 }

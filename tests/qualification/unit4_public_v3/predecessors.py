@@ -17,7 +17,7 @@ from pathlib import Path
 from contracts import need, sha, load, binding, verify, save
 from compare import envelope, diagnostic_vector, valid_origins, policy_bounds
 
-QUALIFIED_PATHS_HELPER_SHA = '522885d6feaa8b4e43f38f11bc2950e0e2471591ad8f40e2b9224ecaeccefeaf'
+QUALIFIED_PATHS_HELPER_SHA = '999e9f8cd75ae2010a11d20a40c357bf28d42b658d6293e93cb73a36cb665288'
 
 def authority_path(contracts, suffix):
     matches = list({r['path']: r for r in contracts.verified if r.get('authority_path', '').endswith(suffix)}.values())

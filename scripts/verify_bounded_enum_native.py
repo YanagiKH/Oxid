@@ -40,9 +40,9 @@ SCANNER_HASHES = {
     "scanner.ox": "d13847eaecd69667031e54bb6f3f329365427a483e0bff537d0b28882516ac14",
 }
 ELF_ENV = {"PATH": "/no-tools"}
-# Approved 237-member input authority for feature 511df039, not a caller-supplied
+# Approved 237-member input authority for CI-fix 78651228, not a caller-supplied
 # roster. A reduced/rehashed manifest cannot redefine this gate's source closure.
-REVIEWED_SOURCE_SHA256 = "53a54bbd2b41db1a7c666cd39362bf520697d2d5fb834cd47799e958b5cf77fd"
+REVIEWED_SOURCE_SHA256 = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 
 
 def require(condition, message):

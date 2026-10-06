@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 IDENTITY = 'enum-enabled-qualified-values-v1'
-DESCRIPTOR_SHA = '18dc17439c6ccc0e76f8a6bbbae5707c7ad826159292e2c548da8fc44280886f'
+DESCRIPTOR_SHA = 'aad90776af8cda1a305efc9581d8fcbb40e4eedb8da0ca9aef703fc4fd8af425'
 CASE_IDS = (
     'parser/bare-relative-prefix',
     'parser/qualified-function-value',
