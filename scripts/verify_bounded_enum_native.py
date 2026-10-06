@@ -62,7 +62,7 @@ def identity(path):
     return {"path": str(path), "sha256": digest, "bytes": path.stat().st_size}
 
 
-def command(root, label, args, *, cwd, env, timeout=1800):
+def command(root, label, args, *, cwd, env, timeout=1800, environment_mode="inherited"):
     """Keep original streams and invocation even when a command fails/times out."""
     args = [str(arg) for arg in args]
     error = None
@@ -80,12 +80,25 @@ def command(root, label, args, *, cwd, env, timeout=1800):
     save_json(root / (label + ".json"), {
         "argv": args, "cwd": str(cwd), "status": status, "error": error,
         "environment": ELF_ENV if env == ELF_ENV else {
+            "mode": "isolated-git-read", "values": env,
+        } if environment_mode == "isolated-git-read" else {
             "mode": "inherited", "OXID_LLVM_BIN": env.get("OXID_LLVM_BIN"),
             "OXID_OWNED_NATIVE_EVIDENCE": env.get("OXID_OWNED_NATIVE_EVIDENCE"),
         },
     })
     require(status == 0, f"{label}: status {status}; see retained command streams ({error})")
     return stdout, stderr
+
+
+def git_command(root, label, repo, *arguments, env):
+    """Trust only this resolved checkout for an isolated, read-only Git child."""
+    repo = repo.resolve(strict=True)
+    git_env = {"PATH": "/usr/bin:/bin", "HOME": env["HOME"], "LC_ALL": "C",
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+               "GIT_OPTIONAL_LOCKS": "0"}
+    return command(root, label, ["/usr/bin/git", "-c", "safe.directory=" + str(repo),
+                   "-C", repo, *arguments], cwd=repo, env=git_env, timeout=60,
+                   environment_mode="isolated-git-read")
 
 
 def admit_listing(data, expected):
@@ -227,13 +240,12 @@ def public_cases(repo, root, binary, env):
 def verify(args, root):
     repo = args.repo.resolve(strict=True)
     env = dict(os.environ, OXID_LLVM_BIN=str(args.llvm_bin.resolve(strict=True)))
-    head, _ = command(root, "git-head", ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
-                      cwd=repo, env=env)
+    head, _ = git_command(root, "git-head", repo, "rev-parse", "HEAD", "HEAD^{tree}", env=env)
     require(head.decode().splitlines()[0] == args.expected_head, "checkout is not the exact CI head")
-    status, _ = command(root, "git-status", ["git", "status", "--porcelain=v1"], cwd=repo, env=env)
+    status, _ = git_command(root, "git-status", repo, "status", "--porcelain=v1", env=env)
     require(not status, "current checkout must be clean")
-    files, _ = command(root, "source-files", ["git", "ls-files", "-z", "--", "src", "native",
-        "Cargo.toml", "Cargo.lock", "build.rs", "tests/fixtures/bounded_enum_scanner"], cwd=repo, env=env)
+    files, _ = git_command(root, "source-files", repo, "ls-files", "-z", "--", "src", "native",
+        "Cargo.toml", "Cargo.lock", "build.rs", "tests/fixtures/bounded_enum_scanner", env=env)
     source_ids = [identity(repo / os.fsdecode(path)) for path in files.split(b"\0") if path]
     source_manifest = repo / "tests/fixtures/typed_project_source_binding/current-source.json"
     manifest = read_reviewed_manifest(source_manifest)
@@ -300,8 +312,8 @@ def verify(args, root):
     require(manifest_id == identity(source_manifest), "reviewed source manifest changed during execution")
     reviewed_after = reviewed_input_identities(repo, manifest)
     require(reviewed_ids == reviewed_after, "reviewed inputs changed during execution")
-    files, _ = command(root, "source-files-after", ["git", "ls-files", "-z", "--", "src", "native",
-        "Cargo.toml", "Cargo.lock", "build.rs", "tests/fixtures/bounded_enum_scanner"], cwd=repo, env=env)
+    files, _ = git_command(root, "source-files-after", repo, "ls-files", "-z", "--", "src", "native",
+        "Cargo.toml", "Cargo.lock", "build.rs", "tests/fixtures/bounded_enum_scanner", env=env)
     source_after = [identity(repo / os.fsdecode(path)) for path in files.split(b"\0") if path]
     admit_source_identity(repo, source_after, manifest)
     save_json(root / "source-identity-after.json", {"reviewed_source_manifest": manifest_id,

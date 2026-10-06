@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import verify_bounded_enum_native as gate
 
@@ -20,6 +22,121 @@ def execution(name, marker=""):
     return (f"\nrunning 1 test\ntest {name} ... {output}\n\n"
             "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; "
             "987 filtered out; finished in 0.01s\n\n").encode()
+
+
+class GitCheckoutControls(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="bounded-enum-git-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.global_config = self.root / "global-config"
+        self.global_config.write_text("[user]\n\tname = Untouched global config\n")
+        self.env = {"PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"], "LC_ALL": "C",
+                    "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": str(self.global_config)}
+        self.repo = self.root / "checkout"
+        self.sibling = self.root / "sibling"
+        for repo in (self.repo, self.sibling):
+            repo.mkdir()
+            (repo / "src").mkdir()
+            (repo / "src/main.rs").write_text("// " + repo.name + "\nfn main() {}\n")
+            for label, argv in (("init", ["init", "-q"]), ("add", ["add", "src/main.rs"]),
+                                ("commit", ["-c", "user.name=Regression", "-c",
+                                 "user.email=regression@example.invalid", "commit", "-qm", "fixture"])):
+                gate.command(self.root, repo.name + "-" + label, ["/usr/bin/git", *argv],
+                             cwd=repo, env=self.env)
+        self.head, _ = gate.command(self.root, "fixture-head",
+            ["/usr/bin/git", "rev-parse", "HEAD", "HEAD^{tree}"], cwd=self.repo, env=self.env)
+        # Use Git's ownership regression hook at the real subprocess seam. No
+        # production environment exception and no Git result is mocked.
+        real_run = gate.subprocess.run
+        def different_owner(*args, **kwargs):
+            kwargs["env"] = dict(kwargs["env"], GIT_TEST_ASSUME_DIFFERENT_OWNER="1")
+            return real_run(*args, **kwargs)
+        patch = mock.patch.object(gate.subprocess, "run", side_effect=different_owner)
+        patch.start()
+        self.addCleanup(patch.stop)
+        try:
+            gate.command(self.root, "unscoped-head", ["/usr/bin/git", "rev-parse", "HEAD"],
+                         cwd=self.repo, env=self.env)
+        except ValueError:
+            receipt = json.loads((self.root / "unscoped-head.json").read_text())
+            self.assertEqual(receipt["status"], 128)
+            self.assertIn(b"dubious ownership", (self.root / "unscoped-head.stderr").read_bytes())
+        else:
+            self.skipTest("Git does not support GIT_TEST_ASSUME_DIFFERENT_OWNER")
+
+    def test_exact_repository_trust_is_read_only_and_scoped_to_each_command(self):
+        alias = self.root / "checkout-alias"
+        alias.symlink_to(self.repo, target_is_directory=True)
+        before = {path: path.read_bytes() for repo in (self.repo, self.sibling)
+                  for path in (repo / ".git").rglob("*") if path.is_file()}
+        before[self.global_config] = self.global_config.read_bytes()
+        # None of this inherited Git configuration may redirect the reads or
+        # broaden the exact per-command ownership exception.
+        hostile_env = dict(self.env, GIT_DIR=str(self.sibling / ".git"),
+            GIT_WORK_TREE=str(self.sibling), GIT_CONFIG_COUNT="1",
+            GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0="*",
+            GIT_CONFIG_PARAMETERS="'safe.directory=*'")
+        paths = ("src", "native", "Cargo.toml", "Cargo.lock", "build.rs",
+                 "tests/fixtures/bounded_enum_scanner")
+        commands = (("git-head", ("rev-parse", "HEAD", "HEAD^{tree}"), self.head),
+                    ("git-status", ("status", "--porcelain=v1"), b""),
+                    ("source-files", ("ls-files", "-z", "--", *paths), b"src/main.rs\0"),
+                    ("source-files-after", ("ls-files", "-z", "--", *paths), b"src/main.rs\0"))
+        for label, arguments, expected in commands:
+            with self.subTest(command=label):
+                stdout, stderr = gate.git_command(self.root, label, alias, *arguments, env=hostile_env)
+                self.assertEqual((stdout, stderr), (expected, b""))
+                self.assertEqual((self.root / (label + ".stdout")).read_bytes(), expected)
+                self.assertEqual((self.root / (label + ".stderr")).read_bytes(), b"")
+                receipt = json.loads((self.root / (label + ".json")).read_text())
+                self.assertEqual(receipt["argv"], ["/usr/bin/git", "-c",
+                    "safe.directory=" + str(self.repo), "-C", str(self.repo), *arguments])
+                self.assertEqual(receipt["cwd"], str(self.repo))
+                self.assertEqual(receipt["status"], 0)
+                self.assertEqual(receipt["environment"], {"mode": "isolated-git-read", "values": {
+                    "PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"], "LC_ALL": "C",
+                    "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+                    "GIT_OPTIONAL_LOCKS": "0"}})
+        # Reusing the exact checkout exception cannot admit its sibling.
+        with self.assertRaisesRegex(ValueError, "status 128"):
+            gate.command(self.root, "sibling-denied", ["/usr/bin/git", "-c",
+                "safe.directory=" + str(self.repo), "-C", self.sibling, "rev-parse", "HEAD"],
+                cwd=self.sibling, env=self.env)
+        self.assertIn(b"dubious ownership", (self.root / "sibling-denied.stderr").read_bytes())
+        with self.assertRaisesRegex(ValueError, "status 128"):
+            gate.command(self.root, "checkout-still-denied", ["/usr/bin/git", "rev-parse", "HEAD"],
+                         cwd=self.repo, env=self.env)
+        after = {path: path.read_bytes() for repo in (self.repo, self.sibling)
+                 for path in (repo / ".git").rglob("*") if path.is_file()}
+        after[self.global_config] = self.global_config.read_bytes()
+        self.assertEqual(after, before)
+
+    def test_verify_still_rejects_wrong_head_and_dirty_checkout_before_building(self):
+        args = SimpleNamespace(repo=self.repo, llvm_bin=self.root, expected_head="0" * 40)
+        with mock.patch.dict(os.environ, self.env):
+            wrong_head = self.root / "wrong-head"
+            wrong_head.mkdir()
+            with self.assertRaisesRegex(ValueError, "not the exact CI head"):
+                gate.verify(args, wrong_head)
+            self.assertFalse((wrong_head / "git-status.json").exists())
+            args.expected_head = self.head.decode().splitlines()[0]
+            for name, path in (("tracked", self.repo / "src/main.rs"),
+                               ("untracked", self.repo / "unexpected")):
+                with self.subTest(drift=name):
+                    original = path.read_bytes() if path.exists() else None
+                    path.write_bytes(b"checkout drift\n")
+                    dirty = self.root / ("dirty-" + name)
+                    dirty.mkdir()
+                    with self.assertRaisesRegex(ValueError, "checkout must be clean"):
+                        gate.verify(args, dirty)
+                    self.assertEqual((dirty / "git-head.stdout").read_bytes(), self.head)
+                    self.assertTrue((dirty / "git-status.stdout").read_bytes())
+                    self.assertFalse((dirty / "source-files.json").exists())
+                    if original is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(original)
 
 
 class BoundedEnumNativeControls(unittest.TestCase):
