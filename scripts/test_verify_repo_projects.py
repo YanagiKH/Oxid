@@ -6,6 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 import verify_repo
 
+SCANNER_MEMBERS = (
+    'tests/fixtures/bounded_enum_scanner/main.ox',
+    'tests/fixtures/bounded_enum_scanner/scanner.ox',
+)
+
 class ProjectRegistrationTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -17,11 +22,23 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
 
+    def assert_scanner_addition(self, checks, entries, count):
+        self.assertEqual(verify_repo.TYPED_PROJECTS[SCANNER_MEMBERS[0]], SCANNER_MEMBERS)
+        scanner_members = {self.root / name for name in SCANNER_MEMBERS}
+        scanner_entry = self.root / SCANNER_MEMBERS[0]
+        self.assertEqual([row for row in checks if row[0] in scanner_members], [(scanner_entry, True)])
+        self.assertEqual([entry for entry in entries if entry in scanner_members], [scanner_entry])
+        # Preserve the pre-scanner totals, excluding only its two named members
+        # and single typed entry check/run. Each caller adds one legacy neighbor.
+        predecessor_checks = [row for row in checks if row[0] not in scanner_members]
+        predecessor_entries = [entry for entry in entries if entry not in scanner_members]
+        self.assertEqual((len(predecessor_checks), len(predecessor_entries), count - len(SCANNER_MEMBERS)),
+                         (6, 5, 13))
+
     def test_children_use_real_entry_and_unrelated_sources_stay_legacy(self):
         extra = self.root / 'fixtures/typed-project-batch/unregistered.ox'
         checks, entries, count = verify_repo.source_plan(sorted(self.members + self.data_sources + [extra]), self.root)
-        self.assertEqual(count, 13)
-        self.assertEqual(len(entries), 5)
+        self.assert_scanner_addition(checks, entries, count)
         self.assertIn((extra, False), checks)
         self.assertIn((self.root / 'fixtures/typed-project-batch/main.ox', True), checks)
         self.assertNotIn(self.root / 'fixtures/typed-project-batch/jobs.ox', [p for p, _ in checks])
@@ -31,24 +48,30 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.assertIn((self.root / 'fixtures/typed-slice-samples/main.ox', True), checks)
         for name in ('buffers.ox', 'stats.ox'):
             self.assertNotIn(self.root / 'fixtures/typed-slice-samples' / name, [p for p, _ in checks])
-        self.assertEqual(len(checks), 6)
 
     def test_unregistered_slice_sample_member_stays_legacy(self):
         extra = self.root / 'fixtures/typed-slice-samples/unregistered.ox'
         checks, entries, count = verify_repo.source_plan(sorted(self.members + self.data_sources + [extra]), self.root)
         self.assertIn((extra, False), checks)
         self.assertNotIn(extra, entries)
-        self.assertEqual((len(checks), len(entries), count), (6, 5, 13))
+        self.assert_scanner_addition(checks, entries, count)
 
     def test_composition_members_are_exact_and_unregistered_sources_stay_legacy(self):
         extra = self.root / 'fixtures/typed-record-composition-samples/unregistered.ox'
         checks, entries, count = verify_repo.source_plan(sorted(self.members + self.data_sources + [extra]), self.root)
         self.assertIn((extra, False), checks)
         self.assertNotIn(extra, entries)
-        self.assertEqual((len(checks), len(entries), count), (6, 5, 13))
+        self.assert_scanner_addition(checks, entries, count)
         self.assertIn((self.root / 'fixtures/typed-record-composition-samples/main.ox', True), checks)
         for name in ('model.ox', 'ops.ox'):
             self.assertNotIn(self.root / 'fixtures/typed-record-composition-samples' / name, [p for p, _ in checks])
+
+    def test_unregistered_scanner_member_stays_legacy(self):
+        extra = self.root / 'tests/fixtures/bounded_enum_scanner/unregistered.ox'
+        checks, entries, count = verify_repo.source_plan(sorted(self.members + self.data_sources + [extra]), self.root)
+        self.assertIn((extra, False), checks)
+        self.assertNotIn(extra, entries)
+        self.assert_scanner_addition(checks, entries, count)
 
     def test_missing_member_fails_before_commands(self):
         for member in self.members:
