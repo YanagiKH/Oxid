@@ -37,7 +37,7 @@ pub(super) use resource::{
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
 #[cfg(test)]
-pub(super) use sealed::collect_enum_candidate;
+pub(super) use sealed::{collect_closed, collect_enum_candidate};
 pub(super) use sealed::{collect_originals, DeclarationFacts, DeclarationIndex};
 use std::{cmp::Ordering, fmt, mem::size_of};
 

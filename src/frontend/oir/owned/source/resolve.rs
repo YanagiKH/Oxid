@@ -380,7 +380,7 @@ fn resolve_index(
 }
 /// Sole production enum typing construction. Source provenance is checked
 /// before storage, and no owner, seed, plan or admission is supplied by callers.
-/// Public collection/parser defaults remain closed in this precursor.
+/// Public facades select this only for an enum-bearing frozen index.
 #[allow(dead_code)]
 pub(in crate::frontend::oir) fn type_enum_source<'s>(
     index: &'s DeclarationIndex<'s>,

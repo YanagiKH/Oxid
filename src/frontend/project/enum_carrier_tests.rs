@@ -1,9 +1,8 @@
-//! Inert internal carrier controls. The production parser never admits enums.
+//! Internal carrier controls, with the historical closed policy kept explicit.
 use super::*;
 use crate::frontend::{
     declaration_index::{self, IndexLimits, SourceOwner, WorkMeter},
     hir,
-    oir::project::{check_project_candidate, check_project_executable},
     source::SourceView,
 };
 use std::mem::{align_of, size_of};
@@ -199,7 +198,7 @@ fn enum_carrier_actual_layouts_preserve_hot_enclosures() {
 }
 
 #[test]
-fn enum_carrier_parser_and_formatter_gates_stay_closed() {
+fn enum_carrier_legacy_parser_stays_closed_and_formatter_accepts_syntax() {
     for text in [
         "enum E { V } fn f()->(){return;}",
         "fn f()->(){E::V;return;}",
@@ -214,7 +213,7 @@ fn enum_carrier_parser_and_formatter_gates_stay_closed() {
         ] {
             assert!(parser::parse_with_mode(source, lexer::lex(source).unwrap(), mode).is_err());
         }
-        assert!(crate::frontend::format::format_source(source).is_err());
+        assert!(crate::frontend::format::format_source(source).is_ok());
     }
     for text in [TEXT, "fn f()->i32{return crate::f();}"] {
         let project = fixture(text);
@@ -298,7 +297,7 @@ fn enum_carrier_absolute_function_shape_remains_owned_route_neutral() {
 }
 
 #[test]
-fn enum_carrier_all_new_forms_deny_before_index_reservation() {
+fn enum_carrier_closed_collection_and_candidate_producers_reject_new_forms() {
     for kind in 0..3 {
         let mut project = fixture(TEXT);
         match kind {
@@ -315,7 +314,7 @@ fn enum_carrier_all_new_forms_deny_before_index_reservation() {
         assert!(valid(&project));
         let work = WorkMeter::default();
         let mut allocator = Allocator::default();
-        let error = declaration_index::collect_originals(
+        let error = declaration_index::collect_closed(
             SourceOwner::project(&project),
             IndexLimits::default(),
             &work,
@@ -335,26 +334,28 @@ fn enum_carrier_all_new_forms_deny_before_index_reservation() {
             hir::resolve(source, &project.programs[0]).unwrap_err()[0].code,
             "E0101"
         );
+        // Fabricated carriers are only negative controls. The explicit private
+        // collection policy preserves its marker at direct producer seams.
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let facts = declaration_index::collect_enum_candidate(
+            SourceOwner::project(&project),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap();
         assert_eq!(
-            check_project_candidate(
-                &project,
-                IndexLimits::default(),
-                &WorkMeter::default(),
-                &mut Allocator::default()
-            )
-            .unwrap_err()[0]
-                .code,
+            hir::original_signatures(&facts, &work).unwrap_err()[0].code,
+            "E0101"
+        );
+        let index = facts.finish(&work, &mut allocator).unwrap();
+        assert_eq!(
+            hir::resolve_project(&index, &work).unwrap_err()[0].code,
             "E0101"
         );
         assert_eq!(
-            check_project_executable(
-                &project,
-                IndexLimits::default(),
-                &WorkMeter::default(),
-                &mut Allocator::default()
-            )
-            .unwrap_err()[0]
-                .code,
+            hir::resolve_bodies(&index, &work, Vec::new()).unwrap_err()[0].code,
             "E0101"
         );
     }

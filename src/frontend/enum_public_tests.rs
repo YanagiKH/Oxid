@@ -111,7 +111,6 @@ const SCANNER_MAIN: &str = include_str!("../../tests/fixtures/bounded_enum_scann
 const SCANNER: &str = include_str!("../../tests/fixtures/bounded_enum_scanner/scanner.ox");
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_frozen_original_and_project_results() {
     for (text, expected, functions, main) in [
         (TINY_RELAY_TAKE, Scalar::I32(7), 3, 2),
@@ -145,7 +144,6 @@ fn bounded_enum_public_frozen_original_and_project_results() {
 
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_scanner_uses_original_files_aliases_and_private_cursor() {
     let fixture = Fixture::new(&[("main.ox", SCANNER_MAIN), ("scanner.ox", SCANNER)]);
     let project = fixture.load();
@@ -175,7 +173,6 @@ fn bounded_enum_public_scanner_uses_original_files_aliases_and_private_cursor() 
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_consumption_reports_the_whole_match_origin() {
     for (text, mark) in [
         (
@@ -215,7 +212,6 @@ fn bounded_enum_public_consumption_reports_the_whole_match_origin() {
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_nominal_payload_and_unused_arm_checks() {
     for (text, stage) in [
         ("enum E{V(i32)} fn main()->i32{let x=E::V(true);return 0;}", "type"),
@@ -230,7 +226,6 @@ fn bounded_enum_public_nominal_payload_and_unused_arm_checks() {
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_unsupported_borrow_containment_array_and_patterns() {
     for (text, code, stage) in [
         ("enum E{N} fn f(e:&E)->(){return;}", "E0202", "resolve"),
@@ -262,7 +257,6 @@ fn bounded_enum_public_unsupported_borrow_containment_array_and_patterns() {
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_formatter_preserves_comments_crlf_and_runtime() {
     let text = format!(
         "// enum match => :: 雪\r\n{}\r\n",
@@ -326,7 +320,6 @@ fn bounded_enum_public_formatter_preserves_comments_crlf_and_runtime() {
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_entry_checks_remain_consumer_checks() {
     for (text, expected_entry) in [
         (ENUM_ENTRY_RESULT, Some(hir::DefId(0))),
@@ -363,7 +356,6 @@ fn bounded_enum_public_entry_checks_remain_consumer_checks() {
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_original_source_identity_cannot_be_substituted() {
     let fixture = Fixture::new(&[("main.ox", TINY_RELAY_TAKE)]);
     let first = fixture.load();
@@ -386,7 +378,6 @@ fn bounded_enum_public_original_source_identity_cannot_be_substituted() {
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_unused_declaration_selects_owned_without_changing_result() {
     let scalar = "fn value()->i32{return 7;} fn main()->i32{return crate::value();}";
     for (text, route) in [
@@ -403,7 +394,6 @@ fn bounded_enum_public_unused_declaration_selects_owned_without_changing_result(
 }
 
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_zero_enum_calls_preserve_old_work_order_and_inputs() {
     for (text, expected, route, targets) in [
         ("fn get()->i32{return 7;} fn main()->i32{return crate::get();}", Some(7), ProjectRoute::Scalar, vec!["crate::get"]),
@@ -496,7 +486,6 @@ fn bounded_enum_public_zero_enum_calls_preserve_old_work_order_and_inputs() {
 
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "public enum activation pending parent gate"]
 fn bounded_enum_public_private_callee_precedes_bad_argument() {
     for child in [
         "fn hidden(x:i32)->i32{return x;}",

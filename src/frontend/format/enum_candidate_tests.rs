@@ -1,4 +1,4 @@
-//! Private enum formatting; ordinary format_source remains closed.
+//! Private formatter accounting and public enum syntax parity.
 use super::*;
 use crate::frontend::source::SourceFileId;
 
@@ -15,14 +15,14 @@ fn formatted(text: &str) -> String {
 }
 
 #[test]
-fn enum_formatter_private_roundtrip_keeps_public_gate_closed() {
+fn enum_formatter_private_roundtrip_matches_public_formatting() {
     let text = "enum E{V(i32),Z}fn f(e:E)->(){match e{E::V(v)=>{crate::m::f(v,&mut *r);},E::Z=>{E::Z();},}}";
     let expected = "enum E { V(i32), Z } fn f(e: E) -> () { match e { E::V(v) => { crate::m::f(v, &mut *r); }, E::Z => { E::Z(); }, } }\n";
     let output = formatted(text);
     assert_eq!(output, expected);
     assert_eq!(formatted(&output), output);
     let sources = source(text);
-    assert!(format_source(sources.get(SourceFileId(0))).is_err());
+    assert_eq!(format_source(sources.get(SourceFileId(0))).unwrap(), output);
     let (_, metrics) =
         format_enum_candidate_observed(sources.get(SourceFileId(0)), &mut Allocator::default());
     assert_eq!(metrics.parse_calls, 2);

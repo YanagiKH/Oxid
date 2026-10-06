@@ -240,7 +240,7 @@ fn enum_index_closed_collection_and_all_direct_source_producers_stay_closed() {
         let work = WorkMeter::default();
         work.enable_observation();
         let mut allocator = Allocator::default();
-        let error = collect_originals(
+        let error = collect_closed(
             SourceOwner::project(&project),
             IndexLimits::default(),
             &work,

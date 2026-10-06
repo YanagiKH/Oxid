@@ -1,11 +1,11 @@
-//! Private bounded enum grammar over the unchanged lossless token tape.
+//! Bounded enum grammar over the unchanged lossless token tape.
 use super::*;
 use crate::frontend::source::Span;
 use std::mem::size_of;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::frontend) struct SyntaxStorage {
-    /// Candidate parser vector capacities, excluding pre-existing lexer tokens.
+    /// Enum-enabled parser capacities, excluding pre-existing lexer tokens.
     pub retained_capacity: usize,
     pub scratch_capacity: usize,
     /// Conservative coexistence bound, including old and new grow buffers.
@@ -23,7 +23,7 @@ fn reserve_error(at: Span, message: &'static str) -> Box<Diagnostic> {
     )
 }
 
-/// Candidate-only fallible growth. Closed callers retain their old reservations.
+/// Enum-enabled fallible growth. Closed callers retain their old reservations.
 pub(super) fn reserve<T>(
     allocator: &mut Allocator,
     storage: &mut SyntaxStorage,

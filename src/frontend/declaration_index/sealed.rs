@@ -24,8 +24,20 @@ pub(in crate::frontend) fn collect_originals<'s>(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+    collect(sources, limits, work, allocator, CollectionSyntax::Enabled)
+}
+/// Preserve the historical closed policy for negative qualification controls.
+/// This never admits enum syntax or clears a private candidate origin.
+#[cfg(test)]
+pub(in crate::frontend) fn collect_closed<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
     collect(sources, limits, work, allocator, CollectionSyntax::Closed)
 }
+
 #[cfg(test)]
 pub(in crate::frontend) fn collect_enum_candidate<'s>(
     sources: SourceOwner<'s>,
@@ -1494,4 +1506,44 @@ fn bounded_enum_production_collection_policy_layout() {
         size_of::<DeclarationFacts<'_>>()
     );
     assert_eq!(size_of::<CollectionSyntax>(), 1);
+}
+
+#[test]
+fn bounded_enum_public_index_rejects_every_unpaid_scalar_producer() {
+    use crate::frontend::{lexer, parser, source::SourceMap};
+    let mut sources = SourceMap::new();
+    let id = sources.add(
+        "public-enum-guard.ox".into(),
+        "enum E{N} fn main()->i32{return 0;}".into(),
+    );
+    let file = sources.get(id);
+    let ast = parser::parse_typed_counted(
+        file,
+        lexer::lex(file).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+        parser::MAX_NODES,
+        &mut Allocator::default(),
+        &mut Default::default(),
+    )
+    .unwrap()
+    .0;
+    let owner = SourceOwner::original(file, &ast, SourceView::Map(&sources)).unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let facts = collect_originals(owner, IndexLimits::default(), &work, &mut allocator).unwrap();
+    facts.require_current_source_pipeline().unwrap();
+    assert_eq!(facts.enum_count(), 1);
+    let phase = WorkMeter::default();
+    let errors = super::super::hir::original_signatures(&facts, &phase).unwrap_err();
+    assert_eq!((errors[0].code, errors[0].stage), ("E0101", "resolve"));
+    assert_eq!(phase.used(), 0);
+    let index = facts.finish(&work, &mut allocator).unwrap();
+    index.require_current_source_pipeline().unwrap();
+    for errors in [
+        super::super::hir::resolve_project(&index, &phase).unwrap_err(),
+        super::super::hir::resolve_bodies(&index, &phase, Vec::new()).unwrap_err(),
+    ] {
+        assert_eq!((errors[0].code, errors[0].stage), ("E0101", "resolve"));
+    }
+    assert_eq!(phase.used(), 0);
 }

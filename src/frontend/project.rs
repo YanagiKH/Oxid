@@ -175,12 +175,13 @@ impl ProjectSources {
     }
     /// Parse and load the bounded typed grammar once for public typed dispatch.
     pub fn load_typed(entry: &str, limits: ProjectLimits) -> Result<Self, LoadFailure> {
-        Self::load_with_arrays(
+        Self::load_with_syntax(
             entry,
             limits,
             parser::SourceMode::ProjectCandidate,
             &mut Allocator::default(),
             parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::Enabled,
         )
     }
     /// Historical qualification adapter for the same typed loader.

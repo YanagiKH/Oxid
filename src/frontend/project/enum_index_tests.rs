@@ -143,7 +143,7 @@ fn enum_index_loader_preserves_global_limits_and_real_file_association() {
         fixture.0.join("main.ox").to_str().unwrap(),
         ProjectLimits::default()
     )
-    .is_err());
+    .is_ok());
 }
 
 #[test]

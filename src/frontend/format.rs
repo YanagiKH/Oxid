@@ -27,6 +27,7 @@ impl Limits {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FormatSyntax {
+    #[allow(dead_code)] // Historical policy remains available to internal controls.
     Closed,
     #[allow(dead_code)]
     Enabled,
@@ -104,7 +105,7 @@ fn format_with_limits(
     allocator: &mut Allocator,
     limits: Limits,
 ) -> Result<String, Vec<Diagnostic>> {
-    format_with_syntax(source, allocator, limits, FormatSyntax::Closed).0
+    format_with_syntax(source, allocator, limits, FormatSyntax::Enabled).0
 }
 
 #[cfg(test)]

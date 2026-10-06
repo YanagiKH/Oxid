@@ -1,7 +1,7 @@
 //! Private syntax/resource qualification, with all executable routes still closed.
 use super::*;
 use crate::frontend::{
-    declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
+    declaration_index::{collect_closed, IndexLimits, SourceOwner, WorkMeter},
     lexer,
     source::{SourceFileId, SourceMap, SourceView},
 };
@@ -98,7 +98,7 @@ fn enum_candidate_retains_declarations_match_paths_and_origins() {
     }
     let owner = SourceOwner::original(file, &program, SourceView::Single(file)).unwrap();
     let mut allocator = Allocator::default();
-    let error = collect_originals(
+    let error = collect_closed(
         owner,
         IndexLimits::default(),
         &WorkMeter::default(),
@@ -190,7 +190,7 @@ fn enum_candidate_refines_only_exact_unsupported_keywords_and_adjacent_arrow() {
 }
 
 #[test]
-fn enum_candidate_keeps_production_and_array_candidate_entrypoints_closed() {
+fn enum_candidate_keeps_legacy_and_array_parser_entrypoints_closed() {
     let sources = source("enum E{V} fn f()->(){E::V;match e{E::V=>{}}}");
     let file = sources.get(SourceFileId(0));
     for arrays in [
@@ -208,7 +208,7 @@ fn enum_candidate_keeps_production_and_array_candidate_entrypoints_closed() {
         )
         .is_err());
     }
-    assert!(crate::frontend::format::format_source(file).is_err());
+    assert!(crate::frontend::format::format_source(file).is_ok());
     let ordinary = source("use crate::f; fn f()->i32{return crate::f();}");
     let file = ordinary.get(SourceFileId(0));
     let mut allocator = Allocator::default();
