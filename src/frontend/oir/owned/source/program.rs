@@ -349,9 +349,11 @@ fn observe_private_pipeline(
 // authoritative budgets; no inherited verifier/runtime stack is modeled here.
 #[allow(dead_code)]
 struct EnumPipelineProgramCarriers {
-    request: resolve::EnumPipelineRequest,
+    // Publicly inaccessible selector forwards these by value/reference to the
+    // common body; price both roles without relying on tail-call elimination.
+    request: [resolve::EnumPipelineRequest; 2],
     execution_limits: [execute::Limits; 3],
-    typed: &'static typeck::TypedOwnedProgram<'static>,
+    typed: [&'static typeck::TypedOwnedProgram<'static>; 2],
     index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
     source_owner: crate::frontend::declaration_index::SourceOwner<'static>,
     source_view: crate::frontend::source::SourceView<'static>,

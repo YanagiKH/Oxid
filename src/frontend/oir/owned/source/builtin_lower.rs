@@ -24,6 +24,19 @@ fn bad(index: &DeclarationIndex<'_>) -> OwnedFailure {
     OwnedFailure::malformed(Malformed::Binding, index.sources().eof())
 }
 
+fn exact<T>(count: usize) -> Result<Vec<T>, OwnedFailure> {
+    let values = budget::reserve(count)?;
+    check_capacity(&values, count)?;
+    Ok(values)
+}
+
+pub(super) fn check_capacity<T>(values: &Vec<T>, count: usize) -> Result<(), OwnedFailure> {
+    if values.capacity() != count {
+        return Err(OwnedFailure::resource("builtin source capacity"));
+    }
+    Ok(())
+}
+
 /// Called only after the complete source output and invocation preflight. Each
 /// nonempty nested vector uses the same observed fallible reservation boundary
 /// as ordinary source lowering; empty lanes allocate nothing.
@@ -41,16 +54,16 @@ pub(super) fn function(index: &DeclarationIndex<'_>) -> Result<RawOwnedFunction,
         id,
         span,
         result: ValueTy::Owned(AggregateTy::Enum(enumeration)),
-        parameters: budget::reserve(1)?,
+        parameters: exact(1)?,
         locals: Vec::new(),
         places: Vec::new(),
-        owners: budget::reserve(1)?,
-        references: budget::reserve(1)?,
+        owners: exact(1)?,
+        references: exact(1)?,
         calls: Vec::new(),
         loans: Vec::new(),
         matches: Vec::new(),
         entry: BlockId(0),
-        blocks: budget::reserve(1)?,
+        blocks: exact(1)?,
     };
     budget::append(
         &mut raw.parameters,
@@ -82,7 +95,7 @@ pub(super) fn function(index: &DeclarationIndex<'_>) -> Result<RawOwnedFunction,
     let mut block = OwnedBlock {
         span,
         merge: None,
-        statements: budget::reserve(2)?,
+        statements: exact(2)?,
         terminator: Some(OwnedTerminator {
             kind: OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(0)),
             span,
@@ -140,11 +153,15 @@ struct Carriers {
     owner_rows: [OwnerDecl; 2],
     reference_rows: [ReferenceDecl; 2],
     parameters: [ParameterBinding; 2],
-    parameter_reserve: (Vec<ParameterBinding>, Result<Vec<ParameterBinding>, OwnedFailure>),
-    owner_reserve: (Vec<OwnerDecl>, Result<Vec<OwnerDecl>, OwnedFailure>),
-    reference_reserve: (Vec<ReferenceDecl>, Result<Vec<ReferenceDecl>, OwnedFailure>),
-    block_reserve: (Vec<OwnedBlock>, Result<Vec<OwnedBlock>, OwnedFailure>),
-    statement_reserve: (Vec<OwnedStatement>, Result<Vec<OwnedStatement>, OwnedFailure>),
+    // Existing reserve and the observed-capacity wrapper each retain their
+    // complete local/return role; no allocator slack is admitted silently.
+    parameter_reserve: [(Vec<ParameterBinding>, Result<Vec<ParameterBinding>, OwnedFailure>); 2],
+    owner_reserve: [(Vec<OwnerDecl>, Result<Vec<OwnerDecl>, OwnedFailure>); 2],
+    reference_reserve: [(Vec<ReferenceDecl>, Result<Vec<ReferenceDecl>, OwnedFailure>); 2],
+    block_reserve: [(Vec<OwnedBlock>, Result<Vec<OwnedBlock>, OwnedFailure>); 2],
+    statement_reserve: [(Vec<OwnedStatement>, Result<Vec<OwnedStatement>, OwnedFailure>); 2],
+    terminator: OwnedTerminator,
+    terminator_option: Option<OwnedTerminator>,
     aggregate: Result<AggregateSlot, DeclarationError>,
     referent: Result<BorrowedSlot, DeclarationError>,
     inventory: raw_budget::FunctionCounts,

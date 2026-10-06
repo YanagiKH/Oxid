@@ -216,6 +216,8 @@ struct BuiltinAssociationCarriers {
     anchor_lookup: Result<Span, Box<Diagnostic>>,
     enum_row: Option<&'static RawEnumDecl>,
     function_row: Option<&'static RawOwnedFunction>,
+    enum_row_return: Result<&'static RawEnumDecl, Box<Diagnostic>>,
+    function_row_return: Result<&'static RawOwnedFunction, Box<Diagnostic>>,
     set: BuiltinOrigins,
     iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
 }

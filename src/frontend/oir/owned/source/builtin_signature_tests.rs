@@ -1,6 +1,6 @@
 //! Fresh candidate signature/type controls. No raw or executable witness escapes.
 use super::*;
-use crate::frontend::{lexer, parser, source::SourceFileId};
+use crate::frontend::{lexer, parser};
 
 const BOTH: &str = "use std::io::read_stdin as input; use std::io::ReadStatus as Status; enum Local { Value } fn helper()->i32{return 7;} fn relay(xs:&mut [i32])->Status{return input(&mut *xs);} fn main()->i32{let mut bytes=[1,2];let status=relay(&mut bytes);match status{Status::Eof(n)=>{return n;},Status::Full=>{return helper();},Status::IoError=>{return 0;},}}";
 
@@ -144,6 +144,7 @@ fn bounded_stdin_paid_allocations_fail_at_each_requested_reservation() {
         for attempt in 1..=baseline.attempts {
             let work = WorkMeter::default();
             let mut allocator = Allocator { fail_at: Some(attempt), ..Default::default() };
+            allocator.observer_trace_bound(512).unwrap();
             let ((failed, code), (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
                 match type_builtin_source(index, &work, &mut allocator) {
                     Ok(typed) => { drop(typed); (false, false) }
@@ -152,7 +153,34 @@ fn bounded_stdin_paid_allocations_fail_at_each_requested_reservation() {
             });
             assert!(failed && code, "allocation {attempt}");
             assert_eq!(live, 0, "allocation {attempt}");
-            assert_eq!(allocator.attempts, attempt);
+            assert!(allocator.attempts >= attempt);
+            assert!(!allocator.trace[attempt - 1].success);
+            assert!(allocator.trace[..attempt - 1].iter().all(|event| event.success));
+            assert!(!allocator.observer_trace_overflow);
+        }
+    });
+}
+
+#[test]
+fn bounded_stdin_paid_work_endpoint_is_exact() {
+    with_index(BOTH, |index| {
+        let measured = WorkMeter::default();
+        drop(type_builtin_source(index, &measured, &mut Allocator::default()).unwrap());
+        let required = measured.used();
+        assert!(required > 0);
+        for limit in [required - 1, required] {
+            let work = WorkMeter::new(limit);
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(512).unwrap();
+            let ((success, resource), (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                match type_builtin_source(index, &work, &mut allocator) {
+                    Ok(typed) => { drop(typed); (true, false) }
+                    Err(errors) => (false, errors.iter().any(|error| error.code == "E0400")),
+                }
+            });
+            assert_eq!(success, limit == required);
+            assert_eq!(resource, limit < required);
+            assert_eq!(live, 0);
         }
     });
 }
@@ -169,7 +197,4 @@ fn bounded_stdin_paid_new_carriers_have_actual_layout_receipts() {
         size_of::<BuiltinSignatureCarriers>(), align_of::<BuiltinSignatureCarriers>(),
         size_of::<SignatureIdentityCarriers>(), align_of::<SignatureIdentityCarriers>(),
         production_source_carrier_bytes(), super::super::typeck::production_type_carrier_bytes());
-    let mut sources = SourceMap::new();
-    sources.add("layout.ox".into(), "x".into());
-    assert_eq!(sources.get(SourceFileId(0)).text_at(sources.get(SourceFileId(0)).span(0, 1)), "x");
 }

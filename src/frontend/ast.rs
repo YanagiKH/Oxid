@@ -420,17 +420,17 @@ impl Program {
         enum_syntax: &mut Option<Span>,
     ) -> bool {
         self.validate_spans_and_ids_counted_with_syntax(inspect, enum_syntax,
-            super::parser::StdImportPolicy::Closed, &mut None)
+            super::parser::StdImportPolicy::Closed, &mut false)
     }
     pub(super) fn validate_spans_and_ids_counted_with_syntax(
         &self,
         inspect: impl FnMut(Option<Span>) -> bool,
         enum_syntax: &mut Option<Span>,
         std_policy: super::parser::StdImportPolicy,
-        std_syntax: &mut Option<Span>,
+        std_syntax: &mut bool,
     ) -> bool {
         *enum_syntax = None;
-        *std_syntax = None;
+        *std_syntax = false;
         let inspect = std::cell::RefCell::new(inspect);
         let mut valid = |span| (inspect.borrow_mut())(Some(span));
         let visit = || (inspect.borrow_mut())(None);
@@ -459,6 +459,8 @@ impl Program {
                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
                 }
         };
+        let mut std_paths = 0usize;
+        let mut std_imports = 0usize;
         let mut path_end = 0;
         let mut previous_path: Option<Span> = None;
         for (index, path) in self.paths.iter().enumerate() {
@@ -468,8 +470,10 @@ impl Program {
             let length = usize::from(path.segment_len);
             project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
             if path.root == PathRoot::Std {
-                std_syntax.get_or_insert(path.span);
+                *std_syntax = true;
                 if !std_policy.enabled() { return false; }
+                let Some(next) = std_paths.checked_add(1) else { return false; };
+                std_paths = next;
             }
             if path.segment_start != path_end
                 || previous_path.is_some_and(|previous| {
@@ -538,6 +542,10 @@ impl Program {
             if !visit() {
                 return false;
             }
+            if self.paths.get(import.path.0).is_some_and(|path| path.root == PathRoot::Std) {
+                let Some(next) = std_imports.checked_add(1) else { return false; };
+                std_imports = next;
+            }
             if !self
                 .paths
                 .get(import.path.0)
@@ -549,6 +557,9 @@ impl Program {
                 return false;
             }
         }
+        // The private import inventory separately checks strict source order,
+        // so these equal cardinalities also exclude detached/reused std rows.
+        if std_paths != std_imports { return false; }
         let mut counts = [0usize; 5];
         for item in &self.items {
             if !visit() {

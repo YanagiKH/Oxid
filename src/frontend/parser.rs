@@ -1806,6 +1806,10 @@ mod enums;
 pub(super) use enums::SyntaxStorage;
 
 #[cfg(test)]
+#[path = "parser/builtin_tests.rs"]
+mod builtin_tests;
+
+#[cfg(test)]
 #[path = "parser/array_syntax_tests.rs"]
 mod array_syntax_tests;
 #[cfg(test)]

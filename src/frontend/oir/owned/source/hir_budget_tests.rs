@@ -120,6 +120,29 @@ fn production_entry_components() -> usize {
         + crate::frontend::oir::source::enum_facade_carrier_bytes()
 }
 
+#[test]
+fn bounded_stdin_hir_signature_suffix_prices_no_synthetic_body() {
+    let sources = sources("x");
+    let at = sources.get(SourceFileId(0)).span(0, 1);
+    let source = HirCounts { functions: 2, signatures: 2, ..HirCounts::default() };
+    let ordinary = HirPlan::calculate(source, at).unwrap();
+    let builtin = HirPlan::calculate(HirCounts { signatures: 3, parameters: 1, ..source }, at).unwrap();
+    assert_eq!(builtin.resolved - ordinary.resolved, size_of::<Signature>() + size_of::<ParameterTy>());
+    assert_eq!(builtin.typed, ordinary.typed);
+    assert_eq!(builtin.staging, ordinary.staging);
+    assert_eq!(builtin.typeck_scratch, ordinary.typeck_scratch);
+    assert_eq!(builtin.resolver_scratch - ordinary.resolver_scratch,
+        size_of::<Vec<ParameterTy>>() + resolve::builtin_signature_carrier_bytes() + size_of::<BuiltinPreflightCarriers>());
+    assert!(HirPlan::calculate(HirCounts { signatures: 4, ..source }, at).is_err());
+    let remaining = MAX_HIR_BYTES - builtin.total;
+    assert_eq!(builtin.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+    assert_eq!(builtin.with_dynamic(remaining + 1, at).unwrap_err().code, "E0400");
+    println!("BUILTIN_HIR_LAYOUT counts={}/{} plan={}/{} plan_return={}/{} builtin_preflight={}/{} candidate_preflight={}/{} ordinary_total={} builtin_total={}",
+        size_of::<HirCounts>(), align_of::<HirCounts>(), size_of::<HirPlan>(), align_of::<HirPlan>(),
+        size_of::<PlanReturnEnvelope>(), align_of::<PlanReturnEnvelope>(), size_of::<BuiltinPreflightCarriers>(), align_of::<BuiltinPreflightCarriers>(),
+        size_of::<CandidatePreflightCarriers>(), align_of::<CandidatePreflightCarriers>(), ordinary.total, builtin.total);
+}
+
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";
 
 #[test]

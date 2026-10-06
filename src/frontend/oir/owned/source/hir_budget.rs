@@ -97,6 +97,21 @@ struct PlanReturnEnvelope {
     preflight_return: Result<Option<HirPlan>, Box<Diagnostic>>,
     forwarded_preflight_return: Result<Option<HirPlan>, Box<Diagnostic>>,
 }
+/// The builtin-only count suffix has a checked import-anchor projection and
+/// checked fixed-bank additions, with no synthetic source function/body state.
+#[allow(dead_code)]
+struct BuiltinPreflightCarriers {
+    anchor: Span,
+    anchor_return: Result<Span, Box<Diagnostic>>,
+    work_return: Result<(), Box<Diagnostic>>,
+    increments: [Result<(), Box<Diagnostic>>; 2],
+}
+#[allow(dead_code)]
+struct CandidatePreflightCarriers {
+    extra: usize,
+    extra_return: Result<usize, Box<Diagnostic>>,
+    additions: [Result<usize, Box<Diagnostic>>; 3],
+}
 pub(super) struct CapacityReturnEnvelope {
     // new's Self construction, one caller ticket, reserve's by-value self and
     // check_observed's nested by-value self. The Result embeds its own payload.
@@ -220,6 +235,9 @@ fn admit(total: usize, extra: usize, limit: usize, at: Span) -> Result<usize, Bo
 }
 impl HirPlan {
     fn calculate(c: HirCounts, at: Span) -> Result<Self, Box<Diagnostic>> {
+        if c.signatures < c.functions || c.signatures - c.functions > 1 {
+            return Err(invalid(at));
+        }
         let mut resolved = 0;
         charge::<Record>(&mut resolved, c.records, at)?;
         charge::<Field>(&mut resolved, c.record_fields, at)?;
@@ -281,6 +299,11 @@ impl HirPlan {
             &mut resolver_scratch,
             mul(c.signatures.checked_sub(c.functions).ok_or_else(|| invalid(at))?,
                 resolve::builtin_signature_carrier_bytes(), at)?,
+            at,
+        )?;
+        charge::<BuiltinPreflightCarriers>(
+            &mut resolver_scratch,
+            c.signatures - c.functions,
             at,
         )?;
         // Pending local vector headers coexist with complete prepaid HIR rows.
@@ -684,6 +707,7 @@ fn preflight_hir(
         // Both full identity-check invocations are prepaid, including the
         // no-import private marker. Production no-import work is unaffected.
         let extra = mul(2, resolve::signature_identity_carrier_bytes(), at)?;
+        let extra = add(extra, size_of::<CandidatePreflightCarriers>(), at)?;
         #[cfg(test)]
         let extra = add(extra, super::program::builtin_program_carrier_bytes(), at)?;
         plan.fixed = add(plan.fixed, extra, at)?;

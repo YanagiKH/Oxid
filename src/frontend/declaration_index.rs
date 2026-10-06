@@ -8,6 +8,8 @@ mod sealed;
 mod source_owner;
 pub(super) use source_owner::SourceOwner;
 #[cfg(test)]
+mod builtin_tests;
+#[cfg(test)]
 mod enum_query_tests;
 #[cfg(test)]
 mod enum_tests;
@@ -325,7 +327,23 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // The nominal request and reverse-map validation result can coexist.
     + size_of::<Result<NominalId, Box<Diagnostic>>>()
     // The shared nominal helper borrows a handle rather than making a fifth copy.
-    + size_of::<&ItemPathRef>();
+    + size_of::<&ItemPathRef>()
+    // Added import/identity state is priced in full, even when build/query
+    // phases do not overlap. The admission local is separate from Tables.
+    + size_of::<BuiltinAdmission>()
+    + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
+    + size_of::<Result<Option<DeclarationHandle>, Box<Diagnostic>>>()
+    + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
+    + size_of::<Option<&ast::EnumDecl>>()
+    + size_of::<Option<&ast::EnumVariantSyntax>>()
+    // Target grouping now holds two complete root-bearing path views.
+    + size_of::<source_owner::QualifiedPathView<'static>>()
+    // Std walk report and checked source-order inventory cursor.
+    + size_of::<bool>()
+    + size_of::<Option<usize>>()
+    + size_of::<super::parser::StdImportPolicy>()
+    + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>()
+    + size_of::<[usize; 2]>();
 const _: () = {
     assert!(FIXED_SCRATCH <= 4096);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
@@ -1522,7 +1540,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         let id = match self.tables.project_handle(handle)? {
             DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
                 self.work.debit(19, at, "nominal display bytes")?;
-                return Ok(PreparedTypeName { names: [""; 32], count: 0, terminal: "ReadStatus",
+                return Ok(PreparedTypeName { names: [CompactSpan::default(); 32], sources: self.tables.sources, count: 0, terminal: "ReadStatus",
                     ordinal: self.tables.enums.len(), total: 19, original: false, is_enum: true, builtin: true });
             }
             DeclarationProjection::SourceOriginal(id) => id,
@@ -1530,7 +1548,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         };
         let original = self.tables.original(id)?;
         let terminal = self.tables.sources.text(original.name.span())?;
-        let mut names = [""; 32];
+        let mut names = [CompactSpan::default(); 32];
         let mut count = 0;
         let mut owner = original.owner;
         while owner != 0 {
@@ -1543,10 +1561,9 @@ impl<'i, 's> QuerySession<'i, 's> {
                 .modules
                 .get(owner as usize)
                 .ok_or_else(|| bad(at))?;
-            names[count] = self
-                .tables
-                .sources
-                .text(self.tables.original(module.original)?.name.span())?;
+            let name = self.tables.original(module.original)?.name;
+            self.tables.sources.text(name.span())?;
+            names[count] = name;
             count += 1;
             owner = module.parent;
         }
@@ -1556,7 +1573,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         for name in &names[..count] {
             total = total
                 .checked_add(2)
-                .and_then(|n| n.checked_add(name.len()))
+                .and_then(|n| n.checked_add(self.tables.sources.text(name.span()).expect("validated prepared name").len()))
                 .ok_or_else(|| overflow(at))?;
         }
         let original = self.tables.sources.flavor() == SyntaxFlavor::OriginalSingleFile;
@@ -1571,6 +1588,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         )?;
         Ok(PreparedTypeName {
             names,
+            sources: self.tables.sources,
             count,
             terminal,
             ordinal: match nominal {
@@ -1587,7 +1605,8 @@ impl<'i, 's> QuerySession<'i, 's> {
 
 #[derive(Debug)]
 pub(super) struct PreparedTypeName<'s> {
-    names: [&'s str; 32],
+    names: [CompactSpan; 32],
+    sources: SourceOwner<'s>,
     count: usize,
     terminal: &'s str,
     ordinal: usize,
@@ -1605,7 +1624,7 @@ impl fmt::Display for PreparedTypeName<'_> {
         if self.total <= 160 {
             f.write_str("crate")?;
             for name in self.names[..self.count].iter().rev() {
-                write!(f, "::{name}")?;
+                write!(f, "::{}", self.sources.text(name.span()).expect("validated prepared name"))?;
             }
             return write!(f, "::{}", self.terminal);
         }
@@ -1633,7 +1652,7 @@ impl fmt::Display for PreparedTypeName<'_> {
         write_piece("crate")?;
         for name in self.names[..self.count].iter().rev() {
             write_piece("::")?;
-            write_piece(name)?;
+            write_piece(self.sources.text(name.span()).expect("validated prepared name"))?;
         }
         if truncated {
             f.write_str("...")?;

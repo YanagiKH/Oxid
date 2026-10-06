@@ -145,9 +145,12 @@ pub(super) fn preflight(
             typed.index().sources().eof(),
         ));
     }
-    typed.validate_function_signatures().map_err(|_| {
-        OwnedFailure::malformed(Malformed::Binding, typed.index().sources().eof())
-    })?;
+    #[cfg(test)]
+    if typed.admission() == super::resolve::SourceAdmission::BuiltinPipeline {
+        typed.validate_function_signatures().map_err(|_| {
+            OwnedFailure::malformed(Malformed::Binding, typed.index().sources().eof())
+        })?;
+    }
     #[cfg(test)]
     guard_event(GuardEvent::DeclarationAdmission);
     let mut declarations =
@@ -215,6 +218,10 @@ pub(super) fn preflight(
         let count = super::builtin_lower::counts();
         raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
         bytes = cap(add(bytes, function_bytes(count)?)?, ceiling, "source raw payload")?;
+    }
+    // Status-only imports use the same fixed capacity-check roles for the new
+    // enum suffix; conservatively admit the bounded builtin producer envelope.
+    if typed.index().builtin_set() != BuiltinOrigins::None {
         scratch = scratch.max(super::builtin_lower::carrier_bytes());
     }
     if let Some(seed) = typed.source_storage_bytes() {

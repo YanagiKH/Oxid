@@ -229,7 +229,7 @@ fn collect<'s>(
         let file = sources.file(module)?;
         let mut failure = None;
         let mut enum_syntax = None;
-        let mut std_syntax = None;
+        let mut std_syntax = false;
         let valid = ast.validate_spans_and_ids_counted_with_syntax(
             |span| {
                 if let Err(error) = work.preflight(span.unwrap_or(at)) {
