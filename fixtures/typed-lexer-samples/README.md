@@ -54,6 +54,7 @@ keyword prefixes and input refusals. Receipts distinguish canonical comparison,
 Oxid reference execution and the same native ELF across all inputs.
 
 Native runs use an empty working directory and cleared environment after moving
-the copied source project away from its build-time location. This establishes
-execution without source lookup or tools on PATH; it is not a filesystem sandbox.
+the copied source project away from its build-time location. These runs succeed with an empty working directory, no PATH variable, and the
+original copied source path absent. Files and executables elsewhere remain
+accessible; filesystem and process activity were not traced.
 Compiler provider dispatch and Unicode support remain separate work.

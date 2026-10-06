@@ -29,9 +29,17 @@ class TranscriptTests(unittest.TestCase):
             decode(data, b' "')
 
     def test_domain_and_diagnostic_opener(self):
-        for source in (b"x" * 129, b"\xff"):
-            with self.assertRaises(ValueError):
-                decode(success(), source)
+        # This structurally valid tape passed the old decoder without the
+        # explicit source-domain guard; EOF/coverage alone do not reject it.
+        overlong = bytearray(b'OXL1' + bytes([0, 2, 0, 0]) + bytes(387))
+        overlong[8:10] = bytes([3, 47])
+        overlong[137:139] = bytes([0, 129])
+        overlong[266:268] = bytes([129, 129])
+        with self.assertRaises(ValueError):
+            decode(overlong, b"1" * 129)
+        high_bit_error = b'OXL1' + bytes([1, 0, 0, 2]) + bytes(387)
+        with self.assertRaises(ValueError):
+            decode(high_bit_error, b'"\xff')
         for tag in (1, 2):
             data = b'OXL1' + bytes([tag, 0, 0, 1]) + bytes(387)
             with self.assertRaises(ValueError):
