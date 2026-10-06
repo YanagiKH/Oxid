@@ -17,7 +17,7 @@ const CHILD: &str = concat!(
 const DRIVER_DENIED: &[u8] = b"private output process proof is not enabled\n";
 const DRIVER_OPTIONS: &[u8] = b"invalid private output process fixture options\n";
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Case {
     Abc,
     InvalidLast256,
@@ -125,6 +125,12 @@ fn candidate(case: Case) -> (SourceMap, RawOwnedProgram, hir::DefId) {
         span: s(11),
     }];
     main.blocks.truncate(1);
+    if matches!(case, Case::Projected) {
+        // The removed checksum loop alone initializes/uses these two scalar
+        // places. The retained record constructor, shared projected loan and
+        // status-consumption tail use only scalar locals and owned places.
+        main.places.clear();
+    }
     for arm in 0..3 {
         main.blocks.push(e::block(
             if arm == 0 {
@@ -157,7 +163,7 @@ fn candidate(case: Case) -> (SourceMap, RawOwnedProgram, hir::DefId) {
                     arm,
                     destination: (arm == 2).then_some(LocalId(base + 6)),
                 },
-                s(12),
+                s(11),
             ),
             f::instruction(OwnedInstruction::StorageEnd(subject), s(13)),
             f::instruction(OwnedInstruction::Discard(OwnerPlaceId(0)), s(14)),
@@ -399,7 +405,7 @@ fn builtin_output_process_candidates_require_the_ordinary_verifier() {
         Case::Status(-256),
     ] {
         let (sources, raw, _) = candidate(case);
-        verified::verify_owned(raw, &sources).unwrap();
+        verified::verify_owned(raw, &sources).unwrap_or_else(|error| panic!("{case:?}: {error:?}"));
     }
 }
 
