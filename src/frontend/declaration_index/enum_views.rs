@@ -90,11 +90,7 @@ impl<'a> VariantView<'a> {
     }
     pub fn name(&self) -> &'a str {
         match self.source_syntax() {
-            Some(syntax) => self
-                .index
-                .sources()
-                .text(syntax.name)
-                .expect("frozen source variant name"),
+            Some(syntax) => self.index.sources().frozen_text(syntax.name),
             None => BuiltinEnum::ReadStatus
                 .member_name(self.id.index)
                 .expect("checked builtin variant"),

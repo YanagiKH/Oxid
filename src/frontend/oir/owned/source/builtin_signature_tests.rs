@@ -308,6 +308,114 @@ fn bounded_stdin_paid_work_endpoint_is_exact() {
 }
 
 #[test]
+fn bounded_stdin_builtin_parameter_real_null_drops_prior_signatures() {
+    use crate::frontend::{
+        oir::owned::reviewer_origins as raw, project::budget::real_null_observer as null,
+    };
+    use std::{alloc::Layout, mem::size_of};
+
+    // Source-derived requests, not calibrated from a successful execution:
+    // Records(0), Signatures(2), main Parameters(0), builtin Parameters(1).
+    const TEXT: &str = "use std::io::read_stdin; fn main()->i32{return 0;}";
+    with_index(TEXT, |index| {
+        let expected_anchor = Span {
+            file: index.sources().eof().file,
+            start: 13,
+            end: 23,
+        };
+        assert_eq!(
+            index
+                .builtin_function_anchor(BuiltinFunction::ReadStdin)
+                .unwrap(),
+            expected_anchor
+        );
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(8).unwrap();
+        let trace_capacity = allocator.trace.capacity();
+        let target = null::Target {
+            attempt: 4,
+            kind: "paid HIR parameters",
+            slots: 1,
+            element_bytes: size_of::<ParameterTy>(),
+            layout: Layout::array::<ParameterTy>(1).unwrap(),
+        };
+        let action = |allocator: &mut Allocator| {
+            raw::integration_counted(|| {
+                super::super::reviewer_source::integration_measured(|| {
+                    match type_builtin_source(index, &work, allocator) {
+                        Ok(typed) => {
+                            drop(typed);
+                            (false, 0, None, None, None, false)
+                        }
+                        Err(errors) => (
+                            true,
+                            errors.len(),
+                            errors.first().map(|error| error.code),
+                            errors.first().map(|error| error.stage),
+                            errors.first().and_then(|error| error.primary),
+                            errors.iter().all(|error| {
+                                error.message == "affected HIR allocation failed"
+                                    && error.secondary.is_empty()
+                                    && error.notes.is_empty()
+                            }),
+                        ),
+                    }
+                })
+            })
+        };
+        let control_bytes = null::selection_carriers_bytes(&action);
+        let (((facts, stats), raw_calls), report) =
+            null::with_selected(&mut allocator, target, action).unwrap();
+        assert_eq!(
+            facts,
+            (
+                true,
+                1,
+                Some("E0400"),
+                Some("resolve"),
+                Some(expected_anchor),
+                true
+            )
+        );
+        assert_eq!(report.target, target);
+        assert!(report.selected && report.matched && report.fired);
+        assert_eq!(report.rejection, None);
+        assert_eq!(
+            report.actual,
+            Some(null::GlobalEvent {
+                operation: null::Operation::Alloc,
+                layout: target.layout,
+                new_size: None
+            })
+        );
+        assert_eq!(raw_calls, stats.0 + 1);
+        assert_eq!(stats.1, 0);
+        assert!(stats.0 > 0 && stats.2 > 0);
+        assert_eq!(allocator.fail_at, None);
+        assert_eq!(allocator.attempts, 4);
+        assert_eq!(allocator.trace.len(), 4);
+        assert_eq!(allocator.trace.capacity(), trace_capacity);
+        for (row, expected) in allocator.trace.iter().zip([
+            ("paid HIR records", 0, size_of::<Record>(), true),
+            ("paid HIR signatures", 2, size_of::<Signature>(), true),
+            ("paid HIR parameters", 0, size_of::<ParameterTy>(), true),
+            ("paid HIR parameters", 1, size_of::<ParameterTy>(), false),
+        ]) {
+            assert_eq!(
+                (row.kind, row.length, row.element_bytes, row.success),
+                expected
+            );
+        }
+        assert!(!allocator.observer_trace_overflow);
+        assert!(
+            !super::super::reviewer_source::integration_enabled() && !raw::integration_enabled()
+        );
+        println!("BUILTIN_PARAMETER_REAL_NULL attempt=4 slots=1 width={} layout={:?} controls={control_bytes} live={} peak={}", target.element_bytes, target.layout, stats.1, stats.2);
+    });
+}
+
+#[test]
 fn bounded_stdin_paid_new_carriers_have_actual_layout_receipts() {
     use std::mem::{align_of, size_of};
     assert_eq!(size_of::<SourceAdmission>(), 1);

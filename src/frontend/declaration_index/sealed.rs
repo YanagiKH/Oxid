@@ -1471,13 +1471,10 @@ impl<'s> DeclarationIndex<'s> {
     // Only checked view constructors use these narrow immutable projections.
     pub(super) fn frozen_enum_syntax(&self, id: EnumId) -> Option<&ast::EnumDecl> {
         self.tables.enums.get(id.0).map(|row| {
-            let owner = ModuleId(self.tables.originals[row.original as usize].owner as usize);
-            &self
-                .tables
-                .sources
-                .ast(owner)
-                .expect("frozen source association")
-                .enums[row.local_enum as usize]
+            self.tables.sources.frozen_enum(EnumAstKey {
+                file: SourceFileId(row.file as usize),
+                index: row.local_enum as usize,
+            })
         })
     }
     pub(super) fn frozen_enum_origin(&self, id: EnumId) -> DeclarationOrigin {
@@ -1490,11 +1487,7 @@ impl<'s> DeclarationIndex<'s> {
     pub(super) fn frozen_enum_name(&self, id: EnumId) -> &str {
         self.frozen_enum_syntax(id).map_or_else(
             || BuiltinEnum::ReadStatus.name(),
-            |syntax| {
-                self.sources()
-                    .text(syntax.name)
-                    .expect("frozen source enum name")
-            },
+            |syntax| self.tables.sources.frozen_text(syntax.name),
         )
     }
     pub(super) fn frozen_enum_anchor(&self, id: EnumId) -> Span {

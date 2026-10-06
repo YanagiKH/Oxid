@@ -137,7 +137,18 @@ fn builtin_source_aliases_trailing_ids_zero_capacity_vertical() {
         output.facts.source_seed_after
     );
     assert_eq!(output.facts.source_usage.analysis, output.facts.raw_usage);
-    assert_eq!(output.facts.raw_usage, output.facts.verified_usage);
+    // Raw inventory leaves validated layout summaries unset. Full verification
+    // adds the seven two-cell enum slots; the zero-length array adds no cells.
+    assert_eq!(output.facts.raw_usage.owner_cells, 0);
+    assert_eq!(output.facts.raw_usage.owner_layout_bytes, 0);
+    assert_eq!(
+        output.facts.verified_usage,
+        super::super::OwnershipUsage {
+            owner_cells: 14,
+            owner_layout_bytes: 56,
+            ..output.facts.raw_usage
+        }
+    );
     let module = output.llvm.unwrap().unwrap();
     assert!(module.contains("__oxid_read_stdin_byte"));
 }
@@ -245,5 +256,63 @@ fn builtin_source_association_independently_binds_import_anchors_and_suffix() {
             "E0500",
             "mutation {mutation}"
         );
+    }
+}
+
+const INPUT: &str = r#"
+use std::io::read_stdin as input;
+use std::io::ReadStatus as Status;
+fn receive(bytes: &mut [i32]) -> Status { return input(&mut *bytes); }
+fn main() -> i32 {
+    let mut bytes = [-7, -7, -7];
+    let status = receive(&mut bytes);
+    let sum = bytes[0] + bytes[1] + bytes[2];
+    match status {
+        Status::Eof(n) => { return n * 1000 + sum; },
+        Status::Full => { return 10000 + sum; },
+        Status::IoError => { return -10000 + sum; },
+    }
+}
+"#;
+
+/// Explicit subprocess-only source effect test. The ordinary test suite does
+/// not select it or read stdin. Only scalar facts and bounded module text cross
+/// the fresh source-owned continuation; compilation uses the real native API.
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn builtin_source_input_subprocess_child() {
+    if std::env::var("OXID_PRIVATE_SOURCE_STDIN").as_deref() != Ok("1") {
+        return;
+    }
+    let fixture = ProjectFixture::new(INPUT);
+    let project = fixture.load();
+    let output = program::run_builtin_source(
+        SourceOwner::project(&project),
+        resolve::EnumPipelineRequest {
+            emit_llvm: true,
+            ..resolve::EnumPipelineRequest::REFERENCE
+        },
+    )
+    .unwrap();
+    match output.facts.result {
+        Ok(Scalar::I32(value)) => println!("OXID_SOURCE_STDIN_RESULT={value}"),
+        other => panic!("unexpected source input result: {other:?}"),
+    }
+    assert_eq!(output.facts.source_usage.analysis, output.facts.raw_usage);
+    assert_eq!(
+        output.facts.source_seed_before,
+        output.facts.source_seed_after
+    );
+    let module = output.llvm.unwrap().unwrap();
+    if let Some(directory) = std::env::var_os("OXID_PRIVATE_SOURCE_NATIVE_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        assert!(directory.is_dir());
+        assert!(!directory.join("program.ll").exists());
+        assert!(!directory.join("program").exists());
+        std::fs::write(directory.join("main.ox"), INPUT).unwrap();
+        std::fs::write(directory.join("program.ll"), &module).unwrap();
+        crate::frontend::native::compile(&module, directory.join("program").to_str().unwrap())
+            .unwrap();
+        println!("OXID_SOURCE_STDIN_NATIVE_READY=1");
     }
 }

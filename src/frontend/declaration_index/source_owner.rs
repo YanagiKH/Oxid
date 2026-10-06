@@ -137,9 +137,23 @@ impl<'s> SourceOwner<'s> {
     /// Preparation already checked file membership and UTF-8 boundaries. Keep
     /// safe source access, without constructing a fallible diagnostic transport.
     pub(super) fn prepared_text(&self, name: CompactSpan) -> &'s str {
+        self.frozen_text(name.span())
+    }
+    /// Frozen view constructors already validated this exact row key and source
+    /// association. Safe projections retain bounds/file checks without minting
+    /// a new boxed-error return inside each infallible getter.
+    pub(super) fn frozen_enum(&self, key: EnumAstKey) -> &'s ast::EnumDecl {
         match &self.kind {
-            Kind::Original { file, .. } => file.text_at(name.span()),
-            Kind::Project(project) => project.sources().text(name.span()),
+            Kind::Original { ast, .. } => &ast.enums[key.index],
+            Kind::Project(project) => project.try_enum(key).expect("frozen enum association"),
+        }
+    }
+    /// Internal projection of a span already checked against this immutable
+    /// owner. This accepts no spelling as declaration or execution authority.
+    pub(super) fn frozen_text(&self, span: Span) -> &'s str {
+        match &self.kind {
+            Kind::Original { file, .. } => file.text_at(span),
+            Kind::Project(project) => project.sources().text(span),
         }
     }
     pub fn view(self) -> SourceView<'s> {
