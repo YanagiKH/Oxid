@@ -2,6 +2,61 @@
 //! associations, including descendants of the outer declaration_index module.
 use super::*;
 
+/// Constructor and anchor updates remain in this sealed module. No mutable
+/// set is retained alongside the anchors: dependency closure follows the state.
+#[derive(Debug)]
+pub(super) struct BuiltinAdmission { state: BuiltinAdmissionState }
+#[derive(Debug)]
+enum BuiltinAdmissionState {
+    None,
+    ReadStatus(CompactSpan),
+    ReadStdin { status: CompactSpan, function: CompactSpan },
+}
+impl BuiltinAdmission {
+    fn none() -> Self { Self { state: BuiltinAdmissionState::None } }
+    pub(super) fn set(&self) -> BuiltinSet {
+        match self.state { BuiltinAdmissionState::None => BuiltinSet::None, BuiltinAdmissionState::ReadStatus(_) => BuiltinSet::ReadStatus, BuiltinAdmissionState::ReadStdin { .. } => BuiltinSet::ReadStdin }
+    }
+    fn admit(&mut self, item: BuiltinItem, anchor: CompactSpan) {
+        // Inventory is module preorder, then source order. First anchors are minima.
+        match (&mut self.state, item) {
+            (BuiltinAdmissionState::None, BuiltinItem::Enum(_)) => self.state = BuiltinAdmissionState::ReadStatus(anchor),
+            (BuiltinAdmissionState::None, BuiltinItem::Function(_)) => self.state = BuiltinAdmissionState::ReadStdin { status: anchor, function: anchor },
+            (BuiltinAdmissionState::ReadStatus(status), BuiltinItem::Function(_)) => self.state = BuiltinAdmissionState::ReadStdin { status: *status, function: anchor },
+            _ => {},
+        }
+    }
+    pub(super) fn enum_anchor(&self) -> Option<Span> {
+        match self.state { BuiltinAdmissionState::None => None, BuiltinAdmissionState::ReadStatus(at) | BuiltinAdmissionState::ReadStdin { status: at, .. } => Some(at.span()) }
+    }
+    pub(super) fn function_anchor(&self) -> Option<Span> {
+        match self.state { BuiltinAdmissionState::ReadStdin { function, .. } => Some(function.span()), _ => None }
+    }
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CandidateOrigin { Current, Enum(CompactSpan), Builtin(CompactSpan) }
+impl CandidateOrigin {
+    pub(super) fn span(self) -> Option<Span> {
+        match self { Self::Current => None, Self::Enum(at) | Self::Builtin(at) => Some(at.span()) }
+    }
+    pub(super) fn is_builtin(self) -> bool { matches!(self, Self::Builtin(_)) }
+}
+
+fn builtin_endpoint(sources: SourceOwner<'_>, path: QualifiedPathRef, work: &WorkMeter) -> Result<BuiltinItem, Box<Diagnostic>> {
+    let view = sources.import_path(path)?;
+    let segments = view.segments();
+    let at = view.span();
+    if view.root() != ast::PathRoot::Std || segments.len() != 3
+        || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal {
+        return Err(diagnostic("E0205", "resolve", "unsupported standard library import", at));
+    }
+    let endpoint = sources.text(segments[2])?;
+    for item in [BuiltinItem::Enum(BuiltinEnum::ReadStatus), BuiltinItem::Function(BuiltinFunction::ReadStdin)] {
+        if compare_bytes(endpoint, item.name(), work, segments[2])? == Ordering::Equal { return Ok(item); }
+    }
+    Err(diagnostic("E0205", "resolve", "unsupported standard library import", segments[2]))
+}
+
 #[derive(Debug)]
 pub(in crate::frontend) struct DeclarationFacts<'s> {
     tables: Tables<'s>,
@@ -53,13 +108,28 @@ pub(in crate::frontend) fn collect_enum_candidate<'s>(
         CollectionSyntax::EnumCandidate,
     )
 }
+#[cfg(test)]
+pub(in crate::frontend) fn collect_builtin_candidate<'s>(
+    sources: SourceOwner<'s>, limits: IndexLimits, work: &WorkMeter, allocator: &mut Allocator,
+) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+    collect(sources, limits, work, allocator, CollectionSyntax::BuiltinCandidate)
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CollectionSyntax {
+    #[cfg(test)]
+    BuiltinCandidate,
     Closed,
     #[allow(dead_code)]
     Enabled,
     #[cfg(test)]
     EnumCandidate,
+}
+impl CollectionSyntax {
+    fn std_policy(self) -> super::super::parser::StdImportPolicy {
+        #[cfg(test)]
+        if self == Self::BuiltinCandidate { return super::super::parser::StdImportPolicy::Candidate; }
+        super::super::parser::StdImportPolicy::Closed
+    }
 }
 fn collect<'s>(
     sources: SourceOwner<'s>,
@@ -97,7 +167,26 @@ fn collect<'s>(
     };
     let record_usage = super::super::oir::owned_types::admit_declaration_counts(fields)
         .map_err(|_| declaration_limit())?;
-    if syntax != CollectionSyntax::Closed && has_enums {
+    let mut builtins = BuiltinAdmission::none();
+    if syntax.std_policy().enabled() {
+        for module in 0..sources.count() {
+            work.preflight(at)?;
+            let ast = sources.ast(ModuleId(module))?;
+            let mut previous = None;
+            for import in &ast.imports {
+                work.preflight(import.span)?;
+                let path = QualifiedPathRef { file: import.span.file, path: import.path };
+                let view = sources.import_path(path)?;
+                if view.root() != ast::PathRoot::Std { continue; }
+                let endpoint = *view.segments().last().ok_or_else(|| bad(at))?;
+                if previous.is_some_and(|offset| endpoint.start <= offset) { return Err(bad(endpoint)); }
+                previous = Some(endpoint.start);
+                let item = builtin_endpoint(sources, path, work)?;
+                builtins.admit(item, CompactSpan::new(endpoint)?);
+            }
+        }
+    }
+    if syntax != CollectionSyntax::Closed && (has_enums || builtins.set().extra_enums() != 0) {
         let mut remaining = 0usize;
         for module in 0..sources.count() {
             work.preflight(at)?;
@@ -114,14 +203,18 @@ fn collect<'s>(
                 sources,
                 module: 0,
                 local: 0,
-                remaining,
+                remaining: remaining.checked_add(builtins.set().extra_enums()).ok_or_else(|| overflow(at))?,
             },
             record_usage,
         )
         .map_err(|_| declaration_limit())?;
     }
     #[allow(unused_mut)]
-    let mut candidate_source_origin = None;
+    let mut candidate_source_origin = CandidateOrigin::Current;
+    #[cfg(test)]
+    if syntax == CollectionSyntax::BuiltinCandidate {
+        candidate_source_origin = CandidateOrigin::Builtin(CompactSpan::new(at)?);
+    }
     let mut c = Counts {
         modules: u64::try_from(sources.count()).map_err(|_| overflow(at))?,
         ..Counts::default()
@@ -136,7 +229,8 @@ fn collect<'s>(
         let file = sources.file(module)?;
         let mut failure = None;
         let mut enum_syntax = None;
-        let valid = ast.validate_spans_and_ids_counted_with_enum_syntax(
+        let mut std_syntax = None;
+        let valid = ast.validate_spans_and_ids_counted_with_syntax(
             |span| {
                 if let Err(error) = work.preflight(span.unwrap_or(at)) {
                     failure = Some(error);
@@ -147,6 +241,8 @@ fn collect<'s>(
                 })
             },
             &mut enum_syntax,
+            syntax.std_policy(),
+            &mut std_syntax,
         );
         if let Some(error) = failure {
             return Err(error);
@@ -164,8 +260,8 @@ fn collect<'s>(
                 ));
             }
             #[cfg(test)]
-            if syntax == CollectionSyntax::EnumCandidate && candidate_source_origin.is_none() {
-                candidate_source_origin = Some(CompactSpan::new(span)?);
+            if syntax == CollectionSyntax::EnumCandidate && candidate_source_origin.span().is_none() {
+                candidate_source_origin = CandidateOrigin::Enum(CompactSpan::new(span)?);
             }
         }
         if sources.is_original_adapter() && ast.uses_project_syntax() {
@@ -217,10 +313,10 @@ fn collect<'s>(
         for import in &ast.imports {
             work.preflight(import.alias)?;
             c.alias_bytes = add(c.alias_bytes, sources.text(import.alias)?.len() as u64, at)?;
-            for segment in sources.segments(ItemPathRef {
+            for segment in sources.import_path(QualifiedPathRef {
                 file: import.span.file,
-                path: ast::ItemPath::Absolute(import.path),
-            })? {
+                path: import.path,
+            })?.segments() {
                 work.preflight(*segment)?;
                 c.path_weight = add(
                     c.path_weight,
@@ -248,6 +344,12 @@ fn collect<'s>(
         if count >= u64::from(BUILTIN_CONFLICT) {
             return Err(bad(at));
         }
+    }
+    // Suffix identities never consume sentinel values, and totals narrow before allocation.
+    for (prefix, extra) in [(c.originals, 2 * builtins.set().extra_enums()),
+        (c.functions, builtins.set().extra_functions()), (c.enums, builtins.set().extra_enums())] {
+        let total = prefix.checked_add(extra as u64).ok_or_else(|| overflow(at))?;
+        if total >= u64::from(BUILTIN_CONFLICT) { return Err(bad(at)); }
     }
     let plan = IndexPlan::calculate(
         c,
@@ -364,6 +466,7 @@ fn collect<'s>(
         )?,
         root_main: NONE,
         candidate_source_origin,
+        builtins,
     };
     let mut scratch = Scratch {
         merge: allocate(
@@ -780,9 +883,11 @@ impl<'s> DeclarationFacts<'s> {
     pub fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_current_source_pipeline()
     }
-    pub fn enum_count(&self) -> usize {
-        self.tables.enums.len()
-    }
+    pub fn enum_count(&self) -> usize { self.source_enum_count() + self.builtin_set().extra_enums() }
+    pub fn source_enum_count(&self) -> usize { self.tables.enums.len() }
+    pub fn builtin_set(&self) -> BuiltinSet { self.tables.builtins.set() }
+    pub fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> { self.tables.require_builtin_candidate_pipeline() }
+    pub fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> { self.tables.require_no_builtin_candidate() }
     pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
         enumeration(&self.tables, id)
     }
@@ -795,9 +900,8 @@ impl<'s> DeclarationFacts<'s> {
     pub fn original_count(&self) -> usize {
         self.tables.originals.len()
     }
-    pub fn function_count(&self) -> usize {
-        self.tables.functions.len()
-    }
+    pub fn function_count(&self) -> usize { self.source_function_count() + self.builtin_set().extra_functions() }
+    pub fn source_function_count(&self) -> usize { self.tables.functions.len() }
     pub fn record_count(&self) -> usize {
         self.tables.records.len()
     }
@@ -972,12 +1076,12 @@ impl<'s> CleanOriginals<'s> {
                     // occurs between the paired alias/seen writes.
                     let cell = &mut tables.aliases[txn.alias];
                     let seen = &mut scratch.seen[txn.seen];
-                    if txn.ty != NONE {
+                    if txn.ty != NO_DECLARATION {
                         cell.type_target = txn.ty;
                         cell.type_first_import = txn.import;
                         seen.type_first_import = txn.import;
                     }
-                    if txn.value != NONE {
+                    if txn.value != NO_DECLARATION {
                         cell.value_target = txn.value;
                         cell.value_first_import = txn.import;
                         seen.value_first_import = txn.import;
@@ -1032,25 +1136,18 @@ fn stage_import(
     let at = import.alias;
     let requester = ModuleId(row.module as usize);
     work.debit(1, at, "import transaction")?;
-    let (ty, value) = tables.absolute_endpoint(
-        requester,
-        ItemPathRef {
-            file: SourceFileId(row.file as usize),
-            path: ast::ItemPath::Absolute(import.path),
-        },
-        work,
-        true,
-    )?;
-    let endpoint = *tables
-        .sources
-        .segments(ItemPathRef {
-            file: import.span.file,
-            path: ast::ItemPath::Absolute(import.path),
-        })?
-        .last()
-        .ok_or_else(|| bad(at))?;
+    let path = QualifiedPathRef { file: SourceFileId(row.file as usize), path: import.path };
+    let view = tables.sources.import_path(path)?;
+    let endpoint = *view.segments().last().ok_or_else(|| bad(at))?;
+    let (ty, value) = if view.root() == ast::PathRoot::Std {
+        let item = builtin_endpoint(tables.sources, path, work)?;
+        let handle = tables.builtin_handle(item)?;
+        match item { BuiltinItem::Enum(_) => (Some(handle), None), BuiltinItem::Function(_) => (None, Some(handle)) }
+    } else {
+        tables.absolute_endpoint(requester, ItemPathRef { file: path.file, path: ast::ItemPath::Absolute(path.path) }, work, true)?
+    };
     for target in [ty, value].into_iter().flatten() {
-        tables.access_original(target, requester, work, endpoint)?;
+        tables.access_handle(target, requester, work, endpoint)?;
     }
     let seen = seen.get(row.target_group as usize).ok_or_else(|| bad(at))?;
     for (target, previous) in [
@@ -1098,8 +1195,8 @@ fn stage_import(
         alias: row.alias_group as usize,
         seen: row.target_group as usize,
         import: id,
-        ty: ty.unwrap_or(NONE),
-        value: value.map_or(NONE, |id| tables.originals[id as usize].target),
+        ty: ty.unwrap_or(NO_DECLARATION),
+        value: value.unwrap_or(NO_DECLARATION),
     })
 }
 
@@ -1186,11 +1283,60 @@ impl<'s> DeclarationIndex<'s> {
     pub fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_current_source_pipeline()
     }
-    pub fn enum_count(&self) -> usize {
-        self.tables.enums.len()
-    }
+    pub fn enum_count(&self) -> usize { self.source_enum_count() + self.builtin_set().extra_enums() }
+    pub fn source_enum_count(&self) -> usize { self.tables.enums.len() }
+    pub fn builtin_set(&self) -> BuiltinSet { self.tables.builtins.set() }
+    pub fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> { self.tables.require_builtin_candidate_pipeline() }
+    pub fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> { self.tables.require_no_builtin_candidate() }
     pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
         enumeration(&self.tables, id)
+    }
+    pub fn builtin_enum_id(&self, item: BuiltinEnum) -> Result<EnumId, Box<Diagnostic>> {
+        self.tables.builtin_handle(BuiltinItem::Enum(item))?;
+        Ok(EnumId(self.source_enum_count()))
+    }
+    pub fn builtin_function_id(&self, item: BuiltinFunction) -> Result<DefId, Box<Diagnostic>> {
+        self.tables.builtin_handle(BuiltinItem::Function(item))?;
+        Ok(DefId(self.source_function_count()))
+    }
+    pub fn builtin_enum_anchor(&self, item: BuiltinEnum) -> Result<Span, Box<Diagnostic>> {
+        self.builtin_enum_id(item)?;
+        self.tables.builtins.enum_anchor().ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn builtin_function_anchor(&self, item: BuiltinFunction) -> Result<Span, Box<Diagnostic>> {
+        self.builtin_function_id(item)?;
+        self.tables.builtins.function_anchor().ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn enum_origin(&self, id: EnumId) -> Result<DeclarationOrigin, Box<Diagnostic>> {
+        if id.0 < self.source_enum_count() { self.enumeration(id)?; return Ok(DeclarationOrigin::Source); }
+        if self.builtin_enum_id(BuiltinEnum::ReadStatus)? != id { return Err(bad(self.sources().eof())); }
+        Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus)))
+    }
+    pub fn function_origin(&self, id: DefId) -> Result<DeclarationOrigin, Box<Diagnostic>> {
+        if id.0 < self.source_function_count() { self.function(id)?; return Ok(DeclarationOrigin::Source); }
+        if self.builtin_function_id(BuiltinFunction::ReadStdin)? != id { return Err(bad(self.sources().eof())); }
+        Ok(DeclarationOrigin::Builtin(BuiltinItem::Function(BuiltinFunction::ReadStdin)))
+    }
+    // Only checked view constructors use these narrow immutable projections.
+    pub(super) fn frozen_enum_syntax(&self, id: EnumId) -> Option<&ast::EnumDecl> {
+        self.tables.enums.get(id.0).map(|row| {
+            let owner = ModuleId(self.tables.originals[row.original as usize].owner as usize);
+            &self.tables.sources.ast(owner).expect("frozen source association").enums[row.local_enum as usize]
+        })
+    }
+    pub(super) fn frozen_enum_origin(&self, id: EnumId) -> DeclarationOrigin {
+        if id.0 < self.source_enum_count() { DeclarationOrigin::Source }
+        else { DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus)) }
+    }
+    pub(super) fn frozen_enum_name(&self, id: EnumId) -> &str {
+        self.frozen_enum_syntax(id).map_or_else(|| BuiltinEnum::ReadStatus.name(),
+            |syntax| self.sources().text(syntax.name).expect("frozen source enum name"))
+    }
+    pub(super) fn frozen_enum_anchor(&self, id: EnumId) -> Span {
+        self.frozen_enum_syntax(id).map_or_else(|| self.tables.builtins.enum_anchor().expect("checked builtin enum"), |syntax| syntax.name)
+    }
+    pub(super) fn frozen_variant_count(&self, id: EnumId) -> usize {
+        self.tables.enums.get(id.0).map_or(3, |row| row.variant_len as usize)
     }
     pub fn enum_for(&self, key: EnumAstKey) -> Result<EnumId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
@@ -1208,9 +1354,7 @@ impl<'s> DeclarationIndex<'s> {
         EnumView::from_index(self, id)
     }
     pub fn enum_variant_counts(&self) -> EnumVariantCounts<'_> {
-        EnumVariantCounts {
-            rows: self.tables.enums.iter(),
-        }
+        EnumVariantCounts { index: self, next: 0 }
     }
     /// The historical observation shape cannot represent enum rows.
     #[cfg(test)]
@@ -1251,9 +1395,8 @@ impl<'s> DeclarationIndex<'s> {
     pub fn sources(&self) -> SourceOwner<'s> {
         self.tables.sources
     }
-    pub fn function_count(&self) -> usize {
-        self.tables.functions.len()
-    }
+    pub fn function_count(&self) -> usize { self.source_function_count() + self.builtin_set().extra_functions() }
+    pub fn source_function_count(&self) -> usize { self.tables.functions.len() }
     pub fn record_count(&self) -> usize {
         self.tables.records.len()
     }
@@ -1344,6 +1487,7 @@ impl Iterator for EnumSourceCounts<'_> {
             self.module += 1;
             self.local = 0;
         }
+        if self.remaining == 1 { self.remaining = 0; return Some(3); }
         None
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1381,13 +1525,13 @@ fn observe_import(
             AliasObservation {
                 module: ModuleId(r.module as usize),
                 alias: tables.import(i as u32).expect("checked alias").alias,
-                ty: (c.type_target != NONE).then(|| {
+                ty: (c.type_target != NO_DECLARATION).then(|| {
                     tables
-                        .nominal_original(c.type_target)
+                        .nominal_handle(c.type_target)
                         .expect("checked alias type")
                         .legacy_record()
                 }),
-                value: (c.value_target != NONE).then_some(DefId(c.value_target as usize)),
+                value: (c.value_target != NO_DECLARATION).then(|| tables.function_handle(c.value_target).expect("checked alias function")),
                 type_first: (c.type_first_import != NONE).then_some(c.type_first_import as usize),
                 value_first: (c.value_first_import != NONE)
                     .then_some(c.value_first_import as usize),
@@ -1417,12 +1561,12 @@ fn observe_import(
         committed,
         ty: (committed && cell.type_first_import == id as u32).then(|| {
             tables
-                .nominal_original(cell.type_target)
+                .nominal_handle(cell.type_target)
                 .expect("checked import type")
                 .legacy_record()
         }),
         value: (committed && cell.value_first_import == id as u32)
-            .then_some(DefId(cell.value_target as usize)),
+            .then(|| tables.function_handle(cell.value_target).expect("checked import function")),
         aliases,
         seen,
     });
@@ -1452,12 +1596,12 @@ fn observe_nominal_import(
             NominalAliasObservation {
                 module: ModuleId(r.module as usize),
                 alias: tables.import(i as u32).expect("checked alias").alias,
-                ty: (c.type_target != NONE).then(|| {
+                ty: (c.type_target != NO_DECLARATION).then(|| {
                     tables
-                        .nominal_original(c.type_target)
+                        .nominal_handle(c.type_target)
                         .expect("checked alias type")
                 }),
-                value: (c.value_target != NONE).then_some(DefId(c.value_target as usize)),
+                value: (c.value_target != NO_DECLARATION).then(|| tables.function_handle(c.value_target).expect("checked alias function")),
                 type_first: (c.type_first_import != NONE).then_some(c.type_first_import as usize),
                 value_first: (c.value_first_import != NONE)
                     .then_some(c.value_first_import as usize),
@@ -1487,11 +1631,11 @@ fn observe_nominal_import(
         committed,
         ty: (committed && cell.type_first_import == id as u32).then(|| {
             tables
-                .nominal_original(cell.type_target)
+                .nominal_handle(cell.type_target)
                 .expect("checked import type")
         }),
         value: (committed && cell.value_first_import == id as u32)
-            .then_some(DefId(cell.value_target as usize)),
+            .then(|| tables.function_handle(cell.value_target).expect("checked import function")),
         aliases,
         seen,
     });

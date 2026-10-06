@@ -528,6 +528,7 @@ fn parser_for<'a>(
         mode,
         arrays: ArraySyntaxPolicy::Enabled,
         enums: EnumSyntaxPolicy::Candidate,
+        std_imports: StdImportPolicy::Closed,
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         tokens: lexer::lex(file).unwrap(),

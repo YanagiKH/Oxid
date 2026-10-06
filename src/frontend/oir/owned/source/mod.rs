@@ -1,6 +1,7 @@
 //! Owned-source producer. The raw verifier alone certifies ownership.
 mod association;
 mod budget;
+mod builtin_lower;
 pub(super) mod hir;
 mod hir_budget;
 pub(super) mod lower;
@@ -53,3 +54,5 @@ mod projected_slice_raw_tests;
 
 #[cfg(test)]
 mod enum_native_source_tests;
+#[cfg(test)]
+mod builtin_source_tests;

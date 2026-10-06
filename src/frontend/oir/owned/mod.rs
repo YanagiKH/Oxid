@@ -38,14 +38,7 @@ struct MatchArm {
     dispatch: BlockId,
     entry: BlockId,
 }
-/// Closed origin claims, not execution authority. Raw admission requires the
-/// canonical descriptor plus full ordinary proof; source association stays closed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BuiltinOrigins {
-    None,
-    ReadStatus,
-    ReadStdin,
-}
+use crate::frontend::builtin_catalog::BuiltinSet as BuiltinOrigins;
 impl BuiltinOrigins {
     fn require_none(self) -> Result<(), OwnedFailure> {
         if self == Self::None {

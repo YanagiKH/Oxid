@@ -10,6 +10,7 @@ pub enum ItemPath {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PathRoot {
     Crate,
+    Std,
     LocalType,
 }
 #[derive(Clone, Copy, Debug)]
@@ -418,7 +419,18 @@ impl Program {
         inspect: impl FnMut(Option<Span>) -> bool,
         enum_syntax: &mut Option<Span>,
     ) -> bool {
+        self.validate_spans_and_ids_counted_with_syntax(inspect, enum_syntax,
+            super::parser::StdImportPolicy::Closed, &mut None)
+    }
+    pub(super) fn validate_spans_and_ids_counted_with_syntax(
+        &self,
+        inspect: impl FnMut(Option<Span>) -> bool,
+        enum_syntax: &mut Option<Span>,
+        std_policy: super::parser::StdImportPolicy,
+        std_syntax: &mut Option<Span>,
+    ) -> bool {
         *enum_syntax = None;
+        *std_syntax = None;
         let inspect = std::cell::RefCell::new(inspect);
         let mut valid = |span| (inspect.borrow_mut())(Some(span));
         let visit = || (inspect.borrow_mut())(None);
@@ -454,7 +466,11 @@ impl Program {
                 return false;
             }
             let length = usize::from(path.segment_len);
-            project_syntax |= path.root == PathRoot::Crate;
+            project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
+            if path.root == PathRoot::Std {
+                std_syntax.get_or_insert(path.span);
+                if !std_policy.enabled() { return false; }
+            }
             if path.segment_start != path_end
                 || previous_path.is_some_and(|previous| {
                     previous.file != path.span.file || previous.end > path.span.start
@@ -525,7 +541,8 @@ impl Program {
             if !self
                 .paths
                 .get(import.path.0)
-                .is_some_and(|path| path.root == PathRoot::Crate)
+                .is_some_and(|path| path.root == PathRoot::Crate
+                    || (std_policy.enabled() && path.root == PathRoot::Std))
                 || !valid(import.alias)
                 || !valid(import.span)
             {
@@ -727,7 +744,7 @@ impl Program {
                                         && visit()
                                         && self.paths.get(arm.variant.0).is_some_and(|path| {
                                             path.root == PathRoot::LocalType
-                                                || path.segment_len >= 3
+                                                || (path.root == PathRoot::Crate && path.segment_len >= 3)
                                         })
                                         && arm.binding.is_none_or(valid)
                                         && valid(arm.span)
@@ -802,7 +819,7 @@ impl Program {
                 ExprKind::QualifiedValue { path, args } => {
                     enum_syntax.get_or_insert(expression.span);
                     visit()
-                        && self.paths.get(path.0).is_some()
+                        && self.paths.get(path.0).is_some_and(|path| path.root != PathRoot::Std)
                         && args.as_ref().is_none_or(|args| {
                             args.len() <= super::parser::MAX_PARAMS
                                 && args.iter().all(|arg| {

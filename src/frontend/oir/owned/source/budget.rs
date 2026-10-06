@@ -145,6 +145,9 @@ pub(super) fn preflight(
             typed.index().sources().eof(),
         ));
     }
+    typed.validate_function_signatures().map_err(|_| {
+        OwnedFailure::malformed(Malformed::Binding, typed.index().sources().eof())
+    })?;
     #[cfg(test)]
     guard_event(GuardEvent::DeclarationAdmission);
     let mut declarations =
@@ -188,6 +191,11 @@ pub(super) fn preflight(
     let mut scratch = 0;
     let mut counts = raw_budget::ProgramCounts::default();
     raw_budget::account_enum_declarations(enums, raw_budget::Limits::DEFAULT, &mut counts)?;
+    raw_budget::account_builtin_descriptors(
+        typed.index().builtin_set(),
+        raw_budget::Limits::DEFAULT,
+        &mut counts,
+    )?;
     #[cfg(test)]
     guard_event(GuardEvent::FunctionIteration);
     for view in typed.functions() {
@@ -202,6 +210,12 @@ pub(super) fn preflight(
         )
         .map_err(|error| at(error, span))?;
         scratch = scratch.max(lower::scratch_bytes(&view, count)?);
+    }
+    if typed.index().builtin_set().extra_functions() != 0 {
+        let count = super::builtin_lower::counts();
+        raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+        bytes = cap(add(bytes, function_bytes(count)?)?, ceiling, "source raw payload")?;
+        scratch = scratch.max(super::builtin_lower::carrier_bytes());
     }
     if let Some(seed) = typed.source_storage_bytes() {
         admit_lower_scratch(seed, scratch)?;

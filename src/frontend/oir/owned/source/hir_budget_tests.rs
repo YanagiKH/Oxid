@@ -138,6 +138,7 @@ fn c3a_counts_complete_mixed_hir_without_heap_allocation_or_activation() {
                 record_fields: 2,
                 max_record_fields: 2,
                 functions: 2,
+                signatures: 2,
                 parameters: 1,
                 bindings: 3,
                 expressions: 6,
@@ -676,6 +677,7 @@ fn c3a_paid_branch_header_formula_keeps_old_and_new_buffers_separate() {
     // No source traversal, allocations or inferred consumer output is involved.
     let counts = HirCounts {
         functions: 2,
+        signatures: 2,
         blocks: 3,
         calls: 4,
         ..HirCounts::default()
@@ -804,6 +806,7 @@ fn c3_t0_new_surcharge_uses_the_existing_checked_capacity_boundary() {
     let plan = HirPlan::calculate(
         HirCounts {
             functions: 2,
+            signatures: 2,
             ..HirCounts::default()
         },
         at,
@@ -830,6 +833,7 @@ fn c3_t0_new_surcharge_uses_the_existing_checked_capacity_boundary() {
     assert!(HirPlan::calculate(
         HirCounts {
             functions: usize::MAX,
+            signatures: usize::MAX,
             ..HirCounts::default()
         },
         at
@@ -871,7 +875,7 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
         for which in 0..4 {
             let mut c = HirCounts::default();
             match which {
-                0 => c.functions = count,
+                0 => { c.functions = count; c.signatures = count; },
                 1 => c.blocks = count,
                 2 => c.calls = count,
                 _ => c.record_literals = count,
@@ -954,6 +958,7 @@ fn c3_t1_passive_checker_products_and_aggregate_cap_remain_checked() {
     let plan = HirPlan::calculate(
         HirCounts {
             functions: 2,
+            signatures: 2,
             blocks: 3,
             calls: 4,
             record_literals: 5,
@@ -976,6 +981,7 @@ fn c3_t1_passive_checker_products_and_aggregate_cap_remain_checked() {
     for c in [
         HirCounts {
             functions: usize::MAX,
+            signatures: usize::MAX,
             ..HirCounts::default()
         },
         HirCounts {
@@ -1071,6 +1077,7 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
         // Scalar resource arithmetic only, not a forged source/HIR witness.
         let c = HirCounts {
             functions: scale,
+            signatures: scale,
             blocks: 2 * scale,
             calls: 3 * scale,
             record_literals: 4 * scale,
@@ -1131,6 +1138,7 @@ fn c3_t1_observation_price_products_aggregation_and_shared_cap_are_checked() {
     let plan = HirPlan::calculate(
         HirCounts {
             functions: 2,
+            signatures: 2,
             calls: 3,
             record_literals: 4,
             ..HirCounts::default()

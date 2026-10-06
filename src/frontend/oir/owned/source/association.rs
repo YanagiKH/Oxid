@@ -40,6 +40,7 @@ fn function(
     function: &RawOwnedFunction,
     visitor: &mut Visitor<'_>,
     allow_enums: bool,
+    allow_input: bool,
 ) -> Result<(), Box<Diagnostic>> {
     if !allow_enums && !function.matches.is_empty() {
         return Err(bad());
@@ -81,7 +82,11 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
-                OwnedInstruction::ReadStdin { .. } => return Err(bad()),
+                OwnedInstruction::ReadStdin { .. } => {
+                    if !allow_input {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::ConstructEnum { payload, .. } => {
                     if !allow_enums {
                         return Err(bad());
@@ -171,7 +176,7 @@ pub(super) fn check(
     // Reuse the same provenance helper/result as fresh typing, after that
     // invocation has ended. Candidate-marked indices stay on the private seam.
     index.require_current_source_pipeline()?;
-    check_impl(raw, index, sources, index.enum_count() != 0)
+    check_impl(raw, index, sources, index.enum_count() != 0, false)
 }
 
 /// Private qualification also accepts intentionally candidate-marked indices.
@@ -181,7 +186,41 @@ pub(super) fn check_enum_candidate(
     index: &DeclarationIndex<'_>,
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    check_impl(raw, index, sources, true)
+    index.require_no_builtin_candidate()?;
+    check_impl(raw, index, sources, true, false)
+}
+
+/// Import-derived identity is checked separately from the raw descriptor proof.
+/// Only the new private source continuation may admit this suffix.
+#[cfg(test)]
+pub(super) fn check_builtin_candidate(
+    raw: &RawOwnedProgram,
+    index: &DeclarationIndex<'_>,
+    sources: &SourceMap,
+) -> Result<BindUsage, Box<Diagnostic>> {
+    index.require_builtin_candidate_pipeline()?;
+    check_impl(raw, index, sources, true, true)
+}
+
+// Only new builtin identity/anchor transports, not inherited Visitor internals.
+// The private caller pays this complete envelope before source lowering.
+#[allow(dead_code)]
+struct BuiltinAssociationCarriers {
+    ids_return: Result<builtins::BuiltinIds, OwnedFailure>,
+    normalized_ids: Result<builtins::BuiltinIds, Box<Diagnostic>>,
+    ids: builtins::BuiltinIds,
+    enum_id: EnumId,
+    function_id: hir::DefId,
+    enum_lookup: Result<EnumId, Box<Diagnostic>>,
+    function_lookup: Result<hir::DefId, Box<Diagnostic>>,
+    anchor_lookup: Result<Span, Box<Diagnostic>>,
+    enum_row: Option<&'static RawEnumDecl>,
+    function_row: Option<&'static RawOwnedFunction>,
+    set: BuiltinOrigins,
+    iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
+}
+pub(super) const fn builtin_carrier_bytes() -> usize {
+    std::mem::size_of::<BuiltinAssociationCarriers>()
 }
 
 fn check_impl(
@@ -189,8 +228,37 @@ fn check_impl(
     index: &DeclarationIndex<'_>,
     sources: &SourceMap,
     allow_enums: bool,
+    allow_builtins: bool,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    raw.builtins.require_none().map_err(|_| bad())?;
+    if allow_builtins {
+        if raw.builtins != index.builtin_set() {
+            return Err(bad());
+        }
+        let ids = builtins::check(raw).map_err(|_| bad())?;
+        if let Some(id) = ids.enumeration {
+            use crate::frontend::builtin_catalog::BuiltinEnum;
+            if id != index.builtin_enum_id(BuiltinEnum::ReadStatus).map_err(|_| bad())?
+                || raw.enums.get(id.0).ok_or_else(bad)?.span
+                    != index.builtin_enum_anchor(BuiltinEnum::ReadStatus).map_err(|_| bad())?
+            {
+                return Err(bad());
+            }
+        }
+        if let Some(id) = ids.function {
+            use crate::frontend::builtin_catalog::BuiltinFunction;
+            if id != index.builtin_function_id(BuiltinFunction::ReadStdin).map_err(|_| bad())?
+                || raw.functions.get(id.0).ok_or_else(bad)?.span
+                    != index.builtin_function_anchor(BuiltinFunction::ReadStdin).map_err(|_| bad())?
+            {
+                return Err(bad());
+            }
+        }
+    } else {
+        raw.builtins.require_none().map_err(|_| bad())?;
+        if index.builtin_set() != BuiltinOrigins::None {
+            return Err(bad());
+        }
+    }
     if !allow_enums && (!raw.enums.is_empty() || index.enum_count() != 0) {
         return Err(bad());
     }
@@ -201,8 +269,13 @@ fn check_impl(
     for declaration in &raw.records {
         record(declaration, &mut count)?;
     }
-    for declaration in &raw.functions {
-        function(declaration, &mut count, allow_enums)?;
+    for (ordinal, declaration) in raw.functions.iter().enumerate() {
+        function(
+            declaration,
+            &mut count,
+            allow_enums,
+            allow_builtins && ordinal == index.source_function_count(),
+        )?;
     }
     let mut visitor = Visitor::validate(sources);
     // The ordinary zero-enum path keeps its historical dimension/work count.
@@ -212,7 +285,7 @@ fn check_impl(
     for (ordinal, declaration) in raw.enums.iter().enumerate() {
         let id = EnumId(ordinal);
         let original = index.enum_view(id).map_err(|_| bad())?;
-        if declaration.id != id || declaration.span != original.name_span() {
+        if declaration.id != id || declaration.span != original.diagnostic_span() {
             return Err(bad());
         }
         visitor.dimension(declaration.variants.len(), original.variant_count())?;
@@ -223,7 +296,7 @@ fn check_impl(
             };
             let expected = original.variant(id).map_err(|_| bad())?;
             if variant.id != id
-                || variant.span != expected.name_span()
+                || variant.span != expected.diagnostic_span()
                 || variant.payload
                     != expected
                         .payload()
@@ -232,7 +305,7 @@ fn check_impl(
                 return Err(bad());
             }
         }
-        visitor.file(original.name_span().file);
+        visitor.file(original.diagnostic_span().file);
         enumeration(declaration, &mut visitor)?;
     }
     visitor.dimension(raw.records.len(), index.record_count())?;
@@ -264,6 +337,14 @@ fn check_impl(
     }
     for (ordinal, declaration) in raw.functions.iter().enumerate() {
         let id = hir::DefId(ordinal);
+        if ordinal >= index.source_function_count() {
+            if !allow_builtins || declaration.id != id {
+                return Err(bad());
+            }
+            visitor.file(declaration.span.file);
+            function(declaration, &mut visitor, allow_enums, true)?;
+            continue;
+        }
         let (key, module) = index.function(id).map_err(|_| bad())?;
         let ast = index.sources().ast(module).map_err(|_| bad())?;
         let original = ast.functions.get(key.index).ok_or_else(bad)?;
@@ -271,7 +352,7 @@ fn check_impl(
             return Err(bad());
         }
         visitor.file(original.name.file);
-        function(declaration, &mut visitor, allow_enums)?;
+        function(declaration, &mut visitor, allow_enums, false)?;
     }
     visitor.finish(count)
 }

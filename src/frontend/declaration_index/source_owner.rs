@@ -184,6 +184,13 @@ impl<'s> SourceOwner<'s> {
         // rescan full paths inside each prefix comparison or semantic lookup.
         Ok(view.segments)
     }
+    pub fn import_path(self, path: QualifiedPathRef) -> Result<QualifiedPathView<'s>, Box<Diagnostic>> {
+        let view = self.qualified_path(path)?;
+        if !matches!(view.root, ast::PathRoot::Crate | ast::PathRoot::Std) {
+            return Err(bad(self.eof()));
+        }
+        Ok(view)
+    }
     pub fn qualified_path(
         self,
         path: QualifiedPathRef,
@@ -207,6 +214,7 @@ impl<'s> SourceOwner<'s> {
             || first.start != row.span.start
             || last.end != row.span.end
             || (row.root == ast::PathRoot::Crate && self.text(*first)? != "crate")
+            || (row.root == ast::PathRoot::Std && self.text(*first)? != "std")
         {
             return Err(bad(self.eof()));
         }
@@ -225,6 +233,10 @@ impl<'s> SourceOwner<'s> {
             if !program.records.is_empty() || !program.enums.is_empty() {
                 owned = true;
                 continue;
+            }
+            for import in &program.imports {
+                work.preflight(import.span)?;
+                owned |= self.import_path(QualifiedPathRef { file: import.span.file, path: import.path })?.root() == ast::PathRoot::Std;
             }
             for function in &program.functions {
                 work.preflight(function.name)?;

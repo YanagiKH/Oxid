@@ -92,7 +92,7 @@ fn limits(c: HirCounts) -> [usize; KINDS] {
     [
         c.records,
         c.record_fields,
-        c.functions,
+        c.signatures,
         c.parameters,
         c.functions,
         c.bindings,
@@ -764,6 +764,8 @@ struct ProbeCarriers {
     attempts_after: usize,
     delta_option: Option<usize>,
     delta: usize,
+    provenance_return: Result<(), Box<Diagnostic>>,
+    provenance_normalized: Result<(), Vec<Diagnostic>>,
 }
 pub(super) const fn probe_carrier_bytes() -> usize {
     size_of::<ProbeCarriers>()

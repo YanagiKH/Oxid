@@ -582,7 +582,7 @@ fn enum_query_utf8_display_preserves_boundaries_without_source_identifiers() {
     // Direct formatter data, deliberately not a claim of Unicode source identifiers.
     let module = "é".repeat(100);
     let terminal = "λ".repeat(40);
-    let mut names = [""; 33];
+    let mut names = [""; 32];
     names[0] = module.as_str();
     let prepared = PreparedTypeName {
         names,
@@ -592,6 +592,7 @@ fn enum_query_utf8_display_preserves_boundaries_without_source_identifiers() {
         total: 7 + module.len() + 2 + terminal.len(),
         original: false,
         is_enum: true,
+        builtin: false,
     };
     let display = prepared.to_string();
     assert!(display.len() <= 160);
