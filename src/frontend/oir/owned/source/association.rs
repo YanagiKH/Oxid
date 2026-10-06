@@ -375,6 +375,191 @@ fn check_impl(
     visitor.finish(count)
 }
 
+/// RFC 0025 layout models only. None of these types constructs builtin IDs,
+/// performs source association, or supplies an executable witness.
+#[cfg(test)]
+#[allow(dead_code)]
+mod output_layout_feasibility {
+    use super::*;
+    use std::mem::{align_of, size_of};
+
+    // Preserve the actual singleton fields and their declaration order.
+    struct BaselineIds {
+        enumeration: Option<EnumId>,
+        function: Option<hir::DefId>,
+    }
+
+    // Each family is absent, status-only, or function plus required status.
+    // These nine states encode dependency closure, but prove no provenance.
+    enum Inventory {
+        None,
+        ReadStatus,
+        ReadStdin,
+        WriteStatus,
+        ReadStatusWriteStatus,
+        ReadStdinWriteStatus,
+        WriteStdout,
+        ReadStatusWriteStdout,
+        ReadStdinWriteStdout,
+    }
+    struct ExplicitIds {
+        read_enumeration: Option<EnumId>,
+        read_function: Option<hir::DefId>,
+        write_enumeration: Option<EnumId>,
+        write_function: Option<hir::DefId>,
+    }
+    // Independent enum/function suffix bases; Inventory determines which
+    // family exists and each family's rank within its own suffix. A future
+    // validator must prove bounds, canonical order and source association.
+    struct SuffixIds {
+        enumeration_base: EnumId,
+        function_base: hir::DefId,
+        inventory: Inventory,
+    }
+    enum Family {
+        Input,
+        Output,
+    }
+    enum Enumeration {
+        ReadStatus,
+        WriteStatus,
+    }
+    enum Function {
+        ReadStdin,
+        WriteStdout,
+    }
+
+    // Complete actual BuiltinAssociationCarriers, in actual declaration order.
+    // Only the test models substitute IDs/inventory and append named roles.
+    macro_rules! carriers {
+        ($name:ident, $ids:ty, $inventory:ty; $($extra:tt)*) => {
+            struct $name {
+                ids_return: Result<$ids, OwnedFailure>,
+                normalized_ids: Result<$ids, Box<Diagnostic>>,
+                ids: $ids,
+                enum_id: EnumId,
+                function_id: hir::DefId,
+                enum_lookup: Result<EnumId, Box<Diagnostic>>,
+                function_lookup: Result<hir::DefId, Box<Diagnostic>>,
+                anchor_lookup: Result<Span, Box<Diagnostic>>,
+                enum_row: Option<&'static RawEnumDecl>,
+                function_row: Option<&'static RawOwnedFunction>,
+                enum_row_return: Result<&'static RawEnumDecl, Box<Diagnostic>>,
+                function_row_return: Result<&'static RawOwnedFunction, Box<Diagnostic>>,
+                set: $inventory,
+                iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
+                $($extra)*
+            }
+        };
+    }
+    carriers!(BaselineCarriers, BaselineIds, BuiltinOrigins;);
+    carriers!(ExplicitSubstitutionCarriers, ExplicitIds, Inventory;);
+    carriers!(SuffixSubstitutionCarriers, SuffixIds, Inventory;);
+
+    // Price a concrete finite-family walk separately from ID substitution.
+    // All named roles coexist in this model; no padding or lifetime reuse is
+    // assumed. This does not assert that future control flow needs only these.
+    macro_rules! family_carriers {
+        ($name:ident, $ids:ty) => {
+            carriers!($name, $ids, Inventory;
+                family: Family,
+                enumeration: Enumeration,
+                function: Function,
+                enumeration_rank: Option<usize>,
+                function_rank: Option<usize>,
+                family_iteration: std::array::IntoIter<Family, 2>,
+                next_family: Option<Family>,
+            );
+        };
+    }
+    family_carriers!(ExplicitFamilyCarriers, ExplicitIds);
+    family_carriers!(SuffixFamilyCarriers, SuffixIds);
+
+    fn same_layout<T, U>() {
+        assert_eq!(size_of::<T>(), size_of::<U>());
+        assert_eq!(align_of::<T>(), align_of::<U>());
+    }
+    fn report<T>(name: &str) {
+        println!(
+            "OUTPUT_ASSOCIATION_LAYOUT {name} bytes={} align={}",
+            size_of::<T>(),
+            align_of::<T>()
+        );
+    }
+    fn candidate<T>(name: &str) {
+        println!(
+            "OUTPUT_ASSOCIATION_CANDIDATE {name} actual_carriers={} \
+             candidate_carriers={} delta={} admission=NOT_ESTABLISHED",
+            size_of::<BuiltinAssociationCarriers>(),
+            size_of::<T>(),
+            size_of::<T>() as i128 - size_of::<BuiltinAssociationCarriers>() as i128,
+        );
+    }
+
+    #[test]
+    fn bounded_stdout_association_disconnected_layout_feasibility() {
+        same_layout::<BaselineIds, builtins::BuiltinIds>();
+        same_layout::<BaselineCarriers, BuiltinAssociationCarriers>();
+        same_layout::<Result<BaselineIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
+        );
+        same_layout::<
+            Result<BaselineIds, Box<Diagnostic>>,
+            Result<builtins::BuiltinIds, Box<Diagnostic>>,
+        >();
+        assert_eq!(builtin_carrier_bytes(), size_of::<BaselineCarriers>());
+
+        macro_rules! layouts {
+            ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
+        }
+        macro_rules! id_transports {
+            ($ids:ty) => {
+                layouts!(
+                    $ids,
+                    Result<$ids, OwnedFailure>,
+                    Result<$ids, Box<Diagnostic>>,
+                );
+            };
+        }
+        layouts!(
+            EnumId,
+            hir::DefId,
+            Option<EnumId>,
+            Option<hir::DefId>,
+            OwnedFailure,
+            Box<Diagnostic>,
+            BuiltinOrigins,
+            Inventory,
+            Family,
+            Enumeration,
+            Function,
+            Option<usize>,
+            std::array::IntoIter<Family, 2>,
+            Option<Family>,
+            BuiltinAssociationCarriers,
+            BaselineCarriers,
+            ExplicitSubstitutionCarriers,
+            SuffixSubstitutionCarriers,
+            ExplicitFamilyCarriers,
+            SuffixFamilyCarriers,
+        );
+        id_transports!(builtins::BuiltinIds);
+        id_transports!(BaselineIds);
+        id_transports!(ExplicitIds);
+        id_transports!(SuffixIds);
+        candidate::<ExplicitSubstitutionCarriers>("four_optional_ids_substitution_only");
+        candidate::<SuffixSubstitutionCarriers>("suffix_bases_substitution_only");
+        candidate::<ExplicitFamilyCarriers>("four_optional_ids_with_family_roles");
+        candidate::<SuffixFamilyCarriers>("suffix_bases_with_family_roles");
+        println!(
+            "OUTPUT_ASSOCIATION_SCOPE disconnected_layouts_only; \
+             existing_raw_and_witness_types_unchanged; \
+             named_selector_rank_iterator_and_next_roles_measured; \
+             future_checked_rank_projection_and_source_anchor_control_flow_unproved; \
+             no_complete_program_coexistence_or_production_admission_claim"
+        );
+    }
+}
+
 #[cfg(test)]
 mod array_tests {
     use super::*;

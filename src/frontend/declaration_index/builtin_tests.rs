@@ -688,6 +688,10 @@ mod output_layout_feasibility {
     struct ImportOrdinalAdmission {
         families: [FamilyImportAnchors; 2],
     }
+    struct BorrowedAdmission<'s> {
+        enumerations: [Option<&'s Span>; 2],
+        functions: [Option<&'s Span>; 2],
+    }
 
     // Complete actual Tables fields, in actual declaration order. Each macro
     // expansion is a disconnected private type; production is not generalized.
@@ -731,6 +735,60 @@ mod output_layout_feasibility {
     enclosing_models!(BaselineIndex, BaselineFacts, BaselineTables);
     enclosing_models!(SpanIndex, SpanFacts, SpanTables);
     enclosing_models!(OrdinalIndex, OrdinalFacts, OrdinalTables);
+
+    // This separate mirror binds its admission references to the same existing
+    // source lifetime. The references never point into this movable carrier.
+    struct BorrowedTables<'s> {
+        sources: SourceOwner<'s>,
+        originals: Vec<OriginalRow>,
+        original_order: Vec<u32>,
+        functions: Vec<FunctionRow>,
+        records: Vec<RecordRow>,
+        fields: Vec<FieldRow>,
+        enums: Vec<EnumRow>,
+        variants: Vec<VariantRow>,
+        modules: Vec<ModuleRow>,
+        children: Vec<u32>,
+        imports: Vec<ImportRow>,
+        aliases: Vec<AliasCell>,
+        alias_order: Vec<u32>,
+        root_main: u32,
+        candidate_source_origin: CandidateOrigin,
+        builtins: BorrowedAdmission<'s>,
+    }
+    enclosing_models!(BorrowedIndex, BorrowedFacts, BorrowedTables);
+
+    // Compare the exact old/new endpoint roles without claiming credit from
+    // an unspecified historical bank. Both include the same existing lookup,
+    // validation and public-return transports. The new validated local is
+    // separate from its borrowed constructor argument, so that copy is visible.
+    struct ExistingAnchorTransports<'s> {
+        endpoint_option: Option<&'s Span>,
+        endpoint_result: Result<&'s Span, Box<Diagnostic>>,
+        selected_endpoint: Span,
+        validation_argument: Span,
+        validation_return: Result<CompactSpan, Box<Diagnostic>>,
+        constructor_argument: CompactSpan,
+        item_argument: BuiltinItem,
+        getter_local: CompactSpan,
+        getter_span_return: Span,
+        getter_option_return: Option<Span>,
+        public_anchor_return: Result<Span, Box<Diagnostic>>,
+    }
+    struct BorrowedAnchorTransports<'s> {
+        endpoint_option: Option<&'s Span>,
+        endpoint_result: Result<&'s Span, Box<Diagnostic>>,
+        selected_endpoint: &'s Span,
+        validation_argument: Span,
+        validation_return: Result<CompactSpan, Box<Diagnostic>>,
+        validated_local: CompactSpan,
+        constructor_argument: &'s Span,
+        item_argument: NestedItem,
+        getter_local: &'s Span,
+        getter_span_return: Span,
+        getter_option_return: Option<Span>,
+        public_anchor_return: Result<Span, Box<Diagnostic>>,
+    }
 
     fn same_layout<T, U>() {
         assert_eq!(size_of::<T>(), size_of::<U>());
@@ -900,5 +958,270 @@ mod output_layout_feasibility {
              no_collection_no_source_association_no_effect_no_consumer_authority; \
              no_claim_of_complete_retained_scratch_coexistence"
         );
+    }
+
+    #[test]
+    fn bounded_stdout_borrowed_anchor_enclosing_layout_feasibility() {
+        same_layout::<BaselineTables<'static>, Tables<'static>>();
+        same_layout::<BaselineIndex<'static>, DeclarationIndex<'static>>();
+        same_layout::<BaselineFacts<'static>, DeclarationFacts<'static>>();
+        same_layout::<
+            Result<BaselineFacts<'static>, Box<Diagnostic>>,
+            Result<DeclarationFacts<'static>, Box<Diagnostic>>,
+        >();
+        let substituted = substituted_fixed::<
+            BorrowedTables<'static>,
+            BorrowedAdmission<'static>,
+            NestedProjection,
+            NestedItem,
+            NestedOrigin,
+        >()
+        .checked_sub(size_of::<Option<usize>>())
+        .unwrap()
+        .checked_add(size_of::<u32>())
+        .unwrap();
+        let old_transports = size_of::<ExistingAnchorTransports<'static>>();
+        let new_transports = size_of::<BorrowedAnchorTransports<'static>>();
+        assert!(new_transports <= old_transports);
+        assert_eq!(size_of::<Option<&Span>>(), size_of::<&Span>());
+        assert_eq!(
+            size_of::<BorrowedAdmission<'static>>(),
+            4 * size_of::<&Span>()
+        );
+        macro_rules! layouts {
+            ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
+        }
+        layouts!(
+            BorrowedAdmission<'static>,
+            BorrowedTables<'static>, BorrowedIndex<'static>, BorrowedFacts<'static>,
+            Result<BorrowedTables<'static>, Box<Diagnostic>>,
+            Result<BorrowedIndex<'static>, Box<Diagnostic>>,
+            Result<BorrowedFacts<'static>, Box<Diagnostic>>,
+            Result<BorrowedIndex<'static>, Vec<Diagnostic>>,
+            Option<usize>, u32, Option<&Span>, Result<&Span, Box<Diagnostic>>,
+            Span, &Span, CompactSpan, Result<CompactSpan, Box<Diagnostic>>,
+            Option<Span>, Result<Span, Box<Diagnostic>>,
+            ExistingAnchorTransports<'static>, BorrowedAnchorTransports<'static>,
+        );
+        println!(
+            "OUTPUT_INDEX_BORROWED_CANDIDATE actual_fixed={FIXED_SCRATCH} \
+             substituted_fixed={substituted} ceiling=4096 headroom={} \
+             old_endpoint_transports={old_transports} new_endpoint_transports={new_transports} \
+             transport_credit_used=0 phase_overlay=false ordinal_projection=false \
+             source_identity=NOT_ESTABLISHED all_nine_family_construction=NOT_ESTABLISHED \
+             admission=NOT_ESTABLISHED",
+            4096i128 - substituted as i128,
+        );
+    }
+
+    // Uses actual immutable AST storage and the existing checked path view.
+    // It returns only a borrow, never a catalog identity or an executable owner.
+    fn borrow_real_endpoint<'s>(
+        owner: SourceOwner<'s>,
+        path: QualifiedPathRef,
+    ) -> Result<&'s Span, Box<Diagnostic>> {
+        let endpoint = {
+            let view = owner.import_path(path)?;
+            let endpoint = view.segments().last().ok_or_else(|| bad(view.span()))?;
+            CompactSpan::new(*endpoint)?;
+            endpoint
+        };
+        Ok(endpoint)
+    }
+
+    #[test]
+    fn bounded_stdout_borrowed_anchor_outlives_real_path_view() {
+        let fixture = Fixture::new(&[
+            (
+                "main.ox",
+                "mod child; use std::io::ReadStatus as Status; fn main()->(){return;}",
+            ),
+            (
+                "child.ox",
+                "use std::io::read_stdin as input; fn helper()->(){return;}",
+            ),
+        ]);
+        let project = fixture.load_current();
+        let owner = SourceOwner::project(&project);
+        let root_ast = owner.ast(ModuleId(0)).unwrap();
+        let child_ast = owner.ast(ModuleId(1)).unwrap();
+        let root_import = &root_ast.imports[0];
+        let child_import = &child_ast.imports[0];
+        let root_path = QualifiedPathRef {
+            file: root_import.span.file,
+            path: root_import.path,
+        };
+        let child_path = QualifiedPathRef {
+            file: child_import.span.file,
+            path: child_import.path,
+        };
+        let expected_status = root_ast
+            .path_segments(root_import.path)
+            .unwrap()
+            .last()
+            .unwrap();
+        let expected_function = child_ast
+            .path_segments(child_import.path)
+            .unwrap()
+            .last()
+            .unwrap();
+        let borrowed = {
+            let copied_owner = owner;
+            BorrowedAdmission {
+                enumerations: [
+                    Some(borrow_real_endpoint(copied_owner, root_path).unwrap()),
+                    None,
+                ],
+                functions: [
+                    Some(borrow_real_endpoint(copied_owner, child_path).unwrap()),
+                    None,
+                ],
+            }
+        };
+        let candidate = BorrowedIndex {
+            tables: BorrowedTables {
+                sources: owner,
+                originals: Vec::new(),
+                original_order: Vec::new(),
+                functions: Vec::new(),
+                records: Vec::new(),
+                fields: Vec::new(),
+                enums: Vec::new(),
+                variants: Vec::new(),
+                modules: Vec::new(),
+                children: Vec::new(),
+                imports: Vec::new(),
+                aliases: Vec::new(),
+                alias_order: Vec::new(),
+                root_main: NONE,
+                candidate_source_origin: CandidateOrigin::Current,
+                builtins: borrowed,
+            },
+        };
+        let moved = candidate;
+        let status = moved.tables.builtins.enumerations[0].unwrap();
+        let function = moved.tables.builtins.functions[0].unwrap();
+        assert!(std::ptr::eq(status, expected_status));
+        assert!(std::ptr::eq(function, expected_function));
+        assert_eq!(*status, *expected_status);
+        assert_eq!(*function, *expected_function);
+        assert_ne!(function.file, SourceFileId(0));
+        assert_eq!(moved.tables.sources.text(*status).unwrap(), "ReadStatus");
+        assert_eq!(moved.tables.sources.text(*function).unwrap(), "read_stdin");
+        assert!(moved.tables.builtins.enumerations[1].is_none());
+        assert!(moved.tables.builtins.functions[1].is_none());
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum StepFailure {
+        Order,
+        Catalog,
+        Compact,
+    }
+    // These two inert steps compare control ordering only. catalog_ok models
+    // the existing catalog check's success/failure and grants no identity.
+    fn existing_order_step(
+        endpoint: Span,
+        previous: &mut Option<usize>,
+        catalog_ok: bool,
+    ) -> Result<CompactSpan, StepFailure> {
+        if previous.is_some_and(|offset| endpoint.start <= offset) {
+            return Err(StepFailure::Order);
+        }
+        *previous = Some(endpoint.start);
+        if !catalog_ok {
+            return Err(StepFailure::Catalog);
+        }
+        CompactSpan::new(endpoint).map_err(|_| StepFailure::Compact)
+    }
+    fn borrowed_order_step<'s>(
+        endpoint: &'s Span,
+        previous: &mut u32,
+        catalog_ok: bool,
+    ) -> Result<&'s Span, StepFailure> {
+        if *previous != NONE && endpoint.start <= *previous as usize {
+            return Err(StepFailure::Order);
+        }
+        if !catalog_ok {
+            return Err(StepFailure::Catalog);
+        }
+        let checked = CompactSpan::new(*endpoint).map_err(|_| StepFailure::Compact)?;
+        *previous = checked.start;
+        Ok(endpoint)
+    }
+
+    #[test]
+    fn bounded_stdout_borrowed_anchor_sentinel_and_error_order() {
+        let span = |file, start, end| Span {
+            file: SourceFileId(file),
+            start,
+            end,
+        };
+        let valid = span(0, 3, 4);
+        let mut previous = NONE;
+        assert!(std::ptr::eq(
+            borrowed_order_step(&valid, &mut previous, true).unwrap(),
+            &valid
+        ));
+        assert_eq!(previous, 3);
+        let zero = span(0, 0, 0);
+        let mut zero_previous = NONE;
+        assert!(borrowed_order_step(&zero, &mut zero_previous, true).is_ok());
+        assert_eq!(zero_previous, 0);
+
+        let largest = (BUILTIN_CONFLICT - 1) as usize;
+        assert!(CompactSpan::new(span(largest, largest, largest)).is_ok());
+        for reserved in [BUILTIN_CONFLICT as usize, NONE as usize] {
+            for invalid in [
+                span(reserved, 3, 4),
+                span(0, reserved, reserved),
+                span(0, 3, reserved),
+            ] {
+                assert!(CompactSpan::new(invalid).is_err());
+                let mut previous = NONE;
+                assert_eq!(
+                    borrowed_order_step(&invalid, &mut previous, true),
+                    Err(StepFailure::Compact)
+                );
+                assert_eq!(previous, NONE);
+            }
+        }
+
+        for (endpoint, before, catalog_ok, expected) in [
+            (
+                span(NONE as usize, 2, 4),
+                Some(3),
+                false,
+                StepFailure::Order,
+            ),
+            (
+                span(NONE as usize, 4, 5),
+                Some(3),
+                false,
+                StepFailure::Catalog,
+            ),
+            (
+                span(NONE as usize, 4, 5),
+                Some(3),
+                true,
+                StepFailure::Compact,
+            ),
+            (
+                span(0, NONE as usize, NONE as usize),
+                None,
+                false,
+                StepFailure::Catalog,
+            ),
+        ] {
+            let mut old_previous = before;
+            let mut new_previous = before.map_or(NONE, |value| u32::try_from(value).unwrap());
+            let old = existing_order_step(endpoint, &mut old_previous, catalog_ok).unwrap_err();
+            let new = borrowed_order_step(&endpoint, &mut new_previous, catalog_ok).unwrap_err();
+            assert_eq!(old, expected);
+            assert_eq!(new, expected);
+            // The old assignment was earlier, but failures return before any
+            // next iteration. The new cursor changes only after full validation.
+            assert_eq!(new_previous, before.map_or(NONE, |value| value as u32));
+        }
     }
 }

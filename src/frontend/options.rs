@@ -54,6 +54,126 @@ impl Operation {
     }
 }
 
+/// Disconnected RFC 0025 route layout measurements, never returned by route().
+#[cfg(test)]
+#[allow(dead_code)]
+mod output_layout_feasibility {
+    use super::*;
+    use std::mem::{align_of, size_of};
+
+    // Exact current variants, field types and declaration order. In particular,
+    // use the real Operation/String/Vec carriers instead of byte stand-ins.
+    enum BaselineRoute {
+        Legacy(Vec<String>),
+        TypedFormat {
+            path: String,
+            check: bool,
+        },
+        FormatError {
+            message: String,
+        },
+        TypedCheck {
+            path: String,
+            json: bool,
+        },
+        TypedRun {
+            path: String,
+            json: bool,
+        },
+        TypedCompile {
+            path: String,
+            json: bool,
+            output: String,
+        },
+        Error {
+            message: String,
+            json: bool,
+            operation: Operation,
+        },
+    }
+
+    enum EntryPolicy {
+        Result,
+        Process,
+    }
+    enum CandidateRoute {
+        Legacy(Vec<String>),
+        TypedFormat {
+            path: String,
+            check: bool,
+        },
+        FormatError {
+            message: String,
+        },
+        TypedCheck {
+            path: String,
+            json: bool,
+        },
+        TypedRun {
+            path: String,
+            json: bool,
+            entry_policy: EntryPolicy,
+        },
+        TypedCompile {
+            path: String,
+            json: bool,
+            output: String,
+            entry_policy: EntryPolicy,
+        },
+        Error {
+            message: String,
+            json: bool,
+            operation: Operation,
+        },
+        // A separate text-only route is needed for early process-run errors,
+        // including a conflicting JSON request. This model has no classifier,
+        // signal setup, reporter, source activation or executable consumer.
+        ProcessError {
+            message: String,
+        },
+    }
+
+    fn report<T>(name: &str) {
+        println!(
+            "OUTPUT_ROUTE_LAYOUT {name} bytes={} align={}",
+            size_of::<T>(),
+            align_of::<T>()
+        );
+    }
+
+    #[test]
+    fn bounded_stdout_route_disconnected_layout_feasibility() {
+        assert_eq!(size_of::<BaselineRoute>(), size_of::<Route>());
+        assert_eq!(align_of::<BaselineRoute>(), align_of::<Route>());
+        macro_rules! layouts {
+            ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
+        }
+        layouts!(
+            Operation,
+            bool,
+            String,
+            Vec<String>,
+            EntryPolicy,
+            Route,
+            BaselineRoute,
+            CandidateRoute,
+        );
+        println!(
+            "OUTPUT_ROUTE_CANDIDATE policy_and_text_only_process_error \
+             actual_route={} candidate_route={} delta={} \
+             production_behavior=UNCHANGED admission=NOT_ESTABLISHED",
+            size_of::<Route>(),
+            size_of::<CandidateRoute>(),
+            size_of::<CandidateRoute>() as i128 - size_of::<Route>() as i128,
+        );
+        println!(
+            "OUTPUT_ROUTE_SCOPE measured_enclosing_enum_padding; \
+             String_and_Vec_heap_capacities_not_measured; \
+             no_option_parser_no_process_reporting_no_policy_activation"
+        );
+    }
+}
+
 /// Classify arguments excluding the executable name, without reading any files.
 pub fn route(args: &[String]) -> Route {
     let mut forwarded = Vec::with_capacity(args.len());

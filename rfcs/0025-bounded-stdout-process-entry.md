@@ -111,6 +111,17 @@ validate the new claim through ordinary signature, CFG, ownership and canonical
 builtin checks. No reusable privileged constructor, alternate witness or runtime
 sidecar is proposed.
 
+Each family has exactly three states: absent, status-only, or function with its
+required status. The product has nine valid states. Canonical suffixes list
+input before output, ranking admitted enums and functions independently after
+their source-only prefixes. Importing a function installs its status dependency
+without binding an unimported status name in source. Each enum anchor is the
+earliest import of that enum or its requiring function; each function anchor is
+its earliest function import, ordered by module preorder then source order.
+WriteStatus carries its i32 payload at member 2; ReadStatus retains member 0.
+All source association and raw checks must distinguish these families even when
+only one family is present. Unknown or dependency-incomplete claims are invalid.
+
 The existing declaration-index fixed-state measurement is 4094 bytes under an
 unchanged 4096-byte ceiling. Existing singleton BuiltinIds and the one-parameter
 signature are concrete design constraints. Measure new/affected enclosing
