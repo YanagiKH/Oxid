@@ -395,7 +395,7 @@ fn process_output_is_exact_and_result_inventory_denial_covers_compile() {
     if !QUALIFIED {
         return;
     }
-    let fixture = Fixture::new("use std::io::write_stdout as emit; use std::io::WriteStatus as Written; fn main()->i32{let bytes=[0,65,255];match emit(&bytes){Written::Complete=>{return 39;},Written::InvalidInput=>{return 2;},Written::IoError(n)=>{return n+3;},}}");
+    let fixture = Fixture::new("use std::io::write_stdout as emit; use std::io::WriteStatus as Written; fn main()->i32{let bytes=[0,65,255];let written=emit(&bytes);match written{Written::Complete=>{return 39;},Written::InvalidInput=>{return 2;},Written::IoError(n)=>{return n+3;},}}");
     let out = fixture.process();
     assert_eq!(out.status.code(), Some(39), "{out:?}");
     assert_eq!(out.stdout, [0, 65, 255]);
@@ -440,8 +440,8 @@ fn process_output_is_exact_and_result_inventory_denial_covers_compile() {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
-fn process_closed_stderr_returns_74_without_stdout_fallback() {
-    use std::os::unix::process::CommandExt;
+fn process_closed_reader_stderr_returns_74_without_stdout_fallback() {
+    use std::os::fd::FromRawFd;
     let fixture = Fixture::new("fn main()->i32{return 0;}");
     for args in [
         vec![
@@ -459,17 +459,18 @@ fn process_closed_stderr_returns_74_without_stdout_fallback() {
         ],
     ] {
         let mut command = fixture.command(&args);
-        // The signal and descriptor changes are confined to the CLI child.
+        // Keep fd2 valid across Rust startup, which repairs a missing standard
+        // descriptor. A real pipe with no reader instead fails its first write.
+        let mut descriptors = [-1; 2];
         unsafe {
-            command.pre_exec(|| {
-                unsafe extern "C" {
-                    fn close(fd: std::ffi::c_int) -> std::ffi::c_int;
-                }
-                if close(2) != 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
+            unsafe extern "C" {
+                fn pipe(descriptors: *mut std::ffi::c_int) -> std::ffi::c_int;
+                fn close(fd: std::ffi::c_int) -> std::ffi::c_int;
+            }
+            assert_eq!(pipe(descriptors.as_mut_ptr()), 0);
+            assert_eq!(close(descriptors[0]), 0);
+            // Ownership of the sole write end transfers once to Command.
+            command.stderr(Stdio::from(fs::File::from_raw_fd(descriptors[1])));
         }
         let out = wait(command.spawn().unwrap());
         assert_eq!(out.status.code(), Some(74), "{out:?}");

@@ -230,7 +230,9 @@ entry policy is1 byte, and its diagnostic key/table carriers remain32/48.
 Process mode applies the existing16MiB diagnostic and64MiB LLVM-text caps even
 to acyclic programs, while preserving their body ABI and fuel schedule.
 The source process failure/result carriers are8/16 bytes, signature return40,
-and checked owner320 with zero stored policy fields. These are measurements of
+and checked owner320 with zero stored policy fields. The non-test argv scanner
+increases from2 to5 bytes; Route remains56 and its scanner-result envelope56.
+These are measurements of
 named transient roles, not new retained HIR allocations or a stack/RSS bound.
 
 ## Concrete acceptance and stopping point

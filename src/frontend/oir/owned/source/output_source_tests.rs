@@ -1,4 +1,4 @@
-//! Private real-source process proof. Public source/CLI admission stays closed.
+//! Private real-source process proof alongside the separately admitted public route.
 //! The exact child is inert unless its parent provides OXID_SOURCE_STDOUT_PATH.
 //! Run owns a dedicated inherited stdout fd; Emit only builds saved artifacts.
 use super::super::{
@@ -455,16 +455,30 @@ fn output_source_emit_requires_original_zero_argument_i32_main() {
 }
 
 #[test]
-fn output_source_public_loader_stays_closed() {
+fn output_source_public_loader_admits_but_default_consumers_deny_effects() {
     let fixture = ProjectFixture::new(&[("main.ox", ABC)]);
-    let failure =
+    let project =
         ProjectSources::load_typed(fixture.path().to_str().unwrap(), ProjectLimits::default())
-            .unwrap_err();
-    assert!(!failure.diagnostics.is_empty());
-    assert!(failure
-        .diagnostics
-        .iter()
-        .any(|error| error.code == "E0101"));
+            .unwrap();
+    let work = crate::frontend::declaration_index::WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let checked = crate::frontend::oir::project::check_project_executable(
+        &project,
+        crate::frontend::declaration_index::IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap();
+    let reference = checked.run().unwrap_err();
+    let native = checked.native_module().unwrap_err();
+    assert_eq!(
+        (reference.code, reference.stage),
+        ("E0609", "oir-owned-run")
+    );
+    assert_eq!(
+        reference.render_json(project.sources()),
+        native.render_json(project.sources())
+    );
 }
 
 #[test]
