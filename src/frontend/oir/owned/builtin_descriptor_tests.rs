@@ -638,7 +638,8 @@ fn builtin_descriptor_acceptance_does_not_open_any_witness_entrypoint() {
                     &sources,
                     native::NativeControl::default(),
                 )
-                .unwrap_err()
+                .err()
+                .expect("builtin native probe remains denied")
                 .kind,
                 expected
             );

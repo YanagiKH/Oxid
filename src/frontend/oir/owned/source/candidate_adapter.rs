@@ -269,6 +269,7 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
+        OwnedInstruction::ReadStdin { .. } => unreachable!("builtin input source gate"),
         OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
             unreachable!("enum source gate")
         }
