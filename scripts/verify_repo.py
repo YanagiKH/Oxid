@@ -29,6 +29,10 @@ TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
+    "tests/fixtures/bounded_enum_scanner/main.ox": (
+        "tests/fixtures/bounded_enum_scanner/main.ox",
+        "tests/fixtures/bounded_enum_scanner/scanner.ox",
+    ),
     "fixtures/typed-record-composition-samples/main.ox": (
         "fixtures/typed-record-composition-samples/main.ox",
         "fixtures/typed-record-composition-samples/model.ox",
@@ -147,7 +151,7 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
 
 
 def verify_test_fixture_registration(root: Path = ROOT) -> None:
-    """The CLI's opt-in exclusions must equal the already frozen data inventory."""
+    """Exclude exact frozen data and explicitly checked typed projects from legacy tests."""
     fixture_data = fixture_data_sources(root)
     try:
         manifest = tomllib.loads((root / "oxid.toml").read_text(encoding="utf-8"))
@@ -155,9 +159,13 @@ def verify_test_fixture_registration(root: Path = ROOT) -> None:
         raise RuntimeError(f"unreadable test fixture registration: {error}") from error
     configured = manifest.get("test-fixtures", {})
     expected = {path.relative_to(root).as_posix() for path in fixture_data}
+    # Typed projects below the legacy test search roots run only through their
+    # explicit typed root. Never exclude neighboring files or whole directories.
+    expected.update(member for members in TYPED_PROJECTS.values() for member in members
+                    if Path(member).parts[0] in ("tests", "examples"))
     if (not isinstance(configured, dict) or set(configured) != expected
             or any(value is not True for value in configured.values())):
-        raise RuntimeError("test fixture registration must exactly match frozen source-only data")
+        raise RuntimeError("test fixture registration must exactly match frozen data and explicit typed test projects")
 
 
 def main() -> int:

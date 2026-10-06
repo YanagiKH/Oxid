@@ -41,9 +41,12 @@ go_interop = true
 web = true
 discord = true
 
-# Exact compiler source data, validated against the frozen fixture manifests.
+# Exact compiler source data and explicitly registered typed test projects.
+# Typed projects are checked/run separately with --edition=typed-preview.
 # Other .ox files under tests/ and examples/ remain runnable language tests.
 [test-fixtures]
+"tests/fixtures/bounded_enum_scanner/main.ox" = true
+"tests/fixtures/bounded_enum_scanner/scanner.ox" = true
 "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/bracket-comments-do-not-route/main.ox" = true
 "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/bracket-string-is-not-array-syntax/main.ox" = true
 "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/call-arguments-max/main.ox" = true

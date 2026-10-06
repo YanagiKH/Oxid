@@ -1,6 +1,8 @@
 //! Independent C2a index lifetimes through the existing real heap observer.
 //! Source fixtures and instrumentation are outside every measured interval.
 //! No executable/source-admission witness is constructed by these controls.
+//! Child-module successes require Linux; single-file and host-policy failure
+//! lifetimes remain measured on every applicable host.
 use super::source::reviewer_source::{integration_enabled, integration_measured};
 use crate::frontend::{
     declaration_index::{
@@ -125,6 +127,7 @@ fn inventory(lengths: [usize; REQUESTS]) -> [Row; REQUESTS] {
     ]
 }
 
+#[cfg(target_os = "linux")]
 fn mixed_inventory() -> [Row; REQUESTS] {
     // Source order: 5 functions, 3 records/fields, 5 enums/7 variants,
     // 3 modules, 2 imports; 15 originals and 2 child links.
@@ -204,6 +207,7 @@ fn diagnostic_payload(error: &Diagnostic) -> usize {
 #[test]
 fn enum_index_lifecycle_collection_freeze_and_drop_match_independent_row_capacities() {
     for (name, files, rows, requested_retained, requested_scratch) in [
+        #[cfg(target_os = "linux")]
         ("mixed", MIXED, mixed_inventory(), 1268, 96),
         ("enum-free", ENUM_FREE, enum_free_inventory(), 120, 8),
     ] {
@@ -304,6 +308,7 @@ fn enum_index_lifecycle_collection_freeze_and_drop_match_independent_row_capacit
 #[test]
 fn enum_index_lifecycle_all_reserve_failures_leave_only_diagnostic_then_zero() {
     for (name, files, rows) in [
+        #[cfg(target_os = "linux")]
         ("mixed", MIXED, mixed_inventory()),
         ("enum-free", ENUM_FREE, enum_free_inventory()),
     ] {
@@ -387,7 +392,7 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
         &'a str,
         usize,
     );
-    let cases: [FailureCase<'_>; 2] = [
+    let cases: &[FailureCase<'_>] = &[
         (
             "duplicate variants",
             &[("main.ox", duplicate)],
@@ -395,6 +400,7 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
             "E0201",
             1,
         ),
+        #[cfg(target_os = "linux")]
         (
             "paired alias builtin collision",
             &[
@@ -406,7 +412,7 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
             0,
         ),
     ];
-    for (name, files, lengths, code, labels) in cases {
+    for &(name, files, lengths, code, labels) in cases {
         let rows = inventory(lengths);
         let fixture = Fixture::new(files);
         let project = fixture.load();
@@ -481,36 +487,42 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
 
 #[test]
 fn enum_index_lifecycle_trace_exhaustion_is_not_production_allocation_failure() {
-    let fixture = Fixture::new(MIXED);
-    let project = fixture.load();
-    let rows = mixed_inventory();
-    for trace_rows in [0, REQUESTS - 1, REQUESTS] {
-        let mut allocator = prepared_allocator(None, trace_rows);
-        let trace_capacity = allocator.trace.capacity();
-        let work = WorkMeter::default();
-        let ((), (calls, live, peak)) = integration_measured(|| {
-            let facts = collect_enum_candidate(
-                SourceOwner::project(&project),
-                IndexLimits::default(),
-                &work,
-                &mut allocator,
-            )
-            .unwrap();
-            drop(facts.finish(&work, &mut allocator).unwrap());
-        });
-        assert_eq!(allocator.attempts, REQUESTS);
-        assert_eq!(allocator.trace.capacity(), trace_capacity);
-        assert_eq!(allocator.trace.len(), trace_rows);
-        assert_eq!(allocator.observer_trace_overflow, trace_rows < REQUESTS);
-        assert!(allocator.trace.iter().all(|event| event.success));
-        assert_eq!(calls, real_allocations(&rows));
-        assert_eq!(live, 0);
-        assert_eq!(peak, isize::try_from(heap(&rows)).unwrap());
-        quiet_work(&work);
-        assert!(!integration_enabled());
+    for (files, rows) in [
+        #[cfg(target_os = "linux")]
+        (MIXED, mixed_inventory()),
+        (ENUM_FREE, enum_free_inventory()),
+    ] {
+        let fixture = Fixture::new(files);
+        let project = fixture.load();
+        for trace_rows in [0, REQUESTS - 1, REQUESTS] {
+            let mut allocator = prepared_allocator(None, trace_rows);
+            let trace_capacity = allocator.trace.capacity();
+            let work = WorkMeter::default();
+            let ((), (calls, live, peak)) = integration_measured(|| {
+                let facts = collect_enum_candidate(
+                    SourceOwner::project(&project),
+                    IndexLimits::default(),
+                    &work,
+                    &mut allocator,
+                )
+                .unwrap();
+                drop(facts.finish(&work, &mut allocator).unwrap());
+            });
+            assert_eq!(allocator.attempts, REQUESTS);
+            assert_eq!(allocator.trace.capacity(), trace_capacity);
+            assert_eq!(allocator.trace.len(), trace_rows);
+            assert_eq!(allocator.observer_trace_overflow, trace_rows < REQUESTS);
+            assert!(allocator.trace.iter().all(|event| event.success));
+            assert_eq!(calls, real_allocations(&rows));
+            assert_eq!(live, 0);
+            assert_eq!(peak, isize::try_from(heap(&rows)).unwrap());
+            quiet_work(&work);
+            assert!(!integration_enabled());
+        }
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop() {
     const TRACE_ROWS: usize = 512;
@@ -651,4 +663,56 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
         "enum candidate loader: swept {} observed reserve ordinals; failure-owned source/AST/diagnostic payload drops to zero with caller trace preserved; maximum failure logical peak={maximum_failure_peak}",
         baseline.attempts
     );
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn enum_index_lifecycle_unqualified_host_drops_all_loader_owners() {
+    const TRACE_ROWS: usize = 512;
+    for files in [
+        MIXED,
+        &[("main.ox", "mod a;enum E{V}"), ("a.ox", "enum F{W}")],
+    ] {
+        let fixture = Fixture::new(files);
+        let entry = fixture.0.join("main.ox");
+        let entry = entry.to_str().unwrap();
+        let mut allocator = prepared_allocator(None, TRACE_ROWS);
+        let trace_capacity = allocator.trace.capacity();
+        let (receipt, (calls, live, peak)) = integration_measured(|| {
+            let mut failure = ProjectSources::load_enum_index_candidate(
+                entry,
+                ProjectLimits::default(),
+                &mut allocator,
+            )
+            .unwrap_err();
+            let error = &failure.diagnostics[0];
+            let receipt = (
+                error.code,
+                error.stage,
+                error.message == "module source policy is not qualified on this host",
+                error
+                    .primary
+                    .is_some_and(|span| failure.sources.try_text(span).is_some()),
+                failure.sources.files().len(),
+                failure.usage.modules,
+                failure.usage.probes,
+                failure.usage.directory_entries,
+            );
+            // The trace was prepaid before measurement. Recover it so a
+            // negative baseline cannot disguise retained loader storage.
+            std::mem::swap(&mut allocator, &mut failure.allocator);
+            drop(failure);
+            receipt
+        });
+        assert_eq!((receipt.0, receipt.1, receipt.2), ("E0005", "source", true));
+        assert!(receipt.3);
+        assert_eq!((receipt.4, receipt.5, receipt.6, receipt.7), (1, 1, 0, 0));
+        assert_eq!(live, 0);
+        assert!(calls > 0 && peak > 0);
+        assert_eq!(allocator.trace.capacity(), trace_capacity);
+        assert_eq!(allocator.trace.len(), allocator.attempts);
+        assert!(!allocator.observer_trace_overflow);
+        assert!(allocator.trace.iter().all(|event| event.success));
+        assert!(!integration_enabled());
+    }
 }

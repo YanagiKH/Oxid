@@ -1,4 +1,6 @@
 //! C2a index-only controls. No enum source executable witness is admitted.
+//! Real child-module inputs require the production Linux filesystem policy.
+//! Single-file index and carrier controls remain applicable on every host.
 use super::*;
 use crate::frontend::{hir, project::ProjectLimits};
 use std::{
@@ -50,6 +52,7 @@ fn collect<'s>(
     )
     .unwrap()
 }
+#[cfg(target_os = "linux")]
 fn bound(project: &ProjectSources, alias: usize) -> ItemPathRef {
     let import = &project.try_file_ast(SourceFileId(0)).unwrap().imports[alias];
     ItemPathRef {
@@ -57,6 +60,7 @@ fn bound(project: &ProjectSources, alias: usize) -> ItemPathRef {
         path: ast::ItemPath::Unqualified(import.alias),
     }
 }
+#[cfg(target_os = "linux")]
 fn identity_fixture() -> Fixture {
     Fixture::new(&[
         ("main.ox", "fn pre()->i32{return 0;} enum RootE{Z,U(())} pub struct RootR{pub x:i32} pub mod branch; pub enum RootTail{B(bool)} use crate::branch::Pair as Imported; use crate::branch::ChildR as ImportedR; fn main()->i32{return 0;}"),
@@ -64,6 +68,7 @@ fn identity_fixture() -> Fixture {
         ("branch/leaf.ox", "pub enum LeafE{L} pub struct LeafR{pub unit:()} pub fn leaf_fn()->(){return;}"),
     ])
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_interleaved_identity_views_and_original_alias_targets() {
     let fixture = identity_fixture();
@@ -264,6 +269,11 @@ fn enum_index_closed_collection_and_all_direct_source_producers_stay_closed() {
             Observation::SignatureStart { .. } | Observation::RecordStart { .. }
         )));
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn enum_index_closed_collection_reports_imported_enum_origin() {
     let fixture = Fixture::new(&[
         ("main.ox", "mod child; fn main()->(){return;}"),
         ("child.ox", "enum Unused{V}"),
@@ -283,6 +293,7 @@ fn enum_index_closed_collection_and_all_direct_source_producers_stay_closed() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_observation_schema_uses_complete_enum_identity_table_only() {
     for with_enum in [false, true] {
@@ -333,10 +344,15 @@ fn enum_index_observation_schema_uses_complete_enum_identity_table_only() {
                 .any(|e| matches!(e, Observation::NominalImport { .. })));
         }
     }
+}
+
+#[test]
+fn enum_index_nominal_legacy_wrapper_rejects_enums() {
     assert_eq!(NominalId::Record(RecordId(7)).legacy_record(), RecordId(7));
     assert!(std::panic::catch_unwind(|| NominalId::Enum(EnumId(7)).legacy_record()).is_err());
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_paired_alias_rejection_does_not_poison_later_import() {
     let fixture = Fixture::new(&[
@@ -409,6 +425,7 @@ fn enum_index_duplicate_unused_variants_and_type_collisions_reject() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_complete_rows_have_preallocation_caps_and_all_reserve_failures() {
     let fixture = identity_fixture();
@@ -524,6 +541,7 @@ fn enum_index_legacy_row_observation_is_exact_and_fails_closed_on_enums() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_combined_declaration_limit_spans_real_modules() {
     let mut root = String::from("mod child;");
@@ -642,6 +660,7 @@ fn enum_index_tiny_new_and_widened_rows_have_exact_capacity() {
     }
 }
 
+#[cfg(target_os = "linux")]
 type ImportSnapshot = (
     bool,
     Option<NominalId>,
@@ -649,6 +668,7 @@ type ImportSnapshot = (
     Vec<NominalAliasObservation>,
     Vec<SeenObservation>,
 );
+#[cfg(target_os = "linux")]
 fn nominal_snapshots(work: &WorkMeter) -> Vec<ImportSnapshot> {
     work.observations
         .borrow()
@@ -670,6 +690,7 @@ fn nominal_snapshots(work: &WorkMeter) -> Vec<ImportSnapshot> {
         })
         .collect()
 }
+#[cfg(target_os = "linux")]
 fn empty_alias_snapshot(snapshot: &ImportSnapshot) {
     assert!(!snapshot.0);
     assert_eq!((snapshot.1, snapshot.2), (None, None));
@@ -683,6 +704,7 @@ fn empty_alias_snapshot(snapshot: &ImportSnapshot) {
         .all(|row| row.type_first.is_none() && row.value_first.is_none()));
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_paired_second_lane_and_privacy_failures_commit_nothing() {
     for (root, child, code) in [
@@ -723,6 +745,7 @@ fn enum_index_paired_second_lane_and_privacy_failures_commit_nothing() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_second_alias_lane_collision_preserves_the_first_value() {
     let fixture = Fixture::new(&[
@@ -773,6 +796,7 @@ fn enum_index_second_alias_lane_collision_preserves_the_first_value() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_repeated_pair_target_preserves_prior_alias_and_seen() {
     let fixture = Fixture::new(&[
@@ -828,6 +852,7 @@ fn enum_index_repeated_pair_target_preserves_prior_alias_and_seen() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_every_import_stage_debit_failure_has_atomic_snapshots() {
     let fixture=Fixture::new(&[("main.ox","mod m; use crate::m::Pair as A; use crate::m::Other as B; fn main()->(){return;}"),("m.ox","pub enum Pair{V} pub fn Pair()->(){return;} pub enum Other{W} pub fn Other()->(){return;}")]);
@@ -990,6 +1015,11 @@ fn enum_index_stored_origin_is_exact_at_facts_and_scalar_producer_gates() {
             Observation::SignatureStart { .. } | Observation::RecordStart { .. }
         )));
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn enum_index_stored_origin_is_exact_for_imported_enum() {
     let fixture = Fixture::new(&[
         ("main.ox", "mod child; fn main()->(){return;}"),
         ("child.ox", "enum Unused{V}"),
@@ -1009,6 +1039,7 @@ fn enum_index_stored_origin_is_exact_at_facts_and_scalar_producer_gates() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_mandatory_build_work_threshold_precedes_all_reservations() {
     let fixture = identity_fixture();

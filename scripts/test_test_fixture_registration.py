@@ -1,4 +1,4 @@
-"""Keep ordinary CLI test classification bound to the frozen data inventory."""
+"""Keep legacy CLI classification bound to exact data and typed-project inventories."""
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,6 +32,7 @@ class TestFixtureRegistrationTests(unittest.TestCase):
                         with self.assertRaisesRegex(RuntimeError, "exactly match"):
                             verify_repo.verify_test_fixture_registration(root)
 
+    @patch.object(verify_repo, "TYPED_PROJECTS", {})
     def test_paths_are_relative_to_the_verifier_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -40,6 +41,21 @@ class TestFixtureRegistrationTests(unittest.TestCase):
             with patch.object(verify_repo, "fixture_data_sources",
                               return_value={root / "tests/fixtures/data.ox"}):
                 verify_repo.verify_test_fixture_registration(root)
+
+    def test_typed_project_exclusion_is_exact_and_neighbors_remain_legacy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            members = ("tests/typed/main.ox", "tests/typed/child.ox")
+            with patch.object(verify_repo, "fixture_data_sources", return_value=set()), \
+                    patch.object(verify_repo, "TYPED_PROJECTS", {members[0]: members}):
+                exact = "[test-fixtures]\n" + "".join(f'"{name}" = true\n' for name in members)
+                (root / "oxid.toml").write_text(exact)
+                verify_repo.verify_test_fixture_registration(root)
+                for changed in (exact + '"tests/typed/neighbor.ox" = true\n',
+                                '[test-fixtures]\n"tests/typed/main.ox" = true\n'):
+                    (root / "oxid.toml").write_text(changed)
+                    with self.assertRaisesRegex(RuntimeError, "exactly match"):
+                        verify_repo.verify_test_fixture_registration(root)
 
     def test_unreadable_or_duplicate_registration_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

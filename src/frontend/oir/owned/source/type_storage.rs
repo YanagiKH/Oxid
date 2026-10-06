@@ -986,13 +986,13 @@ struct CountsAccessCarriers {
 // There is no synthetic Vec/owner value, callback, or production pricing array.
 pub(super) const fn sample_carrier_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<SampleCarriers<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         TypedBody,
         Option<ParameterTy>,
         Option<ValueTy>,
@@ -1011,13 +1011,13 @@ pub(super) const fn sample_carrier_bytes() -> usize {
 }
 pub(super) const fn endpoint_sample_carrier_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<EndpointSampleCarriers<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         Option<ParameterTy>,
         Option<ValueTy>,
         Option<FlowSummary>,
@@ -1365,13 +1365,13 @@ pub(super) const fn inventory_construction_carrier_bytes() -> usize {
 }
 pub(super) const fn retained_sample_carrier_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<RetainedSampleCarriers<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         TypedBody,
         Option<Projection>,
         Vec<Option<Projection>>,
@@ -1565,13 +1565,13 @@ pub(super) const fn account_carrier_bytes() -> usize {
 }
 pub(super) const fn reserve_carrier_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<ReserveCarriers<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         TypedBody,
         Option<ParameterTy>,
         Option<ValueTy>,
@@ -1590,13 +1590,13 @@ pub(super) const fn reserve_carrier_bytes() -> usize {
 }
 pub(super) const fn fill_carrier_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<FillCarriers<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         Option<ParameterTy>,
         Option<ValueTy>,
         Option<FlowSummary>,
@@ -1809,13 +1809,13 @@ pub(super) const fn partition_carrier_bytes() -> usize {
 
 const fn reserve_control_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<ReserveControls<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         TypedBody,
         Option<ParameterTy>,
         Option<ValueTy>,
@@ -1834,13 +1834,13 @@ const fn reserve_control_bytes() -> usize {
 }
 const fn fill_control_bytes() -> usize {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<FillControls<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         Option<ParameterTy>,
         Option<ValueTy>,
         Option<FlowSummary>,

@@ -1,4 +1,6 @@
 //! C2b pure index queries. Successful queries do not open source execution.
+//! Multi-file positive queries follow the production Linux filesystem policy;
+//! local queries, display carriers, and entry-file parse limits are portable.
 use super::*;
 use crate::frontend::project::ProjectLimits;
 use std::{
@@ -193,6 +195,7 @@ fn enum_query_literal_classification_work_and_legacy_callee_costs() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_imported_alias_value_parameter_and_record_only_reference() {
     let fixture=Fixture::new(&[
@@ -281,6 +284,7 @@ fn enum_query_imported_alias_value_parameter_and_record_only_reference() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_private_prefix_and_function_errors_never_fall_back() {
     let fixture = Fixture::new(&[
@@ -334,6 +338,7 @@ fn enum_query_actual_fixed_and_prepared_name_carriers_are_measured() {
     assert_eq!(size_of::<PreparedTypeName<'_>>(), 576);
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_exposure_matches_literal_subtree_inclusion_matrix() {
     let fixture=Fixture::new(&[
@@ -402,6 +407,7 @@ fn enum_query_exposure_matches_literal_subtree_inclusion_matrix() {
     ));
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_ancestor_exposure_and_legacy_record_wrapper_agree() {
     let fixture=Fixture::new(&[
@@ -474,6 +480,7 @@ fn enum_query_ancestor_exposure_and_legacy_record_wrapper_agree() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_bounded_names_preserve_kind_work_and_infallible_display() {
     let module = "m".repeat(200);
@@ -521,6 +528,7 @@ fn enum_query_bounded_names_preserve_kind_work_and_infallible_display() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_name_length_boundaries_and_utf8_display_are_independent() {
     for length in [159, 160, 161] {
@@ -567,6 +575,10 @@ fn enum_query_name_length_boundaries_and_utf8_display_are_independent() {
         assert_eq!(display.len(), 160);
         assert!(display.ends_with(&format!("::{shown} [enum #0]")));
     }
+}
+
+#[test]
+fn enum_query_utf8_display_preserves_boundaries_without_source_identifiers() {
     // Direct formatter data, deliberately not a claim of Unicode source identifiers.
     let module = "é".repeat(100);
     let terminal = "λ".repeat(40);
@@ -628,6 +640,7 @@ fn deep_fixture(depth: usize, variant: bool, extra: bool) -> Fixture {
         .collect();
     Fixture::new(&borrowed)
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_full_path_limit_counts_member_and_function_endpoints() {
     for (depth, variant, expected) in [
@@ -666,6 +679,12 @@ fn enum_query_full_path_limit_counts_member_and_function_endpoints() {
             .query(&WorkMeter::default())
             .prepare_nominal_type_name(NominalId::Enum(EnumId(0)), last)
             .is_ok());
+    }
+}
+
+#[test]
+fn enum_query_oversized_path_rejects_before_child_module_loading() {
+    for (depth, variant) in [(31, true), (32, false)] {
         let oversized = deep_fixture(depth, variant, true);
         let failure = ProjectSources::load_enum_index_candidate(
             oversized.0.join("main.ox").to_str().unwrap(),
@@ -682,6 +701,7 @@ fn enum_query_full_path_limit_counts_member_and_function_endpoints() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_query_local_aliases_do_not_authorize_absolute_aliases_or_extra_members() {
     let fixture=Fixture::new(&[

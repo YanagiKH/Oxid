@@ -510,6 +510,7 @@ fn c3a_actual_source_hir_cache_staging_and_scope_layouts() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn c3a_imported_unused_enum_selects_complete_index() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};

@@ -493,6 +493,7 @@ fn bounded_enum_resolver_zero_enum_qualified_calls_preserve_the_legacy_route_exa
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn bounded_enum_resolver_project_aliases_and_signature_privacy_use_nominal_index() {
     let fixture = ProjectFixture::new(&[
@@ -515,7 +516,10 @@ fn bounded_enum_resolver_project_aliases_and_signature_privacy_use_nominal_index
             .unwrap()
             .unwrap();
     assert_eq!(facts.retained_counts[Kind::MatchArms as usize], 2);
+}
 
+#[test]
+fn bounded_enum_resolver_single_file_signature_privacy_uses_nominal_index() {
     for (source, code, expected) in [
         (
             "enum E{V} pub fn expose(value:E)->(){return;}",

@@ -709,6 +709,7 @@ fn c3a_paid_resolver_enum_branches_preserve_payload_and_scrutinee_diagnostics() 
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn c3a_paid_resolver_imported_enum_and_constructor_privacy_precede_payload_storage() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -861,6 +862,7 @@ fn c3a_paid_resolver_final_work_failures_drop_parts_constructed_inside_heap_wind
     });
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn c3a_paid_resolver_imported_unused_enum_selects_inert_project_observation() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};

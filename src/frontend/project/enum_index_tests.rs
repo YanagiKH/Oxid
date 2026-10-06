@@ -46,6 +46,7 @@ fn exact() -> ProjectLimits {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_loader_preserves_global_limits_and_real_file_association() {
     let fixture = Fixture::new();
@@ -146,6 +147,7 @@ fn enum_index_loader_preserves_global_limits_and_real_file_association() {
     .is_ok());
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
     let fixture = Fixture::new();
@@ -180,4 +182,124 @@ fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
 #[test]
 fn enum_index_loader_and_project_headers_are_measured() {
     println!("enum-index-loader-layout SourceSetBuilder={} ProjectSources={} ModuleHeader={} LoadFailure={} EnumPolicy={} Frame={}",size_of::<SourceSetBuilder<'_>>(),size_of::<ProjectSources>(),size_of::<ModuleHeader>(),size_of::<LoadFailure>(),size_of::<ProjectEnumSyntax>(),size_of::<Frame>());
+}
+
+// Child modules intentionally remain unavailable until this host's filesystem
+// policy is qualified. Both enum loader entry points must retain that boundary.
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn enum_index_loader_unqualified_host_stops_before_child_io() {
+    let fixture = Fixture::new();
+    // If a loader enters the child, it would report a parse error instead.
+    fs::write(fixture.0.join("a.ox"), "@ child must not be parsed").unwrap();
+    for failure in [
+        fixture
+            .load(exact(), &mut Allocator::default())
+            .unwrap_err(),
+        ProjectSources::load_typed(fixture.0.join("main.ox").to_str().unwrap(), exact())
+            .unwrap_err(),
+    ] {
+        assert_eq!(failure.diagnostics.len(), 1);
+        let error = &failure.diagnostics[0];
+        assert_eq!(
+            (error.code, error.stage, error.message.as_str()),
+            (
+                "E0005",
+                "source",
+                "module source policy is not qualified on this host"
+            )
+        );
+        let origin = error.primary.unwrap();
+        assert_eq!(
+            origin,
+            Span {
+                file: SourceFileId(0),
+                start: 4,
+                end: 5
+            }
+        );
+        assert_eq!(failure.sources.text(origin), "a");
+        assert!(error.secondary.is_empty() && error.notes.is_empty());
+        assert_eq!(failure.sources.files().len(), 1);
+        assert_eq!(
+            failure.sources.get(SourceFileId(0)).text(),
+            "mod a;enum E{V}"
+        );
+        assert_eq!(
+            (
+                failure.usage.source_bytes,
+                failure.usage.non_eof_tokens,
+                failure.usage.syntax_nodes,
+                failure.usage.modules
+            ),
+            (15, 10, 3, 1)
+        );
+        assert_eq!(
+            (
+                failure.usage.probes,
+                failure.usage.directory_entries,
+                failure.usage.directory_name_units
+            ),
+            (0, 0, 0)
+        );
+        assert!(!failure
+            .allocator
+            .trace
+            .iter()
+            .any(|event| event.kind == "module probe path"));
+        assert!(failure.allocator.trace.iter().all(|event| event.success));
+        assert_eq!(failure.allocator.trace.len(), failure.allocator.attempts);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn enum_index_loader_unqualified_host_reserve_failures_stop_at_the_paid_prefix() {
+    let fixture = Fixture::new();
+    let baseline = fixture
+        .load(exact(), &mut Allocator::default())
+        .unwrap_err();
+    assert_eq!(baseline.diagnostics[0].code, "E0005");
+    assert!(baseline.allocator.attempts > 0);
+    for fail_at in 1..=baseline.allocator.attempts {
+        let mut allocator = Allocator {
+            fail_at: Some(fail_at),
+            ..Allocator::default()
+        };
+        let failure = fixture.load(exact(), &mut allocator).unwrap_err();
+        assert_eq!(failure.diagnostics[0].code, "E0400");
+        assert!(matches!(
+            failure.diagnostics[0].stage,
+            "source-project" | "parse"
+        ));
+        assert_eq!(failure.allocator.attempts, fail_at);
+        assert_eq!(failure.allocator.trace.len(), fail_at);
+        assert!(failure.sources.files().len() <= 1);
+        assert_eq!(
+            (failure.usage.probes, failure.usage.directory_entries),
+            (0, 0)
+        );
+        for (position, (actual, expected)) in failure
+            .allocator
+            .trace
+            .iter()
+            .zip(&baseline.allocator.trace)
+            .enumerate()
+        {
+            assert_eq!(
+                (
+                    actual.kind,
+                    actual.length,
+                    actual.element_bytes,
+                    actual.success
+                ),
+                (
+                    expected.kind,
+                    expected.length,
+                    expected.element_bytes,
+                    position + 1 != fail_at
+                )
+            );
+        }
+    }
 }

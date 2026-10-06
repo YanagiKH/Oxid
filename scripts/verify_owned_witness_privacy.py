@@ -235,9 +235,9 @@ PROBES.append(("array-native-probe-absent-in-production", False, ("E0425",), """
 """))
 
 
-# Exact compile-time data dependencies of owned/source/array_types_tests.rs.
+# Exact compile-time data dependencies of array and enum source tests.
 # These are copied inputs for cfg(test) compilation, not additional privacy probes.
-COMPILE_TIME_FIXTURES = (
+ARRAY_COMPILE_TIME_FIXTURES = (
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -281,6 +281,13 @@ COMPILE_TIME_FIXTURES = (
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
 )
+
+
+ENUM_COMPILE_TIME_FIXTURES = (
+    'tests/fixtures/bounded_enum_scanner/main.ox',
+    'tests/fixtures/bounded_enum_scanner/scanner.ox',
+)
+COMPILE_TIME_FIXTURES = (*ARRAY_COMPILE_TIME_FIXTURES, *ENUM_COMPILE_TIME_FIXTURES)
 
 
 def materialize_checkout(root, checkout):

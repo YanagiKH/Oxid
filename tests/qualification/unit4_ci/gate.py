@@ -242,7 +242,7 @@ def prepare_host(args, repo, output, provenance, measured, driver):
     driver.stage('01-contract-verification', [transport, 'verify'], 120)
     driver.stage('02-contract-materialization', [transport, 'extract', '--destination', output / 'contracts'], 120)
     roots, mapping = materialized(repo, output)
-    c, _, _, _, _ = q.public_modules(repo)
+    c, runtime, _, _, _ = q.public_modules(repo)
     contracts = c.Contracts(roots['public'], mapping, repo / q.AMENDMENT)
     ci = {key: os.environ.get(key) for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_WORKFLOW', 'GITHUB_EVENT_NAME', 'GITHUB_REPOSITORY')}
     plan = plan_for(contracts, measured, provenance, ci)
@@ -258,7 +258,7 @@ def prepare_host(args, repo, output, provenance, measured, driver):
     shutil.copytree(repo / retained, source_root / retained)
     driver.stage('03-lifecycle-preparation', [repo / q.PUBLIC / 'build.py', 'prepare-observer', '--source-root', source_root,
                  '--manifest', repo / q.SOURCE / 'current-source.json', '--observer-patch', repo / q.OBSERVER_PATCH,
-                 '--observer-patch-sha256', 'e5a5673475a6b858672c37a2798380e65b8bc7e56e1cdbd7752be9e60593f18d', '--out', output / 'observer-source'], 120)
+                 '--observer-patch-sha256', runtime.LIFECYCLE_PATCH_SHA, '--out', output / 'observer-source'], 120)
     return roots, contracts, plan
 
 

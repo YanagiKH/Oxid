@@ -130,13 +130,13 @@ pub(super) struct VectorReturnEnvelope<T> {
 // generic Result<Vec<T>, _> layouts are identical. New uses must extend this set.
 pub(super) const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
     let mut largest = 0;
-    macro_rules! include {
+    macro_rules! measure_carriers {
         ($($ty:ty),* $(,)?) => { $(
             let bytes = size_of::<VectorReturnEnvelope<$ty>>();
             if bytes > largest { largest = bytes; }
         )* };
     }
-    include!(
+    measure_carriers!(
         Record,
         Field,
         FieldId,

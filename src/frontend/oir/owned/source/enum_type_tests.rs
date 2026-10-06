@@ -273,6 +273,7 @@ fn bounded_enum_pipeline_tiny_relay_executes_after_full_proof_and_releases_backi
     });
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -460,4 +461,34 @@ fn bounded_enum_pipeline_emits_after_success_and_inert_fuel_error_then_drops_art
             println!("ENUM_PIPELINE_EMIT fuel={fuel} llvm_bytes={llvm_bytes} calls={calls} live={live} peak={peak}");
         }
     });
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn bounded_enum_pipeline_scanner_preserves_unqualified_host_diagnostic() {
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    let failure = ProjectSources::load_enum_index_candidate(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/bounded_enum_scanner/main.ox"
+        ),
+        ProjectLimits::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap_err();
+    assert_eq!(failure.diagnostics.len(), 1);
+    let error = &failure.diagnostics[0];
+    assert_eq!(
+        (error.code, error.stage, error.message.as_str()),
+        (
+            "E0005",
+            "source",
+            "module source policy is not qualified on this host"
+        )
+    );
+    let origin = error.primary.unwrap();
+    assert_eq!(origin.file, SourceFileId(0));
+    assert_eq!(failure.sources.text(origin), "scanner");
+    assert_eq!(failure.sources.files().len(), 1);
+    assert_eq!((failure.usage.modules, failure.usage.probes), (1, 0));
 }

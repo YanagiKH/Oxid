@@ -130,6 +130,45 @@ class ProvenanceOrderingControls(unittest.TestCase):
             with self.subTest(mutation=mutation): self.assertNotEqual(join.provenance_key(changed), expected)
 
 
+class HostPreparationControls(unittest.TestCase):
+    def test_actual_host_preparation_uses_current_overlay_and_stage_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            runtime = q.public_modules(REPO)[1]
+            provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+            driver = gate.Driver(REPO, root, provenance, runtime)
+            # Admission has separate exact-commit controls; exercise the actual
+            # preparation commands and Driver.stage defaults without a compiler.
+            with patch.object(q, 'admit', return_value=provenance), \
+                 patch.object(runtime, 'process', wraps=runtime.process) as process:
+                gate.prepare_host(SimpleNamespace(), REPO, root, provenance, q.measured_host(), driver)
+            receipts = [q.read(record['path']) for record in driver.state['stages']]
+            self.assertEqual([row['name'] for row in receipts],
+                             ['01-contract-verification', '02-contract-materialization', '03-lifecycle-preparation'])
+            self.assertEqual(process.call_count, 3)
+            for row in receipts:
+                self.assertEqual(row['status'], 0)
+                self.assertEqual(row['accepted_exit_codes'], [0])
+                self.assertFalse(row['timed_out'])
+                self.assertFalse(row['stream_limit_exceeded'])
+                self.assertEqual(row['argv'][:2], [sys.executable, '-B'])
+            lifecycle = receipts[-1]['argv']
+            self.assertEqual(lifecycle[2:4], [str(REPO / q.PUBLIC / 'build.py'), 'prepare-observer'])
+            patch_path = Path(lifecycle[lifecycle.index('--observer-patch') + 1])
+            self.assertEqual(patch_path, REPO / q.OBSERVER_PATCH)
+            patch_identity = q.identity(patch_path)
+            self.assertEqual(lifecycle[lifecycle.index('--observer-patch-sha256') + 1], patch_identity['sha256'])
+            prepared = q.read(root / 'observer-source/prepared.json')
+            self.assertEqual(prepared['compiler_invocations'], 0)
+            observer = q.read(root / 'observer-source/observer-source.json')
+            self.assertEqual(observer['observer_patch'], patch_identity)
+            self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
+            self.assertEqual(len(observer['files']), 238)
+            runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
+            self.assertFalse((root / 'ordinary-build').exists())
+            self.assertFalse((root / 'observer-build').exists())
+
+
 class ObserverPreparationControls(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -771,6 +810,20 @@ class CapsuleControls(unittest.TestCase):
 
     def test_unchanged_transport(self):
         self.assertEqual(ReadCapsule(self.root / 'capsule').raw(self.bound), self.raw.read_bytes())
+
+    def test_symlink_output_ancestry_requires_resolved_test_root(self):
+        target = self.root / 'real-directory'
+        target.mkdir()
+        alias = self.root / 'directory-alias'
+        try: alias.symlink_to(target, target_is_directory=True)
+        except OSError: self.skipTest('host lacks symlink creation permission; production still rejects symlinks')
+        with self.assertRaisesRegex(q.Reject, 'symlink output ancestry'):
+            Capsule(alias / 'capsule')
+        self.assertFalse((target / 'capsule').exists())
+        capsule = Capsule(alias.resolve() / 'capsule')
+        capsule.add(self.raw, 'synthetic-control')
+        capsule.finish({'status': 'pass', 'scope': 'synthetic transport control only'})
+        self.assertEqual(ReadCapsule(capsule.root).raw(self.bound), self.raw.read_bytes())
 
     def test_altered_member(self):
         (self.root / 'capsule/members/00000').write_bytes(b'altered')
@@ -1421,7 +1474,7 @@ class EnumSemanticReceiptTransportControls(unittest.TestCase):
 
     def test_compact_reader_retains_named_authority_and_historical_report(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             capsule = Capsule(root / 'capsule')
             source = REPO / q.SOURCE / 'current-source.json'
             authority_path, history_path = root / 'qualified-paths-amendment.json', root / 'historical-comparison.json'
