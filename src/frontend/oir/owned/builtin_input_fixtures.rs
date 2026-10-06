@@ -489,7 +489,7 @@ pub(super) fn forwarded_program(
 ) -> (SourceMap, RawOwnedProgram, hir::DefId) {
     let (sources, mut raw, entry) = program(3, observation);
     let origin = raw.functions[0].span;
-    let s = |index| e::at(origin, 3500 + index);
+    let s = |index: usize| e::at(origin, 3500 + index);
     let mut forward = f::function(1, ValueTy::Owned(AggregateTy::Enum(EnumId(0))), s(0));
     forward.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
     forward.references = vec![ReferenceDecl {
