@@ -132,9 +132,8 @@ impl<'src> ResolvedOwnedProgram<'src> {
     pub(super) fn admission(&self) -> SourceAdmission {
         self.admission
     }
-    /// Interior-mutable authority for the one closed fresh statistics call.
-    /// This is not a seed setter or an admission/source-association proof.
-    #[cfg(test)]
+    /// Shared budget access for closed fresh typing only. This is not a seed
+    /// setter or an admission/source-association proof.
     pub(super) fn type_storage_cell(&self) -> &std::cell::Cell<usize> {
         &self.projection_bytes
     }
@@ -370,8 +369,79 @@ fn resolve_index(
     index
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
+    if index.enum_count() != 0 {
+        return Err(vec![*error(
+            "E0101",
+            format_args!("enum source requires fresh paid typing"),
+            index.sources().eof(),
+        )]);
+    }
     resolve_index_impl(index, work, allocator, None)
 }
+/// Sole production enum typing construction. Source provenance is checked
+/// before storage, and no owner, seed, plan or admission is supplied by callers.
+/// Public collection/parser defaults remain closed in this precursor.
+#[allow(dead_code)]
+pub(in crate::frontend) fn type_enum_source<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    index
+        .require_current_source_pipeline()
+        .map_err(|error| vec![*error])?;
+    let at = index.sources().eof();
+    if index.enum_count() == 0 {
+        return Err(vec![*error(
+            "E0500",
+            format_args!("fresh enum typing requires enum declarations"),
+            at,
+        )]);
+    }
+    let attempts_before = allocator.attempts;
+    let plan = super::hir_budget::preflight_enum_hir(index, work)
+        .map_err(|error| vec![*error])?
+        .ok_or_else(|| {
+            vec![*error(
+                "E0500",
+                format_args!("missing enum HIR preflight"),
+                at,
+            )]
+        })?;
+    let parts;
+    let resolver_end;
+    {
+        let mut paid = PaidStorage::new(plan.counts);
+        parts = resolve_index_impl(index, work, allocator, Some(&mut paid))?;
+        let inventory = storage::inventory_parts(&parts, work, at).map_err(|error| vec![*error])?;
+        resolver_end = allocator.attempts;
+        let delta = resolver_end.checked_sub(attempts_before).ok_or_else(|| {
+            vec![*error(
+                "E0400",
+                format_args!("resolver allocation attempt counter regressed"),
+                at,
+            )]
+        })?;
+        paid.reconcile(&plan, inventory, delta, work, at)
+            .map_err(|error| vec![*error])?;
+    }
+    let (records, signatures, functions) = parts;
+    let program = ResolvedOwnedProgram {
+        projection_bytes: std::cell::Cell::new(plan.total),
+        admission: SourceAdmission::Executable,
+        sources: index.sources().view(),
+        index: IndexOwner::Borrowed(index),
+        work: MeterOwner::Borrowed(work),
+        records,
+        signatures,
+        functions,
+        entry: index.root_original_main(),
+    };
+    // The scalar checkpoint detects any request inserted between reconciled
+    // resolution and paid typing; it is not a caller-chosen seed or capability.
+    super::typeck::finish_enum_source(program, &plan, allocator, resolver_end)
+}
+
 /// Test-only fixed statistics, never a source/typing/ownership witness. All
 /// private parts and construction-local storage end before the result returns.
 #[cfg(test)]
@@ -2726,3 +2796,27 @@ mod enum_semantic_tests;
 #[cfg(test)]
 #[path = "enum_storage_failure_tests.rs"]
 mod enum_storage_failure_tests;
+
+// New production-only named transports. Existing resolver/paid preparation
+// banks retain their exact plan/account/parts/owner-construction roles; no
+// artifact/observation envelope is substituted for a typed-owner return.
+#[allow(dead_code)]
+struct ProductionSourceCarriers {
+    index: &'static DeclarationIndex<'static>,
+    work: &'static WorkMeter,
+    allocator: &'static mut Allocator,
+    provenance_return: Result<(), Box<Diagnostic>>,
+    provenance_normalized: Result<(), Vec<Diagnostic>>,
+    plan_normalized: Result<Option<super::hir_budget::HirPlan>, Vec<Diagnostic>>,
+    selected_plan: Result<super::hir_budget::HirPlan, Vec<Diagnostic>>,
+    inventory_normalized: Result<storage::ResolverInventory, Vec<Diagnostic>>,
+    resolver_end: usize,
+    checkpoint_argument: usize,
+    delta_normalized: Result<usize, Vec<Diagnostic>>,
+    reconciliation_normalized: Result<storage::ResolverStorageObservation, Vec<Diagnostic>>,
+    discarded_observation: storage::ResolverStorageObservation,
+    returned: Result<super::typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+}
+pub(super) const fn production_source_carrier_bytes() -> usize {
+    std::mem::size_of::<ProductionSourceCarriers>()
+}

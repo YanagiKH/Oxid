@@ -111,7 +111,6 @@ impl TypedOwnedProgram<'_> {
     /// charge. Ordinary owners have no enum index; this grants no admission and
     /// exposes neither the Cell nor a way to seed/reset it.
     pub(super) fn source_storage_bytes(&self) -> Option<usize> {
-        #[cfg(test)]
         if self.index().enum_count() != 0 {
             return Some(self.program.type_storage_cell().get());
         }
@@ -297,6 +296,14 @@ pub(in crate::frontend::oir) fn check(
             "E0500",
             "type",
             "paid enum type observation requires its private checker",
+            None,
+        )]);
+    }
+    if program.index().enum_count() != 0 {
+        return Err(vec![*diagnostic(
+            "E0500",
+            "type",
+            "enum-bearing source requires fresh paid typing",
             None,
         )]);
     }
@@ -673,6 +680,106 @@ pub(super) fn finish_enum_pipeline(
     })
 }
 
+/// Only resolve::type_enum_source calls this paid production completion.
+/// Return the ordinary typed owner only after inventory and reconciliation.
+#[allow(dead_code)]
+pub(super) fn finish_enum_source<'s>(
+    program: ResolvedOwnedProgram<'s>,
+    source: &super::hir_budget::HirPlan,
+    allocator: &mut Allocator,
+    resolver_end: usize,
+) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    let bodies;
+    let _typed_observation;
+    {
+        let work = program.work();
+        let at = program.index().sources().eof();
+        if program.admission() != SourceAdmission::Executable || program.index().enum_count() == 0 {
+            let error = paid_state(at);
+            work.record_error(&error);
+            return Err(vec![*error]);
+        }
+        let total = program.type_storage_cell();
+        if total.get() != source.total {
+            let error = paid_state(at);
+            work.record_error(&error);
+            return Err(vec![*error]);
+        }
+        if allocator.attempts != resolver_end {
+            let error = paid_state(at);
+            work.record_error(&error);
+            return Err(vec![*error]);
+        }
+        let attempts_before = allocator.attempts;
+        {
+            match storage::prepare(
+                program.records(),
+                program.signatures(),
+                program.functions(),
+                source,
+                work,
+                at,
+            ) {
+                Ok(mut plan) => {
+                    let mut observed = storage::TypedObserved::new();
+                    bodies = {
+                        let mut context = ProgramPaid {
+                            plan: &mut plan,
+                            allocator: &mut *allocator,
+                            projection_bytes: total,
+                            observed: &mut observed,
+                        };
+                        // A Vec failure was already recorded by the shared core.
+                        check_bodies(&program, Some(&mut context))?
+                    };
+                    match typed_inventory::bodies(&program, &bodies) {
+                        Ok(inventory) => {
+                            let attempts_after = allocator.attempts;
+                            let delta_option = attempts_after.checked_sub(attempts_before);
+                            match delta_option {
+                                Some(delta) => match storage::reconcile_typed_storage(
+                                    &observed,
+                                    &inventory,
+                                    plan.counts(),
+                                    source,
+                                    total,
+                                    delta,
+                                    work,
+                                    at,
+                                ) {
+                                    Ok(observation) => _typed_observation = observation,
+                                    Err(error) => {
+                                        work.record_error(&error);
+                                        return Err(vec![*error]);
+                                    }
+                                },
+                                None => {
+                                    let error = error(
+                                        "E0400",
+                                        "typed allocation attempt counter regressed",
+                                        at,
+                                    );
+                                    work.record_error(&error);
+                                    return Err(vec![*error]);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            work.record_error(&error);
+                            return Err(vec![*error]);
+                        }
+                    }
+                }
+                Err(error) => {
+                    work.record_error(&error);
+                    return Err(vec![*error]);
+                }
+            }
+        }
+    }
+    Ok(TypedOwnedProgram { program, bodies })
+}
+
 // Stage D's separately prepaid caller/return roles. PreparationCarriers
 // already owns the caller TypePlan and BorrowedCheckCarriers the caller Bodies;
 // Stage A owns the observed constructor/return and count-access transports;
@@ -728,13 +835,15 @@ fn check_bodies(
     program: &ResolvedOwnedProgram<'_>,
     mut paid: Option<&mut ProgramPaid<'_, '_>>,
 ) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
-    #[cfg(test)]
-    let enum_types = matches!(
-        program.admission(),
-        SourceAdmission::ObserveEnumTypes | SourceAdmission::EnumPipeline
-    );
-    #[cfg(not(test))]
-    let enum_types = false;
+    let enum_types = match program.admission() {
+        SourceAdmission::Executable => program.index().enum_count() != 0,
+        #[cfg(test)]
+        SourceAdmission::ObserveEnumTypes | SourceAdmission::EnumPipeline => true,
+        #[cfg(test)]
+        SourceAdmission::ObserveArrayTypes
+        | SourceAdmission::ObserveArrayPipeline
+        | SourceAdmission::ArrayConsumer => false,
+    };
     if enum_types != paid.is_some() {
         return Err(vec![*diagnostic(
             "E0500",
@@ -4554,4 +4663,47 @@ struct EnumPipelineTypeCarriers {
 }
 pub(super) const fn enum_pipeline_type_carrier_bytes() -> usize {
     std::mem::size_of::<EnumPipelineTypeCarriers>()
+}
+
+// The ordinary complete TypedOwnedProgram bank pays its construction once.
+// This adds the new owned callee input and complete typed-owner return; neither
+// is paid by an unrelated private artifact result merely because it is larger.
+#[allow(dead_code)]
+struct ProductionTypeCarriers {
+    owned_argument: ResolvedOwnedProgram<'static>,
+    checkpoint: usize,
+    checkpoint_mismatch: bool,
+    enum_count: usize,
+    enum_empty: bool,
+    returned: Result<TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+}
+pub(super) const fn production_type_carrier_bytes() -> usize {
+    std::mem::size_of::<ProductionTypeCarriers>()
+}
+
+#[test]
+fn bounded_enum_production_type_envelopes_are_separate_and_observers_stay_closed() {
+    use std::mem::{align_of, size_of};
+    let _: for<'a> fn(&'a ProductionTypeCarriers) -> &'a ResolvedOwnedProgram<'static> =
+        |model| &model.owned_argument;
+    let _: for<'a> fn(
+        &'a ProductionTypeCarriers,
+    ) -> &'a Result<TypedOwnedProgram<'static>, Vec<Diagnostic>> = |model| &model.returned;
+    assert!(
+        production_type_carrier_bytes()
+            >= size_of::<ResolvedOwnedProgram<'static>>()
+                + size_of::<Result<TypedOwnedProgram<'static>, Vec<Diagnostic>>>()
+    );
+    assert!(!SourceAdmission::ObserveEnumTypes.allows_lowering());
+    assert!(!SourceAdmission::EnumPipeline.executable());
+    println!(
+        "ENUM_PRODUCTION_TYPE_LAYOUT source={} type={} resolved={}/{} typed={}/{} typed_return={}",
+        super::resolve::production_source_carrier_bytes(),
+        production_type_carrier_bytes(),
+        size_of::<ResolvedOwnedProgram<'static>>(),
+        align_of::<ResolvedOwnedProgram<'static>>(),
+        size_of::<TypedOwnedProgram<'static>>(),
+        align_of::<TypedOwnedProgram<'static>>(),
+        size_of::<Result<TypedOwnedProgram<'static>, Vec<Diagnostic>>>()
+    );
 }

@@ -636,6 +636,18 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::QualifiedValue {
+                path,
+                args: Some(args),
+            } if self.index.enum_count() == 0
+                && self
+                    .ast
+                    .paths
+                    .get(path.0)
+                    .is_some_and(|path| path.root == ast::PathRoot::Crate) =>
+            {
+                self.call(expr.span, ast::ItemPath::Absolute(*path), args)?
+            }
             ast::ExprKind::QualifiedValue { .. } => {
                 return Err(Diagnostic::new(
                     "E0101",
@@ -679,29 +691,7 @@ impl<'a> Resolver<'_, 'a> {
                 })?;
                 ExprKind::Local(local.0)
             }
-            ast::ExprKind::Call { callee, args } => {
-                let target = self.index.query(self.work).callee(
-                    self.requester,
-                    ItemPathRef {
-                        file: expr.span.file,
-                        path: *callee,
-                    },
-                    true,
-                )?;
-                let args = args
-                    .iter()
-                    .map(|arg| match arg {
-                        ast::Argument::Value(id) => self.expression(*id),
-                        ast::Argument::Borrow { span, .. } => Err(Diagnostic::new(
-                            "E0500",
-                            "resolve",
-                            "owned syntax entered scalar resolution",
-                            Some(*span),
-                        )),
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                ExprKind::Call { target, args }
-            }
+            ast::ExprKind::Call { callee, args } => self.call(expr.span, *callee, args)?,
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
             ast::ExprKind::Negate {
                 operand,
@@ -770,5 +760,33 @@ impl<'a> Resolver<'_, 'a> {
             span: expr.span,
         });
         Ok(id)
+    }
+    fn call(
+        &mut self,
+        span: Span,
+        callee: ast::ItemPath,
+        args: &[ast::Argument],
+    ) -> Result<ExprKind, Box<Diagnostic>> {
+        let target = self.index.query(self.work).callee(
+            self.requester,
+            ItemPathRef {
+                file: span.file,
+                path: callee,
+            },
+            true,
+        )?;
+        let args = args
+            .iter()
+            .map(|arg| match arg {
+                ast::Argument::Value(id) => self.expression(*id),
+                ast::Argument::Borrow { span, .. } => Err(Diagnostic::new(
+                    "E0500",
+                    "resolve",
+                    "owned syntax entered scalar resolution",
+                    Some(*span),
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ExprKind::Call { target, args })
     }
 }
