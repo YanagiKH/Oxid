@@ -252,3 +252,73 @@ fn bounded_enum_pipeline_tiny_relay_executes_after_full_proof_and_releases_backi
         }
     });
 }
+
+#[test]
+fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    let project = ProjectSources::load_enum_index_candidate(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/bounded_enum_scanner/main.ox"
+        ),
+        ProjectLimits::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    let index_work = WorkMeter::default();
+    let mut index_allocator = Allocator::default();
+    let index = collect_enum_candidate(
+        SourceOwner::project(&project),
+        IndexLimits::default(),
+        &index_work,
+        &mut index_allocator,
+    )
+    .unwrap()
+    .finish(&index_work, &mut index_allocator)
+    .unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(1024).unwrap();
+    let (result, (calls, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+        super::super::resolve::probe_enum_pipeline(&index, &work, &mut allocator)
+    });
+    let facts = result.unwrap().unwrap();
+    // Independent pilot oracle: Integer(12), Plus, Integer(3), End => 12+100+3.
+    assert_eq!(
+        facts.pipeline.result,
+        crate::frontend::oir::Scalar::I32(115)
+    );
+    assert_eq!(
+        (
+            facts.pipeline.enum_count,
+            facts.pipeline.variant_count,
+            facts.pipeline.function_count,
+            facts.pipeline.match_count,
+            facts.pipeline.arm_count
+        ),
+        (1, 4, 3, 1, 4)
+    );
+    assert_eq!(
+        facts.pipeline.source_usage.analysis,
+        facts.pipeline.raw_usage
+    );
+    assert_eq!(
+        facts.pipeline.verified_usage.owners,
+        facts.pipeline.raw_usage.owners
+    );
+    assert_eq!(facts.pipeline.source_seed_before, facts.typed.final_cell);
+    assert_eq!(facts.pipeline.source_seed_after, facts.typed.final_cell);
+    assert!(facts.typed.path_vectors > 0);
+    assert!(facts.typed.final_cell > facts.resolver.plan.total);
+    assert_eq!(
+        allocator.attempts,
+        facts.resolver.reservation_attempts + facts.typed.typed_attempts
+    );
+    assert_eq!(live, 0);
+    assert!(calls > 0 && peak > 0);
+    assert!(!allocator.observer_trace_overflow);
+    assert!(allocator.trace.iter().all(|event| event.success));
+    println!("ENUM_PIPELINE_SCANNER result=115 resolver={} typed={} paths={} seed={} calls={calls} live={live} peak={peak}",
+        facts.resolver.reservation_attempts, facts.typed.typed_attempts,
+        facts.typed.path_vectors, facts.typed.final_cell);
+}
