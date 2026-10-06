@@ -29,6 +29,8 @@ pub(super) enum SourceAdmission {
     #[cfg(test)]
     ObserveEnumTypes,
     #[cfg(test)]
+    EnumPipeline,
+    #[cfg(test)]
     ObserveArrayPipeline,
     #[cfg(test)]
     ArrayConsumer,
@@ -41,7 +43,7 @@ impl SourceAdmission {
         match self {
             Self::Executable => true,
             #[cfg(test)]
-            Self::ObserveArrayPipeline | Self::ArrayConsumer => true,
+            Self::ObserveArrayPipeline | Self::ArrayConsumer | Self::EnumPipeline => true,
             #[cfg(test)]
             Self::ObserveArrayTypes | Self::ObserveEnumTypes => false,
         }
@@ -565,6 +567,142 @@ fn fresh_enum_type_storage<'s>(
     }
 }
 
+/// Denied precursor: the complete fixed return type is priced and measured
+/// before this selector may call the one closed fresh pipeline construction.
+#[cfg(test)]
+#[allow(dead_code)]
+pub(super) fn probe_enum_pipeline<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Option<EnumPipelineObservation>, Vec<Diagnostic>> {
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    let _ = (work, allocator);
+    Err(vec![*error(
+        "E0500",
+        format_args!("enum pipeline precursor is not admitted"),
+        index.sources().eof(),
+    )])
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(super) struct EnumPipelineObservation {
+    pub(super) resolver: storage::ResolverStorageObservation,
+    pub(super) typed: super::type_storage::TypeStorageObservation,
+    pub(super) pipeline: super::program::EnumPipelineFacts,
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn fresh_enum_pipeline<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Option<EnumPipelineObservation>, Vec<Diagnostic>> {
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    let attempts_before = allocator.attempts;
+    let at = index.sources().eof();
+    match super::hir_budget::preflight_enum_hir(index, work) {
+        Ok(Some(plan)) => {
+            let parts;
+            let resolver_observation;
+            {
+                let mut paid = PaidStorage::new(plan.counts);
+                parts = resolve_index_impl(index, work, allocator, Some(&mut paid))?;
+                match storage::inventory_parts(&parts, work, at) {
+                    Ok(inventory) => {
+                        let attempts_after = allocator.attempts;
+                        let delta_option = attempts_after.checked_sub(attempts_before);
+                        match delta_option {
+                            Some(delta) => {
+                                match paid.reconcile(&plan, inventory, delta, work, at) {
+                                    Ok(observation) => resolver_observation = observation,
+                                    Err(error) => return Err(vec![*error]),
+                                }
+                            }
+                            None => {
+                                return Err(vec![*error(
+                                    "E0400",
+                                    format_args!("resolver allocation attempt counter regressed"),
+                                    at,
+                                )])
+                            }
+                        }
+                    }
+                    Err(error) => return Err(vec![*error]),
+                }
+            }
+            // The resolver account and inventory borrows have ended. Move the
+            // exact fresh parts directly into one owner; never upgrade a prior
+            // executable owner or accept a caller-chosen seed/context.
+            let typed_observation;
+            {
+                let (records, signatures, functions) = parts;
+                let program = ResolvedOwnedProgram {
+                    projection_bytes: std::cell::Cell::new(plan.total),
+                    admission: SourceAdmission::EnumPipeline,
+                    index: IndexOwner::Borrowed(index),
+                    work: MeterOwner::Borrowed(work),
+                    sources: index.sources().view(),
+                    records,
+                    signatures,
+                    functions,
+                    entry: index.root_original_main(),
+                };
+                typed_observation =
+                    super::typeck::finish_enum_pipeline(program, &plan, &mut *allocator)?;
+            }
+            // The owner is gone before any combined facts are constructed.
+            let attempts_final = allocator.attempts;
+            let total_delta_option = attempts_final.checked_sub(attempts_before);
+            match total_delta_option {
+                Some(total_delta) => {
+                    let phase_delta_option = resolver_observation
+                        .reservation_attempts
+                        .checked_add(typed_observation.typed.typed_attempts);
+                    match phase_delta_option {
+                        Some(phase_delta) => {
+                            if total_delta != phase_delta {
+                                return Err(vec![*error(
+                                    "E0500",
+                                    format_args!("typed observation allocation interval mismatch"),
+                                    at,
+                                )]);
+                            }
+                            Ok(Some(EnumPipelineObservation {
+                                resolver: resolver_observation,
+                                typed: typed_observation.typed,
+                                pipeline: typed_observation.pipeline,
+                            }))
+                        }
+                        None => Err(vec![*error(
+                            "E0400",
+                            format_args!("typed observation allocation interval overflow"),
+                            at,
+                        )]),
+                    }
+                }
+                None => Err(vec![*error(
+                    "E0400",
+                    format_args!("typed observation allocation counter regressed"),
+                    at,
+                )]),
+            }
+        }
+        Ok(None) => Err(vec![*error(
+            "E0500",
+            format_args!("missing enum HIR preflight for typed observation"),
+            at,
+        )]),
+        Err(error) => Err(vec![*error]),
+    }
+}
+
 // Stage D's separately prepaid actual roles. Existing resolver fixed,
 // inventory and ProbeCarriers retain the plan/account/parts and resolver-fact
 // pattern/caller roles plus the initial resolver interval controls. The primary
@@ -597,6 +735,54 @@ struct FreshTypeObservationCarriers {
     optional: Option<EnumTypeStorageObservation>,
     returned: Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>>,
 }
+// Same closed fresh-construction role family, with an owned continuation input
+// and larger fixed facts. Only one entry is selected; charge the measured excess
+// over its existing bank rather than duplicating common plan/account/parts state.
+#[allow(dead_code)]
+struct FreshEnumPipelineCarriers {
+    enum_count: usize,
+    eof_source: SourceOwner<'static>,
+    records: Vec<Record>,
+    signatures: Vec<Signature>,
+    functions: Vec<Function>,
+    constructed_owner: ResolvedOwnedProgram<'static>,
+    view_source: SourceOwner<'static>,
+    view_return: SourceView<'static>,
+    entry_return: Option<DefId>,
+    seed: usize,
+    cell_return: std::cell::Cell<usize>,
+    owner_argument: ResolvedOwnedProgram<'static>,
+    plan_borrow: &'static super::hir_budget::HirPlan,
+    allocator_reborrow: &'static mut Allocator,
+    typed_observation: super::typeck::EnumPipelineTypedFacts,
+    typed_return: Result<super::typeck::EnumPipelineTypedFacts, Vec<Diagnostic>>,
+    attempts_final: usize,
+    total_delta_option: Option<usize>,
+    total_delta: usize,
+    phase_delta_option: Option<usize>,
+    phase_delta: usize,
+    interval_mismatch: bool,
+    constructed: EnumPipelineObservation,
+    optional: Option<EnumPipelineObservation>,
+    returned: Result<Option<EnumPipelineObservation>, Vec<Diagnostic>>,
+}
+#[allow(dead_code)]
+struct DeniedEnumPipelineProbeCarriers {
+    index: &'static DeclarationIndex<'static>,
+    work: &'static WorkMeter,
+    allocator: &'static mut Allocator,
+    enum_count: usize,
+    sources: SourceOwner<'static>,
+    origin: Span,
+    returned: Result<Option<EnumPipelineObservation>, Vec<Diagnostic>>,
+}
+pub(super) const fn enum_pipeline_source_extra_bytes() -> usize {
+    std::mem::size_of::<FreshEnumPipelineCarriers>()
+        .saturating_sub(std::mem::size_of::<FreshTypeObservationCarriers>())
+        + std::mem::size_of::<DeniedEnumPipelineProbeCarriers>()
+            .saturating_sub(std::mem::size_of::<DeniedTypeProbeCarriers>())
+}
+
 #[allow(dead_code)]
 struct TypeStorageCellCarriers {
     program: &'static ResolvedOwnedProgram<'static>,

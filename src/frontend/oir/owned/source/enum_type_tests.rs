@@ -131,3 +131,51 @@ fn bounded_enum_type_constructor_payload_and_arm_binding_are_observed_once() {
         assert_eq!(binders, 1);
     });
 }
+
+#[test]
+fn bounded_enum_pipeline_precursor_is_denied_and_enum_free_is_inert() {
+    with_index("fn main()->i32{return 0;}", |index| {
+        let work = WorkMeter::new(0);
+        let mut allocator = Allocator {
+            attempts: 7,
+            ..Allocator::default()
+        };
+        let (result, heap) = super::super::reviewer_source::integration_measured(|| {
+            super::super::resolve::probe_enum_pipeline(index, &work, &mut allocator)
+        });
+        assert!(result.unwrap().is_none());
+        assert_eq!(heap, (0, 0, 0));
+        assert_eq!(allocator.attempts, 7);
+        assert!(allocator.trace.is_empty());
+    });
+    with_index("enum E{V} fn main()->i32{return 0;}", |index| {
+        let work = WorkMeter::new(0);
+        let mut allocator = Allocator {
+            attempts: 7,
+            ..Allocator::default()
+        };
+        let errors =
+            super::super::resolve::probe_enum_pipeline(index, &work, &mut allocator).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E0500");
+        assert_eq!(allocator.attempts, 7);
+        assert!(allocator.trace.is_empty());
+    });
+    assert!(!SourceAdmission::EnumPipeline.executable());
+    assert!(SourceAdmission::EnumPipeline.allows_lowering());
+    assert!(!SourceAdmission::ObserveEnumTypes.allows_lowering());
+}
+
+#[test]
+fn bounded_enum_pipeline_precursor_named_carrier_layouts() {
+    println!("ENUM_PIPELINE_LAYOUT source_extra={} type_controls={} program_controls={} observation={} observation_return={} typed_facts={} typed_return={} program_facts={} program_return={}",
+        super::super::resolve::enum_pipeline_source_extra_bytes(),
+        enum_pipeline_type_carrier_bytes(),
+        super::super::program::enum_pipeline_program_carrier_bytes(),
+        std::mem::size_of::<super::super::resolve::EnumPipelineObservation>(),
+        std::mem::size_of::<Result<Option<super::super::resolve::EnumPipelineObservation>, Vec<Diagnostic>>>(),
+        std::mem::size_of::<EnumPipelineTypedFacts>(),
+        std::mem::size_of::<Result<EnumPipelineTypedFacts, Vec<Diagnostic>>>(),
+        std::mem::size_of::<super::super::program::EnumPipelineFacts>(),
+        std::mem::size_of::<Result<super::super::program::EnumPipelineFacts, Vec<Diagnostic>>>());
+}

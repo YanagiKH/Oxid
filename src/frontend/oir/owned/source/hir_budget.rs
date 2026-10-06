@@ -540,6 +540,15 @@ impl HirPlan {
             typeck::borrowed_type_observation_carrier_bytes(),
             at,
         )?;
+        // Denied private pipeline precursor: actual new named enclosing
+        // carriers are paid before its source selector can be activated.
+        increment(&mut fixed, resolve::enum_pipeline_source_extra_bytes(), at)?;
+        increment(&mut fixed, typeck::enum_pipeline_type_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            super::program::enum_pipeline_program_carrier_bytes(),
+            at,
+        )?;
         // The witnessed ValueTy::Scalar function-item local is zero-sized;
         // there is no function pointer or additional receiver to invent.
         charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;

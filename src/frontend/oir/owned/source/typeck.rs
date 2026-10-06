@@ -117,6 +117,11 @@ impl TypedOwnedProgram<'_> {
         }
         None
     }
+    #[cfg(test)]
+    pub(super) fn work(&self) -> &crate::frontend::declaration_index::WorkMeter {
+        self.program.work()
+    }
+
     pub(super) fn records(&self) -> &[Record] {
         self.program.records()
     }
@@ -284,7 +289,10 @@ pub(in crate::frontend::oir) fn check(
     // A paid statistics owner must never select the legacy storage branch.
     // Deny before phase observation, borrowed preparation or any body vectors.
     #[cfg(test)]
-    if program.admission() == SourceAdmission::ObserveEnumTypes {
+    if matches!(
+        program.admission(),
+        SourceAdmission::ObserveEnumTypes | SourceAdmission::EnumPipeline
+    ) {
         return Err(vec![*diagnostic(
             "E0500",
             "type",
@@ -553,6 +561,115 @@ pub(super) fn observe_enum_type_storage(
     Ok(typed_observation)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(super) struct EnumPipelineTypedFacts {
+    pub(super) typed: storage::TypeStorageObservation,
+    pub(super) pipeline: super::program::EnumPipelineFacts,
+}
+
+/// The sole caller is resolve's closed fresh pipeline construction. No typed
+/// owner, raw program or witness escapes this continuation.
+#[cfg(test)]
+#[allow(dead_code)]
+pub(super) fn finish_enum_pipeline(
+    program: ResolvedOwnedProgram<'_>,
+    source: &super::hir_budget::HirPlan,
+    allocator: &mut Allocator,
+) -> Result<EnumPipelineTypedFacts, Vec<Diagnostic>> {
+    let bodies;
+    let typed_observation;
+    {
+        let work = program.work();
+        let at = program.index().sources().eof();
+        if program.admission() != SourceAdmission::EnumPipeline || program.index().enum_count() == 0
+        {
+            let error = paid_state(at);
+            work.record_error(&error);
+            return Err(vec![*error]);
+        }
+        let total = program.type_storage_cell();
+        if total.get() != source.total {
+            let error = paid_state(at);
+            work.record_error(&error);
+            return Err(vec![*error]);
+        }
+        let attempts_before = allocator.attempts;
+        {
+            match storage::prepare(
+                program.records(),
+                program.signatures(),
+                program.functions(),
+                source,
+                work,
+                at,
+            ) {
+                Ok(mut plan) => {
+                    let mut observed = storage::TypedObserved::new();
+                    bodies = {
+                        let mut context = ProgramPaid {
+                            plan: &mut plan,
+                            allocator: &mut *allocator,
+                            projection_bytes: total,
+                            observed: &mut observed,
+                        };
+                        // A Vec failure was already recorded by the shared core.
+                        check_bodies(&program, Some(&mut context))?
+                    };
+                    match typed_inventory::bodies(&program, &bodies) {
+                        Ok(inventory) => {
+                            let attempts_after = allocator.attempts;
+                            let delta_option = attempts_after.checked_sub(attempts_before);
+                            match delta_option {
+                                Some(delta) => match storage::reconcile_typed_storage(
+                                    &observed,
+                                    &inventory,
+                                    plan.counts(),
+                                    source,
+                                    total,
+                                    delta,
+                                    work,
+                                    at,
+                                ) {
+                                    Ok(observation) => typed_observation = observation,
+                                    Err(error) => {
+                                        work.record_error(&error);
+                                        return Err(vec![*error]);
+                                    }
+                                },
+                                None => {
+                                    let error = error(
+                                        "E0400",
+                                        "typed allocation attempt counter regressed",
+                                        at,
+                                    );
+                                    work.record_error(&error);
+                                    return Err(vec![*error]);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            work.record_error(&error);
+                            return Err(vec![*error]);
+                        }
+                    }
+                }
+                Err(error) => {
+                    work.record_error(&error);
+                    return Err(vec![*error]);
+                }
+            }
+        }
+    }
+    let typed = TypedOwnedProgram { program, bodies };
+    let pipeline = super::program::observe_enum_pipeline(&typed)?;
+    drop(typed);
+    Ok(EnumPipelineTypedFacts {
+        typed: typed_observation,
+        pipeline,
+    })
+}
+
 // Stage D's separately prepaid caller/return roles. PreparationCarriers
 // already owns the caller TypePlan and BorrowedCheckCarriers the caller Bodies;
 // Stage A owns the observed constructor/return and count-access transports;
@@ -609,7 +726,10 @@ fn check_bodies(
     mut paid: Option<&mut ProgramPaid<'_, '_>>,
 ) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
     #[cfg(test)]
-    let enum_types = program.admission() == SourceAdmission::ObserveEnumTypes;
+    let enum_types = matches!(
+        program.admission(),
+        SourceAdmission::ObserveEnumTypes | SourceAdmission::EnumPipeline
+    );
     #[cfg(not(test))]
     let enum_types = false;
     if enum_types != paid.is_some() {
@@ -4414,3 +4534,20 @@ fn c3_t1_disconnected_observation_context_and_completion_roles_are_explicit() {
 #[cfg(test)]
 #[path = "enum_type_tests.rs"]
 mod enum_type_tests;
+
+// New named continuation controls only. The fresh source model pays the owned
+// input; existing T0/BorrowedTypeObservation banks pay preparation, buffers,
+// inventory/reconciliation and the one primary complete TypedOwnedProgram.
+#[allow(dead_code)]
+struct EnumPipelineTypeCarriers {
+    enum_count: usize,
+    enum_empty: bool,
+    typed_borrow: &'static TypedOwnedProgram<'static>,
+    pipeline_return: Result<super::program::EnumPipelineFacts, Vec<Diagnostic>>,
+    pipeline: super::program::EnumPipelineFacts,
+    constructed: EnumPipelineTypedFacts,
+    returned: Result<EnumPipelineTypedFacts, Vec<Diagnostic>>,
+}
+pub(super) const fn enum_pipeline_type_carrier_bytes() -> usize {
+    std::mem::size_of::<EnumPipelineTypeCarriers>()
+}

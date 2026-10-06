@@ -106,6 +106,14 @@ fn observation_components() -> (usize, usize, usize, usize) {
     )
 }
 
+// New denied-pipeline controls remain separate from the old T0/checker and
+// fixed-statistics components. Each concrete bank has its own layout receipt.
+fn pipeline_components() -> usize {
+    resolve::enum_pipeline_source_extra_bytes()
+        + typeck::enum_pipeline_type_carrier_bytes()
+        + super::super::program::enum_pipeline_program_carrier_bytes()
+}
+
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";
 
 #[test]
@@ -591,6 +599,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
             + resolve::denied_type_probe_carrier_bytes()
             + checker_only_components().0
             + observation_components().0
+            + pipeline_components()
             + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
             + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>()
     );
@@ -706,7 +715,8 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
             - typeck::borrowed_check_carrier_bytes()
             - resolve::denied_type_probe_carrier_bytes()
             - checker_only_components().0
-            - observation_components().0,
+            - observation_components().0
+            - pipeline_components(),
         type_storage::fixed_control_carrier_bytes()
     );
     for functions in [0, 1, 2] {
@@ -1043,6 +1053,7 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
         + typeck::borrowed_check_carrier_bytes()
         + resolve::denied_type_probe_carrier_bytes()
         + checker.0
+        + pipeline_components()
         + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
     assert_eq!(base.fixed - before_observation, observation.0);
@@ -1167,6 +1178,7 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
         + old_return
         + checker_only_components().0
         + observation_components().0
+        + pipeline_components()
         + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
     let delta = resolve::enum_type_observation_return_bytes() - old_return;
