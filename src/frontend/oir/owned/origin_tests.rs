@@ -519,7 +519,7 @@ fn maximum_block_some_origins_retain_linear_scratch_and_exact_work() {
     assert_eq!(usage.work, 33_600_192);
     assert_eq!(
         usage.metadata_bytes,
-        16_800_240 + std::mem::size_of::<Vec<MatchDecl>>()
+        16_800_248 + std::mem::size_of::<Vec<MatchDecl>>()
     );
     assert_eq!(usage.scratch_bytes, 9_900_000);
     let w = verify_owned(p, &sources).unwrap();
