@@ -834,13 +834,13 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
     let at = sources("x").get(SourceFileId(0)).span(0, 1);
     let components = checker_only_components();
     #[cfg(target_pointer_width = "64")]
-    // Stage C enlarges the one already embedded BodyPaid by its observation
-    // borrow. This automatic sizeof growth is not payment of new source banks.
+    // Stage C's observation borrow remains. The measured enum constructor bank
+    // adds 152 per supported expression depth; Match adds 472 per function.
     assert_eq!(
         components,
         (
-            33448,
-            1920 + size_of::<&mut type_storage::TypedObserved>(),
+            33448 + 64 * 152,
+            1920 + size_of::<&mut type_storage::TypedObserved>() + 472,
             24,
             784,
             88
@@ -1027,7 +1027,9 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
     let at = sources("x").get(SourceFileId(0)).span(0, 1);
     let observation = observation_components();
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(observation, (11792, 320, 24, 24));
+    // MatchArms extends each complete constructed/Option/Result observation
+    // in FreshTypeObservationCarriers by two usize fields: 3 * 16 bytes.
+    assert_eq!(observation, (11792 + 3 * 16, 320, 24, 24));
     let checker = checker_only_components();
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
     let before_observation = size_of::<typeck::TypedOwnedProgram<'_>>()
@@ -1173,8 +1175,21 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
     {
         // MatchArms adds two usize slots to the returned resolver facts.
         assert_eq!(delta, 888);
-        assert_eq!(observation_components(), (11792, 320, 24, 24));
-        assert_eq!(checker_only_components(), (33448, 1928, 24, 784, 88));
+        assert_eq!(observation_components(), (11792 + 3 * 16, 320, 24, 24));
+        assert_eq!(
+            checker_only_components(),
+            (33448 + 64 * 152, 1928 + 472, 24, 784, 88)
+        );
+        // Independently measured embedded banks, rather than substituting a
+        // changed aggregate outcome for the preceding member composition.
+        assert_eq!(
+            size_of::<typeck::semantic_carriers::EnumConstructorCarriers>(),
+            152
+        );
+        assert_eq!(
+            size_of::<typeck::semantic_carriers::EnumMatchCarriers>(),
+            472
+        );
     }
     let remaining = MAX_HIR_BYTES - plan.total;
     assert_eq!(

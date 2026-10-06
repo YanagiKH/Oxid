@@ -2371,7 +2371,13 @@ struct InvocationControls {
     match_rows_iter: std::iter::Enumerate<std::slice::Iter<'static, source::MatchArm>>,
     match_ordinals: std::ops::Range<usize>,
     match_locations: (MatchId, OwnerPlaceId, BlockId, BlockId, Option<BlockId>),
+    // The lookup result and the selected row reference are standalone roles,
+    // separate from the iterator/cursor and from the source arm backing store.
+    match_arm_lookup: Option<&'static source::MatchArm>,
+    selected_match_arm: &'static source::MatchArm,
     constructor_operand: Option<Operand>,
+    // map's Option<Result<...>> exists before transpose's Result<Option<...>>.
+    constructor_payload_map: Option<Result<Operand>>,
     constructor_operand_return: Result<Option<Operand>>,
 }
 pub(super) const fn invocation_control_bytes() -> usize {
@@ -2444,7 +2450,10 @@ fn enum_lower_cursor_stack_is_independent_of_sibling_count() {
         );
         assert!(peak < BODY_FRAMES);
     }
-    println!("ENUM_LOWER_LAYOUT BodyFrame={} OptionBodyFrame={} BodyStack={} MatchCursor={} MatchReturn={} InvocationControls={}",
+    println!("ENUM_LOWER_LAYOUT BodyFrame={} OptionBodyFrame={} BodyStack={} MatchCursor={} MatchReturn={} ArmLookup={} SelectedArm={} ConstructorPayloadMap={} ConstructorOperandReturn={} InvocationControls={}",
         size_of::<BodyFrame>(), size_of::<Option<BodyFrame>>(), size_of::<Stack<BodyFrame, BODY_FRAMES>>(),
-        size_of::<MatchCursor>(), size_of::<Result<MatchCursor>>(), invocation_control_bytes());
+        size_of::<MatchCursor>(), size_of::<Result<MatchCursor>>(),
+        size_of::<Option<&source::MatchArm>>(), size_of::<&source::MatchArm>(),
+        size_of::<Option<Result<Operand>>>(), size_of::<Result<Option<Operand>>>(),
+        invocation_control_bytes());
 }

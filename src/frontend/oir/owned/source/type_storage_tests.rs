@@ -1052,7 +1052,12 @@ fn c3_t0_hir_count_and_partition_carriers_are_measured_before_checker_integratio
     );
     assert_eq!(
         size_of::<BodyChildBranches>(),
-        2 * size_of::<&BodyBlockId>() + size_of::<&Option<BodyBlockId>>()
+        2 * size_of::<&BodyBlockId>()
+            + size_of::<&Option<BodyBlockId>>()
+            + 2 * size_of::<&Vec<MatchArm>>()
+            + size_of::<Option<&MatchArm>>()
+            + size_of::<&MatchArm>()
+            + size_of::<Option<BodyBlockId>>()
     );
     println!(
         "T0_COUNT_ENVELOPES count={} preparation={} partition={}",
@@ -1815,7 +1820,12 @@ fn c3_t0_fixed_control_formula_is_an_independent_sum_of_actual_components() {
     assert_eq!(fixed_control_carrier_bytes(), expected);
     assert_eq!(function_output_carrier_bytes(), size_of::<FunctionQuota>());
     #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-    assert_eq!((expected, function_output_carrier_bytes()), (11584, 320));
+    // Existing T0 controls plus the five newly reachable Match branch roles:
+    // two Vec borrows, get/selected arm borrows, and its constructed child Option.
+    assert_eq!(
+        (expected, function_output_carrier_bytes()),
+        (11584 + 48, 320)
+    );
     println!(
         "T0_PASSIVE_SURCHARGE fixed={} per-function={}",
         expected,
