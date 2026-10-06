@@ -51,6 +51,16 @@ STACK_ADDED_FILES = (
     STACK_STDIN_ENTRY,
 )
 STACK_SAMPLE_MEMBERS = STACK_ADDED_FILES[:-1] + EXPRESSION_SAMPLE_MEMBERS[1:]
+LEXER_MAIN_ENTRY = "fixtures/typed-lexer-samples/main.ox"
+LEXER_ADMISSION_ENTRY = "fixtures/typed-lexer-samples/admission.ox"
+LEXER_ADDED_FILES = (
+    LEXER_MAIN_ENTRY,
+    "fixtures/typed-lexer-samples/tape.ox",
+    "fixtures/typed-lexer-samples/transcript.ox",
+    "fixtures/typed-lexer-samples/lexer.ox",
+    "fixtures/typed-lexer-samples/keywords.ox",
+    LEXER_ADMISSION_ENTRY,
+)
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -92,7 +102,18 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS, (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS,
+                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY))
+        self.assertEqual([name for name in language if name in LEXER_ADDED_FILES], sorted(LEXER_ADDED_FILES))
+        self.assertEqual([row for row in check_inventory if row[0] in LEXER_ADDED_FILES],
+                         [(LEXER_MAIN_ENTRY, True), (LEXER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(row[0] in LEXER_ADDED_FILES for row in run_inventory))
+        self.assertTrue(all(root / name not in data_sources for name in LEXER_ADDED_FILES))
+        # Both input-requiring lexer roots use process mode only in their
+        # dedicated verifier. Subtract the six exact members and two checks.
+        language = [name for name in language if name not in LEXER_ADDED_FILES]
+        check_inventory = [row for row in check_inventory if row[0] not in LEXER_ADDED_FILES]
+        typed_members -= len(LEXER_ADDED_FILES)
         self.assertEqual([name for name in language if name in ARTIFACT_ADDED_FILES], sorted(ARTIFACT_ADDED_FILES))
         self.assertEqual([row for row in check_inventory if row[0] in ARTIFACT_ADDED_FILES],
                          [(ARTIFACT_MAIN_ENTRY, True), (ARTIFACT_LOAD_ENTRY, True)])
@@ -166,11 +187,14 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
-        for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY):
+        for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
+                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY):
             stdin_root = str(verify_repo.ROOT / relative)
             self.assertEqual([command for command in commands if stdin_root in command],
                              [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
-        added_roots = {str(verify_repo.ROOT / name) for name in (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY)}
+        added_roots = {str(verify_repo.ROOT / name) for name in
+                       (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
+                        ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY)}
         predecessor_commands = [command for command in commands if not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
         self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
@@ -187,9 +211,10 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for call in run.call_args_list for arg in call.args[0]))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn(f"{146 + len(ARTIFACT_ADDED_FILES)} language sources, "
+        self.assertIn(f"{146 + len(ARTIFACT_ADDED_FILES) + len(LEXER_ADDED_FILES)} language sources, "
                       f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS)} checks, 75 runnable programs", output.getvalue())
-        self.assertIn(f"121 legacy sources, 67 legacy runnable programs, {25 + len(ARTIFACT_ADDED_FILES)} typed source members / "
+        self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
+                      f"{25 + len(ARTIFACT_ADDED_FILES) + len(LEXER_ADDED_FILES)} typed source members / "
                       "8 typed entry runs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
@@ -252,6 +277,12 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        lexer_files = {self.root / name for name in LEXER_ADDED_FILES}
+        self.assertEqual([row for row in checks if row[0] in lexer_files],
+                         [(self.root / LEXER_MAIN_ENTRY, True), (self.root / LEXER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(entry in lexer_files for entry in entries))
+        checks = [row for row in checks if row[0] not in lexer_files]
+        count -= len(LEXER_ADDED_FILES)
         artifact_files = {self.root / name for name in ARTIFACT_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in artifact_files],
                          [(self.root / ARTIFACT_MAIN_ENTRY, True), (self.root / ARTIFACT_LOAD_ENTRY, True)])

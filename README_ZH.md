@@ -140,3 +140,5 @@ Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指�
 實驗性的[有界標準輸入](spec/typed-preview.md#bounded-stdin-input)僅加入可使用別名的個別 `std::io::read_stdin` 與 `std::io::ReadStatus` 匯入。它將原始位元組填入既有的獨占 i32 切片，回傳 `Eof(n)`、不多讀資料的 `Full`，或保持目的緩衝區不變的 `IoError`；已消耗的輸入無法還原。在 Linux x86_64 上，[128 位元組運算式程式](fixtures/typed-expression-samples/README.md#bounded-stdin-entry)已在本機 28 案例的參考／原生驗證中，以同一個未變更的 ELF 分別回傳 39 和 63。完整的目前原始碼驗證與精確版本的託管 CI 仍是獨立關卡；一般 `std`、字串、其他輸入執行平台及自我託管仍不在此次範圍內。
 
 實驗性的[有界標準輸出與行程入口](spec/typed-preview.md#bounded-stdout-and-process-entry)加入對既有共用 i32 位元組切片的 `write_stdout`，以及明確指定的 `--entry-mode=process`：0..255 直接作為結束狀態，標準輸出不再附加純量或 JSON 結果。[持久化堆疊元件](fixtures/typed-expression-samples/README.md)輸出 80 位元組的 OXS1 成品，由獨立的 Oxid 載入器與外部解碼器驗證；同一個產生器 ELF 可處理結果為 39 與 63 的輸入。目前執行限 Linux x86_64，完整原始碼驗證與託管 CI 仍是獨立關卡；Windows 的 Process Run 暫時以狀態 74 靜默結束，預設模式不變。
+
+另有以 Oxid 撰寫的[有界 typed-preview 詞法元件](fixtures/typed-lexer-samples/README.md)，保留最多 128 個 ASCII 來源位元組的詞元、空白註解與位元組範圍，並與既有 Rust 詞法器比對，以同一個原生 ELF 執行。此元件不切換正式編譯器供應者，也不宣稱支援 Unicode。

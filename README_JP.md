@@ -140,3 +140,5 @@ Windows、リリースアーカイブ、Cargo インストール、Docker につ
 実験的な[上限付き標準入力](spec/typed-preview.md#bounded-stdin-input)は、別名も使える個別の `std::io::read_stdin` と `std::io::ReadStatus` インポートだけを追加します。既存の排他的 i32 スライスに生バイトを読み込み、`Eof(n)`、余分な読み取りを行わない `Full`、または書き込み先を変更しない `IoError` を返します。消費済みの入力は巻き戻せません。Linux x86_64 では、[128 バイトの式処理プログラム](fixtures/typed-expression-samples/README.md#bounded-stdin-entry)がローカルの 28 ケースの参照／ネイティブ検証で、同じ未変更の ELF から 39 と 63 を返しました。現在のソース全体の検証と正確なコミットに対するホスト型 CI は別の関門です。一般的な `std`、文字列、他の入力実行環境、セルフホスティングは今回の対象外です。
 
 実験的な[上限付き標準出力とプロセス入口](spec/typed-preview.md#bounded-stdout-and-process-entry)は、既存の共有 i32 バイトスライスを受け取る `write_stdout` と、明示的な `--entry-mode=process` を追加します。0..255 をそのまま終了状態にし、標準出力にスカラーや JSON の結果を追加しません。[永続化スタックコンポーネント](fixtures/typed-expression-samples/README.md)は 80 バイトの OXS1 ファイルを生成し、独立した Oxid ローダーと外部デコーダーが検証します。同じ生成器 ELF で 39 と 63 の入力を処理できます。実行対象は Linux x86_64 です。現在のソースの検証とホスト型 CI は別の関門であり、Windows の Process Run は現在、出力せず状態 74 で終了します。既定モードは変わりません。
+
+Oxid で記述した独立の[上限付き typed-preview 字句解析コンポーネント](fixtures/typed-lexer-samples/README.md)は、最大 128 バイトの ASCII ソースについてトークン、空白・コメント、バイト範囲を保持します。既存の Rust 字句解析器と比較し、同じネイティブ ELF で実行します。本番コンパイラの実装切り替えと Unicode 対応は対象外です。
