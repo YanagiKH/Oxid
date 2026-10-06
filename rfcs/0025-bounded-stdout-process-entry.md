@@ -152,22 +152,38 @@ Retain the old boundary evidence and test the new exact endpoint plus the old
 endpoint/one-byte-under failures before allocation. Measure and charge all other
 affected enclosing wrappers separately: the eight-byte header change is not a
 claim about total program growth. The source-association candidate measured 504
-bytes, but the complete implementation includes its actual receiver borrows,
-selectors, rank results and retained function projection. Its charged envelope
-is 568 bytes, up from 464. The private builtin caller consequently grows from
-2944 to 3072 bytes: association adds 104 and the index, typed value and typed
-result each add eight. Resolved and typed program carriers grow from 600/624 to
-608/632 bytes; the production source and type dispatch envelopes grow from
-3256/2528 to 3272/2560. The observation fixed charge grows from 11888 to 11896.
-These actual enclosing charges supersede the candidate measurement and remain
-subject to existing ceilings. Output execution stays denied until its proof
-consumers are established.
+bytes; the closed transport implementation required 568, including actual
+receiver borrows, selectors, rank results and the retained function projection.
+Its private input caller was 3072 rather than 2944. These predecessor
+measurements remain distinct from the finite-family source successor below.
+Resolved and typed program carriers are 608/632 rather than 600/624; production
+source/type dispatch envelopes are 3272/2560 rather than 3256/2528. The observation
+fixed charge is 11896 rather than 11888. Existing ceilings still apply.
 
 The two retained predecessor fixtures pin the distinction: absent inventory
 previously requested retained/scratch 488/4102, and read_stdin requested
 528/4114. The closed successor requests 496/4104 and 536/4116 respectively,
 where scratch is fixed 4096 plus existing dynamic 8/20. These are named current
 resource-admission changes; source behavior and the ceilings are unchanged.
+
+**Named finite-family source successor:** exact signature and identity carriers
+increase from 368/400 to 376/440 bytes. The canonical producer increases from
+6456 to 6584. Source association uses one retained first-function ID and a
+one-byte family permission, with its complete classifier/transport envelope
+charged at 640 rather than 568. The existing private input caller consequently
+increases from 3072 to 3144. The separate fresh output caller is charged at 5592,
+including association; it is paid even when its sealed candidate has no imports.
+Run and Emit are separate requests, so emission performs no reference effects.
+
+The preserved input fixtures quantify the resulting admission change: fixed HIR
+105888 becomes 106040 (+152); status-only total 150465 becomes 150617; one input
+function total 151025 becomes 151185; the larger fixture 174091 becomes 174251.
+The additional eight bytes per synthetic signature are separate from the fixed
+increase. Reservation counts and retained-allocation peaks are unchanged in
+these comparisons, and both private/current exact work endpoints remain 739.
+These are measured control-carrier admission successors under unchanged limits,
+not a claim that every prior exact byte endpoint still admits. The index fixed
+bank remains 4096; that is not the total HIR or raw-lowering budget.
 
 ## Concrete acceptance and stopping point
 
