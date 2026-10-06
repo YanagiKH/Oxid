@@ -351,7 +351,7 @@ fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
 }
 
 #[test]
-fn bounded_enum_pipeline_nondefault_requests_stay_denied_before_source_work() {
+fn bounded_enum_pipeline_requests_preserve_enum_free_and_preflight_order() {
     use super::super::resolve::{probe_enum_pipeline, EnumPipelineRequest};
     with_index("enum E{V} fn main()->i32{return 0;}", |index| {
         for request in [
@@ -375,7 +375,7 @@ fn bounded_enum_pipeline_nondefault_requests_stay_denied_before_source_work() {
             };
             let errors = probe_enum_pipeline(index, &work, &mut allocator, request).unwrap_err();
             assert_eq!(errors.len(), 1);
-            assert_eq!(errors[0].code, "E0500");
+            assert_eq!(errors[0].code, "E0400");
             assert_eq!(work.used(), 0);
             assert_eq!(allocator.attempts, 7);
             assert!(allocator.trace.is_empty());
@@ -402,4 +402,62 @@ fn bounded_enum_pipeline_nondefault_requests_stay_denied_before_source_work() {
         std::mem::size_of::<Result<String, Box<Diagnostic>>>(),
         std::mem::size_of::<Option<Result<String, Box<Diagnostic>>>>(),
         std::mem::size_of::<Result<crate::frontend::oir::Scalar, super::super::super::execute::OwnedRunFailure>>());
+}
+
+#[test]
+fn bounded_enum_pipeline_emits_after_success_and_inert_fuel_error_then_drops_artifact() {
+    use super::super::resolve::{probe_enum_pipeline, EnumPipelineRequest};
+    // Frozen tiny_relay_take: min fuel121; fuel98 fails its first dispatch.
+    const TEXT: &str = "enum E{N,V(i32)} fn relay(x:E)->E{return x;} fn take(x:E)->i32{match x{E::N=>{return 0;},E::V(v)=>{return v;},}} fn main()->i32{return take(relay(E::V(7)));}";
+    with_index(TEXT, |index| {
+        let SourceView::Map(sources) = index.sources().view() else {
+            panic!("source map");
+        };
+        for fuel in [EnumPipelineRequest::REFERENCE.fuel, 98] {
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(256).unwrap();
+            let request = EnumPipelineRequest {
+                emit_llvm: true,
+                fuel,
+            };
+            let ((outcome, llvm_bytes, has_main), (calls, live, peak)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    let output = probe_enum_pipeline(index, &work, &mut allocator, request)
+                        .unwrap()
+                        .unwrap();
+                    let outcome = match &output.observation.pipeline.result {
+                        Ok(value) => Ok(*value),
+                        Err(error) => {
+                            let diagnostic = error.diagnostic(sources);
+                            let receipt = (diagnostic.code, diagnostic.primary);
+                            drop(diagnostic);
+                            Err(receipt)
+                        }
+                    };
+                    let module = output.llvm.as_ref().unwrap().as_ref().unwrap();
+                    let llvm_bytes = module.len();
+                    let has_main = module.contains("define i32 @main(");
+                    // Artifact backing is intentionally returned by the helper;
+                    // release the complete product before asserting cleanup.
+                    drop(output);
+                    (outcome, llvm_bytes, has_main)
+                });
+            if fuel == EnumPipelineRequest::REFERENCE.fuel {
+                assert_eq!(outcome, Ok(crate::frontend::oir::Scalar::I32(7)));
+            } else {
+                let (code, span) = outcome.unwrap_err();
+                assert_eq!(code, "E0601");
+                assert_eq!(
+                    index.sources().text(span.unwrap()).unwrap(),
+                    "match x{E::N=>{return 0;},E::V(v)=>{return v;},}"
+                );
+            }
+            assert!(llvm_bytes > 0 && has_main);
+            assert_eq!(live, 0);
+            assert!(calls > 0 && peak > 0);
+            assert!(!allocator.observer_trace_overflow);
+            println!("ENUM_PIPELINE_EMIT fuel={fuel} llvm_bytes={llvm_bytes} calls={calls} live={live} peak={peak}");
+        }
+    });
 }

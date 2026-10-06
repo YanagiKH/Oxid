@@ -600,13 +600,6 @@ pub(super) fn probe_enum_pipeline<'s>(
     if index.enum_count() == 0 {
         return Ok(None);
     }
-    if request != EnumPipelineRequest::REFERENCE {
-        return Err(vec![*error(
-            "E0500",
-            format_args!("enum pipeline consumer request is not admitted"),
-            index.sources().eof(),
-        )]);
-    }
     fresh_enum_pipeline(index, work, allocator, request)
 }
 

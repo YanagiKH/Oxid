@@ -172,8 +172,8 @@ pub(super) struct EnumPipelineProgramOutput {
     pub(super) llvm: Option<Result<String, Box<Diagnostic>>>,
 }
 
-/// Sole caller is the paid typeck continuation. The selector admits only the
-/// default request until all changed output/request carriers are reviewed.
+/// Sole caller is the paid typeck continuation. Fixed runtime observations and
+/// bounded artifacts leave only after the same verified witness is dropped.
 #[cfg(test)]
 #[allow(dead_code)]
 pub(super) fn observe_enum_pipeline(
