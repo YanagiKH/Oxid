@@ -1144,6 +1144,8 @@ impl Diagnostics {
             accounting,
         )
     }
+    // Entry policy is explicit alongside the existing accounted inputs.
+    #[allow(clippy::too_many_arguments)]
     fn new_policy_accounted(
         plan: &ExecutionPlan<'_>,
         entry: hir::DefId,

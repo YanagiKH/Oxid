@@ -187,7 +187,7 @@ fn builtin_descriptor_claim_selects_only_the_canonical_suffix() {
 }
 
 #[test]
-fn builtin_descriptor_output_claims_fail_before_any_descriptor_row() {
+fn builtin_descriptor_output_claims_require_present_canonical_rows() {
     for origin in [
         BuiltinOrigins::WriteStatus,
         BuiltinOrigins::WriteStdout,
@@ -196,21 +196,27 @@ fn builtin_descriptor_output_claims_fail_before_any_descriptor_row() {
         BuiltinOrigins::ReadStdinWriteStatus,
         BuiltinOrigins::ReadStdinWriteStdout,
     ] {
-        // Rows deliberately carry invalid ordinals and unequal anchors. An
-        // attempted descriptor proof would report a row's origin, not NONE.
+        // Existing rows must pass the ordinary canonical proof. Missing
+        // two-family suffixes fail before a row can provide an origin.
         let mut raw = canonical(BuiltinOrigins::ReadStdin);
         raw.builtins = origin;
         raw.enums[0].id = EnumId(usize::MAX);
         raw.enums[0].variants[0].span = anchor(4);
         raw.functions[0].id = hir::DefId(usize::MAX);
         budget::fail_allocation_after(0, || {
-            let denied = assert_bad(&raw, Malformed::Binding, "closed output claim");
-            assert_eq!(denied.primary, Origin::NONE);
+            let denied = assert_bad(&raw, Malformed::Binding, "malformed output claim");
+            let expected = match origin {
+                BuiltinOrigins::WriteStatus | BuiltinOrigins::WriteStdout => {
+                    Origin::from(Some(anchor(0)))
+                }
+                _ => Origin::NONE,
+            };
+            assert_eq!(denied.primary, expected);
         });
         raw.enums.clear();
         raw.functions.clear();
         assert_eq!(
-            assert_bad(&raw, Malformed::Binding, "empty closed output claim").primary,
+            assert_bad(&raw, Malformed::Binding, "empty output claim").primary,
             Origin::NONE
         );
     }

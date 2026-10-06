@@ -489,7 +489,7 @@ mod subprocess {
     #[test]
     #[ignore = "explicit private process proof; retains exact captures in OXID_RAW_STDOUT_EVIDENCE_DIR"]
     fn builtin_output_process_reference_bytes_and_statuses() {
-        assert!(POSITIVE_PROCESS_PROOF_ENABLED);
+        const { assert!(POSITIVE_PROCESS_PROOF_ENABLED) };
         let directory = std::path::PathBuf::from(
             std::env::var_os("OXID_RAW_STDOUT_EVIDENCE_DIR")
                 .expect("fresh proof evidence directory"),

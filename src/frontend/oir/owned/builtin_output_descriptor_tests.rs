@@ -132,7 +132,7 @@ fn builtin_output_descriptor_canonical_mutations_are_denied() {
             raw.enums[1].variants.pop();
         }),
         ("extra variant", |raw| {
-            let variant = raw.enums[1].variants[0].clone();
+            let variant = raw.enums[1].variants[0];
             raw.enums[1].variants.push(variant);
         }),
         ("payload at input member", |raw| {
