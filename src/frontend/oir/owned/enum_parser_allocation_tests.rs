@@ -3,7 +3,7 @@
 use super::source::reviewer_source::{integration_enabled, integration_measured};
 use crate::frontend::{
     ast::{ExprKind, Program, StmtKind},
-    declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
+    declaration_index::{collect_closed, IndexLimits, SourceOwner, WorkMeter},
     diagnostic::Diagnostic,
     lexer,
     parser::{parse_enum_candidate_counted, SourceMode, MAX_NODES},
@@ -100,10 +100,11 @@ fn complete_trace(allocator: &Allocator, prepared_capacity: usize) {
     assert_eq!(allocator.trace.capacity(), prepared_capacity);
 }
 
+// This is a historical closed-policy check, separate from public admission.
 fn closed_semantics(file: &SourceFile, program: &Program) {
     let owner = SourceOwner::original(file, program, SourceView::Single(file)).unwrap();
     let mut index_allocator = Allocator::default();
-    let error = collect_originals(
+    let error = collect_closed(
         owner,
         IndexLimits::default(),
         &WorkMeter::default(),

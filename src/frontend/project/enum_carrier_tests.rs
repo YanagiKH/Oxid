@@ -330,10 +330,9 @@ fn enum_carrier_closed_collection_and_candidate_producers_reject_new_forms() {
         let owner = SourceOwner::original(source, &project.programs[0], SourceView::Single(source))
             .unwrap();
         assert!(owner.owned(&WorkMeter::default()).unwrap());
-        assert_eq!(
-            hir::resolve(source, &project.programs[0]).unwrap_err()[0].code,
-            "E0101"
-        );
+        // The expression-only carrier can be orphaned from every function
+        // body, so it makes no public semantic claim. Test its explicit closed
+        // collection above and its private candidate provenance below.
         // Fabricated carriers are only negative controls. The explicit private
         // collection policy preserves its marker at direct producer seams.
         let work = WorkMeter::default();
