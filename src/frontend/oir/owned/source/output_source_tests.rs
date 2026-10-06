@@ -625,7 +625,7 @@ mod subprocess {
             assert!(diagnostic.starts_with(
                 "error[E0600] (oir-run): process main must return a status in 0..255\n"
             ));
-            assert!(diagnostic.contains("main.ox:1:1"));
+            assert!(diagnostic.ends_with("main.ox:1:4\n"));
         }
     }
 }

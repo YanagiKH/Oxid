@@ -590,6 +590,10 @@ fn bounded_stdout_fresh_typing_rejects_wrong_borrows_nominals_and_payloads() {
         with_index(text, |index| {
             let work = WorkMeter::default();
             let mut allocator = Allocator::default();
+            // The qualification trace outlives heap observation; reserve its
+            // separate backing first so only compiler-owned cleanup is sampled.
+            allocator.observer_trace_bound(512).unwrap();
+            let trace_capacity = allocator.trace.capacity();
             let (codes, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
                 match type_builtin_source(index, &work, &mut allocator) {
                     Ok(typed) => { drop(typed); (false, false) }
@@ -598,6 +602,8 @@ fn bounded_stdout_fresh_typing_rejects_wrong_borrows_nominals_and_payloads() {
             });
             assert_eq!(codes, (true, true), "{text}");
             assert_eq!(live, 0, "{text}");
+            assert_eq!(allocator.trace.capacity(), trace_capacity);
+            assert!(!allocator.observer_trace_overflow);
         });
     }
 }
@@ -612,6 +618,10 @@ fn bounded_stdout_fresh_typing_work_endpoint_is_exact() {
         for limit in [required - 1, required] {
             let work = WorkMeter::new(limit);
             let mut allocator = Allocator::default();
+            // The qualification trace outlives heap observation; reserve its
+            // separate backing first so only compiler-owned cleanup is sampled.
+            allocator.observer_trace_bound(512).unwrap();
+            let trace_capacity = allocator.trace.capacity();
             let ((succeeded, exhausted), (_, live, _)) =
                 super::super::reviewer_source::integration_measured(|| {
                     match type_builtin_source(index, &work, &mut allocator) {
@@ -625,6 +635,8 @@ fn bounded_stdout_fresh_typing_work_endpoint_is_exact() {
             assert_eq!(succeeded, limit == required);
             assert_eq!(exhausted, limit < required);
             assert_eq!(live, 0);
+            assert_eq!(allocator.trace.capacity(), trace_capacity);
+            assert!(!allocator.observer_trace_overflow);
         }
         println!("OUTPUT_FRESH_TYPING_WORK exact={required}");
     });
@@ -633,8 +645,8 @@ fn bounded_stdout_fresh_typing_work_endpoint_is_exact() {
 #[test]
 fn bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor() {
     let files = [
-        ("main.ox", "pub mod output; fn main()->i32{let bytes=[65];return output::send(&bytes);}"),
-        ("output.ox", "use std::io::write_stdout as first; use std::io::write_stdout as later; use std::io::WriteStatus as W; pub fn send(xs:&[i32])->i32{let status=later(&*xs);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}"),
+        ("main.ox", "use std::io::write_stdout as first; pub mod output; fn main()->i32{let bytes=[65];return output::send(&bytes);}"),
+        ("output.ox", "use std::io::write_stdout as later; use std::io::WriteStatus as W; pub fn send(xs:&[i32])->i32{let status=later(&*xs);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}"),
     ];
     #[cfg(not(target_os = "linux"))]
     {
@@ -670,7 +682,8 @@ fn bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor() {
             .unwrap();
         assert_eq!(typed.signatures()[output.0].span, anchor);
         assert_eq!((anchor.start, anchor.end), (13, 25));
-        assert_ne!(anchor.file, index.sources().eof().file);
+        // Root preorder wins even though only the child's alias is called.
+        assert_eq!(anchor.file, index.sources().eof().file);
         assert_eq!(typed.functions().len(), 2);
         assert_eq!(typed.signatures().len(), 3);
     });
@@ -685,6 +698,10 @@ fn bounded_stdout_completion_rejects_seed_checkpoint_and_plan_mismatch_before_ty
                 .unwrap()
                 .unwrap();
             let mut allocator = Allocator::default();
+            // The qualification trace outlives heap observation; reserve its
+            // separate backing first so only compiler-owned cleanup is sampled.
+            allocator.observer_trace_bound(512).unwrap();
+            let trace_capacity = allocator.trace.capacity();
             let (code, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
                 let mut paid = PaidStorage::new(plan.counts);
                 let parts =
@@ -731,6 +748,8 @@ fn bounded_stdout_completion_rejects_seed_checkpoint_and_plan_mismatch_before_ty
             });
             assert_eq!(code, "E0500", "mutation {mutation}");
             assert_eq!(live, 0, "mutation {mutation}");
+            assert_eq!(allocator.trace.capacity(), trace_capacity);
+            assert!(!allocator.observer_trace_overflow);
         }
     });
 }
