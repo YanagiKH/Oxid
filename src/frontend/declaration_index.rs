@@ -41,7 +41,8 @@ pub(super) use resource::{
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
 #[cfg(test)]
 pub(super) use sealed::{
-    collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_output_candidate, collect_std_closed,
+    collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_output_candidate,
+    collect_std_closed,
 };
 pub(super) use sealed::{collect_originals, DeclarationFacts, DeclarationIndex};
 use sealed::{BuiltinAdmission, CandidateOrigin};
@@ -392,14 +393,16 @@ impl Tables<'_> {
         Ok(())
     }
     fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> {
-        if self.candidate_source_origin.is_builtin() || self.builtins.set() != BuiltinSet::None
-            || {
-                #[cfg(test)]
-                { matches!(self.candidate_source_origin, CandidateOrigin::Output(_)) }
-                #[cfg(not(test))]
-                { false }
+        if self.candidate_source_origin.is_builtin() || self.builtins.set() != BuiltinSet::None || {
+            #[cfg(test)]
+            {
+                matches!(self.candidate_source_origin, CandidateOrigin::Output(_))
             }
-        {
+            #[cfg(not(test))]
+            {
+                false
+            }
+        } {
             return Err(diagnostic(
                 "E0101",
                 "resolve",
@@ -421,48 +424,96 @@ impl Tables<'_> {
         let extra = match item {
             BuiltinItem::Enum(item) if self.builtins.set().contains_enum(item) => match item {
                 BuiltinEnum::ReadStatus => 0,
-                BuiltinEnum::WriteStatus => usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)),
+                BuiltinEnum::WriteStatus => {
+                    usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus))
+                }
             },
-            BuiltinItem::Function(item) if self.builtins.set().contains_function(item) => self.builtins.set().extra_enums() + match item {
-                BuiltinFunction::ReadStdin => 0,
-                BuiltinFunction::WriteStdout => usize::from(self.builtins.set().contains_function(BuiltinFunction::ReadStdin)),
-            },
+            BuiltinItem::Function(item) if self.builtins.set().contains_function(item) => {
+                self.builtins.set().extra_enums()
+                    + match item {
+                        BuiltinFunction::ReadStdin => 0,
+                        BuiltinFunction::WriteStdout => usize::from(
+                            self.builtins
+                                .set()
+                                .contains_function(BuiltinFunction::ReadStdin),
+                        ),
+                    }
+            }
             _ => return Err(bad(self.sources.eof())),
         };
-        let target = self.originals.len().checked_add(extra).ok_or_else(|| overflow(self.sources.eof()))?;
+        let target = self
+            .originals
+            .len()
+            .checked_add(extra)
+            .ok_or_else(|| overflow(self.sources.eof()))?;
         Ok(DeclarationHandle(compact(target, self.sources.eof())?))
     }
-    fn project_handle(&self, handle: DeclarationHandle) -> Result<DeclarationProjection, Box<Diagnostic>> {
+    fn project_handle(
+        &self,
+        handle: DeclarationHandle,
+    ) -> Result<DeclarationProjection, Box<Diagnostic>> {
         if (handle.0 as usize) < self.originals.len() {
             return Ok(DeclarationProjection::SourceOriginal(handle.0));
         }
         // All suffix totals were checked below the reserved compact sentinels
         // before allocation. There is no family iterator or optional rank state.
         if self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)
-            && handle.0 as usize == self.originals.len() {
-            return Ok(DeclarationProjection::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus)));
+            && handle.0 as usize == self.originals.len()
+        {
+            return Ok(DeclarationProjection::Builtin(BuiltinItem::Enum(
+                BuiltinEnum::ReadStatus,
+            )));
         }
         if self.builtins.set().contains_enum(BuiltinEnum::WriteStatus)
-            && handle.0 as usize == self.originals.len() + usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)) {
-            return Ok(DeclarationProjection::Builtin(BuiltinItem::Enum(BuiltinEnum::WriteStatus)));
+            && handle.0 as usize
+                == self.originals.len()
+                    + usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus))
+        {
+            return Ok(DeclarationProjection::Builtin(BuiltinItem::Enum(
+                BuiltinEnum::WriteStatus,
+            )));
         }
-        if self.builtins.set().contains_function(BuiltinFunction::ReadStdin)
-            && handle.0 as usize == self.originals.len() + self.builtins.set().extra_enums() {
-            return Ok(DeclarationProjection::Builtin(BuiltinItem::Function(BuiltinFunction::ReadStdin)));
+        if self
+            .builtins
+            .set()
+            .contains_function(BuiltinFunction::ReadStdin)
+            && handle.0 as usize == self.originals.len() + self.builtins.set().extra_enums()
+        {
+            return Ok(DeclarationProjection::Builtin(BuiltinItem::Function(
+                BuiltinFunction::ReadStdin,
+            )));
         }
-        if self.builtins.set().contains_function(BuiltinFunction::WriteStdout)
-            && handle.0 as usize == self.originals.len() + self.builtins.set().extra_enums() + usize::from(self.builtins.set().contains_function(BuiltinFunction::ReadStdin)) {
-            return Ok(DeclarationProjection::Builtin(BuiltinItem::Function(BuiltinFunction::WriteStdout)));
+        if self
+            .builtins
+            .set()
+            .contains_function(BuiltinFunction::WriteStdout)
+            && handle.0 as usize
+                == self.originals.len()
+                    + self.builtins.set().extra_enums()
+                    + usize::from(
+                        self.builtins
+                            .set()
+                            .contains_function(BuiltinFunction::ReadStdin),
+                    )
+        {
+            return Ok(DeclarationProjection::Builtin(BuiltinItem::Function(
+                BuiltinFunction::WriteStdout,
+            )));
         }
         Err(bad(self.sources.eof()))
     }
     fn nominal_handle(&self, handle: DeclarationHandle) -> Result<NominalId, Box<Diagnostic>> {
         match self.project_handle(handle)? {
             DeclarationProjection::SourceOriginal(id) => self.nominal_original(id),
-            DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => Ok(NominalId::Enum(EnumId(self.enums.len() + match item {
-                BuiltinEnum::ReadStatus => 0,
-                BuiltinEnum::WriteStatus => usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)),
-            }))),
+            DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => Ok(NominalId::Enum(EnumId(
+                self.enums.len()
+                    + match item {
+                        BuiltinEnum::ReadStatus => 0,
+                        BuiltinEnum::WriteStatus => {
+                            usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus))
+                        }
+                    },
+            ))),
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -470,15 +521,30 @@ impl Tables<'_> {
         match self.project_handle(handle)? {
             DeclarationProjection::SourceOriginal(id) => {
                 let row = self.original(id)?;
-                if row.flags & KIND_MASK != FUNCTION { return Err(bad(row.name.span())); }
+                if row.flags & KIND_MASK != FUNCTION {
+                    return Err(bad(row.name.span()));
+                }
                 let target = DefId(row.target as usize);
-                if self.functions.get(target.0).is_none_or(|row| row.original != id) { return Err(bad(self.sources.eof())); }
+                if self
+                    .functions
+                    .get(target.0)
+                    .is_none_or(|row| row.original != id)
+                {
+                    return Err(bad(self.sources.eof()));
+                }
                 Ok(target)
             }
-            DeclarationProjection::Builtin(BuiltinItem::Function(item)) => Ok(DefId(self.functions.len() + match item {
-                BuiltinFunction::ReadStdin => 0,
-                BuiltinFunction::WriteStdout => usize::from(self.builtins.set().contains_function(BuiltinFunction::ReadStdin)),
-            })),
+            DeclarationProjection::Builtin(BuiltinItem::Function(item)) => Ok(DefId(
+                self.functions.len()
+                    + match item {
+                        BuiltinFunction::ReadStdin => 0,
+                        BuiltinFunction::WriteStdout => usize::from(
+                            self.builtins
+                                .set()
+                                .contains_function(BuiltinFunction::ReadStdin),
+                        ),
+                    },
+            )),
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -534,11 +600,17 @@ impl Tables<'_> {
         at: Span,
     ) -> Result<DeclarationHandle, Box<Diagnostic>> {
         if self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)
-            && nominal == NominalId::Enum(EnumId(self.enums.len())) {
+            && nominal == NominalId::Enum(EnumId(self.enums.len()))
+        {
             return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
         }
         if self.builtins.set().contains_enum(BuiltinEnum::WriteStatus)
-            && nominal == NominalId::Enum(EnumId(self.enums.len() + usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)))) {
+            && nominal
+                == NominalId::Enum(EnumId(
+                    self.enums.len()
+                        + usize::from(self.builtins.set().contains_enum(BuiltinEnum::ReadStatus)),
+                ))
+        {
             return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
         }
         let original = match nominal {
@@ -832,7 +904,9 @@ impl Tables<'_> {
         work: &WorkMeter,
     ) -> Result<VariantId, Box<Diagnostic>> {
         if enumeration.0 >= self.enums.len() {
-            let item = match self.project_handle(self.original_for_nominal(NominalId::Enum(enumeration), member)?)? {
+            let item = match self
+                .project_handle(self.original_for_nominal(NominalId::Enum(enumeration), member)?)?
+            {
                 DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => item,
                 _ => return Err(bad(member)),
             };
@@ -840,8 +914,7 @@ impl Tables<'_> {
             for index in 0..item.variant_count() {
                 work.debit(1, member, "variant lookup probe")?;
                 if compare_bytes(
-                    item.member_name(index)
-                        .expect("closed member"),
+                    item.member_name(index).expect("closed member"),
                     spelling,
                     work,
                     member,
@@ -860,7 +933,8 @@ impl Tables<'_> {
                 "resolve",
                 format_args!(
                     "unknown variant `{}` of enum `{}`",
-                    owned_diagnostic::name(spelling), item.name()
+                    owned_diagnostic::name(spelling),
+                    item.name()
                 ),
                 Some(member),
             ));
@@ -1668,13 +1742,17 @@ impl<'i, 's> QuerySession<'i, 's> {
         let handle = self.tables.original_for_nominal(nominal, at)?;
         let id = match self.tables.project_handle(handle)? {
             DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => {
-                self.work.debit((9 + item.name().len()) as u64, at, "nominal display bytes")?;
+                self.work
+                    .debit((9 + item.name().len()) as u64, at, "nominal display bytes")?;
                 return Ok(PreparedTypeName {
                     names: [CompactSpan::default(); 32],
                     sources: self.tables.sources,
                     count: 0,
                     terminal: item.name(),
-                    ordinal: match nominal { NominalId::Enum(id) => id.0, _ => unreachable!("checked builtin enum") },
+                    ordinal: match nominal {
+                        NominalId::Enum(id) => id.0,
+                        _ => unreachable!("checked builtin enum"),
+                    },
                     total: 9 + item.name().len(),
                     original: false,
                     is_enum: true,

@@ -296,9 +296,17 @@ pub(super) fn parse_output_candidate_counted(
     allocator: &mut Allocator,
     storage: &mut enums::SyntaxStorage,
 ) -> Result<(Program, usize), Vec<Diagnostic>> {
-    parse_counted_with_policies(source, tokens, mode, node_limit, allocator,
-        ArraySyntaxPolicy::Enabled, EnumSyntaxPolicy::Enabled,
-        StdImportPolicy::OutputCandidate, storage)
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::OutputCandidate,
+        storage,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

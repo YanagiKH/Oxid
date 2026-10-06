@@ -1,8 +1,8 @@
 # RFC 0025: bounded stdout and explicit process entry
 
-Status: **draft for independent contract and layout feasibility review**.
-Updated 2026-10-06. No new source import, operation, CLI policy, executable
-admission or public behavior is enabled by this draft or its disconnected model.
+Status: **draft; public stdout/process support is not enabled**.
+Updated 2026-10-06. Closed identity and carrier construction is under review.
+Output imports, process routing and output executable admission remain denied.
 
 ## Outcome
 
@@ -138,6 +138,10 @@ It narrows only the already validated std-order cursor to the reserved-domain
 u32 sentinel. On the measured target, the complete substituted fixed bank remains
 4094 bytes with no phase overlay and no credit for smaller endpoint transports.
 This does not yet establish all nine source identities or executable admission.
+The actual closed implementation additionally names and charges the two one-byte
+enum/function selector arguments. Its fixed bank is therefore 4096, exactly at
+the unchanged 4096 ceiling. Total requested scratch also includes existing
+dynamic row storage; it is not the same quantity as this fixed bank.
 
 **Named retained-header successor:** Tables/DeclarationIndex grow from 368 to
 376 bytes; DeclarationFacts grows from 584 to 592. The actual outer IndexPlan
@@ -151,6 +155,12 @@ claim about total program growth. The candidate source-association envelope with
 suffix bases and explicit family roles grows from 464 to 504 bytes and remains
 unpaid until integrated into its actual ledger. No output route may rely on these
 candidate measurements alone.
+
+The two retained predecessor fixtures pin the distinction: absent inventory
+previously requested retained/scratch 488/4102, and read_stdin requested
+528/4114. The closed successor requests 496/4104 and 536/4116 respectively,
+where scratch is fixed 4096 plus existing dynamic 8/20. These are named current
+resource-admission changes; source behavior and the ceilings are unchanged.
 
 ## Concrete acceptance and stopping point
 

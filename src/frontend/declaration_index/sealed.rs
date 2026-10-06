@@ -14,10 +14,20 @@ pub(super) struct BuiltinAdmission<'s> {
 }
 impl<'s> BuiltinAdmission<'s> {
     fn none() -> Self {
-        Self { read_status: None, read_stdin: None, write_status: None, write_stdout: None }
+        Self {
+            read_status: None,
+            read_stdin: None,
+            write_status: None,
+            write_stdout: None,
+        }
     }
     pub(super) fn set(&self) -> BuiltinSet {
-        match (self.read_status.is_some(), self.read_stdin.is_some(), self.write_status.is_some(), self.write_stdout.is_some()) {
+        match (
+            self.read_status.is_some(),
+            self.read_stdin.is_some(),
+            self.write_status.is_some(),
+            self.write_stdout.is_some(),
+        ) {
             (false, false, false, false) => BuiltinSet::None,
             (true, false, false, false) => BuiltinSet::ReadStatus,
             (true, true, false, false) => BuiltinSet::ReadStdin,
@@ -33,15 +43,31 @@ impl<'s> BuiltinAdmission<'s> {
     fn admit(&mut self, item: BuiltinItem, anchor: &'s Span) {
         // Inventory is module preorder, then source order. First anchors are minima.
         match item {
-            BuiltinItem::Enum(BuiltinEnum::ReadStatus) => { if self.read_status.is_none() { self.read_status = Some(anchor); } }
-            BuiltinItem::Function(BuiltinFunction::ReadStdin) => {
-                if self.read_status.is_none() { self.read_status = Some(anchor); }
-                if self.read_stdin.is_none() { self.read_stdin = Some(anchor); }
+            BuiltinItem::Enum(BuiltinEnum::ReadStatus) => {
+                if self.read_status.is_none() {
+                    self.read_status = Some(anchor);
+                }
             }
-            BuiltinItem::Enum(BuiltinEnum::WriteStatus) => { if self.write_status.is_none() { self.write_status = Some(anchor); } }
+            BuiltinItem::Function(BuiltinFunction::ReadStdin) => {
+                if self.read_status.is_none() {
+                    self.read_status = Some(anchor);
+                }
+                if self.read_stdin.is_none() {
+                    self.read_stdin = Some(anchor);
+                }
+            }
+            BuiltinItem::Enum(BuiltinEnum::WriteStatus) => {
+                if self.write_status.is_none() {
+                    self.write_status = Some(anchor);
+                }
+            }
             BuiltinItem::Function(BuiltinFunction::WriteStdout) => {
-                if self.write_status.is_none() { self.write_status = Some(anchor); }
-                if self.write_stdout.is_none() { self.write_stdout = Some(anchor); }
+                if self.write_status.is_none() {
+                    self.write_status = Some(anchor);
+                }
+                if self.write_stdout.is_none() {
+                    self.write_stdout = Some(anchor);
+                }
             }
         }
     }
@@ -102,10 +128,18 @@ fn builtin_endpoint(
     let endpoint = sources.text(segments[2])?;
     // Keep input's comparison/work order exactly. The private successor adds
     // two finite branches, not an unaccounted family iterator.
-    if compare_bytes(endpoint, BuiltinEnum::ReadStatus.name(), work, segments[2])? == Ordering::Equal {
+    if compare_bytes(endpoint, BuiltinEnum::ReadStatus.name(), work, segments[2])?
+        == Ordering::Equal
+    {
         return Ok(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
     }
-    if compare_bytes(endpoint, BuiltinFunction::ReadStdin.name(), work, segments[2])? == Ordering::Equal {
+    if compare_bytes(
+        endpoint,
+        BuiltinFunction::ReadStdin.name(),
+        work,
+        segments[2],
+    )? == Ordering::Equal
+    {
         return Ok(BuiltinItem::Function(BuiltinFunction::ReadStdin));
     }
     Err(diagnostic(
@@ -125,24 +159,52 @@ fn output_candidate_endpoint(
     let view = sources.import_path(path)?;
     let segments = view.segments();
     let at = view.span();
-    if view.root() != ast::PathRoot::Std || segments.len() != 3
-        || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal {
-        return Err(diagnostic("E0205", "resolve", "unsupported standard library import", at));
+    if view.root() != ast::PathRoot::Std
+        || segments.len() != 3
+        || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal
+    {
+        return Err(diagnostic(
+            "E0205",
+            "resolve",
+            "unsupported standard library import",
+            at,
+        ));
     }
     let endpoint = sources.text(segments[2])?;
-    if compare_bytes(endpoint, BuiltinEnum::ReadStatus.name(), work, segments[2])? == Ordering::Equal {
+    if compare_bytes(endpoint, BuiltinEnum::ReadStatus.name(), work, segments[2])?
+        == Ordering::Equal
+    {
         return Ok(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
     }
-    if compare_bytes(endpoint, BuiltinFunction::ReadStdin.name(), work, segments[2])? == Ordering::Equal {
+    if compare_bytes(
+        endpoint,
+        BuiltinFunction::ReadStdin.name(),
+        work,
+        segments[2],
+    )? == Ordering::Equal
+    {
         return Ok(BuiltinItem::Function(BuiltinFunction::ReadStdin));
     }
-    if compare_bytes(endpoint, BuiltinEnum::WriteStatus.name(), work, segments[2])? == Ordering::Equal {
+    if compare_bytes(endpoint, BuiltinEnum::WriteStatus.name(), work, segments[2])?
+        == Ordering::Equal
+    {
         return Ok(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
     }
-    if compare_bytes(endpoint, BuiltinFunction::WriteStdout.name(), work, segments[2])? == Ordering::Equal {
+    if compare_bytes(
+        endpoint,
+        BuiltinFunction::WriteStdout.name(),
+        work,
+        segments[2],
+    )? == Ordering::Equal
+    {
         return Ok(BuiltinItem::Function(BuiltinFunction::WriteStdout));
     }
-    Err(diagnostic("E0205", "resolve", "unsupported standard library import", segments[2]))
+    Err(diagnostic(
+        "E0205",
+        "resolve",
+        "unsupported standard library import",
+        segments[2],
+    ))
 }
 
 #[derive(Debug)]
@@ -236,7 +298,13 @@ pub(in crate::frontend) fn collect_output_candidate<'s>(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
-    collect(sources, limits, work, allocator, CollectionSyntax::OutputCandidate)
+    collect(
+        sources,
+        limits,
+        work,
+        allocator,
+        CollectionSyntax::OutputCandidate,
+    )
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CollectionSyntax {
@@ -337,7 +405,9 @@ fn collect<'s>(
                         builtin_endpoint(sources, path, work)?
                     }
                     #[cfg(not(test))]
-                    { builtin_endpoint(sources, path, work)? }
+                    {
+                        builtin_endpoint(sources, path, work)?
+                    }
                 };
                 // Complete file/start/end validation still follows catalog success.
                 // Only its validated start enters the narrower reserved-domain cursor.
@@ -520,7 +590,10 @@ fn collect<'s>(
     }
     // Suffix identities never consume sentinel values, and totals narrow before allocation.
     for (prefix, extra) in [
-        (c.originals, builtins.set().extra_enums() + builtins.set().extra_functions()),
+        (
+            c.originals,
+            builtins.set().extra_enums() + builtins.set().extra_functions(),
+        ),
         (c.functions, builtins.set().extra_functions()),
         (c.enums, builtins.set().extra_enums()),
     ] {
@@ -1345,7 +1418,9 @@ fn stage_import(
                 builtin_endpoint(tables.sources, path, work)?
             }
             #[cfg(not(test))]
-            { builtin_endpoint(tables.sources, path, work)? }
+            {
+                builtin_endpoint(tables.sources, path, work)?
+            }
         };
         let handle = tables.builtin_handle(item)?;
         match item {
@@ -1520,17 +1595,28 @@ impl<'s> DeclarationIndex<'s> {
     }
     pub fn builtin_enum_id(&self, item: BuiltinEnum) -> Result<EnumId, Box<Diagnostic>> {
         self.tables.builtin_handle(BuiltinItem::Enum(item))?;
-        Ok(EnumId(self.source_enum_count() + match item {
-            BuiltinEnum::ReadStatus => 0,
-            BuiltinEnum::WriteStatus => usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus)),
-        }))
+        Ok(EnumId(
+            self.source_enum_count()
+                + match item {
+                    BuiltinEnum::ReadStatus => 0,
+                    BuiltinEnum::WriteStatus => {
+                        usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus))
+                    }
+                },
+        ))
     }
     pub fn builtin_function_id(&self, item: BuiltinFunction) -> Result<DefId, Box<Diagnostic>> {
         self.tables.builtin_handle(BuiltinItem::Function(item))?;
-        Ok(DefId(self.source_function_count() + match item {
-            BuiltinFunction::ReadStdin => 0,
-            BuiltinFunction::WriteStdout => usize::from(self.builtin_set().contains_function(BuiltinFunction::ReadStdin)),
-        }))
+        Ok(DefId(
+            self.source_function_count()
+                + match item {
+                    BuiltinFunction::ReadStdin => 0,
+                    BuiltinFunction::WriteStdout => usize::from(
+                        self.builtin_set()
+                            .contains_function(BuiltinFunction::ReadStdin),
+                    ),
+                },
+        ))
     }
     pub fn builtin_enum_anchor(&self, item: BuiltinEnum) -> Result<Span, Box<Diagnostic>> {
         self.builtin_enum_id(item)?;
@@ -1551,12 +1637,21 @@ impl<'s> DeclarationIndex<'s> {
             self.enumeration(id)?;
             return Ok(DeclarationOrigin::Source);
         }
-        if self.builtin_set().contains_enum(BuiltinEnum::ReadStatus) && id.0 == self.source_enum_count() {
-            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus)));
+        if self.builtin_set().contains_enum(BuiltinEnum::ReadStatus)
+            && id.0 == self.source_enum_count()
+        {
+            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(
+                BuiltinEnum::ReadStatus,
+            )));
         }
         if self.builtin_set().contains_enum(BuiltinEnum::WriteStatus)
-            && id.0 == self.source_enum_count() + usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus)) {
-            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::WriteStatus)));
+            && id.0
+                == self.source_enum_count()
+                    + usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus))
+        {
+            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(
+                BuiltinEnum::WriteStatus,
+            )));
         }
         Err(bad(self.sources().eof()))
     }
@@ -1565,12 +1660,28 @@ impl<'s> DeclarationIndex<'s> {
             self.function(id)?;
             return Ok(DeclarationOrigin::Source);
         }
-        if self.builtin_set().contains_function(BuiltinFunction::ReadStdin) && id.0 == self.source_function_count() {
-            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Function(BuiltinFunction::ReadStdin)));
+        if self
+            .builtin_set()
+            .contains_function(BuiltinFunction::ReadStdin)
+            && id.0 == self.source_function_count()
+        {
+            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Function(
+                BuiltinFunction::ReadStdin,
+            )));
         }
-        if self.builtin_set().contains_function(BuiltinFunction::WriteStdout)
-            && id.0 == self.source_function_count() + usize::from(self.builtin_set().contains_function(BuiltinFunction::ReadStdin)) {
-            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Function(BuiltinFunction::WriteStdout)));
+        if self
+            .builtin_set()
+            .contains_function(BuiltinFunction::WriteStdout)
+            && id.0
+                == self.source_function_count()
+                    + usize::from(
+                        self.builtin_set()
+                            .contains_function(BuiltinFunction::ReadStdin),
+                    )
+        {
+            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Function(
+                BuiltinFunction::WriteStdout,
+            )));
         }
         Err(bad(self.sources().eof()))
     }
@@ -1586,7 +1697,9 @@ impl<'s> DeclarationIndex<'s> {
     pub(super) fn frozen_enum_origin(&self, id: EnumId) -> DeclarationOrigin {
         if id.0 < self.source_enum_count() {
             DeclarationOrigin::Source
-        } else if self.builtin_set().contains_enum(BuiltinEnum::ReadStatus) && id.0 == self.source_enum_count() {
+        } else if self.builtin_set().contains_enum(BuiltinEnum::ReadStatus)
+            && id.0 == self.source_enum_count()
+        {
             DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus))
         } else {
             DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::WriteStatus))
@@ -1603,11 +1716,13 @@ impl<'s> DeclarationIndex<'s> {
     }
     pub(super) fn frozen_enum_anchor(&self, id: EnumId) -> Span {
         self.frozen_enum_syntax(id).map_or_else(
-            || {
-                match self.frozen_enum_origin(id) {
-                    DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => self.tables.builtins.enum_anchor(item).expect("checked builtin enum"),
-                    _ => unreachable!("checked builtin enum"),
-                }
+            || match self.frozen_enum_origin(id) {
+                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => self
+                    .tables
+                    .builtins
+                    .enum_anchor(item)
+                    .expect("checked builtin enum"),
+                _ => unreachable!("checked builtin enum"),
             },
             |syntax| syntax.name,
         )
@@ -1994,4 +2109,17 @@ fn bounded_enum_public_index_rejects_every_unpaid_scalar_producer() {
         assert_eq!((errors[0].code, errors[0].stage), ("E0101", "resolve"));
     }
     assert_eq!(phase.used(), 0);
+}
+
+#[cfg(test)]
+impl<'s> DeclarationIndex<'s> {
+    /// Read-only pointer evidence for the sealed source-owner association.
+    pub(super) fn builtin_anchor_borrows_for_test(&self) -> [Option<&'s Span>; 4] {
+        [
+            self.tables.builtins.read_status,
+            self.tables.builtins.read_stdin,
+            self.tables.builtins.write_status,
+            self.tables.builtins.write_stdout,
+        ]
+    }
 }

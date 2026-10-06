@@ -210,8 +210,8 @@ pub(super) fn check_builtin_candidate(
 }
 
 // Only builtin identity/anchor transports, not inherited Visitor internals.
-// Selectors, iterator/next, checked-rank results, projected-ID results, and the
-// retained input identity are separate roles: no overlay or lifetime reuse.
+// Selectors, iterator/next, checked-rank results, projected-ID results, receiver
+// borrows and retained input identity are separate roles: no lifetime reuse.
 // The private caller pays this complete envelope before source lowering.
 #[allow(dead_code)]
 struct BuiltinAssociationCarriers {
@@ -238,6 +238,8 @@ struct BuiltinAssociationCarriers {
     enumeration_id_return: Option<EnumId>,
     function_id_return: Option<hir::DefId>,
     input_function: Option<hir::DefId>,
+    enumeration_ids_borrow: &'static builtins::BuiltinIds,
+    function_ids_borrow: &'static builtins::BuiltinIds,
 }
 pub(super) const fn builtin_carrier_bytes() -> usize {
     std::mem::size_of::<BuiltinAssociationCarriers>()
@@ -511,6 +513,8 @@ mod output_layout_feasibility {
         enumeration_id_return: Option<EnumId>,
         function_id_return: Option<hir::DefId>,
         input_function: Option<hir::DefId>,
+        enumeration_ids_borrow: &'static builtins::BuiltinIds,
+        function_ids_borrow: &'static builtins::BuiltinIds,
     );
 
     fn same_layout<T, U>() {

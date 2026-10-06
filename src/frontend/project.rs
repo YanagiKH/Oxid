@@ -271,8 +271,14 @@ impl ProjectSources {
         limits: ProjectLimits,
         allocator: &mut Allocator,
     ) -> Result<Self, LoadFailure> {
-        Self::load_with_syntax(entry, limits, parser::SourceMode::ProjectCandidate,
-            allocator, parser::ArraySyntaxPolicy::Enabled, ProjectEnumSyntax::OutputCandidate)
+        Self::load_with_syntax(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            allocator,
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::OutputCandidate,
+        )
     }
     fn load_with_arrays(
         entry: &str,
@@ -900,7 +906,12 @@ impl SourceSetBuilder<'_> {
             )?,
             #[cfg(test)]
             ProjectEnumSyntax::OutputCandidate => parser::parse_output_candidate_counted(
-                source, tokens, self.mode, remaining_nodes, self.allocator, &mut Default::default(),
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                &mut Default::default(),
             )?,
             #[cfg(test)]
             ProjectEnumSyntax::BuiltinCandidate => parser::parse_builtin_candidate_counted(

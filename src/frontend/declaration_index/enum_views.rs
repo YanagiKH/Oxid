@@ -92,7 +92,9 @@ impl<'a> VariantView<'a> {
         match self.source_syntax() {
             Some(syntax) => self.index.sources().frozen_text(syntax.name),
             None => match self.origin() {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item.member_name(self.id.index).expect("checked builtin variant"),
+                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item
+                    .member_name(self.id.index)
+                    .expect("checked builtin variant"),
                 _ => unreachable!("checked builtin variant"),
             },
         }
@@ -128,7 +130,9 @@ impl<'a> VariantView<'a> {
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
             }),
             None => match self.origin() {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item.member_payload(self.id.index),
+                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => {
+                    item.member_payload(self.id.index)
+                }
                 _ => unreachable!("checked builtin variant"),
             },
         }

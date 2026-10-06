@@ -39,6 +39,7 @@ pub enum Route {
         operation: Operation,
     },
     // Closed data carrier. The public classifier cannot produce this variant.
+    #[cfg_attr(not(test), allow(dead_code))]
     ProcessError {
         message: String,
     },
@@ -74,7 +75,7 @@ mod output_layout_feasibility {
     use super::*;
     use std::mem::{align_of, size_of};
 
-    // Exact current variants, field types and declaration order. In particular,
+    // Exact input-only variants, field types and declaration order. In particular,
     // use the real Operation/String/Vec carriers instead of byte stand-ins.
     enum BaselineRoute {
         Legacy(Vec<String>),
@@ -132,6 +133,7 @@ mod output_layout_feasibility {
             Option<Route>,
             Result<Route, Route>,
             Result<Route, String>,
+            Option<i32>,
             BaselineRoute,
             EntryOptionMode,
             EntryOptionScan,
@@ -176,7 +178,9 @@ struct EntryOptionScan {
     mode: EntryOptionMode,
     policy: EntryPolicy,
     seen: bool,
+    #[cfg(test)]
     process_requested: bool,
+    #[cfg(test)]
     compile: bool,
 }
 
@@ -186,7 +190,9 @@ impl EntryOptionScan {
             mode,
             policy: EntryPolicy::Result,
             seen: false,
+            #[cfg(test)]
             process_requested: false,
+            #[cfg(test)]
             compile: false,
         }
     }
@@ -297,7 +303,10 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             ("--entry-mode", Some("result")) => entry.policy = EntryPolicy::Result,
             ("--entry-mode", Some("process")) => {
                 entry.policy = EntryPolicy::Process;
-                entry.process_requested = true;
+                #[cfg(test)]
+                {
+                    entry.process_requested = true;
+                }
             }
             ("--entry-mode", Some(value)) => {
                 error.get_or_insert_with(|| {
@@ -308,10 +317,16 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
         }
     }
 
-    entry.compile = forwarded.first().map(String::as_str) == Some("compile");
+    #[cfg(test)]
+    {
+        entry.compile = forwarded.first().map(String::as_str) == Some("compile");
+    }
     if entry.seen
         && (edition != Some("typed-preview")
-            || !matches!(forwarded.first().map(String::as_str), Some("run" | "compile")))
+            || !matches!(
+                forwarded.first().map(String::as_str),
+                Some("run" | "compile")
+            ))
     {
         error.get_or_insert_with(|| {
             "--entry-mode requires typed-preview run or compile".to_string()
@@ -576,8 +591,18 @@ mod tests {
             }
         }
         for values in [
-            &["--entry-mode=process", "run", "file.ox", "--edition=typed-preview"][..],
-            &["run", "file.ox", "--edition=typed-preview", "--entry-mode=process"],
+            &[
+                "--entry-mode=process",
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+            ][..],
+            &[
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+            ],
             &["run", "file.ox", "--edition=typed-preview", "--entry-mode"],
         ] {
             assert!(matches!(route(&arguments(values)), Route::Error { .. }));
@@ -591,9 +616,27 @@ mod tests {
             ("process", EntryPolicy::Process),
         ] {
             for values in [
-                vec!["--entry-mode", value, "run", "file.ox", "--edition=typed-preview"],
-                vec!["run", "--entry-mode", value, "--edition=typed-preview", "file.ox"],
-                vec!["run", "file.ox", "--edition=typed-preview", "--entry-mode", value],
+                vec![
+                    "--entry-mode",
+                    value,
+                    "run",
+                    "file.ox",
+                    "--edition=typed-preview",
+                ],
+                vec![
+                    "run",
+                    "--entry-mode",
+                    value,
+                    "--edition=typed-preview",
+                    "file.ox",
+                ],
+                vec![
+                    "run",
+                    "file.ox",
+                    "--edition=typed-preview",
+                    "--entry-mode",
+                    value,
+                ],
             ] {
                 assert_eq!(
                     candidate_route(&arguments(&values)),
@@ -606,8 +649,14 @@ mod tests {
             }
             assert_eq!(
                 candidate_route(&arguments(&[
-                    "--edition=typed-preview", "compile", "file.ox", "--backend=llvm",
-                    "--output=program", "--message-format=json", "--entry-mode", value,
+                    "--edition=typed-preview",
+                    "compile",
+                    "file.ox",
+                    "--backend=llvm",
+                    "--output=program",
+                    "--message-format=json",
+                    "--entry-mode",
+                    value,
                 ])),
                 Route::TypedCompile {
                     path: "file.ox".into(),
@@ -617,16 +666,39 @@ mod tests {
                 }
             );
         }
+        assert_eq!(
+            candidate_route(&arguments(&[
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=result",
+                "--message-format=json",
+            ])),
+            Route::TypedRun {
+                path: "file.ox".into(),
+                json: true,
+                entry_policy: EntryPolicy::Result,
+            }
+        );
         assert!(matches!(
             candidate_route(&arguments(&[
-                "run", "file.ox", "--edition=typed-preview", "--entry-mode=process"
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process"
             ])),
-            Route::TypedRun { entry_policy: EntryPolicy::Process, .. }
+            Route::TypedRun {
+                entry_policy: EntryPolicy::Process,
+                ..
+            }
         ));
         for command in ["check", "fmt", "script", "unknown"] {
             assert!(matches!(
                 candidate_route(&arguments(&[
-                    "--entry-mode=process", "--edition=typed-preview", command, "file.ox"
+                    "--entry-mode=process",
+                    "--edition=typed-preview",
+                    command,
+                    "file.ox"
                 ])),
                 Route::ProcessError { .. }
             ));
@@ -651,19 +723,42 @@ mod tests {
             &["--unknown"],
             &["second.ox"],
         ] {
-            let mut values = vec!["run", "file.ox", "--edition=typed-preview", "--entry-mode=process"];
+            let mut values = vec![
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+            ];
             values.extend_from_slice(suffix);
             assert!(
-                matches!(candidate_route(&arguments(&values)), Route::ProcessError { .. }),
+                matches!(
+                    candidate_route(&arguments(&values)),
+                    Route::ProcessError { .. }
+                ),
                 "{values:?}"
             );
         }
         for values in [
             &["run", "--edition=typed-preview", "--entry-mode=process"][..],
-            &["run", "file.ox", "--edition=unknown", "--entry-mode=process", "--message-format=json"],
-            &["run", "file.ox", "--edition=typed-preview", "--entry-mode=unknown", "--entry-mode=process"],
+            &[
+                "run",
+                "file.ox",
+                "--edition=unknown",
+                "--entry-mode=process",
+                "--message-format=json",
+            ],
+            &[
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=unknown",
+                "--entry-mode=process",
+            ],
         ] {
-            assert!(matches!(candidate_route(&arguments(values)), Route::ProcessError { .. }));
+            assert!(matches!(
+                candidate_route(&arguments(values)),
+                Route::ProcessError { .. }
+            ));
         }
         for selection in [
             &["--entry-mode"][..],
@@ -671,7 +766,12 @@ mod tests {
             &["--entry-mode=unknown"],
             &["--entry-mode=result", "--entry-mode=result"],
         ] {
-            let mut values = vec!["run", "file.ox", "--edition=typed-preview", "--message-format=json"];
+            let mut values = vec![
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--message-format=json",
+            ];
             values.extend_from_slice(selection);
             match candidate_route(&arguments(&values)) {
                 Route::Error { message, json, .. } => {
@@ -685,8 +785,13 @@ mod tests {
         // carrier is also preserved when a candidate process policy was selected.
         assert!(matches!(
             candidate_route(&arguments(&[
-                "compile", "file.ox", "--edition=typed-preview", "--entry-mode=process",
-                "--message-format=json", "--backend=unknown", "--output=program"
+                "compile",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+                "--message-format=json",
+                "--backend=unknown",
+                "--output=program"
             ])),
             Route::Error { json: true, .. }
         ));
@@ -695,8 +800,20 @@ mod tests {
     #[test]
     fn candidate_and_public_routes_preserve_script_and_separator_boundaries() {
         for values in [
-            &["script", "task", "--entry-mode", "process", "--edition=typed-preview"][..],
-            &["run", "file.ox", "--", "--entry-mode=process", "--edition=typed-preview"],
+            &[
+                "script",
+                "task",
+                "--entry-mode",
+                "process",
+                "--edition=typed-preview",
+            ][..],
+            &[
+                "run",
+                "file.ox",
+                "--",
+                "--entry-mode=process",
+                "--edition=typed-preview",
+            ],
         ] {
             let args = arguments(values);
             assert_eq!(route(&args), Route::Legacy(args.clone()));
@@ -705,7 +822,10 @@ mod tests {
         for classify in [route, candidate_route] {
             assert_eq!(
                 classify(&arguments(&[
-                    "run", "--edition=typed-preview", "--", "--entry-mode=process"
+                    "run",
+                    "--edition=typed-preview",
+                    "--",
+                    "--entry-mode=process"
                 ])),
                 Route::TypedRun {
                     path: "--entry-mode=process".into(),
@@ -715,11 +835,28 @@ mod tests {
             );
             assert_eq!(
                 classify(&arguments(&[
-                    "script", "--edition=legacy-0.9", "task", "--entry-mode=process"
+                    "script",
+                    "--edition=legacy-0.9",
+                    "task",
+                    "--entry-mode=process"
                 ])),
                 Route::Legacy(arguments(&["script", "task", "--entry-mode=process"]))
             );
         }
+        assert_eq!(
+            candidate_route(&arguments(&[
+                "run",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+                "--",
+                "--entry-mode=result",
+            ])),
+            Route::TypedRun {
+                path: "--entry-mode=result".into(),
+                json: false,
+                entry_policy: EntryPolicy::Process,
+            }
+        );
     }
 
     #[test]

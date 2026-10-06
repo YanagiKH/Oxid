@@ -33,8 +33,11 @@ impl Fixture {
     }
     fn load_output(&self) -> ProjectSources {
         ProjectSources::load_output_candidate(
-            self.0.join("main.ox").to_str().unwrap(), ProjectLimits::default(), &mut Allocator::default(),
-        ).unwrap()
+            self.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap()
     }
     fn load_current(&self) -> ProjectSources {
         ProjectSources::load_typed(
@@ -672,7 +675,7 @@ mod output_layout_feasibility {
         SourceOriginal(u32),
         Builtin(FlatItem),
     }
-    // Exactly the current admission's per-family payload alternatives.
+    // Exactly the predecessor admission's per-family payload alternatives.
     enum FamilySpanState {
         None,
         Status(CompactSpan),
@@ -807,8 +810,8 @@ mod output_layout_feasibility {
         );
     }
     fn substituted_fixed<TablesModel, Admission, Projection, Item, Origin>() -> usize {
-        // Start from the complete actual bank. Embedded admission is replaced
-        // once through Tables; the collection-local admission is separate.
+        // Start from the preserved 4094-byte predecessor bank. Embedded
+        // admission is replaced once through its mirror; the local is separate.
         let old = size_of::<BaselineTables<'static>>()
             + size_of::<FamilySpanState>()
             + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
@@ -827,10 +830,10 @@ mod output_layout_feasibility {
     }
     fn candidate(name: &str, substituted: usize) {
         let headroom = 4096i128 - substituted as i128;
-        let delta = substituted as i128 - FIXED_SCRATCH as i128;
+        let delta = substituted as i128 - 4094;
         println!(
-            "OUTPUT_INDEX_CANDIDATE {name} actual_fixed={FIXED_SCRATCH} \
-             substituted_fixed={substituted} delta={delta} ceiling=4096 \
+            "OUTPUT_INDEX_CANDIDATE {name} predecessor_fixed=4094 actual_fixed={FIXED_SCRATCH} \
+             substituted_fixed={substituted} predecessor_delta={delta} ceiling=4096 \
              headroom_before_new_roles={headroom} new_projection_control_bytes=UNPRICED \
              admission=NOT_ESTABLISHED"
         );
@@ -990,7 +993,10 @@ mod output_layout_feasibility {
         .checked_add(size_of::<u32>())
         .unwrap();
         assert_eq!(substituted, 4094);
-        assert_eq!(FIXED_SCRATCH, substituted + size_of::<BuiltinEnum>() + size_of::<BuiltinFunction>());
+        assert_eq!(
+            FIXED_SCRATCH,
+            substituted + size_of::<BuiltinEnum>() + size_of::<BuiltinFunction>()
+        );
         let old_transports = size_of::<ExistingAnchorTransports<'static>>();
         let new_transports = size_of::<BorrowedAnchorTransports<'static>>();
         assert!(new_transports <= old_transports);
@@ -1247,7 +1253,12 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
     assert_eq!(FIXED_SCRATCH, 4096);
     for (name, source, old_retained, old_scratch) in [
         ("absent", "fn main()->(){return;}", 488, 4102),
-        ("read_stdin", "use std::io::read_stdin; fn main()->(){return;}", 528, 4114),
+        (
+            "read_stdin",
+            "use std::io::read_stdin; fn main()->(){return;}",
+            528,
+            4114,
+        ),
     ] {
         let fixture = Fixture::new(&[("main.ox", source)]);
         let project = fixture.load();
@@ -1263,9 +1274,16 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
             (plan.retained, plan.scratch, true),
         ] {
             let mut allocator = Allocator::default();
-            let result = collect_originals(SourceOwner::project(&project), IndexLimits {
-                retained, scratch, ..IndexLimits::default()
-            }, &WorkMeter::default(), &mut allocator);
+            let result = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits {
+                    retained,
+                    scratch,
+                    ..IndexLimits::default()
+                },
+                &WorkMeter::default(),
+                &mut allocator,
+            );
             assert_eq!(result.is_ok(), expected);
             if !expected {
                 assert_eq!(allocator.attempts, 0);
@@ -1273,5 +1291,708 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
             }
         }
         println!("OUTPUT_RETAINED_SUCCESSOR name={name} predecessor_header=368 predecessor_retained={old_retained} predecessor_scratch={old_scratch} header=376 retained={} scratch={} fixed={} selector_bytes=2 source={source:?}", plan.retained, plan.scratch, FIXED_SCRATCH);
+    }
+}
+
+fn output_inventory_cases() -> [(&'static str, &'static str, BuiltinSet); 9] {
+    [
+        ("", "", BuiltinSet::None),
+        (
+            "use std::io::ReadStatus as InStatus;",
+            "",
+            BuiltinSet::ReadStatus,
+        ),
+        (
+            "use std::io::read_stdin as input;",
+            "",
+            BuiltinSet::ReadStdin,
+        ),
+        (
+            "",
+            "use std::io::WriteStatus as OutStatus;",
+            BuiltinSet::WriteStatus,
+        ),
+        (
+            "",
+            "use std::io::write_stdout as output;",
+            BuiltinSet::WriteStdout,
+        ),
+        (
+            "use std::io::ReadStatus as InStatus;",
+            "use std::io::WriteStatus as OutStatus;",
+            BuiltinSet::ReadStatusWriteStatus,
+        ),
+        (
+            "use std::io::ReadStatus as InStatus;",
+            "use std::io::write_stdout as output;",
+            BuiltinSet::ReadStatusWriteStdout,
+        ),
+        (
+            "use std::io::read_stdin as input;",
+            "use std::io::WriteStatus as OutStatus;",
+            BuiltinSet::ReadStdinWriteStatus,
+        ),
+        (
+            "use std::io::read_stdin as input;",
+            "use std::io::write_stdout as output;",
+            BuiltinSet::ReadStdinWriteStdout,
+        ),
+    ]
+}
+fn output_facts<'s>(
+    project: &'s ProjectSources,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> DeclarationFacts<'s> {
+    collect_output_candidate(
+        SourceOwner::project(project),
+        IndexLimits::default(),
+        work,
+        allocator,
+    )
+    .unwrap()
+}
+
+#[test]
+fn bounded_stdout_catalog_nine_state_closure_ranks_and_signatures() {
+    let cases = output_inventory_cases();
+    for (left_rank, (_, _, left)) in cases.iter().enumerate() {
+        assert!(cases[..left_rank].iter().all(|(_, _, other)| left != other));
+        assert_eq!(left.union(*left), *left);
+        assert_eq!(left.union(BuiltinSet::None), *left);
+        assert_eq!(
+            left.has_output(),
+            left.contains_enum(BuiltinEnum::WriteStatus)
+        );
+        assert_eq!(
+            left.has_output_function(),
+            left.contains_function(BuiltinFunction::WriteStdout)
+        );
+        assert_eq!(
+            left.extra_enums(),
+            BuiltinEnum::ALL
+                .into_iter()
+                .filter(|item| left.contains_enum(*item))
+                .count()
+        );
+        assert_eq!(
+            left.extra_functions(),
+            BuiltinFunction::ALL
+                .into_iter()
+                .filter(|item| left.contains_function(*item))
+                .count()
+        );
+        for item in BuiltinEnum::ALL {
+            assert_eq!(left.enum_rank(item).is_some(), left.contains_enum(item));
+        }
+        for item in BuiltinFunction::ALL {
+            assert_eq!(
+                left.function_rank(item).is_some(),
+                left.contains_function(item)
+            );
+        }
+        assert_eq!(
+            left.enum_rank(BuiltinEnum::WriteStatus),
+            left.has_output()
+                .then_some(usize::from(left.contains_enum(BuiltinEnum::ReadStatus)))
+        );
+        assert_eq!(
+            left.function_rank(BuiltinFunction::WriteStdout),
+            left.has_output_function().then_some(usize::from(
+                left.contains_function(BuiltinFunction::ReadStdin)
+            ))
+        );
+        for (_, _, right) in cases {
+            assert_eq!(left.union(right), right.union(*left));
+            assert!(cases
+                .iter()
+                .any(|(_, _, candidate)| *candidate == left.union(right)));
+            for item in BuiltinEnum::ALL {
+                assert_eq!(
+                    left.union(right).contains_enum(item),
+                    left.contains_enum(item) || right.contains_enum(item)
+                );
+            }
+            for item in BuiltinFunction::ALL {
+                assert_eq!(
+                    left.union(right).contains_function(item),
+                    left.contains_function(item) || right.contains_function(item)
+                );
+            }
+            for (_, _, third) in cases {
+                assert_eq!(
+                    left.union(right).union(third),
+                    left.union(right.union(third))
+                );
+            }
+        }
+    }
+    for (function, status, kind) in [
+        (
+            BuiltinFunction::ReadStdin,
+            BuiltinEnum::ReadStatus,
+            BorrowKind::Exclusive,
+        ),
+        (
+            BuiltinFunction::WriteStdout,
+            BuiltinEnum::WriteStatus,
+            BorrowKind::Shared,
+        ),
+    ] {
+        let set = BuiltinSet::None.admit(BuiltinItem::Function(function));
+        assert!(set.contains_enum(status));
+        assert!(set.contains_function(function));
+        assert_eq!(
+            function.signature(EnumId(7)),
+            (
+                ParameterTy::Reference {
+                    referent: BorrowedTy::ScalarSlice(Ty::I32),
+                    kind,
+                },
+                ValueTy::Owned(AggregateTy::Enum(EnumId(7)))
+            )
+        );
+        assert_eq!(
+            BuiltinItem::Function(function).path(),
+            ["std", "io", function.name()]
+        );
+        for member in 0..4 {
+            assert_eq!(
+                status.member_payload(member),
+                (member
+                    == if status == BuiltinEnum::ReadStatus {
+                        0
+                    } else {
+                        2
+                    })
+                .then_some(Ty::I32)
+            );
+        }
+    }
+}
+
+#[test]
+fn bounded_stdout_private_index_all_nine_suffixes_queries_and_views() {
+    for (input, output, expected) in output_inventory_cases() {
+        for output_first in [false, true] {
+            let imports = if output_first {
+                format!("{output} {input}")
+            } else {
+                format!("{input} {output}")
+            };
+            // Source declarations deliberately duplicate the catalog's spellings
+            // and shapes. Their IDs and origins must stay in the source prefix.
+            let text = format!("{imports} enum ReadStatus{{Eof(i32),Full,IoError}} enum WriteStatus{{Complete,InvalidInput,IoError(i32)}} fn read_stdin()->(){{return;}} fn write_stdout()->(){{return;}} fn main()->(){{return;}}");
+            let fixture = Fixture::new(&[("main.ox", &text)]);
+            let project = fixture.load_output();
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let facts = output_facts(&project, &work, &mut allocator);
+            assert_eq!(
+                (
+                    facts.plan().counts.functions,
+                    facts.plan().counts.enums,
+                    facts.plan().counts.variants
+                ),
+                (3, 2, 6)
+            );
+            assert!(facts.require_current_source_pipeline().is_err());
+            assert!(facts.require_builtin_candidate_pipeline().is_err());
+            assert!(facts.require_no_builtin_candidate().is_err());
+            let index = facts.finish(&work, &mut allocator).unwrap();
+            assert!(index.require_current_source_pipeline().is_err());
+            assert!(index.require_builtin_candidate_pipeline().is_err());
+            assert!(index.require_no_builtin_candidate().is_err());
+            assert_eq!(index.builtin_set(), expected);
+            assert_eq!(index.root_original_main(), Some(DefId(2)));
+            assert_eq!(index.enum_count(), 2 + expected.extra_enums());
+            assert_eq!(index.function_count(), 3 + expected.extra_functions());
+            assert_eq!(
+                index.enum_variant_counts().collect::<Vec<_>>(),
+                vec![3; index.enum_count()]
+            );
+            for id in 0..2 {
+                assert_eq!(
+                    index.enum_origin(EnumId(id)).unwrap(),
+                    DeclarationOrigin::Source
+                );
+            }
+            for id in 0..3 {
+                assert_eq!(
+                    index.function_origin(DefId(id)).unwrap(),
+                    DeclarationOrigin::Source
+                );
+            }
+            assert!(index.enum_origin(EnumId(index.enum_count())).is_err());
+            assert!(index
+                .function_origin(DefId(index.function_count()))
+                .is_err());
+            for item in BuiltinEnum::ALL {
+                if let Some(rank) = expected.enum_rank(item) {
+                    let id = index.builtin_enum_id(item).unwrap();
+                    assert_eq!(id, EnumId(2 + rank));
+                    assert_eq!(
+                        index.enum_origin(id).unwrap(),
+                        DeclarationOrigin::Builtin(BuiltinItem::Enum(item))
+                    );
+                    let view = index.enum_view(id).unwrap();
+                    assert_eq!(view.name(), item.name());
+                    assert_eq!(view.variant_count(), 3);
+                    assert!(view.source_syntax().is_none());
+                    assert_eq!(
+                        index
+                            .query(&work)
+                            .prepare_nominal_type_name(NominalId::Enum(id), view.diagnostic_span())
+                            .unwrap()
+                            .to_string(),
+                        format!("std::io::{}", item.name())
+                    );
+                    let source_enum = usize::from(item == BuiltinEnum::WriteStatus);
+                    for member in 0..3 {
+                        let variant_id = VariantId {
+                            enumeration: id,
+                            index: member,
+                        };
+                        let view = view.variant(variant_id).unwrap();
+                        assert_eq!(view.name(), item.member_name(member).unwrap());
+                        assert_eq!(view.payload(), item.member_payload(member));
+                        assert_eq!(
+                            view.origin(),
+                            DeclarationOrigin::Builtin(BuiltinItem::Enum(item))
+                        );
+                        assert!(view.source_syntax().is_none());
+                        let name_span = project.try_file_ast(SourceFileId(0)).unwrap().enums
+                            [source_enum]
+                            .variants[member]
+                            .name;
+                        assert_eq!(
+                            index
+                                .query(&work)
+                                .tables
+                                .lookup_variant(id, name_span, &work)
+                                .unwrap(),
+                            variant_id
+                        );
+                    }
+                } else {
+                    assert!(index.builtin_enum_id(item).is_err());
+                    assert!(index.builtin_enum_anchor(item).is_err());
+                }
+            }
+            for item in BuiltinFunction::ALL {
+                if let Some(rank) = expected.function_rank(item) {
+                    let id = index.builtin_function_id(item).unwrap();
+                    assert_eq!(id, DefId(3 + rank));
+                    assert_eq!(
+                        index.function_origin(id).unwrap(),
+                        DeclarationOrigin::Builtin(BuiltinItem::Function(item))
+                    );
+                    assert_eq!(
+                        project.text(index.builtin_function_anchor(item).unwrap()),
+                        item.name()
+                    );
+                } else {
+                    assert!(index.builtin_function_id(item).is_err());
+                    assert!(index.builtin_function_anchor(item).is_err());
+                }
+            }
+            for (position, import) in project
+                .try_file_ast(SourceFileId(0))
+                .unwrap()
+                .imports
+                .iter()
+                .enumerate()
+            {
+                let endpoint = *project
+                    .try_file_ast(SourceFileId(0))
+                    .unwrap()
+                    .path_segments(import.path)
+                    .unwrap()
+                    .last()
+                    .unwrap();
+                match project.text(endpoint) {
+                    "ReadStatus" | "WriteStatus" => {
+                        let item = if project.text(endpoint) == "ReadStatus" {
+                            BuiltinEnum::ReadStatus
+                        } else {
+                            BuiltinEnum::WriteStatus
+                        };
+                        assert_eq!(
+                            index
+                                .query(&work)
+                                .nominal_type(
+                                    ModuleId(0),
+                                    bound(&project, 0, position),
+                                    TypeContext::Value
+                                )
+                                .unwrap(),
+                            NominalId::Enum(index.builtin_enum_id(item).unwrap())
+                        );
+                    }
+                    "read_stdin" | "write_stdout" => {
+                        let item = if project.text(endpoint) == "read_stdin" {
+                            BuiltinFunction::ReadStdin
+                        } else {
+                            BuiltinFunction::WriteStdout
+                        };
+                        assert_eq!(
+                            index
+                                .query(&work)
+                                .callee(ModuleId(0), bound(&project, 0, position), false)
+                                .unwrap(),
+                            index.builtin_function_id(item).unwrap()
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn bounded_stdout_private_output_denied_by_current_parser_and_collection() {
+    for endpoint in ["WriteStatus", "write_stdout"] {
+        let text = format!("use std::io::{endpoint} as Output; fn main()->(){{return;}}");
+        let fixture = Fixture::new(&[("main.ox", &text)]);
+        let failure = ProjectSources::load_typed(
+            fixture.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        )
+        .unwrap_err();
+        assert!(failure
+            .diagnostics
+            .iter()
+            .any(|error| error.code == "E0101"));
+        let project = fixture.load_output();
+        for collect in [
+            collect_originals,
+            collect_builtin_candidate,
+            collect_std_closed,
+            collect_closed,
+            collect_enum_candidate,
+        ] {
+            let mut allocator = Allocator::default();
+            assert!(collect(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &WorkMeter::default(),
+                &mut allocator
+            )
+            .is_err());
+            assert_eq!(allocator.attempts, 0, "laundered {endpoint}");
+        }
+    }
+}
+
+#[test]
+fn bounded_stdout_private_index_all_nine_resource_boundaries() {
+    for (input, output, expected) in output_inventory_cases() {
+        let text = format!("{input} {output} fn main()->(){{return;}}");
+        let fixture = Fixture::new(&[("main.ox", &text)]);
+        let project = fixture.load_output();
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        let facts = output_facts(&project, &work, &mut allocator);
+        let plan = facts.plan();
+        let mandatory = work
+            .events
+            .borrow()
+            .iter()
+            .take_while(|event| event.operation != "initialize admitted rows")
+            .map(|event| event.units)
+            .sum::<u64>()
+            + plan.build_work;
+        facts.finish(&work, &mut allocator).unwrap();
+        for (retained, scratch, work_limit, ok) in [
+            (plan.retained, plan.scratch, mandatory, true),
+            (plan.retained - 1, plan.scratch, mandatory, false),
+            (plan.retained, plan.scratch - 1, mandatory, false),
+            (plan.retained, plan.scratch, mandatory - 1, false),
+        ] {
+            let mut allocator = Allocator::default();
+            let work = WorkMeter::new(work_limit);
+            let result = collect_output_candidate(
+                SourceOwner::project(&project),
+                IndexLimits {
+                    retained,
+                    scratch,
+                    work: work_limit,
+                },
+                &work,
+                &mut allocator,
+            );
+            assert_eq!(
+                result.is_ok(),
+                ok,
+                "{expected:?}: retained={retained} scratch={scratch} work={work_limit}"
+            );
+            if ok {
+                assert_eq!(
+                    result
+                        .unwrap()
+                        .finish(&work, &mut allocator)
+                        .unwrap()
+                        .builtin_set(),
+                    expected
+                );
+            } else {
+                assert_eq!(allocator.attempts, 0);
+                assert_eq!(result.unwrap_err().code, "E0400");
+            }
+        }
+        println!("OUTPUT_PRIVATE_INDEX_ENDPOINT set={expected:?} retained={} scratch={} mandatory_work={mandatory}", plan.retained, plan.scratch);
+    }
+}
+
+#[test]
+fn bounded_stdout_private_function_dependency_does_not_bind_output_status() {
+    let fixture = Fixture::new(&[("main.ox", "use std::io::write_stdout as output; fn helper()->WriteStatus{return;} fn main()->(){return;}")]);
+    let project = fixture.load_output();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let index = output_facts(&project, &work, &mut allocator)
+        .finish(&work, &mut allocator)
+        .unwrap();
+    assert_eq!(index.enum_count(), 1);
+    let result = project.try_file_ast(SourceFileId(0)).unwrap().functions[0].result;
+    assert_eq!(
+        index
+            .query(&work)
+            .value_type(ModuleId(0), result, TypeContext::Value)
+            .unwrap_err()
+            .code,
+        "E0202"
+    );
+}
+
+#[test]
+fn bounded_stdout_private_borrowed_anchors_preserve_dependency_and_module_order() {
+    for first_function in [false, true] {
+        let root = if first_function {
+            "pub mod first; pub mod second; use std::io::read_stdin as input; use std::io::WriteStatus as OutStatus; fn main()->(){return;}"
+        } else {
+            "pub mod first; pub mod second; use std::io::ReadStatus as InStatus; use std::io::write_stdout as output; fn main()->(){return;}"
+        };
+        let child = if first_function {
+            "use std::io::ReadStatus as InStatus; use std::io::write_stdout as output; pub fn helper()->(){return;}"
+        } else {
+            "use std::io::read_stdin as input; use std::io::WriteStatus as OutStatus; pub fn helper()->(){return;}"
+        };
+        let fixture = Fixture::new(&[("main.ox", root), ("first.ox", child), ("second.ox", "use std::io::write_stdout as again; use std::io::read_stdin as input; pub fn other()->(){return;}")]);
+        let project = fixture.load_output();
+        let owner = SourceOwner::project(&project);
+        let endpoint = |module: usize, import: usize| {
+            let ast = owner.ast(ModuleId(module)).unwrap();
+            ast.path_segments(ast.imports[import].path)
+                .unwrap()
+                .last()
+                .unwrap()
+        };
+        let expected = [
+            endpoint(0, 0),
+            if first_function {
+                endpoint(0, 0)
+            } else {
+                endpoint(1, 0)
+            },
+            endpoint(0, 1),
+            if first_function {
+                endpoint(1, 1)
+            } else {
+                endpoint(0, 1)
+            },
+        ];
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let original = output_facts(&project, &work, &mut allocator)
+            .finish(&work, &mut allocator)
+            .unwrap();
+        let moved = original;
+        assert_eq!(moved.builtin_set(), BuiltinSet::ReadStdinWriteStdout);
+        for (actual, expected) in moved
+            .builtin_anchor_borrows_for_test()
+            .into_iter()
+            .zip(expected)
+        {
+            assert!(std::ptr::eq(actual.unwrap(), expected));
+            assert_eq!(
+                owner.text(*actual.unwrap()).unwrap(),
+                owner.text(*expected).unwrap()
+            );
+        }
+        assert_eq!(
+            moved.builtin_enum_anchor(BuiltinEnum::ReadStatus).unwrap(),
+            *expected[0]
+        );
+        assert_eq!(
+            moved
+                .builtin_function_anchor(BuiltinFunction::ReadStdin)
+                .unwrap(),
+            *expected[1]
+        );
+        assert_eq!(
+            moved.builtin_enum_anchor(BuiltinEnum::WriteStatus).unwrap(),
+            *expected[2]
+        );
+        assert_eq!(
+            moved
+                .builtin_function_anchor(BuiltinFunction::WriteStdout)
+                .unwrap(),
+            *expected[3]
+        );
+        assert!(expected[usize::from(first_function) * 2 + 1].file != SourceFileId(0));
+    }
+}
+
+#[test]
+fn bounded_stdout_private_borrowed_anchors_choose_first_within_module() {
+    for function_first in [false, true] {
+        let text = if function_first {
+            "use std::io::write_stdout as output; use std::io::read_stdin as input; use std::io::WriteStatus as OutStatus; use std::io::ReadStatus as InStatus; fn main()->(){return;}"
+        } else {
+            "use std::io::WriteStatus as OutStatus; use std::io::ReadStatus as InStatus; use std::io::write_stdout as output; use std::io::read_stdin as input; fn main()->(){return;}"
+        };
+        let fixture = Fixture::new(&[("main.ox", text)]);
+        let project = fixture.load_output();
+        let ast = project.try_file_ast(SourceFileId(0)).unwrap();
+        let endpoint = |import: usize| {
+            ast.path_segments(ast.imports[import].path)
+                .unwrap()
+                .last()
+                .unwrap()
+        };
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = output_facts(&project, &work, &mut allocator)
+            .finish(&work, &mut allocator)
+            .unwrap();
+        let expected = [
+            endpoint(1),
+            endpoint(if function_first { 1 } else { 3 }),
+            endpoint(0),
+            endpoint(if function_first { 0 } else { 2 }),
+        ];
+        for (actual, expected) in index
+            .builtin_anchor_borrows_for_test()
+            .into_iter()
+            .zip(expected)
+        {
+            assert!(std::ptr::eq(actual.unwrap(), expected));
+        }
+    }
+}
+
+#[test]
+fn bounded_stdout_original_owner_keeps_absent_inventory_and_rejects_std_ast() {
+    use crate::frontend::{lexer, source::SourceMap};
+    for text in [
+        "fn main()->(){return;}",
+        "use std::io::write_stdout; fn main()->(){return;}",
+        "use std::io::read_stdin; fn main()->(){return;}",
+    ] {
+        let mut map = SourceMap::new();
+        map.add("padding.ox".into(), String::new());
+        let id = map.add("original.ox".into(), text.into());
+        let file = map.get(id);
+        let ast = parser::parse_output_candidate_counted(
+            file,
+            lexer::lex(file).unwrap(),
+            parser::SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0;
+        let owner = SourceOwner::original(file, &ast, SourceView::Map(&map)).unwrap();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let result = collect_output_candidate(owner, IndexLimits::default(), &work, &mut allocator);
+        if text.starts_with("use") {
+            assert_eq!(result.unwrap_err().code, "E0500");
+            assert_eq!(allocator.attempts, 0);
+        } else {
+            let index = result.unwrap().finish(&work, &mut allocator).unwrap();
+            assert_eq!(index.builtin_set(), BuiltinSet::None);
+            assert_eq!(index.builtin_anchor_borrows_for_test(), [None; 4]);
+            assert_eq!(index.function(DefId(0)).unwrap().0.file, id);
+            assert!(index.require_current_source_pipeline().is_err());
+            assert!(index.require_builtin_candidate_pipeline().is_err());
+        }
+    }
+}
+
+#[test]
+fn bounded_stdout_private_invalid_imports_and_duplicate_aliases_fail_closed() {
+    for text in [
+        "use std::fs::write_stdout; fn main()->(){return;}",
+        "use std::io::missing; fn main()->(){return;}",
+        "use std::io::WriteStatus::Complete; fn main()->(){return;}",
+    ] {
+        let fixture = Fixture::new(&[("main.ox", text)]);
+        let project = fixture.load_output();
+        let mut allocator = Allocator::default();
+        assert_eq!(
+            collect_output_candidate(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &WorkMeter::default(),
+                &mut allocator
+            )
+            .unwrap_err()
+            .code,
+            "E0205"
+        );
+        assert_eq!(allocator.attempts, 0);
+    }
+    for text in [
+        "use std::io::WriteStatus as A; use std::io::WriteStatus as B; fn main()->(){return;}",
+        "use std::io::write_stdout as a; use std::io::write_stdout as b; fn main()->(){return;}",
+        "use std::io::ReadStatus as Status; use std::io::WriteStatus as Status; fn main()->(){return;}",
+        "use std::io::read_stdin as io; use std::io::write_stdout as io; fn main()->(){return;}",
+        "use std::io::WriteStatus as bool; fn main()->(){return;}",
+        "use std::io::write_stdout as main; fn main()->(){return;}",
+    ] {
+        let fixture = Fixture::new(&[("main.ox", text)]);
+        let project = fixture.load_output();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let errors = output_facts(&project, &work, &mut allocator).finish(&work, &mut allocator).unwrap_err();
+        assert!(errors.iter().any(|error| matches!(error.code, "E0201" | "E0202")));
+    }
+}
+
+#[test]
+fn bounded_stdout_private_allocation_failures_never_freeze_identity() {
+    let fixture = Fixture::new(&[("main.ox", "use std::io::ReadStatus as InStatus; use std::io::read_stdin as input; use std::io::WriteStatus as OutStatus; use std::io::write_stdout as output; enum User{V} fn main()->(){return;}")]);
+    let project = fixture.load_output();
+    let mut baseline = Allocator::default();
+    output_facts(&project, &WorkMeter::default(), &mut baseline);
+    for fail_at in 1..=baseline.attempts {
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator {
+            fail_at: Some(fail_at),
+            ..Allocator::default()
+        };
+        assert_eq!(
+            collect_output_candidate(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &work,
+                &mut allocator
+            )
+            .unwrap_err()
+            .code,
+            "E0400"
+        );
+        assert_eq!(allocator.attempts, fail_at);
+        assert!(!work
+            .observations
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, Observation::Frozen { .. })));
     }
 }

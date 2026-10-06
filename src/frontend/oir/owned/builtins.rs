@@ -25,13 +25,13 @@ pub(super) struct BuiltinIds {
     inventory: BuiltinOrigins,
 }
 impl BuiltinIds {
-    pub(super) fn enumeration(self, kind: BuiltinEnum) -> Option<EnumId> {
+    pub(super) fn enumeration(&self, kind: BuiltinEnum) -> Option<EnumId> {
         self.enumeration_base
             .0
             .checked_add(self.inventory.enum_rank(kind)?)
             .map(EnumId)
     }
-    pub(super) fn function(self, kind: BuiltinFunction) -> Option<hir::DefId> {
+    pub(super) fn function(&self, kind: BuiltinFunction) -> Option<hir::DefId> {
         self.function_base
             .0
             .checked_add(self.inventory.function_rank(kind)?)
