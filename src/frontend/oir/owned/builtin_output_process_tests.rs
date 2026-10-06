@@ -204,6 +204,7 @@ fn bounded_fuel() -> Option<usize> {
 /// harness stream. The parent must provide a separate open fd, never 0/1/2.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn redirect_actual_stdout() -> bool {
+    use std::io::Write;
     unsafe extern "C" {
         fn dup2(old: std::ffi::c_int, new: std::ffi::c_int) -> std::ffi::c_int;
         fn close(fd: std::ffi::c_int) -> std::ffi::c_int;
@@ -215,6 +216,12 @@ fn redirect_actual_stdout() -> bool {
     else {
         return false;
     };
+    // libtest may have buffered its opening text without a newline. Drain that
+    // buffer while fd 1 still names the parent-owned harness capture; otherwise
+    // std::process::exit could flush harness text into the artifact at shutdown.
+    if std::io::stdout().flush().is_err() {
+        return false;
+    }
     // SAFETY: the explicit parent contract supplies this inherited descriptor.
     // dup2 makes fd 1 a distinct reference to the same open description; close
     // releases only the private extra descriptor, not stdout or harness stderr.
@@ -242,7 +249,9 @@ fn reference_status(case: Case, fuel: usize) -> i32 {
                 return 74;
             }
             return process::diagnostic(
-                error.diagnostic(&sources).render_human(&sources).as_bytes(),
+                source::raw_verification_diagnostic(&error, &sources)
+                    .render_human(&sources)
+                    .as_bytes(),
             );
         }
     };
@@ -280,7 +289,7 @@ fn native_artifact_status(case: Case, fuel: usize, directory: &std::path::Path) 
     let (sources, raw, entry) = candidate(case);
     let module = match verified::verify_owned(raw, &sources) {
         Ok(witness) => native::native_process_module_with_fuel(&witness, entry, &sources, fuel),
-        Err(error) => Err(error.diagnostic(&sources)),
+        Err(error) => Err(source::raw_verification_diagnostic(&error, &sources)),
     };
     let module = match module {
         Ok(module) => module,
