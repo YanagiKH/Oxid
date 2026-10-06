@@ -918,7 +918,7 @@ def compose_division_lexer(a, raw):
 
 
 def compose_observer_initializer(a):
-    """Keep the direct path-overflow probe on closed array and enum policies."""
+    """Keep the direct overflow probe closed through enum and stdin successors."""
     path = FROZEN / "frozen/helpers/observer.rs"
     original = path.read_bytes()
     row = next(row for row in a["helper_files"] if row["path"] == "observer.rs")
@@ -929,12 +929,24 @@ def compose_observer_initializer(a):
              b"            storage: enums::SyntaxStorage::default(),\n            project_recovery: false,")
     same(original.count(before), 1, "exact direct observer initializer")
     require(after not in original, "historical observer already adapted")
-    result = original.replace(before, after, 1)
-    same(result.replace(after, before, 1), original, "observer successor must preserve every historical byte")
-    same(a["current"]["observer_initializer_adapter"], {
+    predecessor = original.replace(before, after, 1)
+    same(predecessor.replace(after, before, 1), original, "observer successor must preserve every historical byte")
+    enum_adapter = {
         "version": "unit4-direct-parser-closed-array-enum-v1", "original": row,
-        "derived": {"path": "src/frontend/parser/unit4_observer.rs", "bytes": len(result), "sha256": sha(result)},
+        "derived": {"path": "src/frontend/parser/unit4_observer.rs", "bytes": len(predecessor), "sha256": sha(predecessor)},
         "old_seam_sha256": sha(before), "new_seam_sha256": sha(after), "substitutions": 1,
+    }
+    stdin_before = b"            enums: EnumSyntaxPolicy::Closed,\n"
+    stdin_after = stdin_before + b"            std_imports: StdImportPolicy::Closed,\n"
+    same(predecessor.count(stdin_before), 1, "exact enum predecessor observer initializer")
+    require(stdin_after not in predecessor, "enum observer already stdin-adapted")
+    result = predecessor.replace(stdin_before, stdin_after, 1)
+    same(result.replace(stdin_after, stdin_before, 1), predecessor,
+         "stdin observer successor must preserve every enum predecessor byte")
+    same(a["current"]["observer_initializer_adapter"], {
+        "version": "unit4-direct-parser-closed-stdin-v1", "predecessor": enum_adapter,
+        "derived": {"path": "src/frontend/parser/unit4_observer.rs", "bytes": len(result), "sha256": sha(result)},
+        "old_seam_sha256": sha(stdin_before), "new_seam_sha256": sha(stdin_after), "substitutions": 1,
     }, "unapproved observer initializer successor")
     return result
 

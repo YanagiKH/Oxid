@@ -111,7 +111,11 @@ The runner checks and compiles the application once, then keeps its ELF hash
 unchanged across 28 hand-derived cases. It checks pipe and regular-file input,
 empty and malformed expressions, raw NUL/non-ASCII bytes, EOF at 127/128 bytes,
 capacity at 129/130 bytes, node/stack endpoints, and scanner/evaluator overflow.
-A closed stdin descriptor checks the distinct input error. An independent
+An open directory supplied as stdin checks the distinct input error: the actual
+Linux read fails with EISDIR. A closed descriptor is not an equivalent
+cross-route control: the qualified Rust reference process repairs fd 0 to
+`/dev/null` at startup, producing EOF, while native startup leaves it closed and
+the read fails. An independent
 controller reads the remaining bytes from the shared input descriptor after
 every pipe/file execution. Check and compile receive sentinel bytes and must
 leave all of them unread. Reference and native outputs, including overflow

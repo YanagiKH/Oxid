@@ -43,16 +43,12 @@ CASES = (
     ("addition-overflow", b"2147483647+1", None, "evaluator.ox"),
     ("multiplication-overflow", b"46341*46341", None, "evaluator.ox"),
     ("no-multiply-short-circuit", b"0*(2147483647+1)", None, "evaluator.ox"),
-    ("closed-stdin", b"", -5, None),
+    ("stdin-read-error", b"", -5, None),
 )
 
 
 def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def close_stdin():
-    os.close(0)
 
 
 def invoke(directory, label, command, data, mode, *, cwd, env=None, timeout=120):
@@ -79,15 +75,21 @@ def invoke(directory, label, command, data, mode, *, cwd, env=None, timeout=120)
         elif mode == "file":
             input_file = (directory / (label + ".input")).open("rb", buffering=0)
             fd = input_file.fileno()
-        elif mode != "closed":
+        elif mode == "directory":
+            # Rust process startup repairs a closed fd 0 to /dev/null, unlike
+            # the native executable. An open directory survives both startups
+            # and makes the actual read fail with EISDIR on qualified Linux.
+            input_directory = directory / "stdin-directory"
+            input_directory.mkdir(exist_ok=True)
+            fd = os.open(input_directory, os.O_RDONLY | os.O_DIRECTORY)
+        else:
             raise ValueError("unknown input mode")
         result = subprocess.run(
-            command, stdin=subprocess.DEVNULL if mode == "closed" else fd,
-            preexec_fn=close_stdin if mode == "closed" else None,
+            command, stdin=fd,
             cwd=cwd, env=env, capture_output=True, timeout=timeout, check=False,
         )
         stdout, stderr = result.stdout, result.stderr
-        if fd is not None:
+        if mode in ("pipe", "file"):
             remaining = b""
             while True:
                 chunk = os.read(fd, 4096)
@@ -186,7 +188,7 @@ def main():
             "remaining_hex": expected_remaining.hex(),
         }
         rows = []
-        modes = ("closed",) if name == "closed-stdin" else ("pipe", "file")
+        modes = ("directory",) if name == "stdin-read-error" else ("pipe", "file")
         for mode in modes:
             reference_stderr = None
             stages = [("reference", [compiler, "run", entry, "--edition", "typed-preview"])]
@@ -207,7 +209,7 @@ def main():
                     ok = ok and b"error[E0604]" in stderr and origin in stderr
                 else:
                     ok = ok and stderr == b""
-                if mode != "closed":
+                if mode in ("pipe", "file"):
                     ok = ok and remaining == expected_remaining
                 if native:
                     after = sha256(program)

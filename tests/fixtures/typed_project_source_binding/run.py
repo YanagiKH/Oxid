@@ -38,6 +38,18 @@ OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
 ENUM_RESOURCE_SEAM = b'mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,enums:EnumSyntaxPolicy::Closed,storage:enums::SyntaxStorage::default(),tokens,cursor:0'
+STDIN_RESOURCE_SEAM = b'mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,enums:EnumSyntaxPolicy::Closed,std_imports:StdImportPolicy::Closed,storage:enums::SyntaxStorage::default(),tokens,cursor:0'
+STDIN_RESOURCE_ADAPTER = {
+    "version": "unit2-closed-stdin-parser-resource-v1",
+    "predecessor_version": "unit2-closed-enum-parser-resource-v1",
+    "predecessor": {"path": RESOURCE, "bytes": 2078,
+                    "sha256": "b79e045596fab2a54ddc888435e10a12986c950658a68d3686bc0d339c4a9b23"},
+    "derived": {"path": RESOURCE, "bytes": 2114,
+                "sha256": "e3081188e6dfb0bd171e806992091f3a58b9b463d38a194b481341ff3064a2b5"},
+    "substitution": {"old_sha256": "3d98537500bc2c6e8083523cc8d14e07142019c8ed0e3805b3fcb96939c3ca71",
+                     "new_sha256": "579627d44b8b65e7a5a4ff18a99060a123ab1e8e4d5a5ebcba8e7a708573d990", "count": 1},
+    "scope": "Add only the closed std-import policy to the exact enum-era direct Parser initializer; frozen resource controls and expectations remain unchanged.",
+}
 SLICES_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
 SLICES_SOURCE_BYTES = 35876
 COMPOSITION_SOURCE_SHA = 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16'
@@ -997,6 +1009,22 @@ def adapt_borrowed_unit2_observer(aggregate):
     return result
 
 
+def adapt_stdin_parser_resource(data, *, reverse=False):
+    """Add only a closed std policy, preserving the exact enum predecessor."""
+    before, after = (("derived", "predecessor") if reverse else ("predecessor", "derived"))
+    old, new = ((STDIN_RESOURCE_SEAM, ENUM_RESOURCE_SEAM) if reverse
+                else (ENUM_RESOURCE_SEAM, STDIN_RESOURCE_SEAM))
+    require(entry(RESOURCE, data) == STDIN_RESOURCE_ADAPTER[before], "wrong stdin parser resource input")
+    require(STDIN_RESOURCE_ADAPTER["substitution"] == {
+        "old_sha256": digest(ENUM_RESOURCE_SEAM), "new_sha256": digest(STDIN_RESOURCE_SEAM), "count": 1,
+    }, "stdin parser resource substitution identity differs")
+    require(data.count(old) == 1 and new not in data, "stdin parser resource seam drift")
+    result = data.replace(old, new, 1)
+    require(entry(RESOURCE, result) == STDIN_RESOURCE_ADAPTER[after], "wrong stdin parser resource output")
+    require(result.replace(new, old, 1) == data, "stdin parser resource reverse identity differs")
+    return result
+
+
 def adapt_enum_unit2_observer(borrowed):
     """Keep frozen scalar/record observations and reject each new enum projection."""
     require(digest(borrowed) == BORROWED_OBSERVER_DERIVED_SHA
@@ -1519,6 +1547,10 @@ def preflight(repo, package=PACKAGE):
         "scope": "Add only closed enum syntax policy and empty syntax storage to the direct Parser initializer; existing resource controls and expectations remain unchanged.",
     } and enum_resource.replace(ENUM_RESOURCE_SEAM, NEW_SEAM) == adapted_resource,
             "derived enum resource drift")
+    stdin_authority = json.loads(package_bytes["stdin-authority.json"])
+    require(stdin_authority["resource_adapter"] == STDIN_RESOURCE_ADAPTER,
+            "unapproved stdin parser resource adapter")
+    stdin_resource = adapt_stdin_parser_resource(enum_resource)
     adapted_observer = adapt_unit2_observer(historical_bytes[OBSERVER])
     require(authority["unit2_observer_adapter"] == {
         "version": OBSERVER_ADAPTER_VERSION,
@@ -1591,6 +1623,7 @@ def preflight(repo, package=PACKAGE):
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
     return {"current": enum_current, "enum_authority": enumeration, "enum_touched": enum_touched,
+            "stdin_authority": stdin_authority,
             "projected_source": projected_current, "projected_inputs": projected_inputs, "unary_source": unary_current,
             "projected_authority": projected, "projected_touched": projected_touched,
             "unary_inputs": unary_inputs, "composition_source": composition_current,
@@ -1599,7 +1632,8 @@ def preflight(repo, package=PACKAGE):
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
             "inputs": enum_inputs, "archived": reconstructed, "references": references,
-            "historical_bytes": historical_bytes, "resource": enum_resource, "combined_resource": adapted_resource,
+            "historical_bytes": historical_bytes, "resource": stdin_resource,
+            "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
             "unit2_comparator": unit2_comparator, "semantic_amendment": semantic_receipt,
             "semantic_report": semantic_report,
@@ -1691,7 +1725,9 @@ def prepare_unit2(output, captured):
             "observer_adapter": captured["enum_authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_predecessor": captured["authority"]["derived_resource"],
-            "resource_after": captured["enum_authority"]["resource_adapter"]["derived"],
+            "resource_enum_predecessor": captured["enum_authority"]["resource_adapter"]["derived"],
+            "resource_adapter": captured["stdin_authority"]["resource_adapter"],
+            "resource_after": captured["stdin_authority"]["resource_adapter"]["derived"],
             "compatibility_runner": str(compat / "run.py"), "files": manifest["files"]}
 
 

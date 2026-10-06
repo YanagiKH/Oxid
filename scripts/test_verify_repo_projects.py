@@ -17,6 +17,7 @@ EXPRESSION_MEMBERS = (
     'fixtures/typed-expression-samples/parser.ox',
     'fixtures/typed-expression-samples/evaluator.ox',
 )
+STDIN_ENTRY = 'fixtures/typed-expression-samples/stdin.ox'
 
 class ProjectRegistrationTests(unittest.TestCase):
     def setUp(self):
@@ -28,8 +29,21 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
+        self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]
+
+    def assert_stdin_addition(self, checks, entries, count):
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY,))
+        stdin_entry = self.root / STDIN_ENTRY
+        self.assertEqual([row for row in checks if row[0] == stdin_entry], [(stdin_entry, True)])
+        self.assertNotIn(stdin_entry, entries)
+        self.assertFalse(any(STDIN_ENTRY in members for members in verify_repo.TYPED_PROJECTS.values()))
+        # Remove only the new check-only root; the old runnable roster is intact.
+        predecessor_checks = [row for row in checks if row[0] != stdin_entry]
+        self.assertEqual((len(predecessor_checks), len(entries), count - 1), (8, 7, 20))
+        return predecessor_checks, entries, count - 1
 
     def assert_expression_addition(self, checks, entries, count):
+        checks, entries, count = self.assert_stdin_addition(checks, entries, count)
         self.assertEqual(verify_repo.TYPED_PROJECTS[EXPRESSION_MEMBERS[0]], EXPRESSION_MEMBERS)
         expression_members = {self.root / name for name in EXPRESSION_MEMBERS}
         expression_entry = self.root / EXPRESSION_MEMBERS[0]
@@ -112,10 +126,22 @@ class ProjectRegistrationTests(unittest.TestCase):
             {'main.ox': ('child.ox',)},
             {'main.ox': ('main.ox', 'main.ox')},
             {'main.ox': ('main.ox', verify_repo.TYPED_SOURCE_FILES[0])},
+            {'main.ox': ('main.ox', STDIN_ENTRY)},
         ]
         for inventory in bad:
             with self.subTest(inventory=inventory), patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
                 with self.assertRaises(RuntimeError):
+                    verify_repo.source_plan(self.members + self.data_sources, self.root)
+
+    def test_overlapping_check_only_inventory_is_rejected(self):
+        inventories = (
+            (STDIN_ENTRY, STDIN_ENTRY),
+            (STDIN_ENTRY, verify_repo.TYPED_SOURCE_FILES[0]),
+            (STDIN_ENTRY, EXPRESSION_MEMBERS[1]),
+        )
+        for inventory in inventories:
+            with self.subTest(inventory=inventory), patch.object(verify_repo, 'TYPED_CHECK_ONLY_FILES', inventory):
+                with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
                     verify_repo.source_plan(self.members + self.data_sources, self.root)
 
 if __name__ == '__main__':

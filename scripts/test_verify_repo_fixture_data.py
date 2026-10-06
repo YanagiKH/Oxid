@@ -33,6 +33,7 @@ EXPRESSION_SAMPLE_MEMBERS = (
     "fixtures/typed-expression-samples/parser.ox",
     "fixtures/typed-expression-samples/evaluator.ox",
 )
+STDIN_ENTRY = "fixtures/typed-expression-samples/stdin.ox"
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -74,7 +75,17 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
-        self.assertEqual((len(language), len(checks), len(run_inventory), typed_members, len(typed_entries)),
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY,))
+        self.assertEqual([name for name in language if name == STDIN_ENTRY], [STDIN_ENTRY])
+        self.assertEqual([row for row in check_inventory if row[0] == STDIN_ENTRY], [(STDIN_ENTRY, True)])
+        self.assertFalse(any(row[0] == STDIN_ENTRY for row in run_inventory))
+        self.assertNotIn(root / STDIN_ENTRY, data_sources)
+        # Subtract only the effectful root's check and member. It adds no run,
+        # and all earlier source, check and run inventories remain frozen.
+        language = [name for name in language if name != STDIN_ENTRY]
+        check_inventory = [row for row in check_inventory if row[0] != STDIN_ENTRY]
+        typed_members -= 1
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
                          (141, 128, 74, 20, 7))
         # Preserve the exact pre-expression totals using only its five named
         # members and single typed root check/run as the subtraction.
@@ -111,9 +122,13 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
-        self.assertEqual(len(run.call_args_list), 205)  # 128 checks, 74 runs, test/build/doctor.
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(sum("--edition=typed-preview" in command for command in commands), 14)
+        stdin_root = str(verify_repo.ROOT / STDIN_ENTRY)
+        self.assertEqual([command for command in commands if stdin_root in command],
+                         [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
+        predecessor_commands = [command for command in commands if stdin_root not in command]
+        self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
+        self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
         for members in SAMPLE_PROJECTS:
             with self.subTest(sample=members[0]):
                 sample_root = str(verify_repo.ROOT / members[0])
@@ -127,7 +142,9 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for call in run.call_args_list for arg in call.args[0]))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn("141 language sources, 128 checks, 74 runnable programs", output.getvalue())
+        self.assertIn("142 language sources, 129 checks, 74 runnable programs", output.getvalue())
+        self.assertIn("121 legacy sources, 67 legacy runnable programs, 21 typed source members / "
+                      "7 typed entry runs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
     def test_git_autocrlf_preserves_frozen_bytes_and_converts_other_text(self):
@@ -166,7 +183,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         self.manifest = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[0][0]
         self.document = json.loads(self.manifest.read_bytes())
         self.source = next(self.manifest.parent / name for name in self.document["files"] if name.endswith(".ox"))
-        for relative in verify_repo.TYPED_SOURCE_FILES:
+        for relative in verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES:
             self.write(relative, b"// typed inventory member\n")
         for members in verify_repo.TYPED_PROJECTS.values():
             for relative in members:
@@ -187,6 +204,13 @@ class FixtureAdmissionTests(unittest.TestCase):
             for child in members[1:]:
                 self.assertNotIn(self.root / child, checked)
                 self.assertNotIn(self.root / child, entries)
+
+    def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        stdin_entry = self.root / STDIN_ENTRY
+        self.assertEqual([row for row in checks if row[0] == stdin_entry], [(stdin_entry, True)])
+        self.assertNotIn(stdin_entry, entries)
+        self.assertEqual((len([row for row in checks if row[0] != stdin_entry]), len(entries), count - 1),
+                         (predecessor_check_count, 7, 20))
 
     def repinned(self, raw):
         # Exercise malformed registration handling beyond the production digest
@@ -257,7 +281,7 @@ class FixtureAdmissionTests(unittest.TestCase):
     def test_unlisted_typing_source_remains_a_language_check(self):
         extra = self.write(DATA / "typing-contracts-v1/fixtures/unlisted.ox", b"invalid candidate\n")
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (8, 7, 20))
+        self.assert_stdin_addition(checks, entries, count, 8)
         self.assert_samples_use_root(checks, entries)
         self.assertIn((extra, False), checks)
 
@@ -280,7 +304,7 @@ class FixtureAdmissionTests(unittest.TestCase):
     def test_unlisted_lowering_source_remains_a_language_check(self):
         extra = self.write(DATA / "lowering-contracts-v1/unlisted.ox", b"invalid candidate\n")
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (8, 7, 20))
+        self.assert_stdin_addition(checks, entries, count, 8)
         self.assert_samples_use_root(checks, entries)
         self.assertIn((extra, False), checks)
 
@@ -292,7 +316,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         extras = [self.write(DATA / "contracts-v2/fixtures/unlisted.ox", b"invalid candidate\n"),
                   self.write("fixtures/unrelated.ox", b"unrelated\n")]
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (9, 7, 20))
+        self.assert_stdin_addition(checks, entries, count, 9)
         self.assert_samples_use_root(checks, entries)
         for source in extras:
             self.assertIn((source, False), checks)
@@ -301,6 +325,15 @@ class FixtureAdmissionTests(unittest.TestCase):
         relative = self.source.relative_to(self.root).as_posix()
         with patch.object(verify_repo, "TYPED_SOURCE_FILES", verify_repo.TYPED_SOURCE_FILES + (relative,)):
             self.assert_no_compiler("overlaps")
+
+    def test_check_only_inventory_overlap_fails_before_compiler(self):
+        relative = self.source.relative_to(self.root).as_posix()
+        with patch.object(verify_repo, "TYPED_CHECK_ONLY_FILES", verify_repo.TYPED_CHECK_ONLY_FILES + (relative,)):
+            self.assert_no_compiler("overlaps")
+
+    def test_missing_check_only_root_fails_before_compiler(self):
+        (self.root / STDIN_ENTRY).unlink()
+        self.assert_no_compiler("typed source fixture missing from discovery")
 
     def test_explicit_legacy_runnable_overlap_fails_before_compiler(self):
         relative = self.source.relative_to(self.root).as_posix()

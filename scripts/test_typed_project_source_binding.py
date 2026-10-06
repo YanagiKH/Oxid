@@ -340,12 +340,13 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_enum_resource_adapter_is_exact_reversible(self):
         prior = self.captured["combined_resource"]
-        current = self.captured["resource"]
+        current = self.captured["enum_resource"]
         self.assertEqual(current.replace(binding.ENUM_RESOURCE_SEAM, binding.NEW_SEAM), prior)
         self.assertEqual(current.count(binding.ENUM_RESOURCE_SEAM), 1)
         self.assertIn(b"enums:EnumSyntaxPolicy::Closed,storage:enums::SyntaxStorage::default()", current)
         self.assertEqual(self.captured["enum_authority"]["resource_adapter"]["derived"],
                          binding.entry(binding.RESOURCE, current))
+        self.assertEqual(binding.adapt_stdin_parser_resource(current), self.captured["resource"])
 
     def test_projected_inverse_restores_exact_unary(self):
         restored, touched = binding.inverse_projected_patch(
@@ -1591,8 +1592,12 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(seam["observer_adapter"], self.captured["enum_authority"]["unit2_observer_adapter"])
         self.assertEqual((root / binding.OBSERVER).read_bytes(), self.captured["observer"])
         modified = (root / binding.RESOURCE).read_bytes()
-        self.assertEqual(modified.replace(binding.ENUM_RESOURCE_SEAM, binding.OLD_SEAM),
+        self.assertEqual(modified.replace(binding.STDIN_RESOURCE_SEAM, binding.OLD_SEAM),
                          self.captured["historical_bytes"][binding.RESOURCE])
+        self.assertEqual(seam["resource_enum_predecessor"],
+                         self.captured["enum_authority"]["resource_adapter"]["derived"])
+        self.assertEqual(seam["resource_adapter"], self.captured["stdin_authority"]["resource_adapter"])
+        self.assertEqual(seam["resource_after"], binding.entry(binding.RESOURCE, modified))
         self.assertEqual((Path(seam["compatibility_runner"])).read_bytes(), self.captured["references"][binding.COMPAT])
 
     def test_current_observer_substitutions_are_exact_and_reversible(self):

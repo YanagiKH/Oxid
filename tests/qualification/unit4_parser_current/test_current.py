@@ -397,6 +397,7 @@ class ArrayCompositionControls(unittest.TestCase):
         raw = p.compose_observer_initializer(self.a)
         insertion = (b'            arrays: ArraySyntaxPolicy::Closed,\n'
                      b'            enums: EnumSyntaxPolicy::Closed,\n'
+                     b'            std_imports: StdImportPolicy::Closed,\n'
                      b'            storage: enums::SyntaxStorage::default(),\n')
         self.assertEqual(raw.count(insertion), 1)
         self.assertEqual(raw.replace(insertion, b'', 1), (p.FROZEN / 'frozen/helpers/observer.rs').read_bytes())
