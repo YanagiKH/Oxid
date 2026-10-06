@@ -1489,6 +1489,91 @@ class EnumSemanticReceiptTransportControls(unittest.TestCase):
             reader.path(bound).write_bytes(b'forged historical comparison')
             with self.assertRaises(q.Reject): reader.json(bound)
 
+    def semantic_capsule(self, root, mutation=None):
+        public = root / 'public'
+        (public / 'predecessors').mkdir(parents=True)
+        authority_path = public / 'qualified-paths-amendment.json'
+        observations_path = public / 'predecessors/observations.jsonl.gz'
+        history_path = public / 'predecessors/historical-comparison.json'
+        report_path, main_path = public / 'predecessors/comparison.json', public / 'comparison.json'
+        q.save(authority_path, self.authority)
+        q.write_rows(observations_path, self.values)
+        history = self.collector.predecessor_history(self.rows, self.values, self.predecessors,
+                                                    self.policy, self.c.binding(observations_path))
+        if mutation is not None and mutation[0] == 'observations': mutation[1](history['observations'])
+        q.save(history_path, history)
+        report = self.collector.predecessor_report_fields(self.predecessors, history,
+                                                          self.c.binding(authority_path), self.c.binding(history_path))
+        report_fields = {'authority': 'qualified_paths_amendment_receipt', 'history': 'historical_comparison'}
+        if mutation is not None and mutation[0] in report_fields: mutation[1](report[report_fields[mutation[0]]])
+        q.save(report_path, report)
+        main = {'predecessor_semantic_amendment': self.c.binding(authority_path),
+                'sections': {'predecessors': report}}
+        if mutation is not None and mutation[0] == 'main': mutation[1](main['predecessor_semantic_amendment'])
+        q.save(main_path, main)
+        capsule = Capsule(root / 'capsule')
+        for path in (authority_path, observations_path, history_path, report_path, main_path):
+            capsule.add(path, 'semantic-control')
+        capsule.finish({'status': 'pass'})
+        return ReadCapsule(capsule.root)
+
+    def verify_semantic_capsule(self, capsule, root):
+        main = capsule.json(capsule.named(str(root / 'public/comparison.json')))
+        values = q.rows(capsule.path(capsule.named(str(root / 'public/predecessors/observations.jsonl.gz'))))
+        return join.verify_qualified_paths_capsule(capsule, str(root), main, self.collector,
+                                                  self.predecessors, self.rows, values, self.policy)
+
+    def test_public_semantic_join_replays_actual_capsule_receipt_shapes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            capsule = self.semantic_capsule(root)
+            authority_path = root / 'public/qualified-paths-amendment.json'
+            self.assertEqual(set(self.c.binding(authority_path)), {'path', 'bytes', 'sha256'})
+            self.assertEqual(set(capsule.named(str(authority_path))), {'path', 'bytes', 'sha256', 'member', 'role'})
+            result = self.verify_semantic_capsule(capsule, root)
+            self.assertEqual(result['qualified_paths_amendment_receipt'], self.c.binding(authority_path))
+            self.assertEqual(len(result['qualified_paths_amended_keys']), 8)
+
+    def test_public_semantic_join_rejects_mutated_original_receipts_after_transport(self):
+        mutations = {'path': lambda row: row.update(path=row['path'] + '.alias'),
+                     'bytes': lambda row: row.update(bytes=row['bytes'] + 1),
+                     'sha256': lambda row: row.update(sha256='0' * 64),
+                     'missing': lambda row: row.pop('sha256'),
+                     'extra-member': lambda row: row.update(member='members/00000'),
+                     'extra-role': lambda row: row.update(role='semantic-control'),
+                     'extra-original': lambda row: row.update(unapproved=True)}
+        for target in ('main', 'authority', 'history', 'observations'):
+            for field, mutate in mutations.items():
+                with self.subTest(target=target, field=field), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory).resolve()
+                    capsule = self.semantic_capsule(root, (target, mutate))
+                    with self.assertRaises(q.Reject): self.verify_semantic_capsule(capsule, root)
+
+    def test_public_semantic_join_revalidates_transported_member_bytes(self):
+        for name in ('qualified-paths-amendment.json', 'predecessors/comparison.json',
+                     'predecessors/historical-comparison.json', 'predecessors/observations.jsonl.gz'):
+            with self.subTest(member=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                capsule = self.semantic_capsule(root)
+                main = capsule.json(capsule.named(str(root / 'public/comparison.json')))
+                values = q.rows(capsule.path(capsule.named(str(root / 'public/predecessors/observations.jsonl.gz'))))
+                path = capsule.path(capsule.named(str(root / 'public' / name)))
+                path.write_bytes(path.read_bytes() + b'\n')
+                with self.assertRaises(q.Reject):
+                    join.verify_qualified_paths_capsule(capsule, str(root), main, self.collector,
+                                                       self.predecessors, self.rows, values, self.policy)
+                with self.assertRaises(q.Reject): ReadCapsule(capsule.root)
+
+    def test_public_semantic_join_preserves_transported_host_exclusions(self):
+        self.rows = [row for row in self.contracts.roster('predecessors', 'Windows x86_64')
+                     if row['group'] == 'Unit2' and row['case_id'] in self.authority['cases']]
+        self.values = [self.collector.skipped(row) for row in self.rows]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            capsule = self.semantic_capsule(root)
+            result = self.verify_semantic_capsule(capsule, root)
+            self.assertEqual(result['qualified_paths_amended_keys'], [])
+
 
 class FinalFailureControls(unittest.TestCase):
     def test_failed_upstream_has_structured_nonpassing_result(self):

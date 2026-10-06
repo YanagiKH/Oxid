@@ -106,6 +106,29 @@ def verify_qualified_paths_receipts(run, predecessors, rows, values, policy, aut
     return expected
 
 
+def verify_qualified_paths_capsule(capsule, output, main_result, run, predecessors, rows, values, policy):
+    """Replay original semantic receipts through the compact capsule transport."""
+    def original_binding(*parts):
+        packaged = capsule.named(original_child(output, 'public', *parts))
+        capsule.raw(packaged)
+        # member/role describe transport; only the producer's original identity
+        # belongs in reconstructed receipts. Never project incoming report fields.
+        return {key: packaged[key] for key in ('path', 'bytes', 'sha256')}
+
+    authority_binding = original_binding('qualified-paths-amendment.json')
+    authority = capsule.json(authority_binding)
+    q.need(main_result.get('predecessor_semantic_amendment') == authority_binding,
+           'main public semantic amendment receipt differs')
+    report = capsule.json(capsule.named(original_child(output, 'public', 'predecessors', 'comparison.json')))
+    history_binding = original_binding('predecessors', 'historical-comparison.json')
+    q.need(q.canonical(main_result['sections']['predecessors']) == q.canonical(report),
+           'main predecessor amended report differs')
+    return verify_qualified_paths_receipts(run, predecessors, rows, values, policy, authority, report,
+        capsule.json(history_binding),
+        original_binding('predecessors', 'observations.jsonl.gz'),
+        authority_binding, history_binding)
+
+
 def public_join(capsule, contracts, repo, plan):
     c, rt, run, guards, Predecessors = q.public_modules(repo)
     final = capsule.json(capsule.manifest['public_finalization'])
@@ -167,10 +190,6 @@ def public_join(capsule, contracts, repo, plan):
     predecessors = Predecessors(contracts,
                                 source_manifest=capsule.path(configs['ordinary']['source_manifest']),
                                 amendment_root=Path(repo) / q.SOURCE)
-    authority_binding = capsule.named(original_child(output, 'public', 'qualified-paths-amendment.json'))
-    authority = capsule.json(authority_binding)
-    q.need(main_result.get('predecessor_semantic_amendment') == authority_binding,
-           'main public semantic amendment receipt differs')
     counts, all_keys, replaced = {}, set(), set()
     for section in q.SECTIONS:
         roster = contracts.roster(section, host)
@@ -182,14 +201,8 @@ def public_join(capsule, contracts, repo, plan):
         actual_counts = c.check_inventory(roster, values, allow_capability_gap=False)
         q.need(actual_counts == final['sections'][section] and actual_counts['executed'] == actual_counts['required_local'], 'public count/result mismatch')
         if section == 'predecessors':
-            report = capsule.json(capsule.named(original_child(output, 'public', section, 'comparison.json')))
-            history_binding = capsule.named(original_child(output, 'public', section, 'historical-comparison.json'))
-            q.need(q.canonical(main_result['sections'][section]) == q.canonical(report), 'main predecessor amended report differs')
-            verify_qualified_paths_receipts(run, predecessors, roster, original,
-                contracts.tables['public']['new_policy_diagnostic_bounds'], authority, report,
-                capsule.json(history_binding),
-                capsule.named(original_child(output, 'public', section, 'observations.jsonl.gz')),
-                authority_binding, history_binding)
+            verify_qualified_paths_capsule(capsule, output, main_result, run, predecessors, roster, original,
+                                          contracts.tables['public']['new_policy_diagnostic_bounds'])
         actual_index = {row['key']: row for row in values}
         for row in roster:
             got = actual_index[row['key']]
