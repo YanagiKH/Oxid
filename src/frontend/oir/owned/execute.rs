@@ -2756,7 +2756,7 @@ fn execute_plan_inner(
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<Scalar> {
-    // All callers share entry validation. The sole private Process caller
+    // All callers share entry validation. Every sealed Process caller
     // establishes host support and signal policy before reaching this point.
     checked_entry_policy(plan.witness(), Some(entry), policy)?;
     let limits = limits.bounded();
@@ -2848,7 +2848,18 @@ pub(super) fn run_process_limits(
     }
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Process)?;
     let plan = ExecutionPlan::build(witness)?;
-    execute_plan_inner(&plan, entry, limits, EntryPolicy::Process, None, None, None)
+    execute_plan_inner(
+        &plan,
+        entry,
+        limits,
+        EntryPolicy::Process,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+    )
 }
 #[cfg(test)]
 pub(super) fn run_observed(

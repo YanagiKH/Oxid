@@ -201,6 +201,23 @@ fn bounded_stdout_typing_denies_public_and_observer_admissions_before_reserve() 
                 SourceAdmission::ObserveArrayPipeline,
                 SourceAdmission::ArrayConsumer,
             ] {
+                let program = ResolvedOwnedProgram {
+                    projection_bytes: std::cell::Cell::new(plan.total),
+                    admission,
+                    index: IndexOwner::Borrowed(index),
+                    work: MeterOwner::Borrowed(&work),
+                    sources: index.sources().view(),
+                    records: Vec::new(),
+                    signatures: Vec::new(),
+                    functions: Vec::new(),
+                    entry: index.root_original_main(),
+                };
+                super::super::typeck::assert_paid_source_rejected_before_completion_and_lowering(
+                    program,
+                    &plan,
+                    &mut allocator,
+                );
+                assert_eq!((work.used(), allocator.attempts), (before, 0));
                 for route in 0..3 {
                     // Empty rows make an accidental advance past provenance
                     // observable without granting any paid construction.
@@ -363,6 +380,22 @@ fn bounded_stdout_typing_carriers_have_actual_layout_receipts() {
     use std::mem::{align_of, size_of};
     assert_eq!(size_of::<SourceAdmission>(), 1);
     assert!(!SourceAdmission::BuiltinPipeline.executable());
+    assert_eq!(
+        paid_source_admission_carrier_bytes(),
+        size_of::<PaidSourceAdmissionCarriers>()
+    );
+    assert!(
+        size_of::<PaidSourceAdmissionCarriers>()
+            >= 4 * size_of::<&DeclarationIndex<'static>>() + 10 * size_of::<bool>()
+    );
+    println!(
+        "OUTPUT_PAID_ADMISSION_GUARD bytes={} align={} source={} type={} lower_controls={}",
+        paid_source_admission_carrier_bytes(),
+        align_of::<PaidSourceAdmissionCarriers>(),
+        production_source_carrier_bytes(),
+        super::super::typeck::production_type_carrier_bytes(),
+        super::super::lower::invocation_control_bytes()
+    );
     println!("OUTPUT_TYPING_LAYOUT resolved={}/{} typed={}/{} signature={}/{} identity={}/{} source_dispatch={} type_dispatch={} preflight={:?}",
         size_of::<ResolvedOwnedProgram<'static>>(), align_of::<ResolvedOwnedProgram<'static>>(),
         size_of::<super::super::typeck::TypedOwnedProgram<'static>>(), align_of::<super::super::typeck::TypedOwnedProgram<'static>>(),
@@ -811,4 +844,134 @@ fn bounded_stdout_completion_rejects_seed_checkpoint_and_plan_mismatch_before_ty
             assert!(!allocator.observer_trace_overflow);
         }
     });
+}
+
+#[test]
+fn bounded_stdout_current_paid_typing_measures_all_nine_inventories() {
+    use super::super::{hir_budget, reviewer_source};
+    for (imports, expected, enums, builtins) in INVENTORIES {
+        // Unequal source prefixes ensure enum and function suffix ranks are independent.
+        let text = format!(
+            "{imports} enum Local{{One}} fn helper()->i32{{return 1;}} fn main()->i32{{return 0;}}"
+        );
+        with_current_index(&text, |index| {
+            assert!(index.is_current_source_pipeline());
+            assert_eq!(index.builtin_set(), expected);
+            let work = WorkMeter::default();
+            let (plan, heap) = reviewer_source::integration_measured(|| {
+                hir_budget::preflight_current_hir(index, &work)
+            });
+            let plan = plan.unwrap().unwrap();
+            assert_eq!(heap, (0, 0, 0));
+            assert_eq!(
+                (
+                    plan.counts.functions,
+                    plan.counts.signatures,
+                    plan.counts.parameters
+                ),
+                (2, 2 + builtins, builtins)
+            );
+            assert_eq!(
+                (
+                    index.enum_count(),
+                    index.enum_variant_counts().sum::<usize>()
+                ),
+                (1 + enums, 1 + 3 * enums)
+            );
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let (seed, (_, live, peak)) = reviewer_source::integration_measured(|| {
+                let typed = type_enum_source(index, &work, &mut allocator).unwrap();
+                assert_eq!(typed.admission(), SourceAdmission::Executable);
+                typed.validate_function_signatures().unwrap();
+                let seed = typed.source_storage_bytes().unwrap();
+                assert_eq!(seed, plan.total);
+                drop(typed);
+                seed
+            });
+            assert_eq!(live, 0);
+            assert!(peak > 0);
+            for (kind, count) in [
+                ("paid HIR signatures", 2 + builtins),
+                ("paid HIR parameters", builtins),
+                ("paid HIR functions", 2),
+                ("paid typed bodies", 2),
+            ] {
+                assert_eq!(
+                    allocator
+                        .trace
+                        .iter()
+                        .filter(|row| row.kind == kind)
+                        .map(|row| row.length)
+                        .sum::<usize>(),
+                    count,
+                    "{expected:?}: {kind}"
+                );
+            }
+            assert!(allocator.trace.iter().all(|row| row.success));
+            assert!(!allocator.observer_trace_overflow);
+            println!("OUTPUT_CURRENT_PAID_TYPING inventory={expected:?} fixed={} total={seed} reserves={} live={live} peak={peak}", plan.fixed, allocator.attempts);
+        });
+    }
+}
+
+#[test]
+fn bounded_stdout_current_provenance_rejects_private_and_observer_policies_before_work() {
+    for (imports, inventory, _, _) in INVENTORIES {
+        with_current_index(
+            &format!("{imports} enum Local{{One}} fn main()->i32{{return 0;}}"),
+            |index| {
+                let work = WorkMeter::default();
+                let mut allocator = Allocator {
+                    fail_at: Some(1),
+                    ..Default::default()
+                };
+                for admission in [
+                    SourceAdmission::BuiltinPipeline,
+                    SourceAdmission::ObserveArrayTypes,
+                    SourceAdmission::ObserveEnumTypes,
+                    SourceAdmission::EnumPipeline,
+                    SourceAdmission::ObserveArrayPipeline,
+                    SourceAdmission::ArrayConsumer,
+                ] {
+                    assert!(type_paid_source(index, &work, &mut allocator, admission).is_err());
+                }
+                assert_eq!((work.used(), allocator.attempts), (0, 0));
+                if inventory != BuiltinSet::None {
+                    assert!(resolve_index(index, &work, &mut allocator).is_err());
+                    assert!(probe_enum_resolver_storage(index, &work, &mut allocator).is_err());
+                    assert!(probe_enum_type_storage(index, &work, &mut allocator).is_err());
+                    assert!(super::super::hir_budget::preflight_enum_hir(index, &work).is_err());
+                    assert!(super::super::hir_budget::preflight_builtin_hir(index, &work).is_err());
+                    assert_eq!((work.used(), allocator.attempts), (0, 0));
+                    let plan = super::super::hir_budget::preflight_current_hir(index, &work)
+                        .unwrap()
+                        .unwrap();
+                    let before = work.used();
+                    for admission in [
+                        SourceAdmission::BuiltinPipeline,
+                        SourceAdmission::ObserveArrayTypes,
+                        SourceAdmission::ObserveEnumTypes,
+                        SourceAdmission::EnumPipeline,
+                        SourceAdmission::ObserveArrayPipeline,
+                        SourceAdmission::ArrayConsumer,
+                    ] {
+                        let program = ResolvedOwnedProgram {
+                            projection_bytes: std::cell::Cell::new(plan.total),
+                            admission,
+                            index: IndexOwner::Borrowed(index),
+                            work: MeterOwner::Borrowed(&work),
+                            sources: index.sources().view(),
+                            records: Vec::new(),
+                            signatures: Vec::new(),
+                            functions: Vec::new(),
+                            entry: index.root_original_main(),
+                        };
+                        super::super::typeck::assert_paid_source_rejected_before_completion_and_lowering(program, &plan, &mut allocator);
+                        assert_eq!((work.used(), allocator.attempts), (before, 0));
+                    }
+                }
+            },
+        );
+    }
 }

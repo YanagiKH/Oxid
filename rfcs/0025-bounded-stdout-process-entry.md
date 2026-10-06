@@ -209,6 +209,30 @@ These are measured control-carrier admission successors under unchanged limits,
 not a claim that every prior exact byte endpoint still admits. The index fixed
 bank remains 4096; that is not the total HIR or raw-lowering budget.
 
+**Named public-admission successor:** each repeated Current/Executable versus
+private-candidate guard has a complete fixed carrier in its existing paid bank.
+Measured source/type dispatch increases from 3272/2560 to 3320/2608 bytes;
+association increases from 640 to 672. The private input/output caller envelopes
+therefore increase from 3144/5592 to 3176/5624. Lower invocation controls increase
+from 4672 to 4776. Resolved608, typed632, signature376, identity440, canonical
+producer6584 and the index fixed4096 remain unchanged. No new origin flag or
+policy field is retained in a checked source owner.
+
+The same one-input-function fixture now admits HIR151313 instead of151185:
+its base149353 becomes149449, and the production builtin extra880 becomes912.
+The exact private/current work endpoint remains739. This measured +128 is a
+named admission difference under the existing64MiB HIR ceiling; it is not an
+increase to that ceiling or a claim about whole-process memory. The lower
+invocation change is separately charged by its existing raw/source preflights.
+
+The scalar emitter's transient `Emission` carrier is40 bytes instead of32;
+entry policy is1 byte, and its diagnostic key/table carriers remain32/48.
+Process mode applies the existing16MiB diagnostic and64MiB LLVM-text caps even
+to acyclic programs, while preserving their body ABI and fuel schedule.
+The source process failure/result carriers are8/16 bytes, signature return40,
+and checked owner320 with zero stored policy fields. These are measurements of
+named transient roles, not new retained HIR allocations or a stack/RSS bound.
+
 ## Concrete acceptance and stopping point
 
 Produce an exact 80-byte versioned stack artifact: magic `OXS1` (four bytes),

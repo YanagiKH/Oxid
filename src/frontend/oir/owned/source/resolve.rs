@@ -3050,6 +3050,7 @@ pub(super) struct PaidSourceAdmissionCarriers {
     returned: bool,
     rejected: bool,
 }
+#[cfg(test)]
 pub(super) const fn paid_source_admission_carrier_bytes() -> usize {
     std::mem::size_of::<PaidSourceAdmissionCarriers>()
 }

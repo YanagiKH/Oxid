@@ -753,6 +753,30 @@ pub(super) fn finish_builtin_source<'s>(
     finish_paid_source(program, source, allocator, resolver_end)
 }
 
+/// Negative-only qualification: no owner, raw payload, or witness escapes.
+/// Empty bodies make advancing past either raw gate observable immediately.
+#[cfg(test)]
+pub(super) fn assert_paid_source_rejected_before_completion_and_lowering(
+    program: ResolvedOwnedProgram<'_>,
+    source: &super::hir_budget::HirPlan,
+    allocator: &mut Allocator,
+) {
+    assert!(!program.admission().allows_paid_source(program.index()));
+    let before = allocator.attempts;
+    let typed = TypedOwnedProgram {
+        program,
+        bodies: Vec::new(),
+    };
+    super::budget::reset_guard_counts();
+    assert!(super::budget::preflight(&typed, super::budget::Limits::DEFAULT).is_err());
+    assert!(super::lower::lower(&typed).is_err());
+    assert_eq!(super::budget::guard_counts(), [0; 7]);
+    let TypedOwnedProgram { program, bodies } = typed;
+    drop(bodies);
+    assert!(finish_paid_source(program, source, allocator, before).is_err());
+    assert_eq!(allocator.attempts, before);
+}
+
 // The condition keeps production and private-test admission branches explicit.
 #[allow(clippy::blocks_in_conditions)]
 fn finish_paid_source<'s>(

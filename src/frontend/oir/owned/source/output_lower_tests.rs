@@ -1,5 +1,5 @@
-//! Private source producer controls. The exact output-candidate marker is
-//! required; public source and process-option admission remain closed.
+//! Source producer controls for distinct Current/Executable and private
+//! Output/BuiltinPipeline routes. Neither route may relabel the other.
 use super::super::super::{budget as raw_budget, consumer_fixtures as fixture};
 use super::super::{budget as source_budget, builtin_lower, lower, resolve, reviewer_source};
 use super::*;
@@ -24,6 +24,18 @@ const CASES: [(BuiltinOrigins, u8, u8); 9] = [
 ];
 
 fn with_index(input: u8, output: u8, run: impl FnOnce(&DeclarationIndex<'_>, &SourceMap)) {
+    with_index_kind(input, output, false, run)
+}
+fn with_each_index(input: u8, output: u8, mut run: impl FnMut(&DeclarationIndex<'_>, &SourceMap)) {
+    with_index_kind(input, output, false, &mut run);
+    with_index_kind(input, output, true, &mut run);
+}
+fn with_index_kind(
+    input: u8,
+    output: u8,
+    current: bool,
+    run: impl FnOnce(&DeclarationIndex<'_>, &SourceMap),
+) {
     let input_import = match input {
         0 => "",
         1 => "use std::io::ReadStatus as InputStatus;",
@@ -36,30 +48,49 @@ fn with_index(input: u8, output: u8, run: impl FnOnce(&DeclarationIndex<'_>, &So
     };
     // Import order differs from canonical family order.
     let text = format!("{output_import}{input_import} enum User{{Only}} fn helper()->i32{{return 1;}} fn main()->i32{{return 0;}}");
-    with_project(&[("main.ox", &text)], run);
+    with_project_kind(&[("main.ox", &text)], current, run);
 }
 
-fn with_project(files: &[(&str, &str)], run: impl FnOnce(&DeclarationIndex<'_>, &SourceMap)) {
-    with_project_load(files, |loaded| {
+fn with_each_project(
+    files: &[(&str, &str)],
+    mut run: impl FnMut(&DeclarationIndex<'_>, &SourceMap),
+) {
+    with_project_kind(files, false, &mut run);
+    with_project_kind(files, true, &mut run);
+}
+fn with_project_kind(
+    files: &[(&str, &str)],
+    current: bool,
+    run: impl FnOnce(&DeclarationIndex<'_>, &SourceMap),
+) {
+    with_project_load_kind(files, current, |loaded| {
         let project = loaded.unwrap();
         let owner = SourceOwner::project(&project);
         let work = WorkMeter::default();
         let mut allocator = Allocator::default();
-        let index = declaration_index::collect_output_candidate(
-            owner,
-            IndexLimits::default(),
-            &work,
-            &mut allocator,
-        )
-        .unwrap()
-        .finish(&work, &mut allocator)
-        .unwrap();
+        let collect = if current {
+            declaration_index::collect_originals
+        } else {
+            declaration_index::collect_output_candidate
+        };
+        let index = collect(owner, IndexLimits::default(), &work, &mut allocator)
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
         run(&index, project.sources());
     });
 }
 
+#[cfg(not(target_os = "linux"))]
 fn with_project_load(
     files: &[(&str, &str)],
+    run: impl FnOnce(Result<ProjectSources, crate::frontend::project::LoadFailure>),
+) {
+    with_project_load_kind(files, false, run)
+}
+fn with_project_load_kind(
+    files: &[(&str, &str)],
+    current: bool,
     run: impl FnOnce(Result<ProjectSources, crate::frontend::project::LoadFailure>),
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -80,11 +111,38 @@ fn with_project_load(
         std::fs::write(fixture.0.join(name), text).unwrap();
     }
     let path = fixture.0.join("main.ox");
-    run(ProjectSources::load_output_candidate(
-        path.to_str().unwrap(),
-        ProjectLimits::default(),
-        &mut Allocator::default(),
-    ));
+    run(if current {
+        ProjectSources::load_typed(path.to_str().unwrap(), ProjectLimits::default())
+    } else {
+        ProjectSources::load_output_candidate(
+            path.to_str().unwrap(),
+            ProjectLimits::default(),
+            &mut Allocator::default(),
+        )
+    });
+}
+
+fn type_source<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<super::super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    if index.is_current_source_pipeline() {
+        resolve::type_enum_source(index, work, allocator)
+    } else {
+        resolve::type_builtin_source(index, work, allocator)
+    }
+}
+fn check_source(
+    raw: &RawOwnedProgram,
+    index: &DeclarationIndex<'_>,
+    sources: &SourceMap,
+) -> Result<BindUsage, Box<Diagnostic>> {
+    if index.is_current_source_pipeline() {
+        check(raw, index, sources)
+    } else {
+        check_builtin_candidate(raw, index, sources)
+    }
 }
 
 fn raw_prefix(index: &DeclarationIndex<'_>) -> RawOwnedProgram {
@@ -353,7 +411,7 @@ fn bounded_output_lower_measures_complete_finite_producer_and_association_envelo
         source_budget::function_bytes(builtin_lower::counts()).unwrap(),
         raw_payload
     );
-    println!("OUTPUT_SOURCE_LOWER_CARRIERS producer={} association={} invocation_controls={} raw_function_payload={} output_source_admission=PRIVATE_ONLY",
+    println!("OUTPUT_SOURCE_LOWER_CARRIERS producer={} association={} invocation_controls={} raw_function_payload={} output_source_admission=CURRENT_AND_PRIVATE_SEPARATE",
         builtin_lower::carrier_bytes(), builtin_carrier_bytes(),
         super::super::lower::invocation_control_bytes(), raw_payload);
 }
@@ -361,10 +419,9 @@ fn bounded_output_lower_measures_complete_finite_producer_and_association_envelo
 #[test]
 fn bounded_output_paid_lowering_all_nine_reconcile_both_preflights_and_exact_boundaries() {
     for (expected, input, output) in CASES {
-        with_index(input, output, |index, sources| {
+        with_each_index(input, output, |index, sources| {
             let work = WorkMeter::default();
-            let typed =
-                resolve::type_builtin_source(index, &work, &mut Allocator::default()).unwrap();
+            let typed = type_source(index, &work, &mut Allocator::default()).unwrap();
             let seed = typed.source_storage_bytes().unwrap();
             let (usage, heap) = reviewer_source::integration_measured(|| {
                 source_budget::preflight(&typed, source_budget::Limits::DEFAULT)
@@ -431,14 +488,25 @@ fn bounded_output_paid_lowering_all_nine_reconcile_both_preflights_and_exact_bou
                 OwnedFailureKind::Resource("ownership metadata")
             );
             assert_eq!(heap, (0, 0, 0));
-            let association = check_builtin_candidate(&raw, index, sources).unwrap();
+            let association = check_source(&raw, index, sources).unwrap();
             assert_eq!(association.count, association.validation);
-            assert!(check(&raw, index, sources).is_err());
-            assert!(check_enum_candidate(&raw, index, sources).is_err());
+            if index.is_current_source_pipeline() {
+                assert!(check_builtin_candidate(&raw, index, sources).is_err());
+            } else {
+                assert!(check(&raw, index, sources).is_err());
+            }
+            if expected != BuiltinOrigins::None || !index.is_current_source_pipeline() {
+                assert!(check_enum_candidate(&raw, index, sources).is_err());
+            }
             verified::verify_owned(raw, sources).unwrap();
             assert_eq!(typed.source_storage_bytes(), Some(seed));
-            println!("OUTPUT_PAID_LOWER inventory={expected:?} source_bytes={} metadata={} scratch={} seed={seed}",
-                usage.raw_bytes, actual.metadata_bytes, usage.scratch_bytes);
+            if index.is_current_source_pipeline() {
+                // Exercise the ordinary production checked-owner constructor too.
+                drop(super::super::program::check_typed(&typed).unwrap());
+                assert_eq!(typed.source_storage_bytes(), Some(seed));
+            }
+            println!("OUTPUT_PAID_LOWER route={:?} inventory={expected:?} source_bytes={} metadata={} scratch={} seed={seed}",
+                typed.admission(), usage.raw_bytes, actual.metadata_bytes, usage.scratch_bytes);
         });
     }
 }
@@ -446,15 +514,14 @@ fn bounded_output_paid_lowering_all_nine_reconcile_both_preflights_and_exact_bou
 #[test]
 fn bounded_output_paid_lowering_every_reservation_failure_drops_prior_payload() {
     for (input, output) in [(0, 2), (2, 2)] {
-        with_index(input, output, |index, sources| {
+        with_each_index(input, output, |index, sources| {
             let work = WorkMeter::default();
-            let typed =
-                resolve::type_builtin_source(index, &work, &mut Allocator::default()).unwrap();
+            let typed = type_source(index, &work, &mut Allocator::default()).unwrap();
             let seed = typed.source_storage_bytes();
             source_budget::reset_guard_counts();
             let raw = lower::lower(&typed).unwrap();
             let attempts = source_budget::guard_counts()[5];
-            check_builtin_candidate(&raw, index, sources).unwrap();
+            check_source(&raw, index, sources).unwrap();
             verified::verify_owned(raw, sources).unwrap();
             assert!(attempts > 5 * (1 + usize::from(input == 2)));
             for attempt in 0..attempts {
@@ -485,9 +552,9 @@ fn bounded_output_paid_lowering_every_reservation_failure_drops_prior_payload() 
 
 #[test]
 fn bounded_output_paid_association_rejects_identity_anchor_opcode_and_role_tampering() {
-    with_index(2, 2, |index, sources| {
+    with_each_index(2, 2, |index, sources| {
         let work = WorkMeter::default();
-        let typed = resolve::type_builtin_source(index, &work, &mut Allocator::default()).unwrap();
+        let typed = type_source(index, &work, &mut Allocator::default()).unwrap();
         let input = index
             .builtin_function_id(BuiltinFunction::ReadStdin)
             .unwrap()
@@ -497,9 +564,27 @@ fn bounded_output_paid_association_rejects_identity_anchor_opcode_and_role_tampe
             .unwrap()
             .0;
         let status = index.builtin_enum_id(BuiltinEnum::WriteStatus).unwrap().0;
-        for mutation in 0..16 {
+        // Byte-identical replacement text still cannot replace the source
+        // allocation bound to the real production parser/index owner.
+        let file = index
+            .sources()
+            .file(crate::frontend::project::ModuleId(0))
+            .unwrap();
+        let ast = index
+            .sources()
+            .ast(crate::frontend::project::ModuleId(0))
+            .unwrap();
+        let mut substitute = SourceMap::new();
+        substitute.add(file.path().into(), file.text().into());
+        assert!(SourceOwner::original(
+            file,
+            ast,
+            crate::frontend::source::SourceView::Map(&substitute)
+        )
+        .is_err());
+        for mutation in 0..17 {
             let mut raw = lower::lower(&typed).unwrap();
-            check_builtin_candidate(&raw, index, sources).unwrap();
+            check_source(&raw, index, sources).unwrap();
             let wrong_anchor = index
                 .builtin_function_anchor(BuiltinFunction::ReadStdin)
                 .unwrap();
@@ -579,12 +664,14 @@ fn bounded_output_paid_association_rejects_identity_anchor_opcode_and_role_tampe
                     raw.functions.pop();
                 }
                 15 => raw.functions[output].references[0].position = 1,
+                16 => {
+                    raw.functions[output].references[0].referent =
+                        BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::Bool)).unwrap()
+                }
                 _ => unreachable!(),
             }
             assert_eq!(
-                check_builtin_candidate(&raw, index, sources)
-                    .unwrap_err()
-                    .code,
+                check_source(&raw, index, sources).unwrap_err().code,
                 "E0500",
                 "mutation {mutation}"
             );
@@ -633,12 +720,11 @@ pub fn relay(bytes:&[i32])->i32{
         );
     });
     #[cfg(target_os = "linux")]
-    with_project(
+    with_each_project(
         &[("main.ox", ROOT), ("child.ox", CHILD)],
         |index, sources| {
             let work = WorkMeter::default();
-            let typed =
-                resolve::type_builtin_source(index, &work, &mut Allocator::default()).unwrap();
+            let typed = type_source(index, &work, &mut Allocator::default()).unwrap();
             let source_usage =
                 source_budget::preflight(&typed, source_budget::Limits::DEFAULT).unwrap();
             let raw = lower::lower(&typed).unwrap();
@@ -666,7 +752,7 @@ pub fn relay(bytes:&[i32])->i32{
                 .statements
                 .iter()
                 .all(|statement| !matches!(statement.kind, OwnedInstruction::WriteStdout { .. }))));
-            let usage = check_builtin_candidate(&raw, index, sources).unwrap();
+            let usage = check_source(&raw, index, sources).unwrap();
             assert_eq!(usage.count, usage.validation);
             verified::verify_owned(raw, sources).unwrap();
         },
