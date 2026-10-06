@@ -59,6 +59,9 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
         FailureKind::EnumPayload => {
             execute::OwnedRunFailure::Invariant("enum payload", Some(origin)).diagnostic(sources)
         }
+        FailureKind::InputCapacity => {
+            execute::OwnedRunFailure::Invariant("input capacity", Some(origin)).diagnostic(sources)
+        }
     }
     .render_human(sources)
 }

@@ -166,45 +166,143 @@ pub(super) fn program(
         main.blocks.push(e::block(statements, terminator, s(23)));
     }
     if observation == Observation::Checksum {
-        let mut sum = main.locals.len();
-        main.locals.push(f::scalar(hir::Ty::I32, s(30)));
-        let mut statements = vec![f::assign(sum, Rvalue::I32(0), s(30))];
-        // Each SSA temporary is assigned once. Even at capacity 1024 this is a
-        // bounded, acyclic observation with no mutable scalar or loop machinery.
-        for index in 0..capacity {
-            let offset = main.locals.len();
-            let value = offset + 1;
-            let next_sum = offset + 2;
-            let origin = s(100 + index * 3);
-            main.locals
-                .extend((0..3).map(|_| f::scalar(hir::Ty::I32, origin)));
-            statements.extend([
-                f::assign(offset, Rvalue::I32(index as i32), origin),
+        // Ten temporaries and two mutable places suffice at every capacity.
+        // The header checks index < capacity before each read, including the
+        // zero-capacity case. Only the index and running sum cross the backedge.
+        main.locals.extend(
+            [
+                hir::Ty::I32,  // 4: zero
+                hir::Ty::I32,  // 5: one
+                hir::Ty::I32,  // 6: capacity
+                hir::Ty::I32,  // 7: current index
+                hir::Ty::Bool, // 8: loop condition
+                hir::Ty::I32,  // 9: cell
+                hir::Ty::I32,  // 10: current sum
+                hir::Ty::I32,  // 11: next sum
+                hir::Ty::I32,  // 12: next index
+                hir::Ty::I32,  // 13: result
+            ]
+            .into_iter()
+            .map(|ty| f::scalar(ty, s(30))),
+        );
+        main.places = vec![
+            PlaceDecl {
+                ty: hir::Ty::I32,
+                span: s(33),
+            },
+            PlaceDecl {
+                ty: hir::Ty::I32,
+                span: s(34),
+            },
+        ];
+        let place = |id, span| Place {
+            id: PlaceId(id),
+            span,
+        };
+        main.blocks.push(e::block(
+            vec![
+                f::assign(4, Rvalue::I32(0), s(30)),
+                f::assign(5, Rvalue::I32(1), s(31)),
+                f::assign(6, Rvalue::I32(capacity as i32), s(32)),
+                f::instruction(
+                    OwnedInstruction::Scalar(Statement::Initialize {
+                        place: place(0, s(33)),
+                        value: f::operand(4, s(33)),
+                        span: s(33),
+                    }),
+                    s(33),
+                ),
+                f::instruction(
+                    OwnedInstruction::Scalar(Statement::Initialize {
+                        place: place(1, s(34)),
+                        value: f::operand(4, s(34)),
+                        span: s(34),
+                    }),
+                    s(34),
+                ),
+            ],
+            OwnedTerminatorKind::Goto(BlockId(8)),
+            s(35),
+        ));
+        main.blocks.push(e::block(
+            vec![
+                f::assign(7, Rvalue::Load(place(0, s(36))), s(36)),
+                f::assign(
+                    8,
+                    Rvalue::CompareScalar {
+                        op: hir::ComparisonOp::Less,
+                        left: f::operand(7, s(37)),
+                        right: f::operand(6, s(37)),
+                        operator_span: s(37),
+                    },
+                    s(37),
+                ),
+            ],
+            OwnedTerminatorKind::Branch {
+                condition: f::operand(8, s(38)),
+                then_block: BlockId(9),
+                else_block: BlockId(10),
+            },
+            s(38),
+        ));
+        main.blocks.push(e::block(
+            vec![
                 f::instruction(
                     OwnedInstruction::ReadIndex {
-                        destination: LocalId(value),
+                        destination: LocalId(9),
                         base: AccessBase::Owner(OwnerPlaceId(0)),
-                        index: f::operand(offset, origin),
+                        index: f::operand(7, s(39)),
                     },
-                    origin,
+                    s(39),
                 ),
+                f::assign(10, Rvalue::Load(place(1, s(40))), s(40)),
                 f::assign(
-                    next_sum,
+                    11,
                     Rvalue::CheckedI32 {
                         op: hir::ArithmeticOp::Add,
-                        left: f::operand(sum, origin),
-                        right: f::operand(value, origin),
-                        operator_span: origin,
+                        left: f::operand(10, s(41)),
+                        right: f::operand(9, s(41)),
+                        operator_span: s(41),
                     },
-                    origin,
+                    s(41),
                 ),
-            ]);
-            sum = next_sum;
-        }
+                f::instruction(
+                    OwnedInstruction::Scalar(Statement::Store {
+                        place: place(1, s(42)),
+                        value: f::operand(11, s(42)),
+                        operator_span: s(42),
+                        span: s(42),
+                    }),
+                    s(42),
+                ),
+                f::assign(
+                    12,
+                    Rvalue::CheckedI32 {
+                        op: hir::ArithmeticOp::Add,
+                        left: f::operand(7, s(43)),
+                        right: f::operand(5, s(43)),
+                        operator_span: s(43),
+                    },
+                    s(43),
+                ),
+                f::instruction(
+                    OwnedInstruction::Scalar(Statement::Store {
+                        place: place(0, s(44)),
+                        value: f::operand(12, s(44)),
+                        operator_span: s(44),
+                        span: s(44),
+                    }),
+                    s(44),
+                ),
+            ],
+            OwnedTerminatorKind::Goto(BlockId(8)),
+            s(45),
+        ));
+        let mut statements = vec![f::assign(13, Rvalue::Load(place(1, s(46))), s(46))];
         statements.extend(cleanup_buffer(s(3200)));
         main.blocks.push(e::block(
             statements,
-            OwnedTerminatorKind::ReturnScalar(f::operand(sum, s(3201))),
+            OwnedTerminatorKind::ReturnScalar(f::operand(13, s(3201))),
             s(3201),
         ));
     }

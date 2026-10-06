@@ -277,6 +277,17 @@ fn builtin_input_subprocess_child() {
     };
     let (sources, raw, entry) = fixture::program(capacity, observation);
     let witness = verify_owned(raw, &sources).unwrap();
+    if let Some(directory) = std::env::var_os("OXID_RAW_STDIN_NATIVE_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        assert!(directory.is_dir(), "parent must reserve artifact directory");
+        let module = native::native_module_with_fuel(&witness, entry, &sources, fuel).unwrap();
+        drop(witness);
+        std::fs::write(directory.join("program.ll"), &module).unwrap();
+        let output = directory.join("program");
+        crate::frontend::native::compile(&module, output.to_str().unwrap()).unwrap();
+        println!("OXID_RAW_STDIN_NATIVE_READY=1");
+        return;
+    }
     let observed = execute::run_array_observed(
         &witness,
         Some(entry),
@@ -301,8 +312,9 @@ fn builtin_input_subprocess_child() {
     }
     match observed.result {
         Ok(Scalar::I32(value)) => println!("OXID_RAW_STDIN_RESULT={value}"),
-        Err(execute::OwnedRunFailure::Scalar(RunFailure::Fuel(_))) => {
+        Err(error @ execute::OwnedRunFailure::Scalar(RunFailure::Fuel(_))) => {
             println!("OXID_RAW_STDIN_FAILURE=fuel");
+            eprint!("{}", error.diagnostic(&sources).render_human(&sources));
         }
         other => panic!("unexpected raw stdin outcome: {other:?}"),
     }
