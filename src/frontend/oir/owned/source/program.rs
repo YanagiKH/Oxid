@@ -340,10 +340,7 @@ fn checked_output_entry(
             "E0600",
             "oir-run",
             "process entry requires original-root fn main() -> i32 with no parameters",
-            match function {
-                Some(function) => Some(function.span),
-                None => None,
-            },
+            function.map(|function| function.span),
         )),
     }
 }

@@ -482,6 +482,8 @@ pub(super) fn type_builtin_source<'s>(
     type_paid_source(index, work, allocator, SourceAdmission::BuiltinPipeline)
 }
 
+// The condition keeps production and private-test admission branches explicit.
+#[allow(clippy::blocks_in_conditions)]
 fn type_paid_source<'s>(
     index: &'s DeclarationIndex<'s>,
     work: &'s WorkMeter,

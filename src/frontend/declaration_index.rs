@@ -1471,7 +1471,14 @@ impl<'i, 's> QuerySession<'i, 's> {
                         Some(prefix),
                     ));
                 };
-                if !matches!(self.tables.nominal_handle(original)?, NominalId::Enum(_)) {
+                // Local lookup also admits modules in the type lane. Reject
+                // that checked source kind before the strict nominal projection.
+                if matches!(
+                    self.tables.project_handle(original)?,
+                    DeclarationProjection::SourceOriginal(id)
+                        if self.tables.original(id)?.flags & KIND_MASK == MODULE
+                ) || !matches!(self.tables.nominal_handle(original)?, NominalId::Enum(_))
+                {
                     return Err(diagnostic(
                         "E0202",
                         "resolve",

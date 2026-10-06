@@ -68,6 +68,275 @@ fn paths(project: &ProjectSources, file: usize) -> Vec<QualifiedPathRef> {
         .collect()
 }
 
+// Exact no-stdlib sources retained with the bare-module diagnostic assessment.
+// main SHA256 eed546c521daec5c87cbbfdafe7c27aff9baa299be1ff62153aa6c4a758c40e1
+// child SHA256 c2d2cb2fecd71d6e5875be1dbfc2442566c988e6a79e88b2b477d1fc7bc0d9f9
+#[cfg(target_os = "linux")]
+const BARE_MODULE_MAIN: &str =
+    "pub mod output; fn main()->i32{let bytes=[65];return output::send(&bytes);}";
+#[cfg(target_os = "linux")]
+const BARE_MODULE_CHILD: &str = "pub fn send(xs:&[i32])->i32{return 0;}";
+
+#[cfg(target_os = "linux")]
+#[test]
+fn enum_query_bare_module_rejects_after_permission_with_unchanged_work() {
+    let fixture = Fixture::new(&[
+        ("main.ox", BARE_MODULE_MAIN),
+        ("output.ox", BARE_MODULE_CHILD),
+    ]);
+    let project = fixture.load();
+    let index = freeze(&project);
+    let path = paths(&project, 0)[0];
+    let prefix = Span {
+        file: SourceFileId(0),
+        start: 53,
+        end: 59,
+    };
+    assert_eq!(project.text(prefix), "output");
+    // Query1 + prefix1 + lookup1 + comparison1 + six bytes + permission2.
+    // The module kind check adds no metered work or member lookup.
+    for (limit, code, message) in [
+        (12, "E0202", "variant qualification requires an enum type"),
+        (11, "E0400", "declaration index work limit exceeded"),
+    ] {
+        let work = WorkMeter::new(limit);
+        work.enable_observation();
+        let error = index
+            .query(&work)
+            .qualified_value_endpoint(ModuleId(0), path)
+            .unwrap_err();
+        assert_eq!(
+            (error.code, error.message.as_str(), error.primary),
+            (code, message, Some(prefix))
+        );
+        assert_eq!(
+            error.stage,
+            if limit == 12 {
+                "resolve"
+            } else {
+                "resolve-project"
+            }
+        );
+        assert_eq!(work.used(), limit);
+        let events = work.events.borrow();
+        let expected = [
+            "query qualified value",
+            "qualified path segment",
+            "original lookup probe",
+            "comparison",
+            "compared byte",
+            "compared byte",
+            "compared byte",
+            "compared byte",
+            "compared byte",
+            "compared byte",
+            "target permission",
+            "domain permission",
+        ];
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.operation)
+                .collect::<Vec<_>>(),
+            expected[..limit as usize]
+        );
+        assert!(events.iter().all(|event| event.units == 1));
+        assert!(events[1..].iter().all(|event| event.origin == prefix));
+        assert!(work.observations.borrow().is_empty());
+    }
+    // A source-level wrong-kind rejection must not relax the nominal API or
+    // turn malformed request/source identities into user diagnostics.
+    let work = WorkMeter::default();
+    let mut query = index.query(&work);
+    let handle = query
+        .select(
+            ModuleId(0),
+            ItemPathRef {
+                file: SourceFileId(0),
+                path: ast::ItemPath::Unqualified(prefix),
+            },
+            true,
+        )
+        .unwrap()
+        .unwrap();
+    let strict = query.tables.nominal_handle(handle).unwrap_err();
+    assert_eq!((strict.code, strict.stage), ("E0500", "resolve-project"));
+    assert_eq!(
+        strict.primary,
+        Some(Span {
+            file: SourceFileId(0),
+            start: 8,
+            end: 14
+        })
+    );
+    assert_eq!(
+        query
+            .tables
+            .project_handle(NO_DECLARATION)
+            .unwrap_err()
+            .code,
+        "E0500"
+    );
+    for (requester, wrong_path) in [
+        (ModuleId(1), path),
+        (
+            ModuleId(0),
+            QualifiedPathRef {
+                file: SourceFileId(1),
+                ..path
+            },
+        ),
+        (
+            ModuleId(0),
+            QualifiedPathRef {
+                path: ast::PathId(usize::MAX),
+                ..path
+            },
+        ),
+    ] {
+        assert_eq!(
+            query
+                .qualified_value_endpoint(requester, wrong_path)
+                .unwrap_err()
+                .code,
+            "E0500"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn enum_query_bare_module_current_source_rejects_and_crate_call_runs() {
+    use crate::frontend::oir::{
+        project::{check_project_candidate, check_project_executable},
+        Scalar,
+    };
+    for (main, accepted) in [
+        (BARE_MODULE_MAIN, false),
+        (
+            "pub mod output; fn main()->i32{let bytes=[65];return crate::output::send(&bytes);}",
+            true,
+        ),
+    ] {
+        let fixture = Fixture::new(&[("main.ox", main), ("output.ox", BARE_MODULE_CHILD)]);
+        let project = ProjectSources::load_typed(
+            fixture.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        )
+        .unwrap();
+        let types = check_project_candidate(
+            &project,
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut Allocator::default(),
+        );
+        let executable = check_project_executable(
+            &project,
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut Allocator::default(),
+        );
+        if accepted {
+            assert_eq!(types.unwrap().functions(), 2);
+            let executable = executable.unwrap();
+            assert_eq!(executable.function_count(), 2);
+            assert_eq!(executable.run().unwrap(), Scalar::I32(0));
+        } else {
+            for errors in [types.unwrap_err(), executable.unwrap_err()] {
+                assert_eq!(errors.len(), 1);
+                let error = &errors[0];
+                assert_eq!(
+                    (
+                        error.code,
+                        error.stage,
+                        error.message.as_str(),
+                        error.primary
+                    ),
+                    (
+                        "E0202",
+                        "resolve",
+                        "variant qualification requires an enum type",
+                        Some(Span {
+                            file: SourceFileId(0),
+                            start: 53,
+                            end: 59
+                        })
+                    )
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn enum_query_bare_module_neighbor_and_frozen_undeclared_diagnostics_are_unchanged() {
+    // The first three sources are the unchanged LocalType rows of
+    // enum-enabled-qualified-values-v1, including their final newline.
+    for (source, message, start, end) in [
+        (
+            "fn f() -> i32 { return a::f(); }\n",
+            "unknown enum type `a`",
+            23,
+            24,
+        ),
+        (
+            "fn f() -> i32 { return self::f(); }\n",
+            "unknown enum type `self`",
+            23,
+            27,
+        ),
+        (
+            "fn f() -> i32 { return super::f(); }\n",
+            "unknown enum type `super`",
+            23,
+            28,
+        ),
+        (
+            "struct R{}fn f()->(){R::V;return;}",
+            "variant qualification requires an enum type",
+            21,
+            22,
+        ),
+        ("fn f()->(){f::V;return;}", "unknown enum type `f`", 11, 12),
+        (
+            "fn f()->(){i32::V;return;}",
+            "unknown enum type `i32`",
+            11,
+            14,
+        ),
+    ] {
+        let fixture = Fixture::new(&[("main.ox", source)]);
+        let project = ProjectSources::load_typed(
+            fixture.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        )
+        .unwrap();
+        let (file, ast) = project.original_file().unwrap();
+        let errors = crate::frontend::oir::check_source(file, ast, project.sources()).unwrap_err();
+        assert_eq!(errors.len(), 1, "{source}: {errors:?}");
+        let error = &errors[0];
+        assert_eq!(
+            (
+                error.code,
+                error.stage,
+                error.message.as_str(),
+                error.primary
+            ),
+            (
+                "E0202",
+                "resolve",
+                message,
+                Some(Span {
+                    file: SourceFileId(0),
+                    start,
+                    end
+                })
+            ),
+            "{source}"
+        );
+    }
+}
+
 #[test]
 fn enum_query_literal_classification_work_and_legacy_callee_costs() {
     let fixture = Fixture::new(&[(
