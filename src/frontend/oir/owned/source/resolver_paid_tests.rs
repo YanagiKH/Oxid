@@ -44,7 +44,7 @@ fn prefix_only(allocator: &Allocator) {
 }
 
 #[test]
-fn c3a_paid_resolver_enum_value_type_guards_run_before_any_body_storage() {
+fn c3a_paid_resolver_enum_value_types_preserve_later_body_diagnostics() {
     for text in [
         "enum E{V} fn take(value:E)->i32{return missing;}",
         "enum E{V} fn give()->E{return missing;}",
@@ -52,20 +52,19 @@ fn c3a_paid_resolver_enum_value_type_guards_run_before_any_body_storage() {
     ] {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
-            allocator.observer_trace_bound(32).unwrap();
+            allocator.observer_trace_bound(64).unwrap();
             let work = WorkMeter::default();
             work.enable_observation();
             let errors = attempt_error(index, &work, &mut allocator);
-            assert_eq!(errors.len(), 1);
-            let error = &errors[0];
-            assert_eq!((error.code, error.stage), ("E0101", "resolve"));
-            assert_eq!(
-                error.message,
-                "enum value types are unavailable in this resolver-storage checkpoint"
-            );
-            assert_eq!(index.sources().text(error.primary.unwrap()).unwrap(), "E");
-            prefix_only(&allocator);
-            assert!(!work
+            assert!(!errors.is_empty());
+            for error in &errors {
+                assert_eq!((error.code, error.stage), ("E0200", "resolve"));
+                assert_eq!(
+                    index.sources().text(error.primary.unwrap()).unwrap(),
+                    "missing"
+                );
+            }
+            assert!(work
                 .observations
                 .borrow()
                 .iter()
@@ -200,12 +199,12 @@ fn c3a_paid_resolver_prefix_each_reserve_failure_drops_private_parts() {
 }
 
 #[test]
-fn c3a_paid_resolver_type_guard_is_a_no_allocation_scalar_check() {
+fn c3a_paid_resolver_record_containment_guard_is_a_no_allocation_scalar_check() {
     let mut sources = SourceMap::new();
     sources.add("guard.ox".into(), "x".into());
     let at = sources.get(SourceFileId(0)).span(0, 1);
     let (result, stats) = super::super::reviewer_source::integration_measured(|| {
-        deny_checkpoint_enum(&ValueTy::Scalar(Ty::I32), at)
+        record_field_type(ValueTy::Scalar(Ty::I32), at)
     });
     result.unwrap();
     assert_eq!(stats, (0, 0, 0));
@@ -330,11 +329,11 @@ fn c3a_paid_resolver_fixed_observations_match_independent_small_oracles() {
     // Fixed before integration in independent-small-oracles.md. These are
     // logical exact reserve requests, including all zero-capacity requests.
     for (text, expected_attempts, expected_slots) in [
-        ("enum Only { V }", 3, [0; 17]),
+        ("enum Only { V }", 3, [0; 18]),
         ("enum Unused { V } fn main() -> i32 { return 0; }", 13,
-            [0,0,1,0,1,0,1,1,1,0,0,0,0,0,1,1,12]),
+            [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12]),
         ("enum Unused { V } fn id(x: i32) -> i32 { return x; } fn main() -> i32 { let n = id(7); return n; }", 24,
-            [0,0,2,1,2,2,4,2,3,1,0,0,2,2,2,2,24]),
+            [0, 0, 2, 1, 2, 2, 4, 2, 3, 1, 0, 0, 0, 2, 2, 2, 2, 24]),
     ] {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
@@ -345,16 +344,16 @@ fn c3a_paid_resolver_fixed_observations_match_independent_small_oracles() {
             assert_eq!(live, 0);
             assert_eq!(allocator.attempts, expected_attempts);
             assert_eq!(observation.reservation_attempts, expected_attempts);
-            assert_eq!(observation.retained_counts.as_slice(), &expected_slots[..12]);
+            assert_eq!(observation.retained_counts.as_slice(), &expected_slots[..13]);
             assert_eq!(observation.capacities, expected_slots);
-            let payloads = match expected_attempts { 3 => (0, 0), 13 => (480, 304), 24 => (1552, 704), _ => unreachable!() };
+            let payloads = match expected_attempts { 3 => (0, 0), 13 => (480, 304 + 12 * 8), 24 => (1552, 704 + 24 * 8), _ => unreachable!() };
             assert_eq!((observation.retained_bytes, observation.scratch_capacity_bytes), payloads);
             let labels = ["paid HIR records", "paid HIR record fields", "paid HIR signatures",
                 "paid HIR parameters", "paid HIR functions", "paid HIR bindings", "paid HIR expressions",
                 "paid HIR blocks", "paid HIR statements", "paid HIR arguments", "paid HIR field initializers",
-                "paid HIR array entries", "paid HIR scope names", "paid HIR scope exits", "paid HIR scope marks",
+                "paid HIR array entries", "paid HIR match arms", "paid HIR scope names", "paid HIR scope exits", "paid HIR scope marks",
                 "paid HIR loops", "paid HIR resolve frames"];
-            let mut slots = [0; 17];
+            let mut slots = [0; 18];
             for event in &allocator.trace {
                 assert!(event.success);
                 let kind = labels.iter().position(|label| *label == event.kind).expect("only paid requests");
@@ -655,25 +654,59 @@ fn c3a_paid_resolver_literal_selection_duplicate_and_value_order() {
 }
 
 #[test]
-fn c3a_paid_resolver_constructor_match_and_qualified_calls_stay_closed() {
-    for text in [
-        "enum E{V,P(i32)} fn main()->i32{let value=E::P(bad_payload);return 0;}",
-        "enum E{V} fn main()->i32{match bad_scrutinee{E::V=>{return bad_arm;}}}",
-        "enum E{V} fn helper()->i32{return 0;} fn main()->i32{return crate::helper();}",
+fn c3a_paid_resolver_enum_branches_preserve_payload_and_scrutinee_diagnostics() {
+    for (text, primary) in [
+        (
+            "enum E{V,P(i32)} fn main()->i32{let value=E::P(bad_payload);return 0;}",
+            "bad_payload",
+        ),
+        (
+            "enum E{V} fn main()->i32{match bad_scrutinee{E::V=>{return bad_arm;}}}",
+            "bad_scrutinee",
+        ),
     ] {
         with_index(text, |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
             let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
             assert_eq!(errors.len(), 1);
-            assert_eq!(errors[0].code, "E0101");
-            assert_eq!(errors[0].message, "enum source syntax is unavailable");
+            assert_eq!(errors[0].code, "E0200");
+            assert_eq!(
+                index.sources().text(errors[0].primary.unwrap()).unwrap(),
+                primary
+            );
             assert!(!allocator
                 .trace
                 .iter()
                 .any(|event| event.kind == "paid HIR arguments"));
         });
     }
+    with_index(
+        "enum E{V} fn helper()->i32{return 0;} fn main()->i32{return crate::helper();}",
+        |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let observation =
+                probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator)
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(observation.plan.counts.calls, 1);
+            assert_eq!(
+                allocator
+                    .trace
+                    .iter()
+                    .filter(|event| event.kind == "paid HIR arguments")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                resolve_index(index, &WorkMeter::default(), &mut Allocator::default()).unwrap_err()
+                    [0]
+                .code,
+                "E0101"
+            );
+        },
+    );
 }
 
 #[test]
@@ -879,11 +912,11 @@ fn c3a_paid_resolver_imported_unused_enum_selects_inert_project_observation() {
             observation.retained_bytes,
             observation.scratch_capacity_bytes
         ),
-        (480, 304)
+        (480, 304 + 12 * 8)
     );
     assert_eq!(
         observation.capacities,
-        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 12]
+        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12]
     );
     assert_eq!(
         resolve_project(&index, &WorkMeter::default()).unwrap_err()[0].code,
@@ -1229,17 +1262,17 @@ fn c3_t1_first_tiny_source_observations_match_independent_ledgers_and_drop_all_b
                 assert_eq!(
                     facts.resolver.retained_counts,
                     if has_body {
-                        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0]
+                        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0]
                     } else {
-                        [0; 12]
+                        [0; 13]
                     }
                 );
                 assert_eq!(
                     facts.resolver.capacities,
                     if has_body {
-                        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 12]
+                        [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12]
                     } else {
-                        [0; 17]
+                        [0; 18]
                     }
                 );
                 let resolver_backing = if has_body {
@@ -1402,16 +1435,19 @@ fn c3_t1_enum_free_tiny_twins_preserve_preused_storage_and_observation_state() {
 
 // Frozen independent rich-success ledger, reviewed before selector execution.
 // This is test data only; no per-function observation table enters the checker.
+// The enum resolver adds an unused MatchArms kind after ArrayEntries. Semantic
+// counts and attempts are unchanged; its MatchArm cursor grows ResolveFrame
+// from 24 to 32 bytes on 64-bit targets, adding 8 bytes per reserved frame.
 struct TypedRichSuccessCase {
     id: &'static str,
     text: &'static str,
     source_bytes: usize,
     source_sha256: &'static str,
     counts: super::super::hir_budget::HirCounts,
-    resolver_requests: [usize; 17],
-    resolver_capacities: [usize; 17],
-    resolver_lengths: [usize; 12],
-    resolver_zero_requests: [usize; 17],
+    resolver_requests: [usize; 18],
+    resolver_capacities: [usize; 18],
+    resolver_lengths: [usize; 13],
+    resolver_zero_requests: [usize; 18],
     typed_requests: [usize; 14],
     typed_capacities: [usize; 14],
     typed_lengths: [usize; 8],
@@ -1451,16 +1487,16 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             max_expression_depth: 3,
             max_body_depth: 1,
         },
-        resolver_requests: [1, 0, 1, 4, 1, 4, 4, 4, 4, 4, 0, 0, 4, 4, 4, 4, 4],
-        resolver_capacities: [0, 0, 4, 3, 4, 3, 10, 4, 4, 4, 0, 0, 3, 3, 4, 4, 48],
-        resolver_lengths: [0, 0, 4, 3, 4, 3, 10, 4, 4, 4, 0, 0],
-        resolver_zero_requests: [1, 0, 0, 2, 0, 2, 0, 0, 0, 1, 0, 0, 2, 2, 0, 0, 0],
+        resolver_requests: [1, 0, 1, 4, 1, 4, 4, 4, 4, 4, 0, 0, 0, 4, 4, 4, 4, 4],
+        resolver_capacities: [0, 0, 4, 3, 4, 3, 10, 4, 4, 4, 0, 0, 0, 3, 3, 4, 4, 48],
+        resolver_lengths: [0, 0, 4, 3, 4, 3, 10, 4, 4, 4, 0, 0, 0],
+        resolver_zero_requests: [1, 0, 0, 2, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0],
         typed_requests: [1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 4],
         typed_capacities: [4, 3, 10, 4, 10, 4, 4, 0, 44, 4, 0, 3, 4, 10],
         typed_lengths: [4, 10, 4, 4, 0, 3, 4, 10],
         typed_zero_requests: [0, 2, 0, 0, 0, 0, 0, 4, 0, 1, 0, 2, 0, 0],
         attempts: (47, 49),
-        backing_64bit: [3152, 1360, 1704, 248, 3008],
+        backing_64bit: [3152, 1360 + 48 * 8, 1704, 248, 3008],
     },
     TypedRichSuccessCase {
         id: "A2_nested_records_root_borrow",
@@ -1493,16 +1529,16 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             max_expression_depth: 3,
             max_body_depth: 1,
         },
-        resolver_requests: [1, 4, 1, 2, 1, 2, 2, 2, 2, 1, 3, 0, 2, 2, 2, 2, 2],
-        resolver_capacities: [4, 7, 2, 1, 2, 3, 7, 2, 5, 1, 3, 0, 3, 3, 2, 2, 24],
-        resolver_lengths: [4, 7, 2, 1, 2, 3, 7, 2, 5, 1, 3, 0],
-        resolver_zero_requests: [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        resolver_requests: [1, 4, 1, 2, 1, 2, 2, 2, 2, 1, 3, 0, 0, 2, 2, 2, 2, 2],
+        resolver_capacities: [4, 7, 2, 1, 2, 3, 7, 2, 5, 1, 3, 0, 0, 3, 3, 2, 2, 24],
+        resolver_lengths: [4, 7, 2, 1, 2, 3, 7, 2, 5, 1, 3, 0, 0],
+        resolver_zero_requests: [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
         typed_requests: [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 3, 2, 2, 2],
         typed_capacities: [2, 3, 7, 2, 7, 2, 5, 1, 22, 1, 3, 3, 2, 7],
         typed_lengths: [2, 7, 2, 5, 0, 3, 2, 7],
         typed_zero_requests: [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
         attempts: (31, 27),
-        backing_64bit: [3296, 752, 1272, 192, 1459],
+        backing_64bit: [3296, 752 + 24 * 8, 1272, 192, 1459],
     },
     TypedRichSuccessCase {
         id: "A3_empty_branches_loop_transfers",
@@ -1535,16 +1571,16 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             max_expression_depth: 2,
             max_body_depth: 3,
         },
-        resolver_requests: [1, 0, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 1, 1, 1, 1, 1],
-        resolver_capacities: [0, 0, 1, 0, 1, 1, 12, 6, 8, 0, 0, 0, 1, 1, 3, 3, 20],
-        resolver_lengths: [0, 0, 1, 0, 1, 1, 12, 6, 8, 0, 0, 0],
-        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+        resolver_requests: [1, 0, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        resolver_capacities: [0, 0, 1, 0, 1, 1, 12, 6, 8, 0, 0, 0, 0, 1, 1, 3, 3, 20],
+        resolver_lengths: [0, 0, 1, 0, 1, 1, 12, 6, 8, 0, 0, 0, 0],
+        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         typed_requests: [1, 1, 1, 1, 1, 1, 6, 1, 1, 0, 0, 1, 1, 1],
         typed_capacities: [1, 1, 12, 6, 12, 6, 8, 0, 17, 0, 0, 1, 6, 12],
         typed_lengths: [1, 12, 6, 8, 0, 1, 6, 12],
         typed_zero_requests: [0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0],
         attempts: (18, 17),
-        backing_64bit: [2888, 576, 1648, 240, 1088],
+        backing_64bit: [2888, 576 + 20 * 8, 1648, 240, 1088],
     },
     TypedRichSuccessCase {
         id: "A4_grouped_empty_array_cache",
@@ -1577,21 +1613,31 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             max_expression_depth: 3,
             max_body_depth: 1,
         },
-        resolver_requests: [1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1],
-        resolver_capacities: [0, 0, 1, 0, 1, 1, 4, 1, 2, 0, 0, 0, 1, 1, 1, 1, 12],
-        resolver_lengths: [0, 0, 1, 0, 1, 1, 4, 1, 2, 0, 0, 0],
-        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        resolver_requests: [1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1],
+        resolver_capacities: [0, 0, 1, 0, 1, 1, 4, 1, 2, 0, 0, 0, 0, 1, 1, 1, 1, 12],
+        resolver_lengths: [0, 0, 1, 0, 1, 1, 4, 1, 2, 0, 0, 0, 0],
+        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
         typed_requests: [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1],
         typed_capacities: [1, 1, 4, 1, 4, 1, 2, 0, 11, 0, 0, 1, 1, 4],
         typed_lengths: [1, 4, 1, 2, 0, 1, 1, 4],
         typed_zero_requests: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
         attempts: (14, 12),
-        backing_64bit: [960, 352, 596, 92, 704],
+        backing_64bit: [960, 352 + 12 * 8, 596, 92, 704],
     },
 ];
 
 #[test]
 fn c3_t1_path_free_rich_sources_reconcile_all_kinds_and_release_new_backing() {
+    for case in &TYPED_RICH_SUCCESS_A {
+        assert_typed_rich_success(case, &[], &[]);
+    }
+}
+
+fn assert_typed_rich_success(
+    case: &TypedRichSuccessCase,
+    path_lengths: &[usize],
+    typed_sequence: &[(usize, usize)],
+) {
     use super::super::{
         hir_budget::ScopeName,
         typeck::{BorrowProjection, FlowSummary, TypeFrame, TypedBody},
@@ -1612,6 +1658,7 @@ fn c3_t1_path_free_rich_sources_reconcile_all_kinds_and_release_new_backing() {
         ("paid HIR arguments", size_of::<Argument>()),
         ("paid HIR field initializers", size_of::<FieldInit>()),
         ("paid HIR array entries", size_of::<ExprId>()),
+        ("paid HIR match arms", size_of::<MatchArm>()),
         ("paid HIR scope names", size_of::<ScopeName>()),
         ("paid HIR scope exits", size_of::<usize>()),
         ("paid HIR scope marks", size_of::<usize>()),
@@ -1646,202 +1693,267 @@ fn c3_t1_path_free_rich_sources_reconcile_all_kinds_and_release_new_backing() {
         ("paid typed final flows", size_of::<FlowSummary>()),
         ("paid typed final expressions", size_of::<ValueTy>()),
     ];
-    for case in &TYPED_RICH_SUCCESS_A {
-        assert_eq!(case.text.len(), case.source_bytes);
-        for preused in [false, true] {
-            with_index(case.text, |index| {
-                let mut allocator = Allocator::default();
-                allocator.observer_trace_bound(128).unwrap();
-                let mut sentinel = Vec::<u8>::new();
-                if preused {
-                    allocator
-                        .vector_exact(&mut sentinel, 3, "rich typed sentinel")
-                        .unwrap();
-                    sentinel.extend_from_slice(&[31, 47, 83]);
-                }
-                let before = allocator.attempts;
-                let prefix = allocator.trace.len();
-                let capacities = (allocator.trace.capacity(), sentinel.capacity());
-                let work = WorkMeter::default();
-                let (result, heap) = super::super::reviewer_source::integration_measured(|| {
-                    probe_enum_type_storage(index, &work, &mut allocator)
-                });
-                let facts = result.unwrap().unwrap();
-                assert_eq!(heap.1, 0, "{} preused={preused}", case.id);
-                assert!(heap.0 > 0 && heap.2 > 0);
-                assert!(!work.observing());
-                assert!(work.events.borrow().is_empty() && work.observations.borrow().is_empty());
-                assert_eq!(
-                    (allocator.trace.capacity(), sentinel.capacity()),
-                    capacities
-                );
-                assert_eq!(
-                    sentinel.as_slice(),
-                    if preused { &[31, 47, 83][..] } else { &[][..] }
-                );
-                assert_eq!(
-                    (before, prefix),
-                    (usize::from(preused), usize::from(preused))
-                );
-                if preused {
-                    let row = &allocator.trace[0];
-                    assert_eq!(
-                        (row.kind, row.length, row.element_bytes, row.success),
-                        ("rich typed sentinel", 3, 1, true)
-                    );
-                }
-                assert!(!allocator.observer_trace_overflow);
-                let suffix = &allocator.trace[prefix..];
-                assert!(suffix.iter().all(|row| row.success));
-                assert_eq!(facts.resolver.plan.counts, case.counts);
-                assert_eq!(
-                    (
-                        facts.resolver.reservation_attempts,
-                        facts.typed.typed_attempts
-                    ),
-                    case.attempts
-                );
-                assert_eq!(
-                    allocator.attempts.checked_sub(before).unwrap(),
-                    facts
-                        .resolver
-                        .reservation_attempts
-                        .checked_add(facts.typed.typed_attempts)
-                        .unwrap()
-                );
-                assert_eq!(suffix.len(), case.attempts.0 + case.attempts.1);
-                assert_eq!(facts.resolver.retained_counts, case.resolver_lengths);
-                assert_eq!(facts.resolver.capacities, case.resolver_capacities);
-                assert_eq!(facts.typed.materialized_vectors, case.typed_requests);
-                assert_eq!(facts.typed.capacities, case.typed_capacities);
-                assert_eq!(facts.typed.retained_lengths, case.typed_lengths);
-                for (k, (label, width)) in resolver_kinds.iter().copied().enumerate() {
-                    let rows = suffix.iter().filter(|row| row.kind == label);
-                    assert_eq!(
-                        rows.clone().count(),
-                        case.resolver_requests[k],
-                        "{} {label}",
-                        case.id
-                    );
-                    assert_eq!(
-                        rows.clone().filter(|row| row.length == 0).count(),
-                        case.resolver_zero_requests[k]
-                    );
-                    assert!(rows.clone().all(|row| row.element_bytes == width));
-                    assert_eq!(
-                        rows.map(|row| row.length).sum::<usize>(),
-                        case.resolver_capacities[k]
-                    );
-                }
-                for (k, (label, width)) in typed_kinds.iter().copied().enumerate() {
-                    let rows = suffix.iter().filter(|row| row.kind == label);
-                    assert_eq!(
-                        rows.clone().count(),
-                        case.typed_requests[k],
-                        "{} {label}",
-                        case.id
-                    );
-                    assert_eq!(
-                        rows.clone().filter(|row| row.length == 0).count(),
-                        case.typed_zero_requests[k]
-                    );
-                    assert!(rows.clone().all(|row| row.element_bytes == width));
-                    assert_eq!(
-                        rows.map(|row| row.length).sum::<usize>(),
-                        case.typed_capacities[k]
-                    );
-                }
-                assert_eq!(
-                    case.resolver_requests.iter().sum::<usize>(),
-                    case.attempts.0
-                );
-                assert_eq!(case.typed_requests.iter().sum::<usize>(), case.attempts.1);
-                let resolver_backing = (0..12)
-                    .map(|k| case.resolver_capacities[k] * resolver_kinds[k].1)
-                    .sum::<usize>();
-                let resolver_scratch = (12..17)
-                    .map(|k| case.resolver_capacities[k] * resolver_kinds[k].1)
-                    .sum::<usize>();
-                let typed_backing = [0, 4, 5, 6, 7, 11, 12, 13]
-                    .into_iter()
-                    .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
-                    .sum::<usize>();
-                let staging = [1, 2, 3]
-                    .into_iter()
-                    .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
-                    .sum::<usize>();
-                let scratch = [8, 9, 10]
-                    .into_iter()
-                    .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
-                    .sum::<usize>();
-                let backing = [
-                    resolver_backing,
-                    resolver_scratch,
-                    typed_backing,
-                    staging,
-                    scratch,
-                ];
-                assert_eq!(
-                    [
-                        facts.resolver.retained_bytes,
-                        facts.resolver.scratch_capacity_bytes,
-                        facts.typed.retained_backing_bytes,
-                        facts.typed.staging_backing_bytes,
-                        facts.typed.scratch_backing_bytes
-                    ],
-                    backing
-                );
-                #[cfg(target_pointer_width = "64")]
-                assert_eq!(backing, case.backing_64bit);
-                assert_eq!(resolver_backing, facts.resolver.plan.resolved);
-                assert_eq!(typed_backing, facts.resolver.plan.typed);
-                assert_eq!(
-                    facts.resolver.plan.staging - staging,
-                    case.counts.functions
-                        * (size_of::<Vec<Option<ValueTy>>>()
-                            + size_of::<Vec<Option<ParameterTy>>>()
-                            + size_of::<Vec<Option<FlowSummary>>>())
-                );
-                assert!(resolver_scratch <= facts.resolver.plan.resolver_scratch);
-                assert!(scratch <= facts.resolver.plan.typeck_scratch);
-                assert_eq!(
-                    (
-                        facts.typed.path_vectors,
-                        facts.typed.path_length_fields,
-                        facts.typed.path_capacity_fields
-                    ),
-                    (0, 0, 0)
-                );
-                assert_eq!(
-                    (
-                        facts.typed.materialized_path_bytes,
-                        facts.typed.retained_path_bytes,
-                        facts.typed.precharged_path_bytes
-                    ),
-                    (0, 0, 0)
-                );
-                assert_eq!(facts.typed.final_cell, facts.resolver.plan.total);
-                assert!(suffix
-                    .iter()
-                    .all(|row| row.kind != "paid typed projection fields"));
-                if case.id == "A2_nested_records_root_borrow" {
-                    assert!(facts.typed.capacities.iter().all(|capacity| *capacity > 0));
-                    assert_eq!(
-                        (facts.typed.capacities[7], facts.typed.retained_lengths[4]),
-                        (1, 0)
-                    );
-                    assert_eq!(
-                        (
-                            facts.typed.capacities[10],
-                            case.counts.record_literals * case.counts.max_record_fields
-                        ),
-                        (3, 12)
-                    );
-                }
-                println!("C3_T1_RICH_A case={} expected_source_sha256={} preused={preused} resolver_attempts={} typed_attempts={} whole={} backing={backing:?} live={} peak={}",
-                    case.id, case.source_sha256, case.attempts.0, case.attempts.1, suffix.len(), heap.1, heap.2);
+    assert_eq!(case.text.len(), case.source_bytes);
+    for preused in [false, true] {
+        with_index(case.text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let mut sentinel = Vec::<u8>::new();
+            if preused {
+                allocator
+                    .vector_exact(&mut sentinel, 3, "rich typed sentinel")
+                    .unwrap();
+                sentinel.extend_from_slice(&[31, 47, 83]);
+            }
+            let before = allocator.attempts;
+            let prefix = allocator.trace.len();
+            let capacities = (allocator.trace.capacity(), sentinel.capacity());
+            let work = WorkMeter::default();
+            let (result, heap) = super::super::reviewer_source::integration_measured(|| {
+                probe_enum_type_storage(index, &work, &mut allocator)
             });
-        }
+            let facts = result.unwrap().unwrap();
+            assert_eq!(heap.1, 0, "{} preused={preused}", case.id);
+            assert!(heap.0 > 0 && heap.2 > 0);
+            assert!(!work.observing());
+            assert!(work.events.borrow().is_empty() && work.observations.borrow().is_empty());
+            assert_eq!(
+                (allocator.trace.capacity(), sentinel.capacity()),
+                capacities
+            );
+            assert_eq!(
+                sentinel.as_slice(),
+                if preused { &[31, 47, 83][..] } else { &[][..] }
+            );
+            assert_eq!(
+                (before, prefix),
+                (usize::from(preused), usize::from(preused))
+            );
+            if preused {
+                let row = &allocator.trace[0];
+                assert_eq!(
+                    (row.kind, row.length, row.element_bytes, row.success),
+                    ("rich typed sentinel", 3, 1, true)
+                );
+            }
+            assert!(!allocator.observer_trace_overflow);
+            let suffix = &allocator.trace[prefix..];
+            assert!(suffix.iter().all(|row| row.success));
+            assert_eq!(facts.resolver.plan.counts, case.counts);
+            assert_eq!(
+                (
+                    facts.resolver.reservation_attempts,
+                    facts.typed.typed_attempts
+                ),
+                case.attempts
+            );
+            assert_eq!(
+                allocator.attempts.checked_sub(before).unwrap(),
+                facts
+                    .resolver
+                    .reservation_attempts
+                    .checked_add(facts.typed.typed_attempts)
+                    .unwrap()
+            );
+            assert_eq!(suffix.len(), case.attempts.0 + case.attempts.1);
+            assert_eq!(facts.resolver.retained_counts, case.resolver_lengths);
+            assert_eq!(facts.resolver.capacities, case.resolver_capacities);
+            assert_eq!(facts.typed.materialized_vectors, case.typed_requests);
+            assert_eq!(facts.typed.capacities, case.typed_capacities);
+            assert_eq!(facts.typed.retained_lengths, case.typed_lengths);
+            for (k, (label, width)) in resolver_kinds.iter().copied().enumerate() {
+                let rows = suffix.iter().filter(|row| row.kind == label);
+                assert_eq!(
+                    rows.clone().count(),
+                    case.resolver_requests[k],
+                    "{} {label}",
+                    case.id
+                );
+                assert_eq!(
+                    rows.clone().filter(|row| row.length == 0).count(),
+                    case.resolver_zero_requests[k]
+                );
+                assert!(rows.clone().all(|row| row.element_bytes == width));
+                assert_eq!(
+                    rows.map(|row| row.length).sum::<usize>(),
+                    case.resolver_capacities[k]
+                );
+            }
+            for (k, (label, width)) in typed_kinds.iter().copied().enumerate() {
+                let rows = suffix.iter().filter(|row| row.kind == label);
+                assert_eq!(
+                    rows.clone().count(),
+                    case.typed_requests[k],
+                    "{} {label}",
+                    case.id
+                );
+                assert_eq!(
+                    rows.clone().filter(|row| row.length == 0).count(),
+                    case.typed_zero_requests[k]
+                );
+                assert!(rows.clone().all(|row| row.element_bytes == width));
+                assert_eq!(
+                    rows.map(|row| row.length).sum::<usize>(),
+                    case.typed_capacities[k]
+                );
+            }
+            assert_eq!(
+                case.resolver_requests.iter().sum::<usize>(),
+                case.attempts.0
+            );
+            assert_eq!(
+                case.typed_requests.iter().sum::<usize>() + path_lengths.len(),
+                case.attempts.1
+            );
+            let typed_rows = &suffix[case.attempts.0..];
+            if !typed_sequence.is_empty() {
+                assert_eq!(typed_rows.len(), typed_sequence.len());
+                for (row, &(kind, slots)) in typed_rows.iter().zip(typed_sequence) {
+                    let (label, width) = if kind == typed_kinds.len() {
+                        ("paid typed projection fields", size_of::<FieldId>())
+                    } else {
+                        typed_kinds[kind]
+                    };
+                    assert_eq!(
+                        (row.kind, row.length, row.element_bytes),
+                        (label, slots, width)
+                    );
+                }
+            }
+            let path_rows: Vec<_> = typed_rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| row.kind == "paid typed projection fields")
+                .collect();
+            assert_eq!(path_rows.len(), path_lengths.len());
+            for ((ordinal, row), &length) in path_rows.iter().zip(path_lengths) {
+                assert_eq!(
+                    (row.length, row.element_bytes),
+                    (length, size_of::<FieldId>())
+                );
+                // The supplied allocator's earlier sentinel remains outside the interval.
+                let absolute = before
+                    .checked_add(case.attempts.0)
+                    .unwrap()
+                    .checked_add(*ordinal + 1)
+                    .unwrap();
+                let original = &allocator.trace[absolute - 1];
+                assert_eq!((original.kind, original.length), (row.kind, length));
+            }
+            let resolver_backing = (0..13)
+                .map(|k| case.resolver_capacities[k] * resolver_kinds[k].1)
+                .sum::<usize>();
+            let resolver_scratch = (13..18)
+                .map(|k| case.resolver_capacities[k] * resolver_kinds[k].1)
+                .sum::<usize>();
+            let typed_backing = [0, 4, 5, 6, 7, 11, 12, 13]
+                .into_iter()
+                .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
+                .sum::<usize>();
+            let staging = [1, 2, 3]
+                .into_iter()
+                .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
+                .sum::<usize>();
+            let scratch = [8, 9, 10]
+                .into_iter()
+                .map(|k| case.typed_capacities[k] * typed_kinds[k].1)
+                .sum::<usize>();
+            let backing = [
+                resolver_backing,
+                resolver_scratch,
+                typed_backing,
+                staging,
+                scratch,
+            ];
+            assert_eq!(
+                [
+                    facts.resolver.retained_bytes,
+                    facts.resolver.scratch_capacity_bytes,
+                    facts.typed.retained_backing_bytes,
+                    facts.typed.staging_backing_bytes,
+                    facts.typed.scratch_backing_bytes
+                ],
+                backing
+            );
+            #[cfg(target_pointer_width = "64")]
+            assert_eq!(backing, case.backing_64bit);
+            assert_eq!(resolver_backing, facts.resolver.plan.resolved);
+            let expression_slack = case.counts.expressions - case.resolver_lengths[6];
+            assert_eq!(
+                case.resolver_capacities[6] - case.resolver_lengths[6],
+                expression_slack
+            );
+            assert_eq!(case.typed_capacities[2], case.resolver_lengths[6]);
+            assert_eq!(case.typed_capacities[4], case.resolver_lengths[6]);
+            assert_eq!(case.typed_capacities[13], case.resolver_lengths[6]);
+            assert_eq!(
+                facts.resolver.plan.typed - typed_backing,
+                expression_slack * (size_of::<ValueTy>() + size_of::<Option<Projection>>())
+            );
+            assert_eq!(
+                facts.resolver.plan.staging - staging,
+                case.counts.functions
+                    * (size_of::<Vec<Option<ValueTy>>>()
+                        + size_of::<Vec<Option<ParameterTy>>>()
+                        + size_of::<Vec<Option<FlowSummary>>>())
+                    + expression_slack * size_of::<Option<ValueTy>>()
+            );
+            assert!(resolver_scratch <= facts.resolver.plan.resolver_scratch);
+            assert!(scratch <= facts.resolver.plan.typeck_scratch);
+            assert_eq!(
+                (
+                    facts.typed.path_vectors,
+                    facts.typed.path_length_fields,
+                    facts.typed.path_capacity_fields
+                ),
+                (
+                    path_lengths.len(),
+                    path_lengths.iter().sum(),
+                    path_lengths.iter().sum()
+                )
+            );
+            let path_bytes = path_lengths.iter().sum::<usize>() * size_of::<FieldId>();
+            assert_eq!(
+                (
+                    facts.typed.materialized_path_bytes,
+                    facts.typed.retained_path_bytes,
+                    facts.typed.precharged_path_bytes
+                ),
+                (path_bytes, path_bytes, path_bytes)
+            );
+            assert_eq!(
+                facts
+                    .typed
+                    .final_cell
+                    .checked_sub(facts.resolver.plan.total),
+                Some(path_bytes)
+            );
+            assert_eq!(
+                facts.typed.typed_attempts,
+                facts.typed.materialized_vectors.iter().sum::<usize>() + facts.typed.path_vectors
+            );
+            if case.id == "A2_nested_records_root_borrow" {
+                assert!(facts.typed.capacities.iter().all(|capacity| *capacity > 0));
+                assert_eq!(
+                    (facts.typed.capacities[7], facts.typed.retained_lengths[4]),
+                    (1, 0)
+                );
+                assert_eq!(
+                    (
+                        facts.typed.capacities[10],
+                        case.counts.record_literals * case.counts.max_record_fields
+                    ),
+                    (3, 12)
+                );
+            }
+            let marker = if case.id.starts_with('A') {
+                "C3_T1_RICH_A"
+            } else {
+                "C3_T1_PROJECTION_B"
+            };
+            println!("{marker} case={} expected_source_sha256={} preused={preused} resolver_attempts={} typed_attempts={} whole={} backing={backing:?} live={} peak={}",
+                case.id, case.source_sha256, case.attempts.0, case.attempts.1, suffix.len(), heap.1, heap.2);
+        });
     }
 }
 
@@ -1935,6 +2047,569 @@ fn c3_t1_rich_root_borrow_and_grouped_empty_array_events_are_independent_runs() 
                     .iter()
                     .any(|event| matches!(event, index::Observation::BorrowArgument { .. })));
             }
+        });
+    }
+}
+
+// Frozen projection-success batch B: reviewed source-derived counts and reserve
+// order. One indexed-store target wrapper per source is not retained in HIR.
+const TYPED_PROJECTION_SUCCESS_B: [TypedRichSuccessCase; 3] = [
+    TypedRichSuccessCase {
+        id: "B1_owned_one_hop",
+        text: "enum Unused{V} struct R{n:i32,a:[i32;2]} fn read(xs:&[i32],ys:&mut[i32])->i32{return xs[0]+ys.len();} fn main()->i32{let mut r=R{n:1,a:[2,3]};let whole=[4,5];r.n=6;r.a[0]=7;return r.n+r.a[1]+r.a.len()+read(&whole,&mut r.a);}",
+        source_sha256: "bab1974afaee4bc84d33756cd810a286ab112926f9077bef94255630d15b4470",
+        source_bytes: 224,
+        counts: super::super::hir_budget::HirCounts {
+            records: 1,
+            record_fields: 2,
+            max_record_fields: 2,
+            functions: 2,
+            parameters: 2,
+            bindings: 4,
+            expressions: 24,
+            blocks: 2,
+            statements: 6,
+            calls: 1,
+            call_arguments: 2,
+            borrow_arguments: 2,
+            record_literals: 1,
+            field_initializers: 2,
+            array_literals: 2,
+            array_entries: 4,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 2,
+            loop_slots: 2,
+            resolve_frames: 24,
+            type_frames: 22,
+            max_expression_depth: 5,
+            max_body_depth: 1,
+        },
+        resolver_requests: [1, 1, 1, 2, 1, 2, 2, 2, 2, 1, 1, 2, 0, 2, 2, 2, 2, 2],
+        resolver_capacities: [1, 2, 2, 2, 2, 4, 24, 2, 6, 2, 2, 4, 0, 4, 4, 2, 2, 24],
+        resolver_lengths: [1, 2, 2, 2, 2, 4, 23, 2, 6, 2, 2, 4, 0],
+        resolver_zero_requests: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        typed_requests: [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2],
+        typed_capacities: [2, 4, 23, 2, 23, 2, 6, 2, 22, 2, 2, 4, 2, 23],
+        typed_lengths: [2, 23, 2, 6, 1, 4, 2, 23],
+        typed_zero_requests: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        attempts: (28, 31),
+        backing_64bit: [4408, 800 + 24 * 8, 2576, 472, 1506],
+    },
+    TypedRichSuccessCase {
+        id: "B2_reference_two_hop",
+        text: "enum Unused{V} struct Leaf{n:i32,a:[i32;2]} struct Outer{leaf:Leaf} fn view(xs:&[i32])->i32{return xs[0];} fn inspect(p:&Outer)->i32{return p.leaf.n+p.leaf.a[1]+p.leaf.a.len()+view(&*p.leaf.a);} fn edit(p:&mut Outer)->(){p.leaf.n=2;p.leaf.a[0]=3;return;} fn main()->i32{let mut x=Outer{leaf:Leaf{n:1,a:[4,5]}};edit(&mut x);return inspect(&x);}",
+        source_sha256: "6e38e890e50a1ecfb3a783593c611bd8acb0ab82800ee1c57d4dde9344d9e502",
+        source_bytes: 343,
+        counts: super::super::hir_budget::HirCounts {
+            records: 2,
+            record_fields: 3,
+            max_record_fields: 2,
+            functions: 4,
+            parameters: 3,
+            bindings: 4,
+            expressions: 22,
+            blocks: 4,
+            statements: 8,
+            calls: 3,
+            call_arguments: 3,
+            borrow_arguments: 3,
+            record_literals: 2,
+            field_initializers: 3,
+            array_literals: 1,
+            array_entries: 2,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 4,
+            loop_slots: 4,
+            resolve_frames: 48,
+            type_frames: 44,
+            max_expression_depth: 5,
+            max_body_depth: 1,
+        },
+        resolver_requests: [1, 2, 1, 4, 1, 4, 4, 4, 4, 3, 2, 1, 0, 4, 4, 4, 4, 4],
+        resolver_capacities: [2, 3, 4, 3, 4, 4, 22, 4, 8, 3, 3, 2, 0, 4, 4, 4, 4, 48],
+        resolver_lengths: [2, 3, 4, 3, 4, 4, 21, 4, 8, 3, 3, 2, 0],
+        resolver_zero_requests: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        typed_requests: [1, 4, 4, 4, 4, 4, 4, 4, 4, 3, 2, 4, 4, 4],
+        typed_capacities: [4, 4, 21, 4, 21, 4, 8, 3, 44, 3, 3, 4, 4, 21],
+        typed_lengths: [4, 21, 4, 8, 1, 4, 4, 21],
+        typed_zero_requests: [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0],
+        attempts: (51, 56),
+        backing_64bit: [5360, 1408 + 48 * 8, 2960, 448, 2963],
+    },
+    TypedRichSuccessCase {
+        id: "B3_root_array_twin",
+        text: "enum Unused{V} fn read(xs:&[i32],ys:&mut[i32])->i32{return xs[0]+ys.len();} fn main()->i32{let mut n=1;let mut a=[2,3];let whole=[4,5];n=6;a[0]=7;return n+a[1]+a.len()+read(&whole,&mut a);}",
+        source_sha256: "fc13aac7335ef5556f985857724b3862f7b78cdd75961113802489ba351e401d",
+        source_bytes: 189,
+        counts: super::super::hir_budget::HirCounts {
+            records: 0,
+            record_fields: 0,
+            max_record_fields: 0,
+            functions: 2,
+            parameters: 2,
+            bindings: 5,
+            expressions: 23,
+            blocks: 2,
+            statements: 7,
+            calls: 1,
+            call_arguments: 2,
+            borrow_arguments: 2,
+            record_literals: 0,
+            field_initializers: 0,
+            array_literals: 2,
+            array_entries: 4,
+            matches: 0,
+            match_arms: 0,
+            scope_marks: 2,
+            loop_slots: 2,
+            resolve_frames: 24,
+            type_frames: 22,
+            max_expression_depth: 5,
+            max_body_depth: 1,
+        },
+        resolver_requests: [1, 0, 1, 2, 1, 2, 2, 2, 2, 1, 0, 2, 0, 2, 2, 2, 2, 2],
+        resolver_capacities: [0, 0, 2, 2, 2, 5, 23, 2, 7, 2, 0, 4, 0, 5, 5, 2, 2, 24],
+        resolver_lengths: [0, 0, 2, 2, 2, 5, 22, 2, 7, 2, 0, 4, 0],
+        resolver_zero_requests: [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        typed_requests: [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 2, 2, 2],
+        typed_capacities: [2, 5, 22, 2, 22, 2, 7, 2, 22, 2, 0, 5, 2, 22],
+        typed_lengths: [2, 22, 2, 7, 0, 5, 2, 22],
+        typed_zero_requests: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        attempts: (26, 24),
+        backing_64bit: [4176, 848 + 24 * 8, 2584, 480, 1504],
+    },
+];
+
+// (typed kind ordinal, requested slots), in the frozen reserve sequence.
+// Kinds 0..14 follow the label/type map in assert_typed_rich_success;
+// kind 14 is the separately owned FieldId path payload.
+const TYPED_PROJECTION_RESERVES_B: [&[(usize, usize)]; 3] = [
+    &[
+        (0, 2),   // 1: Bodies
+        (1, 2),   // 2: BindingStage
+        (2, 4),   // 3: ExpressionStage
+        (4, 4),   // 4: ExpressionProjections
+        (7, 0),   // 5: BorrowProjections
+        (5, 1),   // 6: StatementRows
+        (6, 1),   // 7: StatementProjections
+        (3, 1),   // 8: FlowStage
+        (8, 11),  // 9: TypeFrames
+        (11, 2),  // 10: BindingFinal
+        (12, 1),  // 11: FlowFinal
+        (13, 4),  // 12: ExpressionFinal
+        (1, 2),   // 13: BindingStage
+        (2, 19),  // 14: ExpressionStage
+        (4, 19),  // 15: ExpressionProjections
+        (7, 2),   // 16: BorrowProjections
+        (5, 1),   // 17: StatementRows
+        (6, 5),   // 18: StatementProjections
+        (3, 1),   // 19: FlowStage
+        (8, 11),  // 20: TypeFrames
+        (10, 2),  // 21: RecordPresence
+        (14, 1),  // 22: Path
+        (14, 1),  // 23: Path
+        (14, 1),  // 24: Path
+        (14, 1),  // 25: Path
+        (14, 1),  // 26: Path
+        (9, 2),   // 27: CallActuals
+        (14, 1),  // 28: Path
+        (11, 2),  // 29: BindingFinal
+        (12, 1),  // 30: FlowFinal
+        (13, 19), // 31: ExpressionFinal
+    ],
+    &[
+        (0, 4),  // 1: Bodies
+        (1, 1),  // 2: BindingStage
+        (2, 2),  // 3: ExpressionStage
+        (4, 2),  // 4: ExpressionProjections
+        (7, 0),  // 5: BorrowProjections
+        (5, 1),  // 6: StatementRows
+        (6, 1),  // 7: StatementProjections
+        (3, 1),  // 8: FlowStage
+        (8, 11), // 9: TypeFrames
+        (11, 1), // 10: BindingFinal
+        (12, 1), // 11: FlowFinal
+        (13, 2), // 12: ExpressionFinal
+        (1, 1),  // 13: BindingStage
+        (2, 8),  // 14: ExpressionStage
+        (4, 8),  // 15: ExpressionProjections
+        (7, 1),  // 16: BorrowProjections
+        (5, 1),  // 17: StatementRows
+        (6, 1),  // 18: StatementProjections
+        (3, 1),  // 19: FlowStage
+        (8, 11), // 20: TypeFrames
+        (14, 2), // 21: Path
+        (14, 2), // 22: Path
+        (14, 2), // 23: Path
+        (9, 1),  // 24: CallActuals
+        (14, 2), // 25: Path
+        (11, 1), // 26: BindingFinal
+        (12, 1), // 27: FlowFinal
+        (13, 8), // 28: ExpressionFinal
+        (1, 1),  // 29: BindingStage
+        (2, 3),  // 30: ExpressionStage
+        (4, 3),  // 31: ExpressionProjections
+        (7, 0),  // 32: BorrowProjections
+        (5, 1),  // 33: StatementRows
+        (6, 3),  // 34: StatementProjections
+        (3, 1),  // 35: FlowStage
+        (8, 11), // 36: TypeFrames
+        (14, 2), // 37: Path
+        (14, 2), // 38: Path
+        (11, 1), // 39: BindingFinal
+        (12, 1), // 40: FlowFinal
+        (13, 3), // 41: ExpressionFinal
+        (1, 1),  // 42: BindingStage
+        (2, 8),  // 43: ExpressionStage
+        (4, 8),  // 44: ExpressionProjections
+        (7, 2),  // 45: BorrowProjections
+        (5, 1),  // 46: StatementRows
+        (6, 3),  // 47: StatementProjections
+        (3, 1),  // 48: FlowStage
+        (8, 11), // 49: TypeFrames
+        (10, 1), // 50: RecordPresence
+        (10, 2), // 51: RecordPresence
+        (9, 1),  // 52: CallActuals
+        (9, 1),  // 53: CallActuals
+        (11, 1), // 54: BindingFinal
+        (12, 1), // 55: FlowFinal
+        (13, 8), // 56: ExpressionFinal
+    ],
+    &[
+        (0, 2),   // 1: Bodies
+        (1, 2),   // 2: BindingStage
+        (2, 4),   // 3: ExpressionStage
+        (4, 4),   // 4: ExpressionProjections
+        (7, 0),   // 5: BorrowProjections
+        (5, 1),   // 6: StatementRows
+        (6, 1),   // 7: StatementProjections
+        (3, 1),   // 8: FlowStage
+        (8, 11),  // 9: TypeFrames
+        (11, 2),  // 10: BindingFinal
+        (12, 1),  // 11: FlowFinal
+        (13, 4),  // 12: ExpressionFinal
+        (1, 3),   // 13: BindingStage
+        (2, 18),  // 14: ExpressionStage
+        (4, 18),  // 15: ExpressionProjections
+        (7, 2),   // 16: BorrowProjections
+        (5, 1),   // 17: StatementRows
+        (6, 6),   // 18: StatementProjections
+        (3, 1),   // 19: FlowStage
+        (8, 11),  // 20: TypeFrames
+        (9, 2),   // 21: CallActuals
+        (11, 3),  // 22: BindingFinal
+        (12, 1),  // 23: FlowFinal
+        (13, 18), // 24: ExpressionFinal
+    ],
+];
+
+#[test]
+fn c3_t1_projection_sources_reconcile_paths_and_release_new_backing() {
+    let path_lengths: [&[usize]; 3] = [&[1; 6], &[2; 6], &[]];
+    for (i, case) in TYPED_PROJECTION_SUCCESS_B.iter().enumerate() {
+        assert_eq!(case.counts.expressions - case.resolver_lengths[6], 1);
+        assert_typed_rich_success(case, path_lengths[i], TYPED_PROJECTION_RESERVES_B[i]);
+    }
+}
+
+#[test]
+fn c3_t1_projection_work_and_terminal_events_are_independent_runs() {
+    // These logs are intentionally outside the clean-drop measurements. Existing
+    // events expose terminal fields, not a per-site path table; they cannot form
+    // an interleaved reserve/precharge timeline. Full chains and cache slots are
+    // the independently reviewed source audit, plus the selector's reconciliation.
+    for (case_index, case) in TYPED_PROJECTION_SUCCESS_B.iter().enumerate() {
+        with_index(case.text, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let work = WorkMeter::default();
+            work.enable_observation();
+            let facts = probe_enum_type_storage(index, &work, &mut allocator)
+                .unwrap()
+                .unwrap();
+            assert_eq!(allocator.attempts, case.attempts.0 + case.attempts.1);
+            assert!(!allocator.observer_trace_overflow);
+            assert!(allocator.trace.iter().all(|row| row.success));
+            assert_eq!(
+                (facts.typed.capacities[7], facts.typed.retained_lengths[4]),
+                [(2, 1), (3, 1), (2, 0)][case_index]
+            );
+            assert_eq!(
+                (
+                    facts.typed.capacities[10],
+                    case.counts.record_literals * case.counts.max_record_fields
+                ),
+                [(2, 2), (3, 4), (0, 0)][case_index]
+            );
+
+            let expected_path_work: &[(usize, usize)] = match case_index {
+                1 => &[
+                    (142, 148),
+                    (151, 157),
+                    (163, 169),
+                    (185, 191),
+                    (223, 229),
+                    (234, 240),
+                ],
+                _ => &[],
+            };
+            let permission_spans: &[(usize, usize)] = match case_index {
+                0 => &[
+                    (160, 161),
+                    (166, 167),
+                    (182, 183),
+                    (186, 187),
+                    (193, 194),
+                    (220, 221),
+                ],
+                1 => &[
+                    (142, 146),
+                    (147, 148),
+                    (151, 155),
+                    (156, 157),
+                    (163, 167),
+                    (168, 169),
+                    (185, 189),
+                    (190, 191),
+                    (223, 227),
+                    (228, 229),
+                    (234, 238),
+                    (239, 240),
+                ],
+                _ => &[],
+            };
+            // Inventory events carry function.end, deliberately not field spans.
+            // (end start, end end, retained path vectors, retained path fields).
+            let inventory_functions: &[(usize, usize, usize, usize)] = match case_index {
+                0 => &[(223, 224, 6, 6)],
+                1 => &[(193, 194, 4, 8), (253, 254, 2, 4)],
+                _ => &[],
+            };
+            let ordering_spans: &[(usize, usize)] = match case_index {
+                0 => &[(223, 224)],
+                1 => &[(193, 194)],
+                _ => &[],
+            };
+            let array_operations: &[(&str, usize, usize)] = match case_index {
+                0 => &[
+                    ("array type read", 85, 90),
+                    ("array type length", 91, 99),
+                    ("array type store", 164, 170),
+                    ("array type read", 184, 190),
+                    ("array type length", 191, 200),
+                ],
+                1 => &[
+                    ("array type read", 99, 104),
+                    ("array type read", 149, 160),
+                    ("array type length", 161, 175),
+                    ("array type store", 232, 243),
+                ],
+                _ => &[
+                    ("array type read", 59, 64),
+                    ("array type length", 65, 73),
+                    ("array type store", 139, 143),
+                    ("array type read", 155, 159),
+                    ("array type length", 160, 167),
+                ],
+            };
+            let events = work.events.borrow();
+            let path_work: Vec<_> = events
+                .iter()
+                .filter(|event| event.operation == "record projection path")
+                .map(|event| (event.origin.start, event.origin.end, event.units))
+                .collect();
+            let expected: Vec<_> = expected_path_work
+                .iter()
+                .map(|&(start, end)| (start, end, 2))
+                .collect();
+            assert_eq!(path_work, expected, "{}", case.id);
+            let permissions: Vec<_> = events
+                .iter()
+                .filter(|event| {
+                    event.operation == "field permission"
+                        && permission_spans.contains(&(event.origin.start, event.origin.end))
+                })
+                .map(|event| (event.origin.start, event.origin.end, event.units))
+                .collect();
+            let expected: Vec<_> = permission_spans
+                .iter()
+                .map(|&(start, end)| (start, end, 1))
+                .collect();
+            assert_eq!(permissions, expected, "{}", case.id);
+            for (label, field_counts) in [
+                ("typed retained path", false),
+                ("typed retained path field", true),
+            ] {
+                let actual: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.operation == label)
+                    .map(|event| (event.origin.start, event.origin.end, event.units))
+                    .collect();
+                let expected: Vec<_> = inventory_functions
+                    .iter()
+                    .flat_map(|&(start, end, vectors, fields)| {
+                        std::iter::repeat_n(
+                            (start, end, 1),
+                            if field_counts { fields } else { vectors },
+                        )
+                    })
+                    .collect();
+                assert_eq!(actual, expected, "{} {label}", case.id);
+                for &(start, end, _, _) in inventory_functions {
+                    assert_eq!(&case.text[start..end], "}");
+                }
+            }
+            let ordering: Vec<_> = events
+                .iter()
+                .filter(|event| event.operation == "projected borrow lookup ordering")
+                .map(|event| (event.origin.start, event.origin.end, event.units))
+                .collect();
+            let expected: Vec<_> = ordering_spans
+                .iter()
+                .map(|&(start, end)| (start, end, 1))
+                .collect();
+            assert_eq!(ordering, expected);
+            assert!(!events
+                .iter()
+                .any(|event| event.operation == "projected borrow inventory growth"));
+            let arrays: Vec<_> = events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event.operation,
+                        "array type read"
+                            | "array type length"
+                            | "array type store"
+                            | "array type access"
+                    )
+                })
+                .map(|event| {
+                    (
+                        event.operation,
+                        event.origin.start,
+                        event.origin.end,
+                        event.units,
+                    )
+                })
+                .collect();
+            let expected: Vec<_> = array_operations
+                .iter()
+                .flat_map(|&(operation, start, end)| {
+                    [
+                        (operation, start, end, 1),
+                        ("array type access", start, end, 1),
+                    ]
+                })
+                .collect();
+            assert_eq!(arrays, expected, "{}", case.id);
+
+            let observations = work.observations.borrow();
+            let projected_expressions: Vec<_> = observations
+                .iter()
+                .filter_map(|event| {
+                    if let index::Observation::Expression {
+                        function,
+                        origin,
+                        ty,
+                        field: Some(field),
+                    } = event
+                    {
+                        assert_eq!(*ty, ValueTy::Scalar(Ty::I32));
+                        assert_eq!(field.record, RecordId(0));
+                        Some((function.0, origin.start, origin.end, field.index))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let expected: &[(usize, usize, usize, usize)] = match case_index {
+                0 => &[(1, 180, 183, 0), (1, 184, 190, 1), (1, 191, 200, 1)],
+                1 => &[(1, 140, 148, 0), (1, 149, 160, 1), (1, 161, 175, 1)],
+                _ => &[],
+            };
+            assert_eq!(projected_expressions, expected);
+            let projections: Vec<_> = observations
+                .iter()
+                .filter_map(|event| {
+                    if let index::Observation::Projection {
+                        operation,
+                        function,
+                        origin,
+                        field,
+                        ty,
+                    } = event
+                    {
+                        assert_eq!(
+                            (*field, *ty),
+                            (
+                                FieldId {
+                                    record: RecordId(0),
+                                    index: 0
+                                },
+                                ValueTy::Scalar(Ty::I32)
+                            )
+                        );
+                        Some((*operation, function.0, origin.start, origin.end))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let expected: &[(&str, usize, usize, usize)] = match case_index {
+                0 => &[("write", 1, 160, 161), ("read", 1, 182, 183)],
+                1 => &[("read", 1, 142, 148), ("write", 2, 223, 229)],
+                _ => &[],
+            };
+            assert_eq!(projections, expected);
+            let borrows: Vec<_> = observations
+                .iter()
+                .filter_map(|event| {
+                    if let index::Observation::BorrowArgument {
+                        function,
+                        origin,
+                        binding,
+                        ty,
+                    } = event
+                    {
+                        Some((function.0, origin.start, origin.end, *binding, *ty))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let slice = |kind| ParameterTy::Reference {
+                referent: BorrowedTy::ScalarSlice(Ty::I32),
+                kind,
+            };
+            let outer = |kind| ParameterTy::Reference {
+                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(1))),
+                kind,
+            };
+            let expected = match case_index {
+                0 => vec![
+                    (1, 206, 212, 1, slice(BorrowKind::Shared)),
+                    (1, 213, 221, 0, slice(BorrowKind::Exclusive)),
+                ],
+                1 => vec![
+                    (1, 181, 191, 0, slice(BorrowKind::Shared)),
+                    (3, 315, 321, 0, outer(BorrowKind::Exclusive)),
+                    (3, 338, 340, 0, outer(BorrowKind::Shared)),
+                ],
+                _ => vec![
+                    (1, 173, 179, 2, slice(BorrowKind::Shared)),
+                    (1, 180, 186, 1, slice(BorrowKind::Exclusive)),
+                ],
+            };
+            assert_eq!(borrows, expected);
+            println!(
+                "C3_T1_PROJECTION_B_EVENTS case={} path_vectors={} path_fields={} cell_delta={}",
+                case.id,
+                facts.typed.path_vectors,
+                facts.typed.path_length_fields,
+                facts.typed.final_cell - facts.resolver.plan.total
+            );
         });
     }
 }

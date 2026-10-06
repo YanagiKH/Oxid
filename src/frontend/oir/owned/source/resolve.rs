@@ -4,15 +4,16 @@ use super::resolver_storage::{self as storage, Kind, PaidStorage};
 use crate::frontend::{
     ast,
     declaration_index::{
-        self as index, Access, DeclarationIndex, Exposure, IndexLimits, PreparedTypeName,
-        QuerySession, SourceOwner, TypeContext, WorkMeter,
+        self as index, Access, DeclarationIndex, Exposure, IndexLimits, NominalExposure, NominalId,
+        PreparedTypeName, QualifiedValueEndpoint, QuerySession, SourceOwner, TypeContext,
+        WorkMeter,
     },
     diagnostic::Diagnostic,
     owned_diagnostic::{self, diagnostic, secondary},
     parser::MAX_DIAGNOSTICS,
     project::{
         budget::{Allocator, ReserveFailure},
-        ItemPathRef, ModuleId,
+        ItemPathRef, ModuleId, QualifiedPathRef,
     },
     source::{SourceFile, SourceMap, SourceView, Span},
 };
@@ -227,18 +228,6 @@ fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
         .unwrap_err();
         assert_eq!(error.code, "E0300");
         assert_eq!(error.primary, Some(span));
-    }
-}
-
-fn deny_checkpoint_enum(ty: &ValueTy, span: Span) -> Result<(), Box<Diagnostic>> {
-    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
-        Err(error(
-            "E0101",
-            format_args!("enum value types are unavailable in this resolver-storage checkpoint"),
-            span,
-        ))
-    } else {
-        Ok(())
     }
 }
 
@@ -768,9 +757,6 @@ fn resolve_index_impl(
                 )?;
                 for parameter in &function.params {
                     let ty = parameter_type(&mut index.query(work), module, parameter.ty)?;
-                    if let ParameterTy::Value(value) = &ty {
-                        deny_checkpoint_enum(value, parameter.ty.span)?;
-                    }
                     storage::room(&params, params.capacity(), true, parameter.ty.span)?;
                     params.push(ty);
                 }
@@ -783,9 +769,6 @@ fn resolve_index_impl(
                     .collect::<Result<Vec<_>, _>>()?
             };
             let result = value_type(&mut index.query(work), module, function.result)?;
-            if paid.is_some() {
-                deny_checkpoint_enum(&result, function.result.span)?;
-            }
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
@@ -793,10 +776,17 @@ fn resolve_index_impl(
                         ..
                     } = statement.kind
                     {
-                        let resolved = value_type(&mut index.query(work), module, ty)?;
-                        if paid.is_some() {
-                            deny_checkpoint_enum(&resolved, ty.span)?;
-                        }
+                        value_type(&mut index.query(work), module, ty)?;
+                    } else if index.enum_count() == 0
+                        && matches!(statement.kind, ast::StmtKind::Match { .. })
+                    {
+                        // This existing eager walk precedes every function body
+                        // reserve. Candidate syntax alone never selects paid HIR.
+                        return Err(error(
+                            "E0101",
+                            format_args!("enum source syntax is unavailable"),
+                            statement.span,
+                        ));
                     }
                 }
             }
@@ -879,7 +869,10 @@ fn resolve_index_impl(
                         | ParameterTy::Reference {
                             referent: BorrowedTy::Exact(AggregateTy::Record(r)),
                             ..
-                        } => Some(r),
+                        } => Some(NominalId::Record(r)),
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(e))) => {
+                            Some(NominalId::Enum(e))
+                        }
                         _ => None,
                     },
                     &p.ty,
@@ -887,13 +880,14 @@ fn resolve_index_impl(
             });
         let result = (
             match signature.result {
-                ValueTy::Owned(AggregateTy::Record(r)) => Some(r),
+                ValueTy::Owned(AggregateTy::Record(r)) => Some(NominalId::Record(r)),
+                ValueTy::Owned(AggregateTy::Enum(e)) => Some(NominalId::Enum(e)),
                 _ => None,
             },
             &function.result,
         );
-        for (record, ty) in params.chain(std::iter::once(result)) {
-            let Some(record) = record else { continue };
+        for (nominal, ty) in params.chain(std::iter::once(result)) {
+            let Some(nominal) = nominal else { continue };
             let at = match ty.kind {
                 ast::TypeSyntaxKind::Reference { referent, .. } => sources
                     .path_span(ItemPathRef {
@@ -903,21 +897,51 @@ fn resolve_index_impl(
                     .map_err(|e| vec![*e])?,
                 _ => ty.span,
             };
-            match index
-                .query(work)
-                .signature_exposure(DefId(id), record, at)
-                .map_err(|e| vec![*e])?
-            {
+            // Retain the old record query, work and diagnostic route exactly.
+            let exposure = match nominal {
+                NominalId::Record(record) => {
+                    index.query(work).signature_exposure(DefId(id), record, at)
+                }
+                NominalId::Enum(_) => index
+                    .query(work)
+                    .nominal_signature_exposure(DefId(id), nominal, at)
+                    .map(|exposure| match exposure {
+                        NominalExposure::Allowed => Exposure::Allowed,
+                        NominalExposure::Denied {
+                            declaration,
+                            restrictor,
+                        } => Exposure::Denied {
+                            record: declaration,
+                            restrictor,
+                        },
+                    }),
+            }
+            .map_err(|e| vec![*e])?;
+            match exposure {
                 Exposure::Allowed => (),
                 Exposure::Denied { record, restrictor } => {
                     let mut error = secondary(
                         error(
                             "E0207",
-                            format_args!("function signature exposes a less visible record type"),
+                            format_args!(
+                                "function signature exposes a less visible {} type",
+                                if matches!(nominal, NominalId::Enum(_)) {
+                                    "enum"
+                                } else {
+                                    "record"
+                                }
+                            ),
                             at,
                         ),
                         record,
-                        format_args!("record type declared here"),
+                        format_args!(
+                            "{} type declared here",
+                            if matches!(nominal, NominalId::Enum(_)) {
+                                "enum"
+                            } else {
+                                "record"
+                            }
+                        ),
                     );
                     if let Some(restrictor) = restrictor {
                         error = secondary(
@@ -997,9 +1021,26 @@ fn resolve_index_impl(
         Err(diagnostics)
     }
 }
+// Real construction-local state, never retained in the returned program.
+// The vector backing is separately admitted by Kind::MatchArms.
+struct MatchBuilder {
+    scrutinee: BindingId,
+    enumeration: Option<crate::frontend::oir::owned_types::EnumId>,
+    variant_count: usize,
+    coverage: [u64; 4],
+    arms: Vec<MatchArm>,
+}
+
 pub(super) enum ResolveFrame {
     Enter(ast::BodyBlockId),
     Next(ast::BodyBlockId, usize),
+    // One cursor per active match, regardless of its arm count. The parent
+    // statement is retained before any arm body is entered.
+    MatchArm {
+        block: ast::BodyBlockId,
+        statement: usize,
+        arm: usize,
+    },
     Leave,
     LeaveLoop,
 }
@@ -1234,6 +1275,88 @@ impl<'a> Resolver<'_, 'a> {
                     frames.push(ResolveFrame::Next(block, 0));
                     continue;
                 }
+                ResolveFrame::MatchArm {
+                    block,
+                    statement,
+                    arm,
+                } => {
+                    let ast::StmtKind::Match { arms, .. } =
+                        &function.blocks[block.0].body[statement].kind
+                    else {
+                        return Err(error(
+                            "E0500",
+                            format_args!("invalid match cursor"),
+                            function.name,
+                        ));
+                    };
+                    let Some(syntax) = arms.get(arm) else {
+                        continue;
+                    };
+                    self.work.debit(1, syntax.span, "enum resolve arm entry")?;
+                    if let Some(scope) = &mut self.storage.scope {
+                        scope.enter(function.blocks[syntax.body.0].span)?;
+                    } else {
+                        scopes.push(Vec::new());
+                    }
+                    let StmtKind::Match { arms, .. } = &mut blocks[block.0].body[statement].kind
+                    else {
+                        return Err(error(
+                            "E0500",
+                            format_args!("invalid match cursor"),
+                            syntax.span,
+                        ));
+                    };
+                    if let Some(name) = syntax.binding {
+                        let enumeration = self.index.enum_view(arms[arm].variant.enumeration)?;
+                        let variant = enumeration.variant(arms[arm].variant)?;
+                        let payload = variant.payload().ok_or_else(|| {
+                            error(
+                                "E0500",
+                                format_args!("invalid match payload binding"),
+                                syntax.span,
+                            )
+                        })?;
+                        arms[arm].binding = Some(self.bind(
+                            name,
+                            Some(ValueTy::Scalar(payload)),
+                            false,
+                            BodyBlockId(syntax.body.0),
+                            None,
+                        )?);
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active arm scope")
+                                .push(self.text(name));
+                        }
+                    }
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        syntax.span,
+                    )?;
+                    frames.push(ResolveFrame::MatchArm {
+                        block,
+                        statement,
+                        arm: arm + 1,
+                    });
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        syntax.span,
+                    )?;
+                    frames.push(ResolveFrame::Leave);
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
+                        syntax.span,
+                    )?;
+                    frames.push(ResolveFrame::Next(syntax.body, 0));
+                    continue;
+                }
                 ResolveFrame::Leave => {
                     if let Some(scope) = &mut self.storage.scope {
                         scope.leave(self.work, function.name)?;
@@ -1270,12 +1393,7 @@ impl<'a> Resolver<'_, 'a> {
                     let init = self.expression(*init)?;
                     let annotation = annotation
                         .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
-                            let value =
-                                value_type(&mut self.index.query(self.work), self.requester, ty)?;
-                            if self.storage.paid.is_some() {
-                                deny_checkpoint_enum(&value, ty.span)?;
-                            }
-                            Ok(value)
+                            value_type(&mut self.index.query(self.work), self.requester, ty)
                         })
                         .transpose()?;
                     let local =
@@ -1357,12 +1475,115 @@ impl<'a> Resolver<'_, 'a> {
                     }
                 }
                 ast::StmtKind::Expr(expr) => StmtKind::Expr(self.expression(*expr)?),
-                ast::StmtKind::Match { .. } => {
-                    return Err(error(
-                        "E0101",
-                        format_args!("enum source syntax is unavailable"),
+                ast::StmtKind::Match { scrutinee, arms } => {
+                    let scrutinee = self.lookup(*scrutinee)?;
+                    if arms.is_empty() || arms.len() > 256 {
+                        return Err(error(
+                            "E0300",
+                            format_args!("match requires 1..256 arms"),
+                            statement.span,
+                        ));
+                    }
+                    let mut builder = MatchBuilder {
+                        scrutinee,
+                        enumeration: None,
+                        variant_count: 0,
+                        coverage: [0u64; 4],
+                        arms: match self.storage.paid.as_deref_mut() {
+                            Some(paid) => paid.reserve(
+                                self.allocator,
+                                Kind::MatchArms,
+                                arms.len(),
+                                statement.span,
+                            )?,
+                            None => {
+                                return Err(error(
+                                    "E0101",
+                                    format_args!("enum source syntax is unavailable"),
+                                    statement.span,
+                                ))
+                            }
+                        },
+                    };
+                    for arm in arms {
+                        self.work.debit(1, arm.span, "enum resolve arm")?;
+                        let variant = self.index.query(self.work).variant(
+                            self.requester,
+                            QualifiedPathRef {
+                                file: arm.span.file,
+                                path: arm.variant,
+                            },
+                        )?;
+                        let view = self.index.enum_view(variant.enumeration)?;
+                        if let Some(expected) = builder.enumeration {
+                            if variant.enumeration != expected {
+                                return Err(error(
+                                    "E0300",
+                                    format_args!("match arms must name variants of one enum"),
+                                    arm.span,
+                                ));
+                            }
+                        } else {
+                            builder.enumeration = Some(variant.enumeration);
+                            builder.variant_count = view.variant_count();
+                        }
+                        if variant.index >= builder.variant_count || variant.index >= 256 {
+                            return Err(error(
+                                "E0500",
+                                format_args!("invalid match variant"),
+                                arm.span,
+                            ));
+                        }
+                        let declared = view.variant(variant)?;
+                        if declared.payload().is_some() != arm.binding.is_some() {
+                            return Err(error(
+                                "E0300",
+                                format_args!(
+                                    "match pattern payload binding does not match variant"
+                                ),
+                                arm.span,
+                            ));
+                        }
+                        let word = variant.index / 64;
+                        let bit = 1u64 << (variant.index % 64);
+                        if builder.coverage[word] & bit != 0 {
+                            return Err(error(
+                                "E0300",
+                                format_args!("duplicate match variant"),
+                                arm.span,
+                            ));
+                        }
+                        builder.coverage[word] |= bit;
+                        storage::room(&builder.arms, builder.arms.capacity(), true, arm.span)?;
+                        builder.arms.push(MatchArm {
+                            variant,
+                            binding: None,
+                            body: BodyBlockId(arm.body.0),
+                            span: arm.span,
+                        });
+                    }
+                    if arms.len() != builder.variant_count {
+                        return Err(error(
+                            "E0300",
+                            format_args!("match must cover every enum variant exactly once"),
+                            statement.span,
+                        ));
+                    }
+                    storage::room(
+                        &frames,
+                        frames.capacity(),
+                        self.storage.paid.is_some(),
                         statement.span,
-                    ));
+                    )?;
+                    frames.push(ResolveFrame::MatchArm {
+                        block,
+                        statement: index,
+                        arm: 0,
+                    });
+                    StmtKind::Match {
+                        scrutinee: builder.scrutinee,
+                        arms: builder.arms,
+                    }
                 }
                 ast::StmtKind::Return(expr) => {
                     StmtKind::Return(expr.map(|expr| self.expression(expr)).transpose()?)
@@ -1509,12 +1730,89 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
-            ast::ExprKind::QualifiedValue { .. } => {
-                return Err(error(
-                    "E0101",
-                    format_args!("enum source syntax is unavailable"),
-                    expr.span,
-                ));
+            ast::ExprKind::QualifiedValue { path, args } => {
+                // The zero-enum absolute call is the same old query over the
+                // same borrowed syntax, before any argument work or retention.
+                let endpoint = if self.index.enum_count() == 0
+                    && args.is_some()
+                    && self.ast.paths[path.0].root == ast::PathRoot::Crate
+                {
+                    QualifiedValueEndpoint::Function(self.index.query(self.work).callee(
+                        self.requester,
+                        ItemPathRef {
+                            file: expr.span.file,
+                            path: ast::ItemPath::Absolute(*path),
+                        },
+                        false,
+                    )?)
+                } else {
+                    self.index.query(self.work).qualified_value_endpoint(
+                        self.requester,
+                        QualifiedPathRef {
+                            file: expr.span.file,
+                            path: *path,
+                        },
+                    )?
+                };
+                match endpoint {
+                    QualifiedValueEndpoint::Function(target) => {
+                        let args = args.as_ref().ok_or_else(|| {
+                            error(
+                                "E0300",
+                                format_args!("function call requires parentheses"),
+                                expr.span,
+                            )
+                        })?;
+                        let args = if let Some(paid) = self.storage.paid.as_deref_mut() {
+                            let mut resolved = paid.reserve(
+                                self.allocator,
+                                Kind::Arguments,
+                                args.len(),
+                                expr.span,
+                            )?;
+                            for arg in args {
+                                let arg = self.argument(arg)?;
+                                storage::room(&resolved, resolved.capacity(), true, expr.span)?;
+                                resolved.push(arg);
+                            }
+                            resolved
+                        } else {
+                            args.iter()
+                                .map(|arg| self.argument(arg))
+                                .collect::<Result<Vec<_>, _>>()?
+                        };
+                        ExprKind::Call { target, args }
+                    }
+                    QualifiedValueEndpoint::Variant(variant) => {
+                        let enumeration = self.index.enum_view(variant.enumeration)?;
+                        let declared = enumeration.variant(variant)?;
+                        let payload = match (declared.payload(), args.as_deref()) {
+                            (None, None) => None,
+                            (Some(_), Some([ast::Argument::Value(value)])) => {
+                                Some(self.expression(*value)?)
+                            }
+                            (None, Some(_)) => {
+                                return Err(error(
+                                    "E0300",
+                                    format_args!(
+                                        "nullary enum variant does not accept parentheses"
+                                    ),
+                                    expr.span,
+                                ))
+                            }
+                            (Some(_), _) => {
+                                return Err(error(
+                                    "E0300",
+                                    format_args!(
+                                        "enum payload variant requires exactly one value argument"
+                                    ),
+                                    expr.span,
+                                ))
+                            }
+                        };
+                        ExprKind::ConstructEnum { variant, payload }
+                    }
+                }
             }
             ast::ExprKind::ArrayLiteral { elements } => {
                 self.work.debit(1, expr.span, "array resolve literal")?;
@@ -2057,6 +2355,52 @@ mod enum_index_layout_tests {
     }
 }
 
+/// Source-owned query receivers are additional to the index's internal ledger.
+/// Charge complete return and caller carriers separately; no new enum table or
+/// inherited helper-stack model is included. One branch survives per recursive
+/// expression level, including constructors whose only child is their payload.
+pub(super) const fn enum_expression_carrier_bytes() -> usize {
+    use std::mem::size_of;
+    size_of::<QualifiedValueEndpoint>()
+        + size_of::<Result<QualifiedValueEndpoint, Box<Diagnostic>>>()
+        + size_of::<QualifiedPathRef>()
+        + size_of::<index::EnumView<'_>>()
+        + size_of::<Result<index::EnumView<'_>, Box<Diagnostic>>>()
+        + size_of::<index::VariantView<'_>>()
+        + size_of::<Result<index::VariantView<'_>, Box<Diagnostic>>>()
+        + size_of::<Option<Ty>>()
+        + size_of::<Option<&[ast::Argument]>>()
+        + size_of::<Option<ExprId>>()
+        + size_of::<VariantId>()
+        + size_of::<DefId>()
+        + size_of::<&Vec<ast::Argument>>()
+}
+/// A complete actual builder, the shape loop and the later incremental arm
+/// entry's borrowed row/view receivers. The phases do not recursively call one
+/// another; summing them once per match is conservative. Vector transport is
+/// already in PaidStorage's generic complete-return envelope.
+pub(super) const fn enum_match_carrier_bytes() -> usize {
+    use std::mem::size_of;
+    size_of::<MatchBuilder>()
+        + size_of::<std::slice::Iter<'_, ast::MatchArmSyntax>>()
+        + size_of::<Option<&ast::MatchArmSyntax>>()
+        + 2 * size_of::<&ast::MatchArmSyntax>()
+        + size_of::<VariantId>()
+        + size_of::<Result<VariantId, Box<Diagnostic>>>()
+        + size_of::<QualifiedPathRef>()
+        + 2 * size_of::<index::EnumView<'_>>()
+        + 2 * size_of::<Result<index::EnumView<'_>, Box<Diagnostic>>>()
+        + 2 * size_of::<index::VariantView<'_>>()
+        + 2 * size_of::<Result<index::VariantView<'_>, Box<Diagnostic>>>()
+        + size_of::<Option<Ty>>()
+        + size_of::<Result<Ty, Box<Diagnostic>>>()
+        + size_of::<Option<ValueTy>>()
+        + size_of::<Option<BindingId>>()
+        + size_of::<Result<BindingId, Box<Diagnostic>>>()
+        + 2 * size_of::<usize>()
+        + size_of::<u64>()
+}
+
 /// Complete resolver header; its inherited HashMap payload is not admitted by C3a.
 #[allow(dead_code)]
 pub(super) const fn resolver_carrier_bytes() -> usize {
@@ -2148,3 +2492,7 @@ mod fresh_type_observation_layout_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "resolver_enum_tests.rs"]
+mod enum_semantic_tests;

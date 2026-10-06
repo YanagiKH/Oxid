@@ -19,8 +19,8 @@ use crate::frontend::{
 };
 use std::{cmp::Ordering, mem::size_of};
 
-pub(super) const KINDS: usize = 17;
-pub(super) const RETAINED_KINDS: usize = 12;
+pub(super) const KINDS: usize = 18;
+pub(super) const RETAINED_KINDS: usize = 13;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
@@ -37,6 +37,7 @@ pub(super) enum Kind {
     Arguments,
     FieldInitializers,
     ArrayEntries,
+    MatchArms,
     Names,
     Exits,
     Marks,
@@ -58,6 +59,7 @@ impl Kind {
             Self::Arguments => "paid HIR arguments",
             Self::FieldInitializers => "paid HIR field initializers",
             Self::ArrayEntries => "paid HIR array entries",
+            Self::MatchArms => "paid HIR match arms",
             Self::Names => "paid HIR scope names",
             Self::Exits => "paid HIR scope exits",
             Self::Marks => "paid HIR scope marks",
@@ -79,6 +81,7 @@ pub(super) const WIDTHS: [usize; KINDS] = [
     size_of::<Argument>(),
     size_of::<FieldInit>(),
     size_of::<ExprId>(),
+    size_of::<MatchArm>(),
     size_of::<ScopeName>(),
     size_of::<usize>(),
     size_of::<usize>(),
@@ -99,6 +102,7 @@ fn limits(c: HirCounts) -> [usize; KINDS] {
         c.call_arguments,
         c.field_initializers,
         c.array_entries,
+        c.match_arms,
         c.bindings,
         c.bindings,
         c.scope_marks,
@@ -229,7 +233,7 @@ impl ResolverInventory {
         Ok(())
     }
 }
-fn inventory_value(ty: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
+fn inventory_field_value(ty: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
     if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
         Err(invalid(at))
     } else {
@@ -253,17 +257,16 @@ pub(super) fn inventory_parts(
         inventory.vector(Kind::Fields, &record.fields, work, record.span)?;
         for field in &record.fields {
             work.debit(1, field.span, "paid resolver inventory row")?;
-            inventory_value(&field.ty, field.span)?;
+            inventory_field_value(&field.ty, field.span)?;
         }
     }
     for signature in signatures {
         work.debit(1, signature.span, "paid resolver inventory row")?;
-        inventory_value(&signature.result, signature.span)?;
         inventory.vector(Kind::Parameters, &signature.params, work, signature.span)?;
         for parameter in &signature.params {
             work.debit(1, signature.span, "paid resolver inventory row")?;
             match parameter {
-                ParameterTy::Value(value) => inventory_value(value, signature.span)?,
+                ParameterTy::Value(_) => (),
                 ParameterTy::Reference {
                     referent: BorrowedTy::Exact(AggregateTy::Enum(_)),
                     ..
@@ -281,14 +284,10 @@ pub(super) fn inventory_parts(
         inventory.vector(Kind::Blocks, &function.blocks, work, function.end)?;
         for binding in &function.bindings {
             work.debit(1, binding.span, "paid resolver inventory row")?;
-            if let Some(annotation) = &binding.annotation {
-                inventory_value(annotation, binding.span)?;
-            }
         }
         for expression in &function.expressions {
             work.debit(1, expression.span, "paid resolver inventory row")?;
             match &expression.kind {
-                ExprKind::ConstructEnum { .. } => return Err(invalid(expression.span)),
                 ExprKind::Call { args, .. } => {
                     inventory.vector(Kind::Arguments, args, work, expression.span)?
                 }
@@ -306,8 +305,14 @@ pub(super) fn inventory_parts(
             inventory.vector(Kind::Statements, &block.body, work, block.span)?;
             for statement in &block.body {
                 work.debit(1, statement.span, "paid resolver inventory row")?;
-                if matches!(statement.kind, StmtKind::Match { .. }) {
-                    return Err(invalid(statement.span));
+                if let StmtKind::Match { arms, .. } = &statement.kind {
+                    inventory.vector(Kind::MatchArms, arms, work, statement.span)?;
+                    if arms.is_empty() || arms.len() > 256 {
+                        return Err(invalid(statement.span));
+                    }
+                    for arm in arms {
+                        work.debit(1, arm.span, "paid resolver inventory row")?;
+                    }
                 }
             }
         }
@@ -460,9 +465,24 @@ impl PaidScope {
         for block in &function.blocks {
             for statement in &block.body {
                 work.debit(1, statement.span, "paid resolver name inventory")?;
-                if let ast::StmtKind::Let { name, .. } = statement.kind {
-                    room(&names, names.capacity(), true, name)?;
-                    names.push(ScopeName { name, active: None });
+                match &statement.kind {
+                    ast::StmtKind::Let { name, .. } => {
+                        room(&names, names.capacity(), true, *name)?;
+                        names.push(ScopeName {
+                            name: *name,
+                            active: None,
+                        });
+                    }
+                    ast::StmtKind::Match { arms, .. } => {
+                        for arm in arms {
+                            work.debit(1, arm.span, "paid resolver name inventory")?;
+                            if let Some(name) = arm.binding {
+                                room(&names, names.capacity(), true, name)?;
+                                names.push(ScopeName { name, active: None });
+                            }
+                        }
+                    }
+                    _ => (),
                 }
             }
         }
@@ -587,8 +607,7 @@ struct FixedCarriers {
     // Shared implementation argument and probe's temporary Some borrow. These
     // are distinct from the policy embedded in each complete Resolver.
     shared_paid_borrows: [Option<&'static mut PaidStorage>; 2],
-    // Source deny_checkpoint_enum and post-resolution inventory_value execute
-    // in disjoint phases and share this named value-guard borrow bank.
+    // Record-field inventory retains its explicit enum-containment guard.
     type_guard_borrow: &'static ValueTy,
     counts: [HirCounts; 2],
     quota_arrays: [[usize; KINDS]; 4],
@@ -623,6 +642,32 @@ struct FunctionCarriers {
     capacity_array: [usize; KINDS - RETAINED_KINDS],
     legacy_scope_header: Vec<Vec<&'static str>>,
     binding_row: Option<usize>,
+    // Actual changed standalone carriers, separate from frame backing and
+    // from the unchanged complete Resolver header.
+    frame: ResolveFrame,
+    popped_frame: Option<ResolveFrame>,
+    // The new match-name loop's iterator/next/current roles. Names still use
+    // the one pre-dedup ScopeName vector, never an auxiliary arm-name table.
+    arm_names: InventorySliceLoop<ast::MatchArmSyntax>,
+    nominal_signature: NominalSignatureCarriers,
+}
+struct NominalSignatureCarriers {
+    parameter: (
+        Option<crate::frontend::declaration_index::NominalId>,
+        &'static ast::TypeSyntax,
+    ),
+    result: (
+        Option<crate::frontend::declaration_index::NominalId>,
+        &'static ast::TypeSyntax,
+    ),
+    next: Option<(
+        Option<crate::frontend::declaration_index::NominalId>,
+        &'static ast::TypeSyntax,
+    )>,
+    selected: crate::frontend::declaration_index::NominalId,
+    exposure: crate::frontend::declaration_index::Exposure,
+    returned: Result<crate::frontend::declaration_index::NominalExposure, Box<Diagnostic>>,
+    mapped: Result<crate::frontend::declaration_index::Exposure, Box<Diagnostic>>,
 }
 // Inner branch-local vectors are named separately from the old outer pending
 // vectors. Moving headers does not authorize assuming compiler slot reuse.
@@ -687,6 +732,7 @@ struct InventoryWalkCarriers {
     expressions: InventorySliceLoop<Expr>,
     blocks: InventorySliceLoop<BodyBlock>,
     statements: InventorySliceLoop<Stmt>,
+    arms: InventorySliceLoop<MatchArm>,
     reconcile_cursor: std::ops::Range<usize>,
     reconcile_next: Option<usize>,
     reconcile_current: usize,

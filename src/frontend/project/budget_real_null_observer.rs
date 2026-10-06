@@ -301,8 +301,8 @@ pub(in crate::frontend) fn global_event(
 
 // Measurement-only observer banks. Excluded from the affected-HIR ledger by
 // explicit scope, not evidence that their storage or transports are zero.
-// These first banks are deliberately partial: anonymous TLS callbacks and the
-// full eligibility/mismatch/thread calibration transports await the next audit.
+// These banks describe named observer controls, not universal callback/helper
+// stack accounting. The approved observer exclusion does not change HIR prices.
 #[allow(dead_code)]
 struct StateCarriers {
     tls: Cell<State>,
@@ -362,13 +362,139 @@ struct SelectionSizingCarriers<'a, F> {
 }
 
 /// Uses each actual calibration closure/output type without invoking it or
-/// manufacturing an Allocator/owner. More observer transport rows remain pending.
+/// manufacturing an Allocator/owner. This measures the named control banks,
+/// not universal callback/library stack storage.
 pub(in crate::frontend) fn selection_carriers_bytes<F, R>(_: &F) -> usize
 where
     F: for<'a> FnOnce(&'a mut Allocator) -> R,
 {
     std::mem::size_of::<SelectionCarriers<'_, F, R>>()
         + std::mem::size_of::<SelectionSizingCarriers<'_, F>>()
+}
+
+/// Closed primitive calibration output. No allocation pointer, guard, selected
+/// identity or configurable arming capability escapes these drivers.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::frontend) struct MismatchFacts {
+    pub report: Report,
+    pub armed: bool,
+    pub operation_succeeded: bool,
+    pub contents_preserved: bool,
+    pub ordinary_succeeded: bool,
+}
+
+fn mismatch_calibration(operation: Operation) -> Result<MismatchFacts, SetupError> {
+    use std::alloc::{alloc, alloc_zeroed, dealloc, realloc};
+    let mut allocator = Allocator::default();
+    let target = Target {
+        attempt: 1,
+        kind: "closed mismatch calibration",
+        slots: 8,
+        element_bytes: std::mem::size_of::<u64>(),
+        layout: Layout::array::<u64>(8).unwrap(),
+    };
+    let old_layout = Layout::array::<u64>(4).unwrap();
+    let ordinary_layout = Layout::array::<u64>(2).unwrap();
+    let ((armed, operation_succeeded, contents_preserved, ordinary_succeeded), report) =
+        with_selected(&mut allocator, target, |allocator| {
+            // The caller measures the entire closed driver, so old backing is
+            // allocated and freed inside the same interval, never before it.
+            let old = if matches!(operation, Operation::Realloc | Operation::Dealloc) {
+                unsafe { alloc(old_layout) }
+            } else {
+                std::ptr::null_mut()
+            };
+            if matches!(operation, Operation::Realloc | Operation::Dealloc) && old.is_null() {
+                return (false, false, false, false);
+            }
+            if !old.is_null() {
+                unsafe { old.write_bytes(0x5a, old_layout.size()) };
+            }
+            let guard = enter_exact::<u64>(identity(allocator), 1, target.kind, 0, 0, 8, false);
+            // Only primitive branching and the direct nullable operation occur
+            // while Armed. Each callback disarms before System forwarding.
+            let pointer = unsafe {
+                match operation {
+                    Operation::Alloc => alloc(old_layout),
+                    Operation::AllocZeroed => alloc_zeroed(target.layout),
+                    Operation::Realloc => realloc(old, old_layout, target.layout.size()),
+                    Operation::Dealloc => {
+                        dealloc(old, old_layout);
+                        std::ptr::null_mut()
+                    }
+                }
+            };
+            let armed = guard.is_some();
+            drop(guard);
+            let operation_succeeded = operation == Operation::Dealloc || !pointer.is_null();
+            let contents_preserved = unsafe {
+                match operation {
+                    Operation::Alloc => operation_succeeded,
+                    Operation::AllocZeroed => {
+                        !pointer.is_null()
+                            && std::slice::from_raw_parts(pointer, target.layout.size())
+                                .iter()
+                                .all(|byte| *byte == 0)
+                    }
+                    Operation::Realloc => {
+                        !pointer.is_null()
+                            && std::slice::from_raw_parts(pointer, old_layout.size())
+                                .iter()
+                                .all(|byte| *byte == 0x5a)
+                    }
+                    Operation::Dealloc => true,
+                }
+            };
+            unsafe {
+                if !pointer.is_null() {
+                    dealloc(
+                        pointer,
+                        if operation == Operation::Alloc {
+                            old_layout
+                        } else {
+                            target.layout
+                        },
+                    );
+                } else if operation == Operation::Realloc {
+                    // A genuine System realloc failure preserves the old block.
+                    dealloc(old, old_layout);
+                }
+            }
+            let ordinary = unsafe { alloc(ordinary_layout) };
+            let ordinary_succeeded = !ordinary.is_null();
+            if ordinary_succeeded {
+                unsafe { dealloc(ordinary, ordinary_layout) };
+            }
+            (
+                armed,
+                operation_succeeded,
+                contents_preserved,
+                ordinary_succeeded,
+            )
+        })?;
+    Ok(MismatchFacts {
+        report,
+        armed,
+        operation_succeeded,
+        contents_preserved,
+        ordinary_succeeded,
+    })
+}
+
+pub(in crate::frontend) fn calibrate_wrong_layout() -> Result<MismatchFacts, SetupError> {
+    mismatch_calibration(Operation::Alloc)
+}
+
+pub(in crate::frontend) fn calibrate_zeroed_mismatch() -> Result<MismatchFacts, SetupError> {
+    mismatch_calibration(Operation::AllocZeroed)
+}
+
+pub(in crate::frontend) fn calibrate_realloc_mismatch() -> Result<MismatchFacts, SetupError> {
+    mismatch_calibration(Operation::Realloc)
+}
+
+pub(in crate::frontend) fn calibrate_dealloc_mismatch() -> Result<MismatchFacts, SetupError> {
+    mismatch_calibration(Operation::Dealloc)
 }
 
 #[cfg(test)]
@@ -446,9 +572,19 @@ mod controls {
         macro_rules! fields {
             ($model:ty; $($field:ident: $ty:ty),+ $(,)?) => {{
                 $(let _: for<'a> fn(&'a $model) -> &'a $ty = |model| &model.$field;)+
-                let offsets = [$(std::mem::offset_of!($model, $field)),+];
-                for offset in offsets { assert!(offset <= std::mem::size_of::<$model>()); }
-                offsets.len()
+                let extents = [$(
+                    (std::mem::offset_of!($model, $field),
+                     std::mem::size_of::<$ty>(), std::mem::align_of::<$ty>())
+                ),+];
+                for (index, &(offset, size, align)) in extents.iter().enumerate() {
+                    assert_eq!(offset % align, 0);
+                    assert!(offset.checked_add(size).unwrap() <= std::mem::size_of::<$model>());
+                    for &(other, other_size, _) in &extents[..index] {
+                        assert!(size == 0 || other_size == 0 || offset + size <= other
+                            || other + other_size <= offset);
+                    }
+                }
+                extents.len()
             }};
         }
         assert_eq!(
@@ -492,6 +628,33 @@ mod controls {
             reserve_result: Result<(), TryReserveError>),
             16
         );
+        assert_eq!(
+            fields!(MismatchFacts; report: Report, armed: bool,
+            operation_succeeded: bool, contents_preserved: bool, ordinary_succeeded: bool),
+            5
+        );
+        let _: for<'a> fn(&'a State) -> Option<(&'a AllocatorIdentity, &'a Target)> =
+            |state| match state {
+                State::Selected { identity, target } | State::Armed { identity, target } => {
+                    Some((identity, target))
+                }
+                State::Idle | State::Finished(_) => None,
+            };
+        let _: for<'a> fn(&'a State) -> Option<&'a Report> = |state| {
+            if let State::Finished(report) = state {
+                Some(report)
+            } else {
+                None
+            }
+        };
+        println!("REAL_NULL_FIXED_LAYOUT cell={}/{} selection_guard={}/{} reserve_guard={}/{} shadow_guard={}/{} mismatch={}/{} mismatch_result={}/{}",
+            std::mem::size_of::<Cell<State>>(), std::mem::align_of::<Cell<State>>(),
+            std::mem::size_of::<SelectionGuard>(), std::mem::align_of::<SelectionGuard>(),
+            std::mem::size_of::<ReserveGuard>(), std::mem::align_of::<ReserveGuard>(),
+            std::mem::size_of::<ShadowCleanupGuard<'_>>(), std::mem::align_of::<ShadowCleanupGuard<'_>>(),
+            std::mem::size_of::<MismatchFacts>(), std::mem::align_of::<MismatchFacts>(),
+            std::mem::size_of::<Result<MismatchFacts, SetupError>>(),
+            std::mem::align_of::<Result<MismatchFacts, SetupError>>());
         println!(
             "REAL_NULL_EARLY_LAYOUT target={} report={} state={} state_bank={} reserve_bank={}",
             std::mem::size_of::<Target>(),
@@ -500,5 +663,283 @@ mod controls {
             std::mem::size_of::<StateCarriers>(),
             std::mem::size_of::<ExactReserveCarriers>()
         );
+    }
+
+    fn target() -> Target {
+        Target {
+            attempt: 1,
+            kind: "lifecycle calibration",
+            slots: 8,
+            element_bytes: std::mem::size_of::<u64>(),
+            layout: Layout::array::<u64>(8).unwrap(),
+        }
+    }
+
+    #[test]
+    fn real_null_setup_refusals_do_not_call_action_or_install_selection() {
+        for case in 0..7 {
+            let mut allocator = Allocator::default();
+            let mut target = target();
+            let expected = match case {
+                0 => {
+                    target.slots = 0;
+                    SetupError::InvalidTarget
+                }
+                1 => {
+                    target.element_bytes = 0;
+                    SetupError::InvalidTarget
+                }
+                2 => {
+                    target.slots = usize::MAX;
+                    SetupError::InvalidTarget
+                }
+                3 => {
+                    target.slots = 7;
+                    SetupError::InvalidTarget
+                }
+                4 => {
+                    target.attempt = 0;
+                    SetupError::NotFuture
+                }
+                5 => {
+                    allocator.fail_at = Some(1);
+                    SetupError::LogicalFailure
+                }
+                _ => {
+                    allocator.fail_at = Some(2);
+                    SetupError::LogicalFailure
+                }
+            };
+            let called = Cell::new(false);
+            let result = with_selected(&mut allocator, target, |_| called.set(true));
+            assert_eq!(result, Err(expected));
+            assert!(!called.get());
+            assert_eq!(allocator.attempts, 0);
+            assert!(allocator.trace.is_empty());
+            assert!(STATE.with(|state| state.get() == State::Idle));
+        }
+    }
+
+    #[test]
+    fn real_null_gate_refusals_preserve_ordinary_vector_behavior() {
+        for case in 0..9 {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(1).unwrap();
+            let mut target = target();
+            let mut values = if case >= 6 {
+                Vec::<u64>::with_capacity(16)
+            } else {
+                Vec::new()
+            };
+            if case >= 7 {
+                values.push(55);
+            }
+            if case == 8 {
+                values.shrink_to_fit();
+            }
+            let before_len = values.len();
+            let before_capacity = values.capacity();
+            if case == 3 {
+                target.layout =
+                    Layout::from_size_align(target.layout.size(), target.layout.align() * 2)
+                        .unwrap();
+            } else if case == 2 {
+                target.element_bytes = std::mem::size_of::<u32>();
+                target.layout = Layout::array::<u32>(8).unwrap();
+            }
+            let (result, report) = with_selected(&mut allocator, target, |allocator| match case {
+                0 => allocator.vector_exact(&mut values, 8, "wrong label"),
+                1 => allocator.vector_exact(&mut values, 7, target.kind),
+                4 => allocator.vector_exact(&mut values, 0, target.kind),
+                5 => allocator.vector_exact(&mut Vec::<()>::new(), 8, target.kind),
+                _ => allocator.vector_exact(&mut values, 8, target.kind),
+            })
+            .unwrap();
+            assert_eq!(result, Ok(()));
+            assert!(!report.matched && !report.fired);
+            assert_eq!(
+                report.rejection,
+                Some(if case >= 6 {
+                    Reason::IneligibleVector
+                } else {
+                    Reason::WrongRequest
+                })
+            );
+            assert_eq!(report.actual, None);
+            assert_eq!(values.len(), before_len);
+            assert!(values.capacity() >= before_capacity);
+            if before_len != 0 {
+                assert_eq!(values[0], 55);
+            }
+            assert_eq!(allocator.attempts, 1);
+            assert_eq!(allocator.trace.len(), 1);
+            assert!(allocator.trace[0].success);
+        }
+    }
+
+    #[test]
+    fn real_null_pre_gate_overflow_never_arms_or_invents_attempts() {
+        use super::super::ReserveFailure;
+        for nonempty in [false, true] {
+            let mut allocator = Allocator::default();
+            let mut values = if nonempty { vec![7_u64] } else { Vec::new() };
+            let (result, report) = with_selected(&mut allocator, target(), |allocator| {
+                allocator.vector_exact(&mut values, usize::MAX, target().kind)
+            })
+            .unwrap();
+            assert_eq!(result, Err(ReserveFailure::Overflow));
+            assert_eq!(report.rejection, Some(Reason::MissingTarget));
+            assert!(!report.fired);
+            assert_eq!(allocator.attempts, 0);
+            assert!(allocator.trace.is_empty());
+            assert_eq!(values.len(), usize::from(nonempty));
+        }
+        // No valid future target exists here; leave selection disabled.
+        let mut allocator = Allocator {
+            attempts: usize::MAX,
+            ..Allocator::default()
+        };
+        assert_eq!(
+            allocator.vector_exact(&mut Vec::<u8>::new(), 0, "overflow"),
+            Err(ReserveFailure::Overflow)
+        );
+        assert_eq!(allocator.attempts, usize::MAX);
+        assert!(allocator.trace.is_empty());
+    }
+
+    #[test]
+    fn real_null_missing_nested_and_terminal_scopes_cleanup_without_reset() {
+        use super::super::ReserveFailure;
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(2).unwrap();
+        let (_, missing) = with_selected(&mut allocator, target(), |_| ()).unwrap();
+        assert_eq!(missing.rejection, Some(Reason::MissingTarget));
+        let called = Cell::new(false);
+        let ((before, failure, after), report) =
+            with_selected(&mut allocator, target(), |allocator| {
+                let before = with_selected(allocator, target(), |_| called.set(true));
+                let failure = allocator.vector_exact(&mut Vec::<u64>::new(), 8, target().kind);
+                let after = with_selected(
+                    allocator,
+                    Target {
+                        attempt: 2,
+                        ..target()
+                    },
+                    |_| called.set(true),
+                );
+                (before, failure, after)
+            })
+            .unwrap();
+        assert_eq!(before, Err(SetupError::Nested));
+        assert_eq!(after, Err(SetupError::Nested));
+        assert!(!called.get());
+        assert_eq!(failure, Err(ReserveFailure::Allocation));
+        assert!(report.fired);
+        assert!(STATE.with(|state| state.get() == State::Idle));
+        let (failure, report) = with_selected(
+            &mut allocator,
+            Target {
+                attempt: 2,
+                ..target()
+            },
+            |allocator| allocator.vector_exact(&mut Vec::<u64>::new(), 8, target().kind),
+        )
+        .unwrap();
+        assert_eq!(failure, Err(ReserveFailure::Allocation));
+        assert!(report.fired);
+        assert_eq!(allocator.attempts, 2);
+    }
+
+    #[test]
+    fn real_null_private_guard_no_call_and_nested_entry_disarm() {
+        for nested in [false, true] {
+            let mut allocator = Allocator::default();
+            let target = target();
+            let (armed, report) = with_selected(&mut allocator, target, |allocator| {
+                let first = enter_exact::<u64>(identity(allocator), 1, target.kind, 0, 0, 8, false);
+                // No formatting, assertion, allocation, or unwind while Armed.
+                let second = if nested {
+                    enter_exact::<u64>(identity(allocator), 1, target.kind, 0, 0, 8, false)
+                } else {
+                    None
+                };
+                let armed = first.is_some();
+                drop(second);
+                drop(first);
+                armed
+            })
+            .unwrap();
+            assert!(armed && report.matched && !report.fired);
+            assert_eq!(
+                report.rejection,
+                Some(if nested {
+                    Reason::NestedReserve
+                } else {
+                    Reason::NoGlobalCall
+                })
+            );
+            assert!(STATE.with(|state| state.get() == State::Idle));
+        }
+    }
+
+    #[test]
+    fn real_null_closed_driver_rejects_nested_armed_scope_without_disturbing_it() {
+        let mut allocator = Allocator::default();
+        let target = target();
+        let (nested, report) = with_selected(&mut allocator, target, |allocator| {
+            let guard = enter_exact::<u64>(identity(allocator), 1, target.kind, 0, 0, 8, false);
+            // The closed driver's setup refuses before old-block allocation.
+            let nested = calibrate_dealloc_mismatch();
+            drop(guard);
+            nested
+        })
+        .unwrap();
+        assert!(matches!(nested, Err(SetupError::Nested)));
+        assert_eq!(report.rejection, Some(Reason::NoGlobalCall));
+        assert!(report.matched && !report.fired);
+    }
+
+    #[test]
+    fn real_null_selected_unwind_clears_before_same_ordinal_reuse() {
+        use super::super::ReserveFailure;
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(1).unwrap();
+        let payload: Box<dyn std::any::Any + Send> = Box::new(91_u8);
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_selected(&mut allocator, target(), |_: &mut Allocator| -> () {
+                // Real TLS is only Selected: every unwinder allocation forwards.
+                std::panic::resume_unwind(payload);
+            })
+        }));
+        assert!(caught.is_err());
+        drop(caught);
+        assert!(STATE.with(|state| state.get() == State::Idle));
+        assert_eq!(allocator.attempts, 0);
+        let (result, report) = with_selected(&mut allocator, target(), |allocator| {
+            allocator.vector_exact(&mut Vec::<u64>::new(), 8, target().kind)
+        })
+        .unwrap();
+        assert_eq!(result, Err(ReserveFailure::Allocation));
+        assert!(report.fired);
+    }
+
+    #[test]
+    fn real_null_guards_are_neither_send_nor_sync() {
+        trait AmbiguousIfSend<A> {
+            fn check() {}
+        }
+        impl<T: ?Sized> AmbiguousIfSend<()> for T {}
+        impl<T: ?Sized + Send> AmbiguousIfSend<u8> for T {}
+        trait AmbiguousIfSync<A> {
+            fn check() {}
+        }
+        impl<T: ?Sized> AmbiguousIfSync<()> for T {}
+        impl<T: ?Sized + Sync> AmbiguousIfSync<u8> for T {}
+        let _ = <SelectionGuard as AmbiguousIfSend<_>>::check;
+        let _ = <SelectionGuard as AmbiguousIfSync<_>>::check;
+        let _ = <ReserveGuard as AmbiguousIfSend<_>>::check;
+        let _ = <ReserveGuard as AmbiguousIfSync<_>>::check;
+        let _ = <ShadowCleanupGuard<'static> as AmbiguousIfSend<_>>::check;
+        let _ = <ShadowCleanupGuard<'static> as AmbiguousIfSync<_>>::check;
     }
 }

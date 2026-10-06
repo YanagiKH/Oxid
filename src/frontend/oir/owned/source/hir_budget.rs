@@ -293,6 +293,23 @@ impl HirPlan {
             )?,
             at,
         )?;
+        // Newly reachable enum branches retain only bounded borrowed views,
+        // one actual match builder and one cursor per active match. Charge
+        // their actual complete source-side carriers before any body reserve.
+        increment(
+            &mut resolver_scratch,
+            mul(c.matches, resolve::enum_match_carrier_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.max_expression_depth,
+                resolve::enum_expression_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
         charge::<Vec<FieldInit>>(&mut resolver_scratch, c.record_literals, at)?;
         charge::<Vec<ExprId>>(&mut resolver_scratch, c.array_literals, at)?;
         charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;
@@ -451,7 +468,9 @@ impl HirPlan {
         // expression and only source-child edges. Indexed assignment may omit
         // a target wrapper, never add depth. Typing never enters callee bodies.
         // Thus HIR recursion <= admitted source depth <= MAX_NESTING, not
-        // equality and not a claim for forged HIR or future desugarings/enums.
+        // equality and not a claim for forged HIR or future desugarings. Enum
+        // constructors retain exactly their one source-child payload edge;
+        // match bodies use separate block frames and do not add expression depth.
         // Initializer controls are F-paid; projection does not type children.
         charge::<typeck::semantic_carriers::ExpressionSemanticCarriers>(
             &mut fixed,
@@ -689,6 +708,10 @@ pub(super) fn count_function(
     c.max_body_depth = c.max_body_depth.max(maximum);
     increment(&mut c.scope_marks, maximum, at)?;
     increment(&mut c.loop_slots, maximum, at)?;
+    // Each active ancestor retains Leave, its statement continuation, and
+    // at most one else/loop/match cursor. Entering a child adds only its two
+    // block frames. Match arms are entered sequentially, so 1 or 256 arms have
+    // the same stack bound; a nested match adds one ancestor, never all arms.
     increment(&mut c.resolve_frames, add(mul(maximum, 4, at)?, 8, at)?, at)?;
     increment(&mut c.type_frames, add(mul(maximum, 3, at)?, 8, at)?, at)?;
     Ok(())
