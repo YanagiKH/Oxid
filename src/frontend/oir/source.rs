@@ -5,6 +5,7 @@ use super::*;
 use crate::frontend::ast;
 pub(in crate::frontend::oir) mod association;
 mod sealed;
+pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;
 pub(in crate::frontend::oir) use sealed::{
     check_project_candidate, check_project_executable_candidate,
 };
@@ -231,5 +232,3 @@ mod tests {
         error.render_json(&substitute);
     }
 }
-
-pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;

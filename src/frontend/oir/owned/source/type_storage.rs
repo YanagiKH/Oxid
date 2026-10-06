@@ -414,6 +414,8 @@ fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), 
                 }
             }
         }
+        // Keep the explicitly modeled branch transport free of closure captures.
+        #[allow(clippy::manual_map)]
         let child = match &statement.kind {
             StmtKind::Match { arms, .. } => match arms.get(cursor.child) {
                 Some(arm) => Some(arm.body),

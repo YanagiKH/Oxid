@@ -718,10 +718,11 @@ impl<'a, 'b> Walk<'a, 'b> {
                         other => {
                             frames.push(ExprFrame::Emit(id), cause)?;
                             match other {
-                                source::ExprKind::ConstructEnum { payload, .. } => {
-                                    if let Some(child) = payload {
-                                        frames.push(ExprFrame::Visit(*child), cause)?;
-                                    }
+                                source::ExprKind::ConstructEnum {
+                                    payload: Some(child),
+                                    ..
+                                } => {
+                                    frames.push(ExprFrame::Visit(*child), cause)?;
                                 }
                                 source::ExprKind::Group(inner)
                                 | source::ExprKind::Negate { operand: inner, .. }
