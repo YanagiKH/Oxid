@@ -1,4 +1,39 @@
-## Checked unary negation successor
+# Bounded enum current-source successor
+
+The active manifest binds feature checkpoint
+`511df03975c2aa1a815f92155d673adb3571ff77`, full tree
+`7eb1fa1ef8e3107788ca93758f762882ea031d72`: 237 inputs, comprising all 179
+`src/` and `native/` members, 56 retained non-source inputs, and the two canonical
+scanner sources. Including Cargo/build inputs gives 182 compiler bodies.
+`projected-source.json` preserves the previous 201-input manifest byte-for-byte
+(SHA-256 `850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304`).
+
+`enum-authority.json` and `enum-transition.patch` bind an exact 102-path delta,
+including 36 additions. Admission checks every current SHA-256, byte count,
+Git blob and mode; the ordered path roster, two-input/four-reference scanner
+include closure; and exact inverse recovery of all 201 projected inputs.
+The retained inverse chain then verifies unary 199, composition 196, slices 188,
+division 185, combined 185, formatter 133, predecessor 129 and archive 117 inputs.
+All prior source manifests and transition packages remain unchanged. The exposed
+`projected_inputs` view is historical evidence for its retained observer and
+resource-declaration controls; it never substitutes for current execution.
+
+Current Unit2 preparation uses the actual enum source. Its separately pinned
+observer adds explicit enum rejection arms and owned/shared/exclusive rejection
+assertions while retaining the six existing control names and frozen scalar/record
+JSON. Its direct resource-test Parser initializer adds only closed enum syntax
+policy and empty syntax storage. Both adaptations reverse exactly to their retained
+predecessors, without changing any frozen expected result or resource limit.
+
+Run the existing source-binding controls and fresh `preflight` command for
+admission. These execute no compiler and do not establish semantic qualification.
+Current Unit2 still requires all 3,603 semantic cases, 21 resource tests and six
+observer controls per debug/release profile; current parser/public/native gates
+and exact-head hosted checks remain independent requirements.
+
+The sections below record predecessor transitions and their historical counts.
+
+## Historical checked unary negation successor
 
 The active view now binds checked i32 unary negation source checkpoint
 `bf48512acf86e2d23c28b6b9b16de3be3d127051`, exact tree

@@ -38,6 +38,15 @@ PROJECTED_SLICE_NAMES = (
     "frontend::oir::owned::native::tests::projected_slices::native_projected_slices_source_free_signed_bounds_and_fuel",
 )
 
+ENUM_NAMES = (
+    "frontend::oir::owned::native::tests::enums::native_enums_source_free_all_payloads_orders_sites_loops_and_every_fuel",
+    "frontend::oir::owned::native::tests::enums::native_enums_source_free_all_transfer_faults_and_no_partial_write",
+    "frontend::oir::owned::native::tests::enums::native_enums_source_free_changed_variants_and_later_owned_input_boundary",
+    "frontend::oir::owned::native::tests::enums::native_enums_source_free_discard_and_inactive_moved_uninitialized_poison",
+    "frontend::oir::owned::native::tests::enums::native_enums_source_free_guards_precede_every_binding_and_transfer_effect",
+    "frontend::oir::owned::native::tests::enums::native_enums_source_free_invalid_dispatch_consume_and_active_bytes",
+)
+
 def listing_fixture(names, count=None):
     count = len(names) if count is None else count
     return ("\n".join(name + ": test" for name in names)
@@ -45,7 +54,7 @@ def listing_fixture(names, count=None):
 
 
 def discovery_fixture():
-    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES)))
+    return listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES, *ENUM_NAMES)))
 
 
 def selection_mutations(argv):
@@ -59,6 +68,7 @@ def selection_mutations(argv):
         "slice-substitution": [argv[0], SLICE_NAMES[0], *argv[2:]],
         "composition-substitution": [argv[0], COMPOSITION_NAMES[0], *argv[2:]],
         "projected-substitution": [argv[0], PROJECTED_SLICE_NAMES[0], *argv[2:]],
+        "enum-substitution": [argv[0], ENUM_NAMES[0], *argv[2:]],
         "missing-ignored": [argument for argument in argv if argument != "--ignored"],
     }
 
@@ -114,12 +124,12 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "missing listing footer"):
             admission.admit_list(terse)
 
-    def test_broad_discovery_separates_twenty_seven_names_from_sixteen_selected(self):
+    def test_broad_discovery_separates_thirty_three_names_from_sixteen_selected(self):
         self.assertEqual(tuple(admission.SLICE_ROSTER), SLICE_NAMES)
         self.assertEqual(len(admission.ROSTER), 16)
         self.assertTrue(set(admission.ROSTER).isdisjoint(SLICE_NAMES))
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
-        self.assertEqual(len(names), 27)
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES, *ENUM_NAMES))
+        self.assertEqual(len(names), 33)
         # The immutable nineteen-name predecessor remains independently identified.
         predecessor = listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES)))
         self.assertEqual(admission.sha256(predecessor),
@@ -130,6 +140,10 @@ class AdmissionTests(unittest.TestCase):
             admission.admit_discovery(listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES))))
         self.assertEqual(tuple(admission.COMPOSITION_ROSTER), COMPOSITION_NAMES)
         self.assertTrue(set(admission.ROSTER).isdisjoint(COMPOSITION_NAMES))
+        self.assertEqual(tuple(admission.ENUM_ROSTER), ENUM_NAMES)
+        self.assertTrue(set(admission.ROSTER).isdisjoint(ENUM_NAMES))
+        with self.assertRaises(admission.AdmissionError):
+            admission.admit_discovery(listing_fixture(sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))))
         with self.assertRaises(admission.AdmissionError):
             admission.admit_discovery(predecessor)
         self.assertEqual(admission.admit_discovery(discovery_fixture()), names)
@@ -140,22 +154,41 @@ class AdmissionTests(unittest.TestCase):
             admission.admit_discovery(listing_fixture(admission.ROSTER))
 
     def test_broad_discovery_rejects_unknown_missing_duplicate_and_footer_drift(self):
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES, *ENUM_NAMES))
         changed_names = ([], names[:-1], names[1:], names + [names[0]],
                          names + [admission.PREFIX + "slices::native_slices_unreviewed"],
                          [name for name in names if name != SLICE_NAMES[0]],
                          *[[name for name in names if name != omitted] for omitted in COMPOSITION_NAMES],
                          *[[name for name in names if name != omitted] for omitted in PROJECTED_SLICE_NAMES],
+                         *[[name for name in names if name != omitted] for omitted in ENUM_NAMES],
+                         [name if name != ENUM_NAMES[0] else admission.PREFIX + "enums::native_enums_unreviewed" for name in names],
                          ["unexpected", *names[1:]])
         for values in changed_names:
             with self.subTest(values=values), self.assertRaises(admission.AdmissionError):
-                admission.admit_discovery(listing_fixture(values, 27))
-        for changed in (b"", listing_fixture(names, 16), listing_fixture(names, 20),
-                        discovery_fixture().replace(b"27 tests, 0 benchmarks\n", b""),
-                        discovery_fixture() + b"27 tests, 0 benchmarks\n",
+                admission.admit_discovery(listing_fixture(values, 33))
+        for changed in (b"", listing_fixture(names, 16), listing_fixture(names, 20), listing_fixture(names, 27),
+                        discovery_fixture().replace(b"33 tests, 0 benchmarks\n", b""),
+                        discovery_fixture() + b"33 tests, 0 benchmarks\n",
                         discovery_fixture() + b"unexpected: test\n"):
             with self.subTest(data=changed), self.assertRaises(admission.AdmissionError):
                 admission.admit_discovery(changed)
+
+    def test_enum_discovery_matches_six_ignored_groups_and_excludes_source_pipeline(self):
+        repo = Path(__file__).resolve().parents[1]
+        source = (repo / "src/frontend/oir/owned/enum_native_tests.rs").read_text()
+        ignored = re.findall(r'#\[test\]\s*#\[ignore[^\n]*\]\s*fn (native_enums_\w+)\(', source)
+        self.assertEqual(set(ignored), {name.rsplit("::", 1)[1] for name in ENUM_NAMES})
+        self.assertEqual(len(ignored), 6)
+        source_names = (
+            "frontend::oir::owned::source::enum_native_source_tests::bounded_enum_pipeline_native_tiny_and_scanner_source_free",
+            "frontend::oir::owned::source::enum_native_source_tests::bounded_enum_pipeline_native_scanner_overflow_and_tiny_fuel",
+        )
+        names = admission.admit_discovery(discovery_fixture())
+        for name in source_names:
+            with self.subTest(name=name):
+                self.assertFalse(name.startswith(admission.PREFIX))
+                with self.assertRaisesRegex(admission.AdmissionError, "missing, extra, or duplicate"):
+                    admission.admit_discovery(listing_fixture([name, *names[1:]], 33))
 
     def test_explicit_slice_workflow_gates_cover_all_three_ignored_names_in_both_profiles(self):
         repo = Path(__file__).resolve().parents[1]
@@ -810,10 +843,12 @@ class PackageTests(unittest.TestCase):
 
     def test_resealed_broad_discovery_names_and_invocation_are_required(self):
         self.fixture()
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
-        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 24),
-                     "duplicate": listing_fixture([*names, names[0]], 24),
-                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 24),
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES, *ENUM_NAMES))
+        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 33),
+                     "missing-enum": listing_fixture([name for name in names if name != ENUM_NAMES[0]], 33),
+                     "duplicate": listing_fixture([*names, names[0]], 33),
+                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 33),
+                     "unknown-enum": listing_fixture([name if name != ENUM_NAMES[0] else admission.PREFIX + "enums::native_enums_unreviewed" for name in names], 33),
                      "historical-only": listing_fixture(admission.ROSTER)}
         for profile in admission.PROFILES:
             for label, data in mutations.items():
@@ -1820,11 +1855,13 @@ class CombinedReceiptTests(unittest.TestCase):
                         finally:
                             shutil.rmtree(output)
 
-    def test_offline_resealed_discovery_admits_only_current_nineteen_and_broad_argv(self):
-        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES))
-        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 24),
-                     "duplicate": listing_fixture([*names, names[0]], 24),
-                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 24),
+    def test_offline_resealed_discovery_admits_only_current_thirty_three_and_broad_argv(self):
+        names = sorted((*admission.ROSTER, *SLICE_NAMES, *COMPOSITION_NAMES, *PROJECTED_SLICE_NAMES, *ENUM_NAMES))
+        mutations = {"missing-slice": listing_fixture([name for name in names if name != SLICE_NAMES[0]], 33),
+                     "missing-enum": listing_fixture([name for name in names if name != ENUM_NAMES[0]], 33),
+                     "duplicate": listing_fixture([*names, names[0]], 33),
+                     "unknown": listing_fixture([*names, admission.PREFIX + "unknown"], 33),
+                     "unknown-enum": listing_fixture([name if name != ENUM_NAMES[0] else admission.PREFIX + "enums::native_enums_unreviewed" for name in names], 33),
                      "historical-only": listing_fixture(admission.ROSTER)}
         for profile in admission.PROFILES:
             for label, data in mutations.items():

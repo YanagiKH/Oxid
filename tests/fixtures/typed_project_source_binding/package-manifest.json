@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 18261,
+      "bytes": 20448,
       "path": "README.md",
-      "sha256": "00870dccae6315855df1769dd0fafd6fc1722d70a1d173952178b088dca61d9c"
+      "sha256": "8a38ec40e1dbbddb0c0cc91b2876f95a573bd280b26f69e01c31cb70196ec751"
     },
     {
       "bytes": 9916,
@@ -41,9 +41,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 38636,
+      "bytes": 45493,
       "path": "current-source.json",
-      "sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304"
+      "sha256": "53a54bbd2b41db1a7c666cd39362bf520697d2d5fb834cd47799e958b5cf77fd"
     },
     {
       "bytes": 29723,
@@ -59,6 +59,16 @@
       "bytes": 49895,
       "path": "division-transition.patch",
       "sha256": "65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1"
+    },
+    {
+      "bytes": 156306,
+      "path": "enum-authority.json",
+      "sha256": "4842ab5c0e23fc7732d11bbcbb2a0c8a264568083d84bf603d4b7e490800a4b2"
+    },
+    {
+      "bytes": 1795577,
+      "path": "enum-transition.patch",
+      "sha256": "0bc74b58160584cd3a83def80c4f671edb09da740aa2dc43bf6a7bede7554207"
     },
     {
       "bytes": 1464,
@@ -86,14 +96,19 @@
       "sha256": "f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc"
     },
     {
+      "bytes": 38636,
+      "path": "projected-source.json",
+      "sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304"
+    },
+    {
       "bytes": 124986,
       "path": "projected-transition.patch",
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 96115,
+      "bytes": 113403,
       "path": "run.py",
-      "sha256": "f997e3214453ebea4cfe67e8c51b99aadf56e237172ce68c510a2e5e8eb72bbf"
+      "sha256": "efc4ee9bde0c0e4c0a69bf45b7962535dc8490a0b55ed16000b750b29ee16456"
     },
     {
       "bytes": 55961,

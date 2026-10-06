@@ -1,4 +1,4 @@
-"""Current observer derivation and empty-path controls; no runtime-pass claim."""
+"""Archived projected observer controls on its exact inverse source view."""
 import copy
 import importlib.util
 from pathlib import Path
@@ -24,9 +24,10 @@ class ProjectedObserverControls(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.captured = adapter.binding.preflight(ROOT)
-        cls.originals = {p: cls.captured['inputs'].get(p, b'') for p in adapter.IDENTITY['paths']}
+        cls.originals = {p: cls.captured['projected_inputs'].get(p, b'')
+                         for p in adapter.IDENTITY['paths']}
 
-    def test_exact_current_source_derivation_round_trips(self):
+    def test_exact_projected_predecessor_derivation_round_trips(self):
         observed = adapter.derive(self.originals)
         self.assertEqual(adapter.reverse(observed), self.originals)
         self.assertEqual(len(observed), 19)

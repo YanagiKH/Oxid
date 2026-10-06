@@ -54,6 +54,14 @@ PROJECTED_SLICE_ROSTER = (
     PREFIX + "projected_slices::native_projected_slices_source_free_mutation_metadata_and_forwarding",
     PREFIX + "projected_slices::native_projected_slices_source_free_signed_bounds_and_fuel",
 )
+ENUM_ROSTER = (
+    PREFIX + "enums::native_enums_source_free_all_payloads_orders_sites_loops_and_every_fuel",
+    PREFIX + "enums::native_enums_source_free_all_transfer_faults_and_no_partial_write",
+    PREFIX + "enums::native_enums_source_free_changed_variants_and_later_owned_input_boundary",
+    PREFIX + "enums::native_enums_source_free_discard_and_inactive_moved_uninitialized_poison",
+    PREFIX + "enums::native_enums_source_free_guards_precede_every_binding_and_transfer_effect",
+    PREFIX + "enums::native_enums_source_free_invalid_dispatch_consume_and_active_bytes",
+)
 FAMILIES = ({'additional_guarded_modules': 195,
   'compiled_elfs': 390,
   'distinct_inputs': 195,
@@ -217,13 +225,13 @@ def admit_discovery(data):
     for line in data.decode("utf-8").splitlines():
         if not line:
             continue
-        if line == "27 tests, 0 benchmarks" and not footer:
+        if line == "33 tests, 0 benchmarks" and not footer:
             footer = True
         else:
             require(not footer and line.endswith(": test"), "unknown or misplaced discovery line")
             names.append(line[:-6])
     require(footer, "missing discovery footer")
-    exact_inventory(names, (*ROSTER, *SLICE_ROSTER, *COMPOSITION_ROSTER, *PROJECTED_SLICE_ROSTER), "current ignored prefix roster")
+    exact_inventory(names, (*ROSTER, *SLICE_ROSTER, *COMPOSITION_ROSTER, *PROJECTED_SLICE_ROSTER, *ENUM_ROSTER), "current ignored prefix roster")
     return names
 
 

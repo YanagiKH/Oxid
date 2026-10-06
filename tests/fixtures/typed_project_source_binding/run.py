@@ -36,14 +36,164 @@ RESOURCE = "archive/resource/parser-resource-review-tests.rs"
 OLD_SEAM = b"mode:SourceMode::ProjectCandidate,tokens,cursor:0"
 PREDECESSOR_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,tokens,cursor:0"
 NEW_SEAM = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,tokens,cursor:0"
+ENUM_RESOURCE_SEAM = b'mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,enums:EnumSyntaxPolicy::Closed,storage:enums::SyntaxStorage::default(),tokens,cursor:0'
 SLICES_SOURCE_SHA = 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660'
 SLICES_SOURCE_BYTES = 35876
 COMPOSITION_SOURCE_SHA = 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16'
 UNARY_SOURCE_SHA = 'd9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220'
-CURRENT_SOURCE_SHA = '850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304'
+PROJECTED_SOURCE_SHA = '850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304'
+PROJECTED_SOURCE_BYTES = 38636
+CURRENT_SOURCE_SHA = '53a54bbd2b41db1a7c666cd39362bf520697d2d5fb834cd47799e958b5cf77fd'
 COMPOSITION_SOURCE_BYTES = 37404
 UNARY_SOURCE_BYTES = 38090
-CURRENT_SOURCE_BYTES = 38636
+CURRENT_SOURCE_BYTES = 45493
+ENUM_AUTHORITY_SHA = '4842ab5c0e23fc7732d11bbcbb2a0c8a264568083d84bf603d4b7e490800a4b2'
+ENUM_AUTHORITY_BYTES = 156306
+ENUM_PATCH_SHA = '0bc74b58160584cd3a83def80c4f671edb09da740aa2dc43bf6a7bede7554207'
+ENUM_PATCH_BYTES = 1795577
+ENUM_BASE = '052ad52ac876c01b91701132cffb466689b24d01'
+ENUM_HEAD = '511df03975c2aa1a815f92155d673adb3571ff77'
+ENUM_TREE = '7eb1fa1ef8e3107788ca93758f762882ea031d72'
+ENUM_PATHS = ('src/frontend/ast.rs',
+ 'src/frontend/declaration_index.rs',
+ 'src/frontend/declaration_index/enum_query_tests.rs',
+ 'src/frontend/declaration_index/enum_tests.rs',
+ 'src/frontend/declaration_index/enum_views.rs',
+ 'src/frontend/declaration_index/resource.rs',
+ 'src/frontend/declaration_index/sealed.rs',
+ 'src/frontend/declaration_index/source_owner.rs',
+ 'src/frontend/declaration_index/tests.rs',
+ 'src/frontend/enum_public_tests.rs',
+ 'src/frontend/format.rs',
+ 'src/frontend/format/ast_tests.rs',
+ 'src/frontend/format/enum_candidate_tests.rs',
+ 'src/frontend/hir.rs',
+ 'src/frontend/mod.rs',
+ 'src/frontend/oir/owned/allocator_review_controls.rs',
+ 'src/frontend/oir/owned/array_native_resource_tests.rs',
+ 'src/frontend/oir/owned/array_native_tests.rs',
+ 'src/frontend/oir/owned/array_observe.rs',
+ 'src/frontend/oir/owned/array_reference_tests.rs',
+ 'src/frontend/oir/owned/array_tests.rs',
+ 'src/frontend/oir/owned/budget.rs',
+ 'src/frontend/oir/owned/cfg.rs',
+ 'src/frontend/oir/owned/composition_native_tests.rs',
+ 'src/frontend/oir/owned/composition_reference_tests.rs',
+ 'src/frontend/oir/owned/consumer_fixtures.rs',
+ 'src/frontend/oir/owned/consumer_pilot.rs',
+ 'src/frontend/oir/owned/enum_admission_tests.rs',
+ 'src/frontend/oir/owned/enum_consumer_fixtures.rs',
+ 'src/frontend/oir/owned/enum_formatter_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_index_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_layout_tests.rs',
+ 'src/frontend/oir/owned/enum_match_tests.rs',
+ 'src/frontend/oir/owned/enum_native_tests.rs',
+ 'src/frontend/oir/owned/enum_parser_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_query_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_reference_tests.rs',
+ 'src/frontend/oir/owned/execute.rs',
+ 'src/frontend/oir/owned/execute_tests.rs',
+ 'src/frontend/oir/owned/flow.rs',
+ 'src/frontend/oir/owned/mod.rs',
+ 'src/frontend/oir/owned/native.rs',
+ 'src/frontend/oir/owned/native_heldout_review.rs',
+ 'src/frontend/oir/owned/native_tests.rs',
+ 'src/frontend/oir/owned/negation_raw_tests.rs',
+ 'src/frontend/oir/owned/oracle_tests.rs',
+ 'src/frontend/oir/owned/origin_tests.rs',
+ 'src/frontend/oir/owned/plan.rs',
+ 'src/frontend/oir/owned/reviewer_allocator.rs',
+ 'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
+ 'src/frontend/oir/owned/reviewer_heldout.rs',
+ 'src/frontend/oir/owned/reviewer_origins.rs',
+ 'src/frontend/oir/owned/reviewer_reference_tests.rs',
+ 'src/frontend/oir/owned/shape.rs',
+ 'src/frontend/oir/owned/source/array_pipeline_rows.rs',
+ 'src/frontend/oir/owned/source/association.rs',
+ 'src/frontend/oir/owned/source/budget.rs',
+ 'src/frontend/oir/owned/source/budget_tests.rs',
+ 'src/frontend/oir/owned/source/candidate_adapter.rs',
+ 'src/frontend/oir/owned/source/candidate_mutations.rs',
+ 'src/frontend/oir/owned/source/candidate_native.rs',
+ 'src/frontend/oir/owned/source/diagnostic.rs',
+ 'src/frontend/oir/owned/source/enum_native_source_tests.rs',
+ 'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
+ 'src/frontend/oir/owned/source/enum_type_tests.rs',
+ 'src/frontend/oir/owned/source/hir.rs',
+ 'src/frontend/oir/owned/source/hir_budget.rs',
+ 'src/frontend/oir/owned/source/hir_budget_tests.rs',
+ 'src/frontend/oir/owned/source/lower.rs',
+ 'src/frontend/oir/owned/source/mod.rs',
+ 'src/frontend/oir/owned/source/program.rs',
+ 'src/frontend/oir/owned/source/resolve.rs',
+ 'src/frontend/oir/owned/source/resolver_enum_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_inventory_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_paid_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_storage.rs',
+ 'src/frontend/oir/owned/source/resolver_storage_tests.rs',
+ 'src/frontend/oir/owned/source/reviewer_source.rs',
+ 'src/frontend/oir/owned/source/type_storage.rs',
+ 'src/frontend/oir/owned/source/type_storage_tests.rs',
+ 'src/frontend/oir/owned/source/typeck.rs',
+ 'src/frontend/oir/owned/tests.rs',
+ 'src/frontend/oir/owned/verified.rs',
+ 'src/frontend/oir/owned_types.rs',
+ 'src/frontend/oir/owned_types/enum_integration_tests.rs',
+ 'src/frontend/oir/owned_types/enums.rs',
+ 'src/frontend/oir/source.rs',
+ 'src/frontend/oir/source/sealed.rs',
+ 'src/frontend/parser.rs',
+ 'src/frontend/parser/arrays.rs',
+ 'src/frontend/parser/enum_syntax_tests.rs',
+ 'src/frontend/parser/enums.rs',
+ 'src/frontend/parser/project_tests.rs',
+ 'src/frontend/project.rs',
+ 'src/frontend/project/array_syntax_tests.rs',
+ 'src/frontend/project/budget.rs',
+ 'src/frontend/project/budget_real_null_observer.rs',
+ 'src/frontend/project/enum_carrier_tests.rs',
+ 'src/frontend/project/enum_index_tests.rs',
+ 'src/frontend/source.rs',
+ 'tests/fixtures/bounded_enum_scanner/main.ox',
+ 'tests/fixtures/bounded_enum_scanner/scanner.ox')
+ENUM_ADDITIONS = ('src/frontend/declaration_index/enum_query_tests.rs',
+ 'src/frontend/declaration_index/enum_tests.rs',
+ 'src/frontend/declaration_index/enum_views.rs',
+ 'src/frontend/enum_public_tests.rs',
+ 'src/frontend/format/enum_candidate_tests.rs',
+ 'src/frontend/oir/owned/enum_admission_tests.rs',
+ 'src/frontend/oir/owned/enum_consumer_fixtures.rs',
+ 'src/frontend/oir/owned/enum_formatter_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_index_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_layout_tests.rs',
+ 'src/frontend/oir/owned/enum_match_tests.rs',
+ 'src/frontend/oir/owned/enum_native_tests.rs',
+ 'src/frontend/oir/owned/enum_parser_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_query_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_reference_tests.rs',
+ 'src/frontend/oir/owned/source/enum_native_source_tests.rs',
+ 'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
+ 'src/frontend/oir/owned/source/enum_type_tests.rs',
+ 'src/frontend/oir/owned/source/hir_budget.rs',
+ 'src/frontend/oir/owned/source/hir_budget_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_enum_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_inventory_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_paid_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_storage.rs',
+ 'src/frontend/oir/owned/source/resolver_storage_tests.rs',
+ 'src/frontend/oir/owned/source/type_storage.rs',
+ 'src/frontend/oir/owned/source/type_storage_tests.rs',
+ 'src/frontend/oir/owned_types/enum_integration_tests.rs',
+ 'src/frontend/oir/owned_types/enums.rs',
+ 'src/frontend/parser/enum_syntax_tests.rs',
+ 'src/frontend/parser/enums.rs',
+ 'src/frontend/project/budget_real_null_observer.rs',
+ 'src/frontend/project/enum_carrier_tests.rs',
+ 'src/frontend/project/enum_index_tests.rs',
+ 'tests/fixtures/bounded_enum_scanner/main.ox',
+ 'tests/fixtures/bounded_enum_scanner/scanner.ox')
+ENUM_SCANNER_PATHS = ('tests/fixtures/bounded_enum_scanner/main.ox', 'tests/fixtures/bounded_enum_scanner/scanner.ox')
+ENUM_SCANNER_INCLUDERS = ('src/frontend/enum_public_tests.rs', 'src/frontend/oir/owned/source/enum_native_source_tests.rs')
 PROJECTED_AUTHORITY_SHA = 'f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc'
 PROJECTED_AUTHORITY_BYTES = 48552
 PROJECTED_PATCH_SHA = '55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73'
@@ -525,6 +675,24 @@ BORROWED_OBSERVER_SEAMS = (
 )
 
 
+ENUM_OBSERVER_ADAPTER_VERSION = 'unit2-record-enum-exclusion-observer-v3'
+ENUM_OBSERVER_DERIVED_SHA = '5780a5b20f24d1f8bf5bcdb0ddae628be0f9cc53e10be527c490d6a427def085'
+ENUM_OBSERVER_DERIVED_BYTES = 17611
+ENUM_OBSERVER_SCOPE = 'Three exact substitutions after the unchanged borrowed observer: explicit owner-enum and borrowed-enum rejection arms, and owned/shared/exclusive enum rejection assertions within the existing scalar/record preservation control. Retains the six existing control names and frozen scalar/record JSON.'
+ENUM_OBSERVER_SEAMS = ((b'        AggregateTy::Record(record) => record.0,',
+  b'        AggregateTy::Record(record) => record.0,\n        AggregateTy::Enum(_) => panic!("cur'
+  b'rent Unit2 observer excludes enum projection"),'),
+ (b'        BorrowedTy::Exact(AggregateTy::Record(record)) => record.0,',
+  b'        BorrowedTy::Exact(AggregateTy::Record(record)) => record.0,\n        BorrowedTy::Exac'
+  b't(AggregateTy::Enum(_)) => panic!("current Unit2 observer excludes enum projection"),'),
+ (b'    use oir::owned_types::RecordId;',
+  b'    use oir::owned_types::{EnumId, RecordId};\n    assert!(std::panic::catch_unwind(|| value_'
+  b'type(ValueTy::Owned(AggregateTy::Enum(EnumId(0))))).is_err());\n    for kind in [BorrowKind::'
+  b'Shared, BorrowKind::Exclusive] {\n        assert!(std::panic::catch_unwind(|| parameter_type('
+  b'ParameterTy::Reference {\n            referent: BorrowedTy::Exact(AggregateTy::Enum(EnumId(0)'
+  b')), kind,\n        })).is_err());\n    }'))
+
+
 class BindingError(ValueError):
     pass
 
@@ -607,6 +775,11 @@ def check_bytes(inputs, entries):
 def inverse_patch(inputs, patch):
     """Apply the pinned git patch backwards with exact offsets and byte context."""
     return apply_inverse_patch(inputs, patch, PATCH_SHA, PATCH_BYTES, PATCH_PATHS)
+
+
+def inverse_enum_patch(inputs, patch):
+    """Restore exactly the frozen projected-array-slices source view."""
+    return apply_inverse_patch(inputs, patch, ENUM_PATCH_SHA, ENUM_PATCH_BYTES, ENUM_PATHS)
 
 
 def inverse_projected_patch(inputs, patch):
@@ -738,6 +911,25 @@ def adapt_borrowed_unit2_observer(aggregate):
         require(restored.count(new) == 1, "borrowed Unit2 observer reverse seam drift")
         restored = restored.replace(new, old)
     require(restored == aggregate, "borrowed Unit2 observer reverse identity differs")
+    return result
+
+
+def adapt_enum_unit2_observer(borrowed):
+    """Keep frozen scalar/record observations and reject each new enum projection."""
+    require(digest(borrowed) == BORROWED_OBSERVER_DERIVED_SHA
+            and len(borrowed) == BORROWED_OBSERVER_DERIVED_BYTES, "wrong predecessor enum Unit2 observer")
+    require(len(ENUM_OBSERVER_SEAMS) == 3, "wrong enum Unit2 observer substitution count")
+    result = borrowed
+    for old, new in ENUM_OBSERVER_SEAMS:
+        require(result.count(old) == 1 and new not in result, "enum Unit2 observer seam drift")
+        result = result.replace(old, new)
+    require(digest(result) == ENUM_OBSERVER_DERIVED_SHA and len(result) == ENUM_OBSERVER_DERIVED_BYTES,
+            "wrong derived enum Unit2 observer")
+    restored = result
+    for old, new in reversed(ENUM_OBSERVER_SEAMS):
+        require(restored.count(new) == 1, "enum Unit2 observer reverse seam drift")
+        restored = restored.replace(new, old)
+    require(restored == borrowed, "enum Unit2 observer reverse identity differs")
     return result
 
 
@@ -964,7 +1156,73 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    projected_current = json.loads(package_bytes["current-source.json"])
+    enum_current = json.loads(package_bytes["current-source.json"])
+    require(digest(package_bytes["projected-source.json"]) == PROJECTED_SOURCE_SHA
+            and len(package_bytes["projected-source.json"]) == PROJECTED_SOURCE_BYTES,
+            "unapproved projected source manifest")
+    projected_current = json.loads(package_bytes["projected-source.json"])
+    require(digest(package_bytes["enum-authority.json"]) == ENUM_AUTHORITY_SHA
+            and len(package_bytes["enum-authority.json"]) == ENUM_AUTHORITY_BYTES,
+            "stale enum authority")
+    enumeration = json.loads(package_bytes["enum-authority.json"])
+    require(enumeration["schema"] == "oxid-bounded-enum-source-transition-v1"
+            and enumeration["base_head"] == enum_current["enum_base_head"] == ENUM_BASE
+            and enumeration["reviewed_source_head"] == enum_current["reviewed_source_head"] == ENUM_HEAD
+            and enumeration["source_only_tree"] == enum_current["source_only_tree"] == ENUM_TREE
+            and enumeration["recipe"] == SOURCE_DELTA_RECIPE
+            and enumeration["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and enumeration["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and enumeration["projected_source_sha256"] == enum_current["projected_source_sha256"] == PROJECTED_SOURCE_SHA
+            and enumeration["projected_source_bytes"] == PROJECTED_SOURCE_BYTES
+            and enumeration["projected_authority_sha256"] == PROJECTED_AUTHORITY_SHA
+            and enumeration["transition_patch_sha256"] == ENUM_PATCH_SHA
+            and enumeration["transition_patch_bytes"] == ENUM_PATCH_BYTES
+            and enumeration["transition_paths"] == list(ENUM_PATHS)
+            and enumeration["additions"] == list(ENUM_ADDITIONS)
+            and enumeration["removed_paths"] == []
+            and (enumeration["current_source_members"], enumeration["projected_source_members"],
+                 enumeration["compiler_source_members"], enumeration["compiler_bodies"]) == (237, 201, 179, 182),
+            "stale enum transition authority")
+    enum_inputs = check_entries(repo, enum_current["files"])
+    projected_rows = {r["path"]: r for r in projected_current["files"]}
+    require(set(enum_inputs) == set(projected_rows) | set(ENUM_ADDITIONS),
+            "unexpected enum source membership")
+    require([r["path"] for r in enum_current["files"] if r != projected_rows.get(r["path"])]
+            == list(ENUM_PATHS), "unexpected enum source delta")
+    require(enumeration["current_input_git_modes"] == [
+        {"path": r["path"], "mode": "100644"} for r in enum_current["files"]],
+        "unexpected enum input modes")
+    current_identities = []
+    for name, data in enum_inputs.items():
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, "changed input mode: " + name)
+        current_identities.append({**entry(name, data), "mode": "100644",
+            "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
+    require(enumeration["current_input_identities"] == current_identities, "stale enum complete input identities")
+    projected_inputs, enum_touched = inverse_enum_patch(enum_inputs, package_bytes["enum-transition.patch"])
+    check_bytes(projected_inputs, projected_current["files"])
+    transition = []
+    for name in ENUM_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", projected_inputs), ("after", enum_inputs)):
+            data = source_inputs.get(name)
+            identities[label] = None if data is None else {
+                **entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        transition.append(identities)
+    require(enumeration["transition_inputs"] == transition, "stale enum transition input identities")
+    scanner_closure = []
+    patterns = (
+        rb'include_str!\("\.\./\.\./(tests/fixtures/bounded_enum_scanner/(?:main|scanner)\.ox)"\)',
+        rb'include_str!\(concat!\(\s*env!\("CARGO_MANIFEST_DIR"\),\s*"/(tests/fixtures/bounded_enum_scanner/(?:main|scanner)\.ox)"\s*\)\)',
+    )
+    for name, pattern in zip(ENUM_SCANNER_INCLUDERS, patterns):
+        scanner_references = [x.decode("ascii") for x in re.findall(pattern, enum_inputs[name])]
+        require(scanner_references == list(ENUM_SCANNER_PATHS), "changed enum scanner include references")
+        scanner_closure.append({"includer": entry(name, enum_inputs[name]), "ordered_references": scanner_references})
+    require(enumeration["scanner_include_closure"] == scanner_closure
+            and enum_current["enum_scanner_fixture_members"] == 2
+            and enum_current["enum_scanner_fixture_references"] == 4,
+            "changed enum scanner include closure")
     require(digest(package_bytes["unary-source.json"]) == UNARY_SOURCE_SHA
             and len(package_bytes["unary-source.json"]) == UNARY_SOURCE_BYTES,
             "unapproved unary source manifest")
@@ -973,7 +1231,6 @@ def preflight(repo, package=PACKAGE):
             and len(package_bytes["projected-authority.json"]) == PROJECTED_AUTHORITY_BYTES,
             "stale projected authority")
     projected = json.loads(package_bytes["projected-authority.json"])
-    projected_inputs = check_entries(repo, projected_current["files"])
     unary_rows = {r["path"]: r for r in unary_current["files"]}
     require(set(projected_inputs) == set(unary_rows) | set(PROJECTED_ADDITIONS),
             "unexpected projected source membership")
@@ -1073,7 +1330,7 @@ def preflight(repo, package=PACKAGE):
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [x for x in projected_inputs if x.startswith(("src/", "native/"))]
+    expected = [x for x in enum_inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
@@ -1133,6 +1390,16 @@ def preflight(repo, package=PACKAGE):
             "derived combined resource drift")
     require(adapted_resource.replace(NEW_SEAM, OLD_SEAM) == resource,
             "resource reverse identity differs")
+    require(adapted_resource.count(NEW_SEAM) == 1 and ENUM_RESOURCE_SEAM not in adapted_resource,
+            "enum resource seam drift")
+    enum_resource = adapted_resource.replace(NEW_SEAM, ENUM_RESOURCE_SEAM)
+    require(enumeration["resource_adapter"] == {
+        "version": "unit2-closed-enum-parser-resource-v1",
+        "predecessor": entry(RESOURCE, adapted_resource), "derived": entry(RESOURCE, enum_resource),
+        "substitution": {"old_sha256": digest(NEW_SEAM), "new_sha256": digest(ENUM_RESOURCE_SEAM), "count": 1},
+        "scope": "Add only closed enum syntax policy and empty syntax storage to the direct Parser initializer; existing resource controls and expectations remain unchanged.",
+    } and enum_resource.replace(ENUM_RESOURCE_SEAM, NEW_SEAM) == adapted_resource,
+            "derived enum resource drift")
     adapted_observer = adapt_unit2_observer(historical_bytes[OBSERVER])
     require(authority["unit2_observer_adapter"] == {
         "version": OBSERVER_ADAPTER_VERSION,
@@ -1154,18 +1421,29 @@ def preflight(repo, package=PACKAGE):
         "control_tests": list(OBSERVER_CONTROL_NAMES), "control_tests_per_profile": 6,
         "scope": BORROWED_OBSERVER_SCOPE,
     }, "stale borrowed Unit2 observer adapter authority")
+    enum_observer = adapt_enum_unit2_observer(borrowed_observer)
+    require(enumeration["unit2_observer_adapter"] == {
+        "version": ENUM_OBSERVER_ADAPTER_VERSION, "predecessor_version": BORROWED_OBSERVER_ADAPTER_VERSION,
+        "original": entry(OBSERVER, historical_bytes[OBSERVER]),
+        "predecessor_derived": entry(OBSERVER, borrowed_observer), "derived": entry(OBSERVER, enum_observer),
+        "substitutions": [{"old_sha256": digest(old), "new_sha256": digest(new), "count": 1}
+                          for old, new in ENUM_OBSERVER_SEAMS],
+        "control_tests": list(OBSERVER_CONTROL_NAMES), "control_tests_per_profile": 6,
+        "scope": ENUM_OBSERVER_SCOPE,
+    }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": projected_current, "unary_source": unary_current,
+    return {"current": enum_current, "enum_authority": enumeration, "enum_touched": enum_touched,
+            "projected_source": projected_current, "projected_inputs": projected_inputs, "unary_source": unary_current,
             "projected_authority": projected, "projected_touched": projected_touched,
             "unary_inputs": unary_inputs, "composition_source": composition_current,
             "unary_authority": unary, "unary_touched": unary_touched,
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": projected_inputs, "archived": reconstructed, "references": references,
-            "historical_bytes": historical_bytes, "resource": adapted_resource,
-            "observer": borrowed_observer, "aggregate_observer": adapted_observer,
+            "inputs": enum_inputs, "archived": reconstructed, "references": references,
+            "historical_bytes": historical_bytes, "resource": enum_resource, "combined_resource": adapted_resource,
+            "observer": enum_observer, "borrowed_observer": borrowed_observer, "aggregate_observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
             "touched": touched, "authority": authority,
             "predecessor_inputs": predecessor_inputs, "formatter_touched": formatter_touched,
@@ -1211,6 +1489,9 @@ def prepare_archived(output, captured):
             "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
+            "enum_inverse_patch_sha256": ENUM_PATCH_SHA,
+            "enum_inverse_touched": captured["enum_touched"],
+            "projected_source_sha256": PROJECTED_SOURCE_SHA,
             "projected_inverse_patch_sha256": PROJECTED_PATCH_SHA,
             "projected_inverse_touched": captured["projected_touched"],
             "unary_source_sha256": UNARY_SOURCE_SHA,
@@ -1238,10 +1519,10 @@ def prepare_unit2(output, captured):
     materialize(compat, {"run.py": captured["references"][COMPAT]})
     return {"resource_package_root": str(root), "resource_package_inputs_sha256": digest(inputs["package-inputs.json"]),
             "resource_package_changes": [RESOURCE, OBSERVER, "package-inputs.json"],
-            "observer_adapter": captured["slices_authority"]["unit2_observer_adapter"],
+            "observer_adapter": captured["enum_authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_predecessor": captured["authority"]["derived_resource"],
-            "resource_after": captured["combined_authority"]["derived_resource"],
+            "resource_after": captured["enum_authority"]["resource_adapter"]["derived"],
             "compatibility_runner": str(compat / "run.py"), "files": manifest["files"]}
 
 
@@ -1416,6 +1697,8 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      enum_authority_sha256=ENUM_AUTHORITY_SHA,
+                      projected_source_sha256=PROJECTED_SOURCE_SHA,
                       projected_authority_sha256=PROJECTED_AUTHORITY_SHA,
                       unary_source_sha256=UNARY_SOURCE_SHA,
                       unary_authority_sha256=UNARY_AUTHORITY_SHA,
@@ -1428,6 +1711,8 @@ def main():
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
                 "current_source_members": len(captured["inputs"]),
+                "projected_source_members": len(captured["projected_inputs"]),
+                "enum_scanner_fixture_members": 2, "enum_scanner_fixture_references": 4,
                 "slices_source_members": len(captured["slices_inputs"]),
                 "division_source_members": len(captured["division_inputs"]),
                 "combined_source_members": len(captured["combined_inputs"]),
