@@ -159,3 +159,25 @@ All component source functions passed existing native admission, including the
 measured. Independent review and exact-head hosted CI are separate gates; these
 local results do not establish other targets, performance, unbounded parsing or
 completion of a roadmap milestone.
+
+## Saved stack artifact producer and loader
+
+`artifact_main.ox` and `artifact_writer.ox` serialize the existing stack Code as
+an exact 80-byte OXS1 artifact. `artifact_load.ox` and `artifact_reader.ox` form a
+separate byte-only loader. The producer uses process entry; the loader keeps
+default scalar result entry so values such as 2147483647 remain intact. The six
+existing component modules are shared unchanged, with no duplicate source tree.
+Both effectful roots are exact check-only projects in the repository registry.
+
+The [wire contract and independent corpus](../../tests/fixtures/bounded_stack_artifact/README.md)
+describe validation, statuses, saved-file publication, and the focused verifier:
+
+```sh
+python3 -B scripts/verify_bounded_stack_artifact.py --oxid target/release/oxid \
+  --output /tmp/bounded-stack-artifact-evidence --native
+```
+
+The verifier compiles each application once, reruns those same ELFs with distinct
+inputs, and checks saved producer artifacts using the separate loader and an
+independent external decoder. Source integration and Python controller tests do
+not by themselves establish public compiler/native qualification.

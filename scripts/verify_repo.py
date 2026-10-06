@@ -75,8 +75,28 @@ TYPED_PROJECTS = {
         "fixtures/typed-expression-samples/parser.ox",
         "fixtures/typed-expression-samples/evaluator.ox",
     ),
+    "fixtures/typed-expression-samples/artifact_main.ox": (
+        "fixtures/typed-expression-samples/artifact_main.ox",
+        "fixtures/typed-expression-samples/artifact_writer.ox",
+        "fixtures/typed-expression-samples/arena.ox",
+        "fixtures/typed-expression-samples/scanner.ox",
+        "fixtures/typed-expression-samples/parser.ox",
+        "fixtures/typed-expression-samples/evaluator.ox",
+        "fixtures/typed-expression-samples/stack_code.ox",
+        "fixtures/typed-expression-samples/lowering.ox",
+    ),
+    "fixtures/typed-expression-samples/artifact_load.ox": (
+        "fixtures/typed-expression-samples/artifact_load.ox",
+        "fixtures/typed-expression-samples/artifact_reader.ox",
+    ),
 }
-# Only this exact pair of roots shares these exact modules. Neither roots nor
+# Effectful projects retain exact module inventories, but only their roots are
+# checked here. Dedicated controllers supply input and choose the entry mode.
+TYPED_CHECK_ONLY_PROJECTS = (
+    "fixtures/typed-expression-samples/artifact_main.ox",
+    "fixtures/typed-expression-samples/artifact_load.ox",
+)
+# Only these exact pairs of roots share these exact modules. Neither roots nor
 # standalone/check-only files may overlap, and members are counted only once.
 TYPED_PROJECT_SHARED_MEMBERS = {
     frozenset(("fixtures/typed-expression-samples/main.ox",
@@ -85,6 +105,22 @@ TYPED_PROJECT_SHARED_MEMBERS = {
         "fixtures/typed-expression-samples/scanner.ox",
         "fixtures/typed-expression-samples/parser.ox",
         "fixtures/typed-expression-samples/evaluator.ox",
+    ),
+    frozenset(("fixtures/typed-expression-samples/main.ox",
+               "fixtures/typed-expression-samples/artifact_main.ox")): (
+        "fixtures/typed-expression-samples/arena.ox",
+        "fixtures/typed-expression-samples/scanner.ox",
+        "fixtures/typed-expression-samples/parser.ox",
+        "fixtures/typed-expression-samples/evaluator.ox",
+    ),
+    frozenset(("fixtures/typed-expression-samples/stack_main.ox",
+               "fixtures/typed-expression-samples/artifact_main.ox")): (
+        "fixtures/typed-expression-samples/arena.ox",
+        "fixtures/typed-expression-samples/scanner.ox",
+        "fixtures/typed-expression-samples/parser.ox",
+        "fixtures/typed-expression-samples/evaluator.ox",
+        "fixtures/typed-expression-samples/stack_code.ox",
+        "fixtures/typed-expression-samples/lowering.ox",
     ),
 }
 READMES = ("README.md", "README_ZH.md", "README_JP.md")
@@ -171,6 +207,9 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     typed_members.update(typed_check_only)
     standalone_members = set(typed_members)
     project_members = {}
+    if (len(TYPED_CHECK_ONLY_PROJECTS) != len(set(TYPED_CHECK_ONLY_PROJECTS))
+            or not set(TYPED_CHECK_ONLY_PROJECTS) <= TYPED_PROJECTS.keys()):
+        raise RuntimeError("invalid explicit check-only typed project inventory")
     for entries, shared in TYPED_PROJECT_SHARED_MEMBERS.items():
         if (len(entries) != 2 or not entries <= TYPED_PROJECTS.keys()
                 or not shared or len(shared) != len(set(shared)) or entries & set(shared)):
@@ -185,7 +224,10 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
             shared = TYPED_PROJECT_SHARED_MEMBERS.get(frozenset((entry, other_entry)), ())
             if (paths & other_paths) != {root / relative for relative in shared}:
                 raise RuntimeError("overlapping typed source inventories")
-        typed_entries.append(root / entry)
+        if entry in TYPED_CHECK_ONLY_PROJECTS:
+            typed_check_only.append(root / entry)
+        else:
+            typed_entries.append(root / entry)
         typed_members.update(paths)
         project_members[entry] = paths
     if not typed_members <= available:
