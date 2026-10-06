@@ -11,6 +11,7 @@ mod builtins;
 mod cfg;
 mod execute;
 mod flow;
+mod input;
 mod native;
 mod plan;
 mod shape;

@@ -314,6 +314,14 @@ pub(super) fn preflight(
     )
     .map_err(DeclarationError::from)?;
     account_enum_declarations(enums, limits, &mut program)?;
+    program.usage.work = cap(
+        add(
+            program.usage.work,
+            builtins::descriptor_visits(raw.builtins),
+        )?,
+        limits.bounded().work,
+        "ownership work",
+    )?;
     for f in &raw.functions {
         // Preserve the original early general-cap ordering before nested scans.
         cap(

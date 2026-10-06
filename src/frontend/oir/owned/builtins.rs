@@ -3,6 +3,19 @@
 //! declaration, shape, CFG, or ownership proof.
 use super::*;
 
+pub(super) const INPUT_SCRATCH_BYTES: usize = 1024;
+
+/// Header + enum + three variants; the function adds its declaration,
+/// reference, owner, block, two statements and terminator. Work units count
+/// these fixed descriptor visits, not individual scalar comparisons.
+pub(super) const fn descriptor_visits(origin: BuiltinOrigins) -> usize {
+    match origin {
+        BuiltinOrigins::None => 0,
+        BuiltinOrigins::ReadStatus => 5,
+        BuiltinOrigins::ReadStdin => 12,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BuiltinIds {
     pub enumeration: Option<EnumId>,

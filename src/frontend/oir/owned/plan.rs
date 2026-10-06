@@ -151,12 +151,27 @@ impl<'a> ExecutionPlan<'a> {
     pub fn metadata_bytes(&self) -> usize {
         self.metadata_bytes
     }
+    /// Scratch never extends a language owner's nominal extent. It exists only
+    /// in the independently verified canonical input activation.
+    pub(super) fn input_scratch_range(
+        &self,
+        function: hir::DefId,
+    ) -> Option<std::ops::Range<usize>> {
+        if self.witness.builtin_function() != Some(function) {
+            return None;
+        }
+        let end = self.functions.get(function.0)?.usage.payload_bytes;
+        let start = end.checked_sub(builtins::INPUT_SCRATCH_BYTES)?;
+        Some(start..end)
+    }
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
     }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
+            // The consumer charges the validated capacity and each read attempt.
+            OwnedInstruction::ReadStdin { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
             }
@@ -377,6 +392,9 @@ fn usage(
             .expect("verified record");
         u.owner_cells = add(u.owner_cells, width(witness, f, OwnerPlaceId(index)))?;
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
+    }
+    if witness.builtin_function() == Some(f.id) {
+        u.payload_bytes = add(u.payload_bytes, builtins::INPUT_SCRATCH_BYTES)?;
     }
     u.expanded_cells = add(add(u.scalar_slots, u.arguments)?, u.owner_cells)?;
     u.reference_bytes = add(

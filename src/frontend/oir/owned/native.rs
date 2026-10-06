@@ -35,6 +35,8 @@ fn add(a: usize, b: usize) -> Result<usize, Box<Diagnostic>> {
 /// Requested metadata payload; inherited formatter/name allocations have a
 /// separately bounded transient envelope, never an element-sized buffer.
 const DIAGNOSTIC_TRANSIENT_BYTES: usize = size_of::<Diagnostic>() + 64;
+const INPUT_CAPACITY_INVARIANT: &str =
+    "internal compiler error: owned execution invariant input capacity";
 // Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
 // resolution and composite emission never retain an expanded leaf collection.
 const EMITTER_TRANSIENT_BYTES: usize = 32_768;
@@ -203,6 +205,8 @@ impl Limits {
 #[derive(Clone, Copy, Default, Debug)]
 struct Bound {
     cost: usize,
+    // Unknown runtime cost: a CFG cycle, bounded input retries, or a callee
+    // with either. Unrelated acyclic functions retain static fuel admission.
     cyclic: bool,
     depth: usize,
     scalar_slots: usize,
@@ -299,9 +303,6 @@ fn native_module_accounted(
     limits: Limits,
     accounting: &mut Accounting,
 ) -> Result<String, Box<Diagnostic>> {
-    if witness.has_builtin_origins() {
-        return Err(reject("builtin input emission is unavailable", None));
-    }
     // Entry denial is deliberately before plan construction, diagnostics,
     // output text or tools. An invalid identity is an internal error.
     let id = entry.ok_or_else(|| {
@@ -556,7 +557,7 @@ fn admit_accounted(
         let f = &functions[i];
         let u = plan.function(f.id).usage();
         // Determine unknown cost before adding any placeholders: even a late
-        // cyclic callee makes the entire static sum nonbinding. Resource and
+        // dynamic callee makes the entire static sum nonbinding. Resource and
         // known acyclic arithmetic stay checked, while unknown sums saturate.
         let (local_cycle, cycle_scratch) = has_cycle(f)?;
         let scratch = add(
@@ -565,6 +566,7 @@ fn admit_accounted(
         )?;
         accounting.admission_peak(scratch)?;
         let cyclic = local_cycle
+            || plan.witness().builtin_function() == Some(f.id)
             || f.blocks.iter().any(|b| {
                 match &b.terminator.as_ref().expect("verified terminator").kind {
                     OwnedTerminatorKind::Invoke { call, .. } => {
@@ -833,17 +835,25 @@ enum FailureKind {
     Bounds,
     EnumTag,
     EnumPayload,
+    InputCapacity,
 }
 impl FailureKind {
+    fn transient_bytes(self) -> usize {
+        if self == Self::InputCapacity {
+            size_of::<Diagnostic>() + INPUT_CAPACITY_INVARIANT.len()
+        } else {
+            DIAGNOSTIC_TRANSIENT_BYTES
+        }
+    }
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
         match self {
             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
-            // Fixed literals keep the existing 64-byte transient allocation
-            // envelope while rendering the reference invariant verbatim.
-            Self::EnumTag | Self::EnumPayload => Diagnostic::new(
+            // Input capacity alone needs a 65-byte literal; inventory charges
+            // that envelope only for modules that contain the input effect.
+            Self::EnumTag | Self::EnumPayload | Self::InputCapacity => Diagnostic::new(
                 "E0500",
                 "oir-owned-run",
                 match self {
@@ -851,6 +861,7 @@ impl FailureKind {
                     Self::EnumPayload => {
                         "internal compiler error: owned execution invariant enum payload"
                     }
+                    Self::InputCapacity => INPUT_CAPACITY_INVARIANT,
                     _ => unreachable!("enum invariant"),
                 },
                 Some(span).filter(|span| sources.is_valid_span(*span)),
@@ -886,7 +897,7 @@ impl DiagnosticOccurrence {
         let transient = size_of::<Diagnostic>() + diagnostic.message.capacity();
         accounting.metrics.diagnostic_transient_peak =
             accounting.metrics.diagnostic_transient_peak.max(transient);
-        if transient > DIAGNOSTIC_TRANSIENT_BYTES
+        if transient > self.key.0.transient_bytes()
             || !diagnostic.secondary.is_empty()
             || !diagnostic.notes.is_empty()
             || diagnostic.primary != (self.line != 0).then_some(span)
@@ -935,6 +946,10 @@ fn diagnostic_occurrences(
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::ReadStdin { .. } => visit(
+                        FailureKind::InputCapacity,
+                        plan::instruction_span(statement),
+                    )?,
                     OwnedInstruction::ConsumeVariant { match_id, .. } => {
                         let span = f.matches[match_id.0].span;
                         visit(FailureKind::EnumTag, span)?;
@@ -1026,8 +1041,10 @@ impl Diagnostics {
         accounting: &mut Accounting,
     ) -> Result<Self, Box<Diagnostic>> {
         let mut count = 0;
-        diagnostic_occurrences(plan, entry, guarded, |_, _| {
+        let mut diagnostic_transient = DIAGNOSTIC_TRANSIENT_BYTES;
+        diagnostic_occurrences(plan, entry, guarded, |kind, _| {
             count = add(count, 1)?;
+            diagnostic_transient = diagnostic_transient.max(kind.transient_bytes());
             Ok(())
         })?;
         accounting.metrics.occurrences = count;
@@ -1052,7 +1069,7 @@ impl Diagnostics {
             add(retained, occurrence_bytes)?,
             add(
                 mul(count, size_of::<DiagnosticLookup>() + size_of::<String>())?,
-                DIAGNOSTIC_TRANSIENT_BYTES,
+                diagnostic_transient,
             )?,
         )?;
         accounting.metrics.metadata_admitted_bytes = admitted;
@@ -1159,7 +1176,7 @@ impl Diagnostics {
             add(lookup_bytes, header_bytes)?,
         )?;
         limit(
-            add(metadata, DIAGNOSTIC_TRANSIENT_BYTES)?,
+            add(metadata, diagnostic_transient)?,
             metadata_maximum.min(plan::MAX_PLAN_BYTES),
             "diagnostic metadata bytes",
             plan.witness().functions()[entry.0].span,
@@ -1256,6 +1273,15 @@ fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind
     .unwrap();
 }
 fn emit_guard(out: &mut Emission, diagnostics: &Diagnostics, name: &str, cost: usize, span: Span) {
+    emit_guard_value(out, diagnostics, name, cost, span);
+}
+fn emit_guard_value(
+    out: &mut Emission,
+    diagnostics: &Diagnostics,
+    name: &str,
+    cost: impl std::fmt::Display,
+    span: Span,
+) {
     writeln!(out, "  %{name}_remaining = load i64, ptr %fuel\n  %{name}_exhausted = icmp ult i64 %{name}_remaining, {cost}\n  br i1 %{name}_exhausted, label %{name}_error, label %{name}_ok\n{name}_error:").unwrap();
     emit_failure(out, diagnostics, FailureKind::Fuel, span);
     writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
@@ -1466,6 +1492,13 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
             for statement in &block.statements {
                 visits = add(visits, 1)?;
                 let owner = match statement.kind {
+                    OwnedInstruction::ReadStdin { .. } => {
+                        // Fixed result branches: Eof tag/payload, Full tag,
+                        // IoError tag. The bounded commit loop is fixed text,
+                        // not a capacity-sized scalar expansion.
+                        cells = add(cells, 4)?;
+                        None
+                    }
                     OwnedInstruction::ConstructEnum { payload, .. } => {
                         cells = add(cells, 1 + usize::from(payload.is_some()))?;
                         None
@@ -1823,6 +1856,10 @@ fn emit(
     out: &mut Emission,
 ) {
     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
+    if plan.witness().builtin_function().is_some() {
+        out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
+            .unwrap();
+    }
     for (id, message) in diagnostics.messages.iter().enumerate() {
         if out.exceeded {
             return;
@@ -1893,6 +1930,7 @@ enum Continuation {
     Arithmetic,
     Bounds,
     Enum,
+    Input,
 }
 impl Continuation {
     fn suffix(self) -> Option<&'static str> {
@@ -1901,12 +1939,14 @@ impl Continuation {
             Self::Arithmetic => Some("checked_ok"),
             Self::Bounds => Some("bounds_ok"),
             Self::Enum => Some("enum_ok"),
+            Self::Input => Some("input_ok"),
         }
     }
 }
 /// Exhaustive classification shared by operation emission and phi predecessors.
 fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
     match instruction {
+        OwnedInstruction::ReadStdin { .. } => Continuation::Input,
         OwnedInstruction::ConsumeVariant { .. } => Continuation::Enum,
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::Replace { source, .. }
@@ -1937,8 +1977,7 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ReadProjection { index: Some(_), .. }
         | OwnedInstruction::WriteProjection { index: Some(_), .. } => Continuation::Bounds,
-        OwnedInstruction::ReadStdin { .. }
-        | OwnedInstruction::StorageLive(_)
+        OwnedInstruction::StorageLive(_)
         | OwnedInstruction::StorageEnd(_)
         | OwnedInstruction::Construct { .. }
         | OwnedInstruction::ConstructEnum { .. }
@@ -2032,6 +2071,17 @@ fn emit_function(
             out,
             "  %owners = alloca [{} x i8], align 4",
             u.payload_bytes.div_ceil(4) * 4
+        )
+        .unwrap();
+    }
+    if let Some(scratch) = plan.input_scratch_range(id) {
+        debug_assert_eq!(scratch.len(), 1024);
+        // This suffix is part of the already admitted owner allocation. It is
+        // allocated once at entry and reused by every attempt in this frame.
+        writeln!(
+            out,
+            "  %input_scratch = getelementptr i8, ptr %owners, i64 {}",
+            scratch.start
         )
         .unwrap();
     }
@@ -2189,7 +2239,7 @@ fn emit_function(
             }
             out.ordinary_visits += 1;
             let name = format!("f{}_b{b}_i{i}", id.0);
-            if guarded {
+            if guarded && !matches!(statement.kind, OwnedInstruction::ReadStdin { .. }) {
                 emit_guard(
                     out,
                     diagnostics,
@@ -2225,6 +2275,111 @@ fn emit_function(
     out.write_str("}\n").unwrap();
 }
 
+/// The sealed builtin owns both the result extent and its admitted scratch
+/// suffix. Its exclusive slice pointer follows the existing verified ABI;
+/// capacity is checked before any input, result store, or destination write.
+/// Only successful/EOF paths enter the prepaid, infallible commit loop.
+fn emit_read_stdin(
+    plan: &ExecutionPlan<'_>,
+    id: hir::DefId,
+    name: &str,
+    places: (ReferenceParamId, OwnerPlaceId),
+    failure: (&Diagnostics, Span),
+    out: &mut Emission,
+) {
+    let (buffer, destination) = places;
+    let (diagnostics, span) = failure;
+    let scratch = plan
+        .input_scratch_range(id)
+        .expect("verified input scratch suffix");
+    debug_assert_eq!(plan.witness().builtin_function(), Some(id));
+    debug_assert_eq!(scratch.len(), 1024);
+    let enumeration = plan
+        .witness()
+        .builtin_enumeration()
+        .expect("verified input enum");
+    let variants = plan
+        .witness()
+        .declarations()
+        .enums()
+        .variants(enumeration)
+        .expect("verified input variants");
+    let [eof, full, io_error] = variants else {
+        unreachable!("verified input result shape")
+    };
+    let result = format!("%o{}", destination.0);
+    let result_extent = plan
+        .witness()
+        .declarations()
+        .aggregate_layout(AggregateTy::Enum(enumeration))
+        .expect("verified input result layout")
+        .size();
+    debug_assert!(plan.function(id).owner_offset(destination) + result_extent <= scratch.start);
+    let suffix = continuation(
+        &plan.witness().functions()[id.0],
+        &OwnedInstruction::ReadStdin {
+            buffer,
+            destination,
+        },
+    )
+    .suffix()
+    .expect("input continuation");
+    // Unsigned <= rejects negative i32 lengths as well as lengths above 1024.
+    writeln!(out, "  %{name}_capacity = load i32, ptr %rl{}, align 4\n  %{name}_capacity_valid = icmp ule i32 %{name}_capacity, 1024\n  br i1 %{name}_capacity_valid, label %{name}_capacity_ok, label %{name}_capacity_error\n{name}_capacity_error:", buffer.0).unwrap();
+    emit_failure(out, diagnostics, FailureKind::InputCapacity, span);
+    writeln!(out, "{name}_capacity_ok:\n  %{name}_capacity64 = zext i32 %{name}_capacity to i64\n  %{name}_core_cost = add i64 %{name}_capacity64, 4").unwrap();
+    emit_guard_value(
+        out,
+        diagnostics,
+        &format!("{name}_core"),
+        &format!("%{name}_core_cost"),
+        span,
+    );
+    // All storage is already reserved in this frame. No allocation or fallible
+    // destination/result preparation remains after the first adapter attempt.
+    writeln!(out, "  %{name}_buffer = load ptr, ptr %r{}, align 8\n  br label %{name}_read_check\n{name}_read_check:\n  %{name}_staged = phi i32 [ 0, %{name}_core_ok ], [ %{name}_next, %{name}_byte ], [ %{name}_staged, %{name}_retry ]\n  %{name}_at_capacity = icmp eq i32 %{name}_staged, %{name}_capacity\n  br i1 %{name}_at_capacity, label %{name}_full, label %{name}_attempt\n{name}_attempt:", buffer.0).unwrap();
+    emit_guard(out, diagnostics, &format!("{name}_read"), 1, span);
+    // One debit precedes exactly one read, including EOF, EINTR and errors.
+    // The adapter writes staging only; bytes are inspected later only when the
+    // success path has established the precise initialized prefix.
+    writeln!(out, "  %{name}_staged64 = zext i32 %{name}_staged to i64\n  %{name}_byte_ptr = getelementptr i8, ptr %input_scratch, i64 %{name}_staged64\n  %{name}_status = call i32 @__oxid_read_stdin_byte(ptr %{name}_byte_ptr)\n  switch i32 %{name}_status, label %{name}_io_error [\n    i32 1, label %{name}_byte\n    i32 0, label %{name}_eof\n    i32 -1, label %{name}_retry\n  ]\n{name}_byte:\n  %{name}_next = add i32 %{name}_staged, 1\n  br label %{name}_read_check\n{name}_retry:\n  br label %{name}_read_check\n{name}_full:\n  br label %{name}_commit_start\n{name}_eof:\n  br label %{name}_commit_start\n{name}_commit_start:\n  %{name}_is_eof = phi i1 [ false, %{name}_full ], [ true, %{name}_eof ]\n  br label %{name}_commit_check\n{name}_commit_check:\n  %{name}_written = phi i32 [ 0, %{name}_commit_start ], [ %{name}_written_next, %{name}_commit_byte ]\n  %{name}_has_byte = icmp ult i32 %{name}_written, %{name}_staged\n  br i1 %{name}_has_byte, label %{name}_commit_byte, label %{name}_result\n{name}_commit_byte:\n  %{name}_written64 = zext i32 %{name}_written to i64\n  %{name}_source = getelementptr i8, ptr %input_scratch, i64 %{name}_written64\n  %{name}_byte_value = load i8, ptr %{name}_source, align 1\n  %{name}_wide_byte = zext i8 %{name}_byte_value to i32\n  %{name}_destination = getelementptr i32, ptr %{name}_buffer, i64 %{name}_written64\n  store i32 %{name}_wide_byte, ptr %{name}_destination, align 1\n  %{name}_written_next = add i32 %{name}_written, 1\n  br label %{name}_commit_check\n{name}_result:\n  br i1 %{name}_is_eof, label %{name}_result_eof, label %{name}_result_full\n{name}_result_eof:").unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    writeln!(out, "  store i32 {}, ptr {result}, align 1", eof.tag()).unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    enum_payload_store(
+        out,
+        &format!("{name}_eof_result"),
+        &result,
+        eof.payload().expect("verified Eof payload"),
+        &format!("%{name}_staged"),
+        eof.payload_offset().expect("verified Eof offset"),
+    );
+    writeln!(out, "  br label %{name}_{suffix}\n{name}_result_full:").unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    writeln!(
+        out,
+        "  store i32 {}, ptr {result}, align 1\n  br label %{name}_{suffix}\n{name}_io_error:",
+        full.tag()
+    )
+    .unwrap();
+    if !out.expand(Expansion::Construct) {
+        return;
+    }
+    // Nullary outcomes never read or write the inactive payload/padding.
+    writeln!(
+        out,
+        "  store i32 {}, ptr {result}, align 1\n  br label %{name}_{suffix}\n{name}_{suffix}:",
+        io_error.tag()
+    )
+    .unwrap();
+}
+
 fn emit_statement(
     plan: &ExecutionPlan<'_>,
     id: hir::DefId,
@@ -2240,9 +2395,17 @@ fn emit_statement(
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     match &statement.kind {
-        OwnedInstruction::ReadStdin { .. } => {
-            unreachable!("builtin input plans and emission remain denied")
-        }
+        OwnedInstruction::ReadStdin {
+            buffer,
+            destination,
+        } => emit_read_stdin(
+            plan,
+            id,
+            name,
+            (*buffer, *destination),
+            (diagnostics, plan::instruction_span(statement)),
+            out,
+        ),
         OwnedInstruction::ConstructEnum {
             destination,
             variant,

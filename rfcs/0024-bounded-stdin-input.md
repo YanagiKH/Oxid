@@ -292,8 +292,14 @@ Initial OS execution qualification should be Linux x86_64 for both reference and
 LLVM19.1.7 O0 native routes. Define pre-consumption rejection on unqualified hosts
 before activation rather than silently assuming Unix descriptors or Windows
 console encodings. Parser/typechecker portability remains a separate scope.
-Final diagnostic code/spans for host exclusion and staging-resource denial must
-reuse appropriate existing conventions or be explicitly selected in the RFC.
+Reference input-bearing execution on other hosts rejects before activation with
+E0608 / oir-owned-run, "bounded stdin execution requires Linux x86_64", anchored
+to the admitted input import. E0607 retains its existing division-by-zero meaning.
+Native compile keeps its existing host gate. An invalid runtime capacity fails
+closed as the E0500 owned-execution invariant "input capacity" before any input;
+staging-resource denial keeps the existing resource-failure convention.
+The fixed native capacity diagnostic is 65 bytes; its existing transient message
+envelope increases from 64 to 65 only for modules that contain this operation.
 
 ## Acceptance and stopping point
 
