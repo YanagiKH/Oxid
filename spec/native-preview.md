@@ -83,6 +83,18 @@ main is the original root declaration; an imported/child main does not qualify.
 The [project validation ledger](../docs/architecture/typed-project-unit4-validation.md)
 separates public source qualification from historical private-consumer evidence.
 
+The owned route also accepts [bounded enums and consuming matches](typed-preview.md#bounded-nominal-enums-and-consuming-match).
+Enums occupy eight private bytes aligned to four, with logical width 2. Whole
+transfers validate the tag and only the active scalar payload; they never read
+inactive union bytes as a typed value. Canonical binary match dispatch rejects
+invalid tags before payload access or ownership changes. Written arm order
+controls dispatch fuel exactly as in the reference route; consumption costs 3
+and whole replacement costs 5. Storage-end/frame teardown never inspect moved
+or uninitialized enum payloads. This introduces no source-visible layout or ABI.
+The [two-file scanner](../tests/fixtures/bounded_enum_scanner/main.ox) returns
+115 through public reference/native paths; separate current-source qualification
+and exact-head hosted CI remain pending.
+
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
 The following inclusive bounds are the scalar-only native restrictions. Owned
@@ -152,9 +164,9 @@ requires:
 
 For each function let S be scalar locals plus mutable places, A all call argument
 descriptors, O all owners, R incoming references, L loans, C calls, and
-P the sum of owner widths: `max(1, record_field_count)` for each record and
-`max(1, N)` for each fixed array, including empty and unit arrays. B is the aligned
-owner arena including parameter, local, temporary, staged-argument and result
+P the sum of checked recursive owner widths: records use
+`max(1, sum(field widths))`, fixed arrays use `max(1, N)` (including empty and
+unit arrays), and enums use 2. B is the aligned owner arena including parameter, local, temporary, staged-argument and result
 storage, with inter-owner padding. On the qualified x86_64 representation:
 
 ```text
@@ -189,8 +201,9 @@ rather than the scalar-only call/root/return formulas below.
 The ownership emitter uses entry-prologue owner byte arenas, i64 scalar/snapshot
 cells and pointer cells for incoming references and active loans. Incoming owned
 arguments are transferred field-by-field for records and element-by-element for
-arrays into independent callee storage; owned results use caller-owned output storage and are transferred before callee
-return. Staging backing storage remains allocated until return even after its
+arrays, and by checked tag plus active scalar for enums, into independent callee
+storage; owned results use caller-owned output storage and are transferred
+before callee return. Staging backing storage remains allocated until return even after its
 logical ownership is consumed. Shared reference pointers may alias. The emitter
 adds no `noalias`, `inbounds`, `nonnull`, `sret`, `byval` or lifetime assumptions.
 This is a private convention, not a stable source layout or C/FFI ABI.

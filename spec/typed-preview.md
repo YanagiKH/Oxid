@@ -23,7 +23,8 @@ and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-chec
 [RFC 0015](../rfcs/0015-bounded-typed-projects.md) and
 [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md) and
 [RFC 0019](../rfcs/0019-borrowed-scalar-slices.md) and
-[RFC 0020](../rfcs/0020-owned-record-composition.md).
+[RFC 0020](../rfcs/0020-owned-record-composition.md) and
+[RFC 0023](../rfcs/0023-bounded-enum-match.md).
 
 ## Command and compatibility boundary
 
@@ -261,6 +262,80 @@ LLVM/Clang/LLD 19.1.7 at O0 and the existing admission gates. Default/legacy and
 OXBC behavior are unchanged. This remains experimental, with no stable slice
 ABI, general lifetime inference or milestone-completion claim.
 
+## Bounded nominal enums and consuming match
+
+Explicit typed-preview `check`, `run`, native `compile --backend llvm` and
+syntax-only `fmt` accept the experimental contract in
+[RFC 0023](../rfcs/0023-bounded-enum-match.md):
+
+```text
+enum Token { Integer(i32), Plus, End, Invalid(i32) }
+fn consume(token: Token) -> i32 {
+    match token {
+        Token::Integer(value) => { return value; },
+        Token::Plus => { return 1; },
+        Token::End => { return 0; },
+        Token::Invalid(code) => { return 0 - code; },
+    }
+}
+fn main() -> i32 { return consume(Token::Integer(7)); }
+```
+
+Each enum has 1..256 unique variants, each nullary or carrying exactly one
+`bool`, `i32` or `()` value. Nullary construction is `Token::End`, without
+parentheses; payload construction supplies exactly one expression. A `U(())`
+variant is constructed with `E::U(())`. Types match exactly, without coercions.
+Enums share the type namespace with records and builtins; existing type aliases,
+absolute paths and visibility resolve the type prefix. Variants have their
+enum's visibility and no separate `pub` modifier.
+
+Enum values are whole-value move-only locals, mutable replacement destinations,
+by-value parameters and by-value results. `match` is a statement over one bare,
+available named local or parameter. Its arms have braced blocks, comma separators
+and an optional trailing comma. Every variant of that exact enum must occur once,
+including arms that will not run. The selected arm consumes the scrutinee once
+and, for a payload variant, creates one immutable scalar binding scoped to that
+arm. Ordinary no-shadowing, all-path-return, break/continue and loop rules apply.
+Only continuing arms participate in the ownership join; a consumed owner can be
+restored by an explicit same-type assignment to a mutable local. Matching an
+unavailable owner reports E0310 at the complete match statement.
+
+Arm order affects fuel. Selecting zero-based written arm k costs `k + 1` dispatch
+units and 3 consumption units before its body. Construction costs 3 after its
+payload expression; whole move/owned preparation/discard/StorageEnd cost 3 and
+replacement costs 5. Existing call/frame costs use enum width 2. Ordinary source
+temporaries, argument staging, body operations and cleanup add their own costs;
+these figures are not complete source-statement costs. Fuel failure exposes no
+payload and performs no unpaid consumption.
+
+Enums and records share the 4,096 declaration cap. Variants and record fields
+share the 65,536 member cap; record fields retain their 1,024 per-record cap.
+The existing 100,000-node and 64-level parser limits remain. Affected enum-bearing
+HIR storage and admitted projection/lowering scratch use a 64 MiB ceiling; this
+is a scoped storage account, not a universal compiler-memory or RSS cap. Reference
+execution retains the 200,000-expanded-cell/16 MiB bounds; native retains
+8,192 expanded cells/1 MiB and its stricter whole-program admission.
+
+Enum borrows, storage in record fields or arrays, aggregate/recursive payloads,
+partial moves, equality, printing and source-visible tags are unavailable.
+Match expressions, guards, wildcard/alternative/nested patterns and arbitrary
+scrutinee expressions are also unavailable. An enum-returning `main` may check;
+run and native compile still require an original zero-argument bool/i32/unit
+root `main`.
+
+The scanner [entry](../tests/fixtures/bounded_enum_scanner/main.ox) and
+[implementation](../tests/fixtures/bounded_enum_scanner/scanner.ox) use `&[i32]`
+character codes, a separate mutable cursor with a private field, and an imported
+`Token` alias. Input `12 + 3` returns 115 (12 + 100 + 3). Decimal accumulation
+uses checked i32 arithmetic, so overflow remains the ordinary arithmetic failure.
+Run it with `oxid run tests/fixtures/bounded_enum_scanner/main.ox --edition typed-preview`.
+Declared-child loading remains Linux-only; native scope remains Linux x86_64
+with LLVM/Clang/LLD 19.1.7 at O0. This fixed-input compiler-component example
+makes no production-provider or self-hosting claim. The
+[public acceptance controls](../src/frontend/enum_public_tests.rs) cover the
+source path; separate current-source qualification and exact-head hosted CI
+remain pending.
+
 ## Single-file formatting
 
 ```sh
@@ -286,7 +361,8 @@ dash-prefixed filenames and `./-` for a file named `-`. There is no write-in-pla
 recursive, output-path or width option. Default/explicit legacy `fmt` retains
 its existing file-writing behavior.
 
-Formatting validates full-file syntax twice, including fixed-array and borrowed-slice syntax,
+Formatting validates full-file syntax twice, including fixed arrays, borrowed slices,
+enum declarations/construction and consuming matches,
 and checks token/comment and interior-newline preservation before output.
 Brackets count toward delimiter indentation; types/literals format as
 `[i32; 2]` / `[1, 2]`, with name-based indexing tight as `a[0]`. It never loads modules, resolves
@@ -297,7 +373,7 @@ valid formatting. Malformed input produces no candidate source.
 Input and candidate each have a 1 MiB source ceiling and the existing lexer and
 parser limits, including 100,000 tokens, 65,536 bytes per token, 100,000 syntax
 nodes, 64 expression/block nesting, 256 parameters/arguments, 34 path segments,
-and 1024 array elements/declared length.
+1024 array elements/declared length, 256 variants per enum and 256 match arms.
 The formatter adds a 128-entry delimiter stack and an 8 MiB work-table ceiling;
 the current table uses one byte per source byte. These are logical payload
 limits, not whole-process memory or host-I/O guarantees. Full layout policy:
@@ -357,7 +433,7 @@ remain in RFC 0015 and its implementation ledgers.
 
 ```text
 file           := item*
-item           := function | struct_decl | module_decl | import_decl
+item           := function | struct_decl | enum_decl | module_decl | import_decl
 module_decl    := "pub"? "mod" name ";"
 import_decl    := "use" absolute_path ("as" name)? ";"
 absolute_path  := "crate" "::" name ("::" name)*
@@ -373,6 +449,10 @@ parameter_type := value_type | "&" referent_type | "&" "mut" referent_type
 struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
 field_decl     := "pub"? name ":" value_type
 field_decls    := field_decl ("," field_decl)* ","?
+enum_decl      := "pub"? "enum" type_name "{" variant_decl ("," variant_decl)* ","? "}"
+variant_decl   := name ("(" scalar_type ")")?
+variant_path   := name "::" name | absolute_path "::" name
+match_arm      := variant_path ("(" name ")")? "=>" block
 block          := "{" statement* "}"
 statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
                 | name "=" expression ";"
@@ -383,6 +463,7 @@ statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
                 | "break" ";" | "continue" ";"
                 | "if" expression block ("else" block)?
                 | "while" expression block
+                | "match" name "{" match_arm ("," match_arm)* ","? "}"
 expression     := logical_or
 logical_or     := logical_and ("||" logical_and)*
 logical_and    := comparison ("&&" comparison)*
@@ -394,6 +475,7 @@ unary          := ("!" | "-") unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
                 | item_path "(" arguments? ")" | decimal | "-" decimal
                 | field_path | item_path "{" field_inits? "}"
+                | variant_path ("(" expression ")")?
                 | array_base "[" expression "]" | array_base "." "len" "(" ")"
 field_path     := name ("." name)+
 array_base     := name | field_path
@@ -414,9 +496,10 @@ parser. Unicode is permitted in comments; Unicode identifiers are not supported.
 The two colons remain separate lexer tokens and both count in the resource
 ledger. Trivia may surround the delimiter but cannot split its two bytes.
 Public-field recognition requires `pub` followed by a nontrivia identifier.
-Optional trailing commas are confined to struct field declarations and literal
-initializers. Function parameters and call arguments still reject trailing
-commas. Legacy concise-keyword aliases are not supported.
+Optional trailing commas are confined to struct field declarations, literal
+initializers, enum variants and match arms. Function parameters and call
+arguments still reject trailing commas. The two arrow bytes in `=>` must be adjacent. Legacy concise-keyword
+aliases are not supported.
 
 In an unparenthesized `if`/`while` condition, the restriction on struct literals
 applies through the whole top-level precedence expression: its body brace is not
@@ -428,7 +511,8 @@ general expression or parenthesized place. Standalone block statements are not
 part of this grammar.
 
 Scalar values are `bool`, `i32` and unit `()`. The owned addition admits nominal
-move-only structs with only those scalar fields, including empty structs.
+move-only structs (including bounded record composition), fixed scalar arrays
+and the bounded nominal enums described above.
 Reference types occur only in function parameters. A file may contain no
 functions and does not require `main`; checking is not execution. `main` may
 return an owned type when checking, but run and native compile require a
@@ -719,10 +803,10 @@ promised for every formerly unsupported ownership token sequence.
 
 The compiler path is UTF-8 source → lossless token tape → spanned AST →
 resolved HIR → typed HIR → verified OIR. The source integration selects one
-route for the entire parsed project. Any struct declaration, non-scalar named
+route for the entire parsed project. Any struct or enum declaration, non-scalar named
 type annotation/signature, reference parameter, struct literal, field access,
-borrow argument, fixed-array type/literal, indexing or length access selects
-owned HIR and owned OIR for every function. This
+borrow argument, fixed-array type/literal, indexing, length access, enum
+construction or match selects owned HIR and owned OIR for every function. This
 includes unused declarations and statically skipped paths; comments containing
 owned spellings do not select that route. Unknown nominal names also select it
 and fail resolution. Scalar-only modules retain the existing scalar pipeline,
@@ -731,7 +815,7 @@ no fallback after an owned parse, resolution, type, verification, runtime or
 native-admission failure. It lives in `src/frontend/` independently of the legacy
 syntax module and runtime. The token tape retains trivia and invalid tokens; it
 is not a complete formatter/LSP CST. Parsing synchronizes at the next top-level
-`fn` or `struct` for original syntax. After actual project-grammar recognition,
+`fn`, `struct` or `enum` for original syntax. After actual project-grammar recognition,
 recovery also recognizes project declaration boundaries. Recovery scanning alone
 does not activate project grammar; erroneous ASTs never enter name resolution.
 
@@ -1024,8 +1108,9 @@ standalone plan or source-side acceptance summary can authorize execution.
 
 For each function, let S count scalar locals and mutable places, A all call
 argument descriptors, O all owner slots, R incoming references, L loans, C call
-sites, and P the sum of each owner's width: `max(1, field_count)` for a record,
-`max(1, N)` for a fixed array. This includes zero-length and unit arrays. B is the
+sites, and P the sum of each owner's checked recursive width: scalar leaves
+count 1, records use `max(1, sum(field widths))`, fixed arrays use `max(1, N)`,
+and enums use 2. This includes zero-length and unit arrays. B is the
 checked aligned owner arena, including parameters, locals, expression temporaries,
 argument staging, call results and inter-owner padding. All declared storage is
 counted, including unused/skipped work. On the qualified x86_64 representation:
@@ -1045,14 +1130,14 @@ already reserved in the caller's owner arena; no extra variable return scratch
 is hidden. Loops reuse activation storage with checked owner generations.
 
 The owned ledger charges before work. Let w be the affected owner's width,
-`max(1, field_count)` for a record or `max(1, N)` for a fixed array, and r be the
-call's number of borrowed arguments:
+as defined above (2 for an enum), and r be the call's number of borrowed arguments:
 
 | Event | Fuel |
 | --- | ---: |
 | Root activation | `1 + X(root)` |
 | Scalar statement/merge, Branch/Goto, StorageLive, field read/write, scalar/borrow preparation | `1` |
-| Complete record/array construction, move-initialize, discard, StorageEnd, owned preparation | `1 + w` |
+| Complete record/array/enum construction, move-initialize, discard, StorageEnd, owned preparation | `1 + w` |
+| Each enum match dispatch / selected arm consumption | `1` / `1 + w` |
 | Array/slice index read/write, after all operands | `1` before bounds and load/store |
 | Array/slice length | `1` before consumer validation and result |
 | Whole replacement | `1 + 2w` |
@@ -1130,8 +1215,9 @@ Owned source additionally applies the following inclusive preflight limits:
 
 | Resource | Maximum |
 | --- | ---: |
-| Nominal record declarations | 4,096 |
-| Fields per record / aggregate fields | 1,024 / 65,536 |
+| Nominal record and enum declarations combined | 4,096 |
+| Fields per record / variants per enum | 1,024 / 256 |
+| Record fields and enum variants combined | 65,536 |
 | Fixed array length / elements per literal | 1,024 / 1,024 |
 | Checked declaration-table payload / sum of padded declaration layouts | 8 MiB / 1 MiB |
 | Aggregate scalar value/place plus owner slots | 100,000 |
@@ -1143,8 +1229,8 @@ Owned source additionally applies the following inclusive preflight limits:
 
 Raw verification independently recounts actual nested vectors, rather than
 trusting source counts. Expanded events include statements/merges, call argument
-descriptors and preparation sites, constructed field operands and every array
-constructor operand. Work is a
+descriptors and preparation sites, constructed field operands, every array
+constructor operand and complete enum match descriptors/arms. Work is a
 checked inventory-based bound, not CPU instructions or a timeout. Declaration,
 raw-output, verifier, plan and consumer ledgers are separate admissions.
 

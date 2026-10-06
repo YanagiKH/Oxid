@@ -1,7 +1,12 @@
 # RFC 0023: bounded nominal enums and consuming match
 
 Status: accepted bounded experimental implementation contract, 2026-10-05.
-Implementation and qualification are pending.
+Implementation status, 2026-10-06: the experimental public typed-preview
+check/run/native-compile and syntax-only formatter paths are connected. Separate
+current-source qualification and green exact-head hosted CI remain pending.
+See the [public contract](../spec/typed-preview.md#bounded-nominal-enums-and-consuming-match),
+[public acceptance controls](../src/frontend/enum_public_tests.rs) and the
+[two-file scanner](../tests/fixtures/bounded_enum_scanner/main.ox).
 Design base: main `c37a09f332ad68ab401f1c6936e2e17afa430e90`.
 
 ## Boundary
