@@ -133,6 +133,9 @@ pub(super) fn function(index: &DeclarationIndex<'_>) -> Result<RawOwnedFunction,
 /// return envelopes. Nested vector backing is charged by function_bytes; this
 /// does not claim to model inherited helper stack frames or allocator overhead.
 #[allow(dead_code)]
+type ReservationCarriers<T> = [(Vec<T>, Result<Vec<T>, OwnedFailure>); 2];
+
+#[allow(dead_code)]
 struct Carriers {
     index: &'static DeclarationIndex<'static>,
     function_id: hir::DefId,
@@ -155,17 +158,11 @@ struct Carriers {
     parameters: [ParameterBinding; 2],
     // Existing reserve and the observed-capacity wrapper each retain their
     // complete local/return role; no allocator slack is admitted silently.
-    parameter_reserve: [(
-        Vec<ParameterBinding>,
-        Result<Vec<ParameterBinding>, OwnedFailure>,
-    ); 2],
-    owner_reserve: [(Vec<OwnerDecl>, Result<Vec<OwnerDecl>, OwnedFailure>); 2],
-    reference_reserve: [(Vec<ReferenceDecl>, Result<Vec<ReferenceDecl>, OwnedFailure>); 2],
-    block_reserve: [(Vec<OwnedBlock>, Result<Vec<OwnedBlock>, OwnedFailure>); 2],
-    statement_reserve: [(
-        Vec<OwnedStatement>,
-        Result<Vec<OwnedStatement>, OwnedFailure>,
-    ); 2],
+    parameter_reserve: ReservationCarriers<ParameterBinding>,
+    owner_reserve: ReservationCarriers<OwnerDecl>,
+    reference_reserve: ReservationCarriers<ReferenceDecl>,
+    block_reserve: ReservationCarriers<OwnedBlock>,
+    statement_reserve: ReservationCarriers<OwnedStatement>,
     terminator: OwnedTerminator,
     terminator_option: Option<OwnedTerminator>,
     aggregate: Result<AggregateSlot, DeclarationError>,

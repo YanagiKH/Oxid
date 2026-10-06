@@ -414,6 +414,7 @@ impl Program {
     }
     /// Report the closed feature during the already counted structural walk.
     /// This avoids another unmetered scan of every pre-existing source node.
+    #[cfg(test)]
     pub(super) fn validate_spans_and_ids_counted_with_enum_syntax(
         &self,
         inspect: impl FnMut(Option<Span>) -> bool,

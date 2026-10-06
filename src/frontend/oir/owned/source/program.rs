@@ -464,6 +464,9 @@ struct BuiltinProgramCarriers {
     request: resolve::EnumPipelineRequest,
     gate: Result<(), Box<Diagnostic>>,
     gate_normalized: Result<(), Vec<Diagnostic>>,
+    // Source preflight normalizes its typed identity check to OwnedFailure;
+    // the resolver's boxed/Vec diagnostic envelopes do not contain this role.
+    lower_identity_normalized: Result<(), OwnedFailure>,
     returned: Result<EnumPipelineProgramOutput, Vec<Diagnostic>>,
 }
 pub(super) const fn builtin_program_carrier_bytes() -> usize {

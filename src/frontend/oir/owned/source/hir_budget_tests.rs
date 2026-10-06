@@ -786,6 +786,7 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         let plan = HirPlan::calculate(
             HirCounts {
                 functions,
+                signatures: functions,
                 ..HirCounts::default()
             },
             at,
@@ -1107,9 +1108,9 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
     let at = sources("x").get(SourceFileId(0)).span(0, 1);
     let observation = observation_components();
     #[cfg(target_pointer_width = "64")]
-    // MatchArms extends each complete constructed/Option/Result observation
-    // in FreshTypeObservationCarriers by two usize fields: 3 * 16 bytes.
-    assert_eq!(observation, (11792 + 3 * 16, 320, 24, 24));
+    // Measured 11840 -> 11888: the owned index carrier grows by 24 bytes,
+    // and HirCounts.signatures adds 8 to each of three complete observations.
+    assert_eq!(observation, (11888, 320, 24, 24));
     let checker = checker_only_components();
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
     let before_observation = size_of::<typeck::TypedOwnedProgram<'_>>()
@@ -1259,9 +1260,9 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
     assert_eq!(plan.fixed - old_fixed, delta);
     #[cfg(target_pointer_width = "64")]
     {
-        // MatchArms adds two usize slots to the returned resolver facts.
-        assert_eq!(delta, 888);
-        assert_eq!(observation_components(), (11792 + 3 * 16, 320, 24, 24));
+        // The added signature count widens the complete returned facts by 8.
+        assert_eq!(delta, 896);
+        assert_eq!(observation_components(), (11888, 320, 24, 24));
         assert_eq!(
             checker_only_components(),
             (33448 + 64 * 152, 1928 + 472, 24, 784, 88)

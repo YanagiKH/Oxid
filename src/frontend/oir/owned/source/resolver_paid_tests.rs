@@ -1154,9 +1154,9 @@ fn c3_t1_inhabited_denied_selector_prices_its_complete_return_representation() {
             denied_type_probe_carrier_bytes(),
             delta
         ),
-        // One new retained count and one new capacity slot add 16 bytes
-        // to resolver facts and every complete enclosing inhabited payload.
-        (112, 24, 912, 1000, 888)
+        // Measured after HirCounts.signatures adds 8 bytes to the complete
+        // resolver facts/return, widening this enclosing carrier equally.
+        (112, 24, 920, 1008, 896)
     );
     println!("C3_T1_DENIED_SELECTOR_LAYOUT fields={} typed_bytes={} carrier={} return={} old_carrier={} fixed_delta={}",
         roles.len(), occupied, denied_type_probe_carrier_bytes(), size_of::<Returned>(), old_carrier, delta);
