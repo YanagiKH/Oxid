@@ -84,6 +84,9 @@ def command(root, label, args, *, cwd, env, timeout=1800, environment_mode="inhe
         } if environment_mode == "isolated-git-read" else {
             "mode": "inherited", "OXID_LLVM_BIN": env.get("OXID_LLVM_BIN"),
             "OXID_OWNED_NATIVE_EVIDENCE": env.get("OXID_OWNED_NATIVE_EVIDENCE"),
+            **({"mode": "source-test-scoped-git", "git_environment": {
+                key: value for key, value in env.items() if key.startswith("GIT_")
+            }} if environment_mode == "source-test-scoped-git" else {}),
         },
     })
     require(status == 0, f"{label}: status {status}; see retained command streams ({error})")
@@ -99,6 +102,22 @@ def git_command(root, label, repo, *arguments, env):
     return command(root, label, ["/usr/bin/git", "-c", "safe.directory=" + str(repo),
                    "-C", repo, *arguments], cwd=repo, env=git_env, timeout=60,
                    environment_mode="isolated-git-read")
+
+
+def source_test_environment(repo, env):
+    """Grant descendants an exact-checkout ownership exception; preserve HOME."""
+    return {**{key: value for key, value in env.items() if not key.startswith("GIT_")},
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(repo.resolve(strict=True)), "GIT_OPTIONAL_LOCKS": "0"}
+
+
+def native_test_command(root, unit, name, *, repo, env):
+    scoped = name in SOURCE_NAMES
+    return command(root, "execution", [unit, name, "--exact", "--ignored",
+        "--nocapture", "--test-threads=1", "--color=never"], cwd=repo,
+        env=source_test_environment(repo, env) if scoped else env,
+        environment_mode="source-test-scoped-git" if scoped else "inherited")
 
 
 def admit_listing(data, expected):
@@ -298,8 +317,7 @@ def verify(args, root):
             group.mkdir()
             artifacts = group / "artifacts"
             artifacts.mkdir()
-            stdout, _ = command(group, "execution", [unit, name, "--exact", "--ignored",
-                "--nocapture", "--test-threads=1", "--color=never"], cwd=repo,
+            stdout, _ = native_test_command(group, unit, name, repo=repo,
                 env=dict(env, OXID_OWNED_NATIVE_EVIDENCE=str(artifacts)))
             admit_execution(stdout, name)
         public = evidence / "public-cli"
