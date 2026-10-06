@@ -151,10 +151,17 @@ intentional, measured physical-admission difference, not a ceiling increase.
 Retain the old boundary evidence and test the new exact endpoint plus the old
 endpoint/one-byte-under failures before allocation. Measure and charge all other
 affected enclosing wrappers separately: the eight-byte header change is not a
-claim about total program growth. The candidate source-association envelope with
-suffix bases and explicit family roles grows from 464 to 504 bytes and remains
-unpaid until integrated into its actual ledger. No output route may rely on these
-candidate measurements alone.
+claim about total program growth. The source-association candidate measured 504
+bytes, but the complete implementation includes its actual receiver borrows,
+selectors, rank results and retained function projection. Its charged envelope
+is 568 bytes, up from 464. The private builtin caller consequently grows from
+2944 to 3072 bytes: association adds 104 and the index, typed value and typed
+result each add eight. Resolved and typed program carriers grow from 600/624 to
+608/632 bytes; the production source and type dispatch envelopes grow from
+3256/2528 to 3272/2560. The observation fixed charge grows from 11888 to 11896.
+These actual enclosing charges supersede the candidate measurement and remain
+subject to existing ceilings. Output execution stays denied until its proof
+consumers are established.
 
 The two retained predecessor fixtures pin the distinction: absent inventory
 previously requested retained/scratch 488/4102, and read_stdin requested
