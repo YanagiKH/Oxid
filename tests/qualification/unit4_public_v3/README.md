@@ -72,11 +72,13 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact237-input enum compiler manifest, the reviewed238-input
+`authority.py` pins the exact 252-input stdin compiler manifest, the reviewed 253-input
 lifecycle overlay map and the current additive patch successor. Four exact
 enum-era substitutions preserve the logical collection, parser and owned-route
-hooks in the current execution bodies. The successor is `observer-enum-v1.patch`.
-Reversing it restores the retained `observer-combined-v1.patch` exactly; reversing
+hooks in the current execution bodies. The current `observer-stdin-v1.patch`
+adds two exact context insertions and reverses to the retained
+`observer-enum-v1.patch`. Reversing that restores
+`observer-combined-v1.patch` exactly; reversing
 that predecessor's array-policy context edit then restores the exact
 historical additive patch. A caller cannot select a
 different compiler body merely by supplying a coherent rewritten manifest.
@@ -180,3 +182,16 @@ keep their original meanings. Hosted replay and the final join activate the same
 admitted amendment, independently reconstruct the records and reject missing,
 extra or forged metadata. The parser Closed carrier projection and Unit2 resource
 representation successor are separate adapters.
+
+The bounded-stdin successor binds checkpoint
+`c1d73740268d64d4e908ad86ed9dabaa48dd1c23`, 252 current inputs and a
+253-member lifecycle view. Its two context-only patch changes admit the builtin
+catalog module and closed std-import policy parameter without changing any
+logical event. No frozen observer or contract is edited.
+
+The qualified-values descriptor and helper remain unchanged. Its semantic source
+authority is the exact retained 237-input `enum-source.json`; execution source
+is the 252-input `current-source.json`. The public amendment receipt records
+both roles separately. Current executions cannot use the old compiler authority,
+and the frozen semantic amendment cannot be rebound to the new compiler. The
+final join independently validates both exact hashes and their roles.

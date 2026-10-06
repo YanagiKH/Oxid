@@ -163,7 +163,7 @@ class HostPreparationControls(unittest.TestCase):
             observer = q.read(root / 'observer-source/observer-source.json')
             self.assertEqual(observer['observer_patch'], patch_identity)
             self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
-            self.assertEqual(len(observer['files']), 238)
+            self.assertEqual(len(observer['files']), 253)
             runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
             self.assertFalse((root / 'ordinary-build').exists())
             self.assertFalse((root / 'observer-build').exists())
@@ -259,7 +259,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 238)
+        self.assertEqual(len(self.manifest['files']), 253)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -353,7 +353,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 16)
+        self.assertEqual(len(expected), 17)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
@@ -1018,7 +1018,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 808)
+        self.assertEqual(report['full_archive_only'], 838)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1233,7 +1233,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 182)
+        self.assertEqual(len(compiler), 197)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
@@ -1420,13 +1420,16 @@ class EnumSemanticReceiptTransportControls(unittest.TestCase):
                     self.verify()
 
     def test_authority_and_report_metadata_reject_even_with_forged_matching_summary(self):
-        for mutation in ('missing-authority', 'wrong-authority', 'source', 'extra-authority', 'missing-report',
+        for mutation in ('missing-authority', 'wrong-authority', 'source', 'execution-source', 'swapped-sources', 'extra-authority', 'missing-report',
                          'wrong-report', 'extra-report', 'authority-binding', 'history-binding', 'membership'):
             with self.subTest(mutation=mutation):
                 self.setUp()
                 if mutation == 'missing-authority': self.authority = None
                 elif mutation == 'wrong-authority': self.authority['identity'] = 'unapproved'
                 elif mutation == 'source': self.authority['source_manifest']['sha256'] = '0' * 64
+                elif mutation == 'execution-source': self.authority['execution_source_manifest']['sha256'] = '0' * 64
+                elif mutation == 'swapped-sources':
+                    self.authority['source_manifest'], self.authority['execution_source_manifest'] = self.authority['execution_source_manifest'], self.authority['source_manifest']
                 elif mutation == 'extra-authority': self.authority['unapproved'] = True
                 elif mutation == 'missing-report': self.report.pop('qualified_paths_amendment')
                 elif mutation == 'wrong-report': self.report['comparison_basis'] = 'unchanged'
@@ -1434,7 +1437,7 @@ class EnumSemanticReceiptTransportControls(unittest.TestCase):
                 elif mutation == 'authority-binding': self.report['qualified_paths_amendment_receipt'] = {**self.authority_binding, 'sha256': '0' * 64}
                 elif mutation == 'history-binding': self.report['historical_comparison'] = {**self.history_binding, 'sha256': '0' * 64}
                 else: self.report['qualified_paths_amended_keys'].pop()
-                if mutation in ('wrong-authority', 'source', 'extra-authority'):
+                if mutation in ('wrong-authority', 'source', 'execution-source', 'swapped-sources', 'extra-authority'):
                     self.report['qualified_paths_amendment'] = copy.deepcopy(self.authority)
                 with self.assertRaises(q.Reject): self.verify()
 

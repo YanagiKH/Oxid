@@ -15,7 +15,39 @@ import sys
 from pathlib import Path, PurePosixPath
 from contracts import need, sha, load, save, binding, verify
 from runtime import source_manifest, process
-from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA, PROJECTED_LIFECYCLE_PATCH_SHA
+from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA, PROJECTED_LIFECYCLE_PATCH_SHA, ENUM_LIFECYCLE_PATCH_SHA
+
+# Two context-only insertions preserve the exact enum observer and event hooks.
+STDIN_LIFECYCLE_SEAMS = (
+    (b'''@@ -1,4 +1,5 @@
+ //! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
++mod lifecycle_observer;
+ mod ast;
+ mod declaration_index;
+ mod diagnostic;
+''', b'''@@ -1,5 +1,6 @@
+ //! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
++mod lifecycle_observer;
+ mod ast;
+ mod builtin_catalog;
+ mod declaration_index;
+ mod diagnostic;
+'''),
+    (b'''@@ -98,10 +98,11 @@
+     node_limit: usize,
+     allocator: &mut Allocator,
+     arrays: ArraySyntaxPolicy,
+     enums: EnumSyntaxPolicy,
+     storage: &mut enums::SyntaxStorage,
+''', b'''@@ -98,11 +98,12 @@
+     node_limit: usize,
+     allocator: &mut Allocator,
+     arrays: ArraySyntaxPolicy,
+     enums: EnumSyntaxPolicy,
+     std_imports: StdImportPolicy,
+     storage: &mut enums::SyntaxStorage,
+'''),
+)
 
 # Exact enum-era context changes at the same logical execution stages. The new
 # original enum route receives the existing owned-route event exactly once.
@@ -89,7 +121,14 @@ def observer_path_order(paths, root):
 def verify_lifecycle_successor(raw):
     """Restore both pinned predecessors without changing logical event meaning."""
     need(sha(raw) == LIFECYCLE_PATCH_SHA, 'exact current lifecycle successor')
-    projected = raw
+    enum = raw
+    for before, after in reversed(STDIN_LIFECYCLE_SEAMS):
+        need(enum.count(after) == 1, 'exact stdin lifecycle context')
+        enum = enum.replace(after, before, 1)
+    need(sha(enum) == ENUM_LIFECYCLE_PATCH_SHA, 'stdin lifecycle successor must restore exact enum patch')
+    need(enum == Path(__file__).with_name('observer-enum-v1.patch').read_bytes(),
+         'retained enum lifecycle patch changed')
+    projected = enum
     for before, after in reversed(ENUM_LIFECYCLE_SEAMS):
         need(projected.count(after) == 1, 'exact enum lifecycle context')
         projected = projected.replace(after, before, 1)
