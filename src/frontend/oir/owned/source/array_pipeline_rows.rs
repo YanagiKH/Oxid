@@ -56,6 +56,7 @@ impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
+            AggregateTy::Enum(_) => unreachable!("enum source gate"),
             AggregateTy::FixedArray(array) => write!(
                 f,
                 "[\"fixed-array\",{},{}]",
@@ -311,6 +312,7 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            E::ConstructEnum { .. } => unreachable!("enum source gate"),
             E::Bool(value) => write!(f, "[\"bool\",{value}]"),
             E::I32(value) => write!(f, "[\"i32\",{value}]"),
             E::Unit => f.write_str("[\"unit\"]"),
@@ -434,6 +436,7 @@ impl fmt::Display for HirStatement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::StmtKind as S;
         match self.0 {
+            S::Match { .. } => unreachable!("enum source gate"),
             S::Let { binding, init } => write!(f, "[\"let\",{},{}]", binding.0, init.0),
             S::Assign {
                 binding,
@@ -930,6 +933,7 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
+            I::ConstructEnum { .. } | I::ConsumeVariant { .. } => unreachable!("enum source gate"),
             I::ConstructComposite {
                 destination,
                 fields,
@@ -1073,6 +1077,7 @@ struct TerminatorRow<'a>(&'a OwnedTerminatorKind);
 impl fmt::Display for TerminatorRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            OwnedTerminatorKind::MatchDispatch { .. } => unreachable!("enum source gate"),
             OwnedTerminatorKind::Branch {
                 condition,
                 then_block,

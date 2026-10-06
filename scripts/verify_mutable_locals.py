@@ -2,12 +2,15 @@
 """Independent mutable scalar model / reference / mandatory LLVM O0 parity.
 
 Usage: python3 scripts/verify_mutable_locals.py target/debug/oxid target/release/oxid
+Current enum-match source: add --expectation-amendment bounded-enum-match-v1.
+Without the explicit selection, historical negative expectations stay unchanged.
 Requires real pinned LLVM/Clang/LLD 19.1.7. Missing tools fail. The oracle owns
 its AST, types, lexical frames, mutable cells, branch choices, call frames and
 arbitrary-precision checked arithmetic; no compiler output supplies expectations.
 Model traces establish independent witnesses, not observation of compiler stores.
 Native programs run with source removed and no compiler/runtime tools in PATH.
 """
+import argparse
 from dataclasses import dataclass
 import hashlib
 import json
@@ -17,6 +20,10 @@ import random
 import subprocess
 import sys
 import tempfile
+
+ENUM_MATCH_EXPECTATION_AMENDMENT_ID = "bounded-enum-match-v1"
+ENUM_MATCH_NEGATIVE_SOURCE_SHA256 = "dd68ba7d2d902bce84163bd305d09ee4ef4ce63efccfe20dc4417a8892dde2fe"
+ENUM_MATCH_NEGATIVE_OLD_EXPECTATION_SHA256 = "3a8bb56c474222dd5d503c6e04de5ef6883244dfdf258a2a63cd6ab9ffd2858f"
 
 MIN, MAX = -(2 ** 31), 2 ** 31 - 1
 
@@ -474,6 +481,46 @@ def negative_cases():
     yield "token_limit", source + "/*x*/", "E0400", "lex", len(source), 5
 
 
+def negative_expectation_amendment(selection):
+    """Explicit current-source view; retain the historical tuple and its seal."""
+    if selection is None:
+        return None
+    if selection != ENUM_MATCH_EXPECTATION_AMENDMENT_ID:
+        raise ValueError("unknown mutable negative expectation amendment")
+    return {
+        "amendment_id": selection,
+        "scope": "current-production-cli-only",
+        "source_sha256": ENUM_MATCH_NEGATIVE_SOURCE_SHA256,
+        "old_expectation_sha256": ENUM_MATCH_NEGATIVE_OLD_EXPECTATION_SHA256,
+        "old_expected": {"category": "unsupported_control", "code": "E0101", "stage": "parse", "offset": None, "width": None},
+        # The true token starts at character 45, UTF-8 byte 47 after 雪.
+        "effective_expected": {"category": "unsupported_control", "code": "E0100", "stage": "parse", "offset": 45, "width": 4,
+                               "message": "match requires a bare binding name"},
+        "derivation": "Bounded enum match admits the match keyword, but requires a bare binding scrutinee; the true token is rejected before arm parsing",
+    }
+
+
+def amended_negative_cases(selection=None):
+    """Amend exactly one pinned source/expectation; fail closed on drift."""
+    amendment = negative_expectation_amendment(selection)
+    cases = list(negative_cases())
+    if amendment is None:
+        return cases
+    matches = 0
+    for index, case in enumerate(cases):
+        if hashlib.sha256(case[1].encode()).hexdigest() != amendment["source_sha256"]:
+            continue
+        encoded = json.dumps(case, ensure_ascii=True, separators=(",", ":")).encode()
+        if hashlib.sha256(encoded).hexdigest() != amendment["old_expectation_sha256"]:
+            raise ValueError("mutable amendment historical expectation identity mismatch")
+        expected = amendment["effective_expected"]
+        cases[index] = (expected["category"], case[1], expected["code"], expected["stage"], expected["offset"], expected["width"])
+        matches += 1
+    if matches != 1:
+        raise ValueError("mutable amendment requires exactly one pinned historical case")
+    return cases
+
+
 def token_boundary_source():
     # Header 16 tokens, return suffix 5, each x=0; is 4. Three independent
     # trailing trivia tokens bring 16 + 4*24994 + 5 + 3 to exactly 100000.
@@ -552,7 +599,17 @@ def assert_origin(source, primary, offset, width):
     assert primary["column"] == len(source[:offset].rsplit("\n", 1)[-1]) + 1
 
 
-def verify(binaries):
+def assert_negative_diagnostic(category, source, diagnostic, code, stage, offset, width, *, amendment=None):
+    assert diagnostic["code"] == code and diagnostic["stage"] == stage, (category, source[:1000], code, stage, diagnostic)
+    if offset is not None:
+        assert_origin(source, diagnostic["primary"], offset, width)
+    if amendment is not None and hashlib.sha256(source.encode()).hexdigest() == amendment["source_sha256"]:
+        assert diagnostic["message"] == amendment["effective_expected"]["message"], (category, source[:1000], diagnostic)
+
+
+def verify(binaries, *, expectation_amendment=None):
+    amendment = negative_expectation_amendment(expectation_amendment)
+    negatives = amended_negative_cases(expectation_amendment)
     self_check_model()
     binaries = [str(Path(binary).resolve()) for binary in binaries]
     counts = dict(binaries=len(binaries), source_cases=0, success_cases=0, overflow_cases=0,
@@ -670,7 +727,7 @@ def verify(binaries):
                     counts[key] += 1
             categories[category] = categories.get(category, 0) + 1
         assert tested_io == {"i32", "bool", "unit", "error"}
-        for category, source, code, stage, offset, width in negative_cases():
+        for category, source, code, stage, offset, width in negatives:
             source_path.write_bytes(source.encode())
             corpus_hash.update(source.encode() + b"\0")
             previous = {}
@@ -679,9 +736,8 @@ def verify(binaries):
                     output = root / "invalid-output"
                     result = invoke(binary, operation, output=output, missing_tools=True)
                     records = records_of(result, source)
-                    assert result.returncode == 1 and len(records) == 2 and records[0]["code"] == code and records[0]["stage"] == stage, (category, source[:1000], code, stage, records)
-                    if offset is not None:
-                        assert_origin(source, records[0]["primary"], offset, width)
+                    assert result.returncode == 1 and len(records) == 2, (category, source[:1000], records)
+                    assert_negative_diagnostic(category, source, records[0], code, stage, offset, width, amendment=amendment)
                     if code == "E0304" or category == "fixed_types":
                         assert len(records[0]["secondary"]) == 1
                         declaration = source.index("x")
@@ -733,11 +789,22 @@ def verify(binaries):
         assert set(root.iterdir()) == {source_path}, list(root.iterdir())
     assert counts["modeled_stores"] > 100 and counts["modeled_calls"] > 100 and counts["modeled_branches"] > 100
     assert compiler_hashes == [hashlib.sha256(Path(binary).read_bytes()).hexdigest() for binary in binaries], "compiler changed during oracle run"
-    print(json.dumps(dict(counts, categories=categories, compiler_sha256=compiler_hashes, corpus_sha256=corpus_hash.hexdigest(), artifact_manifest_sha256=artifact_hash.hexdigest(), source_model_trace_sha256=trace_hash.hexdigest()), sort_keys=True))
+    print(json.dumps(dict(counts, categories=categories, compiler_sha256=compiler_hashes,
+                          negative_expectation_amendment=amendment,
+                          corpus_sha256=corpus_hash.hexdigest(), artifact_manifest_sha256=artifact_hash.hexdigest(), source_model_trace_sha256=trace_hash.hexdigest()), sort_keys=True))
     print("mutable locals O0: independent typed state/call/branch model, checked i32, reference/native parity, exact diagnostics, resource boundaries and standalone profile-identical ELF: PASS")
 
 
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("binaries", nargs="+")
+    parser.add_argument("--expectation-amendment", choices=(ENUM_MATCH_EXPECTATION_AMENDMENT_ID,),
+                        help="explicit current-source expectation; preserves the historical negative corpus")
+    args = parser.parse_args(argv)
+    if sys.flags.optimize:
+        parser.error("Python assertions must remain enabled")
+    verify(args.binaries, expectation_amendment=args.expectation_amendment)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        raise SystemExit(__doc__)
-    verify(sys.argv[1:])
+    main()

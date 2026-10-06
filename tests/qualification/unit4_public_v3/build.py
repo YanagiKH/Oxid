@@ -15,18 +15,91 @@ import sys
 from pathlib import Path, PurePosixPath
 from contracts import need, sha, load, save, binding, verify
 from runtime import source_manifest, process
-from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA
+from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA, PROJECTED_LIFECYCLE_PATCH_SHA
+
+# Exact enum-era context changes at the same logical execution stages. The new
+# original enum route receives the existing owned-route event exactly once.
+ENUM_LIFECYCLE_SEAMS = (
+    (b'''@@ -24,6 +24,7 @@
+     work: &WorkMeter,
+     allocator: &mut Allocator,
+ ) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+''', b'''@@ -24,7 +24,8 @@
+     work: &WorkMeter,
+     allocator: &mut Allocator,
+     syntax: CollectionSyntax,
+ ) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+'''),
+    (b'''@@ -32,9 +32,12 @@
+     ast: &ast::Program,
+     sources: &'s SourceMap,
+ ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("checker_attempts", "original");
+     let owner =
+         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
++    crate::frontend::lifecycle_observer::event("route_attempts", "original");
+     let (body, entry) = if ast.uses_owned_syntax(source) {
+''', b'''@@ -32,12 +32,16 @@
+     ast: &ast::Program,
+     sources: &'s SourceMap,
+ ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("checker_attempts", "original");
+     let owner =
+         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
++    crate::frontend::lifecycle_observer::event("route_attempts", "original");
+     let (body, entry) = if !ast.enums.is_empty() {
++        crate::frontend::lifecycle_observer::event("route_completions", "owned");
+         let (program, entry) = owned::source::check_enum_source(owner)?;
+         (CheckedBody::Owned(program), entry)
+     } else if ast.uses_owned_syntax(source) {
+'''),
+    (b'''@@ -98,7 +98,8 @@
+     node_limit: usize,
+     allocator: &mut Allocator,
+     arrays: ArraySyntaxPolicy,
+ ) -> Result<(Program, usize), Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("parse_attempt", source.path());
+     let mut parser = Parser {
+''', b'''@@ -98,10 +98,11 @@
+     node_limit: usize,
+     allocator: &mut Allocator,
+     arrays: ArraySyntaxPolicy,
+     enums: EnumSyntaxPolicy,
+     storage: &mut enums::SyntaxStorage,
+ ) -> Result<(Program, usize), Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("parse_attempt", source.path());
+     *storage = enums::SyntaxStorage::default();
+     let mut parser = Parser {
+'''),
+    (b'''@@ -202,6 +203,7 @@
+         }
+     }
+     if diagnostics.is_empty() {
+''', b'''@@ -202,6 +203,7 @@
+     }
+     *storage = parser.storage;
+     if diagnostics.is_empty() {
+'''),
+)
 
 def observer_path_order(paths, root):
     # Preserve the approved POSIX component order on every actual host.
     return sorted(paths, key=lambda path: PurePosixPath(path.relative_to(root).as_posix()).parts)
 
 def verify_lifecycle_successor(raw):
-    """The current parser policy argument changes context, never observer hooks."""
+    """Restore both pinned predecessors without changing logical event meaning."""
+    need(sha(raw) == LIFECYCLE_PATCH_SHA, 'exact current lifecycle successor')
+    projected = raw
+    for before, after in reversed(ENUM_LIFECYCLE_SEAMS):
+        need(projected.count(after) == 1, 'exact enum lifecycle context')
+        projected = projected.replace(after, before, 1)
+    need(sha(projected) == PROJECTED_LIFECYCLE_PATCH_SHA, 'enum lifecycle successor must restore exact projected patch')
+    need(projected == Path(__file__).with_name('observer-combined-v1.patch').read_bytes(),
+         'retained projected lifecycle patch changed')
     before = b'@@ -98,6 +98,7 @@\n     node_limit: usize,\n     allocator: &mut Allocator,\n ) -> Result<(Program, usize), Vec<Diagnostic>> {\n'
     after = b'@@ -98,7 +98,8 @@\n     node_limit: usize,\n     allocator: &mut Allocator,\n     arrays: ArraySyntaxPolicy,\n ) -> Result<(Program, usize), Vec<Diagnostic>> {\n'
-    need(sha(raw) == LIFECYCLE_PATCH_SHA and raw.count(after) == 1, 'exact current lifecycle successor')
-    original = raw.replace(after, before, 1)
+    need(projected.count(after) == 1, 'exact projected lifecycle context')
+    original = projected.replace(after, before, 1)
     need(sha(original) == HISTORICAL_LIFECYCLE_PATCH_SHA, 'lifecycle successor must restore exact historical patch')
     return original
 
@@ -67,6 +140,8 @@ def prepare(args):
                 'src/frontend/oir/source/sealed.rs', 'src/frontend/declaration_index/sealed.rs',
                 'src/frontend/driver.rs', 'src/frontend/lifecycle_observer.rs'}
     need(set(changed) == expected and len(files) == len(original['files']) + 1, 'observer patch source scope')
+    need(sha(__import__('json').dumps(files, sort_keys=True, separators=(',', ':')).encode()) == OBSERVER_FILES_SHA,
+         'unapproved lifecycle observer bodies')
     save(output / 'observer-source.json', {'schema_version': 1, 'kind': 'unit4-public-v3-additive-observer',
          'base_source_manifest': binding(manifest_path), 'base_source_manifest_sha256': sha(manifest_path.read_bytes()),
          'observer_patch': binding(patch), 'counter_semantics': 'Logical stage events, not OS syscalls',

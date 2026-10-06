@@ -178,6 +178,15 @@ pub(super) enum Event {
     Acquire(LoanKey, OwnerKey, BorrowKind),
     Release(LoanKey),
     Return(hir::DefId),
+    EnumTagRead(OwnerKey, u32),
+    EnumPayloadRead(OwnerKey, usize),
+    EnumBind(OwnerKey, Option<LocalId>, Option<Scalar>),
+}
+/// A fixed-size active-value snapshot, never the inactive union or its padding.
+#[derive(Clone, Copy)]
+struct EnumValue {
+    tag: u32,
+    payload: Option<Scalar>,
 }
 #[derive(Clone, Copy)]
 enum Access {
@@ -492,7 +501,7 @@ impl<'p, 'w> Machine<'p, 'w> {
     fn array_type(&self, key: OwnerKey, span: Span) -> Result<FixedArrayTy> {
         match self.aggregate(key, span)? {
             AggregateTy::FixedArray(array) => Ok(array),
-            AggregateTy::Record(_) => Err(bad("array aggregate type", span)),
+            AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -822,6 +831,89 @@ impl<'p, 'w> Machine<'p, 'w> {
         Ok(())
     }
 
+    /// The checked nominal table is the only tag/type authority. Dispatch uses
+    /// this tag-only operation, so neither a failed nor a successful test exposes
+    /// the payload before ConsumeVariant has paid its separate charge.
+    fn enum_tag(&mut self, key: OwnerKey, span: Span) -> Result<(VariantId, Option<hir::Ty>)> {
+        let AggregateTy::Enum(enumeration) = self.aggregate(key, span)? else {
+            return Err(bad("enum type", span));
+        };
+        let extent = self.owner_extent(key, span)?;
+        let offset = scalar_offset(extent, 0, hir::Ty::I32, span)?;
+        let tag = u32::from_le_bytes(
+            self.frames[key.frame as usize].payload[offset..offset + 4]
+                .try_into()
+                .map_err(|_| bad("enum tag", span))?,
+        );
+        #[cfg(test)]
+        self.record_event(Event::EnumTagRead(key, tag));
+        let variant = self
+            .plan
+            .witness()
+            .declarations()
+            .enums()
+            .variant_for_tag(enumeration, tag as usize)
+            .map_err(|_| bad("enum tag", span))?;
+        Ok((variant.id(), variant.payload()))
+    }
+    fn load_enum(
+        &mut self,
+        key: OwnerKey,
+        expected: Option<VariantId>,
+        span: Span,
+    ) -> Result<EnumValue> {
+        let (variant, payload_ty) = self.enum_tag(key, span)?;
+        if expected.is_some_and(|expected| expected != variant) {
+            return Err(bad("enum tag", span));
+        }
+        let payload = if let Some(ty) = payload_ty {
+            let extent = self.owner_extent(key, span)?;
+            let offset = scalar_offset(extent, 4, ty, span)?;
+            #[cfg(test)]
+            self.record_event(Event::EnumPayloadRead(key, scalar_size(ty)));
+            Some(
+                decode(&self.frames[key.frame as usize].payload, offset, ty, span)
+                    .map_err(|_| bad("enum payload", span))?,
+            )
+        } else {
+            None
+        };
+        Ok(EnumValue {
+            tag: variant.index as u32,
+            payload,
+        })
+    }
+    fn preflight_enum_binding(
+        &self,
+        frame: usize,
+        destination: Option<LocalId>,
+        value: EnumValue,
+        span: Span,
+    ) -> Result<()> {
+        match (destination, value.payload) {
+            (None, None) => Ok(()),
+            (Some(destination), Some(value)) => {
+                let declaration = self
+                    .function(self.frames[frame].function)
+                    .locals
+                    .get(destination.0)
+                    .ok_or_else(|| bad("scalar identity", span))?;
+                let slot = self.frames[frame]
+                    .slots
+                    .get(destination.0)
+                    .ok_or_else(|| bad("scalar storage", span))?;
+                if declaration.ty != value.ty() {
+                    return Err(bad("scalar type", span));
+                }
+                if declaration.kind == LocalKind::Parameter && slot.is_some() {
+                    return Err(bad("parameter reassignment", span));
+                }
+                Ok(())
+            }
+            _ => Err(bad("enum binding", span)),
+        }
+    }
+
     fn transfer_payload(&mut self, from: OwnerKey, to: OwnerKey, span: Span) -> Result<()> {
         // Observation identifies the newly installed value, matching parameter transfers.
         // Every caller preflights this same epoch before the logical transition.
@@ -848,6 +940,26 @@ impl<'p, 'w> Machine<'p, 'w> {
             && destination.start < source.end
         {
             return Err(bad("overlapping whole transfer", span));
+        }
+        // Sums have no static leaves. Snapshot only the checked active value,
+        // before any destination write; caller state/epoch preflights precede us.
+        if matches!(record, AggregateTy::Enum(_)) {
+            let value = self.load_enum(from, None, span)?;
+            enum_offsets(destination.clone(), value, span)?;
+            #[cfg(test)]
+            let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
+            encode_enum(
+                &mut self.frames[to.frame as usize].payload,
+                destination,
+                value,
+                span,
+            )?;
+            #[cfg(test)]
+            {
+                self.record_event(Event::Transfer(from, initialized_destination));
+                self.observe_end(observation);
+            }
+            return Ok(());
         }
         let declarations = self.plan.witness().declarations();
         // Preflight all scalar leaves, including positive empty-value sentinels,
@@ -1187,6 +1299,69 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ConstructEnum {
+                destination,
+                variant,
+                payload,
+            } => {
+                self.expect_owner(frame, *destination, &[UNINITIALIZED], span)?;
+                let key = self.raw_key(frame, *destination);
+                let AggregateTy::Enum(enumeration) = self.aggregate(key, span)? else {
+                    return Err(bad("enum type", span));
+                };
+                let payload = payload
+                    .map(|operand| self.read(frame, operand))
+                    .transpose()?;
+                let declarations = self.plan.witness().declarations().enums();
+                declarations
+                    .check_payload(enumeration, *variant, payload.map(Scalar::ty))
+                    .map_err(|_| bad("enum construction type", span))?;
+                let tag = declarations
+                    .variant(enumeration, *variant)
+                    .map_err(|_| bad("enum tag", span))?
+                    .tag();
+                let value = EnumValue { tag, payload };
+                let extent = self.owner_extent(key, span)?;
+                enum_offsets(extent.clone(), value, span)?;
+                #[cfg(test)]
+                let observation =
+                    self.observe_begin(key, StorageObservationKind::Construction, true, span);
+                encode_enum(&mut self.frames[frame].payload, extent, value, span)?;
+                self.change_owner(frame, *destination, AVAILABLE, span)?;
+                #[cfg(test)]
+                self.observe_end(observation);
+            }
+            OwnedInstruction::ConsumeVariant {
+                match_id,
+                arm,
+                destination,
+            } => {
+                let descriptor = f
+                    .matches
+                    .get(match_id.0)
+                    .ok_or_else(|| bad("enum match", span))?;
+                let selected = descriptor
+                    .arms
+                    .get(*arm)
+                    .ok_or_else(|| bad("enum arm", span))?;
+                let key = self.base(
+                    frame,
+                    AccessBase::Owner(descriptor.source),
+                    Access::Consume,
+                    span,
+                )?;
+                self.expect_owner(frame, descriptor.source, &[AVAILABLE], span)?;
+                let value = self.load_enum(key, Some(selected.variant), span)?;
+                self.preflight_enum_binding(frame, *destination, value, span)?;
+                // Every operation that can fail has completed. Binding and the
+                // already-preflighted owner transition form one paid consumption.
+                if let (Some(destination), Some(payload)) = (*destination, value.payload) {
+                    self.frames[frame].slots[destination.0] = Some(payload);
+                }
+                self.change_owner(frame, descriptor.source, MOVED, span)?;
+                #[cfg(test)]
+                self.record_event(Event::EnumBind(key, *destination, value.payload));
+            }
             OwnedInstruction::ConstructComposite {
                 destination,
                 fields,
@@ -1487,8 +1662,11 @@ impl<'p, 'w> Machine<'p, 'w> {
                 self.change_owner(frame, *o, DEAD, span)?;
             }
             OwnedInstruction::Discard(o) => {
-                self.base(frame, AccessBase::Owner(*o), Access::Consume, span)?;
+                let key = self.base(frame, AccessBase::Owner(*o), Access::Consume, span)?;
                 self.expect_owner(frame, *o, &[AVAILABLE], span)?;
+                if matches!(self.aggregate(key, span)?, AggregateTy::Enum(_)) {
+                    self.load_enum(key, None, span)?;
+                }
                 self.change_owner(frame, *o, MOVED, span)?;
             }
             OwnedInstruction::Construct {
@@ -1726,38 +1904,59 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .checked_add(size)
                         .filter(|end| *end <= child.payload.len())
                         .ok_or_else(|| bad("incoming aggregate range", span))?;
-                    for leaf in declarations
-                        .leaves(record)
-                        .map_err(|_| bad("incoming leaves", span))?
-                    {
-                        self.load_leaf(key, leaf, span)?;
-                        scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
-                    }
-                    #[cfg(test)]
-                    let observation = if matches!(record, AggregateTy::FixedArray(_)) {
-                        self.observer.begin(
-                            &mut child.payload,
-                            offset..end,
-                            OwnerKey {
-                                frame: self.frames.len() as u64,
-                                activation: child.activation,
-                                owner: destination.0 as u64,
-                                generation: 1,
-                            },
-                            AVAILABLE,
-                            StorageObservationKind::Incoming,
-                            true,
-                        )
+                    let active = if matches!(record, AggregateTy::Enum(_)) {
+                        let value = self.load_enum(key, None, callee.span)?;
+                        enum_offsets(offset..end, value, span)?;
+                        let owner = child
+                            .owners
+                            .get(destination.0)
+                            .ok_or_else(|| bad("incoming owner", span))?;
+                        if owner.state != DEAD || owner.generation != 0 {
+                            return Err(bad("incoming owner state", span));
+                        }
+                        epoch(owner.generation, span)?;
+                        Some(value)
                     } else {
+                        for leaf in declarations
+                            .leaves(record)
+                            .map_err(|_| bad("incoming leaves", span))?
+                        {
+                            self.load_leaf(key, leaf, span)?;
+                            scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
+                        }
                         None
                     };
-                    for leaf in declarations
-                        .leaves(record)
-                        .map_err(|_| bad("incoming leaves", span))?
-                    {
-                        let value = self.load_leaf(key, leaf, span)?;
-                        let leaf_offset = scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
-                        encode(&mut child.payload, leaf_offset, value, span)?;
+                    #[cfg(test)]
+                    let observation =
+                        if matches!(record, AggregateTy::FixedArray(_) | AggregateTy::Enum(_)) {
+                            self.observer.begin(
+                                &mut child.payload,
+                                offset..end,
+                                OwnerKey {
+                                    frame: self.frames.len() as u64,
+                                    activation: child.activation,
+                                    owner: destination.0 as u64,
+                                    generation: 1,
+                                },
+                                AVAILABLE,
+                                StorageObservationKind::Incoming,
+                                true,
+                            )
+                        } else {
+                            None
+                        };
+                    if let Some(value) = active {
+                        encode_enum(&mut child.payload, offset..end, value, span)?;
+                    } else {
+                        for leaf in declarations
+                            .leaves(record)
+                            .map_err(|_| bad("incoming leaves", span))?
+                        {
+                            let value = self.load_leaf(key, leaf, span)?;
+                            let leaf_offset =
+                                scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
+                            encode(&mut child.payload, leaf_offset, value, span)?;
+                        }
                     }
                     #[cfg(test)]
                     self.observer.end(&child.payload, observation);
@@ -1935,6 +2134,35 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
             self.charge(cost, end.span)?;
             match end.kind {
+                OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
+                    #[cfg(test)]
+                    self.inject_enum_dispatch(frame, match_id, arm, end.span);
+                    let descriptor = f
+                        .matches
+                        .get(match_id.0)
+                        .ok_or_else(|| bad("enum match", end.span))?;
+                    let selected = descriptor
+                        .arms
+                        .get(arm)
+                        .ok_or_else(|| bad("enum arm", end.span))?;
+                    let key = self.base(
+                        frame,
+                        AccessBase::Owner(descriptor.source),
+                        Access::Read,
+                        end.span,
+                    )?;
+                    let (variant, _) = self.enum_tag(key, end.span)?;
+                    let target = if variant == selected.variant {
+                        selected.entry
+                    } else {
+                        descriptor
+                            .arms
+                            .get(arm + 1)
+                            .map(|next| next.dispatch)
+                            .ok_or_else(|| bad("enum tag", end.span))?
+                    };
+                    self.branch(frame, target);
+                }
                 OwnedTerminatorKind::Branch {
                     condition,
                     then_block,
@@ -1947,6 +2175,8 @@ impl<'p, 'w> Machine<'p, 'w> {
                 }
                 OwnedTerminatorKind::Goto(target) => self.branch(frame, target),
                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_) => {
+                    #[cfg(test)]
+                    self.inject_enum_return(frame, &end.kind, end.span);
                     if let Some(value) = self.return_value(frame, &end.kind, end.span)? {
                         return Ok(value);
                     }
@@ -1956,6 +2186,37 @@ impl<'p, 'w> Machine<'p, 'w> {
         }
     }
 }
+/// Validate every destination byte range before the first write. The snapshot
+/// contains no inactive bytes and encoding cannot inspect them.
+fn enum_offsets(
+    extent: std::ops::Range<usize>,
+    value: EnumValue,
+    span: Span,
+) -> Result<(usize, Option<usize>)> {
+    let tag = scalar_offset(extent.clone(), 0, hir::Ty::I32, span)?;
+    let payload = value
+        .payload
+        .map(|payload| scalar_offset(extent, 4, payload.ty(), span))
+        .transpose()?;
+    Ok((tag, payload))
+}
+fn encode_enum(
+    bytes: &mut [u8],
+    extent: std::ops::Range<usize>,
+    value: EnumValue,
+    span: Span,
+) -> Result<()> {
+    if extent.end > bytes.len() {
+        return Err(bad("enum storage", span));
+    }
+    let (tag, payload_offset) = enum_offsets(extent, value, span)?;
+    bytes[tag..tag + 4].copy_from_slice(&value.tag.to_le_bytes());
+    if let (Some(offset), Some(payload)) = (payload_offset, value.payload) {
+        encode(bytes, offset, payload, span)?;
+    }
+    Ok(())
+}
+
 fn scalar_size(ty: hir::Ty) -> usize {
     match ty {
         hir::Ty::I32 => 4,
@@ -2217,6 +2478,8 @@ mod tests;
 fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) => Err(bad("unsupported aggregate carrier", span)),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => {
+            Err(bad("unsupported aggregate carrier", span))
+        }
     }
 }

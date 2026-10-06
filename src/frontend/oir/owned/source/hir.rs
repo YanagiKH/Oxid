@@ -3,6 +3,7 @@ pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 pub(super) use crate::frontend::hir::{DefId, Ty};
 pub(super) use crate::frontend::oir::owned_types::{
     AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+    VariantId,
 };
 use crate::frontend::source::Span;
 
@@ -90,6 +91,12 @@ pub(super) enum ExprKind {
         target: DefId,
         args: Vec<Argument>,
     },
+    /// Passive C3a carrier; no source entrypoint constructs it yet.
+    #[allow(dead_code)]
+    ConstructEnum {
+        variant: VariantId,
+        payload: Option<ExprId>,
+    },
     StructLiteral {
         record: RecordId,
         fields: Vec<FieldInit>,
@@ -125,8 +132,23 @@ pub(super) struct Binding {
     pub(super) scope: BodyBlockId,
     pub(super) parameter_position: Option<usize>,
 }
+/// Written-order arm metadata. Its body owns the scalar payload binding.
+#[derive(Debug)]
+#[allow(dead_code)] // Measured before enum source resolution is admitted.
+pub(super) struct MatchArm {
+    pub(super) variant: VariantId,
+    pub(super) binding: Option<BindingId>,
+    pub(super) body: BodyBlockId,
+    pub(super) span: Span,
+}
 #[derive(Debug)]
 pub(super) enum StmtKind {
+    /// A named owner, never an expression that would move it before dispatch.
+    #[allow(dead_code)]
+    Match {
+        scrutinee: BindingId,
+        arms: Vec<MatchArm>,
+    },
     Let {
         binding: BindingId,
         init: ExprId,

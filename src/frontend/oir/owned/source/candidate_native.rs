@@ -49,6 +49,11 @@ fn event_receipts(events: &[execute::Event]) -> String {
     array(events.iter().enumerate().map(|(index, event)| {
         let mut values = vec![("index", index.to_string())];
         match event {
+            execute::Event::EnumTagRead(..)
+            | execute::Event::EnumPayloadRead(..)
+            | execute::Event::EnumBind(..) => {
+                unreachable!("enum events are outside this predecessor qualification schema")
+            }
             execute::Event::ReadIndex(..)
             | execute::Event::WriteIndex(..)
             | execute::Event::ArrayLength(..) => {
@@ -127,6 +132,9 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
+        OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+            unreachable!("enum source gate")
+        }
         OwnedInstruction::ConstructComposite { .. } => "ConstructComposite",
         OwnedInstruction::ReadProjection { .. } => "ReadProjection",
         OwnedInstruction::WriteProjection { .. } => "WriteProjection",
@@ -221,6 +229,9 @@ fn operations(program: &SourceProgram, entry: hir::DefId) -> String {
                 (
                     "kind",
                     json_string(match term.kind {
+                        OwnedTerminatorKind::MatchDispatch { .. } => {
+                            unreachable!("enum source gate")
+                        }
                         OwnedTerminatorKind::ReturnOwned(_) => "ReturnOwned",
                         OwnedTerminatorKind::ReturnScalar(_) => "ReturnScalar",
                         OwnedTerminatorKind::Invoke { .. } => "Invoke",

@@ -134,3 +134,5 @@ Bug reports with a small runnable example, clearer diagnostics, tests, and docum
 Licensed under [MIT](LICENSE) or [Apache-2.0](LICENSE-APACHE).
 
 Experimental [projected array slices](rfcs/0022-projected-array-slices.md) let slice helpers borrow fixed scalar array fields, for example `bump(&mut batch.samples)`. Nested field paths and explicit whole-record-reference reborrows keep whole-root conflicts, privacy and call-only lifetimes. Resource ceilings and native targets remain unchanged.
+
+Experimental [bounded enums and consuming matches](spec/typed-preview.md#bounded-nominal-enums-and-consuming-match) add nominal move-only values with nullary or single bool/i32/unit payload variants, plus exhaustive statement matches on named owners. Explicit typed-preview check/run/native compile and formatting support this contract. The [two-file scanner](tests/fixtures/bounded_enum_scanner/main.ox) returns 115; enum borrowing, aggregate payloads and match expressions remain outside scope. Current-source qualification and exact-head hosted CI are separate pending gates; this is not a self-hosting claim.

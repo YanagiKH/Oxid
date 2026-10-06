@@ -125,6 +125,7 @@ fn native_owned_entry_denial_precedes_plan_allocation() {
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f],
         },
@@ -695,6 +696,7 @@ fn overflow_before_field(overflow: bool) -> (SourceMap, RawOwnedProgram) {
         s(11),
     )];
     let mut raw = RawOwnedProgram {
+        enums: vec![],
         records: vec![record(&[hir::Ty::I32], s(0))],
         functions: vec![f],
     };
@@ -970,6 +972,7 @@ fn scalar_call_chain(
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions,
         },
@@ -1243,6 +1246,7 @@ fn looping_merge(reversed: bool) -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f],
         },
@@ -1421,6 +1425,7 @@ fn native_owned_extended_storage_every_budget_uses_real_llvm() {
         if name != "owner-loop" && name != "later-argument-loop" {
             let unguarded = verified::verify_owned(
                 RawOwnedProgram {
+                    enums: raw.enums.clone(),
                     records: raw
                         .records
                         .iter()
@@ -1573,6 +1578,7 @@ fn expanded_depth_boundary(extra_field: bool) -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![big, small],
             functions,
         },
@@ -1919,6 +1925,7 @@ fn empty_adjacent_sentinels() -> (SourceMap, RawOwnedProgram, fixtures::Schedule
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![empty, mixed],
             functions,
         },
@@ -2062,6 +2069,7 @@ fn native_owned_actual_representation_caps_precede_text_allocation() {
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f],
         },
@@ -2121,6 +2129,7 @@ fn native_owned_actual_representation_caps_precede_text_allocation() {
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[hir::Ty::I32; 1024], s(0))],
             functions: vec![f],
         },
@@ -2269,6 +2278,7 @@ fn wide_replacement_count_fixture(replacements: usize) -> (SourceMap, VerifiedOw
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[hir::Ty::I32; 64], s(0))],
             functions: vec![f],
         },
@@ -2366,3 +2376,6 @@ mod composition;
 
 #[path = "projected_slice_native_tests.rs"]
 mod projected_slices;
+
+#[path = "enum_native_tests.rs"]
+mod enums;

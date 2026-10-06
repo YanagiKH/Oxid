@@ -201,6 +201,16 @@ pub(in crate::frontend) enum Observation {
         aliases: Vec<AliasObservation>,
         seen: Vec<SeenObservation>,
     },
+    NominalImport {
+        id: usize,
+        module: ModuleId,
+        alias: Span,
+        committed: bool,
+        ty: Option<NominalId>,
+        value: Option<DefId>,
+        aliases: Vec<NominalAliasObservation>,
+        seen: Vec<SeenObservation>,
+    },
     Frozen {
         root_main: Option<DefId>,
     },
@@ -209,6 +219,11 @@ pub(in crate::frontend) enum Observation {
         origin: Span,
         kind: &'static str,
         id: usize,
+    },
+    VariantTarget {
+        operation: &'static str,
+        origin: Span,
+        variant: VariantId,
     },
     Expression {
         function: DefId,
@@ -256,6 +271,16 @@ pub(in crate::frontend) struct AliasObservation {
 }
 #[cfg(test)]
 #[derive(Clone, Debug)]
+pub(in crate::frontend) struct NominalAliasObservation {
+    pub module: ModuleId,
+    pub alias: Span,
+    pub ty: Option<NominalId>,
+    pub value: Option<DefId>,
+    pub type_first: Option<usize>,
+    pub value_first: Option<usize>,
+}
+#[cfg(test)]
+#[derive(Clone, Debug)]
 pub(in crate::frontend) struct SeenObservation {
     pub module: ModuleId,
     pub group: usize,
@@ -274,6 +299,9 @@ pub(in crate::frontend) struct Counts {
     pub functions: u64,
     pub records: u64,
     pub fields: u64,
+    pub enums: u64,
+    pub variants: u64,
+    pub variant_duplicate_work: u64,
     pub modules: u64,
     pub imports: u64,
     pub original_bytes: u64,
@@ -324,8 +352,10 @@ impl IndexPlan {
             (c.originals, 40),
             (c.functions, 12),
             (c.records, 28),
-            (c.fields, 16),
-            (c.modules, 60),
+            (c.fields, size_of::<FieldRow>() as u64),
+            (c.enums, size_of::<EnumRow>() as u64),
+            (c.variants, size_of::<VariantRow>() as u64),
+            (c.modules, size_of::<ModuleRow>() as u64),
             (c.modules.checked_sub(1).ok_or_else(|| bad(at))?, 4),
             (c.imports, 40),
         ] {
@@ -345,11 +375,15 @@ impl IndexPlan {
             at,
         )?;
         let visits = add(
-            add(c.originals, c.fields, at)?,
+            add(add(c.originals, c.fields, at)?, c.variants, at)?,
             add(c.modules, c.imports, at)?,
             at,
         )?;
-        let mut build_work = add(mul(visits, 16, at)?, 128, at)?;
+        let mut build_work = add(
+            add(mul(visits, 16, at)?, 128, at)?,
+            c.variant_duplicate_work,
+            at,
+        )?;
         for (n, bytes) in [
             (c.originals, c.original_bytes),
             (c.imports, c.alias_bytes),
@@ -412,6 +446,33 @@ pub(super) fn allocate<T: Clone>(
             ReserveFailure::Overflow => overflow(at),
             ReserveFailure::Allocation => resource("declaration index allocation failed", at),
         })?;
+    result.resize(n, value);
+    Ok(result)
+}
+
+/// New enum rows and the widened module row retain exactly the admitted slots.
+/// Historical unaffected rows keep their existing requested-length accounting.
+pub(super) fn allocate_exact<T: Clone>(
+    n: usize,
+    value: T,
+    allocator: &mut Allocator,
+    name: &'static str,
+    at: Span,
+    work: &WorkMeter,
+) -> Result<Vec<T>, Box<Diagnostic>> {
+    n.checked_mul(size_of::<T>()).ok_or_else(|| overflow(at))?;
+    work.debit(n as u64, at, "initialize admitted rows")?;
+    let mut result = Vec::new();
+    allocator
+        .vector_exact(&mut result, n, name)
+        .map_err(|error| match error {
+            ReserveFailure::Overflow => overflow(at),
+            ReserveFailure::Allocation => resource("declaration index allocation failed", at),
+        })?;
+    if result.capacity() != n {
+        // Do not resize or retain allocator-provided spare slots as admitted rows.
+        return Err(resource("declaration index allocation failed", at));
+    }
     result.resize(n, value);
     Ok(result)
 }

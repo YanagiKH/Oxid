@@ -40,6 +40,7 @@ fn scalar_raw(spans: &[Span]) -> RawOwnedProgram {
         origin,
     ));
     RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![function],
     }
@@ -51,6 +52,12 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
         FailureKind::Overflow => RunFailure::Overflow(origin).diagnostic(sources),
         FailureKind::DivisionByZero => RunFailure::DivisionByZero(origin).diagnostic(sources),
         FailureKind::Bounds => execute::OwnedRunFailure::Bounds(origin).diagnostic(sources),
+        FailureKind::EnumTag => {
+            execute::OwnedRunFailure::Invariant("enum tag", Some(origin)).diagnostic(sources)
+        }
+        FailureKind::EnumPayload => {
+            execute::OwnedRunFailure::Invariant("enum payload", Some(origin)).diagnostic(sources)
+        }
     }
     .render_human(sources)
 }
@@ -785,6 +792,7 @@ fn array_core(origin: Span, length: usize, access: bool) -> RawOwnedProgram {
         origin,
     ));
     RawOwnedProgram {
+        enums: vec![],
         records: vec![],
         functions: vec![function],
     }

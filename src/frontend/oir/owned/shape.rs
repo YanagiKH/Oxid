@@ -105,13 +105,13 @@ fn same_aggregate(
 fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
     }
 }
 fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
     match aggregate {
         AggregateTy::FixedArray(array) => Ok(array),
-        AggregateTy::Record(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
     }
 }
 fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
@@ -277,6 +277,7 @@ pub(super) fn check(
     sources: &SourceMap,
     meter: &mut budget::Meter,
 ) -> Result<Shape, OwnedFailure> {
+    check_matches(f, d, sources, meter)?;
     let mut owners = filled(f.owners.len(), OwnerSites::default())?;
     let mut calls = filled(f.calls.len(), CallSites::default())?;
     let mut total_args = 0;
@@ -425,6 +426,66 @@ pub(super) fn check(
                 statement: si,
             };
             match &instruction.kind {
+                OwnedInstruction::ConstructEnum {
+                    destination,
+                    variant,
+                    payload,
+                } => {
+                    let o = ordinary(f, *destination, s)?;
+                    if !matches!(o.kind, OwnerKind::Local { .. } | OwnerKind::Temporary) {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    let prev = &mut owners[destination.0].initialize;
+                    if prev.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *prev = Some(site);
+                    d.enums()
+                        .check_payload(
+                            enumeration(o.aggregate(), s)?,
+                            *variant,
+                            payload.map(|v| operand(f, v, sources)).transpose()?,
+                        )
+                        .map_err(DeclarationError::from)?;
+                }
+                OwnedInstruction::ConsumeVariant {
+                    match_id,
+                    arm,
+                    destination,
+                } => {
+                    let (descriptor, selected) = match_arm(f, *match_id, *arm, s)?;
+                    let s = descriptor.span;
+                    if selected.entry != BlockId(bi)
+                        || si != 0
+                        || b.merge.is_some()
+                        || instruction.span != s
+                    {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    // Origins are descriptor-authoritative, even in a raw fixture.
+                    if instruction
+                        .diagnostic_origins
+                        .is_some_and(|o| o.primary != s || o.cause != s)
+                    {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    let actual = destination
+                        .map(|id| {
+                            let l = f.locals.get(id.0).ok_or_else(|| bad(Malformed::Id, s))?;
+                            if l.kind != LocalKind::Binding {
+                                return Err(bad(Malformed::Binding, s));
+                            }
+                            Ok(l.ty)
+                        })
+                        .transpose()?;
+                    d.enums()
+                        .check_payload(
+                            enumeration(owner(f, descriptor.source, s)?.aggregate(), s)?,
+                            selected.variant,
+                            actual,
+                        )
+                        .map_err(DeclarationError::from)?;
+                }
                 OwnedInstruction::Scalar(i) => {
                     super::super::verify::scalar_statement_shape(&f.locals, &f.places, i, sources)?
                 }
@@ -755,6 +816,17 @@ pub(super) fn check(
             }
         };
         match end.kind {
+            OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
+                let (descriptor, selected) = match_arm(f, match_id, arm, end.span)?;
+                if selected.dispatch != BlockId(bi)
+                    || end.span != descriptor.span
+                    || end
+                        .diagnostic_origins
+                        .is_some_and(|o| o.primary != descriptor.span || o.cause != descriptor.span)
+                {
+                    return Err(bad(Malformed::CanonicalSite, descriptor.span));
+                }
+            }
             OwnedTerminatorKind::Branch {
                 condition,
                 then_block,
@@ -893,4 +965,159 @@ fn projection_type(
         }
         _ => Err(bad(Malformed::Type, s)),
     }
+}
+
+fn enumeration(aggregate: AggregateTy, s: Span) -> Result<EnumId, OwnedFailure> {
+    match aggregate {
+        AggregateTy::Enum(id) => Ok(id),
+        _ => Err(bad(Malformed::Type, s)),
+    }
+}
+pub(super) fn match_arm(
+    f: &RawOwnedFunction,
+    id: MatchId,
+    arm: usize,
+    s: Span,
+) -> Result<(&MatchDecl, &MatchArm), OwnedFailure> {
+    let descriptor = f.matches.get(id.0).ok_or_else(|| bad(Malformed::Id, s))?;
+    let selected = descriptor
+        .arms
+        .get(arm)
+        .ok_or_else(|| bad(Malformed::Id, descriptor.span))?;
+    Ok((descriptor, selected))
+}
+/// Temporary global role and edge-multiplicity proof. Kept separate from the
+/// retained call/owner sites and dropped before their allocation.
+#[derive(Clone, Copy)]
+pub(super) struct MatchBlockRole {
+    role: u8,
+    predecessor: usize,
+    incoming: usize,
+}
+fn check_matches(
+    f: &RawOwnedFunction,
+    d: &Declarations,
+    sources: &SourceMap,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    if f.matches.is_empty() {
+        return Ok(());
+    }
+    use super::super::verify::CfgView;
+    let mut capacity = 0;
+    for descriptor in &f.matches {
+        meter.visit()?;
+        if descriptor.arms.len() > 256 {
+            return Err(bad(Malformed::Type, descriptor.span));
+        }
+        capacity = capacity.max(descriptor.arms.len());
+    }
+    let mut roles = filled(
+        f.blocks.len(),
+        MatchBlockRole {
+            role: 0,
+            predecessor: NONE,
+            incoming: 0,
+        },
+    )?;
+    let mut seen = filled(capacity, false)?;
+    for (id, descriptor) in f.matches.iter().enumerate() {
+        meter.visit()?;
+        let s = descriptor.span;
+        span(sources, s)?;
+        let source = owner(f, descriptor.source, s)?;
+        if !matches!(
+            source.kind,
+            OwnerKind::Local { .. } | OwnerKind::Parameter { .. }
+        ) {
+            return Err(bad(Malformed::OwnerClass, s));
+        }
+        let enumeration = enumeration(source.aggregate(), s)?;
+        let variants = d
+            .enums()
+            .variants(enumeration)
+            .map_err(DeclarationError::from)?;
+        if descriptor.arms.is_empty()
+            || descriptor.arms.len() > 256
+            || descriptor.arms.len() != variants.len()
+        {
+            return Err(bad(Malformed::Type, s));
+        }
+        seen[..descriptor.arms.len()].fill(false);
+        for (arm, selected) in descriptor.arms.iter().enumerate() {
+            meter.visit()?;
+            d.enums()
+                .variant(enumeration, selected.variant)
+                .map_err(DeclarationError::from)?;
+            if seen[selected.variant.index] {
+                return Err(bad(Malformed::Type, s));
+            }
+            seen[selected.variant.index] = true;
+            for (block, role, predecessor) in [
+                (
+                    selected.dispatch,
+                    1,
+                    if arm == 0 {
+                        NONE
+                    } else {
+                        descriptor.arms[arm - 1].dispatch.0
+                    },
+                ),
+                (selected.entry, 2, selected.dispatch.0),
+            ] {
+                meter.visit()?;
+                let slot = roles
+                    .get_mut(block.0)
+                    .ok_or_else(|| bad(Malformed::Id, s))?;
+                if slot.role != 0 || (predecessor != NONE && block == f.entry) {
+                    return Err(bad(Malformed::CanonicalSite, s));
+                }
+                *slot = MatchBlockRole {
+                    role,
+                    predecessor,
+                    incoming: 0,
+                };
+            }
+            let dispatch = &f.blocks[selected.dispatch.0];
+            if arm != 0 && (!dispatch.statements.is_empty() || dispatch.merge.is_some()) {
+                return Err(bad(Malformed::CanonicalSite, s));
+            }
+            if !matches!(dispatch.terminator.as_ref().map(|e| &e.kind),
+                Some(OwnedTerminatorKind::MatchDispatch { match_id, arm: actual }) if *match_id == MatchId(id) && *actual == arm)
+            {
+                return Err(bad(Malformed::CanonicalSite, s));
+            }
+            let entry = &f.blocks[selected.entry.0];
+            if entry.merge.is_some()
+                || !matches!(entry.statements.first().map(|i| &i.kind),
+                Some(OwnedInstruction::ConsumeVariant { match_id, arm: actual, .. }) if *match_id == MatchId(id) && *actual == arm)
+            {
+                return Err(bad(Malformed::CanonicalSite, s));
+            }
+        }
+    }
+    // Count edges, never distinct predecessor blocks. The implicit entry edge
+    // was excluded above because it is not present in this explicit CFG scan.
+    for (block, _) in f.blocks.iter().enumerate() {
+        meter.visit()?;
+        for target in f.successors(block)?.into_iter().flatten() {
+            meter.visit()?;
+            let slot = roles
+                .get_mut(target.0)
+                .ok_or_else(|| bad(Malformed::Id, f.span))?;
+            if slot.predecessor != NONE {
+                if slot.predecessor != block || slot.incoming != 0 {
+                    return Err(bad(Malformed::CanonicalSite, f.blocks[target.0].span));
+                }
+                slot.incoming += 1;
+            }
+        }
+    }
+    for (block, role) in roles.iter().enumerate() {
+        meter.visit()?;
+        if role.predecessor != NONE && role.incoming != 1 {
+            return Err(bad(Malformed::CanonicalSite, f.blocks[block].span));
+        }
+    }
+    Ok(())
 }

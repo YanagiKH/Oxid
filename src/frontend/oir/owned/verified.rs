@@ -51,7 +51,7 @@ fn prepare(
     limits: budget::Limits,
 ) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
     let usage = budget::preflight(raw, limits)?;
-    let declarations = Declarations::check(&raw.records, sources)?;
+    let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
     Ok((
         usage,
         declarations,
@@ -65,6 +65,18 @@ fn prepare(
 /// One authoritative continuation for production and the non-executable test
 /// probe. It never constructs a seal and cannot return an executable value.
 fn validate(
+    raw: &RawOwnedProgram,
+    declarations: &Declarations,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    validate_proof(raw, declarations, sources, usage, meter)
+}
+
+// Enum consumers share this authoritative proof. Source production still has
+// no enum syntax/HIR/lowering route; no alternate witness path is introduced.
+fn validate_proof(
     raw: &RawOwnedProgram,
     declarations: &Declarations,
     sources: &SourceMap,
@@ -97,6 +109,21 @@ fn validate(
         }
     }
     Ok(())
+}
+
+/// Non-executable enum observation: only inert usage or denial escapes. This
+/// uses the exact production proof, with no enum witness, plan, raw data,
+/// declarations or consumer callback exposed.
+#[cfg(test)]
+pub(super) fn probe_enum_validation(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
+    inventory_carriers(raw, &mut meter)?;
+    validate_proof(raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(usage)
 }
 
 /// Observe the authoritative checks without acquiring execution authority.
@@ -182,7 +209,19 @@ fn inventory_carriers(
     raw: &RawOwnedProgram,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
+    for enumeration in &raw.enums {
+        meter.visit()?;
+        for _ in &enumeration.variants {
+            meter.visit()?;
+        }
+    }
     for f in &raw.functions {
+        for descriptor in &f.matches {
+            meter.visit()?;
+            for _ in &descriptor.arms {
+                meter.visit()?;
+            }
+        }
         for _ in &f.owners {
             meter.visit()?;
         }

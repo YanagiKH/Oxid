@@ -269,6 +269,9 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
+        OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+            unreachable!("enum source gate")
+        }
         // This frozen scalar-record observer is not the composition qualification path.
         OwnedInstruction::ConstructComposite { .. }
         | OwnedInstruction::ReadProjection { .. }
@@ -380,6 +383,7 @@ fn instruction(value: &OwnedInstruction) -> String {
 
 fn terminator(value: &OwnedTerminatorKind) -> String {
     match value {
+        OwnedTerminatorKind::MatchDispatch { .. } => unreachable!("enum source gate"),
         OwnedTerminatorKind::Branch {
             condition,
             then_block,
@@ -1085,7 +1089,7 @@ mod candidate_native;
 fn record_id(aggregate: AggregateTy) -> RecordId {
     match aggregate {
         AggregateTy::Record(record) => record,
-        AggregateTy::FixedArray(_) => panic!("source array gate"),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => panic!("source aggregate gate"),
     }
 }
 

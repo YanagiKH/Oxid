@@ -78,6 +78,7 @@ fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![],
     }
@@ -253,6 +254,7 @@ fn sequence_fixture(
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f],
         },
@@ -553,6 +555,7 @@ fn chain_fixture(ty: hir::Ty, n: usize) -> (SourceMap, RawOwnedProgram, Vec<(Spa
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record],
             functions: vec![f, g],
         },
@@ -980,6 +983,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions,
         },
@@ -1285,6 +1289,7 @@ fn reference_fixture(
     let (other_ty, other_n) = match other {
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
+        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
     };
     let f = &mut raw.functions[0];
     f.calls.truncate(1);
@@ -1304,6 +1309,7 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
+        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
         AggregateTy::FixedArray(_) => OwnedInstruction::ConstructArray {
             destination: OwnerPlaceId(1),
             elements: vec![op(4, base); other_n],
@@ -1674,6 +1680,7 @@ fn observer_scalar_cap_fixture(statements: usize) -> (SourceMap, RawOwnedProgram
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f],
         },
@@ -1717,6 +1724,7 @@ fn observer_storage_cap_fixture(owners: usize, n: usize) -> (SourceMap, RawOwned
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![],
             functions: vec![f],
         },

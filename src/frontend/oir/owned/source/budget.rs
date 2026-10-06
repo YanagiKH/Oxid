@@ -104,6 +104,8 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.references, size_of::<ReferenceDecl>()),
         (c.calls, size_of::<CallDecl>()),
         (c.loans, size_of::<LoanDecl>()),
+        (c.matches, size_of::<MatchDecl>()),
+        (c.match_arms, size_of::<MatchArm>()),
         (c.descriptor_arguments, size_of::<ArgumentSlot>()),
         (c.blocks, size_of::<OwnedBlock>()),
         (c.statements, size_of::<OwnedStatement>()),
@@ -131,7 +133,7 @@ fn unit2b_q_adds_only_actual_operand_payload_to_source_inventory() {
         );
     }
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 160);
+    assert_eq!(size_of::<raw_budget::FunctionCounts>(), 184);
 }
 pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
@@ -145,8 +147,9 @@ pub(super) fn preflight(
     }
     #[cfg(test)]
     guard_event(GuardEvent::DeclarationAdmission);
-    let declarations = admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
-    if typed
+    let mut declarations =
+        admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
+    declarations.layout_bytes = if typed
         .records()
         .iter()
         .all(|r| r.fields.iter().all(|f| matches!(f.ty, ValueTy::Scalar(_))))
@@ -158,15 +161,19 @@ pub(super) fn preflight(
                 };
                 ty
             })
-        }))?;
+        }))?
     } else {
         admit_value_layouts(
             typed
                 .records()
                 .iter()
                 .map(|r| r.fields.iter().map(|f| f.ty)),
-        )?;
-    }
+        )?
+    };
+    // Both aggregate counts and the actual padded record layout sum participate
+    // in the shared record/enum gate, including unused enum declarations.
+    let enums = admit_enum_counts(typed.index().enum_variant_counts(), declarations)
+        .map_err(DeclarationError::from)?;
     let ceiling = limits.raw_bytes.min(MAX_RAW_BYTES);
     let mut bytes = size_of::<RawOwnedProgram>();
     bytes = add(
@@ -174,9 +181,13 @@ pub(super) fn preflight(
         mul(declarations.records, size_of::<RawRecordDecl>())?,
     )?;
     bytes = add(bytes, mul(declarations.fields, size_of::<RawFieldDecl>())?)?;
+    // RawOwnedProgram and RawEnumDecl already contain the inline Vec headers.
+    bytes = add(bytes, mul(enums.enums, size_of::<RawEnumDecl>())?)?;
+    bytes = add(bytes, mul(enums.variants, size_of::<RawVariantDecl>())?)?;
     cap(bytes, ceiling, "source raw payload")?;
     let mut scratch = 0;
     let mut counts = raw_budget::ProgramCounts::default();
+    raw_budget::account_enum_declarations(enums, raw_budget::Limits::DEFAULT, &mut counts)?;
     #[cfg(test)]
     guard_event(GuardEvent::FunctionIteration);
     for view in typed.functions() {
@@ -192,11 +203,25 @@ pub(super) fn preflight(
         .map_err(|error| at(error, span))?;
         scratch = scratch.max(lower::scratch_bytes(&view, count)?);
     }
+    if let Some(seed) = typed.source_storage_bytes() {
+        admit_lower_scratch(seed, scratch)?;
+    }
     Ok(Usage {
         raw_bytes: bytes,
         scratch_bytes: scratch,
         analysis: counts.usage(),
     })
+}
+
+/// Invocation-local overlay. The affected-source owner already paid the fixed
+/// Walk/stacks/views and typed projection payload. Function caches are sequential
+/// and their maximum is charged once; no persistent source cell is ever changed.
+pub(super) fn admit_lower_scratch(seed: usize, scratch: usize) -> Result<usize, OwnedFailure> {
+    cap(
+        add(seed, add(scratch, lower::invocation_control_bytes())?)?,
+        super::hir_budget::MAX_HIR_BYTES,
+        "source HIR scratch",
+    )
 }
 
 #[cfg(test)]
@@ -286,4 +311,25 @@ pub(super) fn reset_guard_counts() {
 #[cfg(test)]
 pub(super) fn guard_counts() -> [usize; 7] {
     GUARD_COUNTS.with(|counts| counts.get())
+}
+
+#[test]
+fn enum_lower_scratch_overlay_has_exact_unchanged_boundary_and_overflow() {
+    let controls = lower::invocation_control_bytes();
+    let limit = super::hir_budget::MAX_HIR_BYTES;
+    for scratch in [0, 1, 1024] {
+        let available = limit - controls - scratch;
+        assert_eq!(
+            admit_lower_scratch(available - 1, scratch).unwrap(),
+            limit - 1
+        );
+        assert_eq!(admit_lower_scratch(available, scratch).unwrap(), limit);
+        assert!(admit_lower_scratch(available + 1, scratch).is_err());
+        // The helper receives a read-only value; repeated successful/failed
+        // invocations cannot debit or replace the owner's persistent seed.
+        assert_eq!(admit_lower_scratch(available, scratch).unwrap(), limit);
+        assert_eq!(available, limit - controls - scratch);
+    }
+    assert!(admit_lower_scratch(usize::MAX, 0).is_err());
+    assert!(admit_lower_scratch(0, usize::MAX).is_err());
 }

@@ -134,3 +134,5 @@ Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指�
 採用 [MIT](LICENSE) 或 [Apache-2.0](LICENSE-APACHE) 授權。
 
 實驗性的[陣列欄位切片借用](rfcs/0022-projected-array-slices.md)讓切片輔助函式借用固定長度純量陣列欄位，例如 `bump(&mut batch.samples)`。巢狀欄位路徑及透過整筆記錄參照的明確再借用，仍保留整個擁有者的衝突規則、可見性與僅限呼叫的生命週期。資源上限及原生目標不變。
+
+實驗性的[有界列舉與消耗式比對](spec/typed-preview.md#bounded-nominal-enums-and-consuming-match)加入具名、只能移動的列舉值；變體可不帶資料，或攜帶一個 bool/i32/unit 值，並以陳述式對具名擁有者進行完整比對。明確指定 typed-preview 的 check/run/原生 compile 與格式化支援此契約。[兩檔案掃描器](tests/fixtures/bounded_enum_scanner/main.ox)回傳 115；列舉借用、聚合型承載資料與比對運算式仍不在範圍內。目前原始碼驗證與精確版本的託管 CI 仍是待完成的獨立關卡；這不代表已實現自我託管。

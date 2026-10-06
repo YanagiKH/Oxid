@@ -60,6 +60,9 @@ pub(super) enum DeniedOperation {
     StorageEnd,
     Construct,
     ConstructArray,
+    ConstructEnum,
+    ConsumeVariant,
+    MatchDispatch,
     MoveInitialize,
     Replace,
     Discard,
@@ -87,6 +90,7 @@ pub(super) enum DeniedRole {
     StagedInput,
     CallResult,
     ReturnValue,
+    MatchSource,
 }
 impl DenialContext {
     pub(super) fn facts(&self) -> DenialFacts {
@@ -144,6 +148,10 @@ impl DenialContext {
                 counterpart = Some(Self::owner(f, *destination)?);
                 DeniedOperation::Construct
             }
+            (OwnedInstruction::ConstructEnum { destination, .. }, InitializationDestination)
+                if base == AccessBase::Owner(*destination) => DeniedOperation::ConstructEnum,
+            (OwnedInstruction::ConsumeVariant { match_id, .. }, SourceConsume)
+                if base == AccessBase::Owner(f.matches.get(match_id.0)?.source) => DeniedOperation::ConsumeVariant,
             (OwnedInstruction::ConstructArray { destination, .. }, InitializationDestination)
                 if base == AccessBase::Owner(*destination) =>
             {
@@ -263,6 +271,11 @@ impl DenialContext {
     ) -> Option<Self> {
         let owner = Self::owner(f, id)?;
         let operation = match (e, role) {
+            (OwnedTerminatorKind::MatchDispatch { match_id, .. }, DeniedRole::MatchSource)
+                if f.matches.get(match_id.0)?.source == id =>
+            {
+                DeniedOperation::MatchDispatch
+            }
             (OwnedTerminatorKind::Invoke { call, .. }, DeniedRole::StagedInput) if matches!(owner.class, OwnerKind::StagedArgument { call: actual, .. } if actual == *call) => {
                 DeniedOperation::Invoke
             }
@@ -362,6 +375,7 @@ fn step(
         }
         OwnedInstruction::Construct { destination, .. }
         | OwnedInstruction::ConstructArray { destination, .. }
+        | OwnedInstruction::ConstructEnum { destination, .. }
         | OwnedInstruction::ConstructComposite { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
@@ -371,6 +385,14 @@ fn step(
             next = Available;
             failure = Violation::Initialization;
             role = DeniedRole::InitializationDestination;
+        }
+        OwnedInstruction::ConsumeVariant { match_id, .. }
+            if f.matches[match_id.0].source == owner =>
+        {
+            event = true;
+            legal = &[Available];
+            next = Moved;
+            role = DeniedRole::SourceConsume;
         }
         OwnedInstruction::ConstructComposite { fields, .. }
             if fields.iter().any(
@@ -492,6 +514,16 @@ fn end_step(
     use State::*;
     let d = &f.owners[id];
     let (legal, next, kind, role): (&[State], State, Violation, DeniedRole) = match e.kind {
+        OwnedTerminatorKind::MatchDispatch { match_id, .. }
+            if f.matches[match_id.0].source.0 == id =>
+        {
+            (
+                &[Available],
+                Available,
+                Violation::Unavailable,
+                DeniedRole::MatchSource,
+            )
+        }
         OwnedTerminatorKind::Invoke { call, .. } => match d.kind {
             OwnerKind::StagedArgument { call: c, .. } if c == call => (
                 &[Available],
@@ -835,10 +867,16 @@ fn accesses(
             )?;
         }
         OwnedInstruction::Construct { destination, .. }
-        | OwnedInstruction::ConstructArray { destination, .. } => visit(
+        | OwnedInstruction::ConstructArray { destination, .. }
+        | OwnedInstruction::ConstructEnum { destination, .. } => visit(
             AccessBase::Owner(*destination),
             Access::Write,
             DeniedRole::InitializationDestination,
+        )?,
+        OwnedInstruction::ConsumeVariant { match_id, .. } => visit(
+            AccessBase::Owner(f.matches[match_id.0].source),
+            Access::Consume,
+            DeniedRole::SourceConsume,
         )?,
         OwnedInstruction::Discard(o) | OwnedInstruction::PrepareOwned { source: o, .. } => visit(
             AccessBase::Owner(*o),

@@ -29,7 +29,7 @@ class CurrentCompositionContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('no candidate semantic output used', result.stdout)
 
-    def test_extractor_uses_explicit_clean_checkout_and_fresh_output(self):
+    def test_historical_extractor_uses_clean_reconstructed_projected_checkout(self):
         spec = importlib.util.spec_from_file_location(
             'resource_source_binding', REPO / 'tests/fixtures/typed_project_source_binding/run.py')
         binding = importlib.util.module_from_spec(spec)
@@ -37,7 +37,16 @@ class CurrentCompositionContractTests(unittest.TestCase):
         captured = binding.preflight(REPO)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); checkout = root / 'checkout'; output = root / 'probe'
-            subprocess.run(['git', 'clone', '--quiet', '--shared', str(REPO), str(checkout)], check=True)
+            # These are historical layout facts. Reconstruct the exact admitted
+            # projected source view rather than running its old extractor on
+            # enum-era declarations and relabeling their changed carriers.
+            binding.materialize(checkout, captured['projected_inputs'])
+            subprocess.run(['git', 'init', '--quiet', str(checkout)], check=True)
+            subprocess.run(['git', '-C', str(checkout), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(checkout),
+                            '-c', 'user.name=Qualification control',
+                            '-c', 'user.email=qualification@local',
+                            'commit', '--quiet', '-m', 'Reconstruct admitted projected inputs'], check=True)
             self.assertEqual(subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain']), b'')
             argv = [sys.executable, '-B', str(RESOURCE / 'derive-layout-probe.py'),
                     '--repo', str(checkout), '--tree', 'HEAD', '--output', str(output)]
@@ -47,15 +56,15 @@ class CurrentCompositionContractTests(unittest.TestCase):
                              (RESOURCE / 'declaration-layout-probe.rs').read_bytes())
             inputs = json.loads((output / 'declaration-layout-inputs.json').read_bytes())
             original = json.loads((RESOURCE / 'declaration-layout-inputs.json').read_bytes())
-            # Whole-file provenance changes with unary and projected slices; the
-            # selected declaration shapes and independently derived probe do
-            # not. Bind BOTH source views without retargeting historical facts.
+            # Whole-file provenance changed with unary and projected slices,
+            # but these historical selected declarations did not. Bind both
+            # historical views; this is not current enum layout measurement.
             expected = json.loads(json.dumps(original['files']))
             for row in expected:
                 path = row['path']
                 self.assertEqual(hashlib.sha256(captured['composition_inputs'][path]).hexdigest(),
                                  row['sha256'], path)
-                row['sha256'] = hashlib.sha256(captured['inputs'][path]).hexdigest()
+                row['sha256'] = hashlib.sha256(captured['projected_inputs'][path]).hexdigest()
                 if path == 'src/frontend/oir/owned/mod.rs':
                     for declaration in row['declarations']:
                         if declaration['name'] == 'FieldInitializer':

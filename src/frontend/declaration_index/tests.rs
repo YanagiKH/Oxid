@@ -270,7 +270,7 @@ fn exact_space_caps_and_real_reserve_failures_precede_allocated_index() {
     .unwrap();
     let plan = facts.plan();
     let attempts = alloc.attempts;
-    assert_eq!(attempts, 14);
+    assert_eq!(attempts, 16);
     for (limits, ok) in [
         (
             IndexLimits {
@@ -340,6 +340,62 @@ fn exact_space_caps_and_real_reserve_failures_precede_allocated_index() {
     )
     .unwrap_err();
     assert_eq!(error.message, "declaration index count overflow");
+}
+
+#[test]
+fn enum_carrier_path_state_shifts_exact_scratch_admission_before_reservation() {
+    let fixture = Fixture::new(&[("main.ox", "fn main()->(){return;}")]);
+    let sources = fixture.load();
+    let facts = collect_originals(
+        SourceOwner::project(&sources),
+        IndexLimits::default(),
+        &WorkMeter::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    let plan = facts.plan();
+    let added = size_of::<source_owner::QualifiedPathView<'static>>()
+        + size_of::<crate::frontend::project::QualifiedPathRef>();
+    let before = IndexPlan::calculate(
+        plan.counts,
+        size_of::<DeclarationIndex<'_>>(),
+        FIXED_SCRATCH - added,
+        IndexLimits::default(),
+        sources.sources().get(SourceFileId(0)).span(0, 0),
+    )
+    .unwrap();
+    assert_eq!(plan.scratch - before.scratch, added as u64);
+    assert_eq!(plan.retained, before.retained);
+    assert_eq!(plan.build_work, before.build_work);
+    assert_eq!(IndexLimits::default().scratch, 16 * 1024 * 1024);
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(added, 64);
+    println!(
+        "qualified-path-scratch fixed={} added={} previous={} current={}",
+        FIXED_SCRATCH, added, before.scratch, plan.scratch,
+    );
+    for (cap, expected) in [
+        (before.scratch, false),
+        (plan.scratch - 1, false),
+        (plan.scratch, true),
+        (plan.scratch + 1, true),
+    ] {
+        let mut allocator = Allocator::default();
+        let result = collect_originals(
+            SourceOwner::project(&sources),
+            IndexLimits {
+                scratch: cap,
+                ..IndexLimits::default()
+            },
+            &WorkMeter::default(),
+            &mut allocator,
+        );
+        assert_eq!(result.is_ok(), expected);
+        if !expected {
+            assert_eq!(result.unwrap_err().code, "E0400");
+            assert_eq!(allocator.attempts, 0);
+        }
+    }
 }
 
 #[test]

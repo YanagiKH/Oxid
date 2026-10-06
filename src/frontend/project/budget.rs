@@ -2,6 +2,10 @@
 use std::mem::size_of;
 use std::path::PathBuf;
 
+#[cfg(test)]
+#[path = "budget_real_null_observer.rs"]
+pub(in crate::frontend) mod real_null_observer;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum ReserveFailure {
     Overflow,
@@ -132,7 +136,19 @@ impl Allocator {
             .checked_add(additional)
             .ok_or(ReserveFailure::Overflow)?;
         let injected = self.request(length, size_of::<T>())?;
-        let result = vector.try_reserve_exact(if injected { usize::MAX } else { additional });
+        let result = {
+            #[cfg(test)]
+            let _guard = real_null_observer::enter_exact::<T>(
+                real_null_observer::identity(self),
+                self.attempts,
+                kind,
+                vector.len(),
+                vector.capacity(),
+                additional,
+                self.fail_at.is_some(),
+            );
+            vector.try_reserve_exact(if injected { usize::MAX } else { additional })
+        };
         self.record(kind, length, size_of::<T>(), result.is_ok());
         result.map_err(|_| ReserveFailure::Allocation)
     }

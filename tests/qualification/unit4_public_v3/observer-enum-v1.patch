@@ -1,0 +1,178 @@
+--- a/src/frontend/declaration_index/sealed.rs
++++ b/src/frontend/declaration_index/sealed.rs
+@@ -24,7 +24,8 @@
+     work: &WorkMeter,
+     allocator: &mut Allocator,
+     syntax: CollectionSyntax,
+ ) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("index_attempts", "");
+     work.restrict(limits.work);
+     work.phase("collection");
+     let at = sources.eof();
+@@ -791,6 +792,7 @@
+         work.observe(Observation::Frozen {
+             root_main: (tables.root_main != NONE).then_some(DefId(tables.root_main as usize)),
+         });
++        crate::frontend::lifecycle_observer::event("index_completions", "");
+         Ok(DeclarationIndex { tables })
+     }
+ }
+--- a/src/frontend/driver.rs
++++ b/src/frontend/driver.rs
+@@ -145,6 +145,7 @@
+     let sources = project.sources();
+     let result = (|| {
+         let verified = executable?;
++        crate::frontend::lifecycle_observer::event("consumer_entry", "");
+         match operation {
+             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
+             Operation::Compile => {
+--- a/src/frontend/lexer.rs
++++ b/src/frontend/lexer.rs
+@@ -67,6 +67,7 @@
+     source: &SourceFile,
+     limit: usize,
+ ) -> Result<Vec<Token>, Box<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("lex_attempt", source.path());
+     let limit = limit.min(MAX_TOKENS);
+     let text = source.text();
+     let bytes = text.as_bytes();
+@@ -239,6 +240,7 @@
+         kind: Kind::Eof,
+         span: source.span(cursor, cursor),
+     });
++    crate::frontend::lifecycle_observer::event("lex_complete", source.path());
+     Ok(tokens)
+ }
+ 
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -1,4 +1,5 @@
+ //! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
++mod lifecycle_observer;
+ mod ast;
+ mod declaration_index;
+ mod diagnostic;
+--- a/src/frontend/oir/source/sealed.rs
++++ b/src/frontend/oir/source/sealed.rs
+@@ -32,12 +32,16 @@
+     ast: &ast::Program,
+     sources: &'s SourceMap,
+ ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("checker_attempts", "original");
+     let owner =
+         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
++    crate::frontend::lifecycle_observer::event("route_attempts", "original");
+     let (body, entry) = if !ast.enums.is_empty() {
++        crate::frontend::lifecycle_observer::event("route_completions", "owned");
+         let (program, entry) = owned::source::check_enum_source(owner)?;
+         (CheckedBody::Owned(program), entry)
+     } else if ast.uses_owned_syntax(source) {
++        crate::frontend::lifecycle_observer::event("route_completions", "owned");
+         let resolved = owned::source::resolve::resolve_sources(owner)?;
+         let typed = owned::source::typeck::check(resolved)?;
+         let entry = typed.entry();
+@@ -43,6 +46,7 @@
+             entry,
+         )
+     } else {
++        crate::frontend::lifecycle_observer::event("route_completions", "scalar");
+         // Preserve the original scalar schedule and diagnostic adapters exactly.
+         let resolved = hir::resolve(source, ast)?;
+         let entry = ast
+@@ -57,6 +61,7 @@
+         let verified = verify::verify(raw, sources).map_err(|e| vec![*e.diagnostic(sources)])?;
+         (CheckedBody::Scalar(verified), entry)
+     };
++    crate::frontend::lifecycle_observer::event("checked_program_completions", "original");
+     Ok(CheckedSourceProgram {
+         sources,
+         body,
+@@ -91,6 +96,7 @@
+     work: &WorkMeter,
+     allocator: &mut Allocator,
+ ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("checker_attempts", "project");
+     match check_project(project, limits, work, allocator, CheckDepth::Executable)? {
+         Checked::Executable(checked) => Ok(checked),
+         Checked::Types(_) => Err(vec![*association::bad()]),
+@@ -104,11 +110,13 @@
+     depth: CheckDepth,
+ ) -> Result<Checked<'s>, Vec<Diagnostic>> {
+     let sources = SourceOwner::project(project);
++    crate::frontend::lifecycle_observer::event("route_attempts", "project");
+     let route = if sources.owned(work).map_err(|e| vec![*e])? {
+         ProjectRoute::Owned
+     } else {
+         ProjectRoute::Scalar
+     };
++    crate::frontend::lifecycle_observer::event("route_completions", if route == ProjectRoute::Owned { "owned" } else { "scalar" });
+     #[cfg(test)]
+     work.observe(crate::frontend::declaration_index::Observation::Route {
+         owned: route == ProjectRoute::Owned,
+@@ -162,6 +170,7 @@
+             CheckedBody::Owned(owned::source::check_typed(&typed)?)
+         }
+     };
++    crate::frontend::lifecycle_observer::event("checked_program_completions", "project");
+     Ok(Checked::Executable(CheckedSourceProgram {
+         sources: project.sources(),
+         body,
+--- a/src/frontend/parser.rs
++++ b/src/frontend/parser.rs
+@@ -98,10 +98,11 @@
+     node_limit: usize,
+     allocator: &mut Allocator,
+     arrays: ArraySyntaxPolicy,
+     enums: EnumSyntaxPolicy,
+     storage: &mut enums::SyntaxStorage,
+ ) -> Result<(Program, usize), Vec<Diagnostic>> {
++    crate::frontend::lifecycle_observer::event("parse_attempt", source.path());
+     *storage = enums::SyntaxStorage::default();
+     let mut parser = Parser {
+         source,
+         allocator,
+@@ -202,6 +203,7 @@
+     }
+     *storage = parser.storage;
+     if diagnostics.is_empty() {
++        crate::frontend::lifecycle_observer::event("parse_complete", source.path());
+         Ok((
+             Program::parsed(
+                 SourceProvenance::new(source),
+--- a/src/frontend/project.rs
++++ b/src/frontend/project.rs
+@@ -587,7 +587,10 @@
+         display: &str,
+         origin: Option<Span>,
+     ) -> Result<String, Box<Diagnostic>> {
++        crate::frontend::lifecycle_observer::event("source_open_attempt", display);
+         let mut file = File::open(path).map_err(|e| io_error(e, display, origin))?;
++        crate::frontend::lifecycle_observer::event("source_open_complete", display);
++        crate::frontend::lifecycle_observer::event("source_read_attempt", display);
+         let mut bytes = Vec::new();
+         let mut scratch = [0u8; 8192];
+         let remaining = self
+@@ -633,6 +636,7 @@
+                 .map_err(|error| reserve_error(error, origin))?;
+             bytes.extend_from_slice(&scratch[..count]);
+         }
++        crate::frontend::lifecycle_observer::event("source_read_complete", display);
+         self.project.usage.source_bytes =
+             add(self.project.usage.source_bytes, bytes.len(), origin)?;
+         if bytes.starts_with(b"OXBC") {
+--- /dev/null
++++ b/src/frontend/lifecycle_observer.rs
+@@ -0,0 +1,12 @@
++//! Test-only observer in an isolated qualification snapshot, absent from production.
++//! Events are logical operations, not OS syscall counts. No source data is read here.
++use std::io::Write;
++pub(super) fn event(kind: &str, subject: &str) {
++    if let Some(path) = std::env::var_os("UNIT4_LIFECYCLE_LOG") {
++        let mut file = std::fs::OpenOptions::new().create(true).append(true)
++            .open(path).expect("lifecycle evidence open");
++        writeln!(file, "{{\"event\":{},\"subject\":{}}}",
++            super::diagnostic::json_string(kind), super::diagnostic::json_string(subject))
++            .expect("lifecycle evidence write");
++    }
++}

@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 18261,
+      "bytes": 22848,
       "path": "README.md",
-      "sha256": "00870dccae6315855df1769dd0fafd6fc1722d70a1d173952178b088dca61d9c"
+      "sha256": "fbd920d7591ba2a0c27ca0b9223254d284d15bd00b7218e0d2cda0e4c87dee6d"
     },
     {
       "bytes": 9916,
@@ -41,9 +41,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 38636,
+      "bytes": 45493,
       "path": "current-source.json",
-      "sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304"
+      "sha256": "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669"
     },
     {
       "bytes": 29723,
@@ -59,6 +59,31 @@
       "bytes": 49895,
       "path": "division-transition.patch",
       "sha256": "65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1"
+    },
+    {
+      "bytes": 156306,
+      "path": "enum-authority.json",
+      "sha256": "e539957635eaa99b1ca806f73ecc04e99a05d7319231f2385c213c63902a9923"
+    },
+    {
+      "bytes": 9983,
+      "path": "enum-enabled-qualified-values-v1.json",
+      "sha256": "aad90776af8cda1a305efc9581d8fcbb40e4eedb8da0ca9aef703fc4fd8af425"
+    },
+    {
+      "bytes": 10804,
+      "path": "enum-resource-authority.json",
+      "sha256": "9e81f265f1cef93ee41ca326580d19f2728133569d4453310a4a086545031527"
+    },
+    {
+      "bytes": 1805505,
+      "path": "enum-transition.patch",
+      "sha256": "57b5f94476c5c419c66dae9dd609de4350a1e224209290221bf80190c8b39204"
+    },
+    {
+      "bytes": 9510,
+      "path": "enum_enabled_qualified_values_v1.py",
+      "sha256": "999e9f8cd75ae2010a11d20a40c357bf28d42b658d6293e93cb73a36cb665288"
     },
     {
       "bytes": 1464,
@@ -86,14 +111,19 @@
       "sha256": "f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc"
     },
     {
+      "bytes": 38636,
+      "path": "projected-source.json",
+      "sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304"
+    },
+    {
       "bytes": 124986,
       "path": "projected-transition.patch",
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 96115,
+      "bytes": 128099,
       "path": "run.py",
-      "sha256": "f997e3214453ebea4cfe67e8c51b99aadf56e237172ce68c510a2e5e8eb72bbf"
+      "sha256": "75724cc6be2c9fc5bd10476690fa420568c87d47abe80818684467ccd30e04fa"
     },
     {
       "bytes": 55961,

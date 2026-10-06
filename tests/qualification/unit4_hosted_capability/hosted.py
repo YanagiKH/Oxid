@@ -384,7 +384,8 @@ def raw_join(args, child_root=None):
     c.verify(integrity['path_map']['path'], integrity['path_map'])
     contracts = c.Contracts(args.contracts, c.load(integrity['path_map']['path']), args.amendment_root)
     c.need(integrity.get('effective_authority') == contracts.effective_identity, 'main effective authority mismatch')
-    predecessors = Predecessors(contracts)
+    predecessors = Predecessors(contracts, source_manifest=ordinary['source_manifest']['path'],
+                                amendment_root=runner.SOURCE_BINDING_ROOT)
     main_tools_record = c.load(root / 'tools.json')
     main_tools = main_tools_record['tools']
     runtime_binding = main_tools_record['selected_runtime']

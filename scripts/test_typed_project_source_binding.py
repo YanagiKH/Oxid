@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 201)
+        self.assertEqual(len(captured["inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
         self.assertEqual(len(captured["division_inputs"]), 185)
         self.assertEqual(len(captured["combined_inputs"]), 185)
@@ -89,17 +89,275 @@ class SourceBindingTests(unittest.TestCase):
         binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
 
 
+    def test_enum_inverse_restores_exact_projected_predecessor(self):
+        restored, touched = binding.inverse_enum_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["enum-transition.patch"])
+        self.assertEqual(restored, self.captured["projected_inputs"])
+        binding.check_bytes(restored, self.captured["projected_source"]["files"])
+        self.assertEqual(touched, list(binding.ENUM_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.ENUM_ADDITIONS)), (102, 201, 36))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.ENUM_ADDITIONS))
+        self.assertEqual(len([p for p in self.captured["inputs"] if p.startswith(("src/", "native/"))]), 179)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+                         "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd")
+        self.assertEqual(self.captured["current"]["source_only_tree"],
+                         "4970ee660f670cfcb23f42a9cb182a4ca7996388")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
+                         "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
+
+    def test_enum_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-projected"
+        binding.materialize(source, self.captured["projected_inputs"])
+        patch_path = self.package / "enum-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+
+    def test_enum_members_required_byte_and_mode_bound(self):
+        for name in binding.ENUM_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_enum_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.ENUM_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.ENUM_SCANNER_PATHS[0]
+            source.chmod(0o755)
+            self.rejects("changed input mode")
+
+    def test_enum_authority_coherent_rehash_rejects(self):
+        authority = binding.read_json(self.package / "enum-authority.json")
+        authority["transition_paths"] = authority["transition_paths"][:-1]
+        binding.write_json(self.package / "enum-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale enum authority")
+
+    def test_projected_predecessor_manifest_coherent_rehash_rejects(self):
+        source = self.package / "projected-source.json"
+        value = binding.read_json(source)
+        value["files"].pop()
+        binding.write_json(source, value)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved projected source manifest")
+
+    def test_enum_patch_changed_or_missing_rejects(self):
+        source = self.package / "enum-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_enum_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["enum-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 102)
+        for name, section in zip(binding.ENUM_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_enum_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_enum_patch(self.captured["projected_inputs"], original)
+
+    def test_enum_inverse_scope_order_duplicates_unknown_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["enum-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.ENUM_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.ENUM_PATHS)
+
+    def test_enum_scanner_closure_is_separate_and_ordered(self):
+        closure = self.captured["enum_authority"]["scanner_include_closure"]
+        self.assertEqual([row["includer"]["path"] for row in closure], list(binding.ENUM_SCANNER_INCLUDERS))
+        self.assertEqual([row["ordered_references"] for row in closure], [list(binding.ENUM_SCANNER_PATHS)] * 2)
+        self.assertEqual(sum(len(row["ordered_references"]) for row in closure), 4)
+        self.assertEqual(len({name for row in closure for name in row["ordered_references"]}), 2)
+        self.assertEqual((self.captured["current"]["compile_time_fixture_members"],
+                          self.captured["current"]["compile_time_fixture_references"]), (42, 47))
+
+    def test_enum_observer_adapter_is_exact_reversible_and_fail_closed(self):
+        prior = self.captured["borrowed_observer"]
+        current = binding.adapt_enum_unit2_observer(prior)
+        self.assertEqual(current, self.captured["observer"])
+        self.assertEqual(len(binding.ENUM_OBSERVER_SEAMS), 3)
+        self.assertIn(b'AggregateTy::Enum(_) => panic!("current Unit2 observer excludes enum projection")', current)
+        self.assertIn(b'BorrowedTy::Exact(AggregateTy::Enum(_)) => panic!("current Unit2 observer excludes enum projection")', current)
+        self.assertEqual(current.count(b"fn current_unit2_aggregate_adapter_"), 6)
+        restored = current
+        for old, new in reversed(binding.ENUM_OBSERVER_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, prior)
+        for changed in (prior + b"\n", prior[:-1], current):
+            with self.assertRaisesRegex(binding.BindingError, "wrong predecessor enum Unit2 observer"):
+                binding.adapt_enum_unit2_observer(changed)
+        for index, (old, new) in enumerate(binding.ENUM_OBSERVER_SEAMS):
+            seams = binding.ENUM_OBSERVER_SEAMS
+            with patch.object(binding, "ENUM_OBSERVER_SEAMS", seams[:index] + ((old, new + b"// mutation"),) + seams[index + 1:]):
+                with self.assertRaisesRegex(binding.BindingError, "wrong derived enum Unit2 observer"):
+                    binding.adapt_enum_unit2_observer(prior)
+
+    def test_enum_index_resource_preserves_frozen_bytes_and_exact_four_control_scope(self):
+        original = self.captured["historical_bytes"][binding.INDEX_RESOURCE]
+        current = binding.adapt_enum_index_resource(original)
+        self.assertEqual(current, self.captured["index_resource"])
+        self.assertEqual(len(binding.ENUM_INDEX_RESOURCE_SEAMS), 17)
+        restored = current
+        for old, new in reversed(binding.ENUM_INDEX_RESOURCE_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        import re
+        def functions(raw):
+            return {match[1]: match[0] for match in re.finditer(
+                rb'#\[test\]\nfn (reviewer_[a-z_]+)\(\) \{.*?(?=\n#\[test\]|\Z)', raw, re.S)}
+        old_functions, new_functions = functions(original), functions(current)
+        self.assertEqual(set(old_functions), set(new_functions))
+        self.assertEqual([name.decode() for name in old_functions if old_functions[name] != new_functions[name]],
+                         list(binding.ENUM_INDEX_RESOURCE_CONTROLS))
+        self.assertEqual(len(self.captured["index_resource_authority"]["preserved_test_names"]), 21)
+        self.assertIn(b'fn reviewer_fourteen_actual_index_reserve_failures()', current)
+        self.assertIn(b'for fail in 1..=16 {', current)
+        for unchanged in (b'index.row_lengths(),[4,4,2,1,1,2,1,1,1,1]',
+                          b'assert!(FIXED_SCRATCH<=4096)', b'ast_payload,28800',
+                          b'plan().build_work,168', b'assert_eq!(count,usize::MAX)'):
+            if unchanged in original:
+                self.assertIn(unchanged, current)
+
+    def test_enum_index_resource_derivation_matches_independent_prescribed_rows(self):
+        derivation = self.captured["index_resource_authority"]["representation_derivation"]
+        self.assertEqual(derivation["nine_payloads_after"], [68,120,136,184,180,288,272,340,380])
+        self.assertEqual((derivation["module_row_bytes"], derivation["enum_row_bytes"],
+                          derivation["variant_row_bytes"], derivation["index_header_bytes"],
+                          derivation["fixed_scratch_bytes"]), (68,20,12,344,4088))
+        self.assertEqual(derivation["unchanged_function_work"], {"preflight":34,"mandatory_build":168,"admission":202})
+        current = self.captured["index_resource"]
+        self.assertIn(b'("index enums",0,20),("index variants",0,12),("index modules",2,68)', current)
+        self.assertIn(b'al.trace.iter().take(12)', current)
+        self.assertIn(b'al.trace.iter().skip(12)', current)
+        self.assertIn(b'let retained=120+size_of::<DeclarationIndex', current)
+
+    def test_enum_index_resource_coherent_authority_mutations_reject_before_materialization(self):
+        name = self.package / "enum-resource-authority.json"
+        original = name.read_bytes()
+        for field, value in (("logical_resource_tests", 20), ("changed_controls", []),
+                             ("source_dependencies", []), ("preserved_test_names", [])):
+            with self.subTest(field=field):
+                authority = binding.read_json(name)
+                authority[field] = value
+                binding.write_json(name, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale enum index resource authority")
+                name.write_bytes(original)
+        self.rehash_package()
+
+    def test_enum_index_resource_rejects_source_tail_unknown_seams_and_reapplication(self):
+        original = self.captured["historical_bytes"][binding.INDEX_RESOURCE]
+        for changed in (original + b"\n", original[:-1], self.captured["index_resource"]):
+            with self.assertRaisesRegex(binding.BindingError, "wrong original enum index resource"):
+                binding.adapt_enum_index_resource(changed)
+        seams = binding.ENUM_INDEX_RESOURCE_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with patch.object(binding, "ENUM_INDEX_RESOURCE_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong enum index resource substitution count"):
+                    binding.adapt_enum_index_resource(original)
+        for index, (old, new) in enumerate(seams):
+            for changed in ((b"unknown seam", new), (old, new + b"// altered")):
+                with self.subTest(index=index), patch.object(binding, "ENUM_INDEX_RESOURCE_SEAMS", seams[:index] + (changed,) + seams[index+1:]):
+                    with self.assertRaisesRegex(binding.BindingError, "enum index resource seam drift|wrong derived enum index resource"):
+                        binding.adapt_enum_index_resource(original)
+
+    def test_enum_semantic_comparator_is_exact_reversible_and_retains_frozen_report(self):
+        original = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
+        current = binding.adapt_enum_unit2_comparator(original)
+        self.assertEqual(current, self.captured["unit2_comparator"])
+        restored = current
+        for old, new in reversed(binding.UNIT2_COMPARATOR_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        compile(current, "current-unit2-comparator", "exec")
+        self.assertIn(b'compare_before_enum_enabled_qualified_values.py', current)
+        self.assertIn(b"historical_report['counts']=={'match':3599,'mismatch':4}", current)
+        self.assertIn(b"report['historical_semantic_comparison']=historical_binding", current)
+        output = self.root / "semantic-package"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        prepared = Path(seam["resource_package_root"])
+        self.assertEqual((prepared / binding.UNIT2_FROZEN_COMPARATOR).read_bytes(), original)
+        self.assertEqual((prepared / binding.UNIT2_COMPARATOR).read_bytes(), current)
+        self.assertEqual((prepared / "semantic/corpus.jsonl.gz").read_bytes(),
+                         self.captured["historical_bytes"]["semantic/corpus.jsonl.gz"])
+        self.assertEqual(seam["semantic_amendment"]["cases"], [
+            "parser/bare-relative-prefix", "parser/qualified-function-value",
+            "parser/self-relative-prefix", "parser/super-relative-prefix"])
+
+    def test_enum_semantic_helper_or_descriptor_coherent_changes_reject(self):
+        for name in (binding.SEMANTIC_HELPER, binding.SEMANTIC_DESCRIPTOR):
+            with self.subTest(name=name):
+                path = self.package / name
+                old = path.read_bytes()
+                path.write_bytes(old + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization("unapproved enum semantic amendment")
+                path.write_bytes(old)
+        self.rehash_package()
+
+    def test_enum_semantic_comparator_rejects_wrong_original_and_seams(self):
+        original = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
+        for changed in (original + b"\n", self.captured["unit2_comparator"]):
+            with self.assertRaisesRegex(binding.BindingError, "wrong original Unit2 comparator"):
+                binding.adapt_enum_unit2_comparator(changed)
+        seams = binding.UNIT2_COMPARATOR_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with patch.object(binding, "UNIT2_COMPARATOR_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong enum Unit2 comparator substitution count"):
+                    binding.adapt_enum_unit2_comparator(original)
+        for index, (old, new) in enumerate(seams):
+            with patch.object(binding, "UNIT2_COMPARATOR_SEAMS", seams[:index] + ((old, new + b"# altered\n"),) + seams[index+1:]):
+                with self.assertRaisesRegex(binding.BindingError, "wrong derived enum Unit2 comparator"):
+                    binding.adapt_enum_unit2_comparator(original)
+
+    def test_enum_resource_adapter_is_exact_reversible(self):
+        prior = self.captured["combined_resource"]
+        current = self.captured["resource"]
+        self.assertEqual(current.replace(binding.ENUM_RESOURCE_SEAM, binding.NEW_SEAM), prior)
+        self.assertEqual(current.count(binding.ENUM_RESOURCE_SEAM), 1)
+        self.assertIn(b"enums:EnumSyntaxPolicy::Closed,storage:enums::SyntaxStorage::default()", current)
+        self.assertEqual(self.captured["enum_authority"]["resource_adapter"]["derived"],
+                         binding.entry(binding.RESOURCE, current))
+
     def test_projected_inverse_restores_exact_unary(self):
         restored, touched = binding.inverse_projected_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["projected-transition.patch"])
+            self.captured["projected_inputs"], self.captured["package_bytes"]["projected-transition.patch"])
         self.assertEqual(restored, self.captured["unary_inputs"])
         self.assertEqual(touched, list(binding.PROJECTED_PATHS))
         self.assertEqual(len(touched), 40)
         self.assertEqual(len(binding.PROJECTED_ADDITIONS), 2)
         self.assertEqual(len(restored), 199)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(self.captured["projected_source"]["reviewed_source_head"],
                          "052ad52ac876c01b91701132cffb466689b24d01")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["projected_source"]["source_only_tree"],
                          "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50")
 
     def test_projected_members_required_and_byte_bound(self):
@@ -146,7 +404,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(sections), 40)
         for name, section in zip(binding.PROJECTED_PATHS, sections):
             with self.subTest(name=name):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["projected_inputs"])
                 hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[name].splitlines(keepends=True)
@@ -164,7 +422,7 @@ class SourceBindingTests(unittest.TestCase):
                                   (b"".join(sections[:-1]), "wrong transition scope"),
                                   (original + sections[0], "duplicate transition member")):
             with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["projected_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.PROJECTED_PATHS)
 
     def test_unary_inverse_restores_exact_composition(self):
@@ -379,7 +637,7 @@ class SourceBindingTests(unittest.TestCase):
                 calls.append(name)
                 return original(*args)
             return wrapper
-        names = ("inverse_projected_patch", "inverse_unary_patch", "inverse_composition_patch", "inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
+        names = ("inverse_enum_patch", "inverse_projected_patch", "inverse_unary_patch", "inverse_composition_patch", "inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
         with ExitStack() as stack:
             for name in names:
                 stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
@@ -948,7 +1206,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(predecessor, self.captured["predecessor_resource"])
         self.assertEqual(binding.entry(binding.RESOURCE, current),
                          self.captured["combined_authority"]["derived_resource"])
-        self.assertEqual(current, self.captured["resource"])
+        self.assertEqual(current, self.captured["combined_resource"])
         self.assertEqual(current.replace(binding.NEW_SEAM, binding.OLD_SEAM), original)
         self.assertEqual(current.count(b"arrays:ArraySyntaxPolicy::Closed"), 1)
         self.assertEqual(binding.digest(current),
@@ -1318,20 +1576,22 @@ class SourceBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
             binding.inverse_patch(self.captured["inputs"], patch + b"\n")
 
-    def test_resource_seam_only_adds_false_and_closed_initializers(self):
+    def test_current_unit2_package_has_exact_declared_adapters(self):
         output = self.root / "unit2"
         output.mkdir()
         seam = binding.prepare_unit2(output, self.captured)
         root = Path(seam["resource_package_root"])
         changes = [name for name, data in self.captured["historical_bytes"].items()
                    if (root / name).read_bytes() != data]
-        self.assertEqual(sorted(changes), sorted([binding.RESOURCE, binding.OBSERVER]))
+        self.assertEqual(sorted(changes), sorted([binding.RESOURCE, binding.INDEX_RESOURCE, binding.OBSERVER, binding.UNIT2_COMPARATOR]))
         self.assertEqual(seam["resource_package_changes"],
-                         [binding.RESOURCE, binding.OBSERVER, "package-inputs.json"])
-        self.assertEqual(seam["observer_adapter"], self.captured["slices_authority"]["unit2_observer_adapter"])
+                         [binding.RESOURCE, binding.INDEX_RESOURCE, binding.OBSERVER, binding.UNIT2_COMPARATOR,
+                          binding.UNIT2_FROZEN_COMPARATOR, binding.UNIT2_SEMANTIC_HELPER,
+                          binding.UNIT2_SEMANTIC_DESCRIPTOR, "package-inputs.json"])
+        self.assertEqual(seam["observer_adapter"], self.captured["enum_authority"]["unit2_observer_adapter"])
         self.assertEqual((root / binding.OBSERVER).read_bytes(), self.captured["observer"])
         modified = (root / binding.RESOURCE).read_bytes()
-        self.assertEqual(modified.replace(binding.NEW_SEAM, binding.OLD_SEAM),
+        self.assertEqual(modified.replace(binding.ENUM_RESOURCE_SEAM, binding.OLD_SEAM),
                          self.captured["historical_bytes"][binding.RESOURCE])
         self.assertEqual((Path(seam["compatibility_runner"])).read_bytes(), self.captured["references"][binding.COMPAT])
 
@@ -1364,7 +1624,7 @@ class SourceBindingTests(unittest.TestCase):
         aggregate = binding.adapt_unit2_observer(original)
         borrowed = binding.adapt_borrowed_unit2_observer(aggregate)
         self.assertEqual(aggregate, self.captured["aggregate_observer"])
-        self.assertEqual(borrowed, self.captured["observer"])
+        self.assertEqual(borrowed, self.captured["borrowed_observer"])
         self.assertEqual(len(binding.BORROWED_OBSERVER_SEAMS), 7)
         self.assertEqual(len(borrowed), 17039)
         self.assertEqual(binding.digest(borrowed),
@@ -1522,6 +1782,8 @@ class SourceBindingTests(unittest.TestCase):
     def test_observer_controls_bind_both_profiles_and_keep_streams(self):
         output, seam = self.synthetic_observer_controls()
         receipt = binding.run_unit2_observer_controls(self.repo, output, self.captured, seam)
+        self.assertEqual(receipt["observer_adapter_version"], binding.ENUM_OBSERVER_ADAPTER_VERSION)
+        self.assertEqual(receipt["observer_adapter_version"], seam["observer_adapter"]["version"])
         self.assertEqual(receipt["observer_control_tests_per_profile"], 6)
         self.assertEqual(receipt["test_function_executions"], 56)
         self.assertEqual(len(receipt["observer_control_receipts"]), 2)
@@ -1529,6 +1791,7 @@ class SourceBindingTests(unittest.TestCase):
             report = binding.read_json(output / row["path"])
             self.assertEqual(report["tests"], list(binding.OBSERVER_CONTROL_NAMES))
             self.assertEqual(report["observer_adapter"], seam["observer_adapter"])
+            self.assertEqual(report["observer_adapter"]["version"], receipt["observer_adapter_version"])
             self.assertEqual(report["source_inputs_sha256"], binding.CURRENT_SOURCE_SHA)
             commands = binding.read_json(output / "observer-adapter-controls" / report["commands"]["path"])
             self.assertEqual(len(commands), 2)
@@ -1566,7 +1829,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (201, 185, 185, 133, 129, 117))
+                         (237, 185, 185, 133, 129, 117))
         self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
         self.assertEqual(plan["unit2_current_observer_controls_per_profile"], 6)
         self.assertEqual(prepared["slices_authority_sha256"], binding.SLICES_AUTHORITY_SHA)
@@ -1631,6 +1894,11 @@ class SourceBindingTests(unittest.TestCase):
         run.mkdir(parents=True)
         inputs = dict(self.captured["historical_bytes"])
         inputs[binding.RESOURCE] = self.captured["resource"]
+        inputs[binding.INDEX_RESOURCE] = self.captured["index_resource"]
+        inputs[binding.UNIT2_COMPARATOR] = self.captured["unit2_comparator"]
+        inputs[binding.UNIT2_FROZEN_COMPARATOR] = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
+        inputs[binding.UNIT2_SEMANTIC_HELPER] = self.captured["package_bytes"][binding.SEMANTIC_HELPER]
+        inputs[binding.UNIT2_SEMANTIC_DESCRIPTOR] = self.captured["package_bytes"][binding.SEMANTIC_DESCRIPTOR]
         inputs[binding.OBSERVER] = self.captured["observer"]
         inputs["source-inputs.json"] = self.captured["package_bytes"]["current-source.json"]
         manifest = {**self.captured["historical"], "files": [binding.entry(n, d) for n, d in sorted(inputs.items())]}

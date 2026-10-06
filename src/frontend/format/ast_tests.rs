@@ -186,8 +186,14 @@ impl<'a> Fingerprint<'a> {
             span,
             segment_start,
             segment_len,
+            root,
         } = program.paths[id.0];
+        self.tag(match root {
+            PathRoot::Crate => "crate-root",
+            PathRoot::LocalType => "local-type-root",
+        });
         self.span(span);
+        let segment_len = usize::from(segment_len);
         self.count(segment_len);
         for &segment in &program.path_segments[segment_start..segment_start + segment_len] {
             self.spelling(segment);
@@ -349,6 +355,17 @@ impl<'a> Fingerprint<'a> {
                     self.argument(argument);
                 }
             }
+            ExprKind::QualifiedValue { path, args } => {
+                self.tag("qualified-value");
+                self.absolute(*path);
+                self.flag(args.is_some());
+                if let Some(args) = args {
+                    self.count(args.len());
+                    for argument in args {
+                        self.argument(argument);
+                    }
+                }
+            }
             ExprKind::StructLiteral { record, fields } => {
                 self.tag("record-literal");
                 self.path(*record);
@@ -470,6 +487,20 @@ impl<'a> Fingerprint<'a> {
             }
             StmtKind::Break => self.tag("break"),
             StmtKind::Continue => self.tag("continue"),
+            StmtKind::Match { scrutinee, arms } => {
+                self.tag("match");
+                self.spelling(*scrutinee);
+                self.count(arms.len());
+                for arm in arms {
+                    self.absolute(arm.variant);
+                    self.optional_span(arm.binding);
+                    if let Some(binding) = arm.binding {
+                        self.spelling(binding);
+                    }
+                    self.span(arm.span);
+                    self.block(function, blocks, arm.body);
+                }
+            }
             StmtKind::While { condition, body } => {
                 self.tag("while");
                 self.expression(*condition);
@@ -515,6 +546,7 @@ impl<'a> Fingerprint<'a> {
             program.functions.len(),
             program.expressions.len(),
             program.records.len(),
+            program.enums.len(),
             program.items.len(),
             program.modules.len(),
             program.paths.len(),
@@ -535,6 +567,7 @@ impl<'a> Fingerprint<'a> {
         self.tag("items");
         let mut functions = Ids::new(program.functions.len());
         let mut records = Ids::new(program.records.len());
+        let mut enums = Ids::new(program.enums.len());
         let mut modules = Ids::new(program.modules.len());
         let mut imports = Ids::new(program.imports.len());
         for item in &program.items {
@@ -610,11 +643,36 @@ impl<'a> Fingerprint<'a> {
                     self.block(function, &mut blocks, *body);
                     blocks.assert_complete();
                 }
+                ItemId::Enum(index) => {
+                    assert!(enums.visit(index).1, "duplicate item root");
+                    let enumeration = &program.enums[index];
+                    self.tag("enum");
+                    self.optional_span(enumeration.public);
+                    self.spelling(enumeration.name);
+                    self.span(enumeration.span);
+                    self.span(enumeration.end);
+                    self.count(enumeration.variants.len());
+                    for variant in &enumeration.variants {
+                        self.tag("variant");
+                        self.spelling(variant.name);
+                        self.span(variant.span);
+                        self.flag(variant.payload.is_some());
+                        if let Some(payload) = variant.payload {
+                            self.tag(match payload.kind {
+                                ScalarTypeSyntax::Bool => "bool-payload",
+                                ScalarTypeSyntax::I32 => "i32-payload",
+                                ScalarTypeSyntax::Unit => "unit-payload",
+                            });
+                            self.span(payload.span);
+                        }
+                    }
+                }
             }
         }
         for ids in [
             &functions,
             &records,
+            &enums,
             &modules,
             &imports,
             &self.expressions,
@@ -624,7 +682,11 @@ impl<'a> Fingerprint<'a> {
         }
         assert_eq!(
             program.path_segments.len(),
-            program.paths.iter().map(|p| p.segment_len).sum()
+            program
+                .paths
+                .iter()
+                .map(|p| usize::from(p.segment_len))
+                .sum()
         );
         self.parts
     }
@@ -816,17 +878,21 @@ fn normalization_ignores_arena_storage_order_but_retains_edges() {
     for path in &mut program.paths {
         let old_start = path.segment_start;
         path.segment_start = segments.len();
-        segments.extend_from_slice(&program.path_segments[old_start..old_start + path.segment_len]);
+        segments.extend_from_slice(
+            &program.path_segments[old_start..old_start + usize::from(path.segment_len)],
+        );
     }
     program.path_segments = segments;
     program.functions.reverse();
     program.records.reverse();
+    program.enums.reverse();
     program.modules.reverse();
     program.imports.reverse();
     for item in &mut program.items {
         match item {
             ItemId::Function(index) => *index = program.functions.len() - 1 - *index,
             ItemId::Struct(index) => *index = program.records.len() - 1 - *index,
+            ItemId::Enum(index) => *index = program.enums.len() - 1 - *index,
             ItemId::Module(index) => *index = program.modules.len() - 1 - *index,
             ItemId::Import(index) => *index = program.imports.len() - 1 - *index,
         }
@@ -1179,6 +1245,357 @@ fn normalization_detects_same_tape_array_mutations() {
             expected,
             fingerprint(source, &changed),
             "array mutation {index}"
+        );
+    }
+}
+
+fn parse_enum_fingerprint(source: &SourceFile) -> Program {
+    parser::parse_enum_candidate_counted(
+        source,
+        lexer::lex(source).unwrap(),
+        SourceMode::ProjectCandidate,
+        parser::MAX_NODES,
+        &mut crate::frontend::project::budget::Allocator::default(),
+        &mut Default::default(),
+    )
+    .unwrap()
+    .0
+}
+
+#[test]
+fn enum_formatter_independent_fingerprint_roundtrips_every_new_carrier() {
+    let cases = [
+        "enum E{Z,I(i32),B(bool),U(()),} fn f(e:E)->(){E::Z;E::Z();E::U(());match e{E::I(v)=>{v;},E::B(b)=>{b;},E::U(u)=>{u;},E::Z=>{},}}",
+        "pub enum E{Z,I(i32)}fn f(e:crate::m::E,r:&mut R)->(){crate::m::f(1,2,&*r,&mut *r);let a=[E::I(1),E::Z];R{x:E::I(2)};match e{crate::m::E::I(v)=>{return;},crate::m::E::Z=>{},}}",
+        "/* enum match => :: } */\r\nenum E{Z,U(()),}\nfn f(e:E)->(){\nmatch e{E/*x*/::/*y*/Z/*a*/=>/*b*/{},E::U(u)=>{match e{E::Z=>{},E::U(v)=>{v;},}},}\n}",
+        "enum E{I(i32),Z}fn f(e:E)->(){while true{match e{E::I(v)=>{if v>0{continue;}else{break;}},E::Z=>{return;},}}}",
+    ];
+    for text in cases {
+        let mut sources = SourceMap::new();
+        let id = sources.add("enum-oracle.ox".into(), text.into());
+        let source = sources.get(id);
+        let program = parse_enum_fingerprint(source);
+        assert!(program.validate_spans_and_ids(|at| source.try_text(at).is_some()));
+        let expected = fingerprint(source, &program);
+        let (result, metrics) = super::format_enum_candidate_observed(
+            source,
+            &mut crate::frontend::project::budget::Allocator::default(),
+        );
+        let output = result.unwrap();
+        assert_eq!(metrics.parse_calls, 2);
+        let mut candidates = SourceMap::new();
+        let id = candidates.add("enum-output.ox".into(), output.clone());
+        let candidate = candidates.get(id);
+        let reparsed = parse_enum_fingerprint(candidate);
+        assert!(reparsed.validate_spans_and_ids(|at| candidate.try_text(at).is_some()));
+        assert_eq!(expected, fingerprint(candidate, &reparsed));
+        assert!(super::same_projection(
+            source,
+            &program.tokens,
+            candidate,
+            &reparsed.tokens
+        ));
+        assert_eq!(
+            super::format_enum_candidate_observed(
+                candidate,
+                &mut crate::frontend::project::budget::Allocator::default()
+            )
+            .0
+            .unwrap(),
+            output
+        );
+    }
+}
+
+fn enum_fingerprint_arms(program: &mut Program) -> &mut Vec<MatchArmSyntax> {
+    let statement = program.functions[0].blocks[0]
+        .body
+        .iter_mut()
+        .find(|statement| matches!(statement.kind, StmtKind::Match { .. }))
+        .unwrap();
+    let StmtKind::Match { arms, .. } = &mut statement.kind else {
+        unreachable!()
+    };
+    arms
+}
+
+#[test]
+fn enum_formatter_independent_fingerprint_detects_same_tape_mutations() {
+    let text = "pub enum E{Z,I(i32),U(()),B(bool)}fn f(e:E,r:&R)->(){E::Z;E::Z();E::U(());crate::m::f(1,2);crate::m::g(&*r);match e{E::I(v)=>{v;},E::Z=>{},E::U(u)=>{u;},E::B(b)=>{b;},}}";
+    let mut sources = SourceMap::new();
+    let id = sources.add("enum-mutations.ox".into(), text.into());
+    let source = sources.get(id);
+    let original = parse_enum_fingerprint(source);
+    let expected = fingerprint(source, &original);
+    let tape: Vec<_> = original
+        .tokens
+        .iter()
+        .map(|token| (token.kind, token.span))
+        .collect();
+    let mutations: &[fn(&mut Program)] = &[
+        |p| p.enums[0].variants.swap(0, 1),
+        |p| {
+            let name = p.enums[0].variants[1].name;
+            p.enums[0].variants[0].name = name;
+        },
+        |p| p.enums[0].variants[1].payload.as_mut().unwrap().kind = ScalarTypeSyntax::Bool,
+        |p| {
+            let payload = p.enums[0].variants[2].payload;
+            p.enums[0].variants[0].payload = payload;
+        },
+        |p| p.enums[0].variants[2].payload = None,
+        |p| {
+            p.enums[0].span = p.enums[0].name;
+        },
+        |p| {
+            p.enums[0].variants[1].span = p.enums[0].variants[1].name;
+        },
+        |p| {
+            let expr = p
+                .expressions
+                .iter_mut()
+                .find(|expr| matches!(expr.kind, ExprKind::QualifiedValue { args: None, .. }))
+                .unwrap();
+            let ExprKind::QualifiedValue { args, .. } = &mut expr.kind else {
+                unreachable!()
+            };
+            *args = Some(Vec::new());
+        },
+        |p| {
+            let expr = p.expressions.iter_mut().find(|expr| matches!(&expr.kind, ExprKind::QualifiedValue { args: Some(args), .. } if args.is_empty())).unwrap();
+            let ExprKind::QualifiedValue { args, .. } = &mut expr.kind else {
+                unreachable!()
+            };
+            *args = None;
+        },
+        |p| {
+            let expr = p.expressions.iter_mut().find(|expr| matches!(&expr.kind, ExprKind::QualifiedValue { args: Some(args), .. } if args.len() == 2)).unwrap();
+            let ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } = &mut expr.kind
+            else {
+                unreachable!()
+            };
+            args.swap(0, 1);
+        },
+        |p| {
+            let expr = p.expressions.iter_mut().find(|expr| matches!(&expr.kind, ExprKind::QualifiedValue { args: Some(args), .. } if matches!(args.first(), Some(Argument::Borrow { .. })))).unwrap();
+            let ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } = &mut expr.kind
+            else {
+                unreachable!()
+            };
+            let Argument::Borrow { mutable, .. } = &mut args[0] else {
+                unreachable!()
+            };
+            *mutable = !*mutable;
+        },
+        |p| enum_fingerprint_arms(p).swap(0, 1),
+        |p| enum_fingerprint_arms(p)[0].binding = None,
+        |p| {
+            let arms = enum_fingerprint_arms(p);
+            arms[0].binding = arms[2].binding;
+        },
+        |p| {
+            let arms = enum_fingerprint_arms(p);
+            let first = arms[0].body;
+            arms[0].body = arms[1].body;
+            arms[1].body = first;
+        },
+        |p| {
+            let arms = enum_fingerprint_arms(p);
+            arms[0].span = arms[1].span;
+        },
+        |p| p.paths[0].root = PathRoot::Crate,
+        |p| {
+            p.paths[0].span = p.paths[1].span;
+        },
+        |p| {
+            let name = p.enums[0].name;
+            p.enums[0].variants[1].payload.as_mut().unwrap().span = name;
+        },
+    ];
+    for (index, mutate) in mutations.iter().enumerate() {
+        let mut changed = parse_enum_fingerprint(source);
+        mutate(&mut changed);
+        assert_eq!(
+            tape,
+            changed
+                .tokens
+                .iter()
+                .map(|token| (token.kind, token.span))
+                .collect::<Vec<_>>()
+        );
+        assert_ne!(expected, fingerprint(source, &changed), "mutation {index}");
+    }
+}
+
+fn enum_fingerprint_qualified_borrow(program: &mut Program, index: usize) -> &mut BorrowPlace {
+    program
+        .expressions
+        .iter_mut()
+        .filter_map(|expression| match &mut expression.kind {
+            ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } => Some(args),
+            _ => None,
+        })
+        .flat_map(|args| args.iter_mut())
+        .filter_map(|argument| match argument {
+            Argument::Borrow { place, .. } => Some(place),
+            _ => None,
+        })
+        .nth(index)
+        .unwrap()
+}
+
+#[test]
+fn enum_formatter_independent_fingerprint_covers_qualified_values_and_match_origins() {
+    let text = "enum E{I(i32),Z}fn f(e:E,r:&R,s:&R)->(){crate::m::f(true,&*r);crate::m::g(&*r);crate::m::h(&*s);match e{E::I(v)=>{v;},E::Z=>{},}}";
+    let mut sources = SourceMap::new();
+    let id = sources.add("enum-origin-mutations.ox".into(), text.into());
+    let source = sources.get(id);
+    let mut original = parse_enum_fingerprint(source);
+    let expected = fingerprint(source, &original);
+    let tape: Vec<_> = original
+        .tokens
+        .iter()
+        .map(|token| (token.kind, token.span))
+        .collect();
+    let BorrowPlace::ForwardedParameter {
+        name: first_name,
+        star_span: first_star,
+    } = *enum_fingerprint_qualified_borrow(&mut original, 0)
+    else {
+        panic!("first forwarded borrow")
+    };
+    let BorrowPlace::ForwardedParameter {
+        name: second_name,
+        star_span: second_star,
+    } = *enum_fingerprint_qualified_borrow(&mut original, 1)
+    else {
+        panic!("second forwarded borrow")
+    };
+    assert_eq!(source.text_at(first_name), source.text_at(second_name));
+    assert_ne!(
+        first_name, second_name,
+        "identical names must retain distinct source origins"
+    );
+    assert_eq!(source.text_at(first_star), source.text_at(second_star));
+    assert_ne!(
+        first_star, second_star,
+        "identical stars must retain distinct source origins"
+    );
+
+    type NamedMutation = (&'static str, fn(&mut Program));
+    let mutations: &[NamedMutation] = &[
+        ("match arm variant paths", |program| {
+            // Swap only path edges, keeping written arm/body/binding order and
+            // every arena occurrence reachable for the unchanged completeness oracle.
+            let arms = enum_fingerprint_arms(program);
+            let first = arms[0].variant;
+            arms[0].variant = arms[1].variant;
+            arms[1].variant = first;
+        }),
+        ("match statement origin", |program| {
+            let statement = program.functions[0].blocks[0]
+                .body
+                .iter_mut()
+                .find(|statement| matches!(statement.kind, StmtKind::Match { .. }))
+                .unwrap();
+            let StmtKind::Match { arms, .. } = &statement.kind else {
+                unreachable!()
+            };
+            statement.span = arms[0].span;
+        }),
+        ("qualified call argument value", |program| {
+            let expression = program
+                .expressions
+                .iter()
+                .find(|expression| {
+                    matches!(&expression.kind, ExprKind::QualifiedValue { args: Some(args), .. }
+                    if matches!(args.first(), Some(Argument::Value(_))))
+                })
+                .unwrap();
+            let ExprKind::QualifiedValue {
+                args: Some(args), ..
+            } = &expression.kind
+            else {
+                unreachable!()
+            };
+            let Argument::Value(value) = args[0] else {
+                unreachable!()
+            };
+            let ExprKind::Bool(value) = &mut program.expressions[value.0].kind else {
+                panic!("boolean call argument")
+            };
+            *value = !*value;
+        }),
+        ("qualified borrow place", |program| {
+            let place = enum_fingerprint_qualified_borrow(program, 0);
+            let BorrowPlace::ForwardedParameter { name, .. } = *place else {
+                unreachable!()
+            };
+            *place = BorrowPlace::OwnerName(name);
+        }),
+        ("qualified borrow name", |program| {
+            let BorrowPlace::ForwardedParameter { name: other, .. } =
+                *enum_fingerprint_qualified_borrow(program, 2)
+            else {
+                unreachable!()
+            };
+            let BorrowPlace::ForwardedParameter { name, .. } =
+                enum_fingerprint_qualified_borrow(program, 0)
+            else {
+                unreachable!()
+            };
+            *name = other;
+        }),
+        ("qualified borrow identical-name origin", |program| {
+            let BorrowPlace::ForwardedParameter { name: other, .. } =
+                *enum_fingerprint_qualified_borrow(program, 1)
+            else {
+                unreachable!()
+            };
+            let BorrowPlace::ForwardedParameter { name, .. } =
+                enum_fingerprint_qualified_borrow(program, 0)
+            else {
+                unreachable!()
+            };
+            *name = other;
+        }),
+        ("forwarded-star origin", |program| {
+            let BorrowPlace::ForwardedParameter {
+                star_span: other, ..
+            } = *enum_fingerprint_qualified_borrow(program, 1)
+            else {
+                unreachable!()
+            };
+            let BorrowPlace::ForwardedParameter { star_span, .. } =
+                enum_fingerprint_qualified_borrow(program, 0)
+            else {
+                unreachable!()
+            };
+            *star_span = other;
+        }),
+    ];
+    for &(name, mutate) in mutations {
+        let mut changed = parse_enum_fingerprint(source);
+        mutate(&mut changed);
+        assert_eq!(
+            tape,
+            changed
+                .tokens
+                .iter()
+                .map(|token| (token.kind, token.span))
+                .collect::<Vec<_>>(),
+            "{name}"
+        );
+        assert_ne!(
+            expected,
+            fingerprint(source, &changed),
+            "missing mutation control: {name}"
         );
     }
 }

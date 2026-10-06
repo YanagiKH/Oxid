@@ -671,6 +671,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            enums: vec![],
             records: vec![record(&[I32, I32, I32, Bool], main.span)],
             functions: vec![main, retry, commit, dispatch, done, relay, finish],
         },

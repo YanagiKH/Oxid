@@ -91,6 +91,7 @@ fn body(id: usize, s: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![OwnedBlock {
             merge: None,
@@ -131,6 +132,7 @@ fn base(s: Span, owners: usize) -> RawOwnedProgram {
         f.blocks[0].statements.push(construct(id, s));
     }
     RawOwnedProgram {
+        enums: vec![],
         records,
         functions: vec![f],
     }

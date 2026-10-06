@@ -54,3 +54,11 @@ with general prefix negation while preserving signed decimal literal behavior.
 
 [RFC 0022](0022-projected-array-slices.md) connects record-contained fixed scalar
 arrays to call-only slice helpers, retaining conservative whole-root authority.
+
+[RFC 0023](0023-bounded-enum-match.md) adds bounded nominal move-only enums
+with scalar payloads and exhaustive consuming statement matches. The public
+typed-preview check/run/native-compile and formatter paths are experimental;
+current-source qualification and exact-head hosted CI remain separate pending
+gates. The [two-file scanner](../tests/fixtures/bounded_enum_scanner/main.ox)
+returns 115 from fixed integer-code input, without a compiler-provider or
+self-hosting claim.

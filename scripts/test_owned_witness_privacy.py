@@ -19,9 +19,17 @@ class PrivacyCheckoutTests(unittest.TestCase):
         expected = {name.removeprefix('/') for name in references}
         self.assertEqual(len(references), 47)
         self.assertEqual(len(expected), 42)
-        self.assertEqual(list(privacy.COMPILE_TIME_FIXTURES), sorted(expected))
+        self.assertEqual(list(privacy.ARRAY_COMPILE_TIME_FIXTURES), sorted(expected))
         self.assertEqual(sum('/contracts-v2/' in name for name in expected), 38)
         self.assertEqual(sum('/typing-contracts-v1/' in name for name in expected), 4)
+
+    def test_exact_enum_compile_time_fixture_roster(self):
+        self.assertEqual(privacy.ENUM_COMPILE_TIME_FIXTURES, (
+            "tests/fixtures/bounded_enum_scanner/main.ox",
+            "tests/fixtures/bounded_enum_scanner/scanner.ox",
+        ))
+        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 44)
+        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 44)
 
     def test_materialized_checkout_has_exact_fixture_bytes_and_all_includes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -49,7 +57,9 @@ class PrivacyCheckoutTests(unittest.TestCase):
                     self.assertTrue(target.is_relative_to(checkout))
                     self.assertTrue(target.is_file(), target)
                 count += len(literal) + len(rooted)
-            self.assertEqual(count, 56)
+            # 56 predecessor references, four scanner references, and the
+            # native enum harness's self-source provenance include.
+            self.assertEqual(count, 61)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

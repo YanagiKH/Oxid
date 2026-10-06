@@ -2,9 +2,8 @@
 use super::super::{execute, native, verified, *};
 use super::{diagnostic, lower, resolve, typeck};
 use crate::frontend::{ast, source::SourceFile};
-#[cfg(test)]
 use crate::frontend::{
-    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
+    declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
     project::budget::Allocator,
 };
 
@@ -20,6 +19,21 @@ pub(in crate::frontend::oir) fn check_source(
 ) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
     let resolved = resolve::resolve_in_map(source, ast, sources)?;
     let typed = typeck::check(resolved)?;
+    let entry = typed.entry();
+    Ok((check_typed(&typed)?, entry))
+}
+
+/// Keep the fresh index and paid typed owner local until ordinary source
+/// lowering, association and the complete raw verifier have finished.
+pub(in crate::frontend::oir) fn check_enum_source(
+    owner: SourceOwner<'_>,
+) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let facts = index::collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+        .map_err(|error| vec![*error])?;
+    let index = facts.finish(&work, &mut allocator)?;
+    let typed = resolve::type_enum_source(&index, &work, &mut allocator)?;
     let entry = typed.entry();
     Ok((check_typed(&typed)?, entry))
 }
@@ -146,3 +160,247 @@ impl SourceProgram {
 #[cfg(test)]
 #[path = "candidate_adapter.rs"]
 mod candidate_adapter;
+
+/// Fixed observations from a closed source-to-reference path. This is neither
+/// a source owner nor a raw/verified/execution witness.
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(super) struct EnumPipelineFacts {
+    pub(super) source_seed_before: usize,
+    pub(super) source_seed_after: usize,
+    pub(super) source_usage: super::budget::Usage,
+    pub(super) raw_usage: OwnershipUsage,
+    pub(super) verified_usage: OwnershipUsage,
+    pub(super) enum_count: usize,
+    pub(super) variant_count: usize,
+    pub(super) function_count: usize,
+    pub(super) match_count: usize,
+    pub(super) arm_count: usize,
+    pub(super) result: Result<Scalar, execute::OwnedRunFailure>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub(super) struct EnumPipelineProgramOutput {
+    pub(super) facts: EnumPipelineFacts,
+    pub(super) llvm: Option<Result<String, Box<Diagnostic>>>,
+}
+
+/// Sole caller is the paid typeck continuation. Fixed runtime observations and
+/// bounded artifacts leave only after the same verified witness is dropped.
+#[cfg(test)]
+#[allow(dead_code)]
+pub(super) fn observe_enum_pipeline(
+    typed: &typeck::TypedOwnedProgram<'_>,
+    request: resolve::EnumPipelineRequest,
+) -> Result<EnumPipelineProgramOutput, Vec<Diagnostic>> {
+    if typed.admission() != resolve::SourceAdmission::EnumPipeline {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let index = typed.index();
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    };
+    let entry = index.root_original_main();
+    if typed.entry() != entry || index.enum_count() == 0 {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let source_seed_before = typed
+        .source_storage_bytes()
+        .ok_or_else(|| vec![*crate::frontend::oir::source::association::bad()])?;
+    let source_usage = super::budget::preflight(typed, super::budget::Limits::DEFAULT)
+        .map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    let raw = lower::lower(typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    let raw_usage = super::super::budget::preflight(&raw, super::super::budget::Limits::DEFAULT)
+        .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    if source_usage.analysis != raw_usage {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    super::association::check_enum_candidate(&raw, index, sources).map_err(|error| vec![*error])?;
+    // Only fixed header facts are sampled here. This does not replace either
+    // source association or the independent complete raw proof below.
+    let enum_count = raw.enums.len();
+    let function_count = raw.functions.len();
+    let mut variant_count = 0;
+    let mut match_count = 0;
+    let mut arm_count = 0;
+    for enumeration in &raw.enums {
+        typed
+            .work()
+            .debit(1, enumeration.span, "enum pipeline facts")
+            .map_err(|error| {
+                typed.work().record_error(&error);
+                vec![*error]
+            })?;
+        variant_count = super::budget::add(variant_count, enumeration.variants.len())
+            .map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    }
+    for function in &raw.functions {
+        typed
+            .work()
+            .debit(1, function.span, "enum pipeline facts")
+            .map_err(|error| {
+                typed.work().record_error(&error);
+                vec![*error]
+            })?;
+        match_count = super::budget::add(match_count, function.matches.len())
+            .map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+        for descriptor in &function.matches {
+            typed
+                .work()
+                .debit(1, descriptor.span, "enum pipeline facts")
+                .map_err(|error| {
+                    typed.work().record_error(&error);
+                    vec![*error]
+                })?;
+            arm_count = super::budget::add(arm_count, descriptor.arms.len())
+                .map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+        }
+    }
+    // Use the authoritative path including prepare, inventory_carriers and
+    // shape/CFG/flow validation. No probe-only shortcut or second runtime.
+    let witness = verified::verify_owned(raw, sources)
+        .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    let verified_usage = witness.usage();
+    // checked_entry retains ordinary main parameter/result rejection before
+    // execution-plan allocation. Ordinary relay functions may return enums.
+    let limits = execute::Limits {
+        fuel: request.fuel,
+        ..execute::Limits::default()
+    };
+    let result = execute::run_limits(&witness, entry, limits);
+    // Runtime failure is inert data: native emission still uses this exact
+    // verified witness and the ordinary bounded native_module implementation.
+    let llvm = if request.emit_llvm {
+        Some(native::native_module(&witness, entry, sources))
+    } else {
+        None
+    };
+    let source_seed_after = typed
+        .source_storage_bytes()
+        .ok_or_else(|| vec![*crate::frontend::oir::source::association::bad()])?;
+    if source_seed_after != source_seed_before {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    drop(witness);
+    Ok(EnumPipelineProgramOutput {
+        facts: EnumPipelineFacts {
+            source_seed_before,
+            source_seed_after,
+            source_usage,
+            raw_usage,
+            verified_usage,
+            enum_count,
+            variant_count,
+            function_count,
+            match_count,
+            arm_count,
+            result,
+        },
+        llvm,
+    })
+}
+
+// Only the new closed driver's named caller/control surfaces. Raw backing,
+// declaration/verification payloads and execution plans retain their separate
+// authoritative budgets; no inherited verifier/runtime stack is modeled here.
+#[allow(dead_code)]
+struct EnumPipelineProgramCarriers {
+    request: resolve::EnumPipelineRequest,
+    execution_limits: [execute::Limits; 3],
+    typed: &'static typeck::TypedOwnedProgram<'static>,
+    index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
+    source_owner: crate::frontend::declaration_index::SourceOwner<'static>,
+    source_view: crate::frontend::source::SourceView<'static>,
+    sources: &'static SourceMap,
+    entry: Option<hir::DefId>,
+    seed_options: [Option<usize>; 4],
+    seed_results: [Result<usize, Vec<Diagnostic>>; 2],
+    seeds: [usize; 2],
+    source_return: Result<super::budget::Usage, OwnedFailure>,
+    source_normalized: Result<super::budget::Usage, Vec<Diagnostic>>,
+    source_usage: super::budget::Usage,
+    raw_return: Result<RawOwnedProgram, OwnedFailure>,
+    raw_normalized: Result<RawOwnedProgram, Vec<Diagnostic>>,
+    raw: RawOwnedProgram,
+    raw_borrows: [&'static RawOwnedProgram; 2],
+    raw_usage_return: Result<OwnershipUsage, OwnedFailure>,
+    raw_usage_normalized: Result<OwnershipUsage, Vec<Diagnostic>>,
+    raw_usage: OwnershipUsage,
+    association_return:
+        Result<crate::frontend::oir::source::association::BindUsage, Box<Diagnostic>>,
+    association_normalized:
+        Result<crate::frontend::oir::source::association::BindUsage, Vec<Diagnostic>>,
+    association_payload: crate::frontend::oir::source::association::BindUsage,
+    enum_count: usize,
+    function_count: usize,
+    variant_count: usize,
+    match_count: usize,
+    arm_count: usize,
+    enums: std::slice::Iter<'static, RawEnumDecl>,
+    enumeration: &'static RawEnumDecl,
+    enum_next: Option<&'static RawEnumDecl>,
+    functions: std::slice::Iter<'static, RawOwnedFunction>,
+    function: &'static RawOwnedFunction,
+    function_next: Option<&'static RawOwnedFunction>,
+    descriptors: std::slice::Iter<'static, MatchDecl>,
+    descriptor: &'static MatchDecl,
+    descriptor_next: Option<&'static MatchDecl>,
+    additions: [Result<usize, OwnedFailure>; 3],
+    additions_normalized: [Result<usize, Vec<Diagnostic>>; 3],
+    work_borrows: [&'static crate::frontend::declaration_index::WorkMeter; 3],
+    visits: [Result<(), Box<Diagnostic>>; 3],
+    visits_normalized: [Result<(), Vec<Diagnostic>>; 3],
+    witness_return: Result<verified::VerifiedOwnedProgram, OwnedFailure>,
+    witness_normalized: Result<verified::VerifiedOwnedProgram, Vec<Diagnostic>>,
+    witness: verified::VerifiedOwnedProgram,
+    witness_borrows: [&'static verified::VerifiedOwnedProgram; 2],
+    verified_usage: OwnershipUsage,
+    execution_return: Result<Scalar, execute::OwnedRunFailure>,
+    result: Result<Scalar, execute::OwnedRunFailure>,
+    native_witness: &'static verified::VerifiedOwnedProgram,
+    native_entry: Option<hir::DefId>,
+    native_sources: &'static SourceMap,
+    native_return: Result<String, Box<Diagnostic>>,
+    native_options: [Option<Result<String, Box<Diagnostic>>>; 2],
+    constructed_facts: EnumPipelineFacts,
+    constructed: EnumPipelineProgramOutput,
+    returned: Result<EnumPipelineProgramOutput, Vec<Diagnostic>>,
+}
+pub(super) const fn enum_pipeline_program_carrier_bytes() -> usize {
+    std::mem::size_of::<EnumPipelineProgramCarriers>()
+}
+
+// New original-file caller surfaces. The index's collection/finish prefix is
+// independently admitted by IndexPlan. These owners remain live during fresh
+// paid typing; downstream raw/lower/verifier roles keep their existing banks.
+#[allow(dead_code)]
+struct ProductionProgramCarriers {
+    owner: SourceOwner<'static>,
+    work: WorkMeter,
+    allocator: Allocator,
+    index: index::DeclarationIndex<'static>,
+    index_borrow: &'static index::DeclarationIndex<'static>,
+    work_borrow: &'static WorkMeter,
+    allocator_borrow: &'static mut Allocator,
+    typed_return: Result<typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    typed: typeck::TypedOwnedProgram<'static>,
+    typed_borrow: &'static typeck::TypedOwnedProgram<'static>,
+    entry: Option<hir::DefId>,
+    program_return: Result<SourceProgram, Vec<Diagnostic>>,
+    program: SourceProgram,
+    tuple: (SourceProgram, Option<hir::DefId>),
+    returned: Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>>,
+}
+pub(super) const fn production_program_carrier_bytes() -> usize {
+    std::mem::size_of::<ProductionProgramCarriers>()
+}
+
+#[test]
+fn bounded_enum_production_program_caller_layout() {
+    println!(
+        "ENUM_PRODUCTION_PROGRAM_LAYOUT controls={} source={}",
+        production_program_carrier_bytes(),
+        std::mem::size_of::<SourceProgram>()
+    );
+}

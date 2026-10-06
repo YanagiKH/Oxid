@@ -66,6 +66,14 @@ impl CfgView for RawOwnedFunction {
             | OwnedInstruction::ProjectionLength { destination, .. } => {
                 Some((*destination, i.span))
             }
+            OwnedInstruction::ConsumeVariant {
+                match_id,
+                destination,
+                ..
+            } => {
+                let descriptor = self.matches.get(match_id.0).ok_or_else(|| error(i.span))?;
+                destination.map(|id| (id, descriptor.span))
+            }
             _ => None,
         })
     }
@@ -89,6 +97,12 @@ impl CfgView for RawOwnedFunction {
     ) -> Result<(), OirFailure> {
         match &self.instruction(b, s)?.kind {
             OwnedInstruction::Scalar(i) => super::super::verify::scalar_statement_uses(i, visit)?,
+            OwnedInstruction::ConstructEnum {
+                payload: Some(value),
+                ..
+            } => {
+                visit(ScalarUse::Operand(*value))?;
+            }
             OwnedInstruction::Construct { fields, .. } => {
                 for (_, v) in fields {
                     visit(ScalarUse::Operand(*v))?;
@@ -155,6 +169,18 @@ impl CfgView for RawOwnedFunction {
     }
     fn successors(&self, b: usize) -> Result<[Option<BlockId>; 2], OirFailure> {
         Ok(match self.end(b)?.kind {
+            OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
+                let descriptor = self
+                    .matches
+                    .get(match_id.0)
+                    .ok_or_else(|| error(self.span))?;
+                let current = descriptor
+                    .arms
+                    .get(arm)
+                    .ok_or_else(|| error(descriptor.span))?;
+                let next = arm.checked_add(1).and_then(|i| descriptor.arms.get(i));
+                [Some(current.entry), next.map(|a| a.dispatch)]
+            }
             OwnedTerminatorKind::Branch {
                 then_block,
                 else_block,

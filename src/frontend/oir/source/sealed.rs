@@ -12,6 +12,9 @@ use crate::frontend::{
     source::{SourceFile, SourceView},
 };
 
+// Keep the witness inline: its enum growth is the already-admitted raw vector
+// header and checked declaration facade. Boxing would add an unbudgeted allocation.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum CheckedBody {
     Scalar(VerifiedProgram),
@@ -34,7 +37,10 @@ pub(in crate::frontend) fn check_source<'s>(
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
     let owner =
         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
-    let (body, entry) = if ast.uses_owned_syntax(source) {
+    let (body, entry) = if !ast.enums.is_empty() {
+        let (program, entry) = owned::source::check_enum_source(owner)?;
+        (CheckedBody::Owned(program), entry)
+    } else if ast.uses_owned_syntax(source) {
         let resolved = owned::source::resolve::resolve_sources(owner)?;
         let typed = owned::source::typeck::check(resolved)?;
         let entry = typed.entry();
@@ -69,6 +75,8 @@ enum CheckDepth {
     Types,
     Executable,
 }
+// This allocation-free result contains the same already-accounted inline witness.
+#[allow(clippy::large_enum_variant)]
 enum Checked<'s> {
     Types(CheckedProjectTypes),
     Executable(CheckedSourceProgram<'s>),
@@ -151,8 +159,12 @@ fn check_project<'s>(
             )
         }
         ProjectRoute::Owned => {
-            let resolved = owned::source::resolve::resolve_project(&frozen, work)?;
-            let typed = owned::source::typeck::check(resolved)?;
+            let typed = if frozen.enum_count() != 0 {
+                owned::source::resolve::type_enum_source(&frozen, work, allocator)?
+            } else {
+                let resolved = owned::source::resolve::resolve_project(&frozen, work)?;
+                owned::source::typeck::check(resolved)?
+            };
             if matches!(depth, CheckDepth::Types) {
                 return Ok(Checked::Types(summary()));
             }
@@ -201,4 +213,69 @@ impl CheckedSourceProgram<'_> {
     pub(in crate::frontend) fn entry(&self) -> Option<hir::DefId> {
         self.entry
     }
+}
+
+#[test]
+fn bounded_enum_sealed_source_carrier_measurements() {
+    use crate::frontend::oir::owned_types::{EnumDeclarations, RawEnumDecl};
+    use std::mem::{align_of, size_of};
+
+    // Baseline carriers contain the old inline record-only witness. The only
+    // new stored data is its raw enum Vec header plus checked enum facade;
+    // enclosing wrappers neither duplicate it nor introduce a heap allocation.
+    let growth = size_of::<Vec<RawEnumDecl>>() + size_of::<EnumDeclarations>();
+    macro_rules! measured {
+        ($($ty:ty => $baseline:expr),+ $(,)?) => { $(
+            println!(
+                "enum-sealed-layout {} bytes={} align={} admitted-growth={}",
+                stringify!($ty), size_of::<$ty>(), align_of::<$ty>(), growth,
+            );
+            #[cfg(target_pointer_width = "64")]
+            assert_eq!(size_of::<$ty>(), $baseline + growth);
+        )+ };
+    }
+    measured!(
+        owned::SourceProgram => 184,
+        CheckedBody => 184,
+        CheckedSourceProgram<'_> => 208,
+        Checked<'_> => 208,
+    );
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(size_of::<Vec<RawEnumDecl>>(), 24);
+        assert_eq!(size_of::<EnumDeclarations>(), 80);
+        assert_eq!(size_of::<VerifiedProgram>(), 24);
+        assert_eq!(size_of::<CheckedProjectTypes>(), 40);
+    }
+}
+
+// Only the new selector/caller transports. CheckedBody and checked source
+// construction reuse the ordinary facade's existing complete witness roles.
+#[allow(dead_code)]
+struct ProductionEnumFacadeCarriers {
+    original_selected: bool,
+    original_return: Result<(owned::SourceProgram, Option<hir::DefId>), Vec<Diagnostic>>,
+    original_program: owned::SourceProgram,
+    original_entry: Option<hir::DefId>,
+    project_count: usize,
+    project_selected: bool,
+    project_index: &'static index::DeclarationIndex<'static>,
+    project_work: &'static WorkMeter,
+    project_allocator: &'static mut Allocator,
+    project_return: Result<owned::source::typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    project_typed: owned::source::typeck::TypedOwnedProgram<'static>,
+}
+pub(in crate::frontend::oir) const fn enum_facade_carrier_bytes() -> usize {
+    std::mem::size_of::<ProductionEnumFacadeCarriers>()
+}
+
+#[test]
+fn bounded_enum_production_facade_caller_layout() {
+    println!(
+        "ENUM_PRODUCTION_FACADE_LAYOUT controls={} body={} source={} result={}",
+        enum_facade_carrier_bytes(),
+        std::mem::size_of::<CheckedBody>(),
+        std::mem::size_of::<CheckedSourceProgram<'_>>(),
+        std::mem::size_of::<Checked<'_>>()
+    );
 }

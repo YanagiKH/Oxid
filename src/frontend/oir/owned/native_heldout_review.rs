@@ -362,6 +362,7 @@ fn mixed_parameter_fixture(
         s(next),
     ));
     let mut raw = RawOwnedProgram {
+        enums: vec![],
         records: vec![record(&fields, s(0))],
         functions: vec![caller, callee],
     };
@@ -564,6 +565,7 @@ fn review_heldout_call_result_merge_real_llvm() {
                 s(42),
             ));
             let mut raw = RawOwnedProgram {
+                enums: vec![],
                 records: vec![],
                 functions: vec![f, helper],
             };
@@ -648,6 +650,7 @@ fn review_heldout_actual_admission_edges() {
             .collect();
         let witness = verified::verify_owned(
             RawOwnedProgram {
+                enums: vec![],
                 records: vec![],
                 functions,
             },
@@ -684,6 +687,7 @@ fn review_heldout_actual_admission_edges() {
             .collect();
         let witness = verified::verify_owned(
             RawOwnedProgram {
+                enums: vec![],
                 records: vec![],
                 functions: vec![f],
             },
@@ -710,6 +714,7 @@ fn review_heldout_actual_admission_edges() {
         ));
         let witness = verified::verify_owned(
             RawOwnedProgram {
+                enums: vec![],
                 records: vec![],
                 functions: vec![f],
             },

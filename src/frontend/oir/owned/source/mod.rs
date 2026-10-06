@@ -2,13 +2,16 @@
 mod association;
 mod budget;
 pub(super) mod hir;
+mod hir_budget;
 pub(super) mod lower;
 mod program;
 pub(in crate::frontend::oir) mod resolve;
+mod resolver_storage;
 #[cfg(test)]
 mod tests;
+mod type_storage;
 pub(in crate::frontend::oir) mod typeck;
-pub(in crate::frontend::oir) use program::{check_typed, SourceProgram};
+pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
 mod diagnostic;
 
 #[cfg(test)]
@@ -47,3 +50,6 @@ mod slice_tests;
 
 #[cfg(test)]
 mod projected_slice_raw_tests;
+
+#[cfg(test)]
+mod enum_native_source_tests;

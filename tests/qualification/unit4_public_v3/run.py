@@ -18,8 +18,9 @@ import runtime as rt
 from predecessors import Predecessors, original_generator_check
 
 ADAPTER_ROOT = Path(__file__).resolve().parent
+SOURCE_BINDING_ROOT = ADAPTER_ROOT.parents[1] / 'fixtures' / 'typed_project_source_binding'
 
-PACKAGE_FILES = {'observer-combined-v1.patch', 'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
+PACKAGE_FILES = {'observer-combined-v1.patch', 'observer-enum-v1.patch', 'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
 
 def adapter_identity():
     paths = sorted(ADAPTER_ROOT.iterdir(), key=lambda path: path.name)
@@ -143,7 +144,51 @@ def core_compare(section, row, got, cfg, contracts, sources, tools, predecessors
         for field in ('expected_authority_line_sha256', 'expected_projection_sha256', 'source_line_sha256'):
             if field in row['case']:
                 need(got[field] == row['case'][field], 'predecessor authority identity: ' + field)
+        check_predecessor_amendment(row, got, predecessors)
         predecessors.compare(row, got['process'], policy)
+
+def check_predecessor_amendment(row, got, predecessors):
+    """Derive the extra receipt from unchanged process bytes, never its metadata."""
+    expected = predecessors.qualified_paths_comparison(row, got['process']) if got['executed'] else None
+    fields = {key for key in got if key.startswith('qualified_paths_')}
+    need(fields == ({'qualified_paths_comparison'} if expected is not None else set()),
+         'missing/extra predecessor semantic comparison')
+    if expected is not None:
+        need(json.dumps(got['qualified_paths_comparison'], sort_keys=True, allow_nan=False) ==
+             json.dumps(expected, sort_keys=True, allow_nan=False), 'altered predecessor semantic comparison')
+    return expected
+
+def predecessor_history(rows, receipts, predecessors, policy, observations):
+    """Replay the frozen comparator separately; an amended pass is not a historical pass."""
+    need(len(rows) == len(receipts), 'historical predecessor receipt count')
+    mismatches, comparisons = [], []
+    executed = 0
+    for row, got in zip(rows, receipts):
+        need(got['key'] == row['key'], 'historical predecessor tuple order')
+        if not got['executed']:
+            continue
+        executed += 1
+        try:
+            comparison = predecessors.qualified_paths_comparison(row, got['process'])
+            if comparison is not None:
+                comparisons.append({'key': row['key'], 'comparison': comparison})
+            predecessors.compare(row, got['process'], policy, historical=True)
+        except (Reject, KeyError, TypeError, ValueError) as error:
+            mismatches.append({'key': row['key'], 'failure': str(error)})
+    return {'schema': 'oxid-unit4-public-predecessor-historical-comparison-v1',
+            'comparison_basis': 'unchanged-frozen-predecessor-public-projections',
+            'freeze_sha256': FREEZE_SHA, 'observations': observations,
+            'status': 'MISMATCH' if mismatches else 'MATCH', 'executed': executed,
+            'skipped': len(rows) - executed, 'mismatches': mismatches,
+            'qualified_paths_comparisons': comparisons, 'historical_qualification_claim': False,
+            'raw_observations_unchanged': True}
+
+def predecessor_report_fields(predecessors, history, authority_binding, history_binding):
+    return {'comparison_basis': 'frozen-predecessor-projections-plus-enum-enabled-qualified-values-v1',
+            'qualified_paths_amendment': predecessors.qualified_paths_amendment,
+            'qualified_paths_amendment_receipt': authority_binding,
+            'qualified_paths_amended_keys': [row['key'] for row in history['qualified_paths_comparisons']],
+            'historical_comparison': history_binding}
 
 def lifecycle_compare(row, ordinary, observed, cfg, observer_cfg, contracts, sources, tools):
     if not observed['executed']:
@@ -283,7 +328,10 @@ def main():
     else:
         env, tools = rt.setup_no_tool_traps(out)
     save(out / 'tools.json', {'tools': tools, 'selected_runtime': runtime_binding, 'mode': 'real-native' if needs_native else 'no-native-traps'})
-    predecessors = Predecessors(contracts) if 'predecessors' in sections else None
+    predecessors = Predecessors(contracts, source_manifest=cfg['source_manifest']['path'],
+                                amendment_root=SOURCE_BINDING_ROOT) if 'predecessors' in sections else None
+    if predecessors is not None:
+        save(out / 'qualified-paths-amendment.json', predecessors.qualified_paths_amendment)
     if 'original' in sections:
         original_generator_check(contracts, out / 'original-source-generation', cfg['source_root'])
     results = {}
@@ -325,6 +373,10 @@ def main():
                         observed['ordinary_receipt'] = binding(evidence / 'ordinary' / 'receipt.json')
                         got = observed
                     else:
+                        if section == 'predecessors' and got['executed']:
+                            amendment = predecessors.qualified_paths_comparison(row, got['process'])
+                            if amendment is not None:
+                                got['qualified_paths_comparison'] = amendment
                         core_compare(section, row, got, cfg, contracts, sources, tools, predecessors)
                         if got['executed']:
                             got['status'] = 'pass'
@@ -358,6 +410,13 @@ def main():
         except (Reject, KeyError, TypeError, ValueError) as error:
             report = {'status': 'FAIL', 'reason': str(error), 'failures': [{'key': r['key'], 'reason': r.get('failure')} for r in receipts if r['status'] == 'fail']}
         if section == 'predecessors':
+            history = predecessor_history(rows, receipts, predecessors,
+                        contracts.tables['public']['new_policy_diagnostic_bounds'],
+                        binding(section_out / 'observations.jsonl.gz'))
+            save(section_out / 'historical-comparison.json', history)
+            report.update(predecessor_report_fields(predecessors, history,
+                          binding(out / 'qualified-paths-amendment.json'),
+                          binding(section_out / 'historical-comparison.json')))
             report['executed_projection_kind_counts'] = dict(collections.Counter(r['projection_kind'] for r in receipts if r['executed'] and 'projection_kind' in r))
             report['frozen_case_kind_counts'] = contracts.tables[section]['kind_counts']
             report['projection_boundary'] = 'Complete public check/run projections only where declared. First-error, frontend-prefix and schema/source-only rows remain partial. No private legacy-scalar/raw/event/fuel claim.'
@@ -389,6 +448,8 @@ def main():
                'build_receipt_boundary': 'Pinned approved compiler/observer source maps and actual tool-produced build receipts are required. Serialized receipts alone are not cryptographic proof of execution.'}
     if contracts.effective_identity:
         overall.update(contracts.effective_identity)
+    if predecessors is not None:
+        overall['predecessor_semantic_amendment'] = binding(out / 'qualified-paths-amendment.json')
     save(out / 'comparison.json', overall)
     print(json.dumps({k: v for k, v in overall.items() if k != 'sections'}, indent=2))
     return 1 if overall['status'] == 'FAIL' else (2 if overall['status'] == 'INCOMPLETE' else 0)

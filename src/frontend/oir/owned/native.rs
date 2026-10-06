@@ -664,8 +664,15 @@ fn admit_accounted(
     }
     Ok(bounds)
 }
-fn successors(kind: &OwnedTerminatorKind) -> impl Iterator<Item = BlockId> {
+fn successors(f: &RawOwnedFunction, kind: &OwnedTerminatorKind) -> impl Iterator<Item = BlockId> {
     let targets = match kind {
+        OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
+            let descriptor = &f.matches[match_id.0];
+            [
+                Some(descriptor.arms[*arm].entry),
+                descriptor.arms.get(arm + 1).map(|next| next.dispatch),
+            ]
+        }
         OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_) => [None, None],
         OwnedTerminatorKind::Goto(target) => [Some(*target), None],
         OwnedTerminatorKind::Invoke { continuation, .. } => [Some(*continuation), None],
@@ -680,7 +687,7 @@ fn successors(kind: &OwnedTerminatorKind) -> impl Iterator<Item = BlockId> {
 fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
     let mut incoming = vec![0usize; f.blocks.len()];
     for b in &f.blocks {
-        for target in successors(&b.terminator.as_ref().expect("verified terminator").kind) {
+        for target in successors(f, &b.terminator.as_ref().expect("verified terminator").kind) {
             incoming[target.0] += 1;
         }
     }
@@ -697,6 +704,7 @@ fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
     while let Some(i) = ready.pop() {
         visited += 1;
         for target in successors(
+            f,
             &f.blocks[i]
                 .terminator
                 .as_ref()
@@ -820,6 +828,8 @@ enum FailureKind {
     Overflow,
     DivisionByZero,
     Bounds,
+    EnumTag,
+    EnumPayload,
 }
 impl FailureKind {
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
@@ -828,6 +838,20 @@ impl FailureKind {
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
+            // Fixed literals keep the existing 64-byte transient allocation
+            // envelope while rendering the reference invariant verbatim.
+            Self::EnumTag | Self::EnumPayload => Diagnostic::new(
+                "E0500",
+                "oir-owned-run",
+                match self {
+                    Self::EnumTag => "internal compiler error: owned execution invariant enum tag",
+                    Self::EnumPayload => {
+                        "internal compiler error: owned execution invariant enum payload"
+                    }
+                    _ => unreachable!("enum invariant"),
+                },
+                Some(span).filter(|span| sources.is_valid_span(*span)),
+            ),
         }
     }
 }
@@ -889,6 +913,14 @@ fn diagnostic_occurrences(
         visit(FailureKind::Fuel, plan.witness().functions()[entry.0].span)?;
     }
     for f in plan.witness().functions() {
+        for parameter in &f.parameters {
+            if let ParameterBinding::Owned(owner) = parameter {
+                if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) {
+                    visit(FailureKind::EnumTag, f.span)?;
+                    visit(FailureKind::EnumPayload, f.span)?;
+                }
+            }
+        }
         for b in &f.blocks {
             if guarded {
                 if let Some(m) = &b.merge {
@@ -900,6 +932,21 @@ fn diagnostic_occurrences(
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::ConsumeVariant { match_id, .. } => {
+                        let span = f.matches[match_id.0].span;
+                        visit(FailureKind::EnumTag, span)?;
+                        visit(FailureKind::EnumPayload, span)?;
+                    }
+                    OwnedInstruction::MoveInitialize { source, .. }
+                    | OwnedInstruction::Replace { source, .. }
+                    | OwnedInstruction::PrepareOwned { source, .. }
+                    | OwnedInstruction::Discard(source)
+                        if matches!(f.owners[source.0].aggregate(), AggregateTy::Enum(_)) =>
+                    {
+                        let span = plan::instruction_span(statement);
+                        visit(FailureKind::EnumTag, span)?;
+                        visit(FailureKind::EnumPayload, span)?;
+                    }
                     OwnedInstruction::Scalar(Statement::Assign(Assign {
                         value:
                             Rvalue::CheckedI32 {
@@ -930,6 +977,19 @@ fn diagnostic_occurrences(
                     FailureKind::Fuel,
                     b.terminator.as_ref().expect("verified terminator").span,
                 )?;
+            }
+            let term = b.terminator.as_ref().expect("verified terminator");
+            match term.kind {
+                OwnedTerminatorKind::MatchDispatch { match_id, .. } => {
+                    visit(FailureKind::EnumTag, f.matches[match_id.0].span)?
+                }
+                OwnedTerminatorKind::ReturnOwned(owner)
+                    if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) =>
+                {
+                    visit(FailureKind::EnumTag, term.span)?;
+                    visit(FailureKind::EnumPayload, term.span)?;
+                }
+                _ => {}
             }
         }
     }
@@ -1280,7 +1340,9 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
             .unwrap();
             format!("%{name}_length")
         }
-        BorrowedTy::Exact(AggregateTy::Record(_)) => unreachable!("verified indexed base"),
+        BorrowedTy::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => {
+            unreachable!("verified indexed base")
+        }
     }
 }
 fn element_stride(element: hir::Ty) -> usize {
@@ -1359,7 +1421,7 @@ fn index_pointer(
         _ => unreachable!("indexed operation"),
     };
     let index = load_operand(out, f, &format!("{name}_index"), index);
-    let suffix = continuation(&statement.kind)
+    let suffix = continuation(f, &statement.kind)
         .suffix()
         .expect("indexed continuation");
     writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", length).unwrap();
@@ -1393,7 +1455,7 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
         for parameter in &f.parameters {
             visits = add(visits, 1)?;
             if let ParameterBinding::Owned(owner) = parameter {
-                cells = add(cells, plan.owner_width(f.id, *owner))?;
+                cells = add(cells, transfer_expansions(plan, f.id, *owner)?)?;
             }
         }
         for block in &f.blocks {
@@ -1401,6 +1463,15 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
             for statement in &block.statements {
                 visits = add(visits, 1)?;
                 let owner = match statement.kind {
+                    OwnedInstruction::ConstructEnum { payload, .. } => {
+                        cells = add(cells, 1 + usize::from(payload.is_some()))?;
+                        None
+                    }
+                    OwnedInstruction::Discard(owner)
+                        if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) =>
+                    {
+                        Some(owner)
+                    }
                     OwnedInstruction::Construct { destination, .. }
                     | OwnedInstruction::ConstructComposite { destination, .. }
                     | OwnedInstruction::ConstructArray { destination, .. } => Some(destination),
@@ -1410,19 +1481,244 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                     _ => None,
                 };
                 if let Some(owner) = owner {
-                    cells = add(cells, plan.owner_width(f.id, owner))?;
+                    cells = add(cells, transfer_expansions(plan, f.id, owner)?)?;
                 }
             }
             visits = add(visits, 1)?;
             if let OwnedTerminatorKind::ReturnOwned(owner) =
                 block.terminator.as_ref().expect("verified terminator").kind
             {
-                cells = add(cells, plan.owner_width(f.id, owner))?;
+                cells = add(cells, transfer_expansions(plan, f.id, owner)?)?;
             }
         }
     }
     Ok((cells, visits))
 }
+/// Tag-directed enum validation/copy work grows with the number of cases, not
+/// logical owner width. The switch rows and bodies are separately expanded.
+fn transfer_expansions(
+    plan: &ExecutionPlan<'_>,
+    id: hir::DefId,
+    owner: OwnerPlaceId,
+) -> Result<usize, Box<Diagnostic>> {
+    match plan.witness().functions()[id.0].owners[owner.0].aggregate() {
+        AggregateTy::Enum(enumeration) => mul(
+            plan.witness()
+                .declarations()
+                .enums()
+                .variants(enumeration)
+                .expect("verified enum")
+                .len(),
+            2,
+        ),
+        _ => Ok(plan.owner_width(id, owner)),
+    }
+}
+
+/// All callers receive types, extents and ownership transitions from the sealed
+/// witness. Only the runtime tag and active scalar still require validation.
+fn transfer_checked(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    aggregate: AggregateTy,
+    pointers: (&str, &str),
+    failure: (&Diagnostics, Span),
+) {
+    match aggregate {
+        AggregateTy::Enum(enumeration) => enum_transfer(
+            out,
+            plan,
+            name,
+            enumeration,
+            pointers.0,
+            Some(pointers.1),
+            failure,
+        ),
+        _ => transfer(out, plan, name, aggregate, pointers.0, pointers.1),
+    }
+}
+
+/// Read precisely the active scalar after the caller has proved the tag.
+/// In particular an i1 load cannot establish a canonical boolean byte.
+fn enum_payload_load(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    source: &str,
+    variant: VariantId,
+    failure: (&Diagnostics, Span),
+) -> Option<(hir::Ty, String)> {
+    let declaration = plan
+        .witness()
+        .declarations()
+        .enums()
+        .variant(variant.enumeration, variant)
+        .expect("verified variant");
+    let scalar = declaration.payload()?;
+    let pointer = field_pointer(
+        out,
+        &format!("{name}_active"),
+        source,
+        declaration.payload_offset().expect("active scalar offset"),
+    );
+    let storage = if scalar == hir::Ty::I32 { "i32" } else { "i8" };
+    writeln!(
+        out,
+        "  %{name}_active = load {storage}, ptr {pointer}, align 1"
+    )
+    .unwrap();
+    if scalar != hir::Ty::I32 {
+        let predicate = if scalar == hir::Ty::Bool { "ule" } else { "eq" };
+        let bound = usize::from(scalar == hir::Ty::Bool);
+        writeln!(out, "  %{name}_canonical = icmp {predicate} i8 %{name}_active, {bound}\n  br i1 %{name}_canonical, label %{name}_payload_ok, label %{name}_payload_error\n{name}_payload_error:").unwrap();
+        emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+        writeln!(out, "{name}_payload_ok:").unwrap();
+    }
+    if scalar == hir::Ty::Bool {
+        writeln!(out, "  %{name}_value = trunc i8 %{name}_active to i1").unwrap();
+        Some((scalar, format!("%{name}_value")))
+    } else {
+        Some((scalar, format!("%{name}_active")))
+    }
+}
+
+fn enum_payload_store(
+    out: &mut Emission,
+    name: &str,
+    destination: &str,
+    scalar: hir::Ty,
+    value: &str,
+    offset: usize,
+) {
+    let pointer = field_pointer(out, &format!("{name}_active_out"), destination, offset);
+    if scalar == hir::Ty::Bool {
+        writeln!(out, "  %{name}_byte = zext i1 {value} to i8\n  store i8 %{name}_byte, ptr {pointer}, align 1").unwrap();
+    } else {
+        writeln!(
+            out,
+            "  store {} {value}, ptr {pointer}, align 1",
+            ty(scalar)
+        )
+        .unwrap();
+    }
+}
+
+/// A switch validates the tag before reaching any case's active payload read.
+/// No destination byte is touched until all runtime checks for that case pass.
+/// With no destination this is explicit available-value discard validation.
+fn enum_transfer(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    enumeration: EnumId,
+    source: &str,
+    destination: Option<&str>,
+    failure: (&Diagnostics, Span),
+) {
+    if out.exceeded {
+        return;
+    }
+    out.ordinary_visits += 1;
+    let variants = plan
+        .witness()
+        .declarations()
+        .enums()
+        .variants(enumeration)
+        .expect("verified enum");
+    writeln!(out, "  %{name}_tag = load i32, ptr {source}, align 1\n  switch i32 %{name}_tag, label %{name}_tag_error [").unwrap();
+    for variant in variants {
+        if !out.expand(Expansion::Transfer) {
+            return;
+        }
+        writeln!(
+            out,
+            "    i32 {}, label %{name}_variant{}",
+            variant.tag(),
+            variant.tag()
+        )
+        .unwrap();
+    }
+    writeln!(out, "  ]\n{name}_tag_error:").unwrap();
+    emit_failure(out, failure.0, FailureKind::EnumTag, failure.1);
+    for variant in variants {
+        if !out.expand(Expansion::Transfer) {
+            return;
+        }
+        let case = format!("{name}_variant{}", variant.tag());
+        writeln!(out, "{case}:").unwrap();
+        let active = enum_payload_load(out, plan, &case, source, variant.id(), failure);
+        if let Some(destination) = destination {
+            writeln!(
+                out,
+                "  store i32 {}, ptr {destination}, align 1",
+                variant.tag()
+            )
+            .unwrap();
+            if let Some((scalar, value)) = active {
+                enum_payload_store(
+                    out,
+                    &case,
+                    destination,
+                    scalar,
+                    &value,
+                    variant.payload_offset().expect("active scalar offset"),
+                );
+            }
+        }
+        writeln!(out, "  br label %{name}_enum_ok").unwrap();
+    }
+    writeln!(out, "{name}_enum_ok:").unwrap();
+}
+
+fn emit_dispatch(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    f: &RawOwnedFunction,
+    name: &str,
+    match_id: MatchId,
+    arm: usize,
+    diagnostics: &Diagnostics,
+) {
+    let descriptor = &f.matches[match_id.0];
+    let selected = descriptor.arms[arm];
+    let AggregateTy::Enum(enumeration) = f.owners[descriptor.source.0].aggregate() else {
+        unreachable!("verified enum match source")
+    };
+    let declarations = plan.witness().declarations().enums();
+    let variant = declarations
+        .variant(enumeration, selected.variant)
+        .expect("verified match variant");
+    let count = declarations
+        .variants(enumeration)
+        .expect("verified enum")
+        .len();
+    writeln!(out, "  %{name}_tag = load i32, ptr %o{}, align 1\n  %{name}_valid = icmp ult i32 %{name}_tag, {count}\n  br i1 %{name}_valid, label %{name}_tag_valid, label %{name}_tag_error\n{name}_tag_error:", descriptor.source.0).unwrap();
+    emit_failure(out, diagnostics, FailureKind::EnumTag, descriptor.span);
+    writeln!(
+        out,
+        "{name}_tag_valid:\n  %{name}_selected = icmp eq i32 %{name}_tag, {}",
+        variant.tag()
+    )
+    .unwrap();
+    if let Some(next) = descriptor.arms.get(arm + 1) {
+        writeln!(
+            out,
+            "  br i1 %{name}_selected, label %b{}, label %b{}",
+            selected.entry.0, next.dispatch.0
+        )
+        .unwrap();
+    } else {
+        // The final dispatch is independently checked, including singleton enums.
+        writeln!(
+            out,
+            "  br i1 %{name}_selected, label %b{}, label %{name}_tag_error",
+            selected.entry.0
+        )
+        .unwrap();
+    }
+}
+
 fn transfer(
     out: &mut Emission,
     plan: &ExecutionPlan<'_>,
@@ -1437,6 +1733,7 @@ fn transfer(
     out.ordinary_visits += 1;
     let record = match aggregate {
         AggregateTy::Record(record) => record,
+        AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
         AggregateTy::FixedArray(array) => {
             if array.length() == 0 {
                 if !out.expand(Expansion::Transfer) {
@@ -1592,6 +1889,7 @@ enum Continuation {
     Unsplit,
     Arithmetic,
     Bounds,
+    Enum,
 }
 impl Continuation {
     fn suffix(self) -> Option<&'static str> {
@@ -1599,12 +1897,24 @@ impl Continuation {
             Self::Unsplit => None,
             Self::Arithmetic => Some("checked_ok"),
             Self::Bounds => Some("bounds_ok"),
+            Self::Enum => Some("enum_ok"),
         }
     }
 }
 /// Exhaustive classification shared by operation emission and phi predecessors.
-fn continuation(instruction: &OwnedInstruction) -> Continuation {
+fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
     match instruction {
+        OwnedInstruction::ConsumeVariant { .. } => Continuation::Enum,
+        OwnedInstruction::MoveInitialize { source, .. }
+        | OwnedInstruction::Replace { source, .. }
+        | OwnedInstruction::PrepareOwned { source, .. }
+        | OwnedInstruction::Discard(source) => {
+            if matches!(f.owners[source.0].aggregate(), AggregateTy::Enum(_)) {
+                Continuation::Enum
+            } else {
+                Continuation::Unsplit
+            }
+        }
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
                 Rvalue::CheckedI32 { .. } | Rvalue::CheckedNegateI32 { .. } => {
@@ -1627,20 +1937,17 @@ fn continuation(instruction: &OwnedInstruction) -> Continuation {
         OwnedInstruction::StorageLive(_)
         | OwnedInstruction::StorageEnd(_)
         | OwnedInstruction::Construct { .. }
+        | OwnedInstruction::ConstructEnum { .. }
         | OwnedInstruction::ConstructArray { .. }
         | OwnedInstruction::ConstructComposite { .. }
         | OwnedInstruction::ReadProjection { index: None, .. }
         | OwnedInstruction::WriteProjection { index: None, .. }
         | OwnedInstruction::ProjectionLength { .. }
-        | OwnedInstruction::MoveInitialize { .. }
-        | OwnedInstruction::Replace { .. }
-        | OwnedInstruction::Discard(_)
         | OwnedInstruction::ReadField { .. }
         | OwnedInstruction::WriteField { .. }
         | OwnedInstruction::ArrayLength { .. }
         | OwnedInstruction::OpenCall(_)
         | OwnedInstruction::PrepareScalar { .. }
-        | OwnedInstruction::PrepareOwned { .. }
         | OwnedInstruction::PrepareBorrow { .. } => Continuation::Unsplit,
     }
 }
@@ -1654,7 +1961,7 @@ fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emiss
     }
     for (i, statement) in f.blocks[block].statements.iter().enumerate().rev() {
         out.predecessor_visits += 1;
-        if let Some(suffix) = continuation(&statement.kind).suffix() {
+        if let Some(suffix) = continuation(f, &statement.kind).suffix() {
             return format!("f{}_b{block}_i{i}_{suffix}", f.id.0);
         }
     }
@@ -1830,13 +2137,13 @@ fn emit_function(
                     writeln!(out, "  store i32 %arg{i}_length, ptr %rl{}, align 4", r.0).unwrap();
                 }
             }
-            ParameterBinding::Owned(o) => transfer(
+            ParameterBinding::Owned(o) => transfer_checked(
                 out,
                 plan,
                 &name,
                 f.owners[o.0].aggregate(),
-                &format!("%arg{i}"),
-                &format!("%o{}", o.0),
+                (&format!("%arg{i}"), &format!("%o{}", o.0)),
+                (diagnostics, f.span),
             ),
         }
     }
@@ -1906,8 +2213,8 @@ fn emit_function(
             plan,
             id,
             &format!("f{}_b{b}_term", id.0),
-            &term.kind,
-            guarded,
+            term,
+            (diagnostics, guarded),
             out,
         );
     }
@@ -1929,6 +2236,99 @@ fn emit_statement(
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     match &statement.kind {
+        OwnedInstruction::ConstructEnum {
+            destination,
+            variant,
+            payload,
+        } => {
+            let AggregateTy::Enum(enumeration) = f.owners[destination.0].aggregate() else {
+                unreachable!("verified enum constructor")
+            };
+            let declaration = plan
+                .witness()
+                .declarations()
+                .enums()
+                .variant(enumeration, *variant)
+                .expect("verified constructor variant");
+            // Scalar operands are already evaluated. Read before the first store.
+            let value =
+                payload.map(|operand| load_operand(out, f, &format!("{name}_payload"), operand));
+            if !out.expand(Expansion::Construct) {
+                return;
+            }
+            writeln!(
+                out,
+                "  store i32 {}, ptr %o{}, align 1",
+                declaration.tag(),
+                destination.0
+            )
+            .unwrap();
+            if let Some(value) = value {
+                if !out.expand(Expansion::Construct) {
+                    return;
+                }
+                enum_payload_store(
+                    out,
+                    name,
+                    &format!("%o{}", destination.0),
+                    declaration.payload().expect("verified payload"),
+                    &value,
+                    declaration.payload_offset().expect("active scalar offset"),
+                );
+            }
+        }
+        OwnedInstruction::ConsumeVariant {
+            match_id,
+            arm,
+            destination,
+        } => {
+            let descriptor = &f.matches[match_id.0];
+            let selected = descriptor.arms[*arm];
+            let AggregateTy::Enum(enumeration) = f.owners[descriptor.source.0].aggregate() else {
+                unreachable!("verified enum consume source")
+            };
+            let variant = plan
+                .witness()
+                .declarations()
+                .enums()
+                .variant(enumeration, selected.variant)
+                .expect("verified consume variant");
+            let source = format!("%o{}", descriptor.source.0);
+            writeln!(out, "  %{name}_tag = load i32, ptr {source}, align 1\n  %{name}_selected = icmp eq i32 %{name}_tag, {}\n  br i1 %{name}_selected, label %{name}_tag_valid, label %{name}_tag_error\n{name}_tag_error:", variant.tag()).unwrap();
+            emit_failure(out, diagnostics, FailureKind::EnumTag, descriptor.span);
+            writeln!(out, "{name}_tag_valid:").unwrap();
+            let active = enum_payload_load(
+                out,
+                plan,
+                name,
+                &source,
+                selected.variant,
+                (diagnostics, descriptor.span),
+            );
+            if let Some((scalar, value)) = active {
+                store_slot(
+                    out,
+                    &format!("{name}_bind"),
+                    &format!("%s{}", destination.expect("verified payload destination").0),
+                    scalar,
+                    &value,
+                );
+            }
+            writeln!(out, "  br label %{name}_enum_ok\n{name}_enum_ok:").unwrap();
+        }
+        OwnedInstruction::Discard(owner) => {
+            if let AggregateTy::Enum(enumeration) = f.owners[owner.0].aggregate() {
+                enum_transfer(
+                    out,
+                    plan,
+                    name,
+                    enumeration,
+                    &format!("%o{}", owner.0),
+                    None,
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
+        }
         OwnedInstruction::ConstructArray {
             destination,
             elements,
@@ -2165,13 +2565,13 @@ fn emit_statement(
             destination,
             source,
         } => {
-            transfer(
+            transfer_checked(
                 out,
                 plan,
                 name,
                 f.owners[source.0].aggregate(),
-                &format!("%o{}", source.0),
-                &format!("%o{}", destination.0),
+                (&format!("%o{}", source.0), &format!("%o{}", destination.0)),
+                (diagnostics, plan::instruction_span(statement)),
             );
         }
         OwnedInstruction::ReadField {
@@ -2240,13 +2640,13 @@ fn emit_statement(
             let ArgumentSlot::Owned(destination) = f.calls[call.0].arguments[*argument] else {
                 unreachable!("verified owned argument")
             };
-            transfer(
+            transfer_checked(
                 out,
                 plan,
                 name,
                 f.owners[source.0].aggregate(),
-                &format!("%o{}", source.0),
-                &format!("%o{}", destination.0),
+                (&format!("%o{}", source.0), &format!("%o{}", destination.0)),
+                (diagnostics, plan::instruction_span(statement)),
             );
         }
         OwnedInstruction::PrepareBorrow { loan, .. } => {
@@ -2292,7 +2692,6 @@ fn emit_statement(
         // allocated throughout the activation, including suspended staging.
         OwnedInstruction::StorageLive(_)
         | OwnedInstruction::StorageEnd(_)
-        | OwnedInstruction::Discard(_)
         | OwnedInstruction::OpenCall(_) => {}
     }
 }
@@ -2369,7 +2768,7 @@ fn emit_scalar(
             operator_span,
         } => {
             let operand = load_operand(out, f, &format!("{name}_operand"), operand);
-            let suffix = continuation(&owned_statement.kind)
+            let suffix = continuation(f, &owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
             writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.ssub.with.overflow.i32(i32 0, i32 {operand})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1").unwrap();
@@ -2390,7 +2789,7 @@ fn emit_scalar(
         } => {
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
-            let suffix = continuation(&owned_statement.kind)
+            let suffix = continuation(f, &owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
             match op {
@@ -2450,8 +2849,8 @@ fn emit_terminator(
     plan: &ExecutionPlan<'_>,
     id: hir::DefId,
     name: &str,
-    term: &OwnedTerminatorKind,
-    guarded: bool,
+    term: &OwnedTerminator,
+    context: (&Diagnostics, bool),
     out: &mut Emission,
 ) {
     if out.exceeded {
@@ -2459,7 +2858,11 @@ fn emit_terminator(
     }
     out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
-    match term {
+    let (diagnostics, guarded) = context;
+    match &term.kind {
+        OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
+            emit_dispatch(out, plan, f, name, *match_id, *arm, diagnostics);
+        }
         OwnedTerminatorKind::Goto(target) => writeln!(out, "  br label %b{}", target.0).unwrap(),
         OwnedTerminatorKind::Branch {
             condition,
@@ -2480,13 +2883,13 @@ fn emit_terminator(
             writeln!(out, "  ret {t} {value}").unwrap();
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
-            transfer(
+            transfer_checked(
                 out,
                 plan,
                 name,
                 f.owners[owner.0].aggregate(),
-                &format!("%o{}", owner.0),
-                "%result",
+                (&format!("%o{}", owner.0), "%result"),
+                (diagnostics, term.span),
             );
             out.write_str("  ret void\n").unwrap();
         }

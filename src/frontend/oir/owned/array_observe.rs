@@ -311,6 +311,37 @@ pub(in super::super) enum FaultKind {
     ArrayReferenceDifferentType,
     IncomingExclusiveAlias,
     IncomingReferenceDifferentType,
+    // Descriptor arm selectors deliberately survive earlier operations with
+    // the same match span. Generic owner faults target the charged operation.
+    EnumDispatchTag {
+        arm: usize,
+        tag: u32,
+    },
+    EnumConsumeTag {
+        arm: usize,
+        tag: u32,
+    },
+    EnumConsumeEpoch {
+        arm: usize,
+    },
+    EnumConsumeMissingSlot {
+        arm: usize,
+    },
+    EnumOwnerTag {
+        owner: OwnerPlaceId,
+        tag: u32,
+    },
+    EnumOwnerByte {
+        owner: OwnerPlaceId,
+        offset: usize,
+        byte: u8,
+    },
+    EnumOwnerPoison {
+        owner: OwnerPlaceId,
+    },
+    EnumOwnerEpoch {
+        owner: OwnerPlaceId,
+    },
 }
 impl Machine<'_, '_> {
     fn pending_fault(&mut self, span: Span) -> Option<FaultKind> {
@@ -322,6 +353,15 @@ impl Machine<'_, '_> {
             .control
             .fault
             .filter(|fault| fault.at == span)?;
+        if matches!(
+            fault.kind,
+            FaultKind::EnumDispatchTag { .. }
+                | FaultKind::EnumConsumeTag { .. }
+                | FaultKind::EnumConsumeEpoch { .. }
+                | FaultKind::EnumConsumeMissingSlot { .. }
+        ) {
+            return None;
+        }
         // Even an inapplicable first matching charged operation consumes the selector.
         self.observer.fault_attempted = true;
         Some(fault.kind)
@@ -346,12 +386,19 @@ impl Machine<'_, '_> {
         instruction: &OwnedInstruction,
         span: Span,
     ) {
+        if let OwnedInstruction::ConsumeVariant { match_id, arm, .. } = instruction {
+            self.inject_enum_consume(frame, *match_id, *arm, span);
+        }
         let Some(kind) = self.pending_fault(span) else {
             return;
         };
+        if self.inject_enum_owner(frame, kind, span) {
+            return;
+        }
         if kind == FaultKind::ConstructorLastScalarType {
             let last = match instruction {
                 OwnedInstruction::ConstructArray { elements, .. } => elements.last(),
+                OwnedInstruction::ConstructEnum { payload, .. } => payload.as_ref(),
                 OwnedInstruction::ConstructComposite { fields, .. } => {
                     fields.iter().rev().find_map(|(_, value)| {
                         if let FieldInitializer::Scalar(operand) = value {
@@ -449,6 +496,9 @@ impl Machine<'_, '_> {
         let Some(kind) = self.pending_fault(span) else {
             return;
         };
+        if self.inject_enum_owner(frame, kind, span) {
+            return;
+        }
         let function = self.frames[frame].function;
         let loans = self.plan.function(function).borrowed_loans(call);
         let Some(&first) = loans.first() else {
@@ -484,5 +534,170 @@ impl Machine<'_, '_> {
     }
 }
 
+impl Machine<'_, '_> {
+    fn inject_enum_owner(&mut self, frame: usize, kind: FaultKind, span: Span) -> bool {
+        let owner = match kind {
+            FaultKind::EnumOwnerTag { owner, .. }
+            | FaultKind::EnumOwnerByte { owner, .. }
+            | FaultKind::EnumOwnerPoison { owner }
+            | FaultKind::EnumOwnerEpoch { owner } => owner,
+            _ => return false,
+        };
+        if self
+            .frames
+            .get(frame)
+            .and_then(|frame| frame.owners.get(owner.0))
+            .is_none()
+        {
+            return true;
+        }
+        let key = self.raw_key(frame, owner);
+        if !matches!(self.aggregate(key, span), Ok(AggregateTy::Enum(_))) {
+            return true;
+        }
+        let Ok(extent) = self.owner_extent(key, span) else {
+            return true;
+        };
+        match kind {
+            FaultKind::EnumOwnerTag { tag, .. } => {
+                self.frames[frame].payload[extent.start..extent.start + 4]
+                    .copy_from_slice(&tag.to_le_bytes());
+            }
+            FaultKind::EnumOwnerByte { offset, byte, .. } => {
+                if offset >= extent.len() {
+                    return true;
+                }
+                self.frames[frame].payload[extent.start + offset] = byte;
+            }
+            FaultKind::EnumOwnerPoison { .. } => self.frames[frame].payload[extent].fill(0xa5),
+            FaultKind::EnumOwnerEpoch { .. } => {
+                self.frames[frame].owners[owner.0].generation = u64::MAX
+            }
+            _ => unreachable!(),
+        }
+        self.observer.fault_applied = true;
+        true
+    }
+    pub(super) fn inject_enum_dispatch(
+        &mut self,
+        frame: usize,
+        match_id: MatchId,
+        arm: usize,
+        span: Span,
+    ) {
+        if !self.observer.collecting() || self.observer.fault_attempted {
+            return;
+        }
+        let Some(fault) = self.observer.control.fault.filter(|fault| fault.at == span) else {
+            return;
+        };
+        let FaultKind::EnumDispatchTag { arm: selected, tag } = fault.kind else {
+            return;
+        };
+        if selected != arm {
+            return;
+        }
+        let Some(descriptor) = self
+            .function(self.frames[frame].function)
+            .matches
+            .get(match_id.0)
+        else {
+            return;
+        };
+        let owner = descriptor.source;
+        self.observer.fault_attempted = true;
+        self.inject_enum_owner(frame, FaultKind::EnumOwnerTag { owner, tag }, span);
+    }
+    fn inject_enum_consume(&mut self, frame: usize, match_id: MatchId, arm: usize, span: Span) {
+        if !self.observer.collecting() || self.observer.fault_attempted {
+            return;
+        }
+        let Some(fault) = self.observer.control.fault.filter(|fault| fault.at == span) else {
+            return;
+        };
+        let selected = match fault.kind {
+            FaultKind::EnumConsumeTag { arm, .. }
+            | FaultKind::EnumConsumeEpoch { arm }
+            | FaultKind::EnumConsumeMissingSlot { arm } => arm,
+            _ => return,
+        };
+        if selected != arm {
+            return;
+        }
+        let Some(descriptor) = self
+            .function(self.frames[frame].function)
+            .matches
+            .get(match_id.0)
+        else {
+            return;
+        };
+        if matches!(fault.kind, FaultKind::EnumConsumeMissingSlot { .. }) {
+            let function = self.function(self.frames[frame].function);
+            let Some(entry) = descriptor
+                .arms
+                .get(arm)
+                .and_then(|selected| function.blocks.get(selected.entry.0))
+            else {
+                return;
+            };
+            let Some(OwnedStatement {
+                kind:
+                    OwnedInstruction::ConsumeVariant {
+                        destination: Some(destination),
+                        ..
+                    },
+                ..
+            }) = entry.statements.first()
+            else {
+                return;
+            };
+            self.observer.fault_attempted = true;
+            if destination.0 < self.frames[frame].slots.len() {
+                // Test-only corruption of the existing scalar storage extent;
+                // no allocation, declaration mutation, or new runtime sidecar.
+                self.frames[frame].slots.truncate(destination.0);
+                self.observer.fault_applied = true;
+            }
+            return;
+        }
+        let owner = descriptor.source;
+        let kind = match fault.kind {
+            FaultKind::EnumConsumeTag { tag, .. } => FaultKind::EnumOwnerTag { owner, tag },
+            FaultKind::EnumConsumeEpoch { .. } => FaultKind::EnumOwnerEpoch { owner },
+            _ => unreachable!(),
+        };
+        self.observer.fault_attempted = true;
+        self.inject_enum_owner(frame, kind, span);
+    }
+    pub(super) fn inject_enum_return(
+        &mut self,
+        frame: usize,
+        _kind: &OwnedTerminatorKind,
+        span: Span,
+    ) {
+        if let Some(kind) = self.pending_fault(span) {
+            self.inject_enum_owner(frame, kind, span);
+        }
+    }
+}
+
 #[path = "reviewer_array_observer_tests.rs"]
 mod reviewer;
+
+#[test]
+fn enum_observer_carriers_are_bounded_without_production_frame_growth() {
+    assert_eq!(size_of::<Frame>(), 272);
+    assert_eq!(size_of::<Event>(), 72);
+    assert!(size_of::<EnumValue>() <= 16);
+    assert!(size_of::<StorageSnapshot>() <= 128);
+    assert!(size_of::<FaultKind>() <= 40);
+    assert!(size_of::<FaultInjection>() <= 72);
+    assert!(size_of::<ObservationControl>() <= 88);
+    assert!(size_of::<Observer>() <= 136);
+    println!(
+        "B2b reference carriers: Frame={} EnumValue={} Event={} StorageSnapshot={} FaultKind={} FaultInjection={} ObservationControl={} Observer={} Machine={}",
+        size_of::<Frame>(), size_of::<EnumValue>(), size_of::<Event>(),
+        size_of::<StorageSnapshot>(), size_of::<FaultKind>(), size_of::<FaultInjection>(),
+        size_of::<ObservationControl>(), size_of::<Observer>(), size_of::<Machine<'_, '_>>()
+    );
+}

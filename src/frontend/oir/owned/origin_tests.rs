@@ -56,6 +56,7 @@ pub(super) fn function(id: usize, s: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![OwnedBlock {
             merge: None,
@@ -74,6 +75,7 @@ pub(super) fn function(id: usize, s: Span) -> RawOwnedFunction {
 }
 pub(super) fn raw(s: Span) -> RawOwnedProgram {
     RawOwnedProgram {
+        enums: vec![],
         records: vec![RawRecordDecl {
             id: RecordId(0),
             span: s,
@@ -157,7 +159,7 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
         events: 0,
         work: 0,
         scratch: 0,
-        metadata: 0,
+        metadata: (std::mem::size_of::<Vec<RawEnumDecl>>() + std::mem::size_of::<Vec<MatchDecl>>()),
     };
     assert!(verify_with_limits(raw(s), &sources, zero).is_ok());
     let build = || {
@@ -171,7 +173,9 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
         u,
         OwnershipUsage {
             work: 2,
-            metadata_bytes: 2 * std::mem::size_of::<Option<DiagnosticOrigins>>(),
+            metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
+                + std::mem::size_of::<Vec<MatchDecl>>())
+                + 2 * std::mem::size_of::<Option<DiagnosticOrigins>>(),
             ..OwnershipUsage::default()
         }
     );
@@ -217,7 +221,8 @@ fn active_metadata_charges_all_embedded_fields_and_some_adds_four_checks() {
     assert_eq!(none.work, 288);
     assert_eq!(
         none.metadata_bytes,
-        std::mem::size_of::<shape::OwnerSites>()
+        (std::mem::size_of::<Vec<RawEnumDecl>>() + std::mem::size_of::<Vec<MatchDecl>>())
+            + std::mem::size_of::<shape::OwnerSites>()
             + 4 * std::mem::size_of::<Option<DiagnosticOrigins>>()
     );
     for i in &mut p.functions[0].blocks[0].statements {
@@ -441,6 +446,8 @@ fn shared_counts_match_independently_inventoried_raw_without_bypassing_global_ca
         ..budget::FunctionCounts::default()
     };
     let mut program = budget::ProgramCounts::default();
+    budget::account_enum_declarations(EnumUsage::default(), budget::Limits::DEFAULT, &mut program)
+        .unwrap();
     budget::account_function(counts, budget::Limits::DEFAULT, &mut program).unwrap();
     assert_eq!(
         program.usage(),
@@ -504,7 +511,10 @@ fn maximum_block_some_origins_retain_linear_scratch_and_exact_work() {
     }
     let usage = budget::preflight(&p, budget::Limits::DEFAULT).unwrap();
     assert_eq!(usage.work, 33_600_192);
-    assert_eq!(usage.metadata_bytes, 16_800_216);
+    assert_eq!(
+        usage.metadata_bytes,
+        16_800_240 + std::mem::size_of::<Vec<MatchDecl>>()
+    );
     assert_eq!(usage.scratch_bytes, 9_900_000);
     let w = verify_owned(p, &sources).unwrap();
     assert_eq!(w.usage().work, usage.work);
