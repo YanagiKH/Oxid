@@ -485,7 +485,7 @@ fn reviewer_source_physical_payload_includes_fields_operands_and_headers_once() 
             + 3 * size_of::<(FieldId, Operand)>();
         let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
         assert_eq!(usage.raw_bytes, expected);
-        assert_eq!(usage.raw_bytes, 3360 + size_of::<Vec<MatchDecl>>());
+        assert_eq!(usage.raw_bytes, 3368 + size_of::<Vec<MatchDecl>>());
         let denied = budget::fail_allocation_after(0, || {
             lower::lower_with_limits(
                 typed,

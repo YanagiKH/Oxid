@@ -160,7 +160,9 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
         events: 0,
         work: 0,
         scratch: 0,
-        metadata: (std::mem::size_of::<Vec<RawEnumDecl>>() + std::mem::size_of::<Vec<MatchDecl>>()),
+        metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
+            + std::mem::size_of::<usize>()
+            + std::mem::size_of::<Vec<MatchDecl>>()),
     };
     assert!(verify_with_limits(raw(s), &sources, zero).is_ok());
     let build = || {
@@ -175,6 +177,7 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
         OwnershipUsage {
             work: 2,
             metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
+                + std::mem::size_of::<usize>()
                 + std::mem::size_of::<Vec<MatchDecl>>())
                 + 2 * std::mem::size_of::<Option<DiagnosticOrigins>>(),
             ..OwnershipUsage::default()
@@ -222,7 +225,9 @@ fn active_metadata_charges_all_embedded_fields_and_some_adds_four_checks() {
     assert_eq!(none.work, 288);
     assert_eq!(
         none.metadata_bytes,
-        (std::mem::size_of::<Vec<RawEnumDecl>>() + std::mem::size_of::<Vec<MatchDecl>>())
+        (std::mem::size_of::<Vec<RawEnumDecl>>()
+            + std::mem::size_of::<usize>()
+            + std::mem::size_of::<Vec<MatchDecl>>())
             + std::mem::size_of::<shape::OwnerSites>()
             + 4 * std::mem::size_of::<Option<DiagnosticOrigins>>()
     );

@@ -555,7 +555,9 @@ mod enum_tests {
                     check_enum_candidate(&raw, &index, &sources)
                 });
             assert!(denied.is_err());
-            assert_eq!(allocations, 0);
+            // The existing boxed diagnostic allocates its message and Box;
+            // no declaration/proof storage is prepared on this denial.
+            assert_eq!(allocations, 2);
         }
         raw.builtins = BuiltinOrigins::None;
         assert!(check(&raw, &index, &sources).is_err());

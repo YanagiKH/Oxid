@@ -40,13 +40,13 @@ fn source_payload_exact_count_and_one_under_precede_every_reservation() {
             assert_eq!(usage.raw_bytes, expected);
             assert_eq!(
                 usage.raw_bytes,
-                2304 + std::mem::size_of::<Vec<MatchDecl>>()
+                2312 + std::mem::size_of::<Vec<MatchDecl>>()
             );
             assert_eq!(usage.analysis.expanded_events, 7);
             assert_eq!(usage.analysis.work, 552);
             assert_eq!(
                 usage.analysis.metadata_bytes,
-                568 + std::mem::size_of::<Vec<MatchDecl>>()
+                576 + std::mem::size_of::<Vec<MatchDecl>>()
             );
             let raw = lower::lower_with_limits(
                 typed,
@@ -85,13 +85,13 @@ fn source_scalar_origin_only_output_is_counted_without_ownership_flow() {
         "struct T {} fn main() -> () { return; }",
         |typed, sources| {
             let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
-            assert_eq!(usage.raw_bytes, 944 + std::mem::size_of::<Vec<MatchDecl>>());
+            assert_eq!(usage.raw_bytes, 952 + std::mem::size_of::<Vec<MatchDecl>>());
             assert_eq!(usage.analysis.owners, 0);
             assert_eq!(usage.analysis.expanded_events, 0);
             assert_eq!(usage.analysis.work, 4);
             assert_eq!(
                 usage.analysis.metadata_bytes,
-                136 + std::mem::size_of::<Vec<MatchDecl>>()
+                144 + std::mem::size_of::<Vec<MatchDecl>>()
             );
             let raw = lower::lower(typed).unwrap();
             assert!(!super::super::budget::active(&raw.functions[0]));
@@ -207,13 +207,13 @@ fn production_token_envelope_lowers_a_large_real_source_graph() {
     // loop and one synthetic return-unit slot/instruction. No owner slots.
     assert_eq!(
         usage.raw_bytes,
-        1224 * loops + 944 + std::mem::size_of::<Vec<MatchDecl>>()
+        1224 * loops + 952 + std::mem::size_of::<Vec<MatchDecl>>()
     );
     assert_eq!(usage.scratch_bytes, 64 * loops + 8);
     assert_eq!(usage.analysis.work, 8 * loops + 4);
     assert_eq!(
         usage.analysis.metadata_bytes,
-        224 * loops + 136 + std::mem::size_of::<Vec<MatchDecl>>()
+        224 * loops + 144 + std::mem::size_of::<Vec<MatchDecl>>()
     );
     let raw = lower::lower(&typed).unwrap();
     assert_eq!(raw.functions[0].blocks.len(), 3 * loops + 1);
@@ -267,7 +267,7 @@ fn comment_padded_source_checks_do_not_claim_the_file_loader_byte_gate() {
         }
         with_typed(&text, |typed, sources| {
             let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
-            assert_eq!(usage.raw_bytes, 944 + std::mem::size_of::<Vec<MatchDecl>>());
+            assert_eq!(usage.raw_bytes, 952 + std::mem::size_of::<Vec<MatchDecl>>());
             let witness = verified::verify_owned(lower::lower(typed).unwrap(), sources).unwrap();
             assert_eq!(execute::run(&witness, typed.entry()).unwrap(), Scalar::Unit);
         });

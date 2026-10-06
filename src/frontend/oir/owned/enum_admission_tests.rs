@@ -159,14 +159,14 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
     let empty = budget::preflight(&p, budget::Limits::DEFAULT).unwrap();
     assert_eq!(
         empty.metadata_bytes,
-        (size_of::<Vec<RawEnumDecl>>() + size_of::<Vec<MatchDecl>>())
+        (size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>())
     );
     p.enums.push(enumeration(span));
     let usage = budget::fail_allocation_after(0, || budget::preflight(&p, budget::Limits::DEFAULT))
         .unwrap();
     assert_eq!(
         usage.metadata_bytes,
-        (size_of::<Vec<RawEnumDecl>>() + size_of::<Vec<MatchDecl>>())
+        (size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>())
             + size_of::<RawEnumDecl>()
             + size_of::<RawVariantDecl>()
     );
@@ -190,11 +190,14 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
     assert!(budget::preflight(
         &raw(span),
         budget::Limits {
-            metadata: (size_of::<Vec<RawEnumDecl>>() + size_of::<Vec<MatchDecl>>()) - 1,
+            metadata: (size_of::<Vec<RawEnumDecl>>()
+                + size_of::<usize>()
+                + size_of::<Vec<MatchDecl>>())
+                - 1,
             ..budget::Limits::DEFAULT
         }
     )
     .is_err());
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(size_of::<RawOwnedProgram>(), 72);
+    assert_eq!(size_of::<RawOwnedProgram>(), 80);
 }

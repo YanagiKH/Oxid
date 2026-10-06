@@ -467,7 +467,7 @@ mod tests {
             Option<ValueTy> => 16,
             ParameterTy => 24,
             Option<ParameterTy> => 24,
-            RawOwnedProgram => 48 + size_of::<Vec<RawEnumDecl>>(),
+            RawOwnedProgram => 56 + size_of::<Vec<RawEnumDecl>>(),
             RawOwnedFunction => 248 + size_of::<Vec<MatchDecl>>(),
             MatchDecl => 56,
             MatchArm => 32,
