@@ -133,6 +133,15 @@ impl<'s> SourceOwner<'s> {
         }
         .ok_or_else(|| bad(self.eof()))
     }
+    /// Only prepared names from this immutable owner use this projection.
+    /// Preparation already checked file membership and UTF-8 boundaries. Keep
+    /// safe source access, without constructing a fallible diagnostic transport.
+    pub(super) fn prepared_text(&self, name: CompactSpan) -> &'s str {
+        match &self.kind {
+            Kind::Original { file, .. } => file.text_at(name.span()),
+            Kind::Project(project) => project.sources().text(name.span()),
+        }
+    }
     pub fn view(self) -> SourceView<'s> {
         match self.kind {
             Kind::Original { view, .. } => view,
@@ -184,7 +193,10 @@ impl<'s> SourceOwner<'s> {
         // rescan full paths inside each prefix comparison or semantic lookup.
         Ok(view.segments)
     }
-    pub fn import_path(self, path: QualifiedPathRef) -> Result<QualifiedPathView<'s>, Box<Diagnostic>> {
+    pub fn import_path(
+        self,
+        path: QualifiedPathRef,
+    ) -> Result<QualifiedPathView<'s>, Box<Diagnostic>> {
         let view = self.qualified_path(path)?;
         if !matches!(view.root, ast::PathRoot::Crate | ast::PathRoot::Std) {
             return Err(bad(self.eof()));
@@ -236,7 +248,13 @@ impl<'s> SourceOwner<'s> {
             }
             for import in &program.imports {
                 work.preflight(import.span)?;
-                owned |= self.import_path(QualifiedPathRef { file: import.span.file, path: import.path })?.root() == ast::PathRoot::Std;
+                owned |= self
+                    .import_path(QualifiedPathRef {
+                        file: import.span.file,
+                        path: import.path,
+                    })?
+                    .root()
+                    == ast::PathRoot::Std;
             }
             for function in &program.functions {
                 work.preflight(function.name)?;
@@ -374,7 +392,11 @@ mod enum_carrier_tests {
             file,
             path: ast::ItemPath::Absolute(ast::PathId(0)),
         };
-        for root in [ast::PathRoot::LocalType, ast::PathRoot::Crate] {
+        for root in [
+            ast::PathRoot::LocalType,
+            ast::PathRoot::Crate,
+            ast::PathRoot::Std,
+        ] {
             ast.paths[0].root = root;
             let owner = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
             assert!(owner.segments(handle).is_err(), "{root:?}");

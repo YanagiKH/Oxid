@@ -246,9 +246,17 @@ pub(super) fn parse_builtin_candidate_counted(
     allocator: &mut Allocator,
     storage: &mut enums::SyntaxStorage,
 ) -> Result<(Program, usize), Vec<Diagnostic>> {
-    parse_counted_with_policies(source, tokens, mode, node_limit, allocator,
-        ArraySyntaxPolicy::Enabled, EnumSyntaxPolicy::Enabled,
-        StdImportPolicy::Candidate, storage)
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::Candidate,
+        storage,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -559,15 +567,23 @@ impl Parser<'_> {
         Ok((ItemPath::Absolute(id), self.paths[id.0].span))
     }
     fn import_path(&mut self) -> Result<PathId, Box<Diagnostic>> {
-        let first = self.expect(Kind::Ident, "expected absolute import path")?.span;
+        let first = self
+            .expect(Kind::Ident, "expected absolute import path")?
+            .span;
         if !self.double_colon() {
             return Err(self.error("import requires an absolute `crate::` item path"));
         }
         let root = match self.source.text_at(first) {
             "crate" => PathRoot::Crate,
             "std" if self.std_imports.enabled() => PathRoot::Std,
-            _ => return Err(self.diagnostic("E0101", "parse",
-                "only absolute item paths beginning with `crate::` are supported", Some(first))),
+            _ => {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "only absolute item paths beginning with `crate::` are supported",
+                    Some(first),
+                ))
+            }
         };
         self.qualified_segments(first, root)
     }
@@ -627,7 +643,11 @@ impl Parser<'_> {
     fn absolute_path(&mut self, first: super::source::Span) -> Result<PathId, Box<Diagnostic>> {
         self.qualified_segments(first, PathRoot::Crate)
     }
-    fn qualified_segments(&mut self, first: super::source::Span, root: PathRoot) -> Result<PathId, Box<Diagnostic>> {
+    fn qualified_segments(
+        &mut self,
+        first: super::source::Span,
+        root: PathRoot,
+    ) -> Result<PathId, Box<Diagnostic>> {
         let segment_start = self.path_segments.len();
         let mut segment_len = 0;
         self.path_segment(&mut segment_len, first)?;

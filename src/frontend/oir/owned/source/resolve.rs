@@ -196,7 +196,8 @@ impl<'src> ResolvedOwnedProgram<'src> {
             return Err(invalid_signature_identity(at));
         }
         for (ordinal, function) in self.functions.iter().enumerate() {
-            self.work().debit(1, function.end, "source signature identity")?;
+            self.work()
+                .debit(1, function.end, "source signature identity")?;
             if function.id != DefId(ordinal) {
                 return Err(invalid_signature_identity(function.end));
             }
@@ -205,7 +206,10 @@ impl<'src> ResolvedOwnedProgram<'src> {
             let id = index.builtin_function_id(BuiltinFunction::ReadStdin)?;
             let enumeration = index.builtin_enum_id(BuiltinEnum::ReadStatus)?;
             let anchor = index.builtin_function_anchor(BuiltinFunction::ReadStdin)?;
-            let signature = self.signatures.get(id.0).ok_or_else(|| invalid_signature_identity(at))?;
+            let signature = self
+                .signatures
+                .get(id.0)
+                .ok_or_else(|| invalid_signature_identity(at))?;
             let (parameter, result) = BuiltinFunction::ReadStdin.signature(enumeration);
             self.work().debit(5, anchor, "builtin signature identity")?;
             if id.0 != self.functions.len()
@@ -222,7 +226,11 @@ impl<'src> ResolvedOwnedProgram<'src> {
     }
 }
 fn invalid_signature_identity(at: Span) -> Box<Diagnostic> {
-    error("E0500", format_args!("invalid source signature identity"), at)
+    error(
+        "E0500",
+        format_args!("invalid source signature identity"),
+        at,
+    )
 }
 fn text(source: &SourceFile, span: Span) -> &str {
     source.text_at(span)
@@ -456,7 +464,9 @@ pub(super) fn type_builtin_source<'s>(
     work: &'s WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    index.require_builtin_candidate_pipeline().map_err(|error| vec![*error])?;
+    index
+        .require_builtin_candidate_pipeline()
+        .map_err(|error| vec![*error])?;
     type_paid_source(index, work, allocator, SourceAdmission::BuiltinPipeline)
 }
 
@@ -473,14 +483,14 @@ fn type_paid_source<'s>(
         SourceAdmission::BuiltinPipeline => super::hir_budget::preflight_builtin_hir(index, work),
         _ => super::hir_budget::preflight_enum_hir(index, work),
     }
-        .map_err(|error| vec![*error])?
-        .ok_or_else(|| {
-            vec![*error(
-                "E0500",
-                format_args!("missing enum HIR preflight"),
-                at,
-            )]
-        })?;
+    .map_err(|error| vec![*error])?
+    .ok_or_else(|| {
+        vec![*error(
+            "E0500",
+            format_args!("missing enum HIR preflight"),
+            at,
+        )]
+    })?;
     let parts;
     let resolver_end;
     {
@@ -514,8 +524,9 @@ fn type_paid_source<'s>(
     // resolution and paid typing; it is not a caller-chosen seed or capability.
     match admission {
         #[cfg(test)]
-        SourceAdmission::BuiltinPipeline =>
-            super::typeck::finish_builtin_source(program, &plan, allocator, resolver_end),
+        SourceAdmission::BuiltinPipeline => {
+            super::typeck::finish_builtin_source(program, &plan, allocator, resolver_end)
+        }
         _ => super::typeck::finish_enum_source(program, &plan, allocator, resolver_end),
     }
 }
@@ -528,7 +539,9 @@ pub(super) fn probe_enum_resolver_storage(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<Option<storage::ResolverStorageObservation>, Vec<Diagnostic>> {
-    index.require_no_builtin_candidate().map_err(|error| vec![*error])?;
+    index
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     // The selector must precede every new query, phase, work debit or reserve.
     if index.enum_count() == 0 {
         return Ok(None);
@@ -593,7 +606,9 @@ pub(super) fn probe_enum_type_storage<'s>(
     work: &'s WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<Option<EnumTypeStorageObservation>, Vec<Diagnostic>> {
-    index.require_no_builtin_candidate().map_err(|error| vec![*error])?;
+    index
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     if index.enum_count() == 0 {
         return Ok(None);
     }
@@ -747,7 +762,9 @@ pub(super) fn probe_enum_pipeline<'s>(
     allocator: &mut Allocator,
     request: EnumPipelineRequest,
 ) -> Result<Option<EnumPipelineOutput>, Vec<Diagnostic>> {
-    index.require_no_builtin_candidate().map_err(|error| vec![*error])?;
+    index
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     if index.enum_count() == 0 {
         return Ok(None);
     }
@@ -1223,7 +1240,10 @@ fn resolve_index_impl(
     work.phase("exposure");
     // Exposure consumes already selected nominal identities; it does not resolve
     // signatures a second time or consult caller enumeration.
-    for (id, signature) in signatures[..index.source_function_count()].iter().enumerate() {
+    for (id, signature) in signatures[..index.source_function_count()]
+        .iter()
+        .enumerate()
+    {
         let (key, module) = index.function(DefId(id)).map_err(|e| vec![*e])?;
         let function = &sources.ast(module).map_err(|e| vec![*e])?.functions[key.index];
         let params = signature
@@ -1410,7 +1430,11 @@ fn append_builtin_signature(
     storage::room(&params, params.capacity(), true, at)?;
     params.push(parameter);
     storage::room(signatures, signatures.capacity(), true, at)?;
-    signatures.push(Signature { params, result, span: at });
+    signatures.push(Signature {
+        params,
+        result,
+        span: at,
+    });
     Ok(())
 }
 // Real construction-local state, never retained in the returned program.
@@ -2967,8 +2991,9 @@ struct BuiltinSignatureCarriers {
     normalized: Result<(), Vec<Diagnostic>>,
 }
 
-/// Two separate calls coexist in the conservative source envelope: fresh
-/// typing checks the resolved owner; pre-lowering checks the typed wrapper.
+/// Two distinct caller families are summed in the conservative source envelope:
+/// fresh typing checks the resolved owner; pre-lowering checks the typed wrapper.
+/// Repeated nonrecursive preflight calls reuse the latter named control family.
 #[allow(dead_code)]
 struct SignatureIdentityCarriers {
     program: &'static ResolvedOwnedProgram<'static>,

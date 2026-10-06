@@ -140,7 +140,10 @@ impl TypedOwnedProgram<'_> {
     pub(super) fn functions(&self) -> impl ExactSizeIterator<Item = TypedOwnedFunction<'_>> {
         assert_eq!(self.program.functions().len(), self.bodies.len());
         assert_eq!(self.bodies.len(), self.index().source_function_count());
-        assert_eq!(self.program.signatures().len(), self.index().function_count());
+        assert_eq!(
+            self.program.signatures().len(),
+            self.index().function_count()
+        );
         self.program
             .functions()
             .iter()
@@ -296,13 +299,18 @@ fn immutable(function: &Function, binding: BindingId, span: Span) -> Box<Diagnos
 pub(in crate::frontend::oir) fn check(
     program: ResolvedOwnedProgram<'_>,
 ) -> Result<TypedOwnedProgram<'_>, Vec<Diagnostic>> {
-    program.index().require_no_builtin_candidate().map_err(|error| vec![*error])?;
+    program
+        .index()
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     // A paid statistics owner must never select the legacy storage branch.
     // Deny before phase observation, borrowed preparation or any body vectors.
     #[cfg(test)]
     if matches!(
         program.admission(),
-        SourceAdmission::ObserveEnumTypes | SourceAdmission::EnumPipeline | SourceAdmission::BuiltinPipeline
+        SourceAdmission::ObserveEnumTypes
+            | SourceAdmission::EnumPipeline
+            | SourceAdmission::BuiltinPipeline
     ) {
         return Err(vec![*diagnostic(
             "E0500",
@@ -495,7 +503,10 @@ pub(super) fn observe_enum_type_storage(
     source: &super::hir_budget::HirPlan,
     allocator: &mut Allocator,
 ) -> Result<storage::TypeStorageObservation, Vec<Diagnostic>> {
-    program.index().require_no_builtin_candidate().map_err(|error| vec![*error])?;
+    program
+        .index()
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     let work = program.work();
     let at = program.index().sources().eof();
     if program.admission() != SourceAdmission::ObserveEnumTypes {
@@ -599,7 +610,10 @@ pub(super) fn finish_enum_pipeline(
     allocator: &mut Allocator,
     request: super::resolve::EnumPipelineRequest,
 ) -> Result<EnumPipelineTypedOutput, Vec<Diagnostic>> {
-    program.index().require_no_builtin_candidate().map_err(|error| vec![*error])?;
+    program
+        .index()
+        .require_no_builtin_candidate()
+        .map_err(|error| vec![*error])?;
     let bodies;
     let typed_observation;
     {
@@ -706,7 +720,10 @@ pub(super) fn finish_enum_source<'s>(
     if program.admission() != SourceAdmission::Executable || program.index().enum_count() == 0 {
         return Err(vec![*paid_state(program.index().sources().eof())]);
     }
-    program.index().require_current_source_pipeline().map_err(|error| vec![*error])?;
+    program
+        .index()
+        .require_current_source_pipeline()
+        .map_err(|error| vec![*error])?;
     finish_paid_source(program, source, allocator, resolver_end)
 }
 
@@ -718,11 +735,16 @@ pub(super) fn finish_builtin_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    program.index().require_builtin_candidate_pipeline().map_err(|error| vec![*error])?;
+    program
+        .index()
+        .require_builtin_candidate_pipeline()
+        .map_err(|error| vec![*error])?;
     if program.admission() != SourceAdmission::BuiltinPipeline {
         return Err(vec![*paid_state(program.index().sources().eof())]);
     }
-    program.validate_function_signatures().map_err(|error| vec![*error])?;
+    program
+        .validate_function_signatures()
+        .map_err(|error| vec![*error])?;
     finish_paid_source(program, source, allocator, resolver_end)
 }
 
@@ -876,7 +898,9 @@ fn check_bodies(
     let enum_types = match program.admission() {
         SourceAdmission::Executable => program.index().enum_count() != 0,
         #[cfg(test)]
-        SourceAdmission::ObserveEnumTypes | SourceAdmission::EnumPipeline | SourceAdmission::BuiltinPipeline => true,
+        SourceAdmission::ObserveEnumTypes
+        | SourceAdmission::EnumPipeline
+        | SourceAdmission::BuiltinPipeline => true,
         #[cfg(test)]
         SourceAdmission::ObserveArrayTypes
         | SourceAdmission::ObserveArrayPipeline
@@ -4717,7 +4741,11 @@ struct ProductionTypeCarriers {
     // The checked production/private wrappers transfer this second owned
     // argument to the shared paid body and retain its complete return carrier.
     dispatch_argument: ResolvedOwnedProgram<'static>,
-    dispatch_inputs: (&'static super::hir_budget::HirPlan, &'static mut Allocator, usize),
+    dispatch_inputs: (
+        &'static super::hir_budget::HirPlan,
+        &'static mut Allocator,
+        usize,
+    ),
     dispatch_return: Result<TypedOwnedProgram<'static>, Vec<Diagnostic>>,
     provenance_return: Result<(), Box<Diagnostic>>,
     provenance_normalized: Result<(), Vec<Diagnostic>>,

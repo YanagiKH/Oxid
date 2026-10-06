@@ -124,19 +124,48 @@ fn production_entry_components() -> usize {
 fn bounded_stdin_hir_signature_suffix_prices_no_synthetic_body() {
     let sources = sources("x");
     let at = sources.get(SourceFileId(0)).span(0, 1);
-    let source = HirCounts { functions: 2, signatures: 2, ..HirCounts::default() };
+    let source = HirCounts {
+        functions: 2,
+        signatures: 2,
+        ..HirCounts::default()
+    };
     let ordinary = HirPlan::calculate(source, at).unwrap();
-    let builtin = HirPlan::calculate(HirCounts { signatures: 3, parameters: 1, ..source }, at).unwrap();
-    assert_eq!(builtin.resolved - ordinary.resolved, size_of::<Signature>() + size_of::<ParameterTy>());
+    let builtin = HirPlan::calculate(
+        HirCounts {
+            signatures: 3,
+            parameters: 1,
+            ..source
+        },
+        at,
+    )
+    .unwrap();
+    assert_eq!(
+        builtin.resolved - ordinary.resolved,
+        size_of::<Signature>() + size_of::<ParameterTy>()
+    );
     assert_eq!(builtin.typed, ordinary.typed);
     assert_eq!(builtin.staging, ordinary.staging);
     assert_eq!(builtin.typeck_scratch, ordinary.typeck_scratch);
-    assert_eq!(builtin.resolver_scratch - ordinary.resolver_scratch,
-        size_of::<Vec<ParameterTy>>() + resolve::builtin_signature_carrier_bytes() + size_of::<BuiltinPreflightCarriers>());
-    assert!(HirPlan::calculate(HirCounts { signatures: 4, ..source }, at).is_err());
+    assert_eq!(
+        builtin.resolver_scratch - ordinary.resolver_scratch,
+        size_of::<Vec<ParameterTy>>()
+            + resolve::builtin_signature_carrier_bytes()
+            + size_of::<BuiltinPreflightCarriers>()
+    );
+    assert!(HirPlan::calculate(
+        HirCounts {
+            signatures: 4,
+            ..source
+        },
+        at
+    )
+    .is_err());
     let remaining = MAX_HIR_BYTES - builtin.total;
     assert_eq!(builtin.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
-    assert_eq!(builtin.with_dynamic(remaining + 1, at).unwrap_err().code, "E0400");
+    assert_eq!(
+        builtin.with_dynamic(remaining + 1, at).unwrap_err().code,
+        "E0400"
+    );
     println!("BUILTIN_HIR_LAYOUT counts={}/{} plan={}/{} plan_return={}/{} builtin_preflight={}/{} candidate_preflight={}/{} ordinary_total={} builtin_total={}",
         size_of::<HirCounts>(), align_of::<HirCounts>(), size_of::<HirPlan>(), align_of::<HirPlan>(),
         size_of::<PlanReturnEnvelope>(), align_of::<PlanReturnEnvelope>(), size_of::<BuiltinPreflightCarriers>(), align_of::<BuiltinPreflightCarriers>(),
@@ -898,7 +927,10 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
         for which in 0..4 {
             let mut c = HirCounts::default();
             match which {
-                0 => { c.functions = count; c.signatures = count; },
+                0 => {
+                    c.functions = count;
+                    c.signatures = count;
+                }
                 1 => c.blocks = count,
                 2 => c.calls = count,
                 _ => c.record_literals = count,

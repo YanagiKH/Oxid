@@ -217,7 +217,11 @@ pub(super) fn preflight(
     if typed.index().builtin_set().extra_functions() != 0 {
         let count = super::builtin_lower::counts();
         raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
-        bytes = cap(add(bytes, function_bytes(count)?)?, ceiling, "source raw payload")?;
+        bytes = cap(
+            add(bytes, function_bytes(count)?)?,
+            ceiling,
+            "source raw payload",
+        )?;
     }
     // Status-only imports use the same fixed capacity-check roles for the new
     // enum suffix; conservatively admit the bounded builtin producer envelope.

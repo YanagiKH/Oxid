@@ -155,11 +155,17 @@ struct Carriers {
     parameters: [ParameterBinding; 2],
     // Existing reserve and the observed-capacity wrapper each retain their
     // complete local/return role; no allocator slack is admitted silently.
-    parameter_reserve: [(Vec<ParameterBinding>, Result<Vec<ParameterBinding>, OwnedFailure>); 2],
+    parameter_reserve: [(
+        Vec<ParameterBinding>,
+        Result<Vec<ParameterBinding>, OwnedFailure>,
+    ); 2],
     owner_reserve: [(Vec<OwnerDecl>, Result<Vec<OwnerDecl>, OwnedFailure>); 2],
     reference_reserve: [(Vec<ReferenceDecl>, Result<Vec<ReferenceDecl>, OwnedFailure>); 2],
     block_reserve: [(Vec<OwnedBlock>, Result<Vec<OwnedBlock>, OwnedFailure>); 2],
-    statement_reserve: [(Vec<OwnedStatement>, Result<Vec<OwnedStatement>, OwnedFailure>); 2],
+    statement_reserve: [(
+        Vec<OwnedStatement>,
+        Result<Vec<OwnedStatement>, OwnedFailure>,
+    ); 2],
     terminator: OwnedTerminator,
     terminator_option: Option<OwnedTerminator>,
     aggregate: Result<AggregateSlot, DeclarationError>,

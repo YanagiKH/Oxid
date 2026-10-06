@@ -419,8 +419,12 @@ impl Program {
         inspect: impl FnMut(Option<Span>) -> bool,
         enum_syntax: &mut Option<Span>,
     ) -> bool {
-        self.validate_spans_and_ids_counted_with_syntax(inspect, enum_syntax,
-            super::parser::StdImportPolicy::Closed, &mut false)
+        self.validate_spans_and_ids_counted_with_syntax(
+            inspect,
+            enum_syntax,
+            super::parser::StdImportPolicy::Closed,
+            &mut false,
+        )
     }
     pub(super) fn validate_spans_and_ids_counted_with_syntax(
         &self,
@@ -471,8 +475,12 @@ impl Program {
             project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
             if path.root == PathRoot::Std {
                 *std_syntax = true;
-                if !std_policy.enabled() { return false; }
-                let Some(next) = std_paths.checked_add(1) else { return false; };
+                if !std_policy.enabled() {
+                    return false;
+                }
+                let Some(next) = std_paths.checked_add(1) else {
+                    return false;
+                };
                 std_paths = next;
             }
             if path.segment_start != path_end
@@ -542,16 +550,19 @@ impl Program {
             if !visit() {
                 return false;
             }
-            if self.paths.get(import.path.0).is_some_and(|path| path.root == PathRoot::Std) {
-                let Some(next) = std_imports.checked_add(1) else { return false; };
-                std_imports = next;
-            }
-            if !self
+            if self
                 .paths
                 .get(import.path.0)
-                .is_some_and(|path| path.root == PathRoot::Crate
-                    || (std_policy.enabled() && path.root == PathRoot::Std))
-                || !valid(import.alias)
+                .is_some_and(|path| path.root == PathRoot::Std)
+            {
+                let Some(next) = std_imports.checked_add(1) else {
+                    return false;
+                };
+                std_imports = next;
+            }
+            if !self.paths.get(import.path.0).is_some_and(|path| {
+                path.root == PathRoot::Crate || (std_policy.enabled() && path.root == PathRoot::Std)
+            }) || !valid(import.alias)
                 || !valid(import.span)
             {
                 return false;
@@ -559,7 +570,9 @@ impl Program {
         }
         // The private import inventory separately checks strict source order,
         // so these equal cardinalities also exclude detached/reused std rows.
-        if std_paths != std_imports { return false; }
+        if std_paths != std_imports {
+            return false;
+        }
         let mut counts = [0usize; 5];
         for item in &self.items {
             if !visit() {
@@ -755,7 +768,8 @@ impl Program {
                                         && visit()
                                         && self.paths.get(arm.variant.0).is_some_and(|path| {
                                             path.root == PathRoot::LocalType
-                                                || (path.root == PathRoot::Crate && path.segment_len >= 3)
+                                                || (path.root == PathRoot::Crate
+                                                    && path.segment_len >= 3)
                                         })
                                         && arm.binding.is_none_or(valid)
                                         && valid(arm.span)
@@ -830,7 +844,10 @@ impl Program {
                 ExprKind::QualifiedValue { path, args } => {
                     enum_syntax.get_or_insert(expression.span);
                     visit()
-                        && self.paths.get(path.0).is_some_and(|path| path.root != PathRoot::Std)
+                        && self
+                            .paths
+                            .get(path.0)
+                            .is_some_and(|path| path.root != PathRoot::Std)
                         && args.as_ref().is_none_or(|args| {
                             args.len() <= super::parser::MAX_PARAMS
                                 && args.iter().all(|arg| {

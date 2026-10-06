@@ -239,18 +239,28 @@ fn check_impl(
         let ids = builtins::check(raw).map_err(|_| bad())?;
         if let Some(id) = ids.enumeration {
             use crate::frontend::builtin_catalog::BuiltinEnum;
-            if id != index.builtin_enum_id(BuiltinEnum::ReadStatus).map_err(|_| bad())?
+            if id
+                != index
+                    .builtin_enum_id(BuiltinEnum::ReadStatus)
+                    .map_err(|_| bad())?
                 || raw.enums.get(id.0).ok_or_else(bad)?.span
-                    != index.builtin_enum_anchor(BuiltinEnum::ReadStatus).map_err(|_| bad())?
+                    != index
+                        .builtin_enum_anchor(BuiltinEnum::ReadStatus)
+                        .map_err(|_| bad())?
             {
                 return Err(bad());
             }
         }
         if let Some(id) = ids.function {
             use crate::frontend::builtin_catalog::BuiltinFunction;
-            if id != index.builtin_function_id(BuiltinFunction::ReadStdin).map_err(|_| bad())?
+            if id
+                != index
+                    .builtin_function_id(BuiltinFunction::ReadStdin)
+                    .map_err(|_| bad())?
                 || raw.functions.get(id.0).ok_or_else(bad)?.span
-                    != index.builtin_function_anchor(BuiltinFunction::ReadStdin).map_err(|_| bad())?
+                    != index
+                        .builtin_function_anchor(BuiltinFunction::ReadStdin)
+                        .map_err(|_| bad())?
             {
                 return Err(bad());
             }

@@ -1,26 +1,53 @@
 //! Fresh candidate signature/type controls. No raw or executable witness escapes.
 use super::*;
-use crate::frontend::{lexer, parser};
+use crate::frontend::project::{ProjectLimits, ProjectSources};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 const BOTH: &str = "use std::io::read_stdin as input; use std::io::ReadStatus as Status; enum Local { Value } fn helper()->i32{return 7;} fn relay(xs:&mut [i32])->Status{return input(&mut *xs);} fn main()->i32{let mut bytes=[1,2];let status=relay(&mut bytes);match status{Status::Eof(n)=>{return n;},Status::Full=>{return helper();},Status::IoError=>{return 0;},}}";
 
+struct Fixture(PathBuf);
+impl Fixture {
+    fn new(text: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "oxid-builtin-signatures-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("main.ox"), text).unwrap();
+        Self(directory)
+    }
+    fn load(&self) -> ProjectSources {
+        ProjectSources::load_builtin_candidate(
+            self.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap()
+    }
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.0).unwrap();
+    }
+}
+
 fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
-    let mut sources = SourceMap::new();
-    let file = sources.add("builtin-signatures.ox".into(), text.into());
-    let source = sources.get(file);
-    let ast = parser::parse_builtin_candidate_counted(
-        source,
-        lexer::lex(source).unwrap(),
-        parser::SourceMode::OwnedCandidate,
-        parser::MAX_NODES,
-        &mut Allocator::default(),
-        &mut Default::default(),
-    ).unwrap().0;
-    let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+    let fixture = Fixture::new(text);
+    let project = fixture.load();
+    let owner = SourceOwner::project(&project);
     let work = WorkMeter::default();
     let mut allocator = Allocator::default();
-    let index = index::collect_builtin_candidate(owner, IndexLimits::default(), &work, &mut allocator)
-        .unwrap().finish(&work, &mut allocator).unwrap();
+    let index =
+        index::collect_builtin_candidate(owner, IndexLimits::default(), &work, &mut allocator)
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
     action(&index);
 }
 
@@ -28,37 +55,73 @@ fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
 fn bounded_stdin_paid_signatures_split_bodies_and_import_suffix() {
     for (text, bodies, signatures, enumerations) in [
         ("fn main()->i32{return 0;}", 1, 1, 0),
-        ("use std::io::ReadStatus as S; fn main()->i32{return 0;}", 1, 1, 1),
-        ("use std::io::read_stdin as input; fn main()->i32{return 0;}", 1, 2, 1),
+        (
+            "use std::io::ReadStatus as S; fn main()->i32{return 0;}",
+            1,
+            1,
+            1,
+        ),
+        (
+            "use std::io::read_stdin as input; fn main()->i32{return 0;}",
+            1,
+            2,
+            1,
+        ),
         (BOTH, 3, 4, 2),
     ] {
         with_index(text, |index| {
             let work = WorkMeter::default();
-            let (plan, heap) = super::super::reviewer_source::integration_measured(||
-                super::super::hir_budget::preflight_builtin_hir(index, &work));
+            let (plan, heap) = super::super::reviewer_source::integration_measured(|| {
+                super::super::hir_budget::preflight_builtin_hir(index, &work)
+            });
             let plan = plan.unwrap().unwrap();
             assert_eq!(heap, (0, 0, 0));
-            assert_eq!((plan.counts.functions, plan.counts.signatures), (bodies, signatures));
+            assert_eq!(
+                (plan.counts.functions, plan.counts.signatures),
+                (bodies, signatures)
+            );
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(512).unwrap();
-            let (observed, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
-                let typed = type_builtin_source(index, &work, &mut allocator).unwrap();
-                assert_eq!(typed.admission(), SourceAdmission::BuiltinPipeline);
-                assert!(!typed.admission().executable());
-                assert!(typed.admission().allows_lowering());
-                typed.validate_function_signatures().unwrap();
-                let observed = (typed.functions().len(), typed.signatures().len(), typed.index().enum_count(), typed.source_storage_bytes().unwrap());
-                drop(typed);
-                observed
-            });
-            assert_eq!((observed.0, observed.1, observed.2), (bodies, signatures, enumerations));
+            let (observed, (_, live, peak)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    let typed = type_builtin_source(index, &work, &mut allocator).unwrap();
+                    assert_eq!(typed.admission(), SourceAdmission::BuiltinPipeline);
+                    assert!(!typed.admission().executable());
+                    assert!(typed.admission().allows_lowering());
+                    typed.validate_function_signatures().unwrap();
+                    let observed = (
+                        typed.functions().len(),
+                        typed.signatures().len(),
+                        typed.index().enum_count(),
+                        typed.source_storage_bytes().unwrap(),
+                    );
+                    drop(typed);
+                    observed
+                });
+            assert_eq!(
+                (observed.0, observed.1, observed.2),
+                (bodies, signatures, enumerations)
+            );
             assert!(observed.3 >= plan.total);
             assert_eq!(live, 0);
             assert!(peak > 0);
             assert!(!allocator.observer_trace_overflow);
-            let reserved_signatures: usize = allocator.trace.iter().filter(|event| event.kind == "paid HIR signatures").map(|event| event.length).sum();
-            let reserved_functions: usize = allocator.trace.iter().filter(|event| event.kind == "paid HIR functions").map(|event| event.length).sum();
-            assert_eq!((reserved_functions, reserved_signatures), (bodies, signatures));
+            let reserved_signatures: usize = allocator
+                .trace
+                .iter()
+                .filter(|event| event.kind == "paid HIR signatures")
+                .map(|event| event.length)
+                .sum();
+            let reserved_functions: usize = allocator
+                .trace
+                .iter()
+                .filter(|event| event.kind == "paid HIR functions")
+                .map(|event| event.length)
+                .sum();
+            assert_eq!(
+                (reserved_functions, reserved_signatures),
+                (bodies, signatures)
+            );
         });
     }
 }
@@ -68,51 +131,97 @@ fn bounded_stdin_paid_signature_identity_rejects_every_suffix_mutation() {
     with_index(BOTH, |index| {
         for mutation in 0..8 {
             let work = WorkMeter::default();
-            let plan = super::super::hir_budget::preflight_builtin_hir(index, &work).unwrap().unwrap();
+            let plan = super::super::hir_budget::preflight_builtin_hir(index, &work)
+                .unwrap()
+                .unwrap();
             let mut allocator = Allocator::default();
             let mut paid = PaidStorage::new(plan.counts);
-            let (records, signatures, functions) = resolve_index_impl(index, &work, &mut allocator, Some(&mut paid)).unwrap();
+            let (records, signatures, functions) =
+                resolve_index_impl(index, &work, &mut allocator, Some(&mut paid)).unwrap();
             let mut program = ResolvedOwnedProgram {
                 projection_bytes: std::cell::Cell::new(plan.total),
                 admission: SourceAdmission::BuiltinPipeline,
                 index: IndexOwner::Borrowed(index),
                 work: MeterOwner::Borrowed(&work),
                 sources: index.sources().view(),
-                records, signatures, functions,
+                records,
+                signatures,
+                functions,
                 entry: index.root_original_main(),
             };
             program.validate_function_signatures().unwrap();
             let suffix = index.source_function_count();
-            assert_eq!(program.signatures[suffix].params.as_slice(), [ParameterTy::Reference {
-                referent: BorrowedTy::ScalarSlice(Ty::I32), kind: BorrowKind::Exclusive,
-            }]);
-            assert_eq!(program.signatures[suffix].result, ValueTy::Owned(AggregateTy::Enum(crate::frontend::oir::owned_types::EnumId(1))));
+            assert_eq!(
+                program.signatures[suffix].params.as_slice(),
+                [ParameterTy::Reference {
+                    referent: BorrowedTy::ScalarSlice(Ty::I32),
+                    kind: BorrowKind::Exclusive,
+                }]
+            );
+            assert_eq!(
+                program.signatures[suffix].result,
+                ValueTy::Owned(AggregateTy::Enum(
+                    crate::frontend::oir::owned_types::EnumId(1)
+                ))
+            );
             match mutation {
-                0 => { program.signatures.pop(); }
-                1 => program.signatures.push(Signature { params: Vec::new(), result: ValueTy::Scalar(Ty::Unit), span: index.sources().eof() }),
+                0 => {
+                    program.signatures.pop();
+                }
+                1 => program.signatures.push(Signature {
+                    params: Vec::new(),
+                    result: ValueTy::Scalar(Ty::Unit),
+                    span: index.sources().eof(),
+                }),
                 2 => program.signatures[suffix].params.clear(),
-                3 => program.signatures[suffix].params[0] = ParameterTy::Reference { referent: BorrowedTy::ScalarSlice(Ty::I32), kind: BorrowKind::Shared },
-                4 => program.signatures[suffix].result = ValueTy::Owned(AggregateTy::Enum(crate::frontend::oir::owned_types::EnumId(0))),
+                3 => {
+                    program.signatures[suffix].params[0] = ParameterTy::Reference {
+                        referent: BorrowedTy::ScalarSlice(Ty::I32),
+                        kind: BorrowKind::Shared,
+                    }
+                }
+                4 => {
+                    program.signatures[suffix].result = ValueTy::Owned(AggregateTy::Enum(
+                        crate::frontend::oir::owned_types::EnumId(0),
+                    ))
+                }
                 5 => program.signatures[suffix].span = index.sources().eof(),
                 6 => program.signatures.swap(0, suffix),
                 7 => program.functions[0].id = DefId(suffix),
                 _ => unreachable!(),
             }
-            assert_eq!(program.validate_function_signatures().unwrap_err().code, "E0500", "mutation {mutation}");
+            assert_eq!(
+                program.validate_function_signatures().unwrap_err().code,
+                "E0500",
+                "mutation {mutation}"
+            );
         }
     });
 }
 
 #[test]
 fn bounded_stdin_candidate_rejects_earlier_paid_consumers_before_reservation() {
-    for text in ["fn main()->i32{return 0;}", "use std::io::ReadStatus; fn main()->i32{return 0;}", BOTH] {
+    for text in [
+        "fn main()->i32{return 0;}",
+        "use std::io::ReadStatus; fn main()->i32{return 0;}",
+        BOTH,
+    ] {
         with_index(text, |index| {
             let work = WorkMeter::default();
-            let mut allocator = Allocator { fail_at: Some(1), ..Default::default() };
+            let mut allocator = Allocator {
+                fail_at: Some(1),
+                ..Default::default()
+            };
             assert!(type_enum_source(index, &work, &mut allocator).is_err());
             assert!(probe_enum_resolver_storage(index, &work, &mut allocator).is_err());
             assert!(probe_enum_type_storage(index, &work, &mut allocator).is_err());
-            assert!(probe_enum_pipeline(index, &work, &mut allocator, EnumPipelineRequest::REFERENCE).is_err());
+            assert!(probe_enum_pipeline(
+                index,
+                &work,
+                &mut allocator,
+                EnumPipelineRequest::REFERENCE
+            )
+            .is_err());
             assert!(super::super::hir_budget::preflight_enum_hir(index, &work).is_err());
             assert_eq!(allocator.attempts, 0);
         });
@@ -143,19 +252,28 @@ fn bounded_stdin_paid_allocations_fail_at_each_requested_reservation() {
         assert!(baseline.attempts > 1);
         for attempt in 1..=baseline.attempts {
             let work = WorkMeter::default();
-            let mut allocator = Allocator { fail_at: Some(attempt), ..Default::default() };
+            let mut allocator = Allocator {
+                fail_at: Some(attempt),
+                ..Default::default()
+            };
             allocator.observer_trace_bound(512).unwrap();
-            let ((failed, code), (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
-                match type_builtin_source(index, &work, &mut allocator) {
-                    Ok(typed) => { drop(typed); (false, false) }
-                    Err(errors) => (true, errors[0].code == "E0400"),
-                }
-            });
+            let ((failed, code), (_, live, _)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    match type_builtin_source(index, &work, &mut allocator) {
+                        Ok(typed) => {
+                            drop(typed);
+                            (false, false)
+                        }
+                        Err(errors) => (true, errors[0].code == "E0400"),
+                    }
+                });
             assert!(failed && code, "allocation {attempt}");
             assert_eq!(live, 0, "allocation {attempt}");
             assert!(allocator.attempts >= attempt);
             assert!(!allocator.trace[attempt - 1].success);
-            assert!(allocator.trace[..attempt - 1].iter().all(|event| event.success));
+            assert!(allocator.trace[..attempt - 1]
+                .iter()
+                .all(|event| event.success));
             assert!(!allocator.observer_trace_overflow);
         }
     });
@@ -172,12 +290,16 @@ fn bounded_stdin_paid_work_endpoint_is_exact() {
             let work = WorkMeter::new(limit);
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(512).unwrap();
-            let ((success, resource), (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
-                match type_builtin_source(index, &work, &mut allocator) {
-                    Ok(typed) => { drop(typed); (true, false) }
-                    Err(errors) => (false, errors.iter().any(|error| error.code == "E0400")),
-                }
-            });
+            let ((success, resource), (_, live, _)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    match type_builtin_source(index, &work, &mut allocator) {
+                        Ok(typed) => {
+                            drop(typed);
+                            (true, false)
+                        }
+                        Err(errors) => (false, errors.iter().any(|error| error.code == "E0400")),
+                    }
+                });
             assert_eq!(success, limit == required);
             assert_eq!(resource, limit < required);
             assert_eq!(live, 0);
@@ -187,7 +309,7 @@ fn bounded_stdin_paid_work_endpoint_is_exact() {
 
 #[test]
 fn bounded_stdin_paid_new_carriers_have_actual_layout_receipts() {
-    use std::mem::{size_of, align_of};
+    use std::mem::{align_of, size_of};
     assert_eq!(size_of::<SourceAdmission>(), 1);
     assert!(!SourceAdmission::BuiltinPipeline.executable());
     println!("BUILTIN_PAID_LAYOUT index_owner={}/{} resolved={}/{} typed={}/{} builtin_signature={}/{} signature_identity={}/{} source_dispatch={} type_dispatch={}",

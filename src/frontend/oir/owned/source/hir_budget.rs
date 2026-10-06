@@ -297,15 +297,16 @@ impl HirPlan {
         )?;
         increment(
             &mut resolver_scratch,
-            mul(c.signatures.checked_sub(c.functions).ok_or_else(|| invalid(at))?,
-                resolve::builtin_signature_carrier_bytes(), at)?,
+            mul(
+                c.signatures
+                    .checked_sub(c.functions)
+                    .ok_or_else(|| invalid(at))?,
+                resolve::builtin_signature_carrier_bytes(),
+                at,
+            )?,
             at,
         )?;
-        charge::<BuiltinPreflightCarriers>(
-            &mut resolver_scratch,
-            c.signatures - c.functions,
-            at,
-        )?;
+        charge::<BuiltinPreflightCarriers>(&mut resolver_scratch, c.signatures - c.functions, at)?;
         // Pending local vector headers coexist with complete prepaid HIR rows.
         // Sum across visits rather than assume only the largest nested call.
         charge::<Vec<Argument>>(&mut resolver_scratch, c.calls, at)?;

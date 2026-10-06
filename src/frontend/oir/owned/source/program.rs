@@ -210,9 +210,9 @@ pub(super) fn run_builtin_source(
 ) -> Result<EnumPipelineProgramOutput, Vec<Diagnostic>> {
     let work = WorkMeter::default();
     let mut allocator = Allocator::default();
-    let facts = index::collect_builtin_candidate(
-        owner, IndexLimits::default(), &work, &mut allocator,
-    ).map_err(|error| vec![*error])?;
+    let facts =
+        index::collect_builtin_candidate(owner, IndexLimits::default(), &work, &mut allocator)
+            .map_err(|error| vec![*error])?;
     let index = facts.finish(&work, &mut allocator)?;
     let typed = resolve::type_builtin_source(&index, &work, &mut allocator)?;
     if typed.admission() != resolve::SourceAdmission::BuiltinPipeline {
@@ -236,10 +236,14 @@ fn observe_private_pipeline(
     }
     match typed.admission() {
         resolve::SourceAdmission::EnumPipeline if index.enum_count() != 0 => {
-            index.require_no_builtin_candidate().map_err(|error| vec![*error])?;
+            index
+                .require_no_builtin_candidate()
+                .map_err(|error| vec![*error])?;
         }
         resolve::SourceAdmission::BuiltinPipeline => {
-            index.require_builtin_candidate_pipeline().map_err(|error| vec![*error])?;
+            index
+                .require_builtin_candidate_pipeline()
+                .map_err(|error| vec![*error])?;
         }
         _ => return Err(vec![*crate::frontend::oir::source::association::bad()]),
     }
@@ -259,7 +263,8 @@ fn observe_private_pipeline(
             super::association::check_builtin_candidate(&raw, index, sources)
         }
         _ => super::association::check_enum_candidate(&raw, index, sources),
-    }.map_err(|error| vec![*error])?;
+    }
+    .map_err(|error| vec![*error])?;
     // Only fixed header facts are sampled here. This does not replace either
     // source association or the independent complete raw proof below.
     let enum_count = raw.enums.len();

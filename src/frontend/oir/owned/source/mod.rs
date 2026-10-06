@@ -53,6 +53,6 @@ mod slice_tests;
 mod projected_slice_raw_tests;
 
 #[cfg(test)]
-mod enum_native_source_tests;
-#[cfg(test)]
 mod builtin_source_tests;
+#[cfg(test)]
+mod enum_native_source_tests;

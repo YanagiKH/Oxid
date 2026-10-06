@@ -4,6 +4,10 @@
 #![allow(dead_code)] // Historical qualification adapters retain their private API.
 
 #[cfg(test)]
+#[path = "project/builtin_tests.rs"]
+mod builtin_tests;
+
+#[cfg(test)]
 #[path = "project/array_syntax_tests.rs"]
 mod array_syntax_tests;
 pub(super) mod budget;
@@ -237,8 +241,14 @@ impl ProjectSources {
         limits: ProjectLimits,
         allocator: &mut Allocator,
     ) -> Result<Self, LoadFailure> {
-        Self::load_with_syntax(entry, limits, parser::SourceMode::ProjectCandidate,
-            allocator, parser::ArraySyntaxPolicy::Enabled, ProjectEnumSyntax::BuiltinCandidate)
+        Self::load_with_syntax(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            allocator,
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::BuiltinCandidate,
+        )
     }
     fn load_with_arrays(
         entry: &str,
@@ -853,7 +863,13 @@ impl SourceSetBuilder<'_> {
         let (program, nodes) = match self.enums {
             #[cfg(test)]
             ProjectEnumSyntax::BuiltinCandidate => parser::parse_builtin_candidate_counted(
-                source, tokens, self.mode, remaining_nodes, self.allocator, &mut Default::default())?,
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                &mut Default::default(),
+            )?,
             ProjectEnumSyntax::Closed => {
                 if self.arrays == parser::ArraySyntaxPolicy::Closed {
                     parser::parse_counted(

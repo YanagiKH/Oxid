@@ -17,7 +17,7 @@ mod enum_tests;
 mod tests;
 use super::{
     ast,
-    builtin_catalog::{BuiltinSet, BuiltinItem, BuiltinEnum, BuiltinFunction, DeclarationOrigin},
+    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet, DeclarationOrigin},
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
     oir::owned_types::{
@@ -40,7 +40,7 @@ pub(super) use resource::{
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
 #[cfg(test)]
-pub(super) use sealed::{collect_closed, collect_enum_candidate, collect_builtin_candidate};
+pub(super) use sealed::{collect_builtin_candidate, collect_closed, collect_enum_candidate};
 pub(super) use sealed::{collect_originals, DeclarationFacts, DeclarationIndex};
 use sealed::{BuiltinAdmission, CandidateOrigin};
 use std::{cmp::Ordering, fmt, mem::size_of};
@@ -59,8 +59,10 @@ const PUBLIC: u32 = 4;
 struct DeclarationHandle(u32);
 const NO_DECLARATION: DeclarationHandle = DeclarationHandle(NONE);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DeclarationProjection { SourceOriginal(u32), Builtin(BuiltinItem) }
-
+enum DeclarationProjection {
+    SourceOriginal(u32),
+    Builtin(BuiltinItem),
+}
 
 fn diagnostic(
     code: &'static str,
@@ -343,7 +345,10 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<Option<usize>>()
     + size_of::<super::parser::StdImportPolicy>()
     + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>()
-    + size_of::<[usize; 2]>();
+    + size_of::<[usize; 2]>()
+    // Prepared display safely projects one checked span; Option<&str> and its
+    // consumed &str result have identical carriers and no boxed-error branch.
+    + size_of::<Option<&str>>();
 const _: () = {
     assert!(FIXED_SCRATCH <= 4096);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
@@ -367,19 +372,32 @@ impl Tables<'_> {
     fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         self.require_no_builtin_candidate()?;
         if let Some(origin) = self.candidate_source_origin.span() {
-            return Err(diagnostic("E0101", "resolve", "enum source syntax is unavailable", origin));
+            return Err(diagnostic(
+                "E0101",
+                "resolve",
+                "enum source syntax is unavailable",
+                origin,
+            ));
         }
         Ok(())
     }
     fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> {
         if self.candidate_source_origin.is_builtin() || self.builtins.set() != BuiltinSet::None {
-            return Err(diagnostic("E0101", "resolve", "builtin source syntax is unavailable",
-                self.candidate_source_origin.span().unwrap_or(self.sources.eof())));
+            return Err(diagnostic(
+                "E0101",
+                "resolve",
+                "builtin source syntax is unavailable",
+                self.candidate_source_origin
+                    .span()
+                    .unwrap_or(self.sources.eof()),
+            ));
         }
         Ok(())
     }
     fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
-        if !self.candidate_source_origin.is_builtin() { return Err(bad(self.sources.eof())); }
+        if !self.candidate_source_origin.is_builtin() {
+            return Err(bad(self.sources.eof()));
+        }
         Ok(())
     }
     fn builtin_handle(&self, item: BuiltinItem) -> Result<DeclarationHandle, Box<Diagnostic>> {
@@ -388,13 +406,28 @@ impl Tables<'_> {
             BuiltinItem::Function(_) if self.builtins.set().extra_functions() == 1 => 1,
             _ => return Err(bad(self.sources.eof())),
         };
-        let target = self.originals.len().checked_add(extra).ok_or_else(|| overflow(self.sources.eof()))?;
+        let target = self
+            .originals
+            .len()
+            .checked_add(extra)
+            .ok_or_else(|| overflow(self.sources.eof()))?;
         Ok(DeclarationHandle(compact(target, self.sources.eof())?))
     }
-    fn project_handle(&self, handle: DeclarationHandle) -> Result<DeclarationProjection, Box<Diagnostic>> {
-        if (handle.0 as usize) < self.originals.len() { return Ok(DeclarationProjection::SourceOriginal(handle.0)); }
-        for item in [BuiltinItem::Enum(BuiltinEnum::ReadStatus), BuiltinItem::Function(BuiltinFunction::ReadStdin)] {
-            if self.builtin_handle(item).is_ok_and(|expected| expected == handle) {
+    fn project_handle(
+        &self,
+        handle: DeclarationHandle,
+    ) -> Result<DeclarationProjection, Box<Diagnostic>> {
+        if (handle.0 as usize) < self.originals.len() {
+            return Ok(DeclarationProjection::SourceOriginal(handle.0));
+        }
+        for item in [
+            BuiltinItem::Enum(BuiltinEnum::ReadStatus),
+            BuiltinItem::Function(BuiltinFunction::ReadStdin),
+        ] {
+            if self
+                .builtin_handle(item)
+                .is_ok_and(|expected| expected == handle)
+            {
                 return Ok(DeclarationProjection::Builtin(item));
             }
         }
@@ -403,7 +436,9 @@ impl Tables<'_> {
     fn nominal_handle(&self, handle: DeclarationHandle) -> Result<NominalId, Box<Diagnostic>> {
         match self.project_handle(handle)? {
             DeclarationProjection::SourceOriginal(id) => self.nominal_original(id),
-            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => Ok(NominalId::Enum(EnumId(self.enums.len()))),
+            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                Ok(NominalId::Enum(EnumId(self.enums.len())))
+            }
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -411,21 +446,41 @@ impl Tables<'_> {
         match self.project_handle(handle)? {
             DeclarationProjection::SourceOriginal(id) => {
                 let row = self.original(id)?;
-                if row.flags & KIND_MASK != FUNCTION { return Err(bad(row.name.span())); }
+                if row.flags & KIND_MASK != FUNCTION {
+                    return Err(bad(row.name.span()));
+                }
                 let target = DefId(row.target as usize);
-                if self.functions.get(target.0).is_none_or(|row| row.original != id) { return Err(bad(self.sources.eof())); }
+                if self
+                    .functions
+                    .get(target.0)
+                    .is_none_or(|row| row.original != id)
+                {
+                    return Err(bad(self.sources.eof()));
+                }
                 Ok(target)
-            },
-            DeclarationProjection::Builtin(BuiltinItem::Function(_)) => Ok(DefId(self.functions.len())),
+            }
+            DeclarationProjection::Builtin(BuiltinItem::Function(_)) => {
+                Ok(DefId(self.functions.len()))
+            }
             _ => Err(bad(self.sources.eof())),
         }
     }
-    fn access_handle(&self, handle: DeclarationHandle, requester: ModuleId, work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
+    fn access_handle(
+        &self,
+        handle: DeclarationHandle,
+        requester: ModuleId,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
         match self.project_handle(handle)? {
-            DeclarationProjection::SourceOriginal(id) => self.access_original(id, requester, work, at),
+            DeclarationProjection::SourceOriginal(id) => {
+                self.access_original(id, requester, work, at)
+            }
             DeclarationProjection::Builtin(_) => {
                 work.debit(1, at, "target permission")?;
-                if !self.permission(NONE, requester, work, at)? { return Err(bad(at)); }
+                if !self.permission(NONE, requester, work, at)? {
+                    return Err(bad(at));
+                }
                 Ok(())
             }
         }
@@ -456,8 +511,14 @@ impl Tables<'_> {
             _ => Err(bad(original.name.span())),
         }
     }
-    fn original_for_nominal(&self, nominal: NominalId, at: Span) -> Result<DeclarationHandle, Box<Diagnostic>> {
-        if nominal == NominalId::Enum(EnumId(self.enums.len())) && self.builtins.set().extra_enums() == 1 {
+    fn original_for_nominal(
+        &self,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<DeclarationHandle, Box<Diagnostic>> {
+        if nominal == NominalId::Enum(EnumId(self.enums.len()))
+            && self.builtins.set().extra_enums() == 1
+        {
             return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
         }
         let original = match nominal {
@@ -541,11 +602,19 @@ impl Tables<'_> {
         if order != Ordering::Equal {
             return Ok(order);
         }
-        let a = self.sources.import_path(QualifiedPathRef { file: SourceFileId(ra.file as usize), path: self.import(a)?.path })?;
-        let b = self.sources.import_path(QualifiedPathRef { file: SourceFileId(rb.file as usize), path: self.import(b)?.path })?;
+        let a = self.sources.import_path(QualifiedPathRef {
+            file: SourceFileId(ra.file as usize),
+            path: self.import(a)?.path,
+        })?;
+        let b = self.sources.import_path(QualifiedPathRef {
+            file: SourceFileId(rb.file as usize),
+            path: self.import(b)?.path,
+        })?;
         let roots = (a.root() as u8).cmp(&(b.root() as u8));
-        if roots != Ordering::Equal { return Ok(roots); }
-        let (a,b) = (a.segments(), b.segments());
+        if roots != Ordering::Equal {
+            return Ok(roots);
+        }
+        let (a, b) = (a.segments(), b.segments());
         for (a, b) in a.iter().zip(b) {
             work.debit(2, at, "path segment comparison")?;
             let (a, b) = (self.sources.text(*a)?, self.sources.text(*b)?);
@@ -746,12 +815,32 @@ impl Tables<'_> {
             let spelling = self.sources.text(member)?;
             for index in 0..BuiltinEnum::ReadStatus.variant_count() {
                 work.debit(1, member, "variant lookup probe")?;
-                if compare_bytes(BuiltinEnum::ReadStatus.member_name(index).expect("closed member"), spelling, work, member)? == Ordering::Equal {
+                if compare_bytes(
+                    BuiltinEnum::ReadStatus
+                        .member_name(index)
+                        .expect("closed member"),
+                    spelling,
+                    work,
+                    member,
+                )? == Ordering::Equal
+                {
                     return Ok(VariantId { enumeration, index });
                 }
             }
-            work.debit((spelling.len().min(64) + BuiltinEnum::ReadStatus.name().len()) as u64, member, "variant diagnostic name bytes")?;
-            return Err(owned_diagnostic::diagnostic("E0200", "resolve", format_args!("unknown variant `{}` of enum `ReadStatus`", owned_diagnostic::name(spelling)), Some(member)));
+            work.debit(
+                (spelling.len().min(64) + BuiltinEnum::ReadStatus.name().len()) as u64,
+                member,
+                "variant diagnostic name bytes",
+            )?;
+            return Err(owned_diagnostic::diagnostic(
+                "E0200",
+                "resolve",
+                format_args!(
+                    "unknown variant `{}` of enum `ReadStatus`",
+                    owned_diagnostic::name(spelling)
+                ),
+                Some(member),
+            ));
         }
         let row = self.enums.get(enumeration.0).ok_or_else(|| bad(member))?;
         let end = (row.variant_start as usize)
@@ -921,9 +1010,14 @@ impl<'i, 's> QuerySession<'i, 's> {
                     } else {
                         cell.value_target
                     };
-                    if target == NO_DECLARATION { None } else {
-                        if type_lane { self.tables.nominal_handle(target)?; }
-                        else { self.tables.function_handle(target)?; }
+                    if target == NO_DECLARATION {
+                        None
+                    } else {
+                        if type_lane {
+                            self.tables.nominal_handle(target)?;
+                        } else {
+                            self.tables.function_handle(target)?;
+                        }
                         Some(target)
                     }
                 } else {
@@ -1133,10 +1227,20 @@ impl<'i, 's> QuerySession<'i, 's> {
                 let nominal = self.tables.nominal_handle(id)?;
                 #[cfg(test)]
                 self.work.observe(Observation::Target {
-                    operation: match context { TypeContext::Constructor => "constructor-type", TypeContext::Reference => "reference-type", _ => "value-type" },
+                    operation: match context {
+                        TypeContext::Constructor => "constructor-type",
+                        TypeContext::Reference => "reference-type",
+                        _ => "value-type",
+                    },
                     origin: at,
-                    kind: match nominal { NominalId::Record(_) => "record", NominalId::Enum(_) => "enum" },
-                    id: match nominal { NominalId::Record(id) => id.0, NominalId::Enum(id) => id.0 },
+                    kind: match nominal {
+                        NominalId::Record(_) => "record",
+                        NominalId::Enum(_) => "enum",
+                    },
+                    id: match nominal {
+                        NominalId::Record(id) => id.0,
+                        NominalId::Enum(id) => id.0,
+                    },
                 });
                 return Ok(nominal);
             }
@@ -1502,7 +1606,9 @@ impl<'i, 's> QuerySession<'i, 's> {
         let f = self.tables.original(function.original)?;
         self.requester(ModuleId(f.owner as usize), at)?;
         let original = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => return Ok(NominalExposure::Allowed),
+            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                return Ok(NominalExposure::Allowed)
+            }
             DeclarationProjection::SourceOriginal(id) => id,
             _ => return Err(bad(at)),
         };
@@ -1540,8 +1646,17 @@ impl<'i, 's> QuerySession<'i, 's> {
         let id = match self.tables.project_handle(handle)? {
             DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
                 self.work.debit(19, at, "nominal display bytes")?;
-                return Ok(PreparedTypeName { names: [CompactSpan::default(); 32], sources: self.tables.sources, count: 0, terminal: "ReadStatus",
-                    ordinal: self.tables.enums.len(), total: 19, original: false, is_enum: true, builtin: true });
+                return Ok(PreparedTypeName {
+                    names: [CompactSpan::default(); 32],
+                    sources: self.tables.sources,
+                    count: 0,
+                    terminal: "ReadStatus",
+                    ordinal: self.tables.enums.len(),
+                    total: 19,
+                    original: false,
+                    is_enum: true,
+                    builtin: true,
+                });
             }
             DeclarationProjection::SourceOriginal(id) => id,
             _ => return Err(bad(at)),
@@ -1573,7 +1688,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         for name in &names[..count] {
             total = total
                 .checked_add(2)
-                .and_then(|n| n.checked_add(self.tables.sources.text(name.span()).expect("validated prepared name").len()))
+                .and_then(|n| n.checked_add(self.tables.sources.prepared_text(*name).len()))
                 .ok_or_else(|| overflow(at))?;
         }
         let original = self.tables.sources.flavor() == SyntaxFlavor::OriginalSingleFile;
@@ -1617,14 +1732,16 @@ pub(super) struct PreparedTypeName<'s> {
 }
 impl fmt::Display for PreparedTypeName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.builtin { return f.write_str("std::io::ReadStatus"); }
+        if self.builtin {
+            return f.write_str("std::io::ReadStatus");
+        }
         if self.original {
             return write!(f, "{}", owned_diagnostic::name(self.terminal));
         }
         if self.total <= 160 {
             f.write_str("crate")?;
             for name in self.names[..self.count].iter().rev() {
-                write!(f, "::{}", self.sources.text(name.span()).expect("validated prepared name"))?;
+                write!(f, "::{}", self.sources.prepared_text(*name))?;
             }
             return write!(f, "::{}", self.terminal);
         }
@@ -1652,7 +1769,7 @@ impl fmt::Display for PreparedTypeName<'_> {
         write_piece("crate")?;
         for name in self.names[..self.count].iter().rev() {
             write_piece("::")?;
-            write_piece(self.sources.text(name.span()).expect("validated prepared name"))?;
+            write_piece(self.sources.prepared_text(*name))?;
         }
         if truncated {
             f.write_str("...")?;
