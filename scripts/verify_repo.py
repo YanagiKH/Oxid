@@ -53,6 +53,13 @@ TYPED_PROJECTS = {
         "fixtures/typed-slice-samples/buffers.ox",
         "fixtures/typed-slice-samples/stats.ox",
     ),
+    "fixtures/typed-expression-samples/main.ox": (
+        "fixtures/typed-expression-samples/main.ox",
+        "fixtures/typed-expression-samples/arena.ox",
+        "fixtures/typed-expression-samples/scanner.ox",
+        "fixtures/typed-expression-samples/parser.ox",
+        "fixtures/typed-expression-samples/evaluator.ox",
+    ),
 }
 READMES = ("README.md", "README_ZH.md", "README_JP.md")
 IMAGES = (

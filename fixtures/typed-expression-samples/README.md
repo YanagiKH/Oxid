@@ -1,26 +1,90 @@
-# Bounded expression component
+# Bounded expression parser and evaluator
 
-This component is being developed in existing typed-preview Oxid. Its target is
-an iterative parser for decimal integers, `+`, `*` and parentheses, a 15-node
-record-backed expression arena, and a separate iterative evaluator. It is not
-compiler self-hosting or a language extension.
+This component is written in existing typed-preview Oxid. An iterative parser
+builds a fixed expression arena, then a separate iterative evaluator consumes
+that tree. `main.ox` parses `12 + 3 * (4 + 5)`, checks that it built seven nodes,
+and returns 39. It is not compiler self-hosting or a language extension.
 
-The first complete parser/evaluator checkpoint passes public check, reference
-run, LLVM native compilation and ELF execution for `main.ox`: it constructs
-seven nodes for `12 + 3 * (4 + 5)` and returns 39. These focused results use the
-current PR37 compiler and LLVM 19.1.7 on Linux x86_64. The parser/evaluator uses
-21 functions and passes the existing native admission gates without cap changes.
-Full boundary controls and independent review are still pending. `cases.json`
-contains hand-derived expectations, not a claim that those cases have run.
+```sh
+oxid check fixtures/typed-expression-samples/main.ox --edition typed-preview
+oxid run fixtures/typed-expression-samples/main.ox --edition typed-preview
+oxid compile fixtures/typed-expression-samples/main.ox --edition typed-preview \
+  --backend llvm --output ./expression-example
+./expression-example
+```
 
-The example expression `12 + 3 * (4 + 5)` must produce seven nodes and evaluate
-to 39. `*` has greater precedence than `+`; both associate left. Input is bounded
-to 128 character codes, and node/operator/operand capacities are independently
-bounded at 15. Syntax and capacity failures return position-carrying enums;
-decimal and evaluation overflow retain checked i32 E0604 behavior. No compiler
-resource ceiling changes are part of this component.
+## Input and storage contract
 
-The sibling scanner extends the prior scanner with `*`, `(`, `)` and token-start
-positions. The original `tests/fixtures/bounded_enum_scanner` remains unchanged.
-Arena kind values 1 (integer), 2 (addition), and 3 (multiplication) are application
-data, not access to Oxid enum tags. Helpers retain whole-record borrowing.
+The input grammar is decimal integers, `+`, `*`, and parentheses. Multiplication
+binds more tightly than addition; both associate left. ASCII space, tab, CR and
+LF are ignored between tokens. Unary signs, implicit multiplication, other
+operators and identifiers are rejected. Integer spellings may have leading zeros.
+
+Input is limited to 128 character codes. The arena stores at most 15 nodes;
+operator/parenthesis and operand stacks each independently hold at most 15
+entries. Parentheses do not allocate nodes. Eight literals and seven binary
+operators fit the node bound, but parenthesis depth has its own stack bound.
+Every append and push checks capacity before its array write. Limits are
+component-level constants; compiler ceilings are unchanged.
+
+`parse(codes, arena)` resets the arena's logical count and returns `Parsed(root)`
+or a position-carrying error enum. Positions are zero-based input-code indexes;
+EOF uses the input length. Any failed parse leaves the arena unusable until the
+next parse resets it. Columns remain initialized, and entries beyond count are
+not read. The original `tests/fixtures/bounded_enum_scanner` is unchanged; this
+sibling scanner adds `*`, `(`, `)` and token-start positions.
+
+Arena columns are `kind`, `value`, `left`, `right`, and `count`. Kinds 1 (integer),
+2 (addition), and 3 (multiplication) are application data, not Oxid enum tags.
+Literal children are -1; binary nodes have unused value 0. Children precede
+parents, and a successful root is the final node. Helpers borrow whole records.
+
+`evaluate(arena, root)` first validates the complete postorder tree, including
+count/root, node kinds, field conventions and exact pending-child identities.
+It rejects cycles, forward/repeated children and orphan nodes before arithmetic.
+Invalid count/root returns `InvalidArena(-1)`; other malformed storage returns
+the invalid node index, or the final node for residual orphan roots. Only after
+validation does a separate loop compute values with checked i32 operations.
+
+## Failure ordering
+
+Input length is checked before scanning. Each token is completely scanned before
+its grammatical role is considered. An invalid character returns its start
+position. A close parenthesis without an unmatched open is `UnexpectedClose`;
+otherwise a missing operand takes priority. At EOF, a missing operand precedes
+an unmatched-open error; otherwise the innermost open is reported before final
+operator reductions. Capacity errors point to the incoming literal/operator,
+or the stored operator when its reduction would exceed the node bound.
+
+Decimal accumulation and evaluation overflow remain ordinary E0604 errors.
+There is no wrapping or lexical fallback. Thus `1 2147483648` overflows while
+scanning, while `2147483647+1+` reports a syntax failure before any evaluation.
+Runtime diagnostics point to the Oxid scanner/evaluator arithmetic source span.
+
+## Evidence and scope
+
+The public check, reference run, LLVM compile and ELF execution paths passed for
+all 45 hand-derived cases in `cases.json`: 33 parser/evaluation cases and 12
+malformed-arena cases. Exact tree rows distinguish precedence and associativity;
+capacity endpoints and failure positions are asserted. Five arithmetic-overflow
+cases assert E0604, the scanner/evaluator origin, and identical reference/native
+diagnostics. A malformed later node is rejected before an earlier overflowing
+sum can execute.
+
+```sh
+python3 -B scripts/verify_expression_component.py --oxid target/release/oxid \
+  --output /tmp/expression-evidence --native
+```
+
+The output directory must be new. The runner retains source copies, expectations,
+commands, exit statuses, raw streams and compiler/fixture hashes. Native programs
+run from an empty working directory with a cleared environment; this is not
+filesystem isolation. Omit `--native` for reference-only checks. CI runs the
+native group with its pinned LLVM toolchain and retains its evidence.
+
+Local execution used the current PR37 compiler and LLVM 19.1.7 on Linux x86_64.
+All component source functions passed existing native admission, including the
+128-code and 15-entry endpoints. Exact S/O/X and fuel totals were not separately
+measured. Independent review and exact-head hosted CI are separate gates; these
+local results do not establish other targets, performance, unbounded parsing or
+completion of a roadmap milestone.

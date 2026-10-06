@@ -573,6 +573,19 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: target/projected-slices
+      - name: Verify bounded Oxid expression parser and evaluator
+        run: |
+          python3 -B scripts/verify_expression_component.py \
+            --oxid target/release/oxid \
+            --output "$RUNNER_TEMP/expression-component" --native
+      - name: Retain bounded expression component evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: expression-component-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/expression-component
       - name: Test bounded enum native admission controls
         run: python3 -B -m unittest discover -s scripts -p test_bounded_enum_native.py -v
       - name: Verify exact bounded enum native groups and public CLI in both profiles

@@ -26,12 +26,20 @@ SLICE_SAMPLE_MEMBERS = (
     "fixtures/typed-slice-samples/buffers.ox",
     "fixtures/typed-slice-samples/stats.ox",
 )
+EXPRESSION_SAMPLE_MEMBERS = (
+    "fixtures/typed-expression-samples/main.ox",
+    "fixtures/typed-expression-samples/arena.ox",
+    "fixtures/typed-expression-samples/scanner.ox",
+    "fixtures/typed-expression-samples/parser.ox",
+    "fixtures/typed-expression-samples/evaluator.ox",
+)
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
     ("fixtures/typed-record-composition-samples/main.ox",
      "fixtures/typed-record-composition-samples/model.ox",
-     "fixtures/typed-record-composition-samples/ops.ox"),SAMPLE_MEMBERS, SLICE_SAMPLE_MEMBERS)
+     "fixtures/typed-record-composition-samples/ops.ox"),SAMPLE_MEMBERS, SLICE_SAMPLE_MEMBERS,
+    EXPRESSION_SAMPLE_MEMBERS)
 ALL_SAMPLE_MEMBERS = tuple(name for members in SAMPLE_PROJECTS for name in members)
 
 
@@ -66,7 +74,17 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
-        self.assertEqual((len(language), len(checks), len(run_inventory), typed_members), (136, 127, 73, 15))
+        self.assertEqual((len(language), len(checks), len(run_inventory), typed_members, len(typed_entries)),
+                         (141, 128, 74, 20, 7))
+        # Preserve the exact pre-expression totals using only its five named
+        # members and single typed root check/run as the subtraction.
+        self.assertEqual((len([name for name in language if name not in EXPRESSION_SAMPLE_MEMBERS]),
+                          len([row for row in check_inventory if row[0] not in EXPRESSION_SAMPLE_MEMBERS]),
+                          len([row for row in run_inventory if row[0] not in EXPRESSION_SAMPLE_MEMBERS]),
+                          typed_members - len(EXPRESSION_SAMPLE_MEMBERS),
+                          len([entry for entry in typed_entries
+                               if entry.relative_to(root).as_posix() not in EXPRESSION_SAMPLE_MEMBERS])),
+                         (136, 127, 73, 15, 6))
         # Each explicitly named public project adds one typed root check/run.
         # Children remain language sources, never frozen data or standalone runs.
         for members in SAMPLE_PROJECTS:
@@ -77,7 +95,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                 self.assertEqual([row for row in run_inventory if row[0] in members], [(members[0], True)])
         # Preserve fingerprints captured at the exact predecessor of the
         # published 7b362af fixture-only commit. Subtract only the explicit
-        # array, slice, composition and enum sample deltas, never a directory or path class.
+        # array, slice, composition, enum and expression sample deltas, never a directory or path class.
         predecessor_language = [name for name in language if name not in ALL_SAMPLE_MEMBERS]
         predecessor_checks = [row for row in check_inventory if row[0] not in ALL_SAMPLE_MEMBERS]
         predecessor_runs = [row for row in run_inventory if row[0] not in ALL_SAMPLE_MEMBERS]
@@ -93,9 +111,9 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
-        self.assertEqual(len(run.call_args_list), 203)  # 127 checks, 73 runs, test/build/doctor.
+        self.assertEqual(len(run.call_args_list), 205)  # 128 checks, 74 runs, test/build/doctor.
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(sum("--edition=typed-preview" in command for command in commands), 12)
+        self.assertEqual(sum("--edition=typed-preview" in command for command in commands), 14)
         for members in SAMPLE_PROJECTS:
             with self.subTest(sample=members[0]):
                 sample_root = str(verify_repo.ROOT / members[0])
@@ -109,7 +127,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for call in run.call_args_list for arg in call.args[0]))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn("136 language sources, 127 checks, 73 runnable programs", output.getvalue())
+        self.assertIn("141 language sources, 128 checks, 74 runnable programs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
     def test_git_autocrlf_preserves_frozen_bytes_and_converts_other_text(self):
@@ -239,7 +257,7 @@ class FixtureAdmissionTests(unittest.TestCase):
     def test_unlisted_typing_source_remains_a_language_check(self):
         extra = self.write(DATA / "typing-contracts-v1/fixtures/unlisted.ox", b"invalid candidate\n")
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (7, 6, 15))
+        self.assertEqual((len(checks), len(entries), count), (8, 7, 20))
         self.assert_samples_use_root(checks, entries)
         self.assertIn((extra, False), checks)
 
@@ -262,7 +280,7 @@ class FixtureAdmissionTests(unittest.TestCase):
     def test_unlisted_lowering_source_remains_a_language_check(self):
         extra = self.write(DATA / "lowering-contracts-v1/unlisted.ox", b"invalid candidate\n")
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (7, 6, 15))
+        self.assertEqual((len(checks), len(entries), count), (8, 7, 20))
         self.assert_samples_use_root(checks, entries)
         self.assertIn((extra, False), checks)
 
@@ -274,7 +292,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         extras = [self.write(DATA / "contracts-v2/fixtures/unlisted.ox", b"invalid candidate\n"),
                   self.write("fixtures/unrelated.ox", b"unrelated\n")]
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
-        self.assertEqual((len(checks), len(entries), count), (8, 6, 15))
+        self.assertEqual((len(checks), len(entries), count), (9, 7, 20))
         self.assert_samples_use_root(checks, entries)
         for source in extras:
             self.assertIn((source, False), checks)

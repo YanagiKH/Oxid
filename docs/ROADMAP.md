@@ -32,6 +32,12 @@ current-source qualification from archived private-core evidence and future host
 work. This bounded capability advances the static frontend; it does not complete
 a roadmap milestone or v1.0.
 
+The [bounded expression component](../fixtures/typed-expression-samples/README.md)
+exercises the current language with an iterative parser, a 15-node expression
+arena, and a separate evaluator. Its public reference/native example builds
+seven nodes and returns 39 for `12 + 3 * (4 + 5)`. This is a compiler-component
+exercise over fixed input, not a compiler provider, rebuild or self-hosting claim.
+
 ## Native AI work
 
 Native AI support needs typed buffers and CPU tensors first, followed by automatic differentiation, optimizers, and complete training loops. GPU execution, tensor compilation, multi-device training, and resumable checkpoints add separate hardware and correctness requirements. Calling an external framework through a process adapter does not satisfy these milestones.
