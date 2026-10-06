@@ -1225,3 +1225,41 @@ mod output_layout_feasibility {
         }
     }
 }
+
+// Calibrates the named retained-header successor before replacing production
+// carriers. The recorded old endpoint must remain in the successor regression.
+#[test]
+fn bounded_stdout_retained_header_predecessor_endpoints() {
+    assert_eq!(size_of::<DeclarationIndex<'static>>(), 368);
+    for (name, source) in [
+        ("absent", "fn main()->(){return;}"),
+        (
+            "read_stdin",
+            "use std::io::read_stdin; fn main()->(){return;}",
+        ),
+    ] {
+        let fixture = Fixture::new(&[("main.ox", source)]);
+        let project = fixture.load();
+        let facts = collect(&project, &WorkMeter::default(), &mut Allocator::default());
+        let plan = facts.plan();
+        for (limit, expected) in [(plan.retained, true), (plan.retained - 1, false)] {
+            let mut allocator = Allocator::default();
+            let result = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits {
+                    retained: limit,
+                    scratch: plan.scratch,
+                    ..IndexLimits::default()
+                },
+                &WorkMeter::default(),
+                &mut allocator,
+            );
+            assert_eq!(result.is_ok(), expected);
+            if !expected {
+                assert_eq!(allocator.attempts, 0);
+                assert_eq!(result.unwrap_err().code, "E0400");
+            }
+        }
+        println!("OUTPUT_RETAINED_PREDECESSOR name={name} header=368 retained={} scratch={} proposed_header=376 proposed_retained={} source={source:?} new_endpoint_execution=NOT_IMPLEMENTED", plan.retained, plan.scratch, plan.retained.checked_add(8).unwrap());
+    }
+}

@@ -127,9 +127,29 @@ unchanged 4096-byte ceiling. Existing singleton BuiltinIds and the one-parameter
 signature are concrete design constraints. Measure new/affected enclosing
 carriers, complete fixed-bank coexistence, retained capacities and scratch
 before choosing representation. Candidate primitive sizes alone are not an
-admission proof. Preserve enum-free/default costs and ceilings; do not hide
-layout growth or enlarge a limit. Whole-view arity avoids expanding the signature
+admission proof. Preserve default rendering, status and source fuel, and all
+resource ceilings; do not hide layout growth or enlarge a limit. Whole-view arity avoids expanding the signature
 seam solely to support a variable output prefix.
+
+The selected feasibility candidate retains four optional endpoint borrows tied
+to the existing immutable source owner, after complete CompactSpan validation.
+It narrows only the already validated std-order cursor to the reserved-domain
+u32 sentinel. On the measured target, the complete substituted fixed bank remains
+4094 bytes with no phase overlay and no credit for smaller endpoint transports.
+This does not yet establish all nine source identities or executable admission.
+
+**Named retained-header successor:** Tables/DeclarationIndex grow from 368 to
+376 bytes; DeclarationFacts grows from 584 to 592. The actual outer IndexPlan
+charge must increase by eight bytes even for absent builtin inventory. A prior
+exact retained-byte endpoint can therefore reject the same program; this is an
+intentional, measured physical-admission difference, not a ceiling increase.
+Retain the old boundary evidence and test the new exact endpoint plus the old
+endpoint/one-byte-under failures before allocation. Measure and charge all other
+affected enclosing wrappers separately: the eight-byte header change is not a
+claim about total program growth. The candidate source-association envelope with
+suffix bases and explicit family roles grows from 464 to 504 bytes and remains
+unpaid until integrated into its actual ledger. No output route may rely on these
+candidate measurements alone.
 
 ## Concrete acceptance and stopping point
 
