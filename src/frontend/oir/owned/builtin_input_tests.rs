@@ -58,6 +58,8 @@ fn builtin_input_scratch_is_exactly_1024_physical_bytes_without_logical_cells() 
         after.activation_fuel_cells(),
         before.activation_fuel_cells()
     );
+    // The full fixed input suffix adds exactly twelve descriptor-row visits.
+    assert_eq!(builtin.usage().work, ordinary.usage().work + 12);
     assert_eq!(builtin.usage().owner_cells, ordinary.usage().owner_cells);
     assert_eq!(
         builtin.usage().owner_layout_bytes,
@@ -94,7 +96,11 @@ fn builtin_input_enum_only_claim_keeps_ordinary_enum_validation_and_no_scratch()
         hir::Ty::I32,
         s(0),
     );
+    let ordinary_usage = budget::preflight(&raw, budget::Limits::DEFAULT).unwrap();
     raw.builtins = BuiltinOrigins::ReadStatus;
+    let builtin_usage = budget::preflight(&raw, budget::Limits::DEFAULT).unwrap();
+    assert_eq!(builtin_usage.work, ordinary_usage.work + 5);
+    assert_eq!(builtin_usage.metadata_bytes, ordinary_usage.metadata_bytes);
     let witness = verify_owned(raw, &sources).unwrap();
     assert_eq!(witness.builtin_enumeration(), Some(EnumId(0)));
     assert_eq!(witness.builtin_function(), None);
@@ -275,7 +281,21 @@ fn builtin_input_subprocess_child() {
         Err(std::env::VarError::NotPresent) => plan::MAX_FUEL,
         Err(error) => panic!("invalid input fixture fuel: {error}"),
     };
-    let (sources, raw, entry) = fixture::program(capacity, observation);
+    let (sources, raw, entry) = match std::env::var("OXID_RAW_STDIN_SHAPE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("direct") => {
+            fixture::program(capacity, observation)
+        }
+        Ok("projected") => {
+            assert_eq!(capacity, 3);
+            assert_eq!(observation, Observation::Checksum);
+            fixture::projected_record_program()
+        }
+        Ok("forwarded") => {
+            assert_eq!(capacity, 3);
+            fixture::forwarded_program(observation)
+        }
+        _ => panic!("unknown input fixture shape"),
+    };
     let witness = verify_owned(raw, &sources).unwrap();
     if let Some(directory) = std::env::var_os("OXID_RAW_STDIN_NATIVE_DIR") {
         let directory = std::path::PathBuf::from(directory);
@@ -288,11 +308,22 @@ fn builtin_input_subprocess_child() {
         println!("OXID_RAW_STDIN_NATIVE_READY=1");
         return;
     }
+    let bounded_limit = |name: &str, default: usize| match std::env::var(name) {
+        Ok(value) => {
+            let limit = value.parse::<usize>().expect("bounded runtime limit");
+            assert!(limit <= default);
+            limit
+        }
+        Err(std::env::VarError::NotPresent) => default,
+        Err(error) => panic!("invalid runtime limit: {error}"),
+    };
     let observed = execute::run_array_observed(
         &witness,
         Some(entry),
         execute::Limits {
             fuel,
+            frames: bounded_limit("OXID_RAW_STDIN_FRAMES", plan::MAX_FRAMES),
+            bytes: bounded_limit("OXID_RAW_STDIN_BYTES", plan::MAX_REFERENCE_BYTES),
             ..execute::Limits::default()
         },
         execute::ObservationControl::default(),
@@ -316,6 +347,28 @@ fn builtin_input_subprocess_child() {
             println!("OXID_RAW_STDIN_FAILURE=fuel");
             eprint!("{}", error.diagnostic(&sources).render_human(&sources));
         }
+        Err(error @ execute::OwnedRunFailure::Resource(_)) => {
+            println!("OXID_RAW_STDIN_FAILURE=resource");
+            eprint!("{}", error.diagnostic(&sources).render_human(&sources));
+        }
         other => panic!("unexpected raw stdin outcome: {other:?}"),
+    }
+}
+
+#[test]
+fn builtin_input_projected_and_forwarded_programs_retain_full_raw_proof() {
+    for (sources, raw, entry) in [
+        fixture::projected_record_program(),
+        fixture::forwarded_program(Observation::Status),
+        fixture::forwarded_program(Observation::Checksum),
+    ] {
+        let witness = verify_owned(raw, &sources).unwrap();
+        let plan = plan::ExecutionPlan::build(&witness).unwrap();
+        assert_eq!(plan.input_scratch_range(entry), None);
+        assert_eq!(
+            plan.input_scratch_range(witness.builtin_function().unwrap()),
+            Some(8..1032)
+        );
+        assert!(plan.function(entry).usage().scalar_slots < 256);
     }
 }

@@ -358,3 +358,207 @@ pub(super) fn ordinary_control(
     };
     (sources, raw, entry)
 }
+
+/// Read into the middle array field of a mutable record, then observe both
+/// adjacent guards and every data cell through ordinary projected reads.
+/// Result: 1_000_000 * before + 1_000 * after + sum(data).
+pub(super) fn projected_record_program() -> (SourceMap, RawOwnedProgram, hir::DefId) {
+    let (sources, mut raw, entry) = program(3, Observation::Checksum);
+    let origin = raw.functions[0].span;
+    let s = |index| e::at(origin, index);
+    let field = |index| FieldId {
+        record: RecordId(0),
+        index,
+    };
+    let array = raw.functions[0].owners[0].aggregate;
+    raw.records = vec![RawRecordDecl {
+        id: RecordId(0),
+        span: s(100),
+        fields: [
+            ValueTy::Scalar(hir::Ty::I32),
+            ValueTy::Owned(array.aggregate()),
+            ValueTy::Scalar(hir::Ty::I32),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, ty)| RawFieldDecl {
+            id: field(index),
+            ty: ParameterTy::Value(ty),
+            span: s(100),
+        })
+        .collect(),
+    }];
+    let main = &mut raw.functions[0];
+    main.owners[0].aggregate =
+        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap();
+    main.owners.push(OwnerDecl {
+        aggregate: array,
+        kind: OwnerKind::Temporary,
+        span: s(103),
+    });
+    // 14/15 construct the guards. 16..23 observe and combine their actual
+    // post-input values with the existing checksum result in local13.
+    main.locals
+        .extend((14..24).map(|_| f::scalar(hir::Ty::I32, s(100))));
+    main.blocks[0].statements.splice(
+        4..5,
+        [
+            f::assign(14, Rvalue::I32(123), s(101)),
+            f::assign(15, Rvalue::I32(456), s(102)),
+            f::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(3)), s(103)),
+            f::instruction(
+                OwnedInstruction::ConstructArray {
+                    destination: OwnerPlaceId(3),
+                    elements: vec![f::operand(0, s(104)); 3],
+                },
+                s(104),
+            ),
+            f::instruction(
+                OwnedInstruction::ConstructComposite {
+                    destination: OwnerPlaceId(0),
+                    fields: vec![
+                        (field(0), FieldInitializer::Scalar(f::operand(14, s(105)))),
+                        (field(1), FieldInitializer::Owned(OwnerPlaceId(3))),
+                        (field(2), FieldInitializer::Scalar(f::operand(15, s(105)))),
+                    ],
+                },
+                s(105),
+            ),
+            f::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(3)), s(106)),
+        ],
+    );
+    main.loans[0].projection = vec![field(1)];
+    main.blocks[9].statements[0].kind = OwnedInstruction::ReadProjection {
+        destination: LocalId(9),
+        base: AccessBase::Owner(OwnerPlaceId(0)),
+        path: vec![field(1)],
+        index: Some(f::operand(7, s(39))),
+    };
+    let arithmetic = |destination, op, left, right, span| {
+        f::assign(
+            destination,
+            Rvalue::CheckedI32 {
+                op,
+                left: f::operand(left, span),
+                right: f::operand(right, span),
+                operator_span: span,
+            },
+            span,
+        )
+    };
+    // Insert before the existing record discard/end; observe the stored guards,
+    // never substitute the scalar values used by the constructor.
+    main.blocks[10].statements.splice(
+        1..1,
+        [
+            f::assign(16, Rvalue::I32(1_000_000), s(110)),
+            f::assign(17, Rvalue::I32(1_000), s(111)),
+            f::instruction(
+                OwnedInstruction::ReadProjection {
+                    destination: LocalId(18),
+                    base: AccessBase::Owner(OwnerPlaceId(0)),
+                    path: vec![field(0)],
+                    index: None,
+                },
+                s(112),
+            ),
+            f::instruction(
+                OwnedInstruction::ReadProjection {
+                    destination: LocalId(19),
+                    base: AccessBase::Owner(OwnerPlaceId(0)),
+                    path: vec![field(2)],
+                    index: None,
+                },
+                s(113),
+            ),
+            arithmetic(20, hir::ArithmeticOp::Multiply, 18, 16, s(114)),
+            arithmetic(21, hir::ArithmeticOp::Multiply, 19, 17, s(115)),
+            arithmetic(22, hir::ArithmeticOp::Add, 20, 21, s(116)),
+            arithmetic(23, hir::ArithmeticOp::Add, 22, 13, s(117)),
+        ],
+    );
+    main.blocks[10].terminator.as_mut().unwrap().kind =
+        OwnedTerminatorKind::ReturnScalar(f::operand(23, s(3201)));
+    (sources, raw, entry)
+}
+
+/// Main's capacity3 slice passes through one ordinary exclusive-reference
+/// function before reaching the canonical trailing builtin at DefId(2).
+pub(super) fn forwarded_program(
+    observation: Observation,
+) -> (SourceMap, RawOwnedProgram, hir::DefId) {
+    let (sources, mut raw, entry) = program(3, observation);
+    let origin = raw.functions[0].span;
+    let s = |index| e::at(origin, 3500 + index);
+    let mut forward = f::function(1, ValueTy::Owned(AggregateTy::Enum(EnumId(0))), s(0));
+    forward.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+    forward.references = vec![ReferenceDecl {
+        referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::I32)).unwrap(),
+        kind: BorrowKind::Exclusive,
+        position: 0,
+        span: s(0),
+    }];
+    forward.owners = vec![
+        e::owner(
+            OwnerKind::CallResult {
+                call: CallSiteId(0),
+            },
+            s(3),
+        ),
+        e::owner(OwnerKind::Temporary, s(4)),
+    ];
+    forward.calls = vec![CallDecl {
+        target: hir::DefId(2),
+        arguments: vec![ArgumentSlot::Borrow(LoanId(0))],
+        result: CallResult::Owned(OwnerPlaceId(0)),
+        parent: None,
+        span: s(1),
+    }];
+    forward.loans = vec![LoanDecl {
+        call: CallSiteId(0),
+        argument: 0,
+        authority: AccessBase::Parameter(ReferenceParamId(0)),
+        projection: vec![],
+        kind: BorrowKind::Exclusive,
+        referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::I32)).unwrap(),
+        span: s(2),
+    }];
+    forward.blocks = vec![
+        e::block(
+            vec![
+                f::instruction(OwnedInstruction::OpenCall(CallSiteId(0)), s(1)),
+                f::instruction(
+                    OwnedInstruction::PrepareBorrow {
+                        call: CallSiteId(0),
+                        argument: 0,
+                        loan: LoanId(0),
+                    },
+                    s(2),
+                ),
+            ],
+            OwnedTerminatorKind::Invoke {
+                call: CallSiteId(0),
+                continuation: BlockId(1),
+            },
+            s(3),
+        ),
+        e::block(
+            vec![
+                f::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(1)), s(4)),
+                f::instruction(
+                    OwnedInstruction::MoveInitialize {
+                        destination: OwnerPlaceId(1),
+                        source: OwnerPlaceId(0),
+                    },
+                    s(5),
+                ),
+                f::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(0)), s(6)),
+            ],
+            OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(1)),
+            s(7),
+        ),
+    ];
+    raw.functions[1].id = hir::DefId(2);
+    raw.functions.insert(1, forward);
+    (sources, raw, entry)
+}

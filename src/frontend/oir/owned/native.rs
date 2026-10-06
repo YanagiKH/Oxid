@@ -3153,6 +3153,9 @@ fn emit_terminator(
 }
 
 #[cfg(test)]
+#[path = "builtin_input_native_tests.rs"]
+mod builtin_input_tests;
+#[cfg(test)]
 #[path = "native_tests.rs"]
 mod tests;
 
