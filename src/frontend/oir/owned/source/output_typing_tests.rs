@@ -644,8 +644,10 @@ fn bounded_stdout_fresh_typing_work_endpoint_is_exact() {
 
 #[test]
 fn bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor() {
+    // RFC0015 module calls use crate-qualified paths; bare E::member selects
+    // enum qualification and does not express a relative module call.
     let files = [
-        ("main.ox", "use std::io::write_stdout as first; pub mod output; fn main()->i32{let bytes=[65];return output::send(&bytes);}"),
+        ("main.ox", "use std::io::write_stdout as first; pub mod output; fn main()->i32{let bytes=[65];return crate::output::send(&bytes);}"),
         ("output.ox", "use std::io::write_stdout as later; use std::io::WriteStatus as W; pub fn send(xs:&[i32])->i32{let status=later(&*xs);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}"),
     ];
     #[cfg(not(target_os = "linux"))]
