@@ -106,7 +106,7 @@ class NativeSuiteTests(unittest.TestCase):
             "verify_native_arithmetic.py": ("/debug", "/release"),
             "verify_scalar_comparisons.py": ("/debug", "/release"),
             "verify_boolean_logic.py": ("/debug", "/release", "--expectation-amendment", "checked-unary-negation-v1"),
-            "verify_mutable_locals.py": ("/debug", "/release"),
+            "verify_mutable_locals.py": ("/debug", "/release", "--expectation-amendment", "bounded-enum-match-v1"),
             "verify_while_loops.py": ("/debug", "/release"),
             "verify_loop_control.py": ("/debug", "/release"),
         })

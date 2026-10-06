@@ -3,7 +3,8 @@
 
 Linux/POSIX only, like the real LLVM gate. Default to serial locally. Each child
 keeps its existing command/stack limits, private scratch, corpus and profile
-checks. The boolean oracle selects the explicit checked-unary successor.
+checks. The boolean oracle selects the explicit checked-unary successor; the
+mutable oracle selects the exact bounded-enum diagnostic successor.
 Never import the oracle modules here: they use preexec_fn internally.
 """
 import argparse
@@ -35,7 +36,8 @@ def build_jobs(scripts, debug, release):
         ("boolean_logic", b"boolean logic O0",
          (debug, release, "--expectation-amendment", "checked-unary-negation-v1")),
         ("native_preview", b"native preview", (release,)),
-        ("mutable_locals", b"mutable locals O0", (debug, release)),
+        ("mutable_locals", b"mutable locals O0",
+         (debug, release, "--expectation-amendment", "bounded-enum-match-v1")),
         ("while_loops", b"while loops O0", (debug, release)),
         ("loop_control", b"loop control O0", (debug, release)),
     )
