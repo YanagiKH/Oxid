@@ -465,6 +465,8 @@ mod builtin_output_descriptor_tests;
 #[cfg(test)]
 mod builtin_output_fixtures;
 #[cfg(test)]
+mod builtin_output_process_tests;
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
