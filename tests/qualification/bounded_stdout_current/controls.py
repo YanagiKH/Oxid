@@ -95,6 +95,16 @@ def admit_listing(data, names):
             'missing, duplicate, or unexpected exact test discovery')
 
 
+def selection_command(unit, name):
+    # Ordinary libtest capture keeps successful test measurements inside the
+    # harness. The two ignored parents deliberately keep nocapture: their
+    # process children own separately retained program/harness streams.
+    argv = [str(unit), name, '--exact', '--test-threads=1', '--color=never']
+    if name in {parent for _, parent in PARENTS}:
+        argv.extend(('--ignored', '--nocapture'))
+    return argv
+
+
 def admit_selected_harness(data, name):
     # Selected children exit directly after fd redirection or emission. A normal
     # libtest completion marker here would conceal a zero/effect-free invocation.
@@ -286,9 +296,8 @@ class Suite:
         parents = {name: kind for kind, name in PARENTS}
         for index, name in enumerate(names):
             env = clean_env(self.env)
-            argv = c.test_command(self.unit, name)
+            argv = selection_command(self.unit, name)
             if name in parents:
-                argv.append('--ignored')
                 env['OXID_' + parents[name].upper() + '_STDOUT_EVIDENCE_DIR'] = str(self.root / (parents[name] + '-parent-evidence'))
             result, remaining = c.run(self.root / f'selected-test-{index:02}', argv, env, b'UNCHANGED', timeout=180)
             require(result.returncode == 0 and not result.stderr, 'selected unit proof failed: ' + name)

@@ -36,6 +36,25 @@ class SelectionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 controls.admit_selected_harness(bad, name)
 
+    def test_printing_selected_test_uses_capture_and_strict_completion(self):
+        name = 'frontend::oir::owned::execute::output_tests::output_reference_carriers_keep_the_existing_frame_reservations'
+        argv = controls.selection_command('/unit', name)
+        self.assertEqual(argv, ['/unit', name, '--exact', '--test-threads=1', '--color=never'])
+        # A successful printing test under ordinary libtest capture has exactly
+        # this completion. Leaked measurements must still fail strict admission.
+        captured = (f'\nrunning 1 test\ntest {name} ... ok\n\n'
+                    'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1521 filtered out; finished in 0.00s\n').encode()
+        gate.enum_gate.admit_execution(captured, name)
+        leaked = captured.replace(b' ... ok', b' ... output reference carriers: Frame=272\nok')
+        with self.assertRaises(ValueError):
+            gate.enum_gate.admit_execution(leaked, name)
+        for _, parent in controls.PARENTS:
+            self.assertEqual(controls.selection_command('/unit', parent),
+                             ['/unit', parent, '--exact', '--test-threads=1', '--color=never', '--ignored', '--nocapture'])
+        # Effectful direct-exit children retain nocapture and remain separate
+        # from ordinary selected-test execution.
+        self.assertIn('--nocapture', c.test_command('/unit', controls.RAW))
+
     def test_all_effect_selectors_and_preloads_are_removed_before_inert_run(self):
         env = {'PATH': 'ok', 'HOME': 'h', 'LD_PRELOAD': 'bad', 'LD_AUDIT': 'bad',
                'OXID_RAW_STDOUT_CASE': 'abc', 'OXID_SOURCE_STDOUT_PATH': 'bad',
