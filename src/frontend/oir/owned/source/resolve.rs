@@ -42,6 +42,24 @@ impl SourceAdmission {
     pub(super) fn executable(self) -> bool {
         self == Self::Executable
     }
+    /// Exact source/admission relation for fresh paid typing. Inventory and
+    /// paid storage alone never establish source provenance. This predicate
+    /// constructs no owner and is repeated at completion and raw emission.
+    pub(super) fn allows_paid_source(self, index: &DeclarationIndex<'_>) -> bool {
+        if index.is_current_source_pipeline() {
+            return self == Self::Executable;
+        }
+        #[cfg(test)]
+        {
+            self == Self::BuiltinPipeline
+                && (index.is_output_candidate_pipeline()
+                    || (index.is_input_candidate_pipeline() && !index.builtin_set().has_output()))
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
     pub(super) fn allows_lowering(self) -> bool {
         match self {
             Self::Executable => true,
@@ -490,22 +508,7 @@ fn type_paid_source<'s>(
     allocator: &mut Allocator,
     admission: SourceAdmission,
 ) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    // Output source stays private even for an import-free candidate. The
-    // finite family inventory cannot substitute for the sealed source marker.
-    if {
-        #[cfg(test)]
-        {
-            if index.is_output_candidate_pipeline() {
-                admission != SourceAdmission::BuiltinPipeline
-            } else {
-                index.builtin_set().has_output()
-            }
-        }
-        #[cfg(not(test))]
-        {
-            index.builtin_set().has_output()
-        }
-    } {
+    if !admission.allows_paid_source(index) {
         return Err(vec![*invalid_signature_identity(index.sources().eof())]);
     }
     let at = index.sources().eof();
@@ -3023,6 +3026,32 @@ struct ProductionSourceCarriers {
         SourceAdmission,
     ),
     dispatch_return: Result<super::typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    admission_guard: PaidSourceAdmissionCarriers,
+}
+/// Complete new guard roles. Each call site pays its own copy, without
+/// assuming that predicate receivers, comparison results or returned booleans
+/// reuse the caller's gate storage. Private branch roles are included in this
+/// conservative shared envelope, as are the current branch's actual transports.
+#[allow(dead_code)]
+pub(super) struct PaidSourceAdmissionCarriers {
+    admission: SourceAdmission,
+    index: &'static DeclarationIndex<'static>,
+    current_receiver: &'static DeclarationIndex<'static>,
+    current_result: bool,
+    current_admission_matches: bool,
+    private_admission_matches: bool,
+    output_receiver: &'static DeclarationIndex<'static>,
+    output_result: bool,
+    input_receiver: &'static DeclarationIndex<'static>,
+    input_result: bool,
+    input_inventory: BuiltinSet,
+    input_has_output: bool,
+    private_marker_matches: bool,
+    returned: bool,
+    rejected: bool,
+}
+pub(super) const fn paid_source_admission_carrier_bytes() -> usize {
+    std::mem::size_of::<PaidSourceAdmissionCarriers>()
 }
 pub(super) const fn production_source_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionSourceCarriers>()

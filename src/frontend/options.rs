@@ -1,8 +1,8 @@
 //! Edition selection is a pure gate, before legacy dispatch or any host effects.
 //!
-//! Global edition and format options are recognized anywhere before `--`. For `script`,
+//! Global edition, format and entry options are recognized anywhere before `--`. For `script`,
 //! recognition stops immediately after the script name: the remaining arguments
-//! belong to the launched process. With neither option, legacy argv is unchanged.
+//! belong to the launched process. Without global options, legacy argv is unchanged.
 //! Typed commands accept `check|run|compile [options] [--] <source>` and options before the
 //! command or after the source. The separator is optional and makes all later
 //! words literal operands; exactly one source is required. It follows the command.
@@ -38,8 +38,7 @@ pub enum Route {
         json: bool,
         operation: Operation,
     },
-    // Closed data carrier. The public classifier cannot produce this variant.
-    #[cfg_attr(not(test), allow(dead_code))]
+    // Process-intent errors use only the safe, fallible stderr reporter.
     ProcessError {
         message: String,
     },
@@ -68,7 +67,7 @@ impl Operation {
     }
 }
 
-/// Compare the actual closed carriers with the unchanged input-only route.
+/// Compare the active carriers with the unchanged input-only route.
 #[cfg(test)]
 #[allow(dead_code)]
 mod output_layout_feasibility {
@@ -115,7 +114,7 @@ mod output_layout_feasibility {
     }
 
     #[test]
-    fn bounded_stdout_actual_closed_route_layout() {
+    fn bounded_stdout_actual_public_route_layout() {
         assert_eq!(size_of::<BaselineRoute>(), size_of::<Route>());
         assert_eq!(align_of::<BaselineRoute>(), align_of::<Route>());
         macro_rules! layouts {
@@ -135,7 +134,6 @@ mod output_layout_feasibility {
             Result<Route, String>,
             Option<i32>,
             BaselineRoute,
-            EntryOptionMode,
             EntryOptionScan,
             Option<EntryOptionScan>,
             Result<EntryOptionScan, Route>,
@@ -144,9 +142,9 @@ mod output_layout_feasibility {
         #[cfg(target_pointer_width = "64")]
         assert_eq!(size_of::<Route>(), 56);
         println!(
-            "OUTPUT_ROUTE_CLOSED policy_and_text_only_process_error \
+            "OUTPUT_ROUTE_PUBLIC policy_and_text_only_process_error \
              baseline_route={} actual_route={} delta={} \
-             public_behavior=UNCHANGED process_admission=DENIED",
+             public_behavior=EXPLICIT_PROCESS process_admission=QUALIFIED_HOST",
             size_of::<BaselineRoute>(),
             size_of::<Route>(),
             size_of::<Route>() as i128 - size_of::<BaselineRoute>() as i128,
@@ -154,67 +152,18 @@ mod output_layout_feasibility {
         println!(
             "OUTPUT_ROUTE_SCOPE measured_enclosing_enum_padding; \
              String_and_Vec_heap_capacities_not_measured; \
-             candidate_classifier_is_test_only_and_returns_Route; \
-             no_source_owner_no_process_reporting_no_policy_activation"
+             public_classifier_returns_Route; \
+             no_source_owner_or_effects_during_classification"
         );
     }
 }
 
 /// Classify arguments excluding the executable name, without reading any files.
 pub fn route(args: &[String]) -> Route {
-    classify(args, &mut EntryOptionScan::new(EntryOptionMode::Closed))
-}
-
-// Only a test can select proposed entry-option parsing. The production mode
-// recognizes exactly the existing global options and always selects Result.
-#[derive(Clone, Copy)]
-enum EntryOptionMode {
-    Closed,
-    #[cfg(test)]
-    Candidate,
-}
-
-struct EntryOptionScan {
-    mode: EntryOptionMode,
-    policy: EntryPolicy,
-    seen: bool,
-    #[cfg(test)]
-    process_requested: bool,
-    #[cfg(test)]
-    compile: bool,
-}
-
-impl EntryOptionScan {
-    fn new(mode: EntryOptionMode) -> Self {
-        Self {
-            mode,
-            policy: EntryPolicy::Result,
-            seen: false,
-            #[cfg(test)]
-            process_requested: false,
-            #[cfg(test)]
-            compile: false,
-        }
-    }
-
-    fn names(&self) -> &'static [&'static str] {
-        match self.mode {
-            EntryOptionMode::Closed => &["--edition", "--message-format"],
-            #[cfg(test)]
-            EntryOptionMode::Candidate => &["--edition", "--message-format", "--entry-mode"],
-        }
-    }
-}
-
-/// Pure proposed argv classification only: no driver, source owner or effects.
-#[cfg(test)]
-fn candidate_route(args: &[String]) -> Route {
-    let mut entry = EntryOptionScan::new(EntryOptionMode::Candidate);
+    let mut entry = EntryOptionScan::new();
     let classified = classify(args, &mut entry);
     match classified {
-        Route::Error { message, .. } | Route::FormatError { message }
-            if entry.process_requested && !entry.compile =>
-        {
+        Route::Error { message, .. } | Route::FormatError { message } if entry.process_errors => {
             Route::ProcessError { message }
         }
         Route::TypedRun {
@@ -225,6 +174,26 @@ fn candidate_route(args: &[String]) -> Route {
             message: "process-mode run does not support --message-format=json".into(),
         },
         other => other,
+    }
+}
+
+struct EntryOptionScan {
+    policy: EntryPolicy,
+    seen: bool,
+    process_requested: bool,
+    malformed: bool,
+    process_errors: bool,
+}
+
+impl EntryOptionScan {
+    fn new() -> Self {
+        Self {
+            policy: EntryPolicy::Result,
+            seen: false,
+            process_requested: false,
+            malformed: false,
+            process_errors: false,
+        }
     }
 }
 
@@ -249,12 +218,14 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             forwarded.extend_from_slice(&args[index..]);
             break;
         }
-        let option = entry.names().iter().copied().find(|name| {
-            argument == *name
-                || argument
-                    .strip_prefix(name)
-                    .is_some_and(|suffix| suffix.starts_with('='))
-        });
+        let option = ["--edition", "--message-format", "--entry-mode"]
+            .into_iter()
+            .find(|name| {
+                argument == *name
+                    || argument
+                        .strip_prefix(name)
+                        .is_some_and(|suffix| suffix.starts_with('='))
+            });
         let Some(name) = option else {
             forwarded.push(args[index].clone());
             index += 1;
@@ -283,6 +254,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
 
         match (name, value) {
             (_, None | Some("")) => {
+                entry.malformed |= name == "--entry-mode";
                 error.get_or_insert_with(|| format!("{name} requires a value"));
             }
             ("--edition", Some(value @ ("legacy-0.9" | "typed-preview"))) => {
@@ -303,12 +275,10 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             ("--entry-mode", Some("result")) => entry.policy = EntryPolicy::Result,
             ("--entry-mode", Some("process")) => {
                 entry.policy = EntryPolicy::Process;
-                #[cfg(test)]
-                {
-                    entry.process_requested = true;
-                }
+                entry.process_requested = true;
             }
             ("--entry-mode", Some(value)) => {
+                entry.malformed = true;
                 error.get_or_insert_with(|| {
                     format!("unknown --entry-mode `{value}`; expected result or process")
                 });
@@ -317,10 +287,16 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
         }
     }
 
-    #[cfg(test)]
-    {
-        entry.compile = forwarded.first().map(String::as_str) == Some("compile");
-    }
+    // Decide channels only after the complete applicable argv is classified.
+    // A later conflicting entry value cannot erase a valid Process request.
+    let command = forwarded.first().map(String::as_str);
+    entry.process_errors = match command {
+        Some("compile" | "check" | "fmt") => false,
+        Some("run") => {
+            entry.process_requested || (entry.malformed && edition == Some("typed-preview"))
+        }
+        _ => entry.process_requested,
+    };
     if entry.seen
         && (edition != Some("typed-preview")
             || !matches!(
@@ -504,7 +480,7 @@ fn route_format(forwarded: Vec<String>, json: bool) -> Route {
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_route, route, EntryPolicy, Route};
+    use super::{route, EntryPolicy, Route};
 
     fn arguments(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
@@ -567,50 +543,27 @@ mod tests {
     }
 
     #[test]
-    fn public_routes_cannot_select_process_or_process_errors() {
-        for command in ["check", "run", "compile", "fmt"] {
-            for value in ["result", "process", "unknown"] {
+    fn nonexecuting_commands_keep_ordinary_errors_with_entry_options() {
+        for command in ["check", "fmt", "compile"] {
+            for value in ["result", "process", "unknown", ""] {
                 for json in [false, true] {
                     let mut values = vec![command, "--edition=typed-preview", "file.ox"];
-                    if command == "compile" {
-                        values.extend(["--backend=llvm", "--output=program"]);
-                    }
                     if json {
                         values.push("--message-format=json");
                     }
                     values.extend(["--entry-mode", value]);
                     let classified = route(&arguments(&values));
                     assert!(
-                        matches!(classified, Route::Error { .. } | Route::FormatError { .. }),
+                        matches!(classified, Route::Error { json: actual, .. } if actual == json),
                         "{values:?}: {classified:?}"
                     );
-                    if let Route::Error { json: actual, .. } = classified {
-                        assert_eq!(actual, json);
-                    }
                 }
             }
-        }
-        for values in [
-            &[
-                "--entry-mode=process",
-                "run",
-                "file.ox",
-                "--edition=typed-preview",
-            ][..],
-            &[
-                "run",
-                "file.ox",
-                "--edition=typed-preview",
-                "--entry-mode=process",
-            ],
-            &["run", "file.ox", "--edition=typed-preview", "--entry-mode"],
-        ] {
-            assert!(matches!(route(&arguments(values)), Route::Error { .. }));
         }
     }
 
     #[test]
-    fn candidate_entry_options_select_only_run_and_compile_data() {
+    fn public_entry_options_select_only_run_and_compile() {
         for (value, policy) in [
             ("result", EntryPolicy::Result),
             ("process", EntryPolicy::Process),
@@ -639,7 +592,7 @@ mod tests {
                 ],
             ] {
                 assert_eq!(
-                    candidate_route(&arguments(&values)),
+                    route(&arguments(&values)),
                     Route::TypedRun {
                         path: "file.ox".into(),
                         json: false,
@@ -648,7 +601,7 @@ mod tests {
                 );
             }
             assert_eq!(
-                candidate_route(&arguments(&[
+                route(&arguments(&[
                     "--edition=typed-preview",
                     "compile",
                     "file.ox",
@@ -667,7 +620,7 @@ mod tests {
             );
         }
         assert_eq!(
-            candidate_route(&arguments(&[
+            route(&arguments(&[
                 "run",
                 "file.ox",
                 "--edition=typed-preview",
@@ -681,7 +634,7 @@ mod tests {
             }
         );
         assert!(matches!(
-            candidate_route(&arguments(&[
+            route(&arguments(&[
                 "run",
                 "file.ox",
                 "--edition=typed-preview",
@@ -692,9 +645,9 @@ mod tests {
                 ..
             }
         ));
-        for command in ["check", "fmt", "script", "unknown"] {
+        for command in ["script", "unknown"] {
             assert!(matches!(
-                candidate_route(&arguments(&[
+                route(&arguments(&[
                     "--entry-mode=process",
                     "--edition=typed-preview",
                     command,
@@ -704,13 +657,13 @@ mod tests {
             ));
         }
         assert!(matches!(
-            candidate_route(&arguments(&["run", "file.ox", "--entry-mode=process"])),
+            route(&arguments(&["run", "file.ox", "--entry-mode=process"])),
             Route::ProcessError { .. }
         ));
     }
 
     #[test]
-    fn candidate_process_run_json_and_early_errors_are_text_only_data() {
+    fn process_run_json_and_early_errors_are_text_only() {
         for suffix in [
             &["--message-format=json"][..],
             &["--entry-mode=process"],
@@ -731,10 +684,7 @@ mod tests {
             ];
             values.extend_from_slice(suffix);
             assert!(
-                matches!(
-                    candidate_route(&arguments(&values)),
-                    Route::ProcessError { .. }
-                ),
+                matches!(route(&arguments(&values)), Route::ProcessError { .. }),
                 "{values:?}"
             );
         }
@@ -756,7 +706,7 @@ mod tests {
             ],
         ] {
             assert!(matches!(
-                candidate_route(&arguments(values)),
+                route(&arguments(values)),
                 Route::ProcessError { .. }
             ));
         }
@@ -764,7 +714,6 @@ mod tests {
             &["--entry-mode"][..],
             &["--entry-mode="],
             &["--entry-mode=unknown"],
-            &["--entry-mode=result", "--entry-mode=result"],
         ] {
             let mut values = vec![
                 "run",
@@ -773,18 +722,30 @@ mod tests {
                 "--message-format=json",
             ];
             values.extend_from_slice(selection);
-            match candidate_route(&arguments(&values)) {
-                Route::Error { message, json, .. } => {
+            match route(&arguments(&values)) {
+                Route::ProcessError { message } => {
                     assert!(message.contains("--entry-mode"));
-                    assert!(json);
                 }
                 other => panic!("expected entry option error for {values:?}, got {other:?}"),
             }
         }
-        // Compilation never enters process execution; its ordinary JSON error
-        // carrier is also preserved when a candidate process policy was selected.
+        for suffix in [&["--unknown"][..], &["--entry-mode=result"]] {
+            let mut values = vec![
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--entry-mode=result",
+                "--message-format=json",
+            ];
+            values.extend_from_slice(suffix);
+            assert!(matches!(
+                route(&arguments(&values)),
+                Route::Error { json: true, .. }
+            ));
+        }
+        // Compilation never enters process execution and keeps JSON reporting.
         assert!(matches!(
-            candidate_route(&arguments(&[
+            route(&arguments(&[
                 "compile",
                 "file.ox",
                 "--edition=typed-preview",
@@ -798,7 +759,7 @@ mod tests {
     }
 
     #[test]
-    fn candidate_and_public_routes_preserve_script_and_separator_boundaries() {
+    fn public_routes_preserve_script_and_separator_boundaries() {
         for values in [
             &[
                 "script",
@@ -816,12 +777,11 @@ mod tests {
             ],
         ] {
             let args = arguments(values);
-            assert_eq!(route(&args), Route::Legacy(args.clone()));
-            assert_eq!(candidate_route(&args), Route::Legacy(args));
+            assert_eq!(route(&args), Route::Legacy(args));
         }
-        for classify in [route, candidate_route] {
+        {
             assert_eq!(
-                classify(&arguments(&[
+                route(&arguments(&[
                     "run",
                     "--edition=typed-preview",
                     "--",
@@ -834,7 +794,7 @@ mod tests {
                 }
             );
             assert_eq!(
-                classify(&arguments(&[
+                route(&arguments(&[
                     "script",
                     "--edition=legacy-0.9",
                     "task",
@@ -844,7 +804,7 @@ mod tests {
             );
         }
         assert_eq!(
-            candidate_route(&arguments(&[
+            route(&arguments(&[
                 "run",
                 "--edition=typed-preview",
                 "--entry-mode=process",

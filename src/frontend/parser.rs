@@ -643,7 +643,9 @@ impl Parser<'_> {
             if segments.len() != 3
                 || self.source.text_at(segments[1]) != "io"
                 || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
-                    && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name())
+                    && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name()
+                    && self.source.text_at(segments[2]) != BuiltinEnum::WriteStatus.name()
+                    && self.source.text_at(segments[2]) != BuiltinFunction::WriteStdout.name())
             {
                 return Err(self.diagnostic(
                     "E0101",

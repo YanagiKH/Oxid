@@ -2063,14 +2063,16 @@ pub(super) fn lower_with_limits(
     typed: &TypedOwnedProgram<'_>,
     limits: budget::Limits,
 ) -> Result<RawOwnedProgram> {
-    #[cfg(not(test))]
-    if typed.index().builtin_set().has_output() {
-        return Err(invariant(typed.index().sources().eof()));
-    }
-    #[cfg(test)]
-    if typed.index().builtin_set().has_output()
-        && (typed.admission() != super::resolve::SourceAdmission::BuiltinPipeline
-            || !typed.index().is_output_candidate_pipeline())
+    if (typed.index().builtin_set() != BuiltinOrigins::None || {
+        #[cfg(test)]
+        {
+            typed.index().is_output_candidate_pipeline()
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }) && !typed.admission().allows_paid_source(typed.index())
     {
         return Err(invariant(typed.index().sources().eof()));
     }
@@ -2355,6 +2357,10 @@ pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
 /// Nested raw payload is separately priced by source::budget::function_bytes.
 #[allow(dead_code)]
 struct InvocationControls {
+    // Preflight and direct emission each perform the provenance/admission
+    // predicate before the first raw reservation. Keep both complete roles.
+    admission_guards: [super::resolve::PaidSourceAdmissionCarriers; 2],
+    inventory_guards: [(BuiltinOrigins, bool, bool); 2],
     // Caller-held preflight/count results and the standalone per-block cache
     // header coexist with Walk. Result envelopes include their inline payload.
     source_program: &'static TypedOwnedProgram<'static>,

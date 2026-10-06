@@ -106,6 +106,7 @@ impl CandidateOrigin {
     }
 }
 
+#[cfg(test)]
 fn builtin_endpoint(
     sources: SourceOwner<'_>,
     path: QualifiedPathRef,
@@ -150,8 +151,7 @@ fn builtin_endpoint(
     ))
 }
 
-#[cfg(test)]
-fn output_candidate_endpoint(
+fn current_builtin_endpoint(
     sources: SourceOwner<'_>,
     path: QualifiedPathRef,
     work: &WorkMeter,
@@ -399,14 +399,14 @@ fn collect<'s>(
                 }
                 let item = {
                     #[cfg(test)]
-                    if syntax == CollectionSyntax::OutputCandidate {
-                        output_candidate_endpoint(sources, path, work)?
-                    } else {
+                    if syntax == CollectionSyntax::BuiltinCandidate {
                         builtin_endpoint(sources, path, work)?
+                    } else {
+                        current_builtin_endpoint(sources, path, work)?
                     }
                     #[cfg(not(test))]
                     {
-                        builtin_endpoint(sources, path, work)?
+                        current_builtin_endpoint(sources, path, work)?
                     }
                 };
                 // Complete file/start/end validation still follows catalog success.
@@ -1420,14 +1420,14 @@ fn stage_import(
     let (ty, value) = if view.root() == ast::PathRoot::Std {
         let item = {
             #[cfg(test)]
-            if matches!(tables.candidate_source_origin, CandidateOrigin::Output(_)) {
-                output_candidate_endpoint(tables.sources, path, work)?
-            } else {
+            if matches!(tables.candidate_source_origin, CandidateOrigin::Builtin(_)) {
                 builtin_endpoint(tables.sources, path, work)?
+            } else {
+                current_builtin_endpoint(tables.sources, path, work)?
             }
             #[cfg(not(test))]
             {
-                builtin_endpoint(tables.sources, path, work)?
+                current_builtin_endpoint(tables.sources, path, work)?
             }
         };
         let handle = tables.builtin_handle(item)?;
@@ -1580,6 +1580,22 @@ fn enumeration(tables: &Tables<'_>, id: EnumId) -> Result<(EnumAstKey, ModuleId)
     Ok((key, owner))
 }
 impl<'s> DeclarationIndex<'s> {
+    /// A borrowed predicate over the sealed constructor origin, not authority
+    /// to construct or relabel an index. The source admission guard pays this
+    /// receiver/result separately from the existing fallible wrapper.
+    pub fn is_current_source_pipeline(&self) -> bool {
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::Current
+        )
+    }
+    #[cfg(test)]
+    pub fn is_input_candidate_pipeline(&self) -> bool {
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::Builtin(_)
+        )
+    }
     pub fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_current_source_pipeline()
     }

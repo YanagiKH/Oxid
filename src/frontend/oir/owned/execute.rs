@@ -2829,11 +2829,10 @@ fn execute_plan_inner(
         result
     }
 }
-/// Private subprocess execution. Only a scalar result or failure escapes;
+/// Sealed process execution. Only a scalar result or failure escapes;
 /// machine storage and all owners are dropped inside the ordinary executor.
 /// SIGPIPE setup precedes entry diagnostics, planning and the activation guard.
-/// The subprocess driver must turn ProcessSetup into a silent status 74.
-#[cfg(test)]
+/// Every driver must turn ProcessSetup into a silent status 74.
 pub(super) fn run_process_limits(
     witness: &VerifiedOwnedProgram,
     entry: Option<hir::DefId>,

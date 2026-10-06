@@ -271,7 +271,6 @@ enum NativeEntryPolicy {
     Process,
 }
 
-#[cfg(test)]
 pub(super) fn native_process_module_with_fuel(
     witness: &VerifiedOwnedProgram,
     entry: hir::DefId,

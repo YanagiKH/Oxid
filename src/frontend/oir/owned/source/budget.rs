@@ -139,17 +139,16 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
-    #[cfg(not(test))]
-    if typed.index().builtin_set().has_output() {
-        return Err(OwnedFailure::malformed(
-            Malformed::Binding,
-            typed.index().sources().eof(),
-        ));
-    }
-    #[cfg(test)]
-    if typed.index().builtin_set().has_output()
-        && (typed.admission() != super::resolve::SourceAdmission::BuiltinPipeline
-            || !typed.index().is_output_candidate_pipeline())
+    if (typed.index().builtin_set() != BuiltinOrigins::None || {
+        #[cfg(test)]
+        {
+            typed.index().is_output_candidate_pipeline()
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }) && !typed.admission().allows_paid_source(typed.index())
     {
         return Err(OwnedFailure::malformed(
             Malformed::Binding,

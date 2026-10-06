@@ -220,6 +220,7 @@ pub(super) fn check_builtin_candidate(
 // The private caller pays this complete envelope before source lowering.
 #[allow(dead_code)]
 struct BuiltinAssociationCarriers {
+    output_origin_guard: OutputOriginGuardCarriers,
     ids_return: Result<builtins::BuiltinIds, OwnedFailure>,
     normalized_ids: Result<builtins::BuiltinIds, Box<Diagnostic>>,
     ids: builtins::BuiltinIds,
@@ -268,6 +269,20 @@ struct BuiltinAssociationCarriers {
     validation_permission: Option<BuiltinFunction>,
     function_permission: Option<BuiltinFunction>,
 }
+#[allow(dead_code)]
+struct OutputOriginGuardCarriers {
+    index_receiver: &'static DeclarationIndex<'static>,
+    source_inventory: BuiltinOrigins,
+    raw_inventory: BuiltinOrigins,
+    source_has_output: bool,
+    raw_has_output: bool,
+    current_receiver: &'static DeclarationIndex<'static>,
+    current_result: bool,
+    output_receiver: &'static DeclarationIndex<'static>,
+    output_result: bool,
+    origin_allowed: bool,
+    rejected: bool,
+}
 pub(super) const fn builtin_carrier_bytes() -> usize {
     std::mem::size_of::<BuiltinAssociationCarriers>()
 }
@@ -301,15 +316,21 @@ fn check_impl(
     allow_enums: bool,
     allow_builtins: bool,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    // Public/current source never admits output. The private test pipeline
-    // requires its exact source-owner marker before the ordinary full walk.
-    #[cfg(not(test))]
-    if raw.builtins.has_output() || index.builtin_set().has_output() {
-        return Err(bad());
-    }
-    #[cfg(test)]
+    // Public association already requires Current. The shared helper retains
+    // an independent exact-origin check for output claims; the older private
+    // input candidate may never acquire output merely by changing raw shapes.
     if (raw.builtins.has_output() || index.builtin_set().has_output())
-        && (!allow_builtins || !index.is_output_candidate_pipeline())
+        && (!allow_builtins
+            || !(index.is_current_source_pipeline() || {
+                #[cfg(test)]
+                {
+                    index.is_output_candidate_pipeline()
+                }
+                #[cfg(not(test))]
+                {
+                    false
+                }
+            }))
     {
         return Err(bad());
     }
@@ -642,7 +663,12 @@ mod output_layout_feasibility {
     #[test]
     fn bounded_stdout_association_disconnected_layout_feasibility() {
         same_layout::<SuffixIds, builtins::BuiltinIds>();
-        same_layout::<ClosedSourceCarriers, BuiltinAssociationCarriers>();
+        // Retain the closed predecessor as a distinct measured receipt; the
+        // activated association adds its complete independent origin guard.
+        assert_eq!(
+            size_of::<BuiltinAssociationCarriers>(),
+            size_of::<ClosedSourceCarriers>() + size_of::<OutputOriginGuardCarriers>()
+        );
         #[cfg(target_pointer_width = "64")]
         assert_eq!(size_of::<ClosedTransportCarriers>(), 568);
         same_layout::<Result<SuffixIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
@@ -651,7 +677,10 @@ mod output_layout_feasibility {
             Result<SuffixIds, Box<Diagnostic>>,
             Result<builtins::BuiltinIds, Box<Diagnostic>>,
         >();
-        assert_eq!(builtin_carrier_bytes(), size_of::<ClosedSourceCarriers>());
+        assert_eq!(
+            builtin_carrier_bytes(),
+            size_of::<BuiltinAssociationCarriers>()
+        );
 
         macro_rules! layouts {
             ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
@@ -688,6 +717,7 @@ mod output_layout_feasibility {
             SuffixFamilyCarriers,
             ClosedTransportCarriers,
             ClosedSourceCarriers,
+            OutputOriginGuardCarriers,
         );
         id_transports!(builtins::BuiltinIds);
         id_transports!(BaselineIds);
@@ -699,7 +729,7 @@ mod output_layout_feasibility {
         candidate::<SuffixFamilyCarriers>("suffix_bases_with_family_roles");
         println!(
             "OUTPUT_ASSOCIATION_INTEGRATED historical_carriers={} actual_carriers={} \
-             delta={} selectors_ranks_iteration_values_results=PAID public_output_admission=DENIED",
+             delta={} selectors_ranks_iteration_values_results=PAID public_output_admission=CURRENT_EXECUTABLE",
             size_of::<BaselineCarriers>(),
             builtin_carrier_bytes(),
             builtin_carrier_bytes() as i128 - size_of::<BaselineCarriers>() as i128,

@@ -1653,22 +1653,26 @@ fn bounded_stdout_private_index_all_nine_suffixes_queries_and_views() {
 }
 
 #[test]
-fn bounded_stdout_private_output_denied_by_current_parser_and_collection() {
+fn bounded_stdout_current_output_admitted_but_historical_collections_stay_closed() {
     for endpoint in ["WriteStatus", "write_stdout"] {
         let text = format!("use std::io::{endpoint} as Output; fn main()->(){{return;}}");
         let fixture = Fixture::new(&[("main.ox", &text)]);
-        let failure = ProjectSources::load_typed(
-            fixture.0.join("main.ox").to_str().unwrap(),
-            ProjectLimits::default(),
+        let project = fixture.load_current();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = collect_originals(
+            SourceOwner::project(&project),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
         )
-        .unwrap_err();
-        assert!(failure
-            .diagnostics
-            .iter()
-            .any(|error| error.code == "E0101"));
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        assert!(index.is_current_source_pipeline());
+        assert!(index.builtin_set().has_output());
         let project = fixture.load_output();
         for collect in [
-            collect_originals,
             collect_builtin_candidate,
             collect_std_closed,
             collect_closed,

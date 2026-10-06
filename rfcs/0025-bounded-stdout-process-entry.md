@@ -1,8 +1,7 @@
 # RFC 0025: bounded stdout and explicit process entry
 
-Status: **draft; public stdout/process support is not enabled**.
-Updated 2026-10-06. Closed identity and carrier construction is under review.
-Output imports, process routing and output executable admission remain denied.
+Status: **accepted contract; public implementation and qualification in progress**.
+Updated 2026-10-06. Source activation is not yet release-qualified.
 
 ## Outcome
 
@@ -35,8 +34,10 @@ even if the import is unused or hidden behind an alias/module helper. Status-
 only imports do not require it. Checking remains effect-free and has no entry
 requirement. The first process/output execution target is Linux x86_64;
 unsupported-host and entry/policy validation occur before activation/effects.
-Their exact diagnostic ordering remains a review item. Default-mode portability
-is unchanged.
+Process Run/Compile reject unsupported execution hosts before loading source or
+creating an output artifact, with E0608 / oir-run / `process execution requires
+Linux x86_64` when the selected reporting channel is available. Default-mode
+portability is unchanged.
 
 Before process source activation, establish ignored SIGPIPE. Setup failure exits
 74 silently before source effects: attempting a diagnostic before signal safety
@@ -56,7 +57,30 @@ Thus an invalid process/JSON combination can establish SIGPIPE policy before
 reporting its rejection, while performing no source execution or byte-output
 builtin effect. Native process entry uses the same pre-guard setup order.
 Compilation only reports a build and does not execute this process-entry setup.
-Unsupported-host diagnostic ordering remains a separate review item.
+Diagnostic capability is separate from runtime qualification. Linux x86_64
+and macOS x86_64/arm64 use the explicit platform SIGPIPE-ignore policy and
+fallible direct stderr writes. Windows Process Run and process-option errors
+currently return silent 74 before formatting or loading: an inherited stderr
+handle has not been proven synchronous, so no potentially asynchronous write
+receives temporary storage. Process Compile keeps ordinary compiler reporting
+and returns E0608 there; it never installs signal policy. Other unqualified
+terminal targets also fail setup silently. Hosted controls are required for
+each advertised diagnostic target; Linux evidence does not qualify macOS.
+
+Pure argv classification precedes loading. A valid Process selection remains
+sticky for Run error routing, including duplicate or conflicting options.
+Missing/unknown entry-mode values on explicit typed Run also use text-only
+process errors. `--` ends option recognition; script arguments keep their
+existing forwarding boundary. Check/Fmt never establish process signal policy.
+Compile JSON remains an effect-free build report. A Process Run with JSON is
+E0001 on safe stderr, with no JSON or scalar stdout trailer.
+
+Run and Compile share the original-root zero-argument i32 signature gate:
+E0600 / oir-run / `process entry requires original-root fn main() -> i32 with no
+parameters`. Check remains library-capable. Default Run/Compile reject the full
+stdout-function inventory using E0609 / oir-owned-run / `bounded stdout
+execution requires process entry mode`, including unused imports. Raw native
+admission retains its independent E0700 defense.
 
 ## Whole-view output
 

@@ -761,22 +761,9 @@ fn finish_paid_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    // Completion independently retains the exact private marker/admission
-    // condition. Neither an output inventory nor an import-free owner is enough.
-    if {
-        #[cfg(test)]
-        {
-            if program.index().is_output_candidate_pipeline() {
-                program.admission() != SourceAdmission::BuiltinPipeline
-            } else {
-                program.index().builtin_set().has_output()
-            }
-        }
-        #[cfg(not(test))]
-        {
-            program.index().builtin_set().has_output()
-        }
-    } {
+    // Completion independently checks the same exact source/admission pair,
+    // including a private Output candidate with an empty inventory.
+    if !program.admission().allows_paid_source(program.index()) {
         return Err(vec![*paid_state(program.index().sources().eof())]);
     }
     let bodies;
@@ -4774,6 +4761,7 @@ struct ProductionTypeCarriers {
     dispatch_return: Result<TypedOwnedProgram<'static>, Vec<Diagnostic>>,
     provenance_return: Result<(), Box<Diagnostic>>,
     provenance_normalized: Result<(), Vec<Diagnostic>>,
+    admission_guard: super::resolve::PaidSourceAdmissionCarriers,
 }
 pub(super) const fn production_type_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionTypeCarriers>()

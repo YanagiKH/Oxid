@@ -9,7 +9,7 @@ pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;
 pub(in crate::frontend::oir) use sealed::{
     check_project_candidate, check_project_executable_candidate,
 };
-pub(in crate::frontend) use sealed::{check_source, CheckedSourceProgram};
+pub(in crate::frontend) use sealed::{check_source, CheckedSourceProgram, ProcessFailure};
 
 #[cfg(test)]
 mod tests {
@@ -116,7 +116,9 @@ mod tests {
 
     #[test]
     fn owned_dispatch_verifies_entire_module_and_preserves_entry_identity() {
-        let (sources, ast) = parsed("struct C { n: i32 } fn helper() -> i32 { return 7; } fn main() -> i32 { let x = C { n: helper() }; return x.n + 4; }");
+        let (sources, ast) = parsed(
+            "struct C { n: i32 } fn helper() -> i32 { return 7; } fn main() -> i32 { let x = C { n: helper() }; return x.n + 4; }",
+        );
         let source = sources.get(crate::frontend::source::SourceFileId(0));
         let checked = check_source(source, &ast, &sources).unwrap();
         assert!(matches!(

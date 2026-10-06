@@ -15,8 +15,7 @@ mod input;
 mod native;
 mod output;
 mod plan;
-#[allow(dead_code)] // Closed process precursor; no public caller exists.
-mod process;
+pub(in crate::frontend) mod process;
 mod shape;
 pub(super) mod source;
 pub(super) use source::SourceProgram;

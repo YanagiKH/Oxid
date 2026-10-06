@@ -145,6 +145,7 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<Scalar, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
         execute::run(&self.witness, entry).map_err(|error| error.diagnostic(sources))
     }
 
@@ -153,7 +154,66 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<String, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
         native::native_module(&self.witness, entry, sources)
+    }
+
+    /// Only fixed signature facts escape; the verified function stays sealed.
+    pub(in crate::frontend::oir) fn entry_signature(
+        &self,
+        id: hir::DefId,
+    ) -> Option<(usize, bool, crate::frontend::source::Span)> {
+        self.witness
+            .functions()
+            .get(id.0)
+            .filter(|function| function.id == id)
+            .map(|function| {
+                (
+                    function.parameters.len(),
+                    function.result == ValueTy::Scalar(hir::Ty::I32),
+                    function.span,
+                )
+            })
+    }
+
+    fn require_result_entry_policy(&self, sources: &SourceMap) -> Result<(), Box<Diagnostic>> {
+        if let Some(id) = self.witness.builtin_output_function() {
+            return Err(
+                execute::OwnedRunFailure::OutputEntry(self.witness.functions()[id.0].span)
+                    .diagnostic(sources),
+            );
+        }
+        Ok(())
+    }
+
+    pub(in crate::frontend::oir) fn run_process(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+    ) -> Result<Scalar, crate::frontend::oir::ProcessFailure> {
+        execute::run_process_limits(&self.witness, Some(entry), execute::Limits::default()).map_err(
+            |error| match error {
+                execute::OwnedRunFailure::ProcessSetup => {
+                    crate::frontend::oir::ProcessFailure::Setup
+                }
+                error => {
+                    crate::frontend::oir::ProcessFailure::Diagnostic(error.diagnostic(sources))
+                }
+            },
+        )
+    }
+
+    pub(in crate::frontend::oir) fn native_process_module(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+    ) -> Result<String, Box<Diagnostic>> {
+        native::native_process_module_with_fuel(
+            &self.witness,
+            entry,
+            sources,
+            super::super::plan::MAX_FUEL,
+        )
     }
 }
 

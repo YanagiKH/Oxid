@@ -30,6 +30,8 @@ fn builtin_import_parser_admits_only_current_catalog_and_direct_paths_stay_close
     for text in [
         "use std::io::read_stdin; fn main()->(){return;}",
         "use std::io::ReadStatus as Status; fn main()->(){return;}",
+        "use std::io::WriteStatus as Status; fn main()->(){return;}",
+        "use std::io::write_stdout as output; fn main()->(){return;}",
         "use std::io::read_stdin as input; use std::io::ReadStatus; fn main()->(){return;}",
     ] {
         assert!(parsed(text, StdImportPolicy::Candidate).is_ok());
@@ -41,6 +43,9 @@ fn builtin_import_parser_admits_only_current_catalog_and_direct_paths_stay_close
         "use std::io::missing; fn main()->(){return;}",
         "use std::io; fn main()->(){return;}",
         "use std::io::ReadStatus::Full; fn main()->(){return;}",
+        "use std::io::WriteStatus::Complete; fn main()->(){return;}",
+        "use std::fs::write_stdout; fn main()->(){return;}",
+        "use std::io::write_stdout::missing; fn main()->(){return;}",
     ] {
         assert!(parsed(text, StdImportPolicy::Candidate).is_ok());
         assert!(parsed(text, StdImportPolicy::Enabled).is_err());
@@ -48,6 +53,8 @@ fn builtin_import_parser_admits_only_current_catalog_and_direct_paths_stay_close
     }
     for text in [
         "fn main()->(){std::io::read_stdin();}",
+        "fn main()->(){std::io::write_stdout();}",
+        "fn main()->std::io::WriteStatus{return;}",
         "fn main()->std::io::ReadStatus{return;}",
         "fn main()->(){std::io::ReadStatus::Full;}",
         "fn f(s:())->(){match s{std::io::ReadStatus::Full=>{}}}",
