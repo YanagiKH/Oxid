@@ -338,6 +338,11 @@ fn builtin_output_shared_call_still_requires_complete_available_view_and_cfg() {
         let (sources, raw, _) = fixture::program(capacity);
         probe(&raw, &sources).unwrap();
     }
+    // Returning ends the activation's owned storage. Explicit discard/end rows
+    // are optional after the call has released its loan and closed its region.
+    let (sources, mut implicit_cleanup, _) = fixture::program(3);
+    implicit_cleanup.functions[0].blocks[1].statements.clear();
+    probe(&implicit_cleanup, &sources).unwrap();
     type Mutation = (&'static str, fn(&mut RawOwnedFunction));
     let mutations: &[Mutation] = &[
         ("exclusive loan", |main| {
@@ -370,15 +375,22 @@ fn builtin_output_shared_call_still_requires_complete_available_view_and_cfg() {
                 continuation: BlockId(2),
             }
         }),
-        ("live owner at return", |main| {
-            main.blocks[1].statements.clear();
+        ("consume returned status twice", |main| {
+            let discard = main.blocks[1].statements[0].clone();
+            main.blocks[1].statements.insert(1, discard);
         }),
     ];
     for &(label, mutate) in mutations {
         let (sources, mut raw, _) = fixture::program(3);
         mutate(&mut raw.functions[0]);
         assert!(builtins::check_candidate(&raw).is_ok(), "{label}");
-        assert!(probe(&raw, &sources).is_err(), "{label}");
+        let failure = probe(&raw, &sources).expect_err(label);
+        if label == "consume returned status twice" {
+            assert_eq!(
+                failure.kind,
+                OwnedFailureKind::Ownership(Violation::Unavailable)
+            );
+        }
     }
 }
 

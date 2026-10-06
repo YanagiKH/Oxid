@@ -46,6 +46,9 @@ pub(in super::super) struct ReferenceObservation {
 #[derive(Default)]
 pub(super) struct Observer {
     pub(super) fault_attempted: bool,
+    // Process test execution must not grow its event Vec after source effects.
+    // This field is absent from production and ordinary observers keep false.
+    pub(super) silent: bool,
     pub enabled: bool,
     pub control: ObservationControl,
     pub storage: Vec<StorageSnapshot>,
@@ -184,6 +187,9 @@ impl Observer {
 }
 impl Machine<'_, '_> {
     pub(super) fn record_event(&mut self, event: Event) {
+        if self.observer.silent {
+            return;
+        }
         if !self.observer.enabled {
             self.events.push(event);
             return;

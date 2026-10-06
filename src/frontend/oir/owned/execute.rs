@@ -24,6 +24,7 @@ pub(super) enum OwnedRunFailure {
     InputHost(Span),
     OutputHost(Span),
     OutputEntry(Span),
+    ProcessHost,
     ProcessEntry(Span),
     ProcessResult(Span),
     Resource(plan::AdmissionFailure),
@@ -80,6 +81,12 @@ impl OwnedRunFailure {
                 "oir-owned-run",
                 "bounded stdout execution requires process entry mode",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::ProcessHost => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "process execution requires Linux x86_64",
+                None,
             ),
             Self::ProcessEntry(span) => Diagnostic::new(
                 "E0600",
@@ -2685,6 +2692,16 @@ fn checked_entry_policy(
             ));
         }
     }
+    if !output::supported_host() {
+        if let Some(function) = witness.builtin_output_function() {
+            return Err(OwnedRunFailure::OutputHost(
+                witness.functions()[function.0].span,
+            ));
+        }
+        if policy == EntryPolicy::Process {
+            return Err(OwnedRunFailure::ProcessHost);
+        }
+    }
     if !input::supported_host() {
         if let Some(function) = witness.builtin_function() {
             return Err(OwnedRunFailure::InputHost(
@@ -2761,6 +2778,12 @@ fn execute_plan_inner(
             .map(|observer| std::mem::take(*observer))
             .unwrap_or_default(),
     };
+    #[cfg(test)]
+    if policy == EntryPolicy::Process {
+        // Process effects cannot trigger test-only event Vec allocations after
+        // the first write. The private process seam has no observation sink.
+        machine.observer.silent = true;
+    }
     let result = (|| {
         machine.activation_preflight(
             entry,

@@ -91,6 +91,56 @@ fn process_reference_entry_stays_closed_before_allocation_and_activation() {
 }
 
 #[test]
+fn process_silent_observer_does_not_reserve_or_emit_charge_events() {
+    let (sources, raw, schedule) = fixture::empty_record();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let span = witness.functions()[schedule.entry.0].span;
+    let mut machine = Machine {
+        plan: &plan,
+        frames: Vec::new(),
+        limits: Limits::default(),
+        fuel: 3,
+        next_activation: 1,
+        live_slots: 0,
+        live_cells: 0,
+        live_bytes: 0,
+        header_bytes: 0,
+        events: Vec::new(),
+        observer: array_observe::Observer {
+            silent: true,
+            control: ObservationControl {
+                allocation_failure: Some(ObservationAllocationSite::Event),
+                ..ObservationControl::default()
+            },
+            ..array_observe::Observer::default()
+        },
+    };
+    // Exercise the actual charge/record_event path, including preservation of
+    // remaining fuel on failed subtraction. No effect-capable witness exists.
+    for remaining in [2, 1, 0] {
+        machine.charge(1, span).unwrap();
+        assert_eq!(machine.fuel, remaining);
+        assert!(machine.events.is_empty());
+        assert_eq!(machine.events.capacity(), 0);
+    }
+    assert_eq!(
+        machine.charge(1, span),
+        Err(OwnedRunFailure::Scalar(RunFailure::Fuel(span))),
+    );
+    assert_eq!(machine.fuel, 0);
+    assert!(machine.events.is_empty());
+    assert_eq!(machine.events.capacity(), 0);
+    assert!(!machine.observer.allocation_fault_applied);
+    // Preserve ordinary test instrumentation when the private process flag is
+    // absent, including the existing unbounded event-only observation mode.
+    assert!(!array_observe::Observer::default().silent);
+    machine.observer.silent = false;
+    machine.charge(0, span).unwrap();
+    assert_eq!(machine.events, vec![Event::Charge(span, 0)]);
+}
+
+#[test]
 fn output_reference_carriers_keep_the_existing_frame_reservations() {
     #[cfg(target_pointer_width = "64")]
     {
