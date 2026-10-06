@@ -247,7 +247,7 @@ pub(super) fn run_output_source(
     owner: SourceOwner<'_>,
     request: OutputPipelineRequest,
 ) -> Result<OutputPipelineOutput, Vec<Diagnostic>> {
-    const OUTPUT_SOURCE_ENABLED: bool = false;
+    const OUTPUT_SOURCE_ENABLED: bool = true;
     if !OUTPUT_SOURCE_ENABLED {
         return Err(vec![*Diagnostic::new(
             "E0101",
@@ -412,7 +412,7 @@ pub(super) const fn output_program_carrier_bytes() -> usize {
     std::mem::size_of::<OutputProgramCarriers>() + super::association::builtin_carrier_bytes()
 }
 #[test]
-fn bounded_output_source_caller_layout_and_closed_modes() {
+fn bounded_output_source_caller_layout_and_emit_has_no_reference_effects() {
     println!(
         "OUTPUT_SOURCE_CALLER caller={} request={} output={} returned={}",
         output_program_carrier_bytes(),
@@ -428,17 +428,27 @@ fn bounded_output_source_caller_layout_and_closed_modes() {
     let source = sources.get(file);
     let ast = crate::frontend::parser::parse(source, crate::frontend::lexer::lex(source).unwrap())
         .unwrap();
-    for mode in [OutputPipelineMode::Run, OutputPipelineMode::Emit] {
-        let owner = SourceOwner::original(
-            source,
-            &ast,
-            crate::frontend::source::SourceView::Map(&sources),
-        )
-        .unwrap();
-        let denied = run_output_source(owner, OutputPipelineRequest { mode, fuel: 0 }).unwrap_err();
-        assert_eq!(denied[0].code, "E0101");
-        assert_eq!(denied[0].message, "output source pipeline is not enabled");
-    }
+    let owner = SourceOwner::original(
+        source,
+        &ast,
+        crate::frontend::source::SourceView::Map(&sources),
+    )
+    .unwrap();
+    let output = run_output_source(
+        owner,
+        OutputPipelineRequest {
+            mode: OutputPipelineMode::Emit,
+            fuel: 0,
+        },
+    )
+    .unwrap();
+    let OutputPipelineOutput::Emit(module) = output else {
+        panic!("emission must not select the reference consumer");
+    };
+    let module = module.unwrap();
+    assert!(module.contains("@__oxid_process_setup"));
+    assert!(module.contains("store i64 0"));
+    assert!(!module.contains("call i32 @__oxid_print_i32"));
 }
 
 #[cfg(test)]

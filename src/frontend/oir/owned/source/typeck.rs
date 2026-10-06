@@ -759,16 +759,20 @@ fn finish_paid_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    // Independent completion gate for the closed output source precursor,
-    // including import-free Output markers. Passive plans are not admission.
-    if program.index().builtin_set().has_output() || {
+    // Completion independently retains the exact private marker/admission
+    // condition. Neither an output inventory nor an import-free owner is enough.
+    if {
         #[cfg(test)]
         {
-            program.index().is_output_candidate_pipeline()
+            if program.index().is_output_candidate_pipeline() {
+                program.admission() != SourceAdmission::BuiltinPipeline
+            } else {
+                program.index().builtin_set().has_output()
+            }
         }
         #[cfg(not(test))]
         {
-            false
+            program.index().builtin_set().has_output()
         }
     } {
         return Err(vec![*paid_state(program.index().sources().eof())]);

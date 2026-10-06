@@ -488,18 +488,20 @@ fn type_paid_source<'s>(
     allocator: &mut Allocator,
     admission: SourceAdmission,
 ) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    // Closed precursor: passive finite-family preflight and paid resolver
-    // controls do not activate the fresh output typing route. This includes an
-    // Output marker whose inventory is None. Remove only after the complete
-    // caller banks and observed reservations have been reviewed.
-    if index.builtin_set().has_output() || {
+    // Output source stays private even for an import-free candidate. The
+    // finite family inventory cannot substitute for the sealed source marker.
+    if {
         #[cfg(test)]
         {
-            index.is_output_candidate_pipeline()
+            if index.is_output_candidate_pipeline() {
+                admission != SourceAdmission::BuiltinPipeline
+            } else {
+                index.builtin_set().has_output()
+            }
         }
         #[cfg(not(test))]
         {
-            false
+            index.builtin_set().has_output()
         }
     } {
         return Err(vec![*invalid_signature_identity(index.sources().eof())]);

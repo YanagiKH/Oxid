@@ -700,7 +700,7 @@ fn preflight_hir(
     builtin_candidate: bool,
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
     // This passive count/plan grants no owner or admission. The fresh output
-    // entry and checker completion remain independently closed for review.
+    // entry and checker completion independently require the sealed private lane.
     let sources = index.sources();
     let at = sources.eof();
     let mut counts = HirCounts::default();

@@ -209,7 +209,7 @@ fn bounded_fuel() -> Option<usize> {
 /// Rebind fd 1 only in the exact child, after libtest's opening text went to the
 /// harness stream. The parent must provide a separate open fd, never 0/1/2.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn redirect_actual_stdout() -> bool {
+pub(super) fn redirect_actual_stdout() -> bool {
     use std::io::Write;
     unsafe extern "C" {
         fn dup2(old: std::ffi::c_int, new: std::ffi::c_int) -> std::ffi::c_int;
@@ -240,7 +240,7 @@ fn redirect_actual_stdout() -> bool {
     }
 }
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-fn redirect_actual_stdout() -> bool {
+pub(super) fn redirect_actual_stdout() -> bool {
     false
 }
 
@@ -337,7 +337,7 @@ fn native_artifact_status(case: Case, fuel: usize, directory: &std::path::Path) 
     }
 }
 
-fn save_new(path: impl AsRef<std::path::Path>, bytes: &[u8]) -> std::io::Result<()> {
+pub(super) fn save_new(path: impl AsRef<std::path::Path>, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     std::fs::OpenOptions::new()
         .write(true)

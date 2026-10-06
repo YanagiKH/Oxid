@@ -2063,7 +2063,15 @@ pub(super) fn lower_with_limits(
     typed: &TypedOwnedProgram<'_>,
     limits: budget::Limits,
 ) -> Result<RawOwnedProgram> {
+    #[cfg(not(test))]
     if typed.index().builtin_set().has_output() {
+        return Err(invariant(typed.index().sources().eof()));
+    }
+    #[cfg(test)]
+    if typed.index().builtin_set().has_output()
+        && (typed.admission() != super::resolve::SourceAdmission::BuiltinPipeline
+            || !typed.index().is_output_candidate_pipeline())
+    {
         return Err(invariant(typed.index().sources().eof()));
     }
     let expected = budget::preflight(typed, limits)?;

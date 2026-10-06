@@ -301,9 +301,16 @@ fn check_impl(
     allow_enums: bool,
     allow_builtins: bool,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    // Closed identity transport does not activate output source descriptors.
-    // Keep this gate in addition to the parser/index and raw verifier gates.
+    // Public/current source never admits output. The private test pipeline
+    // requires its exact source-owner marker before the ordinary full walk.
+    #[cfg(not(test))]
     if raw.builtins.has_output() || index.builtin_set().has_output() {
+        return Err(bad());
+    }
+    #[cfg(test)]
+    if (raw.builtins.has_output() || index.builtin_set().has_output())
+        && (!allow_builtins || !index.is_output_candidate_pipeline())
+    {
         return Err(bad());
     }
     let first_function = if allow_builtins {
@@ -692,7 +699,7 @@ mod output_layout_feasibility {
         candidate::<SuffixFamilyCarriers>("suffix_bases_with_family_roles");
         println!(
             "OUTPUT_ASSOCIATION_INTEGRATED historical_carriers={} actual_carriers={} \
-             delta={} selectors_ranks_iteration_values_results=PAID output_admission=DENIED",
+             delta={} selectors_ranks_iteration_values_results=PAID public_output_admission=DENIED",
             size_of::<BaselineCarriers>(),
             builtin_carrier_bytes(),
             builtin_carrier_bytes() as i128 - size_of::<BaselineCarriers>() as i128,
@@ -732,7 +739,7 @@ mod array_tests {
         ] {
             raw.builtins = origin;
             // Even the private builtin-allowed continuation cannot admit these
-            // raw claims. No source/descriptor traversal or proof allocation
+            // raw claims without the exact output source marker. No traversal or proof allocation
             // occurs; only the existing boxed diagnostic is allocated.
             let (denied, allocations) =
                 super::super::super::reviewer_origins::integration_counted(|| {

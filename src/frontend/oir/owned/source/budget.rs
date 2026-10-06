@@ -139,7 +139,18 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
+    #[cfg(not(test))]
     if typed.index().builtin_set().has_output() {
+        return Err(OwnedFailure::malformed(
+            Malformed::Binding,
+            typed.index().sources().eof(),
+        ));
+    }
+    #[cfg(test)]
+    if typed.index().builtin_set().has_output()
+        && (typed.admission() != super::resolve::SourceAdmission::BuiltinPipeline
+            || !typed.index().is_output_candidate_pipeline())
+    {
         return Err(OwnedFailure::malformed(
             Malformed::Binding,
             typed.index().sources().eof(),

@@ -1,5 +1,5 @@
-//! Closed source-output precursor: passive plans and local paid resolver parts
-//! are observable; no positive typed owner is admitted by these controls.
+//! Fresh private source-output typing. These controls produce no runtime I/O
+//! and never grant production admission to a private source marker.
 use super::*;
 use crate::frontend::project::{ProjectLimits, ProjectSources};
 use std::{
@@ -42,7 +42,7 @@ const INVENTORIES: [(&str, BuiltinSet, usize, usize); 9] = [
 
 struct Fixture(PathBuf);
 impl Fixture {
-    fn new(text: &str) -> Self {
+    fn new(files: &[(&str, &str)]) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
             "oxid-output-typing-{}-{}",
@@ -50,7 +50,9 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
-        fs::write(path.join("main.ox"), text).unwrap();
+        for (name, text) in files {
+            fs::write(path.join(name), text).unwrap();
+        }
         Self(path)
     }
 }
@@ -60,7 +62,10 @@ impl Drop for Fixture {
     }
 }
 fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
-    let fixture = Fixture::new(text);
+    with_files(&[("main.ox", text)], action)
+}
+fn with_files(files: &[(&str, &str)], action: impl FnOnce(&DeclarationIndex<'_>)) {
+    let fixture = Fixture::new(files);
     let project = ProjectSources::load_output_candidate(
         fixture.0.join("main.ox").to_str().unwrap(),
         ProjectLimits::default(),
@@ -82,7 +87,7 @@ fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
 }
 
 #[test]
-fn bounded_stdout_closed_typing_denies_every_output_marker_before_reserve() {
+fn bounded_stdout_typing_denies_public_and_observer_admissions_before_reserve() {
     for (imports, _, _, _) in INVENTORIES {
         with_index(&format!("{imports} fn main()->i32{{return 0;}}"), |index| {
             let work = WorkMeter::default();
@@ -90,7 +95,16 @@ fn bounded_stdout_closed_typing_denies_every_output_marker_before_reserve() {
                 fail_at: Some(1),
                 ..Default::default()
             };
-            assert!(type_builtin_source(index, &work, &mut allocator).is_err());
+            for admission in [
+                SourceAdmission::Executable,
+                SourceAdmission::ObserveArrayTypes,
+                SourceAdmission::ObserveEnumTypes,
+                SourceAdmission::EnumPipeline,
+                SourceAdmission::ObserveArrayPipeline,
+                SourceAdmission::ArrayConsumer,
+            ] {
+                assert!(type_paid_source(index, &work, &mut allocator, admission).is_err());
+            }
             assert!(type_enum_source(index, &work, &mut allocator).is_err());
             assert!(resolve_index(index, &work, &mut allocator).is_err());
             assert!(probe_enum_resolver_storage(index, &work, &mut allocator).is_err());
@@ -106,13 +120,60 @@ fn bounded_stdout_closed_typing_denies_every_output_marker_before_reserve() {
             assert!(super::super::hir_budget::preflight_enum_hir(index, &work).is_err());
             assert_eq!(allocator.attempts, 0);
             assert_eq!(work.used(), 0);
+            let plan = super::super::hir_budget::preflight_builtin_hir(index, &work)
+                .unwrap()
+                .unwrap();
+            let before = work.used();
+            for admission in [
+                SourceAdmission::Executable,
+                SourceAdmission::ObserveArrayTypes,
+                SourceAdmission::ObserveEnumTypes,
+                SourceAdmission::EnumPipeline,
+                SourceAdmission::ObserveArrayPipeline,
+                SourceAdmission::ArrayConsumer,
+            ] {
+                for route in 0..3 {
+                    // Empty rows make an accidental advance past provenance
+                    // observable without granting any paid construction.
+                    let program = ResolvedOwnedProgram {
+                        projection_bytes: std::cell::Cell::new(plan.total),
+                        admission,
+                        index: IndexOwner::Borrowed(index),
+                        work: MeterOwner::Borrowed(&work),
+                        sources: index.sources().view(),
+                        records: Vec::new(),
+                        signatures: Vec::new(),
+                        functions: Vec::new(),
+                        entry: index.root_original_main(),
+                    };
+                    let result = match route {
+                        0 => super::super::typeck::finish_builtin_source(
+                            program,
+                            &plan,
+                            &mut allocator,
+                            0,
+                        ),
+                        1 => super::super::typeck::finish_enum_source(
+                            program,
+                            &plan,
+                            &mut allocator,
+                            0,
+                        ),
+                        2 => super::super::typeck::check(program),
+                        _ => unreachable!(),
+                    };
+                    assert!(result.is_err());
+                    assert_eq!(allocator.attempts, 0);
+                    assert_eq!(work.used(), before);
+                }
+            }
         });
     }
 }
 
 #[test]
-fn bounded_stdout_preflight_and_paid_resolver_reconcile_all_nine_inventories() {
-    use super::super::{hir_budget, reviewer_source, typeck};
+fn bounded_stdout_fresh_paid_typing_reconciles_all_nine_inventories() {
+    use super::super::{hir_budget, reviewer_source};
     for (imports, expected, enums, builtins) in INVENTORIES {
         with_index(&format!("{imports} fn main()->i32{{return 0;}}"), |index| {
             assert_eq!(index.builtin_set(), expected);
@@ -167,32 +228,13 @@ fn bounded_stdout_preflight_and_paid_resolver_reconcile_all_nine_inventories() {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(128).unwrap();
             let (observed, (_, live, peak)) = reviewer_source::integration_measured(|| {
-                let mut paid = PaidStorage::new(plan.counts);
-                let parts =
-                    resolve_index_impl(index, &work, &mut allocator, Some(&mut paid)).unwrap();
-                let inventory =
-                    storage::inventory_parts(&parts, &work, index.sources().eof()).unwrap();
-                paid.reconcile(
-                    &plan,
-                    inventory,
-                    allocator.attempts,
-                    &work,
-                    index.sources().eof(),
-                )
-                .unwrap();
-                let (records, signatures, functions) = parts;
-                let program = ResolvedOwnedProgram {
-                    projection_bytes: std::cell::Cell::new(plan.total),
-                    admission: SourceAdmission::BuiltinPipeline,
-                    index: IndexOwner::Borrowed(index),
-                    work: MeterOwner::Borrowed(&work),
-                    sources: index.sources().view(),
-                    records,
-                    signatures,
-                    functions,
-                    entry: index.root_original_main(),
-                };
-                program.validate_function_signatures().unwrap();
+                let typed = type_builtin_source(index, &work, &mut allocator).unwrap();
+                assert_eq!(typed.admission(), SourceAdmission::BuiltinPipeline);
+                assert!(!typed.admission().executable());
+                assert_eq!(typed.functions().len(), 1);
+                assert_eq!(typed.signatures().len(), 1 + builtins);
+                assert_eq!(typed.source_storage_bytes(), Some(plan.total));
+                typed.validate_function_signatures().unwrap();
                 for builtin in BuiltinFunction::ALL {
                     if !expected.contains_function(builtin) {
                         continue;
@@ -204,7 +246,7 @@ fn bounded_stdout_preflight_and_paid_resolver_reconcile_all_nine_inventories() {
                             BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
                         })
                         .unwrap();
-                    let signature = &program.signatures[ordinal];
+                    let signature = &typed.signatures()[ordinal];
                     let kind = if builtin == BuiltinFunction::ReadStdin {
                         BorrowKind::Exclusive
                     } else {
@@ -219,13 +261,8 @@ fn bounded_stdout_preflight_and_paid_resolver_reconcile_all_nine_inventories() {
                     );
                     assert_eq!(signature.result, ValueTy::Owned(AggregateTy::Enum(enum_id)));
                 }
-                let resolver_end = allocator.attempts;
-                let error =
-                    typeck::finish_builtin_source(program, &plan, &mut allocator, resolver_end)
-                        .unwrap_err();
-                assert_eq!(error[0].code, "E0500");
-                assert_eq!(allocator.attempts, resolver_end);
-                resolver_end
+                drop(typed);
+                allocator.attempts
             });
             assert_eq!(live, 0);
             assert!(peak > 0);
@@ -233,6 +270,7 @@ fn bounded_stdout_preflight_and_paid_resolver_reconcile_all_nine_inventories() {
                 ("paid HIR signatures", 1 + builtins),
                 ("paid HIR parameters", builtins),
                 ("paid HIR functions", 1),
+                ("paid typed bodies", 1),
             ] {
                 assert_eq!(
                     allocator
@@ -246,13 +284,13 @@ fn bounded_stdout_preflight_and_paid_resolver_reconcile_all_nine_inventories() {
             }
             assert!(allocator.trace.iter().all(|row| row.success));
             assert!(!allocator.observer_trace_overflow);
-            println!("OUTPUT_CLOSED_RESOLVER inventory={expected:?} fixed={} total={} reserves={observed} live={live} peak={peak}", plan.fixed, plan.total);
+            println!("OUTPUT_FRESH_PAID_TYPING inventory={expected:?} fixed={} total={} reserves={observed} live={live} peak={peak}", plan.fixed, plan.total);
         });
     }
 }
 
 #[test]
-fn bounded_stdout_closed_typing_carriers_have_actual_layout_receipts() {
+fn bounded_stdout_typing_carriers_have_actual_layout_receipts() {
     use std::mem::{align_of, size_of};
     assert_eq!(size_of::<SourceAdmission>(), 1);
     assert!(!SourceAdmission::BuiltinPipeline.executable());
@@ -358,19 +396,15 @@ fn bounded_stdout_signature_identity_rejects_family_and_suffix_corruption() {
 }
 
 #[test]
-fn bounded_stdout_resolver_reserve_failures_drop_prior_family_storage() {
+fn bounded_stdout_fresh_typing_reserve_failures_drop_prior_family_storage() {
     for imports in [
         "use std::io::write_stdout;",
         "use std::io::write_stdout; use std::io::read_stdin;",
     ] {
         with_index(&format!("{imports} fn main()->i32{{return 0;}}"), |index| {
             let work = WorkMeter::default();
-            let plan = super::super::hir_budget::preflight_builtin_hir(index, &work)
-                .unwrap()
-                .unwrap();
             let mut baseline = Allocator::default();
-            let mut paid = PaidStorage::new(plan.counts);
-            drop(resolve_index_impl(index, &work, &mut baseline, Some(&mut paid)).unwrap());
+            drop(type_builtin_source(index, &work, &mut baseline).unwrap());
             assert!(baseline.attempts > 4);
             for attempt in 1..=baseline.attempts {
                 let work = WorkMeter::default();
@@ -380,16 +414,15 @@ fn bounded_stdout_resolver_reserve_failures_drop_prior_family_storage() {
                 };
                 allocator.observer_trace_bound(128).unwrap();
                 let (resource_failure, (_, live, _)) =
-                    super::super::reviewer_source::integration_measured(|| {
-                        let mut paid = PaidStorage::new(plan.counts);
-                        match resolve_index_impl(index, &work, &mut allocator, Some(&mut paid)) {
-                            Ok(parts) => {
-                                drop(parts);
+                    super::super::reviewer_source::integration_measured(
+                        || match type_builtin_source(index, &work, &mut allocator) {
+                            Ok(typed) => {
+                                drop(typed);
                                 false
                             }
                             Err(errors) => errors.iter().any(|error| error.code == "E0400"),
-                        }
-                    });
+                        },
+                    );
                 assert!(resource_failure, "{imports}: reserve {attempt}");
                 assert_eq!(live, 0, "{imports}: reserve {attempt}");
                 assert!(allocator.attempts >= attempt);
@@ -398,7 +431,7 @@ fn bounded_stdout_resolver_reserve_failures_drop_prior_family_storage() {
                 assert!(!allocator.observer_trace_overflow);
             }
             println!(
-                "OUTPUT_RESOLVER_FAILURES inventory={:?} attempts={}",
+                "OUTPUT_FRESH_TYPING_FAILURES inventory={:?} attempts={}",
                 index.builtin_set(),
                 baseline.attempts
             );
@@ -418,9 +451,6 @@ fn bounded_stdout_second_parameter_real_null_cleans_both_suffixes() {
         "use std::io::write_stdout; use std::io::read_stdin; fn main()->i32{return 0;}";
     with_index(TEXT, |index| {
         let work = WorkMeter::default();
-        let plan = super::super::hir_budget::preflight_builtin_hir(index, &work)
-            .unwrap()
-            .unwrap();
         let expected_anchor = index
             .builtin_function_anchor(BuiltinFunction::WriteStdout)
             .unwrap();
@@ -437,10 +467,9 @@ fn bounded_stdout_second_parameter_real_null_cleans_both_suffixes() {
         let action = |allocator: &mut Allocator| {
             raw::integration_counted(|| {
                 super::super::reviewer_source::integration_measured(|| {
-                    let mut paid = PaidStorage::new(plan.counts);
-                    match resolve_index_impl(index, &work, allocator, Some(&mut paid)) {
-                        Ok(parts) => {
-                            drop(parts);
+                    match type_builtin_source(index, &work, allocator) {
+                        Ok(typed) => {
+                            drop(typed);
                             (false, 0, None, None, None, false)
                         }
                         Err(errors) => (
@@ -507,5 +536,201 @@ fn bounded_stdout_second_parameter_real_null_cleans_both_suffixes() {
             !super::super::reviewer_source::integration_enabled() && !raw::integration_enabled()
         );
         println!("OUTPUT_SECOND_PARAMETER_REAL_NULL slots=1 width={} controls={control_bytes} live={} peak={}", target.element_bytes, stats.1, stats.2);
+    });
+}
+
+const WRITE_CALL: &str = "use std::io::write_stdout as output; use std::io::WriteStatus as W; fn relay(xs:&[i32])->W{return output(&*xs);} fn main()->i32{let bytes=[0,255];let status=relay(&bytes);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(progress)=>{return progress;},}}";
+const BOTH_CALLS: &str = "use std::io::write_stdout as output; use std::io::WriteStatus as W; use std::io::read_stdin as input; use std::io::ReadStatus as R; fn count(status:R)->i32{match status{R::Eof(n)=>{return n;},R::Full=>{return 2;},R::IoError=>{return 0;},}} fn main()->i32{let mut bytes=[0,0];let read=input(&mut bytes);let n=count(read);let written=output(&bytes);match written{W::Complete=>{return n;},W::InvalidInput=>{return 1;},W::IoError(progress)=>{return progress;},}}";
+
+#[test]
+fn bounded_stdout_fresh_typing_accepts_calls_forwarded_views_and_status_payloads() {
+    for text in [
+        WRITE_CALL,
+        BOTH_CALLS,
+        "use std::io::WriteStatus as W; fn consume(status:W)->i32{match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(progress)=>{return progress;},}} fn main()->i32{let complete=W::Complete;let invalid=W::InvalidInput;let error=W::IoError(7);return consume(complete)+consume(invalid)+consume(error);}",
+        "use std::io::write_stdout; use std::io::WriteStatus as W; struct Packet{bytes:[i32;2]} fn main()->i32{let packet=Packet{bytes:[0,255]};let status=write_stdout(&packet.bytes);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}",
+    ] {
+        with_index(text, |index| {
+            let work = WorkMeter::default();
+            let plan = super::super::hir_budget::preflight_builtin_hir(index, &work).unwrap().unwrap();
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(512).unwrap();
+            let (charged, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
+                let typed = type_builtin_source(index, &work, &mut allocator).unwrap();
+                assert_eq!(typed.admission(), SourceAdmission::BuiltinPipeline);
+                typed.validate_function_signatures().unwrap();
+                let charged = typed.source_storage_bytes().unwrap();
+                drop(typed);
+                charged
+            });
+            assert!(charged >= plan.total);
+            assert_eq!(live, 0);
+            assert!(peak > 0);
+            assert!(allocator.trace.iter().all(|row| row.success));
+            assert!(!allocator.observer_trace_overflow);
+            assert_eq!(allocator.trace.iter().filter(|row| row.kind == "paid typed bodies").map(|row| row.length).sum::<usize>(), index.source_function_count());
+            println!("OUTPUT_TYPED_CALLS inventory={:?} total={} charged={charged} work={} reserves={} live={live} peak={peak}", index.builtin_set(), plan.total, work.used(), allocator.attempts);
+        });
+    }
+}
+
+#[test]
+fn bounded_stdout_fresh_typing_rejects_wrong_borrows_nominals_and_payloads() {
+    for text in [
+        "use std::io::write_stdout; fn main()->i32{let mut a=[1];let status=write_stdout(&mut a);return 0;}",
+        "use std::io::write_stdout; fn main()->i32{let a=[true];let status=write_stdout(&a);return 0;}",
+        "use std::io::write_stdout; fn main()->i32{let a=[1];let status=write_stdout(a);return 0;}",
+        "use std::io::write_stdout; enum Same{Complete,InvalidInput,IoError(i32)} fn main()->i32{let a=[1];let status:Same=write_stdout(&a);return 0;}",
+        "use std::io::write_stdout; use std::io::ReadStatus; fn main()->i32{let a=[1];let status:ReadStatus=write_stdout(&a);return 0;}",
+        "use std::io::WriteStatus as W; fn main()->i32{let status=W::Complete(7);return 0;}",
+        "use std::io::WriteStatus as W; fn main()->i32{let status=W::IoError;return 0;}",
+        "use std::io::WriteStatus as W; fn main()->i32{let status=W::IoError(true);return 0;}",
+        "use std::io::WriteStatus as W; fn main()->i32{let status=W::Complete;match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},}}",
+    ] {
+        with_index(text, |index| {
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let (codes, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                match type_builtin_source(index, &work, &mut allocator) {
+                    Ok(typed) => { drop(typed); (false, false) }
+                    Err(errors) => (true, errors.iter().all(|error| error.code == "E0300")),
+                }
+            });
+            assert_eq!(codes, (true, true), "{text}");
+            assert_eq!(live, 0, "{text}");
+        });
+    }
+}
+
+#[test]
+fn bounded_stdout_fresh_typing_work_endpoint_is_exact() {
+    with_index(BOTH_CALLS, |index| {
+        let baseline = WorkMeter::default();
+        drop(type_builtin_source(index, &baseline, &mut Allocator::default()).unwrap());
+        let required = baseline.used();
+        assert!(required > 0);
+        for limit in [required - 1, required] {
+            let work = WorkMeter::new(limit);
+            let mut allocator = Allocator::default();
+            let ((succeeded, exhausted), (_, live, _)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    match type_builtin_source(index, &work, &mut allocator) {
+                        Ok(typed) => {
+                            drop(typed);
+                            (true, false)
+                        }
+                        Err(errors) => (false, errors.iter().any(|error| error.code == "E0400")),
+                    }
+                });
+            assert_eq!(succeeded, limit == required);
+            assert_eq!(exhausted, limit < required);
+            assert_eq!(live, 0);
+        }
+        println!("OUTPUT_FRESH_TYPING_WORK exact={required}");
+    });
+}
+
+#[test]
+fn bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor() {
+    let files = [
+        ("main.ox", "pub mod output; fn main()->i32{let bytes=[65];return output::send(&bytes);}"),
+        ("output.ox", "use std::io::write_stdout as first; use std::io::write_stdout as later; use std::io::WriteStatus as W; pub fn send(xs:&[i32])->i32{let status=later(&*xs);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}"),
+    ];
+    #[cfg(not(target_os = "linux"))]
+    {
+        let fixture = Fixture::new(&files);
+        let failure = ProjectSources::load_output_candidate(
+            fixture.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap_err();
+        assert_eq!(failure.diagnostics.len(), 1);
+        let error = &failure.diagnostics[0];
+        assert_eq!(
+            (error.code, error.stage, error.message.as_str()),
+            (
+                "E0005",
+                "source",
+                "module source policy is not qualified on this host"
+            ),
+        );
+    }
+    #[cfg(target_os = "linux")]
+    with_files(&files, |index| {
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let typed = type_builtin_source(index, &work, &mut allocator).unwrap();
+        typed.validate_function_signatures().unwrap();
+        let output = index
+            .builtin_function_id(BuiltinFunction::WriteStdout)
+            .unwrap();
+        let anchor = index
+            .builtin_function_anchor(BuiltinFunction::WriteStdout)
+            .unwrap();
+        assert_eq!(typed.signatures()[output.0].span, anchor);
+        assert_eq!((anchor.start, anchor.end), (13, 25));
+        assert_ne!(anchor.file, index.sources().eof().file);
+        assert_eq!(typed.functions().len(), 2);
+        assert_eq!(typed.signatures().len(), 3);
+    });
+}
+
+#[test]
+fn bounded_stdout_completion_rejects_seed_checkpoint_and_plan_mismatch_before_typed_reserve() {
+    with_index(BOTH_CALLS, |index| {
+        for mutation in 0..3 {
+            let work = WorkMeter::default();
+            let mut plan = super::super::hir_budget::preflight_builtin_hir(index, &work)
+                .unwrap()
+                .unwrap();
+            let mut allocator = Allocator::default();
+            let (code, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                let mut paid = PaidStorage::new(plan.counts);
+                let parts =
+                    resolve_index_impl(index, &work, &mut allocator, Some(&mut paid)).unwrap();
+                let inventory =
+                    storage::inventory_parts(&parts, &work, index.sources().eof()).unwrap();
+                paid.reconcile(
+                    &plan,
+                    inventory,
+                    allocator.attempts,
+                    &work,
+                    index.sources().eof(),
+                )
+                .unwrap();
+                let (records, signatures, functions) = parts;
+                let program = ResolvedOwnedProgram {
+                    projection_bytes: std::cell::Cell::new(plan.total),
+                    admission: SourceAdmission::BuiltinPipeline,
+                    index: IndexOwner::Borrowed(index),
+                    work: MeterOwner::Borrowed(&work),
+                    sources: index.sources().view(),
+                    records,
+                    signatures,
+                    functions,
+                    entry: index.root_original_main(),
+                };
+                let before = allocator.attempts;
+                let mut checkpoint = before;
+                match mutation {
+                    0 => program.type_storage_cell().set(plan.total + 1),
+                    1 => checkpoint -= 1,
+                    2 => plan.counts.signatures -= 1,
+                    _ => unreachable!(),
+                }
+                let errors = super::super::typeck::finish_builtin_source(
+                    program,
+                    &plan,
+                    &mut allocator,
+                    checkpoint,
+                )
+                .unwrap_err();
+                assert_eq!(allocator.attempts, before);
+                errors[0].code
+            });
+            assert_eq!(code, "E0500", "mutation {mutation}");
+            assert_eq!(live, 0, "mutation {mutation}");
+        }
     });
 }
