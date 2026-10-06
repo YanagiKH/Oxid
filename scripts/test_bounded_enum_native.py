@@ -138,6 +138,111 @@ class GitCheckoutControls(unittest.TestCase):
                     else:
                         path.write_bytes(original)
 
+    def descendant_git_probe(self):
+        probe = self.root / "descendant-git-probe"
+        probe.write_text(f"#!{sys.executable}\n" + '''import json, os, pathlib, subprocess, sys
+repo = pathlib.Path.cwd().resolve()
+rows = []
+for name, cwd, args in (
+    ("head", repo, ["rev-parse", "HEAD"]),
+    ("status", repo, ["status", "--porcelain=v1"]),
+    ("diff", repo, ["diff", "--no-ext-diff", "--binary", "HEAD"]),
+    ("sibling", repo.with_name("sibling"), ["rev-parse", "HEAD"]),
+):
+    output = subprocess.run(["git", "--no-optional-locks", *args], cwd=cwd,
+                            capture_output=True, text=True)
+    rows.append({"name": name, "status": output.returncode,
+                 "stdout": output.stdout, "stderr": output.stderr})
+print(json.dumps({"git": rows, "environment": dict(os.environ)}))
+print("real descendant Git probe", file=sys.stderr)
+sys.exit(next((row["status"] for row in rows[:-1] if row["status"]), 0))
+''')
+        probe.chmod(0o755)
+        return probe
+
+    def test_source_children_inherit_only_canonical_checkout_trust_and_preserve_native_environment(self):
+        alias = self.root / "checkout-alias"
+        alias.symlink_to(self.repo, target_is_directory=True)
+        probe = self.descendant_git_probe()
+        native_env = dict(self.env, OXID_LLVM_BIN="/retained/llvm/bin",
+            OXID_OWNED_NATIVE_EVIDENCE=str(self.root / "artifacts"),
+            CARGO_HOME="/retained/cargo", RUSTUP_HOME="/retained/rustup",
+            LD_LIBRARY_PATH="/retained/native-libraries")
+        hostile_env = dict(native_env, GIT_DIR=str(self.sibling / ".git"),
+            GIT_WORK_TREE=str(self.sibling), GIT_COMMON_DIR=str(self.sibling / ".git"),
+            GIT_CONFIG_SYSTEM=str(self.global_config), GIT_CONFIG_COUNT="2",
+            GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0="*",
+            GIT_CONFIG_KEY_1="core.bare", GIT_CONFIG_VALUE_1="true",
+            GIT_CONFIG_PARAMETERS="'safe.directory=*'", GIT_TEST_ASSUME_DIFFERENT_OWNER="0")
+        original_env = dict(hostile_env)
+        expected_git = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(self.repo), "GIT_OPTIONAL_LOCKS": "0"}
+        before = {path: path.read_bytes() for repo in (self.repo, self.sibling)
+                  for path in (repo / ".git").rglob("*") if path.is_file()}
+        before[self.global_config] = self.global_config.read_bytes()
+        supplied = gate.source_test_environment(alias, hostile_env)
+        self.assertEqual({key: value for key, value in supplied.items()
+                          if key.startswith("GIT_")}, expected_git)
+        for index, name in enumerate(gate.SOURCE_NAMES):
+            with self.subTest(name=name):
+                evidence = self.root / f"source-child-{index}"
+                evidence.mkdir()
+                stdout, stderr = gate.native_test_command(evidence, probe, name,
+                    repo=alias, env=hostile_env)
+                self.assertEqual((evidence / "execution.stdout").read_bytes(), stdout)
+                self.assertEqual((evidence / "execution.stderr").read_bytes(), stderr)
+                self.assertEqual(stderr, b"real descendant Git probe\n")
+                observed = json.loads(stdout)
+                self.assertEqual(observed["git"][:3], [
+                    {"name": "head", "status": 0, "stdout": self.head.decode().splitlines()[0] + "\n",
+                     "stderr": ""},
+                    {"name": "status", "status": 0, "stdout": "", "stderr": ""},
+                    {"name": "diff", "status": 0, "stdout": "", "stderr": ""}])
+                self.assertEqual(observed["git"][3]["status"], 128)
+                self.assertIn("dubious ownership", observed["git"][3]["stderr"])
+                for key, value in native_env.items():
+                    if not key.startswith("GIT_"):
+                        self.assertEqual(observed["environment"][key], value)
+                self.assertEqual({key: value for key, value in observed["environment"].items()
+                    if key.startswith("GIT_")},
+                    dict(expected_git, GIT_TEST_ASSUME_DIFFERENT_OWNER="1"))
+                receipt = json.loads((evidence / "execution.json").read_text())
+                self.assertEqual(receipt["status"], 0)
+                self.assertEqual(receipt["argv"], [str(probe), name, "--exact", "--ignored",
+                    "--nocapture", "--test-threads=1", "--color=never"])
+                self.assertEqual(receipt["environment"], {"mode": "source-test-scoped-git",
+                    "git_environment": expected_git,
+                    "OXID_LLVM_BIN": native_env["OXID_LLVM_BIN"],
+                    "OXID_OWNED_NATIVE_EVIDENCE": native_env["OXID_OWNED_NATIVE_EVIDENCE"]})
+        self.assertEqual(hostile_env, original_env)
+        with self.assertRaisesRegex(ValueError, "status 128"):
+            gate.command(self.root, "descendant-trust-not-persistent",
+                ["git", "rev-parse", "HEAD"], cwd=self.repo, env=self.env)
+        after = {path: path.read_bytes() for repo in (self.repo, self.sibling)
+                 for path in (repo / ".git").rglob("*") if path.is_file()}
+        after[self.global_config] = self.global_config.read_bytes()
+        self.assertEqual(after, before)
+
+    def test_all_six_raw_children_keep_their_original_environment_without_added_trust(self):
+        probe = self.descendant_git_probe()
+        for index, name in enumerate(gate.RAW_NAMES):
+            with self.subTest(name=name):
+                evidence = self.root / f"raw-child-{index}"
+                evidence.mkdir()
+                with self.assertRaisesRegex(ValueError, "status 128"):
+                    gate.native_test_command(evidence, probe, name, repo=self.repo, env=self.env)
+                observed = json.loads((evidence / "execution.stdout").read_bytes())
+                self.assertEqual(observed["git"][0]["status"], 128)
+                self.assertIn("dubious ownership", observed["git"][0]["stderr"])
+                for key, value in self.env.items():
+                    self.assertEqual(observed["environment"][key], value)
+                self.assertNotIn("GIT_CONFIG_COUNT", observed["environment"])
+                receipt = json.loads((evidence / "execution.json").read_text())
+                self.assertEqual(receipt["status"], 128)
+                self.assertEqual(receipt["environment"]["mode"], "inherited")
+                self.assertNotIn("git_environment", receipt["environment"])
+
 
 class BoundedEnumNativeControls(unittest.TestCase):
     def test_frozen_sources_and_explicit_rosters(self):
