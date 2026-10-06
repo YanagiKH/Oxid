@@ -1,0 +1,292 @@
+{
+  "base_public_freeze_sha256": "12b40d321014719805f4864f297ba3598a3c4c5ec6f416de99a0218de68f2a85",
+  "derivation": "Source-only enum Enabled parser/loader and typed-check routes at the approved source; no observed compiler output supplies expectations.",
+  "identity": "enum-enabled-qualified-values-v1",
+  "public_predecessors": {
+    "bytes": 512328,
+    "sha256": "408cc0bdcf7ca17d3c6d76a3ea1469819cac9777a457852fa2eca786b2a50b72"
+  },
+  "rows": [
+    {
+      "current_public_expected": {
+        "first_diagnostic": {
+          "code": "E0202",
+          "stage": "resolve"
+        },
+        "status": 1
+      },
+      "current_unit2_expected": {
+        "children_read": [],
+        "index_collection_started": false,
+        "load_accepts": true,
+        "parser_accepts": true,
+        "scope": "Loader-only success; no semantic check or execution claim.",
+        "syntax_flavor": "OriginalSingleFile"
+      },
+      "current_unit2_result": {
+        "actual_phases": [],
+        "content_files_retained": [
+          "root.ox"
+        ],
+        "diagnostics": [],
+        "human": "",
+        "load_ok": true,
+        "parser_ok": null,
+        "record_starts": [],
+        "signature_starts": [],
+        "syntax_flavor": "OriginalSingleFile"
+      },
+      "frozen_expected_canonical_sha256": "4c896eb962f54a010210cd565ca14f8c23da943ab0c68e4ac27c7e3431c3f7aa",
+      "frozen_line_sha256": "bc7d0140e8c708b1ceba6ce8108b0ca389ba2048f109fad12c653b3084c65284",
+      "frozen_row_canonical_sha256": "0d73e10a9859d5c6d23953c7eaf694914d5105bc39af6ed8545cc482bf759834",
+      "id": "parser/bare-relative-prefix",
+      "old_public_expected": {
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "status": 1
+      },
+      "old_unit2_expected": {
+        "children_read": [],
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "parser_accepts": false,
+        "scope": "First parser failure classification; no later recovery diagnostics are predicted."
+      },
+      "public_row_canonical_sha256": "d8454e11abf0dd37ea00fedf4c6df5011e95bd34dcdc06b4549eb10a0e3503b3",
+      "source": {
+        "bytes": 33,
+        "path": "root.ox",
+        "sha256": "150eeb3da92597228d7aaf74f88bc9a12b4051b507892bbce1ceb5cd9aa4d610",
+        "text": "fn f() -> i32 { return a::f(); }\n"
+      },
+      "source_derived_public_diagnostic": {
+        "code": "E0202",
+        "message": "unknown enum type `a`",
+        "primary": {
+          "end": 24,
+          "path": "root.ox",
+          "start": 23
+        },
+        "stage": "resolve"
+      }
+    },
+    {
+      "current_public_expected": {
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "resolve"
+        },
+        "status": 1
+      },
+      "current_unit2_expected": {
+        "children_read": [],
+        "index_collection_started": false,
+        "load_accepts": true,
+        "parser_accepts": true,
+        "scope": "Loader-only success; no semantic check or execution claim.",
+        "syntax_flavor": "ProjectSyntax"
+      },
+      "current_unit2_result": {
+        "actual_phases": [],
+        "content_files_retained": [
+          "root.ox"
+        ],
+        "diagnostics": [],
+        "human": "",
+        "load_ok": true,
+        "parser_ok": null,
+        "record_starts": [],
+        "signature_starts": [],
+        "syntax_flavor": "ProjectSyntax"
+      },
+      "frozen_expected_canonical_sha256": "4c896eb962f54a010210cd565ca14f8c23da943ab0c68e4ac27c7e3431c3f7aa",
+      "frozen_line_sha256": "e9f66d06a8e4953d7012549271df898598bcdcb4336dd4d455946ebfea7596b7",
+      "frozen_row_canonical_sha256": "93c4e56cee8fa6ddce1af0b6e1375748552b4a7f84fd338604700c34172e32c9",
+      "id": "parser/qualified-function-value",
+      "old_public_expected": {
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "status": 1
+      },
+      "old_unit2_expected": {
+        "children_read": [],
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "parser_accepts": false,
+        "scope": "First parser failure classification; no later recovery diagnostics are predicted."
+      },
+      "public_row_canonical_sha256": "8d5981e25dcb38ac1a452860a85a3dd9fd7cc2621b2af7930c2c209f3ba7b463",
+      "source": {
+        "bytes": 46,
+        "path": "root.ox",
+        "sha256": "1c65577e9889a42319629add2699beb716ce8c2108fd743b6b6207532cc34859",
+        "text": "fn f() -> i32 { let x = crate::g; return 0; }\n"
+      },
+      "source_derived_public_diagnostic": {
+        "code": "E0101",
+        "message": "enum source syntax is unavailable",
+        "primary": {
+          "end": 32,
+          "path": "root.ox",
+          "start": 24
+        },
+        "stage": "resolve"
+      }
+    },
+    {
+      "current_public_expected": {
+        "first_diagnostic": {
+          "code": "E0202",
+          "stage": "resolve"
+        },
+        "status": 1
+      },
+      "current_unit2_expected": {
+        "children_read": [],
+        "index_collection_started": false,
+        "load_accepts": true,
+        "parser_accepts": true,
+        "scope": "Loader-only success; no semantic check or execution claim.",
+        "syntax_flavor": "OriginalSingleFile"
+      },
+      "current_unit2_result": {
+        "actual_phases": [],
+        "content_files_retained": [
+          "root.ox"
+        ],
+        "diagnostics": [],
+        "human": "",
+        "load_ok": true,
+        "parser_ok": null,
+        "record_starts": [],
+        "signature_starts": [],
+        "syntax_flavor": "OriginalSingleFile"
+      },
+      "frozen_expected_canonical_sha256": "4c896eb962f54a010210cd565ca14f8c23da943ab0c68e4ac27c7e3431c3f7aa",
+      "frozen_line_sha256": "2149d4bed3fbefc7877dbf99a3c84054e2f8474eeb3119de2f878fa6aca4c48a",
+      "frozen_row_canonical_sha256": "fc34096d1d4ceb6daae7ec6bf7c2b031956e545c427f8136bf819a7b1ffaa815",
+      "id": "parser/self-relative-prefix",
+      "old_public_expected": {
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "status": 1
+      },
+      "old_unit2_expected": {
+        "children_read": [],
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "parser_accepts": false,
+        "scope": "First parser failure classification; no later recovery diagnostics are predicted."
+      },
+      "public_row_canonical_sha256": "c852ab15378a164d1197140aded70dba1d1173977b2b050bc956652da6585efc",
+      "source": {
+        "bytes": 36,
+        "path": "root.ox",
+        "sha256": "c12fd7fa64c3b825f78602701d8544f1e77bb6b312f47945dc91f6f8d7f145f3",
+        "text": "fn f() -> i32 { return self::f(); }\n"
+      },
+      "source_derived_public_diagnostic": {
+        "code": "E0202",
+        "message": "unknown enum type `self`",
+        "primary": {
+          "end": 27,
+          "path": "root.ox",
+          "start": 23
+        },
+        "stage": "resolve"
+      }
+    },
+    {
+      "current_public_expected": {
+        "first_diagnostic": {
+          "code": "E0202",
+          "stage": "resolve"
+        },
+        "status": 1
+      },
+      "current_unit2_expected": {
+        "children_read": [],
+        "index_collection_started": false,
+        "load_accepts": true,
+        "parser_accepts": true,
+        "scope": "Loader-only success; no semantic check or execution claim.",
+        "syntax_flavor": "OriginalSingleFile"
+      },
+      "current_unit2_result": {
+        "actual_phases": [],
+        "content_files_retained": [
+          "root.ox"
+        ],
+        "diagnostics": [],
+        "human": "",
+        "load_ok": true,
+        "parser_ok": null,
+        "record_starts": [],
+        "signature_starts": [],
+        "syntax_flavor": "OriginalSingleFile"
+      },
+      "frozen_expected_canonical_sha256": "4c896eb962f54a010210cd565ca14f8c23da943ab0c68e4ac27c7e3431c3f7aa",
+      "frozen_line_sha256": "6dfd8a4996d61c4ad82ad1ee5e79b617c8ca2c3165eee2307853e45b6fbcff1e",
+      "frozen_row_canonical_sha256": "4463efb289e4f2b88cc717c00daf4212b236059451fba06fceafec8b71e92e7b",
+      "id": "parser/super-relative-prefix",
+      "old_public_expected": {
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "status": 1
+      },
+      "old_unit2_expected": {
+        "children_read": [],
+        "first_diagnostic": {
+          "code": "E0101",
+          "stage": "parse"
+        },
+        "parser_accepts": false,
+        "scope": "First parser failure classification; no later recovery diagnostics are predicted."
+      },
+      "public_row_canonical_sha256": "7a96ebec8dad040c0a362d89fe4505c79e9d020514ab1ac83871c02257a6b0ce",
+      "source": {
+        "bytes": 37,
+        "path": "root.ox",
+        "sha256": "946279e722bf706af4ece9f259765159851277594fc00dd521329ceb822fec3d",
+        "text": "fn f() -> i32 { return super::f(); }\n"
+      },
+      "source_derived_public_diagnostic": {
+        "code": "E0202",
+        "message": "unknown enum type `super`",
+        "primary": {
+          "end": 28,
+          "path": "root.ox",
+          "start": 23
+        },
+        "stage": "resolve"
+      }
+    }
+  ],
+  "schema": "oxid-enum-enabled-qualified-values-v1",
+  "scope": "Exactly four project-parser loader-only observations and their check/debug+release/Linux x86_64 public first-diagnostic projections. Later public diagnostics and private public-route observations remain excluded. Frozen authorities and observed streams stay unchanged.",
+  "source_manifest": {
+    "bytes": 45493,
+    "members": 237,
+    "reviewed_source_head": "511df03975c2aa1a815f92155d673adb3571ff77",
+    "sha256": "53a54bbd2b41db1a7c666cd39362bf520697d2d5fb834cd47799e958b5cf77fd"
+  },
+  "unit2_corpus": {
+    "bytes": 1050383,
+    "rows": 3603,
+    "sha256": "a5b1853d854b307ca31c79154b518fb9eddf19218467b5562af81979d1369994"
+  }
+}

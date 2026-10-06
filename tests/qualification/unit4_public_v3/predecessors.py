@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Source and expectation adapters for unchanged Unit1/2/3 public projections."""
+"""Frozen public projections with one explicit, source-bound enum successor."""
 import sys
 sys.dont_write_bytecode = True
 import base64
 import copy
 import gzip
+import importlib.util
 import io
 import json
 import os
@@ -15,6 +16,8 @@ import tarfile
 from pathlib import Path
 from contracts import need, sha, load, binding, verify, save
 from compare import envelope, diagnostic_vector, valid_origins, policy_bounds
+
+QUALIFIED_PATHS_HELPER_SHA = '522885d6feaa8b4e43f38f11bc2950e0e2471591ad8f40e2b9224ecaeccefeaf'
 
 def authority_path(contracts, suffix):
     matches = list({r['path']: r for r in contracts.verified if r.get('authority_path', '').endswith(suffix)}.values())
@@ -64,7 +67,10 @@ def original_generator_check(contracts, output, repository):
     return receipt
 
 class Predecessors:
-    def __init__(self, contracts):
+    def __init__(self, contracts, source_manifest=None, amendment_root=None):
+        self._qualified_paths = None
+        self.qualified_paths_amendment = None
+        need((source_manifest is None) == (amendment_root is None), 'enum amendment needs explicit source and authority')
         u2 = authority_path(contracts, '/typed_project_unit2_independent/semantic/corpus.jsonl.gz')
         u3 = authority_path(contracts, '/typed_project_unit3_independent/components/oracles/expected.jsonl.gz')
         requests = authority_path(contracts, '/typed_project_unit3_independent/components/oracles/requests.jsonl')
@@ -117,7 +123,41 @@ class Predecessors:
         prose = authority_path(contracts, '/typed_project_unit2_independent/semantic/original93-prose-expectations.json')
         self.prose = {(r['case'], r['diagnostic_index']): r['expected'] for r in load(prose)['diagnostics']}
 
-    def compare(self, row, process, policy):
+        if amendment_root is not None:
+            root = Path(amendment_root)
+            helper = root / 'enum_enabled_qualified_values_v1.py'
+            need(helper.is_file() and not helper.is_symlink() and sha(helper.read_bytes()) == QUALIFIED_PATHS_HELPER_SHA,
+                 'enum qualified-path helper identity')
+            spec = importlib.util.spec_from_file_location('enum_enabled_qualified_values_v1', helper)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            amendment = module.Amendment(source_manifest, u2, root / 'enum-enabled-qualified-values-v1.json')
+            module.bound_bytes(contracts.root / 'predecessor-public-projections-replacement-v3.json.gz',
+                               amendment.descriptor['public_predecessors'], 'frozen public predecessors')
+            amendment.admit_public_rows(contracts.tables['predecessors']['rows'])
+            self._qualified_paths = amendment
+            self.qualified_paths_amendment = {**amendment.receipt(), 'implementation_sha256': QUALIFIED_PATHS_HELPER_SHA,
+                'rows': [{'case': case_id,
+                          'frozen_public_row_canonical_sha256': amendment.rows[case_id]['public_row_canonical_sha256'],
+                          'frozen_expected_projection_sha256': amendment.rows[case_id]['frozen_expected_canonical_sha256'],
+                          'historical_expected': copy.deepcopy(amendment.rows[case_id]['old_public_expected']),
+                          'current_expected': copy.deepcopy(amendment.rows[case_id]['current_public_expected'])}
+                         for case_id in module.CASE_IDS]}
+
+    def _qualified_paths_projection(self, row, status, diagnostics):
+        if self._qualified_paths is None:
+            return None
+        data = self.rows[row['case']['family'], row['case']['id']]
+        return self._qualified_paths.public_comparison(row, data['corpus'], data['expected'], data['sources'], status, diagnostics)
+
+    def qualified_paths_comparison(self, row, process):
+        """Separate old/current projections for receipts; never alters process data."""
+        if self._qualified_paths is None or row['case']['family'] != 'Unit2' or row['case']['id'] not in self._qualified_paths.rows:
+            return None
+        _, diagnostics = envelope(process, row['argv_template'][1])
+        return self._qualified_paths_projection(row, process['status'], diagnostics)
+
+    def compare(self, row, process, policy, *, historical=False):
         case = row['case']
         data = self.rows[case['family'], case['id']]
         expected = data['expected']
@@ -131,6 +171,10 @@ class Predecessors:
                 return
             if kind == 'first-diagnostic-only':
                 need(process['status'] == 1 and diagnostics, 'Unit2 first failure absent')
+                amendment = None if historical else self._qualified_paths_projection(row, process['status'], diagnostics)
+                if amendment is not None:
+                    need(amendment['current']['status'] == 'match', 'Unit2 enum-enabled-qualified-values-v1 first diagnostic')
+                    return amendment
                 need({k: diagnostics[0][k] for k in expected['first_diagnostic']} == expected['first_diagnostic'], 'Unit2 first diagnostic')
                 return
             if kind == 'front-end-prefix-only':

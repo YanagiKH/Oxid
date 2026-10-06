@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -21,6 +22,33 @@ HERE = Path(__file__).resolve().parent
 REPOSITORY = HERE.parents[2]
 FROZEN = REPOSITORY / "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3"
 sys.dont_write_bytecode = True
+# Exact compatibility seams; frozen helper bytes and predicates remain unchanged.
+ENUM_HELPER_SUBSTITUTIONS = (("    s=replace(s,'        }\\n    }\\n    '+J+'::parser_return','            '+J+'::recovery(false, "
+  "parser.cursor, parser.peek());\\n        }\\n    }\\n    '+J+'::parser_return')",
+  "    s=replace(s,'        }\\n    }\\n    if parser.enums_enabled() {','            '+J+'::recovery(false, "
+  "parser.cursor, parser.peek());\\n        }\\n    }\\n    if parser.enums_enabled() {')"),
+ ("    part=replace(part,'        self.allocator\\n            .vector(&mut self.path_segments','        "
+  '\'+J+\'::event("node_admit", "path_segment", self.cursor, Token {kind: Kind::Ident, span: segment}, '
+  "self.nodes.to_string());\\n        self.allocator\\n            .vector(&mut self.path_segments')",
+  '    part=replace(part,\'        if self.enums_enabled() {\',\'        \'+J+\'::event("node_admit", '
+  '"path_segment", self.cursor, Token {kind: Kind::Ident, span: segment}, self.nodes.to_string());\\n        '
+  "if self.enums_enabled() {')"),
+ ('        name=[f[1] for f in fs if f.start()<m.start()][-1]',
+  '        name=[f[1] for f in fs if f.start()<m.start()][-1]\n'
+  "        if name=='unary_with_prefixes': name='unary'"))
+ENUM_NODE_ANCHOR = '    fn unit4_node(&mut self, production: &str) -> Result<(), Box<Diagnostic>> {'
+ENUM_NODE_BRIDGE = '    // Enum-only node routes are outside this historical observer\'s domain.\n    // The production implementation is unchanged in the control build.\n    fn node(&mut self) -> Result<(), Box<Diagnostic>> {\n        panic!("enum node route is outside the closed Unit4 parser observation domain")\n    }\n'
+ENUM_AST_SCHEMA_ADAPTER = {
+    "version": "unit4-closed-enum-ast-projection-v1",
+    "parser_entry": "parse_counted", "array_policy": "Closed", "enum_policy": "Closed",
+    "program_field": {"name": "enums", "required_value": []},
+    "path_before": {"tag": "QualifiedPath", "root": {"tag": "Crate"}},
+    "path_after": {"tag": "AbsolutePath"},
+    "unchanged_path_fields": ["segment_len", "segment_start", "span"],
+    "semantic_changes_permitted": False,
+    "raw_observations_changed": False,
+    "semantic_predicate_handlers_changed": False,
+}
 HISTORICAL_AUTHORITY_SHA = "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0"
 CURRENT_PATHS = (
     'fixtures/typed-record-composition-samples/main.ox',
@@ -28,12 +56,19 @@ CURRENT_PATHS = (
     'fixtures/typed-record-composition-samples/ops.ox',
     'src/frontend/ast.rs',
     'src/frontend/declaration_index.rs',
+    'src/frontend/declaration_index/enum_query_tests.rs',
+    'src/frontend/declaration_index/enum_tests.rs',
+    'src/frontend/declaration_index/enum_views.rs',
+    'src/frontend/declaration_index/resource.rs',
+    'src/frontend/declaration_index/sealed.rs',
     'src/frontend/declaration_index/source_owner.rs',
     'src/frontend/declaration_index/tests.rs',
     'src/frontend/diagnostic.rs',
     'src/frontend/driver.rs',
+    'src/frontend/enum_public_tests.rs',
     'src/frontend/format.rs',
     'src/frontend/format/ast_tests.rs',
+    'src/frontend/format/enum_candidate_tests.rs',
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
     'src/frontend/hir.rs',
@@ -45,6 +80,7 @@ CURRENT_PATHS = (
     'src/frontend/oir/mod.rs',
     'src/frontend/oir/native.rs',
     'src/frontend/oir/negation_raw_tests.rs',
+    'src/frontend/oir/owned/allocator_review_controls.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
     'src/frontend/oir/owned/array_native_tests.rs',
     'src/frontend/oir/owned/array_observe.rs',
@@ -60,6 +96,16 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/consumer_pilot.rs',
     'src/frontend/oir/owned/consumer_tests.rs',
     'src/frontend/oir/owned/denial_tests.rs',
+    'src/frontend/oir/owned/enum_admission_tests.rs',
+    'src/frontend/oir/owned/enum_consumer_fixtures.rs',
+    'src/frontend/oir/owned/enum_formatter_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_index_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_layout_tests.rs',
+    'src/frontend/oir/owned/enum_match_tests.rs',
+    'src/frontend/oir/owned/enum_native_tests.rs',
+    'src/frontend/oir/owned/enum_parser_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_query_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_reference_tests.rs',
     'src/frontend/oir/owned/execute.rs',
     'src/frontend/oir/owned/execute_tests.rs',
     'src/frontend/oir/owned/flow.rs',
@@ -72,6 +118,7 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/origin_tests.rs',
     'src/frontend/oir/owned/plan.rs',
     'src/frontend/oir/owned/projected_slice_native_tests.rs',
+    'src/frontend/oir/owned/reviewer_allocator.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
     'src/frontend/oir/owned/reviewer_heldout.rs',
@@ -88,17 +135,28 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/source/array_types_tests.rs',
     'src/frontend/oir/owned/source/association.rs',
     'src/frontend/oir/owned/source/budget.rs',
+    'src/frontend/oir/owned/source/budget_tests.rs',
     'src/frontend/oir/owned/source/candidate_adapter.rs',
     'src/frontend/oir/owned/source/candidate_mutations.rs',
     'src/frontend/oir/owned/source/candidate_native.rs',
     'src/frontend/oir/owned/source/diagnostic.rs',
+    'src/frontend/oir/owned/source/enum_native_source_tests.rs',
+    'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
+    'src/frontend/oir/owned/source/enum_type_tests.rs',
     'src/frontend/oir/owned/source/hir.rs',
+    'src/frontend/oir/owned/source/hir_budget.rs',
+    'src/frontend/oir/owned/source/hir_budget_tests.rs',
     'src/frontend/oir/owned/source/lower.rs',
     'src/frontend/oir/owned/source/mod.rs',
     'src/frontend/oir/owned/source/native_resource_tests.rs',
     'src/frontend/oir/owned/source/program.rs',
     'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
     'src/frontend/oir/owned/source/resolve.rs',
+    'src/frontend/oir/owned/source/resolver_enum_tests.rs',
+    'src/frontend/oir/owned/source/resolver_inventory_tests.rs',
+    'src/frontend/oir/owned/source/resolver_paid_tests.rs',
+    'src/frontend/oir/owned/source/resolver_storage.rs',
+    'src/frontend/oir/owned/source/resolver_storage_tests.rs',
     'src/frontend/oir/owned/source/resource_fixtures.rs',
     'src/frontend/oir/owned/source/reviewer_heldout.rs',
     'src/frontend/oir/owned/source/reviewer_resource_runtime.rs',
@@ -107,6 +165,8 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/source/slice_raw_tests.rs',
     'src/frontend/oir/owned/source/slice_tests.rs',
     'src/frontend/oir/owned/source/tests.rs',
+    'src/frontend/oir/owned/source/type_storage.rs',
+    'src/frontend/oir/owned/source/type_storage_tests.rs',
     'src/frontend/oir/owned/source/typeck.rs',
     'src/frontend/oir/owned/storage.rs',
     'src/frontend/oir/owned/tests.rs',
@@ -114,7 +174,11 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned_types.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
     'src/frontend/oir/owned_types/composition_tests.rs',
+    'src/frontend/oir/owned_types/enum_integration_tests.rs',
+    'src/frontend/oir/owned_types/enums.rs',
+    'src/frontend/oir/source.rs',
     'src/frontend/oir/source/association.rs',
+    'src/frontend/oir/source/sealed.rs',
     'src/frontend/oir/unary_source_tests.rs',
     'src/frontend/oir/verify.rs',
     'src/frontend/options.rs',
@@ -123,14 +187,21 @@ CURRENT_PATHS = (
     'src/frontend/parser/activation_tests.rs',
     'src/frontend/parser/array_syntax_tests.rs',
     'src/frontend/parser/arrays.rs',
+    'src/frontend/parser/enum_syntax_tests.rs',
+    'src/frontend/parser/enums.rs',
     'src/frontend/parser/project_tests.rs',
     'src/frontend/project.rs',
     'src/frontend/project/array_syntax_tests.rs',
     'src/frontend/project/budget.rs',
+    'src/frontend/project/budget_real_null_observer.rs',
+    'src/frontend/project/enum_carrier_tests.rs',
+    'src/frontend/project/enum_index_tests.rs',
     'src/frontend/project/unit2_tests.rs',
     'src/frontend/source.rs',
     'src/frontend/typeck.rs',
     'src/main.rs',
+    'tests/fixtures/bounded_enum_scanner/main.ox',
+    'tests/fixtures/bounded_enum_scanner/scanner.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -179,8 +250,13 @@ CURRENT_ADDED_PATHS = (
     'fixtures/typed-record-composition-samples/main.ox',
     'fixtures/typed-record-composition-samples/model.ox',
     'fixtures/typed-record-composition-samples/ops.ox',
+    'src/frontend/declaration_index/enum_query_tests.rs',
+    'src/frontend/declaration_index/enum_tests.rs',
+    'src/frontend/declaration_index/enum_views.rs',
+    'src/frontend/enum_public_tests.rs',
     'src/frontend/format.rs',
     'src/frontend/format/ast_tests.rs',
+    'src/frontend/format/enum_candidate_tests.rs',
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
     'src/frontend/oir/negation_raw_tests.rs',
@@ -193,6 +269,16 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/composition_native_tests.rs',
     'src/frontend/oir/owned/composition_reference_tests.rs',
     'src/frontend/oir/owned/composition_verifier_tests.rs',
+    'src/frontend/oir/owned/enum_admission_tests.rs',
+    'src/frontend/oir/owned/enum_consumer_fixtures.rs',
+    'src/frontend/oir/owned/enum_formatter_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_index_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_layout_tests.rs',
+    'src/frontend/oir/owned/enum_match_tests.rs',
+    'src/frontend/oir/owned/enum_native_tests.rs',
+    'src/frontend/oir/owned/enum_parser_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_query_allocation_tests.rs',
+    'src/frontend/oir/owned/enum_reference_tests.rs',
     'src/frontend/oir/owned/negation_raw_tests.rs',
     'src/frontend/oir/owned/projected_slice_native_tests.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
@@ -205,15 +291,36 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/source/array_pipeline_transport.rs',
     'src/frontend/oir/owned/source/array_type_controls.rs',
     'src/frontend/oir/owned/source/array_types_tests.rs',
+    'src/frontend/oir/owned/source/enum_native_source_tests.rs',
+    'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
+    'src/frontend/oir/owned/source/enum_type_tests.rs',
+    'src/frontend/oir/owned/source/hir_budget.rs',
+    'src/frontend/oir/owned/source/hir_budget_tests.rs',
     'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
+    'src/frontend/oir/owned/source/resolver_enum_tests.rs',
+    'src/frontend/oir/owned/source/resolver_inventory_tests.rs',
+    'src/frontend/oir/owned/source/resolver_paid_tests.rs',
+    'src/frontend/oir/owned/source/resolver_storage.rs',
+    'src/frontend/oir/owned/source/resolver_storage_tests.rs',
     'src/frontend/oir/owned/source/slice_raw_tests.rs',
     'src/frontend/oir/owned/source/slice_tests.rs',
+    'src/frontend/oir/owned/source/type_storage.rs',
+    'src/frontend/oir/owned/source/type_storage_tests.rs',
     'src/frontend/oir/owned_types/array_tests.rs',
     'src/frontend/oir/owned_types/composition_tests.rs',
+    'src/frontend/oir/owned_types/enum_integration_tests.rs',
+    'src/frontend/oir/owned_types/enums.rs',
     'src/frontend/oir/unary_source_tests.rs',
     'src/frontend/parser/array_syntax_tests.rs',
     'src/frontend/parser/arrays.rs',
+    'src/frontend/parser/enum_syntax_tests.rs',
+    'src/frontend/parser/enums.rs',
     'src/frontend/project/array_syntax_tests.rs',
+    'src/frontend/project/budget_real_null_observer.rs',
+    'src/frontend/project/enum_carrier_tests.rs',
+    'src/frontend/project/enum_index_tests.rs',
+    'tests/fixtures/bounded_enum_scanner/main.ox',
+    'tests/fixtures/bounded_enum_scanner/scanner.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -264,7 +371,10 @@ SLICES_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 COMPOSITION_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 UNARY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 PROJECTED_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
-AUTHORITY_SHA = "13b3bf77b1a853234eab834020ab07baab3ef34b25b5153f577d88ff9ae13668"
+ENUM_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/declaration_index/resource.rs",
+                              "src/frontend/parser.rs",
+                              "src/frontend/project/budget.rs", "src/frontend/source.rs")
+AUTHORITY_SHA = '6f6e5573ad3520c5c353b3c3ec2b04df06b6e95f27970f76fa441321be8f3b29'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -372,7 +482,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["unary_transition_patch"], active["composition_source_manifest"], active["projected_transition_patch"], active["unary_source_manifest"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["unary_transition_patch"], active["composition_source_manifest"], active["projected_transition_patch"], active["unary_source_manifest"], active["enum_transition_patch"], active["projected_source_manifest"], active["enum_authority"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -384,13 +494,20 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 201, "complete current source count")
+    same(len(current["files"]), 237, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
+    enum_authority = read(REPOSITORY / active["enum_authority"]["path"])
+    same(sorted(set(enum_authority["transition_paths"]).intersection(row["path"] for row in result["instrumentation"])),
+         list(ENUM_INSTRUMENTATION_PATHS), "exact enum observer overlap roster")
+    same(sorted(set(enum_authority["transition_paths"]).intersection(row["path"] for row in result["control_instrumentation"])),
+         ["src/frontend/ast.rs", "src/frontend/parser.rs"], "exact enum control overlap roster")
+    same(enum_authority["reviewed_source_head"], current["reviewed_source_head"], "enum authority source checkpoint")
+    same(active["enum_ast_schema_adapter"], ENUM_AST_SCHEMA_ADAPTER, "unapproved enum AST schema adapter")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 201, "duplicate current member")
+    same(len(after), 237, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -399,13 +516,14 @@ def authority():
     same([row["path"] for row in changes], list(CURRENT_PATHS), "unexpected current transition scope")
     same(changes, active["source_delta"], "current transition before/after identities")
     same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"])),
-         sorted([*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs"]), "transition overlaps instrumentation outside exact current composition")
+         sorted([*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs",
+                 "src/frontend/declaration_index/resource.rs"]), "transition overlaps instrumentation outside exact current composition")
     same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["control_instrumentation"])),
          ["src/frontend/ast.rs", "src/frontend/parser.rs"], "transition overlaps control instrumentation outside exact current composition")
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 364, "current base count")
+    same(len(base), 400, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -425,6 +543,9 @@ def authority():
             name = "src/frontend/lexer.rs"
             raw = compose_division_lexer(result, (REPOSITORY / name).read_bytes())
             derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
+            name = "src/frontend/declaration_index/resource.rs"
+            raw = compose_namespace_resource(result, (REPOSITORY / name).read_bytes())
+            derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
             name = "src/frontend/source.rs"
             raw = compose_source_read(result, (REPOSITORY / name).read_bytes())
             derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
@@ -433,13 +554,13 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 367, "current derived count")
+        same(len(ordered), 403, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
 
 def compose_source_read(a, raw):
-    """Compose only the pinned formatter accessor with unchanged historical hooks."""
+    """Compose the two historical source-read hooks onto exact current source."""
     name = "src/frontend/source.rs"
     current = next(row for row in a["current"]["source_delta"] if row["path"] == name)
     same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current source identity")
@@ -454,25 +575,53 @@ def compose_source_read(a, raw):
                        if line.startswith(b"+") and not line.startswith(b"+++"))
     same(len(addition.splitlines()), 7, "exact seven-line formatter accessor")
     same(raw.count(addition), 1, "exact formatter accessor occurrence")
-    original = raw.replace(addition, b"", 1)
+    projected = restore_enum_source(a, name, raw)
+    original = projected.replace(addition, b"", 1)
     historical = next(row for row in a["original_files"] if row["path"] == name)
     same(current["before"], historical, "composition historical source identity")
     same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
          "formatter accessor must leave exact historical source")
     observer = b"crate::frontend::parser::unit4_observer"
-    for before, after in (
-        (b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        if span.file",
-         b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        " + observer + b"::source_read(span.end.saturating_sub(span.start));\n        if span.file"),
-        (b"    pub fn text(&self) -> &str {\n        &self.text",
-         b"    pub fn text(&self) -> &str {\n        " + observer + b"::source_read(self.text.len());\n        &self.text"),
-    ):
-        same(raw.count(before), 1, "exact historical source-read hook location")
-        raw = raw.replace(before, after, 1)
+    def transform(body):
+        for before, after in (
+            (b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        if span.file",
+             b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        " + observer + b"::source_read(span.end.saturating_sub(span.start));\n        if span.file"),
+            (b"    pub fn text(&self) -> &str {\n        &self.text",
+             b"    pub fn text(&self) -> &str {\n        " + observer + b"::source_read(self.text.len());\n        &self.text"),
+        ):
+            same(body.count(before), 1, "exact historical source-read hook location")
+            body = body.replace(before, after, 1)
+        return body
     historical_instrumented = next(row for row in a["derived_files"] if row["path"] == name)
-    original_instrumented = raw.replace(addition, b"", 1)
+    original_instrumented = transform(original)
     same({"path": name, "bytes": len(original_instrumented), "sha256": sha(original_instrumented)},
          historical_instrumented, "composition must preserve exact historical instrumentation")
-    return raw
+    return transform(raw)
+
+
+def compose_namespace_resource(a, raw):
+    """Preserve the two frozen namespace-debit hooks on current resource code."""
+    name = "src/frontend/declaration_index/resource.rs"
+    original = restore_enum_source(a, name, raw)
+    historical = next(row for row in a["original_files"] if row["path"] == name)
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
+         "enum namespace resource must recover exact historical source")
+    observer = b"crate::frontend::parser::unit4_observer"
+    def transform(body):
+        for before, after in (
+            (b"    pub(super) fn preflight(&self, origin: Span) -> Result<(), Box<Diagnostic>> {",
+             b"    pub(super) fn preflight(&self, origin: Span) -> Result<(), Box<Diagnostic>> {\n        " + observer + b"::namespace_debit(1);"),
+            (b"        operation: &'static str,\n    ) -> Result<(), Box<Diagnostic>> {",
+             b"        operation: &'static str,\n    ) -> Result<(), Box<Diagnostic>> {\n        " + observer + b"::namespace_debit(units);"),
+        ):
+            same(body.count(before), 1, "exact historical namespace-debit hook location")
+            body = body.replace(before, after, 1)
+        return body
+    historical_instrumented = next(row for row in a["derived_files"] if row["path"] == name)
+    composed = transform(original)
+    same({"path": name, "bytes": len(composed), "sha256": sha(composed)}, historical_instrumented,
+         "enum namespace resource must preserve exact historical instrumentation")
+    return transform(raw)
 
 
 def compose_array_instrumentation(a, name, raw, control=False):
@@ -495,7 +644,8 @@ def compose_array_instrumentation(a, name, raw, control=False):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact combined instrumentation source section")
     patch = selected[0]
-    combined_raw = restore_division_source(a, name, raw) if name in DIVISION_INSTRUMENTATION_PATHS else raw
+    combined_raw = (restore_division_source(a, name, raw) if name in DIVISION_INSTRUMENTATION_PATHS
+                    else restore_enum_source(a, name, raw))
     restored, touched = module.apply_inverse_patch({name: combined_raw}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact instrumentation inverse scope")
     historical = next(row for row in a["original_files"] if row["path"] == name)
@@ -508,12 +658,20 @@ def compose_array_instrumentation(a, name, raw, control=False):
     helper = types.ModuleType("unit4_frozen_instrumentation")
     helper.__file__ = str(helper_path)
     exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
-    def transform(body):
+    def transform(body, current=False):
         text = body.decode()
         if name == "src/frontend/ast.rs":
             text = helper.replace(text, 'impl Program {', 'impl Program {\n    #[cfg(test)]\n    pub(super) fn unit4_source_handle(&self) -> (u64,usize,usize) { crate::frontend::parser::unit4_observer::provenance_handle(&self.source) }')
         elif name == "src/frontend/parser.rs":
-            text = text + '\n#[cfg(test)]\npub(super) mod unit4_observer;\n' if control else helper.parser_overlay(text)
+            if control:
+                text += '\n#[cfg(test)]\npub(super) mod unit4_observer;\n'
+            elif current:
+                current_helper = compose_enum_parser_helper(a)
+                text = current_helper.parser_overlay(text)
+                same(text.count(ENUM_NODE_ANCHOR), 1, 'exact closed observer enum node bridge')
+                text = text.replace(ENUM_NODE_ANCHOR, ENUM_NODE_BRIDGE + ENUM_NODE_ANCHOR, 1)
+            else:
+                text = helper.parser_overlay(text)
         else:
             text = helper.replace(text, '        #[cfg(test)]\n        self.trace.push(ReserveEvent {', '        #[cfg(test)]\n        ' + helper.J + '::reserve(kind, length, element_bytes, success);\n        #[cfg(test)]\n        self.trace.push(ReserveEvent {')
         return text.encode()
@@ -521,7 +679,40 @@ def compose_array_instrumentation(a, name, raw, control=False):
     expected = next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)
     same({"path": name, "bytes": len(historical_composed), "sha256": sha(historical_composed)}, expected,
          "array composition must preserve exact historical instrumentation")
-    return transform(raw)
+    return transform(raw, current=True)
+
+
+def compose_enum_parser_helper(a):
+    """Rebase three exact hook locations; retain every historical helper byte."""
+    path = FROZEN / "frozen/helpers/prepare.py"
+    original = path.read_bytes()
+    row = next(row for row in a["helper_files"] if row["path"] == "prepare.py")
+    same({"path": "prepare.py", "bytes": len(original), "sha256": sha(original)}, row,
+         "historical parser instrumentation helper identity")
+    source = original.decode()
+    seams = []
+    for before, after in ENUM_HELPER_SUBSTITUTIONS:
+        same(source.count(before), 1, "exact enum parser helper seam")
+        require(after not in source, "enum parser helper seam already adapted")
+        source = source.replace(before, after, 1)
+        seams.append({"before_sha256": sha(before.encode()), "after_sha256": sha(after.encode()),
+                      "substitutions": 1})
+    restored = source
+    for before, after in reversed(ENUM_HELPER_SUBSTITUTIONS):
+        same(restored.count(after), 1, "exact reverse enum parser helper seam")
+        restored = restored.replace(after, before, 1)
+    same(restored.encode(), original, "enum parser helper must restore every historical byte")
+    same(a["current"]["enum_parser_instrumentation_adapter"], {
+        "version": "unit4-enum-parser-hook-locations-v1", "original": row,
+        "derived_helper": {"bytes": len(source.encode()), "sha256": sha(source.encode())},
+        "seams": seams,
+        "closed_enum_node_bridge": {"bytes": len(ENUM_NODE_BRIDGE.encode()),
+                                    "sha256": sha(ENUM_NODE_BRIDGE.encode())},
+    }, "unapproved enum parser instrumentation adapter")
+    result = types.ModuleType("unit4_current_enum_parser_instrumentation")
+    result.__file__ = str(path)
+    exec(compile(source, str(path), "exec"), result.__dict__)
+    return result
 
 
 def restore_division_source(a, name, raw):
@@ -664,12 +855,41 @@ def restore_projected_source(a, name, raw):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact projected instrumentation source section")
     patch = selected[0]
-    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    restored, touched = module.apply_inverse_patch({name: restore_enum_source(a, name, raw)}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact projected instrumentation inverse scope")
     expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
     original = restored[name]
     same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
          "projected transition must recover exact unary source")
+    return original
+
+
+def restore_enum_source(a, name, raw):
+    """Recover the exact projected predecessor at five enum-overlap paths."""
+    require(name in ENUM_INSTRUMENTATION_PATHS, "unapproved enum instrumentation path")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current enum identity")
+    runner, transition, predecessor = (active[key] for key in
+        ("source_binding_runner", "enum_transition_patch", "projected_source_manifest"))
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/enum-transition.patch", "enum transition path")
+    same(predecessor["path"], "tests/fixtures/typed_project_source_binding/projected-source.json", "projected predecessor path")
+    verify_map(REPOSITORY, [runner, transition, predecessor])
+    module = types.ModuleType("unit4_enum_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact enum instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact enum instrumentation inverse scope")
+    expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
+         "enum transition must recover exact projected source")
     return original
 
 
@@ -698,19 +918,21 @@ def compose_division_lexer(a, raw):
 
 
 def compose_observer_initializer(a):
-    """Keep the direct path-overflow probe on the original closed-array policy."""
+    """Keep the direct path-overflow probe on closed array and enum policies."""
     path = FROZEN / "frozen/helpers/observer.rs"
     original = path.read_bytes()
     row = next(row for row in a["helper_files"] if row["path"] == "observer.rs")
     same({"path": "observer.rs", "bytes": len(original), "sha256": sha(original)}, row, "historical observer identity")
     before = b"            mode,\n            project_recovery: false,"
-    after = b"            mode,\n            arrays: ArraySyntaxPolicy::Closed,\n            project_recovery: false,"
+    after = (b"            mode,\n            arrays: ArraySyntaxPolicy::Closed,\n"
+             b"            enums: EnumSyntaxPolicy::Closed,\n"
+             b"            storage: enums::SyntaxStorage::default(),\n            project_recovery: false,")
     same(original.count(before), 1, "exact direct observer initializer")
     require(after not in original, "historical observer already adapted")
     result = original.replace(before, after, 1)
     same(result.replace(after, before, 1), original, "observer successor must preserve every historical byte")
     same(a["current"]["observer_initializer_adapter"], {
-        "version": "unit4-direct-parser-closed-array-v1", "original": row,
+        "version": "unit4-direct-parser-closed-array-enum-v1", "original": row,
         "derived": {"path": "src/frontend/parser/unit4_observer.rs", "bytes": len(result), "sha256": sha(result)},
         "old_seam_sha256": sha(before), "new_seam_sha256": sha(after), "substitutions": 1,
     }, "unapproved observer initializer successor")
@@ -775,7 +997,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 148, "current compiler body count")
+    same(len(wanted), 182, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []
@@ -889,6 +1111,10 @@ def prepare(repo, checkout, output):
                 verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
                 target.write_bytes(compose_division_lexer(a, (checkout / name).read_bytes()))
                 continue
+            if not control and name == "src/frontend/declaration_index/resource.rs":
+                verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
+                target.write_bytes(compose_namespace_resource(a, (checkout / name).read_bytes()))
+                continue
             overlap = name in ARRAY_INSTRUMENTATION_PATHS and (not control or name != "src/frontend/project/budget.rs")
             if overlap or (not control and name == "src/frontend/source.rs"):
                 verify_map(source, [next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)])
@@ -934,7 +1160,7 @@ def current_overlay(source, a, control):
     active = a["current"]
     instrumentation = [dict(row) for row in a["control_instrumentation" if control else "instrumentation"]]
     for row in instrumentation:
-        if row["path"] in (*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs"):
+        if row["path"] in (*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs", "src/frontend/declaration_index/resource.rs"):
             row["before_sha256"] = next(item["sha256"] for item in active["current_base_files"] if item["path"] == row["path"])
             row["after_sha256"] = next(item["sha256"] for item in active["current_control_derived_files" if control else "current_derived_files"] if item["path"] == row["path"])
     return {"schema": "oxid-unit4-current-observer-overlay-v1", "historical_base_commit": a["base_commit"], "control": control,
@@ -951,7 +1177,7 @@ def verify_overlay(root, a, control=False):
     expected = current_overlay(source, a, control)
     verify_map(source, expected["files"], exact=True, extras=("observer-source-manifest.json", "overlay-manifest.json"))
     same(read(source / "overlay-manifest.json"), expected, "current overlay must match reviewed transition exactly")
-    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current ordered348 base map")
+    same(read(source / "candidate-source-manifest.json"), current_candidate(a), "current complete ordered base map")
     same(sha((source / "observer-source-manifest.json").read_bytes()), a["helper_manifest_sha256"], "unchanged helper manifest bytes")
     verify_map(Path(root) / "helpers", a["helper_files"], exact=True)
     no_cargo_configs(source)
@@ -973,7 +1199,7 @@ def verify_transition_records(session, a, resolve=artifact):
     for transition, control in zip(session["transitions"], (False, True)):
         same(set(transition), {"control", "historical_candidate", "historical_overlay", "current_candidate", "current_overlay", "changes"}, "transition fields")
         same(transition["control"], control, "transition role/order")
-        same(transition["changes"], a["current"]["source_delta"], "transition exact 126 changes")
+        same(transition["changes"], a["current"]["source_delta"], "transition exact current changes")
         source = root / ("control-source" if control else "source")
         invocation = root / ("prepare-control" if control else "prepare")
         for key, filename in (("historical_candidate", "historical-candidate-source-manifest.json"), ("historical_overlay", "historical-overlay-manifest.json")):
@@ -1444,6 +1670,73 @@ def current_parser_contract(a, effective, predecessor_receipt):
                         (REPOSITORY / active["composition_parser_amendment"]["path"]).read_bytes())
 
 
+def project_enum_observations(a, rows):
+    """Project only the exact enum-free AST carrier shape for frozen predicates.
+
+    Collection and independent raw normalization stay unchanged. Both row sets
+    are bound in the receipt; exact inverse recovery preserves every other field.
+    This adapter never supplies or changes a semantic expected value.
+    """
+    same(a["current"]["enum_ast_schema_adapter"], ENUM_AST_SCHEMA_ADAPTER,
+         "unapproved enum AST schema adapter")
+    require(type(rows) is list, "enum projection requires observation list")
+    projected = copy.deepcopy(rows)
+    changed = []
+    path_count = 0
+    program_fields = {"tag", "tokens", "functions", "expressions", "records", "enums",
+                      "items", "modules", "paths", "path_segments", "imports", "source", "project_syntax"}
+    path_fields = {"tag", "span", "segment_start", "segment_len", "root"}
+    for index, row in enumerate(projected):
+        require(type(row) is dict and "ast" in row, "enum projection requires observed AST field")
+        if row["ast"] is None:
+            continue
+        require(type(row["ast"]) is dict and "canonical" in row["ast"], "enum projection requires canonical AST")
+        root = row["ast"]["canonical"]
+        require(type(root) is dict and set(root) == program_fields and root["tag"] == "Program",
+                "enum projection requires exact current Program shape")
+        same(root["enums"], [], "enum projection rejects nonempty enum declarations")
+        require(type(root["enums"]) is list, "enum declarations must be exact empty list")
+        require(type(root["paths"]) is list, "enum projection requires path arena list")
+        del root["enums"]
+        for path in root["paths"]:
+            require(type(path) is dict and set(path) == path_fields and path["tag"] == "QualifiedPath",
+                    "enum projection requires exact current QualifiedPath shape")
+            same(path["root"], {"tag": "Crate"}, "enum projection rejects non-Crate path root")
+            require(type(path["segment_len"]) is int and 1 <= path["segment_len"] <= 34,
+                    "enum projection retains historical path-segment bound")
+            del path["root"]
+            path["tag"] = "AbsolutePath"
+            path_count += 1
+        changed.append(index)
+    # The frozen strict type checker rejects every other new carrier or field.
+    legacy, _ = comparator()
+    for index in changed:
+        try:
+            legacy.typed_ast(projected[index]["ast"]["canonical"])
+        except (legacy.Rejected, KeyError, TypeError, IndexError) as error:
+            raise Rejected("enum projection rejects nonhistorical AST member: " + str(error)) from error
+    restored = copy.deepcopy(projected)
+    for index in changed:
+        root = restored[index]["ast"]["canonical"]
+        root["enums"] = []
+        for path in root["paths"]:
+            path["tag"] = "QualifiedPath"
+            path["root"] = {"tag": "Crate"}
+    canonical = legacy.canonical
+    same(canonical(restored), canonical(rows), "enum AST projection must restore every original observation field")
+    receipt = {
+        "schema": "oxid-unit4-closed-enum-ast-projection-v1",
+        "adapter": copy.deepcopy(ENUM_AST_SCHEMA_ADAPTER),
+        "adapter_canonical_sha256": sha(canonical(ENUM_AST_SCHEMA_ADAPTER)),
+        "observations": len(rows), "ast_observations": len(changed),
+        "qualified_paths": path_count, "changed_row_indices": changed,
+        "original_observations_canonical_sha256": sha(canonical(rows)),
+        "projected_observations_canonical_sha256": sha(canonical(projected)),
+        "restored_observations_canonical_sha256": sha(canonical(restored)),
+    }
+    return projected, receipt
+
+
 def compare(session_path, contract_dir):
     a = authority(); session, root = session_at(session_path, a)
     c, proof = comparator(); contract = c.load_contract(contract_dir)
@@ -1458,6 +1751,10 @@ def compare(session_path, contract_dir):
         same(actual, profile, "exact profile order")
         rows.extend(observed); identities[profile] = bound
     require(identities["debug"]["binary_sha256"] != identities["release"]["binary_sha256"], "same binary reused across profiles")
+    unadapted_frozen = c.compare_effective_rows(effective, effective_receipt, rows, identities)
+    unadapted_frozen.update(portable_authority_sha256=AUTHORITY_SHA, session=identity(session_path),
+                            derivation=proof, ordinary_passivity=ordinary_passivity)
+    rows, projection_receipt = project_enum_observations(a, rows)
     frozen_result = c.compare_effective_rows(effective, effective_receipt, rows, identities)
     frozen_result.update(portable_authority_sha256=AUTHORITY_SHA, session=identity(session_path),
                          derivation=proof, ordinary_passivity=ordinary_passivity)
@@ -1465,6 +1762,9 @@ def compare(session_path, contract_dir):
     result = c.compare_rows(current, rows, identities)
     result.update(current_receipt)
     result["execution_contract"] = frozen_result["execution_contract"]
+    result["enum_structural_projection"] = projection_receipt
+    result["unadapted_frozen_comparison"] = unadapted_frozen
+    result["unadapted_frozen_comparison_canonical_sha256"] = c.sha(c.canonical(unadapted_frozen))
     result["frozen_comparison"] = frozen_result
     result["frozen_comparison_canonical_sha256"] = c.sha(c.canonical(frozen_result))
     result.update(portable_authority_sha256=AUTHORITY_SHA, session=identity(session_path), derivation=proof,

@@ -11,6 +11,7 @@ import re
 import stat
 import subprocess
 import sys
+import types
 import uuid
 
 sys.dont_write_bytecode = True
@@ -648,6 +649,88 @@ PATCH_PATHS = (
     'src/frontend/oir/owned_types/array_tests.rs',
 )
 
+SEMANTIC_HELPER = 'enum_enabled_qualified_values_v1.py'
+SEMANTIC_DESCRIPTOR = 'enum-enabled-qualified-values-v1.json'
+SEMANTIC_HELPER_SHA = '522885d6feaa8b4e43f38f11bc2950e0e2471591ad8f40e2b9224ecaeccefeaf'
+SEMANTIC_DESCRIPTOR_SHA = '18dc17439c6ccc0e76f8a6bbbae5707c7ad826159292e2c548da8fc44280886f'
+UNIT2_COMPARATOR = 'semantic/compare.py'
+UNIT2_FROZEN_COMPARATOR = 'semantic/compare_before_enum_enabled_qualified_values.py'
+UNIT2_SEMANTIC_HELPER = 'semantic/enum_enabled_qualified_values_v1.py'
+UNIT2_SEMANTIC_DESCRIPTOR = 'semantic/enum-enabled-qualified-values-v1.json'
+UNIT2_COMPARATOR_ORIGINAL_SHA = '6e6642dfc28e37bf5c8c147719f52088ce3e2e5037cf15356ff287d6dd01df5c'
+UNIT2_COMPARATOR_DERIVED_SHA = '677e7afed200527760c9b8480f798fb94c6446eec845f9f664c2c556c50a310f'
+UNIT2_COMPARATOR_SEAMS = ((b'results=[]\n',
+  b"enum_spec=importlib.util.spec_from_file_location('enum_enabled_qualified_values_v1',ROOT/'en"
+  b"um_enabled_qualified_values_v1.py')\nenum_module=importlib.util.module_from_spec(enum_spec);e"
+  b"num_spec.loader.exec_module(enum_module)\namendment=enum_module.Amendment(ROOT.parent/'source"
+  b"-inputs.json',ROOT/'corpus.jsonl.gz',ROOT/'enum-enabled-qualified-values-v1.json')\n# Preserv"
+  b'e an independent original-oracle report before current comparison.\nimport subprocess\nhistori'
+  b"cal_path=Path(sys.argv[3]).with_name(profile+'-comparison-before-enum-enabled-qualified-valu"
+  b"es.json')\nhistorical_stdout=historical_path.with_suffix('.stdout')\nhistorical_stderr=histori"
+  b"cal_path.with_suffix('.stderr')\nhistorical_argv=[sys.executable,'-B',str(ROOT/'compare_befor"
+  b"e_enum_enabled_qualified_values.py'),profile,str(actual_path),str(historical_path)]\nwith his"
+  b"torical_stdout.open('xb') as sink, historical_stderr.open('xb') as errors:\n    historical_pr"
+  b'ocess=subprocess.run(historical_argv,stdout=sink,stderr=errors,timeout=120)\nassert historica'
+  b"l_process.returncode==0, 'frozen comparison execution failed'\nhistorical_report=json.loads(h"
+  b"istorical_path.read_bytes())\nassert historical_report['profile']==profile and historical_rep"
+  b"ort['cases']==3603, 'frozen comparison profile/count'\nassert historical_report['counts']=={'"
+  b"match':3599,'mismatch':4}, 'unexpected frozen comparison changes'\nassert len(historical_repo"
+  b"rt['results'])==3603 and {r['case'] for r in historical_report['results']}==set(corpus), 'fr"
+  b"ozen comparison exact roster'\nassert {r['case'] for r in historical_report['results'] if r['"
+  b"status']=='mismatch'}==set(enum_module.CASE_IDS), 'unapproved frozen mismatch'\nhistorical_bi"
+  b"nding={'identity':enum_module.IDENTITY,'argv':historical_argv,'status':historical_process.re"
+  b"turncode,\n                    'comparison':{'path':str(historical_path),'bytes':historical_p"
+  b"ath.stat().st_size,'sha256':enum_module.sha(historical_path.read_bytes())},\n                "
+  b"    'stdout':{'path':str(historical_stdout),'bytes':historical_stdout.stat().st_size,'sha256"
+  b"':enum_module.sha(historical_stdout.read_bytes())},\n                    'stderr':{'path':str"
+  b"(historical_stderr),'bytes':historical_stderr.stat().st_size,'sha256':enum_module.sha(histor"
+  b"ical_stderr.read_bytes())},\n                    'normalized_sha256':enum_module.sha(actual_p"
+  b"ath.read_bytes()),'historical_mismatches':list(enum_module.CASE_IDS),\n                    'h"
+  b"istorical_qualification_claim':False}\nresults=[]\n"),
+ (b"    elif cohort in ('parser','grammar-amendment'):\n        root=ROOT/('parser-cases' if coho"
+  b"rt=='parser' else 'grammar-amendment-cases')\n        expected=copy.deepcopy(corpus[item['cas"
+  b"e']]['expected'])\n",
+  b"    elif cohort in ('parser','grammar-amendment'):\n        root=ROOT/('parser-cases' if coho"
+  b"rt=='parser' else 'grammar-amendment-cases')\n        expected=copy.deepcopy(corpus[item['cas"
+  b"e']]['expected'])\n        expected=amendment.project_unit2(corpus[item['case']],expected,ite"
+  b'm,failures)\n'),
+ (b"report={'profile':profile,'normalized_observations':str(actual_path),'cases':len(results),'c"
+  b"ounts':counts,'results':results}\n",
+  b"report={'profile':profile,'normalized_observations':str(actual_path),'cases':len(results),'c"
+  b"ounts':counts,'results':results}\nreport['semantic_amendment']=amendment.unit2_report(results"
+  b")\nreport['historical_semantic_comparison']=historical_binding\n"))
+
+INDEX_RESOURCE = 'archive/resource/resource-review-tests.rs'
+ENUM_INDEX_RESOURCE_VERSION = 'unit2-enum-free-index-resource-v1'
+ENUM_INDEX_RESOURCE_AUTHORITY_SHA = '98a7a52264febecc72c88a3f74449b23d482665e53767b91af55fa88ade79a24'
+ENUM_INDEX_RESOURCE_AUTHORITY_BYTES = 10714
+ENUM_INDEX_RESOURCE_ORIGINAL_SHA = 'a5472f85b6dca1ed9e649c96575b0cf8a45fe37f204040806cd0747a237f1669'
+ENUM_INDEX_RESOURCE_ORIGINAL_BYTES = 22687
+ENUM_INDEX_RESOURCE_DERIVED_SHA = '289d310395a7abb701c03d3ca065f87accba6ed02884fbcf21e2d13235c08dde'
+ENUM_INDEX_RESOURCE_DERIVED_BYTES = 22732
+ENUM_INDEX_RESOURCE_CONTROLS = ('reviewer_nine_independent_space_cases',
+ 'reviewer_independent_exact_admission_and_failure_order',
+ 'reviewer_fourteen_actual_index_reserve_failures',
+ 'reviewer_actual_layout_and_source_node_envelope')
+ENUM_INDEX_RESOURCE_SEAMS = ((b'],[0,0,0,1,0,0,60,4]),', b'],[0,0,0,1,0,0,68,4]),'),
+ (b'],[1,0,0,1,0,1,112,8]),', b'],[1,0,0,1,0,1,120,8]),'),
+ (b'],[0,1,0,1,0,1,128,8]),', b'],[0,1,0,1,0,1,136,8]),'),
+ (b'],[0,1,3,1,0,1,176,8]),', b'],[0,1,3,1,0,1,184,8]),'),
+ (b'],[0,0,0,2,0,1,164,12]),', b'],[0,0,0,2,0,1,180,12]),'),
+ (b'],[0,1,0,2,1,2,272,28]),', b'],[0,1,0,2,1,2,288,28]),'),
+ (b'],[1,0,0,2,1,2,256,28]),', b'],[1,0,0,2,1,2,272,28]),'),
+ (b'],[1,1,0,2,1,3,324,32]),', b'],[1,1,0,2,1,3,340,32]),'),
+ (b'],[1,1,0,2,2,3,364,44]),', b'],[1,1,0,2,2,3,380,44]),'),
+ (b'assert_eq!(al.attempts,14);', b'assert_eq!(al.attempts,16);'),
+ (b'al.trace.iter().take(10)', b'al.trace.iter().take(12)'),
+ (b'al.trace.iter().skip(10)', b'al.trace.iter().skip(12)'),
+ (b'let retained=112+size_of::<DeclarationIndex', b'let retained=120+size_of::<DeclarationIndex'),
+ (b'assert_eq!(alloc.attempts,14);', b'assert_eq!(alloc.attempts,16);'),
+ (b'("index modules",2,60)',
+  b'("index enums",0,20),("index variants",0,12),("index modules",2,68)'),
+ (b'for fail in 1..=14 {', b'for fail in 1..=16 {'),
+ (b'[36,12,28,16,60,20,16,8]', b'[36,12,28,16,68,20,16,8]'))
+
 OBSERVER = 'semantic/observer.rs'
 OBSERVER_ADAPTER_VERSION = 'unit2-record-aggregate-observer-v1'
 OBSERVER_ORIGINAL_SHA = 'f2403aace53b6255a94b8b3ec0290db025638c5af94571d5729355672681fb00'
@@ -931,6 +1014,42 @@ def adapt_enum_unit2_observer(borrowed):
         restored = restored.replace(new, old)
     require(restored == borrowed, "enum Unit2 observer reverse identity differs")
     return result
+
+
+def adapt_enum_index_resource(original):
+    """Prescribe only independently derived representation/reservation successors."""
+    require(digest(original) == ENUM_INDEX_RESOURCE_ORIGINAL_SHA
+            and len(original) == ENUM_INDEX_RESOURCE_ORIGINAL_BYTES, "wrong original enum index resource")
+    require(len(ENUM_INDEX_RESOURCE_SEAMS) == 17, "wrong enum index resource substitution count")
+    result = original
+    for old, new in ENUM_INDEX_RESOURCE_SEAMS:
+        require(result.count(old) == 1 and new not in result, "enum index resource seam drift")
+        result = result.replace(old, new)
+    require(digest(result) == ENUM_INDEX_RESOURCE_DERIVED_SHA
+            and len(result) == ENUM_INDEX_RESOURCE_DERIVED_BYTES, "wrong derived enum index resource")
+    restored = result
+    for old, new in reversed(ENUM_INDEX_RESOURCE_SEAMS):
+        require(restored.count(new) == 1, "enum index resource reverse seam drift")
+        restored = restored.replace(new, old)
+    require(restored == original, "enum index resource reverse identity differs")
+    return result
+
+
+def adapt_enum_unit2_comparator(original):
+    """Keep the frozen comparator and add only the four-row named successor."""
+    require(digest(original) == UNIT2_COMPARATOR_ORIGINAL_SHA, "wrong original Unit2 comparator")
+    require(len(UNIT2_COMPARATOR_SEAMS) == 3, "wrong enum Unit2 comparator substitution count")
+    derived = original
+    for old, new in UNIT2_COMPARATOR_SEAMS:
+        require(derived.count(old) == 1 and new not in derived, "enum Unit2 comparator seam drift")
+        derived = derived.replace(old, new)
+    require(digest(derived) == UNIT2_COMPARATOR_DERIVED_SHA, "wrong derived enum Unit2 comparator")
+    restored = derived
+    for old, new in reversed(UNIT2_COMPARATOR_SEAMS):
+        require(restored.count(new) == 1, "enum Unit2 comparator reverse seam drift")
+        restored = restored.replace(new, old)
+    require(restored == original, "enum Unit2 comparator reverse identity differs")
+    return derived
 
 
 def compile_fixture_paths(source, *, combined=False):
@@ -1421,6 +1540,44 @@ def preflight(repo, package=PACKAGE):
         "control_tests": list(OBSERVER_CONTROL_NAMES), "control_tests_per_profile": 6,
         "scope": BORROWED_OBSERVER_SCOPE,
     }, "stale borrowed Unit2 observer adapter authority")
+    require(digest(package_bytes["enum-resource-authority.json"]) == ENUM_INDEX_RESOURCE_AUTHORITY_SHA
+            and len(package_bytes["enum-resource-authority.json"]) == ENUM_INDEX_RESOURCE_AUTHORITY_BYTES,
+            "stale enum index resource authority")
+    index_resource_authority = json.loads(package_bytes["enum-resource-authority.json"])
+    index_resource = adapt_enum_index_resource(historical_bytes[INDEX_RESOURCE])
+    enum_rows = {row["path"]: row for row in enum_current["files"]}
+    require(index_resource_authority["schema"] == "oxid-unit2-enum-free-index-resource-v1"
+            and index_resource_authority["version"] == ENUM_INDEX_RESOURCE_VERSION
+            and index_resource_authority["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and index_resource_authority["reviewed_source_head"] == ENUM_HEAD
+            and index_resource_authority["source_only_tree"] == ENUM_TREE
+            and index_resource_authority["original"] == entry(INDEX_RESOURCE, historical_bytes[INDEX_RESOURCE])
+            and index_resource_authority["derived"] == entry(INDEX_RESOURCE, index_resource)
+            and index_resource_authority["changed_controls"] == list(ENUM_INDEX_RESOURCE_CONTROLS)
+            and index_resource_authority["logical_resource_tests"] == 21
+            and index_resource_authority["preserved_test_names"] == json.loads(historical_bytes["resource-test-names.json"])
+            and index_resource_authority["substitutions"] == [
+                {"old_sha256": digest(old), "new_sha256": digest(new), "count": 1}
+                for old, new in ENUM_INDEX_RESOURCE_SEAMS]
+            and all(row == enum_rows[row["path"]] for row in index_resource_authority["source_dependencies"]),
+            "stale enum index resource binding")
+    require(digest(package_bytes[SEMANTIC_HELPER]) == SEMANTIC_HELPER_SHA
+            and digest(package_bytes[SEMANTIC_DESCRIPTOR]) == SEMANTIC_DESCRIPTOR_SHA,
+            "unapproved enum semantic amendment")
+    semantic_module = types.ModuleType("current_enum_semantic_amendment")
+    semantic_module.__file__ = str(package / SEMANTIC_HELPER)
+    exec(compile(package_bytes[SEMANTIC_HELPER], semantic_module.__file__, "exec"), semantic_module.__dict__)
+    semantic_amendment = semantic_module.Amendment(package / "current-source.json",
+        repo / U2 / "semantic/corpus.jsonl.gz", package / SEMANTIC_DESCRIPTOR)
+    semantic_receipt = semantic_amendment.receipt()
+    semantic_report = {**semantic_receipt, "rows": [
+        {"case": case_id,
+         "frozen_expected_canonical_sha256": semantic_amendment.rows[case_id]["frozen_expected_canonical_sha256"],
+         "old_expected": semantic_amendment.rows[case_id]["old_unit2_expected"],
+         "current_expected": semantic_amendment.rows[case_id]["current_unit2_expected"],
+         "current_result": semantic_amendment.rows[case_id]["current_unit2_result"]}
+        for case_id in semantic_module.CASE_IDS]}
+    unit2_comparator = adapt_enum_unit2_comparator(historical_bytes[UNIT2_COMPARATOR])
     enum_observer = adapt_enum_unit2_observer(borrowed_observer)
     require(enumeration["unit2_observer_adapter"] == {
         "version": ENUM_OBSERVER_ADAPTER_VERSION, "predecessor_version": BORROWED_OBSERVER_ADAPTER_VERSION,
@@ -1443,6 +1600,9 @@ def preflight(repo, package=PACKAGE):
             "slices_inputs": inputs, "selected": selected, "historical": historical,
             "inputs": enum_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": enum_resource, "combined_resource": adapted_resource,
+            "index_resource": index_resource, "index_resource_authority": index_resource_authority,
+            "unit2_comparator": unit2_comparator, "semantic_amendment": semantic_receipt,
+            "semantic_report": semantic_report,
             "observer": enum_observer, "borrowed_observer": borrowed_observer, "aggregate_observer": adapted_observer,
             "package_bytes": package_bytes, "package_manifest": package_manifest,
             "touched": touched, "authority": authority,
@@ -1508,9 +1668,15 @@ def prepare_archived(output, captured):
 def prepare_unit2(output, captured):
     inputs = dict(captured["historical_bytes"])
     inputs[RESOURCE] = captured["resource"]
+    inputs[INDEX_RESOURCE] = captured["index_resource"]
+    inputs[UNIT2_COMPARATOR] = captured["unit2_comparator"]
+    inputs[UNIT2_FROZEN_COMPARATOR] = captured["historical_bytes"][UNIT2_COMPARATOR]
+    inputs[UNIT2_SEMANTIC_HELPER] = captured["package_bytes"][SEMANTIC_HELPER]
+    inputs[UNIT2_SEMANTIC_DESCRIPTOR] = captured["package_bytes"][SEMANTIC_DESCRIPTOR]
     inputs[OBSERVER] = captured["observer"]
-    require({name for name, data in inputs.items() if data != captured["historical_bytes"][name]}
-            == {RESOURCE, OBSERVER}, "unexpected current Unit2 adapter member changes")
+    require({name for name, data in inputs.items() if data != captured["historical_bytes"].get(name)}
+            == {RESOURCE, INDEX_RESOURCE, OBSERVER, UNIT2_COMPARATOR, UNIT2_FROZEN_COMPARATOR,
+                UNIT2_SEMANTIC_HELPER, UNIT2_SEMANTIC_DESCRIPTOR}, "unexpected current Unit2 adapter member changes")
     manifest = {**captured["historical"], "files": [entry(name, data) for name, data in sorted(inputs.items())]}
     inputs["package-inputs.json"] = encoded(manifest)
     root = output / "compatibility" / "typed_project_unit2_independent"
@@ -1518,7 +1684,10 @@ def prepare_unit2(output, captured):
     compat = output / "compatibility" / "typed_project_unit3_compatibility"
     materialize(compat, {"run.py": captured["references"][COMPAT]})
     return {"resource_package_root": str(root), "resource_package_inputs_sha256": digest(inputs["package-inputs.json"]),
-            "resource_package_changes": [RESOURCE, OBSERVER, "package-inputs.json"],
+            "resource_package_changes": [RESOURCE, INDEX_RESOURCE, OBSERVER, UNIT2_COMPARATOR, UNIT2_FROZEN_COMPARATOR,
+                                         UNIT2_SEMANTIC_HELPER, UNIT2_SEMANTIC_DESCRIPTOR, "package-inputs.json"],
+            "semantic_amendment": captured["semantic_amendment"],
+            "index_resource_adapter": captured["index_resource_authority"],
             "observer_adapter": captured["enum_authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_predecessor": captured["authority"]["derived_resource"],
@@ -1577,6 +1746,30 @@ def verify_unit2_result(output, captured, seam, prepare_only):
                     and not binary.is_symlink(), "test binary outside isolated build")
             require(digest(binary.read_bytes()) == receipt["binary_sha256"], "changed built binary")
             check_entries(run, receipt["artifacts"])
+            current_comparison = read_json(run / (profile + "-comparison.json"))
+            require(current_comparison["semantic_amendment"] == captured["semantic_report"],
+                    "wrong current Unit2 semantic amendment receipt")
+            historical = current_comparison["historical_semantic_comparison"]
+            historical_name = profile + "-comparison-before-enum-enabled-qualified-values.json"
+            require(historical["identity"] == captured["semantic_amendment"]["identity"]
+                    and historical["historical_qualification_claim"] is False
+                    and historical["status"] == 0
+                    and historical["historical_mismatches"] == captured["semantic_amendment"]["cases"]
+                    and historical["normalized_sha256"] == digest((run / (profile + "-normalized.jsonl")).read_bytes())
+                    and historical["argv"] == [sys.executable, "-B", str(final_package / UNIT2_FROZEN_COMPARATOR),
+                                               profile, str(run / (profile + "-normalized.jsonl")), str(run / historical_name)],
+                    "wrong historical Unit2 comparison binding")
+            for key, suffix in (("comparison", ".json"), ("stdout", ".stdout"), ("stderr", ".stderr")):
+                path = (run / historical_name).with_suffix(suffix)
+                require(historical[key] == entry(str(path), path.read_bytes()), "changed historical Unit2 report")
+            historical_report = read_json(run / historical_name)
+            require(historical_report["profile"] == profile and historical_report["cases"] == 3603
+                    and historical_report["counts"] == {"match": 3599, "mismatch": 4}
+                    and len(historical_report["results"]) == 3603
+                    and len({row["case"] for row in historical_report["results"]}) == 3603
+                    and sorted(row["case"] for row in historical_report["results"] if row["status"] == "mismatch")
+                        == captured["semantic_amendment"]["cases"], "unapproved historical Unit2 comparison changes")
+
         check_entries(run, child["evidence"])
     check_entries(Path(seam["resource_package_root"]), seam["files"])
     require(digest((Path(seam["resource_package_root"]) / "package-inputs.json").read_bytes())
@@ -1664,7 +1857,7 @@ def run_unit2_observer_controls(repo, output, captured, seam):
         path = controls / (profile + "-receipt.json")
         write_json(path, record)
         receipts.append(entry(str(path.relative_to(output)), path.read_bytes()))
-    return {"observer_adapter_version": BORROWED_OBSERVER_ADAPTER_VERSION,
+    return {"observer_adapter_version": ENUM_OBSERVER_ADAPTER_VERSION,
             "observer_control_tests_per_profile": 6, "observer_control_receipts": receipts,
             "test_function_executions": 2 * (1 + 21 + 6)}
 
@@ -1698,6 +1891,8 @@ def main():
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
                       enum_authority_sha256=ENUM_AUTHORITY_SHA,
+                      enum_index_resource_authority_sha256=ENUM_INDEX_RESOURCE_AUTHORITY_SHA,
+                      semantic_amendment=captured["semantic_amendment"],
                       projected_source_sha256=PROJECTED_SOURCE_SHA,
                       projected_authority_sha256=PROJECTED_AUTHORITY_SHA,
                       unary_source_sha256=UNARY_SOURCE_SHA,

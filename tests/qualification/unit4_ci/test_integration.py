@@ -209,17 +209,18 @@ class ObserverPreparationControls(unittest.TestCase):
                     with self.assertRaisesRegex(q.Reject, 'public source authority'):
                         join.build_configs(capsule, str(output), provenance, 'Linux x86_64', REPO)
 
-    def test_lifecycle_successor_changes_only_the_array_policy_context(self):
+    def test_lifecycle_successor_preserves_exact_enum_and_array_lineage(self):
         current = (REPO / q.OBSERVER_PATCH).read_bytes()
         original = (REPO / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
         self.assertEqual(self.builder.verify_lifecycle_successor(current), original)
         for changed in (current + b'\n', current.replace(b'ArraySyntaxPolicy', b'OtherSyntaxPolicy'),
-                        current.replace(b'parse_attempt', b'other_attempt')):
+                        current.replace(b'parse_attempt', b'other_attempt'),
+                        current.replace(b'EnumSyntaxPolicy', b'OtherEnumSyntaxPolicy')):
             with self.subTest(changed=q.sha(changed)), self.assertRaises(Exception):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 202)
+        self.assertEqual(len(self.manifest['files']), 238)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -228,7 +229,9 @@ class ObserverPreparationControls(unittest.TestCase):
 
     def test_current_identity_rejects_before_observer_materialization(self):
         for member in ('src/frontend/oir/owned_types/array_tests.rs', 'src/frontend/format.rs',
-                       'src/frontend/oir/unary_source_tests.rs'):
+                       'src/frontend/oir/unary_source_tests.rs', 'src/frontend/parser/enums.rs',
+                       'tests/fixtures/bounded_enum_scanner/main.ox',
+                       'tests/fixtures/bounded_enum_scanner/scanner.ox'):
             for control in ('changed', 'coherent-changed', 'missing', 'coherent-missing', 'stale-checkpoint'):
                 with self.subTest(member=member, control=control), tempfile.TemporaryDirectory() as temporary:
                     root = Path(temporary).resolve()
@@ -311,7 +314,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 15)
+        self.assertEqual(len(expected), 16)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
@@ -962,7 +965,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 736)
+        self.assertEqual(report['full_archive_only'], 808)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1177,7 +1180,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 148)
+        self.assertEqual(len(compiler), 182)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
@@ -1220,6 +1223,218 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
                     session['current_source_manifest']['sha256'] = '0' * 64
                 else: checkout[mutation] = '0' * 40
                 self.check_current_source_boundary(session, 'parser exact current source map/checkpoint')
+
+
+class EnumProjectionTransportControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.adapter = q.module('_unit4_enum_transport_controls', REPO / q.PARSER / 'portable.py')
+        cls.authority = cls.adapter.authority()
+
+    def test_exact_projection_is_rederived_from_raw_normalized_rows(self):
+        rows = [{"ast": None, "diagnostics": [{"code": "E0400"}], "executed": True}]
+        original = copy.deepcopy(rows)
+        _, receipt = self.adapter.project_enum_observations(self.authority, rows)
+        self.assertEqual(join.verify_enum_projection(self.adapter, self.authority, rows, receipt), receipt)
+        self.assertEqual(rows, original)
+
+    def test_changed_reordered_missing_or_extra_projection_receipt_rejects(self):
+        rows = [{"ast": None, "diagnostics": [{"code": "E0400"}], "executed": True}]
+        _, receipt = self.adapter.project_enum_observations(self.authority, rows)
+        for mutation in ('hash', 'count', 'indices', 'adapter', 'missing', 'extra'):
+            altered = copy.deepcopy(receipt)
+            if mutation == 'hash': altered['original_observations_canonical_sha256'] = '0' * 64
+            elif mutation == 'count': altered['observations'] += 1
+            elif mutation == 'indices': altered['changed_row_indices'] = [0]
+            elif mutation == 'adapter': altered['adapter_canonical_sha256'] = '0' * 64
+            elif mutation == 'missing': altered.pop('restored_observations_canonical_sha256')
+            else: altered['unapproved'] = True
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(q.Reject, 'projection receipt differs'):
+                join.verify_enum_projection(self.adapter, self.authority, rows, altered)
+        changed = copy.deepcopy(rows)
+        changed[0]['diagnostics'][0]['code'] = 'E9999'
+        with self.assertRaisesRegex(q.Reject, 'projection receipt differs'):
+            join.verify_enum_projection(self.adapter, self.authority, changed, receipt)
+
+    def test_projection_refuses_nonhistorical_ast_in_transport(self):
+        rows = [{"ast": {"canonical": {"tag": "Program", "enums": ["unapproved"]}}}]
+        with self.assertRaisesRegex(q.Reject, 'structural projection rejected'):
+            join.verify_enum_projection(self.adapter, self.authority, rows, {})
+
+
+class EnumSemanticReceiptTransportControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temp.cleanup)
+        cls.root = Path(cls.temp.name).resolve()
+        transport = q.module('_unit4_semantic_receipt_transport', REPO / q.TRANSPORT / 'transport.py')
+        manifest = transport.materialize(REPO / q.TRANSPORT, cls.root / 'contracts')
+        mapping = {row['logical_path']: str(cls.root / 'contracts' / row['archive_path']) for row in manifest['members']}
+        public_root = Path(mapping[manifest['active_contracts']['public']['logical_path']]).parent
+        cls.c, _, cls.collector, _, cls.Predecessors = q.public_modules(REPO)
+        cls.contracts = cls.c.Contracts(public_root, mapping, REPO / q.AMENDMENT)
+        cls.predecessors = cls.Predecessors(cls.contracts, REPO / q.SOURCE / 'current-source.json', REPO / q.SOURCE)
+        roster = cls.contracts.roster('predecessors', 'Linux x86_64')
+        ids = cls.predecessors.qualified_paths_amendment['cases']
+        cls.amended_rows = [row for row in roster if row['scope'] == 'execute' and row['group'] == 'Unit2' and row['case_id'] in ids]
+        cls.unaffected = next(row for row in roster if row['scope'] == 'execute' and row['group'] == 'Unit2' and
+                              row['case']['kind'] == 'first-diagnostic-only' and row['case_id'] not in ids)
+        cls.policy = cls.contracts.tables['public']['new_policy_diagnostic_bounds']
+
+    def process(self, row, historical=False):
+        amended = self.predecessors._qualified_paths.rows.get(row['case_id'])
+        if amended:
+            first = amended['old_public_expected' if historical else 'current_public_expected']['first_diagnostic']
+        else:
+            first = self.predecessors.rows['Unit2', row['case_id']]['expected']['first_diagnostic']
+        diagnostic = {'schema_version': 1, 'edition': 'typed-preview', 'kind': 'diagnostic',
+                      'severity': 'error', **first, 'message': 'arbitrary valid diagnostic text',
+                      'primary': None, 'secondary': [], 'notes': []}
+        summary = {'schema_version': 1, 'edition': 'typed-preview', 'kind': 'check-summary',
+                   'success': False, 'errors': 1, 'functions': None}
+        stdout = ''.join(json.dumps(value) + '\n' for value in (diagnostic, summary))
+        return {'status': 1, 'timed_out': False, 'stdout': stdout, 'stderr': '',
+                'stdout_sha256': q.sha(stdout.encode()), 'stderr_sha256': q.sha(b'')}
+
+    def setUp(self):
+        self.rows = copy.deepcopy(self.amended_rows + [self.unaffected])
+        self.values = []
+        for row in self.rows:
+            value = {**self.c.receipt_identity(row), 'executed': True, 'status': 'pass', 'process': self.process(row)}
+            value['projection_kind'] = row['case']['kind']
+            for key in ('expected_authority_line_sha256', 'expected_projection_sha256', 'source_line_sha256'):
+                if key in row['case']: value[key] = row['case'][key]
+            amendment = self.predecessors.qualified_paths_comparison(row, value['process'])
+            if amendment is not None:
+                value['qualified_paths_comparison'] = amendment
+            self.values.append(value)
+        self.observations = {'path': '/synthetic/public/predecessors/observations.jsonl.gz', 'bytes': 1, 'sha256': 'a' * 64}
+        self.authority_binding = {'path': '/synthetic/public/qualified-paths-amendment.json', 'bytes': 1, 'sha256': 'b' * 64}
+        self.history_binding = {'path': '/synthetic/public/predecessors/historical-comparison.json', 'bytes': 1, 'sha256': 'c' * 64}
+        self.authority = copy.deepcopy(self.predecessors.qualified_paths_amendment)
+        self.history = self.collector.predecessor_history(self.rows, self.values, self.predecessors, self.policy, self.observations)
+        self.report = self.collector.predecessor_report_fields(self.predecessors, self.history, self.authority_binding, self.history_binding)
+
+    def verify(self):
+        return join.verify_qualified_paths_receipts(self.collector, self.predecessors, self.rows, self.values,
+                    self.policy, self.authority, self.report, self.history, self.observations,
+                    self.authority_binding, self.history_binding)
+
+    def test_eight_amended_tuples_replay_both_semantics_without_raw_changes(self):
+        before = copy.deepcopy((self.rows, self.values, self.predecessors.rows))
+        self.assertEqual(len(self.amended_rows), 8)
+        self.verify()
+        self.assertEqual(len(self.history['mismatches']), 8)
+        self.assertEqual(len(self.history['qualified_paths_comparisons']), 8)
+        self.assertEqual(self.history['executed'], 9)
+        for row, value in zip(self.rows, self.values):
+            self.predecessors.compare(row, value['process'], self.policy)
+        self.assertEqual((self.rows, self.values, self.predecessors.rows), before)
+        self.assertNotIn('qualified_paths_comparison', self.values[-1])
+
+    def test_collector_replay_keeps_frozen_expectation_and_source_identities(self):
+        # Only the process/semantic seam is under test; build/native checks have separate controls.
+        row, value = self.rows[0], self.values[0]
+        sources = self.predecessors.rows['Unit2', row['case_id']]['sources']
+        with patch.object(self.collector, 'check_common'):
+            self.collector.core_compare('predecessors', row, value, {}, self.contracts, sources, {}, self.predecessors)
+            for key in ('expected_authority_line_sha256', 'expected_projection_sha256', 'source_line_sha256'):
+                altered = copy.deepcopy(value)
+                altered[key] = '0' * 64
+                with self.subTest(key=key), self.assertRaises(self.c.Reject):
+                    self.collector.core_compare('predecessors', row, altered, {}, self.contracts, sources, {}, self.predecessors)
+
+    def test_missing_extra_and_forged_per_tuple_comparisons_reject(self):
+        for mutation in ('missing', 'extra', 'forged-current', 'forged-historical', 'forged-observed',
+                         'extra-field', 'namespace', 'boolean-status', 'unaffected', 'duplicate', 'reorder'):
+            with self.subTest(mutation=mutation):
+                self.setUp()
+                value = self.values[0]
+                comparison = value['qualified_paths_comparison']
+                if mutation == 'missing': value.pop('qualified_paths_comparison')
+                elif mutation == 'extra': self.values[-1]['qualified_paths_comparison'] = comparison
+                elif mutation == 'forged-current': comparison['current']['expected']['first_diagnostic']['code'] = 'E9999'
+                elif mutation == 'forged-historical': comparison['historical']['status'] = 'match'
+                elif mutation == 'forged-observed': comparison['observed_projection']['first_diagnostic']['stage'] = 'parse'
+                elif mutation == 'extra-field': comparison['unapproved'] = True
+                elif mutation == 'namespace': value['qualified_paths_forgery'] = True
+                elif mutation == 'boolean-status': comparison['observed_projection']['status'] = True
+                elif mutation == 'unaffected': self.rows[0]['case']['id'] = self.unaffected['case_id']
+                elif mutation == 'duplicate': self.values.append(copy.deepcopy(value))
+                else: self.values.reverse()
+                with self.assertRaises((q.Reject, self.c.Reject, KeyError, ValueError)):
+                    self.verify()
+
+    def test_authority_and_report_metadata_reject_even_with_forged_matching_summary(self):
+        for mutation in ('missing-authority', 'wrong-authority', 'source', 'extra-authority', 'missing-report',
+                         'wrong-report', 'extra-report', 'authority-binding', 'history-binding', 'membership'):
+            with self.subTest(mutation=mutation):
+                self.setUp()
+                if mutation == 'missing-authority': self.authority = None
+                elif mutation == 'wrong-authority': self.authority['identity'] = 'unapproved'
+                elif mutation == 'source': self.authority['source_manifest']['sha256'] = '0' * 64
+                elif mutation == 'extra-authority': self.authority['unapproved'] = True
+                elif mutation == 'missing-report': self.report.pop('qualified_paths_amendment')
+                elif mutation == 'wrong-report': self.report['comparison_basis'] = 'unchanged'
+                elif mutation == 'extra-report': self.report['qualified_paths_unapproved'] = True
+                elif mutation == 'authority-binding': self.report['qualified_paths_amendment_receipt'] = {**self.authority_binding, 'sha256': '0' * 64}
+                elif mutation == 'history-binding': self.report['historical_comparison'] = {**self.history_binding, 'sha256': '0' * 64}
+                else: self.report['qualified_paths_amended_keys'].pop()
+                if mutation in ('wrong-authority', 'source', 'extra-authority'):
+                    self.report['qualified_paths_amendment'] = copy.deepcopy(self.authority)
+                with self.assertRaises(q.Reject): self.verify()
+
+    def test_historical_report_and_rehashed_raw_observation_changes_reject(self):
+        for mutation in ('missing', 'extra', 'forged', 'raw', 'old-output', 'extra-unaffected-mismatch'):
+            with self.subTest(mutation=mutation):
+                self.setUp()
+                if mutation == 'missing': self.history['mismatches'].pop()
+                elif mutation == 'extra': self.history['mismatches'].append(copy.deepcopy(self.history['mismatches'][0]))
+                elif mutation == 'forged': self.history['qualified_paths_comparisons'][0]['comparison']['historical']['status'] = 'match'
+                else:
+                    index = -1 if mutation == 'extra-unaffected-mismatch' else 0
+                    self.values[index]['process'] = self.process(self.rows[index], historical=True)
+                    process = self.values[index]['process']
+                    if mutation != 'old-output':
+                        decoded = [json.loads(line) for line in process['stdout'].splitlines()]
+                        decoded[0]['code'] = 'E9999'
+                        process['stdout'] = ''.join(json.dumps(value) + '\n' for value in decoded)
+                        process['stdout_sha256'] = q.sha(process['stdout'].encode())
+                    # Rehashing transport and regenerating attacker-controlled metadata cannot authorize a new outcome.
+                    comparison = self.predecessors.qualified_paths_comparison(self.rows[index], process)
+                    if comparison is not None: self.values[index]['qualified_paths_comparison'] = comparison
+                    self.history = self.collector.predecessor_history(self.rows, self.values, self.predecessors, self.policy, self.observations)
+                    self.report = self.collector.predecessor_report_fields(self.predecessors, self.history, self.authority_binding, self.history_binding)
+                with self.assertRaises(q.Reject): self.verify()
+
+    def test_host_exclusions_cannot_gain_amendment_metadata(self):
+        self.rows = [row for row in self.contracts.roster('predecessors', 'Windows x86_64')
+                     if row['group'] == 'Unit2' and row['case_id'] in self.authority['cases']]
+        self.values = [self.collector.skipped(row) for row in self.rows]
+        self.history = self.collector.predecessor_history(self.rows, self.values, self.predecessors, self.policy, self.observations)
+        self.report = self.collector.predecessor_report_fields(self.predecessors, self.history, self.authority_binding, self.history_binding)
+        self.verify()
+        self.assertEqual(self.history['qualified_paths_comparisons'], [])
+        self.values[0]['qualified_paths_comparison'] = {}
+        with self.assertRaises(q.Reject): self.verify()
+
+    def test_compact_reader_retains_named_authority_and_historical_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capsule = Capsule(root / 'capsule')
+            source = REPO / q.SOURCE / 'current-source.json'
+            authority_path, history_path = root / 'qualified-paths-amendment.json', root / 'historical-comparison.json'
+            q.save(authority_path, self.authority); q.save(history_path, self.history)
+            for path in (source, authority_path, history_path): capsule.add(path, 'semantic-control')
+            capsule.finish({'status': 'pass'})
+            reader = ReadCapsule(capsule.root)
+            admitted = self.Predecessors(self.contracts, reader.path(q.identity(source)), REPO / q.SOURCE)
+            self.assertEqual(reader.json(q.identity(authority_path)), admitted.qualified_paths_amendment)
+            self.assertEqual(reader.json(q.identity(history_path)), self.history)
+            bound = reader.named(str(history_path))
+            reader.path(bound).write_bytes(b'forged historical comparison')
+            with self.assertRaises(q.Reject): reader.json(bound)
 
 
 class FinalFailureControls(unittest.TestCase):

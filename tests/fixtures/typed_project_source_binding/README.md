@@ -31,6 +31,41 @@ Current Unit2 still requires all 3,603 semantic cases, 21 resource tests and six
 observer controls per debug/release profile; current parser/public/native gates
 and exact-head hosted checks remain independent requirements.
 
+The named `unit2-enum-free-index-resource-v1` successor is pinned separately in
+`enum-resource-authority.json`. Exactly four of the 21 logical resource controls
+change for current representation: each enum-free module adds eight payload
+bytes, ModuleRow is 68 bytes, allocation coverage grows from 14 to 16 positions
+(including both zero-length enum vectors), and the retained trace split moves
+from 10 to 12. The one-function payload is 120 bytes. The historical `fourteen`
+function identifier is retained and now tests all 16 positions. The ten-lane
+row observation, all language/diagnostic/work/origin assertions and resource
+caps stay fixed. Seventeen count-one substitutions reverse to the exact frozen
+resource file; its original bytes and 21-name roster remain untouched.
+
+The authority records the independently prescribed arithmetic and measured
+layout provenance. The 9d4b3dc non-test type-layout receipt supplies unchanged
+definition facts through feature511df, including index header344 and fixed
+scratch4088. It is historical measurement reuse, not fresh current execution.
+Both additional empty reservations produce zero-unit work events; total work
+is unchanged, and no byte-identical complete collection trace is claimed.
+
+The distinct `enum-enabled-qualified-values-v1` semantic amendment admits only
+four source/whole-row-bound historical parser cases. Their Enabled loader-only
+routes now parse successfully with exactly one root read, no child reads and no
+diagnostics; the local qualifiers remain OriginalSingleFile while bare crate::g
+is ProjectSyntax. Their inherited public typed-check projections still reject;
+only the separately declared first-code/stage obligations change. This semantic
+amendment is separate from the resource representation adapter and Closed parser
+AST carrier projection. It never rewrites source files or raw/normalized rows.
+
+The current Unit2 copy retains the original comparator as a separate exact file,
+runs it first on the same normalized rows, and preserves its four historical
+mismatches in named reports. Three reversible comparator seams then admit only
+the named current expectations and require all 3,603 unique rows plus exactly one
+application of each amendment. Both current and historical reports/commands are
+bound in each verified current profile receipt. Frozen corpus/expectation bytes
+and all other semantic rows are unchanged.
+
 The sections below record predecessor transitions and their historical counts.
 
 ## Historical checked unary negation successor

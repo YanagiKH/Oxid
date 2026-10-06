@@ -77,6 +77,35 @@ def build_configs(capsule, output, provenance, host, repo):
     return configs
 
 
+def verify_qualified_paths_receipts(run, predecessors, rows, values, policy, authority,
+                                    report, history, observations, authority_binding, history_binding):
+    """Reconstruct both semantics from admitted sources and raw process observations."""
+    q.need(q.canonical(authority) == q.canonical(predecessors.qualified_paths_amendment) and authority is not None,
+           'public predecessor semantic amendment authority differs')
+    try:
+        q.need(len(rows) == len(values), 'public predecessor semantic receipt count')
+        for row, value in zip(rows, values):
+            q.need(row['key'] == value['key'], 'public predecessor semantic tuple order')
+            run.check_predecessor_amendment(row, value, predecessors)
+        expected_history = run.predecessor_history(rows, values, predecessors, policy, observations)
+    except (run.Reject, ValueError, KeyError, TypeError) as error:
+        raise q.Reject('public predecessor semantic comparison rejected: ' + str(error)) from error
+    q.need(q.canonical(history) == q.canonical(expected_history), 'public predecessor historical comparison differs')
+    expected = run.predecessor_report_fields(predecessors, expected_history, authority_binding, history_binding)
+    q.need(all(q.canonical(report.get(key)) == q.canonical(value) for key, value in expected.items()),
+           'public predecessor amended report differs')
+    allowed = {key for key in expected if key.startswith('qualified_paths_')}
+    q.need({key for key in report if key.startswith('qualified_paths_')} == allowed,
+           'extra public predecessor amendment metadata')
+    comparisons = expected_history['qualified_paths_comparisons']
+    q.need(all(row['comparison']['current']['status'] == 'match' and
+               row['comparison']['historical']['status'] == 'mismatch' for row in comparisons),
+           'public predecessor amended/historical outcome differs')
+    q.need([row['key'] for row in expected_history['mismatches']] == [row['key'] for row in comparisons],
+           'public predecessor historical mismatch membership differs')
+    return expected
+
+
 def public_join(capsule, contracts, repo, plan):
     c, rt, run, guards, Predecessors = q.public_modules(repo)
     final = capsule.json(capsule.manifest['public_finalization'])
@@ -135,7 +164,13 @@ def public_join(capsule, contracts, repo, plan):
         q.need(trap['build']['status'] == trap['rustc']['status'] == 0 and trap['rustc']['stdout'].startswith('rustc 1.99.0 '), 'actual trap build missing')
         for process in (trap['build'], trap['rustc']):
             checked_process(process)
-    predecessors = Predecessors(contracts)
+    predecessors = Predecessors(contracts,
+                                source_manifest=capsule.path(configs['ordinary']['source_manifest']),
+                                amendment_root=Path(repo) / q.SOURCE)
+    authority_binding = capsule.named(original_child(output, 'public', 'qualified-paths-amendment.json'))
+    authority = capsule.json(authority_binding)
+    q.need(main_result.get('predecessor_semantic_amendment') == authority_binding,
+           'main public semantic amendment receipt differs')
     counts, all_keys, replaced = {}, set(), set()
     for section in q.SECTIONS:
         roster = contracts.roster(section, host)
@@ -146,6 +181,15 @@ def public_join(capsule, contracts, repo, plan):
         c.check_inventory(roster, original)
         actual_counts = c.check_inventory(roster, values, allow_capability_gap=False)
         q.need(actual_counts == final['sections'][section] and actual_counts['executed'] == actual_counts['required_local'], 'public count/result mismatch')
+        if section == 'predecessors':
+            report = capsule.json(capsule.named(original_child(output, 'public', section, 'comparison.json')))
+            history_binding = capsule.named(original_child(output, 'public', section, 'historical-comparison.json'))
+            q.need(q.canonical(main_result['sections'][section]) == q.canonical(report), 'main predecessor amended report differs')
+            verify_qualified_paths_receipts(run, predecessors, roster, original,
+                contracts.tables['public']['new_policy_diagnostic_bounds'], authority, report,
+                capsule.json(history_binding),
+                capsule.named(original_child(output, 'public', section, 'observations.jsonl.gz')),
+                authority_binding, history_binding)
         actual_index = {row['key']: row for row in values}
         for row in roster:
             got = actual_index[row['key']]
@@ -164,6 +208,9 @@ def public_join(capsule, contracts, repo, plan):
                 replaced.add(key)
             else:
                 q.need(got == base, 'unapproved changed public raw row')
+            if section != 'predecessors':
+                q.need(not any(key.startswith('qualified_paths_') for key in got),
+                       'extra semantic amendment on unaffected public domain')
             if row['scope'] != 'execute':
                 continue
             q.need(got['status'] == 'pass' and got['executed'] is True, 'unqualified actual public tuple')
@@ -211,6 +258,16 @@ def parser_join(capsule, repo, contract_root, plan):
     return parser_records(capsule, repo, contract_root, plan, seal)
 
 
+def verify_enum_projection(adapter, authority, rows, receipt):
+    """Independently derive the closed enum-free projection from admitted raw rows."""
+    try:
+        _, expected = adapter.project_enum_observations(authority, rows)
+    except (ValueError, KeyError, TypeError) as error:
+        raise q.Reject('parser enum structural projection rejected: ' + str(error)) from error
+    q.need(receipt == expected, 'parser enum structural projection receipt differs')
+    return expected
+
+
 def parser_records(capsule, repo, contract_root, plan, seal):
     """Transport predicate only; the caller must first verify its comparison seal."""
     result = capsule.json(seal['comparison'])
@@ -242,12 +299,20 @@ def parser_records(capsule, repo, contract_root, plan, seal):
            frozen['session'] == result['session'] and frozen['derivation'] == proof and
            frozen['observations'] == frozen['expected_observations'] == 638 and
            frozen['ordinary_passivity'] == result['ordinary_passivity'], 'retained frozen parser comparison differs')
+    unadapted = result['unadapted_frozen_comparison']
+    q.need(q.sha(comparator.canonical(unadapted)) == result['unadapted_frozen_comparison_canonical_sha256'] and
+           all(unadapted.get(key) == value for key, value in predecessor_receipt.items()) and
+           unadapted['observations'] == unadapted['expected_observations'] == 638 and
+           unadapted['session'] == result['session'] and unadapted['derivation'] == proof and
+           unadapted['ordinary_passivity'] == result['ordinary_passivity'],
+           'retained unadapted frozen parser comparison differs')
     sys.path.insert(0, str(Path(repo) / q.PARSER_FROZEN / 'frozen/helpers'))
     normalizer = q.module('_unit4_frozen_collector', Path(repo) / q.PARSER_FROZEN / 'frozen/helpers/run.py')
     expected_case_ids = [case['id'] for case in contract['cases']]
     expected_modes = sum(1 + ('relation_to_original' in case['expected']) for case in contract['cases'])
     q.need(len(expected_case_ids) == 248 and expected_modes == 319, 'parser frozen case/mode roster changed')
     binaries, nonces, total, pairs = set(), set(), 0, 0
+    normalized_rows = []
     for profile in q.PROFILES:
         builds = []
         for control in (False, True):
@@ -301,6 +366,7 @@ def parser_records(capsule, repo, contract_root, plan, seal):
                     line = normalized.readline()
                     q.need(line and q.loads(line) == row, 'changed/summary-only normalized parser row')
                     q.need(row['executed'] is True and row['observation_complete'] is True, 'incomplete parser mode')
+                    normalized_rows.append(row)
                     actual_count += 1
             q.need(normalized.readline() == '', 'extra normalized parser row')
         q.need(manifest['case_count'] == len(expected_case_ids) and manifest['observation_count'] == actual_count == expected_modes, 'parser profile incomplete')
@@ -330,7 +396,9 @@ def parser_records(capsule, repo, contract_root, plan, seal):
                 pairs += 1
     q.need(total == result['observations'] == result['expected_observations'] == 638 and pairs == 12 and len(binaries) == 4, 'parser total incomplete')
     q.need([(row['profile'], row['pairs']) for row in result['ordinary_passivity']] == [('debug', 6), ('release', 6)], 'parser passivity result incomplete')
+    projection = verify_enum_projection(adapter, authority, normalized_rows, result['enum_structural_projection'])
     return {'actual_observations': total, 'ordinary_passivity_pairs': pairs, 'fresh_builds': len(binaries),
+            'enum_structural_projection': projection,
             'comparison': seal['comparison'], 'seal': capsule.manifest['parser_seal'],
             'boundary': 'Exact normalized/raw case and mode transport, actual source/nonce/stream/build identities, and unchanged inputs sealed around fresh same-host semantic comparison. Binary bytes, toolchain replay and original path restoration require the separate full evidence archive.'}
 

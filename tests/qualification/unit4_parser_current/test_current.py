@@ -33,17 +33,22 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [364, 367, 367])
-        self.assertEqual(len(a['current_source']['files']), 201)
-        self.assertEqual(len(p.compiler_map(a)), 148)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [400, 403, 403])
+        self.assertEqual(len(a['current_source']['files']), 237)
+        self.assertEqual(len(p.compiler_map(a)), 182)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 151)
+        self.assertEqual(len(a['current']['source_delta']), 194)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
+ 'src/frontend/declaration_index/enum_query_tests.rs',
+ 'src/frontend/declaration_index/enum_tests.rs',
+ 'src/frontend/declaration_index/enum_views.rs',
+ 'src/frontend/enum_public_tests.rs',
  'src/frontend/format.rs',
  'src/frontend/format/ast_tests.rs',
+ 'src/frontend/format/enum_candidate_tests.rs',
  'src/frontend/format/resource_tests.rs',
  'src/frontend/format_cli.rs',
  'src/frontend/oir/negation_raw_tests.rs',
@@ -56,6 +61,16 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/composition_native_tests.rs',
  'src/frontend/oir/owned/composition_reference_tests.rs',
  'src/frontend/oir/owned/composition_verifier_tests.rs',
+ 'src/frontend/oir/owned/enum_admission_tests.rs',
+ 'src/frontend/oir/owned/enum_consumer_fixtures.rs',
+ 'src/frontend/oir/owned/enum_formatter_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_index_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_layout_tests.rs',
+ 'src/frontend/oir/owned/enum_match_tests.rs',
+ 'src/frontend/oir/owned/enum_native_tests.rs',
+ 'src/frontend/oir/owned/enum_parser_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_query_allocation_tests.rs',
+ 'src/frontend/oir/owned/enum_reference_tests.rs',
  'src/frontend/oir/owned/negation_raw_tests.rs',
  'src/frontend/oir/owned/projected_slice_native_tests.rs',
  'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
@@ -68,15 +83,36 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/source/array_pipeline_transport.rs',
  'src/frontend/oir/owned/source/array_type_controls.rs',
  'src/frontend/oir/owned/source/array_types_tests.rs',
+ 'src/frontend/oir/owned/source/enum_native_source_tests.rs',
+ 'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
+ 'src/frontend/oir/owned/source/enum_type_tests.rs',
+ 'src/frontend/oir/owned/source/hir_budget.rs',
+ 'src/frontend/oir/owned/source/hir_budget_tests.rs',
  'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_enum_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_inventory_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_paid_tests.rs',
+ 'src/frontend/oir/owned/source/resolver_storage.rs',
+ 'src/frontend/oir/owned/source/resolver_storage_tests.rs',
  'src/frontend/oir/owned/source/slice_raw_tests.rs',
  'src/frontend/oir/owned/source/slice_tests.rs',
+ 'src/frontend/oir/owned/source/type_storage.rs',
+ 'src/frontend/oir/owned/source/type_storage_tests.rs',
  'src/frontend/oir/owned_types/array_tests.rs',
  'src/frontend/oir/owned_types/composition_tests.rs',
+ 'src/frontend/oir/owned_types/enum_integration_tests.rs',
+ 'src/frontend/oir/owned_types/enums.rs',
  'src/frontend/oir/unary_source_tests.rs',
  'src/frontend/parser/array_syntax_tests.rs',
  'src/frontend/parser/arrays.rs',
+ 'src/frontend/parser/enum_syntax_tests.rs',
+ 'src/frontend/parser/enums.rs',
  'src/frontend/project/array_syntax_tests.rs',
+ 'src/frontend/project/budget_real_null_observer.rs',
+ 'src/frontend/project/enum_carrier_tests.rs',
+ 'src/frontend/project/enum_index_tests.rs',
+ 'tests/fixtures/bounded_enum_scanner/main.ox',
+ 'tests/fixtures/bounded_enum_scanner/scanner.ox',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -120,9 +156,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 70)
-        self.assertEqual(a['current']['reviewed_source_head'], '052ad52ac876c01b91701132cffb466689b24d01')
-        self.assertEqual(a['current']['source_only_tree'], 'a573ca3d279bc3e14ad6da1bd84cae9917d0fe50')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 77)
+        self.assertEqual(a['current']['reviewed_source_head'], '511df03975c2aa1a815f92155d673adb3571ff77')
+        self.assertEqual(a['current']['source_only_tree'], '7eb1fa1ef8e3107788ca93758f762882ea031d72')
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -131,7 +167,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -154,9 +190,14 @@ class CurrentAuthorityControls(unittest.TestCase):
                     self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
                                      {'path': path, 'bytes': len(raw), 'sha256': p.sha(raw)})
                     continue
+                if role == 'derived_files' and path == 'src/frontend/declaration_index/resource.rs':
+                    raw = p.compose_namespace_resource(a, (p.REPOSITORY / path).read_bytes())
+                    self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
+                                     {'path': path, 'bytes': len(raw), 'sha256': p.sha(raw)})
+                    continue
                 if role == 'derived_files' and path == 'src/frontend/source.rs':
                     self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
-                                     {'path': path, 'bytes': 12917, 'sha256': '68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53'})
+                                     {'path': path, 'bytes': 15844, 'sha256': '9269b83d0388c8c29bca7d92e7d785ca6dc7c6688cb73aa9631c82e0a258b12d'})
                     continue
                 self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
                                  next(r['after'] for r in a['current']['source_delta'] if r['path'] == path))
@@ -165,7 +206,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 364)
+        self.assertEqual(len(candidate['files']), 400)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -221,8 +262,8 @@ class SourceReadCompositionControls(unittest.TestCase):
 
     def test_exact_composition_preserves_both_hooks_and_only_adds_accessor(self):
         composed = p.compose_source_read(self.a, self.raw)
-        self.assertEqual(len(composed), 12917)
-        self.assertEqual(p.sha(composed), '68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53')
+        self.assertEqual(len(composed), 15844)
+        self.assertEqual(p.sha(composed), '9269b83d0388c8c29bca7d92e7d785ca6dc7c6688cb73aa9631c82e0a258b12d')
         addition = (b'    /// Consume a single-source owner after syntax-only candidate validation.\n'
                     b'    /// Moving its text back out avoids a second full formatter output buffer.\n'
                     b'    pub(super) fn into_single_text(mut self) -> String {\n'
@@ -230,8 +271,10 @@ class SourceReadCompositionControls(unittest.TestCase):
                     b'        self.files.pop().expect("one source").text\n'
                     b'    }\n\n')
         self.assertEqual(composed.count(addition), 1)
-        historical = composed.replace(addition, b'', 1)
-        self.assertEqual(p.sha(historical), '9888a72a1d17e5072ac68464a314e02709eeaf98f34fb0b0549a84b917f70c99')
+        projected = p.restore_enum_source(self.a, 'src/frontend/source.rs', self.raw)
+        self.assertEqual(p.sha(projected), '3574d2e4598fa77b82aeee2ba3457dfdd39652d750771d4c56102aa706c0db3e')
+        historical = projected.replace(addition, b'', 1)
+        self.assertEqual(p.sha(historical), next(r['sha256'] for r in self.a['original_files'] if r['path'] == 'src/frontend/source.rs'))
         for call in (b'source_read(span.end.saturating_sub(span.start));', b'source_read(self.text.len());'):
             line = b'        crate::frontend::parser::unit4_observer::' + call + b'\n'
             self.assertEqual(composed.count(line), 1)
@@ -247,9 +290,9 @@ class SourceReadCompositionControls(unittest.TestCase):
         for old, new in zip(self.a['instrumentation'], observer):
             if old['path'] == 'src/frontend/source.rs':
                 self.assertEqual(new, {'path': old['path'],
-                                      'before_sha256': '3574d2e4598fa77b82aeee2ba3457dfdd39652d750771d4c56102aa706c0db3e',
-                                      'after_sha256': '68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53'})
-            elif old['path'] in (*p.ARRAY_INSTRUMENTATION_PATHS, 'src/frontend/lexer.rs'):
+                                      'before_sha256': '38a69de7b01cc0d8160079e98d266a83af2feb969796417952663b5a2c69d176',
+                                      'after_sha256': '9269b83d0388c8c29bca7d92e7d785ca6dc7c6688cb73aa9631c82e0a258b12d'})
+            elif old['path'] in (*p.ARRAY_INSTRUMENTATION_PATHS, 'src/frontend/lexer.rs', 'src/frontend/declaration_index/resource.rs'):
                 self.assertEqual(new['path'], old['path'])
                 self.assertEqual(new['before_sha256'], next(r['sha256'] for r in self.a['current']['current_base_files'] if r['path'] == old['path']))
                 self.assertEqual(new['after_sha256'], next(r['sha256'] for r in self.a['current']['current_derived_files'] if r['path'] == old['path']))
@@ -271,7 +314,7 @@ class SourceReadCompositionControls(unittest.TestCase):
         changed = self.raw + b'// changed historical body\n'
         row = next(row for row in self.a['current']['source_delta'] if row['path'] == 'src/frontend/source.rs')
         row['after'].update(bytes=len(changed), sha256=p.sha(changed))
-        with self.assertRaisesRegex(p.Rejected, 'formatter accessor must leave exact historical source'):
+        with self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
             p.compose_source_read(self.a, changed)
 
     def test_changed_formatter_patch_rejects_before_composition(self):
@@ -289,7 +332,7 @@ class SourceReadCompositionControls(unittest.TestCase):
         historical_path = p.FROZEN / 'authority.json'
         for role, name, message in (
             ('instrumentation', 'src/frontend/driver.rs', 'transition overlaps instrumentation outside exact current composition'),
-            ('control_instrumentation', 'src/frontend/source.rs', 'transition overlaps control instrumentation outside exact current composition')):
+            ('control_instrumentation', 'src/frontend/source.rs', 'exact enum control overlap roster')):
             historical = copy.deepcopy(original_read(historical_path))
             historical[role].append({'path': name, 'before_sha256': '0' * 64, 'after_sha256': '1' * 64})
             with self.subTest(role=role), patch.object(p, 'read', side_effect=lambda path: historical if Path(path) == historical_path else original_read(path)):
@@ -332,9 +375,9 @@ class ArrayCompositionControls(unittest.TestCase):
             a = copy.deepcopy(self.a)
             raw = (p.REPOSITORY / name).read_bytes() + b'// changed historical tail\n'
             next(row for row in a['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            message = ('projected transition must recover exact unary source' if name in p.UNARY_INSTRUMENTATION_PATHS
+            message = ('enum transition must recover exact projected source' if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source' if name in p.DIVISION_INSTRUMENTATION_PATHS
-                       else 'array transition must recover exact historical source')
+                       else 'enum transition must recover exact projected source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
                 p.compose_array_instrumentation(a, name, raw)
 
@@ -350,9 +393,11 @@ class ArrayCompositionControls(unittest.TestCase):
                 with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
                     p.compose_array_instrumentation(self.a, 'src/frontend/ast.rs', raw)
 
-    def test_direct_observer_successor_is_one_closed_policy_field(self):
+    def test_direct_observer_successor_preserves_closed_policies_and_empty_storage(self):
         raw = p.compose_observer_initializer(self.a)
-        insertion = b'            arrays: ArraySyntaxPolicy::Closed,\n'
+        insertion = (b'            arrays: ArraySyntaxPolicy::Closed,\n'
+                     b'            enums: EnumSyntaxPolicy::Closed,\n'
+                     b'            storage: enums::SyntaxStorage::default(),\n')
         self.assertEqual(raw.count(insertion), 1)
         self.assertEqual(raw.replace(insertion, b'', 1), (p.FROZEN / 'frozen/helpers/observer.rs').read_bytes())
         for key in ('current_derived_files', 'current_control_derived_files'):
@@ -410,7 +455,7 @@ class DivisionCompositionControls(unittest.TestCase):
                 p.restore_division_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            message = ('projected transition must recover exact unary source' if name in p.UNARY_INSTRUMENTATION_PATHS
+            message = ('enum transition must recover exact projected source' if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
                 p.restore_division_source(altered, name, raw)
@@ -462,7 +507,7 @@ class SlicesCompositionControls(unittest.TestCase):
                 p.restore_slices_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'projected transition must recover exact unary source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
                 p.restore_slices_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -504,7 +549,7 @@ class RecordCompositionControls(unittest.TestCase):
                 p.restore_composition_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'projected transition must recover exact unary source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
                 p.restore_composition_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -546,7 +591,7 @@ class UnaryCompositionControls(unittest.TestCase):
                 p.restore_unary_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'projected transition must recover exact unary source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
                 p.restore_unary_source(altered, name, raw)
 
     def test_unary_patch_and_predecessor_identity_reject_before_transform(self):
@@ -588,7 +633,7 @@ class ProjectedCompositionControls(unittest.TestCase):
                 p.restore_projected_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'projected transition must recover exact unary source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
                 p.restore_projected_source(altered, name, raw)
 
     def test_projected_patch_and_predecessor_identity_reject_before_transform(self):
@@ -609,6 +654,221 @@ class ProjectedCompositionControls(unittest.TestCase):
         for name in ('src/frontend/lexer.rs', 'src/frontend/source.rs', 'src/frontend/project/budget.rs'):
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unapproved projected instrumentation path'):
                 p.restore_projected_source(self.a, name, b'')
+
+
+class EnumCompositionControls(unittest.TestCase):
+    def setUp(self):
+        self.a = p.authority()
+
+    def test_exact_enum_overlap_roster_and_projected_predecessors(self):
+        self.assertEqual(p.ENUM_INSTRUMENTATION_PATHS, (
+            'src/frontend/ast.rs', 'src/frontend/declaration_index/resource.rs',
+            'src/frontend/parser.rs', 'src/frontend/project/budget.rs', 'src/frontend/source.rs'))
+        before = p.read(p.REPOSITORY / self.a['current']['projected_source_manifest']['path'])
+        self.assertEqual(len(before['files']), 201)
+        for name in p.ENUM_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes()
+            restored = p.restore_enum_source(self.a, name, raw)
+            self.assertEqual({'path': name, 'bytes': len(restored), 'sha256': p.sha(restored)},
+                             next(row for row in before['files'] if row['path'] == name))
+
+    def test_changed_and_coherently_rehashed_enum_source_rejects(self):
+        for name in p.ENUM_INSTRUMENTATION_PATHS:
+            raw = (p.REPOSITORY / name).read_bytes() + b'// unauthorized enum tail\n'
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'composition current enum identity'):
+                p.restore_enum_source(self.a, name, raw)
+            altered = copy.deepcopy(self.a)
+            next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'enum transition must recover exact projected source'):
+                p.restore_enum_source(altered, name, raw)
+
+    def test_enum_transition_predecessor_and_runner_identity_reject_before_transform(self):
+        fields = ('source_binding_runner', 'enum_transition_patch', 'projected_source_manifest')
+        for field in fields:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for key in fields:
+                    relative = self.a['current'][key]['path']
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((p.REPOSITORY / relative).read_bytes() + (b'\n' if key == field else b''))
+                raw = (p.REPOSITORY / 'src/frontend/ast.rs').read_bytes()
+                with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
+                    p.restore_enum_source(self.a, 'src/frontend/ast.rs', raw)
+
+    def test_unknown_enum_instrumentation_path_rejects(self):
+        for name in ('src/frontend/lexer.rs', 'src/frontend/project.rs', 'src/frontend/parser/enums.rs'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'unapproved enum instrumentation path'):
+                p.restore_enum_source(self.a, name, b'')
+
+    def test_namespace_composition_preserves_both_hooks_and_current_body(self):
+        name = 'src/frontend/declaration_index/resource.rs'
+        raw = (p.REPOSITORY / name).read_bytes()
+        composed = p.compose_namespace_resource(self.a, raw)
+        for argument in (b'1', b'units'):
+            hook = b'\n        crate::frontend::parser::unit4_observer::namespace_debit(' + argument + b');'
+            self.assertEqual(composed.count(hook), 1)
+            composed = composed.replace(hook, b'', 1)
+        self.assertEqual(composed, raw)
+        with self.assertRaisesRegex(p.Rejected, 'composition current enum identity'):
+            p.compose_namespace_resource(self.a, raw + b'// changed\n')
+
+    def test_helper_reversal_closed_bridge_and_preserved_unary_gate_label(self):
+        helper = p.compose_enum_parser_helper(self.a)
+        raw = (p.REPOSITORY / 'src/frontend/parser.rs').read_bytes()
+        current = p.compose_array_instrumentation(self.a, 'src/frontend/parser.rs', raw)
+        generated = helper.parser_overlay(raw.decode())
+        self.assertEqual(current.replace(p.ENUM_NODE_BRIDGE.encode(), b'', 1), generated.encode())
+        self.assertEqual(current.count(p.ENUM_NODE_BRIDGE.encode()), 1)
+        self.assertIn(b'panic!("enum node route is outside the closed Unit4 parser observation domain")', current)
+        self.assertIn(b'self.unit4_node("unary")?;', current)
+        self.assertNotIn(b'self.unit4_node("unary_with_prefixes")?;', current)
+        control = p.compose_array_instrumentation(self.a, 'src/frontend/parser.rs', raw, True)
+        self.assertEqual(control, raw + b'\n#[cfg(test)]\npub(super) mod unit4_observer;\n')
+        self.assertIn(b'        EnumSyntaxPolicy::Closed,\n        &mut enums::SyntaxStorage::default(),', raw)
+        enum_module = (p.REPOSITORY / 'src/frontend/parser/enums.rs').read_bytes()
+        self.assertIn(b'pub(super) fn enum_qualified_ahead(&self) -> bool {\n        if !self.enums_enabled()', enum_module)
+
+    def test_unapproved_helper_descriptor_and_seam_reject(self):
+        altered = copy.deepcopy(self.a)
+        altered['current']['enum_parser_instrumentation_adapter']['derived_helper']['sha256'] = '0' * 64
+        with self.assertRaisesRegex(p.Rejected, 'unapproved enum parser instrumentation adapter'):
+            p.compose_enum_parser_helper(altered)
+        with patch.object(p, 'ENUM_HELPER_SUBSTITUTIONS', (("unapproved helper seam", "replacement"),)), self.assertRaisesRegex(p.Rejected, 'exact enum parser helper seam'):
+            p.compose_enum_parser_helper(self.a)
+
+
+class EnumStructuralProjectionControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a = p.authority()
+        cls.comparator = p.comparator()
+
+    def setUp(self):
+        span = {'tag': 'Span', 'file': {'tag': 'SourceFileId', 'items': [0]}, 'start': 0, 'end': 1}
+        root = {'tag': 'Program', 'tokens': [], 'functions': [], 'expressions': [], 'records': [],
+                'enums': [], 'items': [], 'modules': [], 'imports': [], 'path_segments': [span],
+                'paths': [{'tag': 'QualifiedPath', 'span': span, 'segment_start': 0, 'segment_len': 1,
+                           'root': {'tag': 'Crate'}}],
+                'source': {'tag': 'SourceProvenance', 'text_len': 1,
+                           'file': {'tag': 'SourceFileId', 'items': [0]}, 'debug_non_exhaustive': True},
+                'project_syntax': True}
+        self.rows = [{'ast': {'canonical': root}, 'diagnostics': ['retained sentinel'],
+                      'binding': {'case_id': 'synthetic-shape-control'}, 'events': [{'actual': 17}]},
+                     {'ast': None, 'diagnostics': ['unchanged failure']}]
+        self.root = root
+        self.span = span
+
+    def project(self, rows=None):
+        with patch.object(p, 'comparator', return_value=self.comparator):
+            return p.project_enum_observations(self.a, self.rows if rows is None else rows)
+
+    def test_exact_shape_projection_preserves_raw_and_all_other_fields(self):
+        before = copy.deepcopy(self.rows)
+        projected, receipt = self.project()
+        expected = copy.deepcopy(before)
+        root = expected[0]['ast']['canonical']
+        del root['enums']
+        root['paths'][0]['tag'] = 'AbsolutePath'
+        del root['paths'][0]['root']
+        self.assertEqual(self.rows, before)
+        self.assertEqual(projected, expected)
+        self.assertEqual(receipt['changed_row_indices'], [0])
+        self.assertEqual((receipt['observations'], receipt['ast_observations'], receipt['qualified_paths']), (2, 1, 1))
+        canonical = self.comparator[0].canonical
+        self.assertEqual(receipt['original_observations_canonical_sha256'], p.sha(canonical(before)))
+        self.assertEqual(receipt['restored_observations_canonical_sha256'], p.sha(canonical(before)))
+        self.assertEqual(receipt['projected_observations_canonical_sha256'], p.sha(canonical(expected)))
+        self.assertEqual(receipt['adapter'], p.ENUM_AST_SCHEMA_ADAPTER)
+        self.assertFalse(receipt['adapter']['semantic_changes_permitted'])
+        self.assertFalse(receipt['adapter']['raw_observations_changed'])
+        self.assertFalse(receipt['adapter']['semantic_predicate_handlers_changed'])
+
+    def test_nonempty_enum_declarations_and_changed_program_shape_reject(self):
+        for mutation in (
+            lambda root: root.update(enums=[{'tag': 'EnumDecl'}]),
+            lambda root: root.update(enums={}),
+            lambda root: root.pop('enums'),
+            lambda root: root.update(unexpected=[]),
+            lambda root: root.update(tag='AnotherProgram'),
+        ):
+            rows = copy.deepcopy(self.rows); mutation(rows[0]['ast']['canonical'])
+            with self.subTest(mutation=mutation), self.assertRaises(p.Rejected):
+                self.project(rows)
+
+    def test_unknown_root_tag_field_and_path_bound_reject(self):
+        for mutation in (
+            lambda path: path.update(root={'tag': 'LocalType'}),
+            lambda path: path.update(root={'tag': 'Crate', 'hidden': True}),
+            lambda path: path.update(root='Crate'),
+            lambda path: path.pop('root'),
+            lambda path: path.update(tag='AbsolutePath'),
+            lambda path: path.update(extra=1),
+            lambda path: path.update(segment_len=0),
+            lambda path: path.update(segment_len=35),
+            lambda path: path.update(segment_len=True),
+        ):
+            rows = copy.deepcopy(self.rows); mutation(rows[0]['ast']['canonical']['paths'][0])
+            with self.subTest(mutation=mutation), self.assertRaises(p.Rejected):
+                self.project(rows)
+
+    def test_new_value_and_item_carriers_reject_without_semantic_normalization(self):
+        for kind in ({'tag': 'QualifiedValue', 'path': {'tag': 'PathId', 'items': [0]}, 'args': None},
+                     {'tag': 'QualifiedValue', 'path': {'tag': 'PathId', 'items': [0]},
+                      'args': {'tag': 'Some', 'items': [[]]}},
+                     {'tag': 'Match', 'scrutinee': self.span, 'arms': []}):
+            rows = copy.deepcopy(self.rows)
+            rows[0]['ast']['canonical']['expressions'] = [{'tag': 'Expr', 'kind': kind, 'span': self.span}]
+            with self.subTest(kind=kind['tag']), self.assertRaisesRegex(p.Rejected, 'nonhistorical AST member'):
+                self.project(rows)
+        rows = copy.deepcopy(self.rows)
+        rows[0]['ast']['canonical']['items'] = [{'tag': 'Enum', 'items': [0]}]
+        with self.assertRaisesRegex(p.Rejected, 'nonhistorical AST member'):
+            self.project(rows)
+
+    def test_match_statement_and_unknown_nested_fields_reject(self):
+        rows = copy.deepcopy(self.rows)
+        rows[0]['ast']['canonical']['functions'] = [{
+            'tag': 'Function', 'public': None, 'name': self.span, 'params': [],
+            'result': {'tag': 'TypeSyntax', 'span': self.span, 'kind': {'tag': 'Unit'}},
+            'body': {'tag': 'BodyBlockId', 'items': [0]}, 'end': self.span,
+            'blocks': [{'tag': 'BodyBlock', 'span': self.span, 'end': self.span,
+                        'body': [{'tag': 'Stmt', 'span': self.span,
+                                  'kind': {'tag': 'Match', 'scrutinee': self.span, 'arms': []}}]}]}]
+        with self.assertRaisesRegex(p.Rejected, 'nonhistorical AST member'):
+            self.project(rows)
+        rows = copy.deepcopy(self.rows)
+        rows[0]['ast']['canonical']['source']['unexpected'] = True
+        with self.assertRaisesRegex(p.Rejected, 'nonhistorical AST member'):
+            self.project(rows)
+
+    def test_historical_call_carrier_is_retained_without_conversion(self):
+        rows = copy.deepcopy(self.rows)
+        expression = {'tag': 'Expr', 'span': self.span,
+                      'kind': {'tag': 'Call', 'callee': {'tag': 'Absolute', 'items': [
+                          {'tag': 'PathId', 'items': [0]}]}, 'args': []}}
+        rows[0]['ast']['canonical']['expressions'] = [expression]
+        projected, _ = self.project(rows)
+        self.assertEqual(projected[0]['ast']['canonical']['expressions'], [expression])
+
+    def test_schema_adapter_changes_and_double_projection_reject(self):
+        altered = copy.deepcopy(self.a)
+        altered['current']['enum_ast_schema_adapter']['semantic_changes_permitted'] = True
+        with self.assertRaisesRegex(p.Rejected, 'unapproved enum AST schema adapter'):
+            p.project_enum_observations(altered, self.rows)
+        projected, _ = self.project()
+        with self.assertRaisesRegex(p.Rejected, 'exact current Program shape'):
+            self.project(projected)
+
+    def test_unrelated_semantic_fields_are_preserved_and_bound(self):
+        original, receipt = self.project()
+        rows = copy.deepcopy(self.rows)
+        rows[0]['events'][0]['actual'] = 18
+        projected, changed = self.project(rows)
+        self.assertEqual(projected[0]['events'], [{'actual': 18}])
+        self.assertNotEqual(receipt['original_observations_canonical_sha256'], changed['original_observations_canonical_sha256'])
+        self.assertNotEqual(receipt['projected_observations_canonical_sha256'], changed['projected_observations_canonical_sha256'])
+        self.assertEqual(projected[0]['ast'], original[0]['ast'])
 
 
 class CheckoutControls(unittest.TestCase):
@@ -634,7 +894,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 148)
+        self.assertEqual(len(bound['compiler_files']), 182)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())

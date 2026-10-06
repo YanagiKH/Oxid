@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 20448,
+      "bytes": 22848,
       "path": "README.md",
-      "sha256": "8a38ec40e1dbbddb0c0cc91b2876f95a573bd280b26f69e01c31cb70196ec751"
+      "sha256": "89ac3426a8d9cd3a6030294c264aa529b029187bd95269c25ed46f893a12b0a4"
     },
     {
       "bytes": 9916,
@@ -66,9 +66,24 @@
       "sha256": "4842ab5c0e23fc7732d11bbcbb2a0c8a264568083d84bf603d4b7e490800a4b2"
     },
     {
+      "bytes": 9983,
+      "path": "enum-enabled-qualified-values-v1.json",
+      "sha256": "18dc17439c6ccc0e76f8a6bbbae5707c7ad826159292e2c548da8fc44280886f"
+    },
+    {
+      "bytes": 10714,
+      "path": "enum-resource-authority.json",
+      "sha256": "98a7a52264febecc72c88a3f74449b23d482665e53767b91af55fa88ade79a24"
+    },
+    {
       "bytes": 1795577,
       "path": "enum-transition.patch",
       "sha256": "0bc74b58160584cd3a83def80c4f671edb09da740aa2dc43bf6a7bede7554207"
+    },
+    {
+      "bytes": 9510,
+      "path": "enum_enabled_qualified_values_v1.py",
+      "sha256": "522885d6feaa8b4e43f38f11bc2950e0e2471591ad8f40e2b9224ecaeccefeaf"
     },
     {
       "bytes": 1464,
@@ -106,9 +121,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 113403,
+      "bytes": 128099,
       "path": "run.py",
-      "sha256": "efc4ee9bde0c0e4c0a69bf45b7962535dc8490a0b55ed16000b750b29ee16456"
+      "sha256": "37a21a26c927040567a84441384a378da430c414262fa6c2a97f9e77edf6e0f5"
     },
     {
       "bytes": 55961,

@@ -72,11 +72,13 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact199-file unary compiler manifest, the reviewed200-file
-lifecycle overlay map and the current additive patch successor. The successor
-changes only the parser hunk context to include its new array-policy parameter;
-reversing that context edit reproduces the exact historical additive patch.
-All logical event hooks remain unchanged and instrument the real parser body. A caller cannot select a
+`authority.py` pins the exact237-input enum compiler manifest, the reviewed238-input
+lifecycle overlay map and the current additive patch successor. Four exact
+enum-era substitutions preserve the logical collection, parser and owned-route
+hooks in the current execution bodies. The successor is `observer-enum-v1.patch`.
+Reversing it restores the retained `observer-combined-v1.patch` exactly; reversing
+that predecessor's array-policy context edit then restores the exact
+historical additive patch. A caller cannot select a
 different compiler body merely by supplying a coherent rewritten manifest.
 `authority_controls.py` deterministically rejects both current-source and
 observer-body forgeries without invoking a compiler.
@@ -137,7 +139,7 @@ reverses to the unchanged historical patch. Frozen cases, expected observations
 and selected runtime content stay unchanged. Preparation binds files but does not
 establish execution results.
 
-The current ordinary and lifecycle maps contain 188 and 189 inputs respectively.
+The borrowed-slice ordinary and lifecycle maps contain 188 and 189 inputs respectively.
 The added slice test modules introduce no new bin-test include dependencies.
 
 The checked-unary successor advances the source and observer file identities only.
@@ -149,3 +151,32 @@ The projected-slice successor binds the 201-input current source and its
 202-input additive lifecycle view. The lifecycle patch, frozen public contracts,
 comparison handlers and host rosters are unchanged. Only exact current source
 and derived observer identities change; historical outcomes are not relabeled.
+
+The bounded-enum successor binds source checkpoint
+`511df03975c2aa1a815f92155d673adb3571ff77`, its237-input current source manifest and
+238-input additive lifecycle view. The two scanner fixtures are admitted inputs.
+The current patch records index attempts in the shared collection body and parser
+attempts/completions in the shared policy-aware parse body. The new original enum
+route receives the same owned-route completion event as the retained owned branch.
+Each invocation still records one completion for its selected route. The other
+hooks and the eight-path instrumentation scope remain unchanged. Preparation
+checks the complete derived map before writing its receipt and invokes no compiler.
+Frozen public contracts, coordinate amendments, comparisons and host rosters stay
+unchanged; fresh host/profile executions remain required.
+
+## Named qualified-value semantic successor
+
+`enum-enabled-qualified-values-v1` binds exactly four historical Unit2 parser
+cases inherited by the public predecessor projection. The Enabled loader now
+parses them, but public typed checks still fail: three local qualifiers produce
+E0202/resolve and bare crate::g produces E0101/resolve. Public obligations remain
+status1 plus first code/stage; descriptive message/span facts are not added
+comparator obligations. Required hosts/profiles and all frozen rows stay fixed.
+
+The collector retains the named source/corpus/descriptor authority, an exact
+current/historical record for each of eight Linux profile tuples, and a separate
+historical comparison report. Raw process bytes and frozen expectation hashes
+keep their original meanings. Hosted replay and the final join activate the same
+admitted amendment, independently reconstruct the records and reject missing,
+extra or forged metadata. The parser Closed carrier projection and Unit2 resource
+representation successor are separate adapters.

@@ -1,12 +1,19 @@
 # Mandatory current Unit4 qualification
 
-This additive CI integration admits173 exact component members plus the
-188-file current compiler authority before any component use. The current
-authority includes borrowed slices, checked division, formatter and fixed-array implementation and tests;
-its additive lifecycle observer contains189 members. The reviewed
-observer overlay and all semantic/native/mutation contracts remain unchanged.
-The public15-file adapter, hosted4-file controller, portable parser, and existing
-Unit1/2/3/ordinary/native gates retain their respective qualification roles.
+This integration admits the exact component closure and the 237-input current
+compiler authority at feature checkpoint `511df03975c2aa1a815f92155d673adb3571ff77`.
+Its additive lifecycle observer contains 238 members. The named
+`observer-enum-v1.patch` successor composes the existing logical event hooks onto
+current bodies and reverses exactly to the retained projected and historical
+patches. Frozen semantic/native/mutation contracts remain unchanged.
+
+The current parser has 400 base and 403 derived inputs per role, with 182 compiler
+bodies. Its separately pinned enum-free structural projection removes only an
+empty Program enum arena and maps exact crate-root QualifiedPath carriers to
+their historical AbsolutePath shape. Raw and normalized observations remain
+unchanged; the comparison retains both unadapted and projected frozen reports.
+The final join independently re-derives the exact reversible projection receipt
+from its admitted raw-normalized rows and rejects unsupported enum AST data.
 
 The three added job definitions require four actual host executions and an
 always-running final join. The new jobs explicitly check out the event PR head,
@@ -52,8 +59,8 @@ command, exit, snapshot ordering and comparison bytes. The closure requires ever
 consumed input and all four executable identities. Both generated current
 candidate-source manifests must remain as actual compact bodies and are resolved
 against their pinned identities and re-derived maps. The allowed omissions are
-exactly 364 derived-tree members per role plus four binaries (732 identities); the
-365-member derived maps and complete comparison closure are unchanged. The
+exactly 402 derived-tree members per role plus four binaries (808 identities); the
+403-member derived maps and complete comparison closure are unchanged. The
 final join reconstructs each normalized
 row from the unchanged raw case using the frozen normalizer and derives the
 complete case/mode/profile roster. Source/binary replay at original paths was
@@ -67,13 +74,13 @@ controls only; it never supplies a hosted execution row.
 
 The current parser successor lives in `tests/qualification/unit4_parser_current`.
 It preserves the complete original frozen v3 package and distinguishes its
-283/286 historical maps from the current 362/365 maps. The source manifest and
+283/286 historical maps from the current 400/403 maps. The source manifest and
 transition records bind actual current compiler bodies through the final join.
 Only a failed stage08 prints a bounded, JSON-escaped stderr tail; workflow marker
 pairs are escaped too. Full stderr and its exact receipt hash remain preserved,
 and the command still fails normally. No environment or general log dump is added.
 
-The borrowed-slice checkpoint advances current source identities and adds three
+The historical borrowed-slice checkpoint advances current source identities and adds three
 Rust test modules to the current maps. Its exact source.rs accessor addition is composed with the unchanged
 historical read-count instrumentation under explicit hash-bound checks. Slice AST/parser sections first recover the exact division predecessor. Division
 AST, lexer and parser sections then reverse to the exact combined predecessor;
@@ -81,8 +88,17 @@ the three array overlap bodies then use the unchanged historical transforms afte
 exact inverse reconstruction. The lexer retains both frozen token hooks; all unlisted overlaps remain rejected. Frozen cases and expected observations
 are unchanged, and all current execution evidence must be freshly collected.
 
-The checked-unary checkpoint binds 199 current inputs, including three new Rust
+The historical checked-unary checkpoint binds 199 current inputs, including three new Rust
 test modules. Its AST/parser inverse stage first reconstructs the exact preserved
 196-input composition predecessor; all earlier stages and frozen authorities
 remain unchanged. Parser/current public/observer admission rejects stale source
 identities before tool invocation, and requires fresh current execution evidence.
+
+The separately named `enum-enabled-qualified-values-v1` semantic amendment covers
+only four inherited Unit2 Enabled-loader cases and their eight Linux/profile
+public predecessor tuples. Public checks remain status1 failures; only first
+code/stage expectations change. Their exact source and original expectation
+identities stay frozen. Named authority, old/current tuple records and a separate
+historical comparison artifact are required compact evidence; the final join
+re-derives them from unchanged raw process bytes and the admitted source manifest.
+This amendment is not part of the Closed parser structural projection.

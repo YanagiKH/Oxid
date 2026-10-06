@@ -176,7 +176,8 @@ def recheck_public(repo, output, contracts, root_result=None, ordinary_path=None
             q.need(rt.read_events(Path(tool['control_log']['path'])) == [{'unexpected_native_tool': True}], 'no-native trap control log')
     if c.host() != 'Linux x86_64':
         q.need(tools_record['mode'] == 'no-native-traps' and tools_record['selected_runtime'] is None, 'non-Linux must execute no-native trap route')
-    predecessor = Predecessors(contracts)
+    predecessor = Predecessors(contracts, source_manifest=ordinary['source_manifest']['path'],
+                               amendment_root=Path(repo) / q.SOURCE)
     qualified, ordinary_counterparts = {}, []
     for section in q.SECTIONS:
         roster = contracts.roster(section)

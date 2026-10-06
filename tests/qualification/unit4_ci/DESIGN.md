@@ -82,22 +82,23 @@ hosted Linux always executes its dedicated pinned runtime stage.
 
 The source-binding successor adds a distinct current parser controller while
 leaving the historical frozen v3 package and all semantic expectations intact.
-Its 144 reviewed source/input changes include five explicitly admitted observer
-instrumentation overlaps: ast.rs, lexer.rs, parser.rs, project/budget.rs and source.rs.
+Its 194 reviewed source/input changes include six explicitly admitted observer
+instrumentation overlaps: ast.rs, lexer.rs, parser.rs, project/budget.rs, source.rs
+and declaration_index/resource.rs.
 The AST and parser also overlap control instrumentation. Each current composition
 is pinned and preserves the historical transforms; unlisted overlaps reject.
-Historical283/current362 base maps, historical286/current365 derived maps and
-historical113/current146 compiler rosters remain separate identity domains.
-The source-binding transition separately verifies 199 unary inputs, 196 composition inputs, 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
+Historical283/current400 base maps, historical286/current403 derived maps and
+historical113/current182 compiler rosters remain separate identity domains.
+The source-binding transition separately verifies 201 projected inputs, 199 unary inputs, 196 composition inputs, 188 slice inputs, 185 division inputs, 185 combined inputs, 133 formatter inputs, 129
 predecessor inputs and 117 archived inputs. Sessions explicitly deny historical
-source equivalence and bind the current199 manifest, reviewed source checkpoint
+source equivalence and bind the current237 manifest, reviewed source checkpoint
 and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 365-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 362-member base map. Compact omission is limited to the
-other 364 derived-tree members per role and four binaries, for 732 omitted identities.
+belong to the 403-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 400-member base map. Compact omission is limited to the
+other 402 derived-tree members per role and four binaries, for 808 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.
@@ -114,7 +115,7 @@ with JSON control-character escaping and escaped workflow-marker pairs, plus
 byte counts and a truncation flag. No other stage gets a new diagnostic tail;
 existing failure, timeout and stream-limit handling is unchanged.
 
-The slice successor admits only five exact observer instrumentation overlaps
+The historical slice successor admitted only five exact observer instrumentation overlaps
 and two exact control overlaps. Slice sections first recover the pinned division AST and parser bodies.
 Division sections then recover the pinned combined AST, lexer and parser bodies.
 Array source sections then recover historical bodies before the unchanged
@@ -123,3 +124,21 @@ observer's direct Parser initializer adds only the closed array policy; its
 historical helper remains intact. Public lifecycle instrumentation changes only
 patch context for the new policy argument, with exact inverse proof back to the
 historical patch. No scalar/module predicate or expected output changes.
+
+## Enum-free parser carrier projection
+
+The source successor preserves actual current parser execution and all frozen
+semantic predicates. Current Debug output adds an empty enum arena to Program
+and represents legacy absolute paths as QualifiedPath with a Crate root. A named
+identity-bound structural adapter accepts only those exact shapes, validates the
+projected tree with the unchanged strict historical AST checker, and proves exact
+reverse recovery of every observation field. Nonempty enum arenas, other path
+roots, unexpected members and nonhistorical expression kinds reject.
+
+The comparator retains unmodified raw/normalized evidence, the unadapted frozen
+comparison, the projected frozen comparison and the existing six-case diagnostic
+amendment comparison. The final join reconstructs normalized rows from each raw
+case and independently derives the projection receipt, including both row hashes,
+changed-row indices and exact adapter identity. No source/diagnostic expectation
+is rewritten to match observed behavior. Bounded tests prove admission and
+transport only; fresh debug/release execution remains mandatory.

@@ -224,6 +224,8 @@ def compact(output, destination):
     for section in q.SECTIONS:
         for path in (output / 'public' / (section + '-roster.json'), output / 'public' / section / 'observations.jsonl.gz', output / 'public' / section / 'comparison.json'):
             capsule.add(path, 'public-raw')
+    capsule.add(output / 'public/qualified-paths-amendment.json', 'public-semantic-amendment')
+    capsule.add(output / 'public/predecessors/historical-comparison.json', 'public-historical-comparison')
     for name in ('comparison.json', 'input-integrity.json', 'tools.json'):
         capsule.add(output / 'public' / name, 'public-control')
     if (output / 'public/no-tool-trap-build.json').is_file():

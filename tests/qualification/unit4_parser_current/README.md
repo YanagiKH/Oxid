@@ -1,140 +1,126 @@
 # Current-source Unit4 parser qualification
 
-This reviewed successor admits the current checked unary, bounded record composition, borrowed slices, checked division, formatter and fixed-array source while keeping
-`tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` byte-identical.
-It retains the unchanged ten helper files, historical observer Rust, instrumentation
-patches, semantic comparator, effective contract amendment, toolchain and dependency recipes.
-The copied portable controller preserves every function outside the explicitly
-reviewed source-admission, provenance and path-routing changes. Its comparator
-derivation and all 22 semantic predicate handlers remain unchanged.
+This adapter admits bounded-enum feature source checkpoint
+`511df03975c2aa1a815f92155d673adb3571ff77`, full tree
+`7eb1fa1ef8e3107788ca93758f762882ea031d72`, while retaining the byte-identical
+`tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` package.
 
-The historical parser package binds 283 base inputs, 113 compiler bodies and two
-286-member derived views. The current unary source manifest binds 199 inputs;
-65 existing compiler files differ from the historical package and 79
-implementation/test inputs are added, including 42 exact published compile-time
-fixture dependencies referenced 47 times by array_types_tests.rs and three
-new slice test modules, four composition test modules, three unary test modules and the public sample
-includer with its three exact sample inputs. The includer body has its current slice migration identity;
-the fixture bytes and ordered reference roster stay unchanged. Those assets
-are admitted compiler-test inputs, with unchanged bytes and expectations. The current parser therefore binds 362 base
-inputs, 146 compiler bodies and two 365-member derived views. These inventories
-remain distinct. The source checkpoint is published commit
-`bf48512acf86e2d23c28b6b9b16de3be3d127051`, full source tree
-`715d047f37db8b7658bda688ff4e5961609193f8`.
+The replay uses the historical `parse_counted` entry, whose current implementation
+selects `ArraySyntaxPolicy::Closed` and `EnumSyntaxPolicy::Closed`. It qualifies
+that policy on current compiler bodies. Positive public enabled-enum grammar is
+qualified by the separate feature/public gates; this historical-policy replay
+must not be represented as positive public enum parser coverage.
 
-`authority.json` pins the historical identities, the current manifest, exact 144
-before/after identities, current maps, source-binding runner, preserved division/combined
-manifests and all five unary/composition/slices/division/combined inverse patches. Every load re-derives the explicit path and 79-addition rosters. Unknown
-paths, compiler deletions and unlisted instrumentation overlaps remain rejected.
-Only `ast.rs`, `lexer.rs`, `parser.rs`, `project/budget.rs` and `source.rs` overlap observer
-instrumentation; only AST and parser overlap control instrumentation.
+## Exact source and preparation boundaries
 
-The exact unary sections first restore AST and parser to their preserved
-composition manifest identities. The composition sections then restore those
-bodies to their exact slice manifest identities. The exact slice sections then restore those bodies to the pinned
-division predecessor. The division sections then restore AST, lexer and parser bodies to the
-pinned combined predecessor. The three array-overlap bodies then reverse with
-their exact sections of the independently pinned combined transition. Each reconstructed body must equal its
-historical identity. The unchanged pinned historical preparation functions then
-reproduce each historical instrumented identity and compose the same hooks onto
-current source. The lexer composition similarly recovers the unchanged historical
-lexer and reproduces its two exact token hooks before composing current tokens.
-Current composed bodies are independently pinned in both maps.
-The formatter source-read composition remains unchanged: remove the seven-line
-accessor to recover historical source, and preserve the two exact source-read
-hooks. Its composed body remains 12,917 bytes with SHA-256
-`68172cfc186951f2676756410a90de54532de76e529a68970821f057894b8c53`.
-Neither plain current source nor an old instrumented body can substitute for any
-composed body. Both original instrumentation patches remain unchanged.
+The historical authority binds 283 base inputs, 113 compiler bodies and two
+286-member derived views. Current source admission binds 237 inputs, including
+179 `src/` and `native/` members, 56 retained non-source inputs and both scanner
+fixtures. The historical-to-current override has 194 members: 77 changed
+historical inputs and 117 additions. The current parser binds 400 base inputs,
+182 compiler bodies and two 403-member derived views. These inventories have
+different purposes and must not be substituted for one another.
 
-The copied `unit4_observer.rs` has one separately pinned initializer successor:
-`arrays: ArraySyntaxPolicy::Closed` in the direct path-overflow probe. Removing
-that single field restores the unchanged historical observer byte-for-byte. The
-normal probe still calls the closed-policy `parse_counted` entry. Every assertion,
-semantic predicate, resource limit and frozen expectation stays unchanged. These
-historical inputs do not qualify public array semantics; the public-array suite
-continues to own that coverage.
+`authority.json` pins the complete current maps, source checkpoint, immutable
+historical identities, source-binding runner, transition packages and all
+compatibility adapters. Every load derives both complete current maps again.
+Unknown members, missing inputs, compiler deletions, reordered paths, changed
+bytes and coherently rehashed input tails remain rejected. Scanner include
+closure belongs to the separately pinned source-binding authority.
 
-Preparation checks all historical inputs against exact `d9e6b9bf` Git objects
-and all current inputs against the actual checkout HEAD before making an output
-directory. It invokes the unchanged historical preparers and verifies their exact
-286-member outputs. Each original candidate/overlay manifest is retained under
-`prepare` or `prepare-control` with a `historical-` filename. Only then are the
-144 approved current files copied or exactly composed into each build tree. Newly generated current
-candidate/overlay manifests bind the current reviewed source checkpoint, current
-source manifest and transition authority. Builds consume these current views.
-Historical metadata is provenance only; it is never a current execution receipt.
+Five enum transition paths overlap observer instrumentation: AST, parser,
+source-map, namespace-resource and allocator-budget bodies. Only AST and parser
+overlap control instrumentation. The exact enum sections first restore their
+preserved projected-source identities. AST/parser then follow the unchanged
+projected -> unary -> composition -> slices -> division -> combined inverse
+chain; allocator-budget follows the existing combined inverse. Namespace-resource
+is unchanged before the enum transition. Source-map first recovers projected
+source, then removes the exact historical seven-line formatter accessor.
+Every recovered historical body and historical composed body must equal its
+immutable original identity before the original hook meaning is composed onto
+actual current source. Lexer has no enum transition and retains its two original
+hooks. Neither old bodies nor uninstrumented current bodies can replace a current
+composed identity.
 
-The current session uses a distinct schema, `current_source_bound: true` and
-`historical_source_equivalent: false`. Every build, passivity run, collection and
-comparison rechecks the actual current checkout, all derived bodies, the retained
-historical metadata and the transition binding. The compact evidence reader
-consumes the same strict transition predicate and resolves both current candidate
-manifest bodies against their pinned identities and re-derived 362-member map.
-All 14 generated provenance artifacts remain in the compact capsule: the session,
-the historical/current authorities and current source manifest, both historical
-candidate/overlay pairs, and both current candidate/overlay/helper-manifest triples.
-Each 365-member derived view includes its generated candidate manifest; its other
-364 derived-tree members and the four executables may be full-archive-only (732 identities). The final join also binds the current 146-body map,
-source checkpoint and actual build candidate/overlay identities.
+The frozen parser instrumentation helper needs three separately pinned location
+adjustments: recovery-end before the new storage epilogue, path-node admission
+before the conditional reservation, and the existing `unary` production label
+at its moved prefix-loop location. Exact reversal restores every frozen helper
+byte. The derived observer parser has an explicit panic bridge for new enum-only
+`node()` routes, which are outside its closed-policy observation domain; the
+control parser keeps the production method. The direct overflow probe initializer
+adds closed array/enum policies and empty syntax storage. Removing that single
+exact initializer insertion restores the complete frozen observer. No frozen
+helper or instrumentation patch is edited.
+
+Preparation validates historical input bytes against exact `d9e6b9bf` Git objects
+and current inputs against the actual checkout HEAD before creating its output.
+The original preparers produce the two verified 286-member historical views;
+the adapter retains their original candidate/overlay manifests and then applies
+the explicit current overrides. Generated current candidate/overlay manifests
+bind the full current maps and authority. Builds consume those current views.
+Historical metadata remains provenance rather than an execution receipt.
+
+## Closed-policy AST carrier projection
+
+Current raw Debug output adds `Program.enums` and represents the old absolute
+path arena as `QualifiedPath` with `root: Crate`. Collection, raw files and
+normalized observations preserve that output unchanged. Immediately before
+predicate comparison, `project_enum_observations` applies the separately named
+`unit4-closed-enum-ast-projection-v1` structural adapter:
+
+- Require the exact current Program fields and an exactly empty enum vector
+- Require exact QualifiedPath fields, root exactly Crate and the original
+  integer path-length range 1..34
+- Remove only that empty vector/root and rename QualifiedPath to AbsolutePath
+- Run the unchanged frozen strict AST type checker on every projected AST
+- Reverse those operations and require exact recovery of every observation field
+
+Nonempty enum declarations, matches, enum item IDs, QualifiedValue expressions,
+unknown fields/tags/roots and malformed paths reject. Even QualifiedValue with
+arguments is rejected here: the closed entry still produces the original Call
+carrier. The projection cannot supply expectations, hide new enum semantics or
+change diagnostics, events, resource charges, bindings or source coordinates.
+
+The `enum_structural_projection` receipt records the selected parser policies,
+original/projected/restored canonical observation hashes, exact changed-row
+indices and path counts. Comparison retains both the unadapted frozen comparison
+and the projected frozen comparison, with canonical hashes. The current predicate
+comparison consumes the projected rows and existing named diagnostic amendment.
+The CI join independently re-derives the projection receipt from admitted current
+normalized observations. Projection controls are source/admission evidence;
+they are not a current semantic execution pass.
+
+## Preserved contracts and required execution
+
+The ten frozen helpers, comparator derivation and all 22 semantic predicate
+handlers remain unchanged. The original effective amendment and the separate
+six-case record-composition diagnostic amendment remain byte-identical. The
+latter changes only its six explicitly named ProjectCandidate diagnostics and
+retains the original effective comparison beside the successor. No enum-specific
+semantic expected values are added.
+
+A passing current parser result still requires four fresh observer/control
+builds, 12 ordinary passivity pairs and all 638 frozen observations across
+248 sources. Every build, collection, passivity and comparison rechecks the
+checkout, derived bodies, historical provenance and current transition binding.
+The compact capsule retains all 14 generated provenance artifacts. Each current
+derived view includes a generated candidate manifest; its other 402 members and
+the four executables may be full-archive-only, for 808 identities total.
 
 Run bounded controls from the repository root:
 
     python3 -B tests/qualification/unit4_parser_current/test_current.py
+    python3 -B tests/qualification/unit4_parser_current/test_record_composition_amendment.py
     python3 -B tests/qualification/unit4_ci/test_integration.py
 
-For the real complete preparation boundary, use an explicit exact historical
-checkout and a fresh external output. Linux `gate.py prepare-only` now invokes
-the same current parser preparation command as production stage 08:
+Use the exact historical checkout and a fresh external output for preparation:
 
     python3 -B tests/qualification/unit4_ci/gate.py prepare-only \
       --repo "$CURRENT_REPO" --output "$FRESH_OUTPUT" \
       --expected-head "$CURRENT_HEAD" --event-sha "$CURRENT_HEAD" \
       --host 'Linux x86_64' --historical-repo "$HISTORICAL_REPO"
 
-Preparation reports zero compiler executions and no semantic qualification. A
-passing current parser result requires four fresh observer/control builds,
-12 ordinary passivity pairs and all 638 frozen observations, followed by the
-unchanged effective comparator. Hosted qualification must run on the exact
-published integration head. Earlier failed and historical passed receipts remain
-unchanged and cannot be promoted into current passes.
-
-### Six-case composition diagnostic successor
-
-`record-composition-diagnostics-v1.json` and `record_composition_amendment.py`
-retain the original complete effective document and amend only six named
-ProjectCandidate `diagnostics_exact` predicates: qualified/relative field-path
-migration fixtures in plain, Unicode-LF and Unicode-CRLF form. Exact source and
-old expectation hashes, the complete before/after document hashes and reversal
-are checked. Absolute `crate::T` now passes the field-type grammar; unsupported
-`self::T` reaches the existing absolute-prefix guard. Later `pub` errors remain.
-
-No parser source, raw observation, comparator handler, corpus mode/count, resource
-predicate or passivity condition changes. The current result embeds the frozen
-comparison plus its canonical SHA, so the original failure and the current
-six-case successor are explicit side-by-side. The separately retained earlier
-comparison is never overwritten. All638 observations and22 handlers remain.
-
-The frozen parser corpus remains 248 sources and 638 observations. An independent
-raw-byte screen verifies every frozen source identity: the only minus bytes are
-237 `->` arrows. Checked unary therefore adds no parser semantic amendment; the
-existing record-composition amendment and all frozen resource/semantic predicates
-remain unchanged. Every execution receipt still must be collected afresh.
-
-## Projected array slice successor
-
-The projected-slice source checkpoint is `052ad52` (full identity is pinned in
-`authority.json`). Its current manifest has 201 inputs, 151 historical-to-current
-changes, 364 base members, 148 compiler bodies and 367 members in each derived
-view. The two added test modules are `projected_slice_native_tests.rs` and
-`source/projected_slice_raw_tests.rs`.
-
-Before the existing unary inverse, the exact AST and parser sections of
-`projected-transition.patch` restore the preserved `unary-source.json` identities.
-The added inverse accepts only those two instrumentation overlaps; changed input,
-coherently rehashed source tails, altered transition/predecessor artifacts and
-other overlap paths remain rejected. All historical packages and predicates stay
-byte-identical. The 248 frozen parser sources contain no projected borrow token
-sequence, as checked separately from compiler observations, so this successor
-adds no semantic amendment to those parser cases. Projected-source diagnostics
-and path-node charges are qualified by their separately named source controls.
+Preparation performs zero compiler executions and supplies no semantic pass.
+Actual execution must use the current published qualification head and existing
+host gate. Earlier historical or failed receipts cannot become current passes.
