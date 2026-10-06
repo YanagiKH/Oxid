@@ -81,6 +81,7 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
+                OwnedInstruction::ReadStdin { .. } => return Err(bad()),
                 OwnedInstruction::ConstructEnum { payload, .. } => {
                     if !allow_enums {
                         return Err(bad());

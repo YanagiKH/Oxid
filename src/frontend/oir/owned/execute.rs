@@ -1299,6 +1299,9 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::ReadStdin { .. } => {
+                return Err(bad("builtin input execution unavailable", span));
+            }
             OwnedInstruction::ConstructEnum {
                 destination,
                 variant,
@@ -2318,6 +2321,12 @@ pub(super) fn run_limits(
     )
 }
 fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<hir::DefId> {
+    if witness.has_builtin_origins() {
+        return Err(OwnedRunFailure::Invariant(
+            "builtin input execution unavailable",
+            None,
+        ));
+    }
     let entry = entry.ok_or(RunFailure::Entry(None))?;
     let f = witness
         .functions()

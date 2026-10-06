@@ -299,6 +299,9 @@ fn native_module_accounted(
     limits: Limits,
     accounting: &mut Accounting,
 ) -> Result<String, Box<Diagnostic>> {
+    if witness.has_builtin_origins() {
+        return Err(reject("builtin input emission is unavailable", None));
+    }
     // Entry denial is deliberately before plan construction, diagnostics,
     // output text or tools. An invalid identity is an internal error.
     let id = entry.ok_or_else(|| {
@@ -1934,7 +1937,8 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ReadProjection { index: Some(_), .. }
         | OwnedInstruction::WriteProjection { index: Some(_), .. } => Continuation::Bounds,
-        OwnedInstruction::StorageLive(_)
+        OwnedInstruction::ReadStdin { .. }
+        | OwnedInstruction::StorageLive(_)
         | OwnedInstruction::StorageEnd(_)
         | OwnedInstruction::Construct { .. }
         | OwnedInstruction::ConstructEnum { .. }
@@ -2236,6 +2240,9 @@ fn emit_statement(
     let f = &plan.witness().functions()[id.0];
     let fp = plan.function(id);
     match &statement.kind {
+        OwnedInstruction::ReadStdin { .. } => {
+            unreachable!("builtin input plans and emission remain denied")
+        }
         OwnedInstruction::ConstructEnum {
             destination,
             variant,

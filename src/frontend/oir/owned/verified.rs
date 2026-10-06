@@ -11,6 +11,9 @@ pub(super) struct VerifiedOwnedProgram {
 #[derive(Debug)]
 struct OwnershipSeal;
 impl VerifiedOwnedProgram {
+    pub(super) fn has_builtin_origins(&self) -> bool {
+        self.program.builtins != BuiltinOrigins::None
+    }
     pub(super) fn functions(&self) -> &[RawOwnedFunction] {
         &self.program.functions
     }

@@ -426,6 +426,9 @@ pub(super) fn check(
                 statement: si,
             };
             match &instruction.kind {
+                OwnedInstruction::ReadStdin { .. } => {
+                    return Err(bad(Malformed::CanonicalSite, s));
+                }
                 OwnedInstruction::ConstructEnum {
                     destination,
                     variant,

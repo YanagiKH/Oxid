@@ -7,6 +7,7 @@
 #![allow(clippy::result_large_err)]
 use super::{owned_types::*, *};
 mod budget;
+mod builtins;
 mod cfg;
 mod execute;
 mod flow;
@@ -193,6 +194,11 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    // Carrier only: canonical template checks are inert and all consumers deny.
+    ReadStdin {
+        buffer: ReferenceParamId,
+        destination: OwnerPlaceId,
+    },
     ConstructEnum {
         destination: OwnerPlaceId,
         variant: VariantId,
@@ -444,6 +450,8 @@ struct OwnershipUsage {
     owner_cells: usize,
     owner_layout_bytes: usize,
 }
+#[cfg(test)]
+mod builtin_descriptor_tests;
 #[cfg(test)]
 mod builtin_origin_tests;
 #[cfg(test)]

@@ -72,6 +72,7 @@ fn builtin_origin_enclosing_layout_measurements() {
     }
     report!(
         BuiltinOrigins,
+        builtins::BuiltinIds,
         RawOwnedProgram,
         Result<RawOwnedProgram, OwnedFailure>,
         verified::VerifiedOwnedProgram,
@@ -82,4 +83,44 @@ fn builtin_origin_enclosing_layout_measurements() {
         OwnedStatement,
         plan::FrameUsage,
     );
+}
+
+#[test]
+fn builtin_input_carrier_is_rejected_even_in_unreachable_source_blocks() {
+    use super::consumer_fixtures as f;
+    for unreachable in [false, true] {
+        let (sources, span_at) = f::context();
+        let span = span_at(0);
+        let mut function = f::function(0, ValueTy::Scalar(hir::Ty::Unit), span);
+        function.locals.push(f::scalar(hir::Ty::Unit, span));
+        function.blocks.push(OwnedBlock {
+            merge: None,
+            span,
+            statements: vec![f::assign(0, Rvalue::Unit, span)],
+            terminator: f::end(OwnedTerminatorKind::ReturnScalar(f::operand(0, span)), span),
+        });
+        if unreachable {
+            function.blocks.push(function.blocks[0].clone());
+        }
+        function.blocks[usize::from(unreachable)]
+            .statements
+            .push(OwnedStatement {
+                kind: OwnedInstruction::ReadStdin {
+                    buffer: ReferenceParamId(usize::MAX),
+                    destination: OwnerPlaceId(usize::MAX),
+                },
+                span,
+                diagnostic_origins: None,
+            });
+        let raw = RawOwnedProgram {
+            builtins: BuiltinOrigins::None,
+            enums: vec![],
+            records: vec![],
+            functions: vec![function],
+        };
+        assert_eq!(
+            verify_owned(raw, &sources).unwrap_err().kind,
+            OwnedFailureKind::Malformed(Malformed::CanonicalSite)
+        );
+    }
 }
