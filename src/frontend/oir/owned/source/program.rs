@@ -162,16 +162,24 @@ pub(super) struct EnumPipelineFacts {
     pub(super) function_count: usize,
     pub(super) match_count: usize,
     pub(super) arm_count: usize,
-    pub(super) result: Scalar,
+    pub(super) result: Result<Scalar, execute::OwnedRunFailure>,
 }
 
-/// Sole caller is the paid typeck continuation; the fresh driver remains denied
-/// until its enclosing carrier layouts have been measured and reviewed.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub(super) struct EnumPipelineProgramOutput {
+    pub(super) facts: EnumPipelineFacts,
+    pub(super) llvm: Option<Result<String, Box<Diagnostic>>>,
+}
+
+/// Sole caller is the paid typeck continuation. The selector admits only the
+/// default request until all changed output/request carriers are reviewed.
 #[cfg(test)]
 #[allow(dead_code)]
 pub(super) fn observe_enum_pipeline(
     typed: &typeck::TypedOwnedProgram<'_>,
-) -> Result<EnumPipelineFacts, Vec<Diagnostic>> {
+    request: resolve::EnumPipelineRequest,
+) -> Result<EnumPipelineProgramOutput, Vec<Diagnostic>> {
     if typed.admission() != resolve::SourceAdmission::EnumPipeline {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
@@ -242,7 +250,18 @@ pub(super) fn observe_enum_pipeline(
     let verified_usage = witness.usage();
     // checked_entry retains ordinary main parameter/result rejection before
     // execution-plan allocation. Ordinary relay functions may return enums.
-    let result = execute::run(&witness, entry).map_err(|error| vec![*error.diagnostic(sources)])?;
+    let limits = execute::Limits {
+        fuel: request.fuel,
+        ..execute::Limits::default()
+    };
+    let result = execute::run_limits(&witness, entry, limits);
+    // Runtime failure is inert data: native emission still uses this exact
+    // verified witness and the ordinary bounded native_module implementation.
+    let llvm = if request.emit_llvm {
+        Some(native::native_module(&witness, entry, sources))
+    } else {
+        None
+    };
     let source_seed_after = typed
         .source_storage_bytes()
         .ok_or_else(|| vec![*crate::frontend::oir::source::association::bad()])?;
@@ -250,18 +269,21 @@ pub(super) fn observe_enum_pipeline(
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
     drop(witness);
-    Ok(EnumPipelineFacts {
-        source_seed_before,
-        source_seed_after,
-        source_usage,
-        raw_usage,
-        verified_usage,
-        enum_count,
-        variant_count,
-        function_count,
-        match_count,
-        arm_count,
-        result,
+    Ok(EnumPipelineProgramOutput {
+        facts: EnumPipelineFacts {
+            source_seed_before,
+            source_seed_after,
+            source_usage,
+            raw_usage,
+            verified_usage,
+            enum_count,
+            variant_count,
+            function_count,
+            match_count,
+            arm_count,
+            result,
+        },
+        llvm,
     })
 }
 
@@ -270,6 +292,8 @@ pub(super) fn observe_enum_pipeline(
 // authoritative budgets; no inherited verifier/runtime stack is modeled here.
 #[allow(dead_code)]
 struct EnumPipelineProgramCarriers {
+    request: resolve::EnumPipelineRequest,
+    execution_limits: [execute::Limits; 3],
     typed: &'static typeck::TypedOwnedProgram<'static>,
     index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
     source_owner: crate::frontend::declaration_index::SourceOwner<'static>,
@@ -319,10 +343,15 @@ struct EnumPipelineProgramCarriers {
     witness_borrows: [&'static verified::VerifiedOwnedProgram; 2],
     verified_usage: OwnershipUsage,
     execution_return: Result<Scalar, execute::OwnedRunFailure>,
-    execution_normalized: Result<Scalar, Vec<Diagnostic>>,
-    result: Scalar,
-    constructed: EnumPipelineFacts,
-    returned: Result<EnumPipelineFacts, Vec<Diagnostic>>,
+    result: Result<Scalar, execute::OwnedRunFailure>,
+    native_witness: &'static verified::VerifiedOwnedProgram,
+    native_entry: Option<hir::DefId>,
+    native_sources: &'static SourceMap,
+    native_return: Result<String, Box<Diagnostic>>,
+    native_options: [Option<Result<String, Box<Diagnostic>>>; 2],
+    constructed_facts: EnumPipelineFacts,
+    constructed: EnumPipelineProgramOutput,
+    returned: Result<EnumPipelineProgramOutput, Vec<Diagnostic>>,
 }
 pub(super) const fn enum_pipeline_program_carrier_bytes() -> usize {
     std::mem::size_of::<EnumPipelineProgramCarriers>()

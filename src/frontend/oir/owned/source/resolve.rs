@@ -567,19 +567,47 @@ fn fresh_enum_type_storage<'s>(
     }
 }
 
+/// Fixed private consumer request, never a source owner or witness capability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct EnumPipelineRequest {
+    pub(super) emit_llvm: bool,
+    pub(super) fuel: usize,
+}
+impl EnumPipelineRequest {
+    pub(super) const REFERENCE: Self = Self {
+        emit_llvm: false,
+        fuel: super::super::plan::MAX_FUEL,
+    };
+}
+
+/// Only fixed observations and an optional bounded artifact/diagnostic escape.
+#[derive(Debug)]
+pub(super) struct EnumPipelineOutput {
+    pub(super) observation: EnumPipelineObservation,
+    pub(super) llvm: Option<Result<String, Box<Diagnostic>>>,
+}
+
 /// Private source-only selection through the measured closed construction.
-/// Only fixed facts escape; public executable admission remains unchanged.
+/// Only fixed observations/artifacts escape; public admission stays unchanged.
 #[cfg(test)]
 #[allow(dead_code)]
 pub(super) fn probe_enum_pipeline<'s>(
     index: &'s DeclarationIndex<'s>,
     work: &'s WorkMeter,
     allocator: &mut Allocator,
-) -> Result<Option<EnumPipelineObservation>, Vec<Diagnostic>> {
+    request: EnumPipelineRequest,
+) -> Result<Option<EnumPipelineOutput>, Vec<Diagnostic>> {
     if index.enum_count() == 0 {
         return Ok(None);
     }
-    fresh_enum_pipeline(index, work, allocator)
+    if request != EnumPipelineRequest::REFERENCE {
+        return Err(vec![*error(
+            "E0500",
+            format_args!("enum pipeline consumer request is not admitted"),
+            index.sources().eof(),
+        )]);
+    }
+    fresh_enum_pipeline(index, work, allocator, request)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -596,7 +624,8 @@ fn fresh_enum_pipeline<'s>(
     index: &'s DeclarationIndex<'s>,
     work: &'s WorkMeter,
     allocator: &mut Allocator,
-) -> Result<Option<EnumPipelineObservation>, Vec<Diagnostic>> {
+    request: EnumPipelineRequest,
+) -> Result<Option<EnumPipelineOutput>, Vec<Diagnostic>> {
     if index.enum_count() == 0 {
         return Ok(None);
     }
@@ -650,7 +679,7 @@ fn fresh_enum_pipeline<'s>(
                     entry: index.root_original_main(),
                 };
                 typed_observation =
-                    super::typeck::finish_enum_pipeline(program, &plan, &mut *allocator)?;
+                    super::typeck::finish_enum_pipeline(program, &plan, &mut *allocator, request)?;
             }
             // The owner is gone before any combined facts are constructed.
             let attempts_final = allocator.attempts;
@@ -669,10 +698,13 @@ fn fresh_enum_pipeline<'s>(
                                     at,
                                 )]);
                             }
-                            Ok(Some(EnumPipelineObservation {
-                                resolver: resolver_observation,
-                                typed: typed_observation.typed,
-                                pipeline: typed_observation.pipeline,
+                            Ok(Some(EnumPipelineOutput {
+                                observation: EnumPipelineObservation {
+                                    resolver: resolver_observation,
+                                    typed: typed_observation.typed,
+                                    pipeline: typed_observation.pipeline,
+                                },
+                                llvm: typed_observation.llvm,
                             }))
                         }
                         None => Err(vec![*error(
@@ -735,6 +767,7 @@ struct FreshTypeObservationCarriers {
 // over its existing bank rather than duplicating common plan/account/parts state.
 #[allow(dead_code)]
 struct FreshEnumPipelineCarriers {
+    requests: [EnumPipelineRequest; 2],
     enum_count: usize,
     eof_source: SourceOwner<'static>,
     records: Vec<Record>,
@@ -749,27 +782,30 @@ struct FreshEnumPipelineCarriers {
     owner_argument: ResolvedOwnedProgram<'static>,
     plan_borrow: &'static super::hir_budget::HirPlan,
     allocator_reborrow: &'static mut Allocator,
-    typed_observation: super::typeck::EnumPipelineTypedFacts,
-    typed_return: Result<super::typeck::EnumPipelineTypedFacts, Vec<Diagnostic>>,
+    typed_observation: super::typeck::EnumPipelineTypedOutput,
+    typed_return: Result<super::typeck::EnumPipelineTypedOutput, Vec<Diagnostic>>,
     attempts_final: usize,
     total_delta_option: Option<usize>,
     total_delta: usize,
     phase_delta_option: Option<usize>,
     phase_delta: usize,
     interval_mismatch: bool,
-    constructed: EnumPipelineObservation,
-    optional: Option<EnumPipelineObservation>,
-    returned: Result<Option<EnumPipelineObservation>, Vec<Diagnostic>>,
+    constructed_observation: EnumPipelineObservation,
+    constructed: EnumPipelineOutput,
+    optional: Option<EnumPipelineOutput>,
+    returned: Result<Option<EnumPipelineOutput>, Vec<Diagnostic>>,
 }
 #[allow(dead_code)]
 struct DeniedEnumPipelineProbeCarriers {
+    requests: [EnumPipelineRequest; 2],
+    request_denied: bool,
     index: &'static DeclarationIndex<'static>,
     work: &'static WorkMeter,
     allocator: &'static mut Allocator,
     enum_count: usize,
     sources: SourceOwner<'static>,
     origin: Span,
-    returned: Result<Option<EnumPipelineObservation>, Vec<Diagnostic>>,
+    returned: Result<Option<EnumPipelineOutput>, Vec<Diagnostic>>,
 }
 pub(super) const fn enum_pipeline_source_extra_bytes() -> usize {
     std::mem::size_of::<FreshEnumPipelineCarriers>()

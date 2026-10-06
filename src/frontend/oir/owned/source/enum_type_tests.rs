@@ -141,7 +141,12 @@ fn bounded_enum_pipeline_enum_free_and_preflight_guards_remain_inert() {
             ..Allocator::default()
         };
         let (result, heap) = super::super::reviewer_source::integration_measured(|| {
-            super::super::resolve::probe_enum_pipeline(index, &work, &mut allocator)
+            super::super::resolve::probe_enum_pipeline(
+                index,
+                &work,
+                &mut allocator,
+                super::super::resolve::EnumPipelineRequest::REFERENCE,
+            )
         });
         assert!(result.unwrap().is_none());
         assert_eq!(heap, (0, 0, 0));
@@ -154,8 +159,13 @@ fn bounded_enum_pipeline_enum_free_and_preflight_guards_remain_inert() {
             attempts: 7,
             ..Allocator::default()
         };
-        let errors =
-            super::super::resolve::probe_enum_pipeline(index, &work, &mut allocator).unwrap_err();
+        let errors = super::super::resolve::probe_enum_pipeline(
+            index,
+            &work,
+            &mut allocator,
+            super::super::resolve::EnumPipelineRequest::REFERENCE,
+        )
+        .unwrap_err();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code, "E0400");
         assert_eq!(allocator.attempts, 7);
@@ -173,11 +183,11 @@ fn bounded_enum_pipeline_precursor_named_carrier_layouts() {
         enum_pipeline_type_carrier_bytes(),
         super::super::program::enum_pipeline_program_carrier_bytes(),
         std::mem::size_of::<super::super::resolve::EnumPipelineObservation>(),
-        std::mem::size_of::<Result<Option<super::super::resolve::EnumPipelineObservation>, Vec<Diagnostic>>>(),
-        std::mem::size_of::<EnumPipelineTypedFacts>(),
-        std::mem::size_of::<Result<EnumPipelineTypedFacts, Vec<Diagnostic>>>(),
+        std::mem::size_of::<Result<Option<super::super::resolve::EnumPipelineOutput>, Vec<Diagnostic>>>(),
+        std::mem::size_of::<EnumPipelineTypedOutput>(),
+        std::mem::size_of::<Result<EnumPipelineTypedOutput, Vec<Diagnostic>>>(),
         std::mem::size_of::<super::super::program::EnumPipelineFacts>(),
-        std::mem::size_of::<Result<super::super::program::EnumPipelineFacts, Vec<Diagnostic>>>());
+        std::mem::size_of::<Result<super::super::program::EnumPipelineProgramOutput, Vec<Diagnostic>>>());
 }
 
 #[test]
@@ -202,10 +212,20 @@ fn bounded_enum_pipeline_tiny_relay_executes_after_full_proof_and_releases_backi
             let trace_pointer = allocator.trace.as_ptr();
             let (result, (calls, live, peak)) =
                 super::super::reviewer_source::integration_measured(|| {
-                    super::super::resolve::probe_enum_pipeline(index, &work, &mut allocator)
+                    super::super::resolve::probe_enum_pipeline(
+                        index,
+                        &work,
+                        &mut allocator,
+                        super::super::resolve::EnumPipelineRequest::REFERENCE,
+                    )
                 });
-            let facts = result.unwrap().unwrap();
-            assert_eq!(facts.pipeline.result, crate::frontend::oir::Scalar::I32(7));
+            let output = result.unwrap().unwrap();
+            assert!(output.llvm.is_none());
+            let facts = output.observation;
+            assert_eq!(
+                facts.pipeline.result,
+                Ok(crate::frontend::oir::Scalar::I32(7))
+            );
             assert_eq!(
                 (
                     facts.pipeline.enum_count,
@@ -280,13 +300,20 @@ fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
     let mut allocator = Allocator::default();
     allocator.observer_trace_bound(1024).unwrap();
     let (result, (calls, live, peak)) = super::super::reviewer_source::integration_measured(|| {
-        super::super::resolve::probe_enum_pipeline(&index, &work, &mut allocator)
+        super::super::resolve::probe_enum_pipeline(
+            &index,
+            &work,
+            &mut allocator,
+            super::super::resolve::EnumPipelineRequest::REFERENCE,
+        )
     });
-    let facts = result.unwrap().unwrap();
+    let output = result.unwrap().unwrap();
+    assert!(output.llvm.is_none());
+    let facts = output.observation;
     // Independent pilot oracle: Integer(12), Plus, Integer(3), End => 12+100+3.
     assert_eq!(
         facts.pipeline.result,
-        crate::frontend::oir::Scalar::I32(115)
+        Ok(crate::frontend::oir::Scalar::I32(115))
     );
     assert_eq!(
         (
@@ -321,4 +348,58 @@ fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
     println!("ENUM_PIPELINE_SCANNER result=115 resolver={} typed={} paths={} seed={} calls={calls} live={live} peak={peak}",
         facts.resolver.reservation_attempts, facts.typed.typed_attempts,
         facts.typed.path_vectors, facts.typed.final_cell);
+}
+
+#[test]
+fn bounded_enum_pipeline_nondefault_requests_stay_denied_before_source_work() {
+    use super::super::resolve::{probe_enum_pipeline, EnumPipelineRequest};
+    with_index("enum E{V} fn main()->i32{return 0;}", |index| {
+        for request in [
+            EnumPipelineRequest {
+                emit_llvm: true,
+                ..EnumPipelineRequest::REFERENCE
+            },
+            EnumPipelineRequest {
+                fuel: 0,
+                ..EnumPipelineRequest::REFERENCE
+            },
+            EnumPipelineRequest {
+                emit_llvm: true,
+                fuel: 1,
+            },
+        ] {
+            let work = WorkMeter::new(0);
+            let mut allocator = Allocator {
+                attempts: 7,
+                ..Allocator::default()
+            };
+            let errors = probe_enum_pipeline(index, &work, &mut allocator, request).unwrap_err();
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code, "E0500");
+            assert_eq!(work.used(), 0);
+            assert_eq!(allocator.attempts, 7);
+            assert!(allocator.trace.is_empty());
+        }
+    });
+    with_index("fn main()->i32{return 0;}", |index| {
+        let work = WorkMeter::new(0);
+        let mut allocator = Allocator::default();
+        let request = EnumPipelineRequest {
+            emit_llvm: true,
+            fuel: 0,
+        };
+        let (result, heap) = super::super::reviewer_source::integration_measured(|| {
+            probe_enum_pipeline(index, &work, &mut allocator, request)
+        });
+        assert!(result.unwrap().is_none());
+        assert_eq!(heap, (0, 0, 0));
+        assert_eq!(allocator.attempts, 0);
+    });
+    println!("ENUM_PIPELINE_REQUEST_LAYOUT request={} output={} program_output={} native_return={} native_option={} runtime_result={}",
+        std::mem::size_of::<EnumPipelineRequest>(),
+        std::mem::size_of::<super::super::resolve::EnumPipelineOutput>(),
+        std::mem::size_of::<super::super::program::EnumPipelineProgramOutput>(),
+        std::mem::size_of::<Result<String, Box<Diagnostic>>>(),
+        std::mem::size_of::<Option<Result<String, Box<Diagnostic>>>>(),
+        std::mem::size_of::<Result<crate::frontend::oir::Scalar, super::super::super::execute::OwnedRunFailure>>());
 }

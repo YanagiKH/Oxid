@@ -561,11 +561,12 @@ pub(super) fn observe_enum_type_storage(
     Ok(typed_observation)
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 #[allow(dead_code)]
-pub(super) struct EnumPipelineTypedFacts {
+pub(super) struct EnumPipelineTypedOutput {
     pub(super) typed: storage::TypeStorageObservation,
     pub(super) pipeline: super::program::EnumPipelineFacts,
+    pub(super) llvm: Option<Result<String, Box<Diagnostic>>>,
 }
 
 /// The sole caller is resolve's closed fresh pipeline construction. No typed
@@ -576,7 +577,8 @@ pub(super) fn finish_enum_pipeline(
     program: ResolvedOwnedProgram<'_>,
     source: &super::hir_budget::HirPlan,
     allocator: &mut Allocator,
-) -> Result<EnumPipelineTypedFacts, Vec<Diagnostic>> {
+    request: super::resolve::EnumPipelineRequest,
+) -> Result<EnumPipelineTypedOutput, Vec<Diagnostic>> {
     let bodies;
     let typed_observation;
     {
@@ -662,11 +664,12 @@ pub(super) fn finish_enum_pipeline(
         }
     }
     let typed = TypedOwnedProgram { program, bodies };
-    let pipeline = super::program::observe_enum_pipeline(&typed)?;
+    let pipeline = super::program::observe_enum_pipeline(&typed, request)?;
     drop(typed);
-    Ok(EnumPipelineTypedFacts {
+    Ok(EnumPipelineTypedOutput {
         typed: typed_observation,
-        pipeline,
+        pipeline: pipeline.facts,
+        llvm: pipeline.llvm,
     })
 }
 
@@ -4540,13 +4543,14 @@ mod enum_type_tests;
 // inventory/reconciliation and the one primary complete TypedOwnedProgram.
 #[allow(dead_code)]
 struct EnumPipelineTypeCarriers {
+    requests: [super::resolve::EnumPipelineRequest; 2],
     enum_count: usize,
     enum_empty: bool,
     typed_borrow: &'static TypedOwnedProgram<'static>,
-    pipeline_return: Result<super::program::EnumPipelineFacts, Vec<Diagnostic>>,
-    pipeline: super::program::EnumPipelineFacts,
-    constructed: EnumPipelineTypedFacts,
-    returned: Result<EnumPipelineTypedFacts, Vec<Diagnostic>>,
+    pipeline_return: Result<super::program::EnumPipelineProgramOutput, Vec<Diagnostic>>,
+    pipeline: super::program::EnumPipelineProgramOutput,
+    constructed: EnumPipelineTypedOutput,
+    returned: Result<EnumPipelineTypedOutput, Vec<Diagnostic>>,
 }
 pub(super) const fn enum_pipeline_type_carrier_bytes() -> usize {
     std::mem::size_of::<EnumPipelineTypeCarriers>()
