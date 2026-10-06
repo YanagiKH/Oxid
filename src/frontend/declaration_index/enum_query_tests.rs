@@ -920,7 +920,10 @@ fn enum_query_complete_return_carriers_fit_the_explicit_fixed_ledger() {
         + size_of::<Option<&ast::EnumVariantSyntax>>()
         + size_of::<source_owner::QualifiedPathView<'_>>()
         + size_of::<bool>()
-        + size_of::<Option<usize>>()
+        // The checked previous cursor now uses CompactSpan's u32 domain.
+        + size_of::<u32>()
+        + size_of::<BuiltinEnum>()
+        + size_of::<BuiltinFunction>()
         + size_of::<super::super::parser::StdImportPolicy>()
         + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>()
         + size_of::<[usize; 2]>()

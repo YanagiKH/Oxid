@@ -10,6 +10,7 @@ fn parsed(text: &str, policy: StdImportPolicy) -> Result<Program, Vec<Diagnostic
     let mut allocator = Allocator::default();
     let mut storage = enums::SyntaxStorage::default();
     let parse = match policy {
+        StdImportPolicy::OutputCandidate => parse_output_candidate_counted,
         StdImportPolicy::Candidate => parse_builtin_candidate_counted,
         StdImportPolicy::Enabled => parse_typed_counted,
         StdImportPolicy::Closed => parse_typed_closed_std_counted,

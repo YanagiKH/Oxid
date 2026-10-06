@@ -1165,7 +1165,8 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
     #[cfg(target_pointer_width = "64")]
     // Measured 11840 -> 11888: the owned index carrier grows by 24 bytes,
     // and HirCounts.signatures adds 8 to each of three complete observations.
-    assert_eq!(observation, (11888, 320, 24, 24));
+    // The borrowed output-anchor header adds a further 8 to the resolved owner.
+    assert_eq!(observation, (11896, 320, 24, 24));
     let checker = checker_only_components();
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
     let before_observation = size_of::<typeck::TypedOwnedProgram<'_>>()
@@ -1317,7 +1318,7 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
     {
         // The added signature count widens the complete returned facts by 8.
         assert_eq!(delta, 896);
-        assert_eq!(observation_components(), (11888, 320, 24, 24));
+        assert_eq!(observation_components(), (11896, 320, 24, 24));
         assert_eq!(
             checker_only_components(),
             (33448 + 64 * 152, 1928 + 472, 24, 784, 88)
