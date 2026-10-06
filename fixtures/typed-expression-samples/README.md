@@ -1,6 +1,6 @@
 # Bounded expression parser and evaluator
 
-This component is written in existing typed-preview Oxid. An iterative parser
+This component is written in typed-preview Oxid. An iterative parser
 builds a fixed expression arena, then a separate iterative evaluator consumes
 that tree. `main.ox` parses `12 + 3 * (4 + 5)`, checks that it built seven nodes,
 and returns 39. It is not compiler self-hosting or a language extension.
@@ -34,6 +34,15 @@ next parse resets it. Columns remain initialized, and entries beyond count are
 not read. The original `tests/fixtures/bounded_enum_scanner` is unchanged; this
 sibling scanner adds `*`, `(`, `)` and token-start positions.
 
+`parse_prefix(codes, used, arena)` scans only indexes below `used`, including all
+whitespace, digit and EOF decisions. It resets the arena before validating the
+length. Negative lengths and lengths beyond the backing slice return
+`InputLimit(used)`; an otherwise valid length above 128 returns `InputLimit(128)`.
+No unused cells are padded or interpreted. The original `parse` entry delegates
+with `codes.len()`, preserving its whole-input contract. The scanner likewise
+retains `next_token`, with `next_token_prefix` providing the used-length entry;
+an invalid prefix or cursor range returns `Invalid(-1)` before indexing.
+
 Arena columns are `kind`, `value`, `left`, `right`, and `count`. Kinds 1 (integer),
 2 (addition), and 3 (multiplication) are application data, not Oxid enum tags.
 Literal children are -1; binary nodes have unused value 0. Children precede
@@ -61,12 +70,64 @@ There is no wrapping or lexical fallback. Thus `1 2147483648` overflows while
 scanning, while `2147483647+1+` reports a syntax failure before any evaluation.
 Runtime diagnostics point to the Oxid scanner/evaluator arithmetic source span.
 
+## Bounded stdin entry
+
+`stdin.ox` uses the same four component modules and the bounded
+`std::io::read_stdin` / `std::io::ReadStatus` imports. Its zero-argument `main`
+allocates exactly 129 i32 cells: 128 input bytes and one explicit over-capacity
+witness. `Eof(used)` passes only that prefix to the parser. `Full` rejects the
+input without asking whether EOF follows, and leaves any 130th byte unread.
+`IoError` returns an input failure without parsing. Initially unused cells are
+zero, which is invalid expression input; successful short-input cases therefore
+also check that unused storage is not scanned.
+
+Results are ordinary scalar values printed by the existing main ABI. Nonnegative
+values are evaluated expressions. Syntax and node/operator/operand capacity
+failures return -1, invalid arenas return -3, the 128-byte input limit returns
+-4, and input errors return -5. These application results exit successfully;
+checked i32 arithmetic overflow still exits with the ordinary E0604 diagnostic.
+The language grammar, 15-node arena, 15-entry stacks and 128-byte budget are
+unchanged. This is batch input that waits for EOF or capacity, not a line editor.
+
+With an input-enabled compiler, one compilation supports distinct streams:
+
+```sh
+oxid compile fixtures/typed-expression-samples/stdin.ox --edition typed-preview \
+  --backend llvm --output ./expression-stdin
+printf '12 + 3 * (4 + 5)' | ./expression-stdin
+printf '7*(8+1)' | ./expression-stdin
+```
+
+The independently specified results are 39 and 63. Public-route qualification is
+performed by the focused runner below; source files alone are not execution
+evidence.
+
+```sh
+python3 -B scripts/verify_expression_stdin.py --oxid target/release/oxid \
+  --output /tmp/expression-stdin-evidence --native
+```
+
+The runner checks and compiles the application once, then keeps its ELF hash
+unchanged across 28 hand-derived cases. It checks pipe and regular-file input,
+empty and malformed expressions, raw NUL/non-ASCII bytes, EOF at 127/128 bytes,
+capacity at 129/130 bytes, node/stack endpoints, and scanner/evaluator overflow.
+A closed stdin descriptor checks the distinct input error. An independent
+controller reads the remaining bytes from the shared input descriptor after
+every pipe/file execution. Check and compile receive sentinel bytes and must
+leave all of them unread. Reference and native outputs, including overflow
+diagnostics, must agree. The runner retains sources, input bytes, commands,
+raw output, unread bytes, exit statuses and hashes. Native execution uses an
+empty working directory and cleared environment; this is not filesystem
+isolation. Omit `--native` for reference-only verification. The output directory
+must be new.
+
 ## Evidence and scope
 
-The public check, reference run, LLVM compile and ELF execution paths passed for
-all 45 hand-derived cases in `cases.json`: 33 parser/evaluation cases and 12
-malformed-arena cases. Exact tree rows distinguish precedence and associativity;
-capacity endpoints and failure positions are asserted. Five arithmetic-overflow
+The original fixed-input component passed public check, reference run, LLVM
+compile and ELF execution for all 45 hand-derived cases in `cases.json`: 33
+parser/evaluation cases and 12 malformed-arena cases. Exact tree rows distinguish
+precedence and associativity; capacity endpoints and failure positions are
+asserted. Five arithmetic-overflow
 cases assert E0604, the scanner/evaluator origin, and identical reference/native
 diagnostics. A malformed later node is rejected before an earlier overflowing
 sum can execute.
@@ -82,7 +143,7 @@ run from an empty working directory with a cleared environment; this is not
 filesystem isolation. Omit `--native` for reference-only checks. CI runs the
 native group with its pinned LLVM toolchain and retains its evidence.
 
-Local execution used the current PR37 compiler and LLVM 19.1.7 on Linux x86_64.
+That historical execution used the PR37 compiler and LLVM 19.1.7 on Linux x86_64.
 All component source functions passed existing native admission, including the
 128-code and 15-entry endpoints. Exact S/O/X and fuel totals were not separately
 measured. Independent review and exact-head hosted CI are separate gates; these

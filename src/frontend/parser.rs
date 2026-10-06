@@ -102,10 +102,12 @@ impl EnumSyntaxPolicy {
     }
 }
 
-/// Std is recognized only at an import edge, under the private policy.
+/// Std is recognized only at an import edge. Current source admits the closed
+/// catalog; the candidate policy retains its separate qualification route.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum StdImportPolicy {
     Closed,
+    Enabled,
     #[cfg(test)]
     Candidate,
 }
@@ -113,6 +115,7 @@ impl StdImportPolicy {
     pub(super) fn enabled(self) -> bool {
         match self {
             Self::Closed => false,
+            Self::Enabled => true,
             #[cfg(test)]
             Self::Candidate => true,
         }
@@ -195,6 +198,29 @@ pub(super) fn parse_counted_with_arrays(
 /// Bounded production typed grammar; callers select this explicitly.
 #[allow(dead_code)]
 pub(super) fn parse_typed_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(
+        source,
+        tokens,
+        mode,
+        node_limit,
+        allocator,
+        ArraySyntaxPolicy::Enabled,
+        EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::Enabled,
+        storage,
+    )
+}
+
+/// Preserve the pre-stdin typed grammar for negative qualification controls.
+#[cfg(test)]
+pub(super) fn parse_typed_closed_std_counted(
     source: &SourceFile,
     tokens: Vec<Token>,
     mode: SourceMode,
@@ -585,7 +611,25 @@ impl Parser<'_> {
                 ))
             }
         };
-        self.qualified_segments(first, root)
+        let id = self.qualified_segments(first, root)?;
+        if root == PathRoot::Std && self.std_imports == StdImportPolicy::Enabled {
+            use super::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+            let path = &self.paths[id.0];
+            let segments = &self.path_segments[path.segment_start..];
+            if segments.len() != 3
+                || self.source.text_at(segments[1]) != "io"
+                || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
+                    && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name())
+            {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "unsupported standard library import",
+                    Some(path.span),
+                ));
+            }
+        }
+        Ok(id)
     }
     fn path_segment(
         &mut self,

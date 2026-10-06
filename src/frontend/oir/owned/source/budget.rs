@@ -145,8 +145,15 @@ pub(super) fn preflight(
             typed.index().sources().eof(),
         ));
     }
+    if typed.index().builtin_set() != BuiltinOrigins::None {
+        typed.validate_function_signatures().map_err(|_| {
+            OwnedFailure::malformed(Malformed::Binding, typed.index().sources().eof())
+        })?;
+    }
     #[cfg(test)]
-    if typed.admission() == super::resolve::SourceAdmission::BuiltinPipeline {
+    if typed.index().builtin_set() == BuiltinOrigins::None
+        && typed.admission() == super::resolve::SourceAdmission::BuiltinPipeline
+    {
         typed.validate_function_signatures().map_err(|_| {
             OwnedFailure::malformed(Malformed::Binding, typed.index().sources().eof())
         })?;

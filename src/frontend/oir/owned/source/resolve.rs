@@ -184,7 +184,7 @@ impl<'src> ResolvedOwnedProgram<'src> {
         self.entry
     }
     /// Check the source-body prefix and sole catalog signature suffix against
-    /// the frozen index. Called before private paid typing and source lowering;
+    /// the frozen index. Called before builtin paid typing and source lowering;
     /// a signature vector's length or diagnostic spelling is never authority.
     pub(super) fn validate_function_signatures(&self) -> Result<(), Box<Diagnostic>> {
         let index = self.index();
@@ -432,8 +432,9 @@ fn resolve_index(
     }
     resolve_index_impl(index, work, allocator, None)
 }
-/// Sole production enum typing construction. Source provenance is checked
-/// before storage, and no owner, seed, plan or admission is supplied by callers.
+/// Sole production enum-bearing typing construction, including builtin enums.
+/// Source provenance is checked before storage; callers supply no owner, seed,
+/// plan or admission.
 /// Public facades select this only for an enum-bearing frozen index.
 #[allow(dead_code)]
 pub(in crate::frontend::oir) fn type_enum_source<'s>(
@@ -481,7 +482,7 @@ fn type_paid_source<'s>(
     let plan = match admission {
         #[cfg(test)]
         SourceAdmission::BuiltinPipeline => super::hir_budget::preflight_builtin_hir(index, work),
-        _ => super::hir_budget::preflight_enum_hir(index, work),
+        _ => super::hir_budget::preflight_current_hir(index, work),
     }
     .map_err(|error| vec![*error])?
     .ok_or_else(|| {

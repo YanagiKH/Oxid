@@ -32,15 +32,66 @@ impl Drop for Fixture {
     }
 }
 fn reject_before_allocation(project: &ProjectSources) {
-    let mut allocator = Allocator::default();
-    assert!(declaration_index::collect_builtin_candidate(
-        SourceOwner::project(project),
-        IndexLimits::default(),
-        &WorkMeter::default(),
-        &mut allocator
-    )
-    .is_err());
-    assert_eq!(allocator.attempts, 0);
+    for collect in [
+        declaration_index::collect_builtin_candidate,
+        declaration_index::collect_originals,
+    ] {
+        let mut allocator = Allocator::default();
+        assert!(collect(
+            SourceOwner::project(project),
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut allocator
+        )
+        .is_err());
+        assert_eq!(allocator.attempts, 0);
+    }
+}
+
+#[test]
+fn builtin_current_project_routes_unused_imports_through_owned_validation() {
+    for text in [
+        "use std::io::ReadStatus as S; fn main()->i32{return 7;}",
+        "use std::io::read_stdin as input; fn main()->i32{return 7;}",
+    ] {
+        let fixture = Fixture::new(text);
+        let project =
+            ProjectSources::load_typed(fixture.0.to_str().unwrap(), ProjectLimits::default())
+                .unwrap();
+        assert!(project.uses_owned_syntax());
+        assert!(SourceOwner::project(&project)
+            .owned(&WorkMeter::default())
+            .unwrap());
+        assert!(ProjectSources::load_typed_closed_std(
+            fixture.0.to_str().unwrap(),
+            ProjectLimits::default()
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn builtin_owned_classifier_preserves_pre_stdin_work_for_crate_imports() {
+    for text in [
+        "",
+        "use crate::std::read_stdin; use crate::std::ReadStatus;",
+    ] {
+        let fixture = Fixture::new(text);
+        let project =
+            ProjectSources::load_typed(fixture.0.to_str().unwrap(), ProjectLimits::default())
+                .unwrap();
+        assert!(!project.programs[0].uses_std_imports());
+        let work = WorkMeter::default();
+        assert!(!SourceOwner::project(&project).owned(&work).unwrap());
+        // Pre-stdin classification visits this one module; imports were not
+        // inspected, and this fixture has no declaration/body/expression edges.
+        assert_eq!(work.used(), 1);
+    }
+    let fixture = Fixture::new("use std::io::ReadStatus;");
+    let project = fixture.load();
+    let work = WorkMeter::default();
+    assert!(SourceOwner::project(&project).owned(&work).unwrap());
+    assert_eq!(work.used(), 2);
 }
 #[test]
 fn builtin_import_paths_are_checked_and_ordinary_item_paths_remain_crate_only() {
@@ -120,6 +171,17 @@ fn builtin_forged_std_root_cannot_authorize_a_crate_token() {
     let fixture = Fixture::new("use crate::io::ReadStatus; fn main()->(){return;}");
     let mut project = fixture.load();
     project.programs[0].paths[0].root = ast::PathRoot::Std;
+    reject_before_allocation(&project);
+}
+
+#[test]
+fn builtin_reused_import_with_detached_row_cannot_pass_equal_counts() {
+    let fixture = Fixture::new(
+        "use std::io::ReadStatus as S; use std::io::read_stdin as input; fn main()->(){return;}",
+    );
+    let mut project = fixture.load();
+    let first = project.programs[0].imports[0].path;
+    project.programs[0].imports[1].path = first;
     reject_before_allocation(&project);
 }
 #[test]

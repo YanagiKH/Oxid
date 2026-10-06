@@ -473,6 +473,13 @@ pub(super) const fn builtin_program_carrier_bytes() -> usize {
     std::mem::size_of::<BuiltinProgramCarriers>() + super::association::builtin_carrier_bytes()
 }
 
+/// Production uses the already-priced ordinary source caller, not the private
+/// observation driver. Only the builtin association and typed-to-raw identity
+/// normalization add new roles to that existing route.
+pub(super) const fn builtin_production_extra_bytes() -> usize {
+    super::association::builtin_carrier_bytes() + std::mem::size_of::<Result<(), OwnedFailure>>()
+}
+
 #[test]
 fn bounded_enum_production_program_caller_layout() {
     println!(

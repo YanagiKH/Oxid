@@ -40,7 +40,9 @@ pub(super) use resource::{
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
 #[cfg(test)]
-pub(super) use sealed::{collect_builtin_candidate, collect_closed, collect_enum_candidate};
+pub(super) use sealed::{
+    collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_std_closed,
+};
 pub(super) use sealed::{collect_originals, DeclarationFacts, DeclarationIndex};
 use sealed::{BuiltinAdmission, CandidateOrigin};
 use std::{cmp::Ordering, fmt, mem::size_of};
@@ -370,12 +372,15 @@ enum AbsolutePrefix {
 
 impl Tables<'_> {
     fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
-        self.require_no_builtin_candidate()?;
         if let Some(origin) = self.candidate_source_origin.span() {
             return Err(diagnostic(
                 "E0101",
                 "resolve",
-                "enum source syntax is unavailable",
+                if self.candidate_source_origin.is_builtin() {
+                    "builtin source syntax is unavailable"
+                } else {
+                    "enum source syntax is unavailable"
+                },
                 origin,
             ));
         }

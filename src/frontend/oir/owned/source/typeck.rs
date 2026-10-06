@@ -724,6 +724,11 @@ pub(super) fn finish_enum_source<'s>(
         .index()
         .require_current_source_pipeline()
         .map_err(|error| vec![*error])?;
+    if program.index().builtin_set() != crate::frontend::builtin_catalog::BuiltinSet::None {
+        program
+            .validate_function_signatures()
+            .map_err(|error| vec![*error])?;
+    }
     finish_paid_source(program, source, allocator, resolver_end)
 }
 

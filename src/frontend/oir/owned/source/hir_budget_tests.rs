@@ -166,13 +166,68 @@ fn bounded_stdin_hir_signature_suffix_prices_no_synthetic_body() {
         builtin.with_dynamic(remaining + 1, at).unwrap_err().code,
         "E0400"
     );
-    println!("BUILTIN_HIR_LAYOUT counts={}/{} plan={}/{} plan_return={}/{} builtin_preflight={}/{} candidate_preflight={}/{} ordinary_total={} builtin_total={}",
+    println!("BUILTIN_HIR_LAYOUT counts={}/{} plan={}/{} plan_return={}/{} builtin_preflight={}/{} candidate_preflight={}/{} production_preflight={}/{} ordinary_total={} builtin_total={}",
         size_of::<HirCounts>(), align_of::<HirCounts>(), size_of::<HirPlan>(), align_of::<HirPlan>(),
         size_of::<PlanReturnEnvelope>(), align_of::<PlanReturnEnvelope>(), size_of::<BuiltinPreflightCarriers>(), align_of::<BuiltinPreflightCarriers>(),
-        size_of::<CandidatePreflightCarriers>(), align_of::<CandidatePreflightCarriers>(), ordinary.total, builtin.total);
+        size_of::<CandidatePreflightCarriers>(), align_of::<CandidatePreflightCarriers>(),
+        size_of::<ProductionBuiltinPreflightCarriers>(), align_of::<ProductionBuiltinPreflightCarriers>(),
+        ordinary.total, builtin.total);
 }
 
 const MIXED: &str = "enum Token { Number(i32), End } struct R { x:i32, y:bool } fn plain(a:i32)->i32{return a;} fn main()->i32{let token=Token::Number(plain(7));match token{Token::Number(value)=>{return value;},Token::End=>{return 0;},}}";
+
+#[test]
+fn bounded_stdin_current_hir_prices_only_actual_production_extras() {
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let fixture = Fixture(
+        std::env::temp_dir().join(format!("oxid-current-hir-extras-{}", std::process::id())),
+    );
+    std::fs::create_dir(&fixture.0).unwrap();
+    std::fs::write(
+        fixture.0.join("main.ox"),
+        "use std::io::read_stdin; fn main()->i32{return 0;}",
+    )
+    .unwrap();
+    let project = ProjectSources::load_typed(
+        fixture.0.join("main.ox").to_str().unwrap(),
+        ProjectLimits::default(),
+    )
+    .unwrap();
+    let owner = SourceOwner::project(&project);
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let index = crate::frontend::declaration_index::collect_originals(
+        owner,
+        IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap()
+    .finish(&work, &mut allocator)
+    .unwrap();
+    let plan = preflight_current_hir(&index, &work).unwrap().unwrap();
+    let base = HirPlan::calculate(plan.counts, index.sources().eof()).unwrap();
+    let extra = 2 * resolve::signature_identity_carrier_bytes()
+        + size_of::<ProductionBuiltinPreflightCarriers>()
+        + super::super::program::builtin_production_extra_bytes();
+    assert_eq!(plan.fixed - base.fixed, extra);
+    assert_eq!(plan.total - base.total, extra);
+    assert_eq!(plan.resolved, base.resolved);
+    assert_eq!(plan.typed, base.typed);
+    assert_eq!(plan.staging, base.staging);
+    assert_eq!(plan.resolver_scratch, base.resolver_scratch);
+    assert_eq!(plan.typeck_scratch, base.typeck_scratch);
+    assert_eq!(plan.lower_fixed, base.lower_fixed);
+    println!("BUILTIN_CURRENT_HIR signature_identity={} production_preflight={} program_extra={} base={} total={}",
+        resolve::signature_identity_carrier_bytes(), size_of::<ProductionBuiltinPreflightCarriers>(),
+        super::super::program::builtin_production_extra_bytes(), base.total, plan.total);
+}
 
 #[test]
 fn c3a_counts_complete_mixed_hir_without_heap_allocation_or_activation() {

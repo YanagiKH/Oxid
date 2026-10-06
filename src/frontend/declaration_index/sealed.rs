@@ -155,6 +155,23 @@ pub(in crate::frontend) fn collect_closed<'s>(
     collect(sources, limits, work, allocator, CollectionSyntax::Closed)
 }
 
+/// Typed declarations with the historical closed standard-import policy.
+#[cfg(test)]
+pub(in crate::frontend) fn collect_std_closed<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<DeclarationFacts<'s>, Box<Diagnostic>> {
+    collect(
+        sources,
+        limits,
+        work,
+        allocator,
+        CollectionSyntax::StdClosed,
+    )
+}
+
 #[cfg(test)]
 pub(in crate::frontend) fn collect_enum_candidate<'s>(
     sources: SourceOwner<'s>,
@@ -189,6 +206,8 @@ pub(in crate::frontend) fn collect_builtin_candidate<'s>(
 enum CollectionSyntax {
     #[cfg(test)]
     BuiltinCandidate,
+    #[cfg(test)]
+    StdClosed,
     Closed,
     #[allow(dead_code)]
     Enabled,
@@ -197,6 +216,9 @@ enum CollectionSyntax {
 }
 impl CollectionSyntax {
     fn std_policy(self) -> super::super::parser::StdImportPolicy {
+        if self == Self::Enabled {
+            return super::super::parser::StdImportPolicy::Enabled;
+        }
         #[cfg(test)]
         if self == Self::BuiltinCandidate {
             return super::super::parser::StdImportPolicy::Candidate;
@@ -216,10 +238,13 @@ fn collect<'s>(
     let at = sources.eof();
     // The old aggregate declaration envelope keeps its original first position.
     let mut remaining = 0usize;
-    let mut has_enums = false;
+    // Replace the historical one-byte enum flag with two summary bits. The
+    // parsed std bit is reconciled in the counted walk before any allocation.
+    let mut source_features = 0u8;
     for module in 0..sources.count() {
         let ast = sources.ast(ModuleId(module))?;
-        has_enums |= !ast.enums.is_empty();
+        source_features |=
+            u8::from(!ast.enums.is_empty()) | (u8::from(ast.uses_std_imports()) << 1);
         remaining = remaining
             .checked_add(ast.records.len())
             .ok_or_else(|| overflow(at))?;
@@ -241,7 +266,9 @@ fn collect<'s>(
     let record_usage = super::super::oir::owned_types::admit_declaration_counts(fields)
         .map_err(|_| declaration_limit())?;
     let mut builtins = BuiltinAdmission::none();
-    if syntax.std_policy().enabled() {
+    if syntax.std_policy().enabled()
+        && (syntax != CollectionSyntax::Enabled || source_features & 2 != 0)
+    {
         for module in 0..sources.count() {
             work.preflight(at)?;
             let ast = sources.ast(ModuleId(module))?;
@@ -266,7 +293,9 @@ fn collect<'s>(
             }
         }
     }
-    if syntax != CollectionSyntax::Closed && (has_enums || builtins.set().extra_enums() != 0) {
+    if syntax != CollectionSyntax::Closed
+        && (source_features & 1 != 0 || builtins.set().extra_enums() != 0)
+    {
         let mut remaining = 0usize;
         for module in 0..sources.count() {
             work.preflight(at)?;

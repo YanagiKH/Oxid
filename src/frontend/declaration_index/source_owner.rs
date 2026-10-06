@@ -260,15 +260,19 @@ impl<'s> SourceOwner<'s> {
                 owned = true;
                 continue;
             }
-            for import in &program.imports {
-                work.preflight(import.span)?;
-                owned |= self
-                    .import_path(QualifiedPathRef {
-                        file: import.span.file,
-                        path: import.path,
-                    })?
-                    .root()
-                    == ast::PathRoot::Std;
+            // The private parsed summary avoids charging old crate imports for
+            // stdin discovery. Collection rechecks the summary before allocation.
+            if program.uses_std_imports() {
+                for import in &program.imports {
+                    work.preflight(import.span)?;
+                    owned |= self
+                        .import_path(QualifiedPathRef {
+                            file: import.span.file,
+                            path: import.path,
+                        })?
+                        .root()
+                        == ast::PathRoot::Std;
+                }
             }
             for function in &program.functions {
                 work.preflight(function.name)?;

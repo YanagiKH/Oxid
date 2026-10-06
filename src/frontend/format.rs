@@ -706,6 +706,20 @@ mod tests {
             assert!(formatted(input).is_err());
         }
     }
+
+    #[test]
+    fn builtin_current_formatter_rejects_unknown_and_nonimport_std_paths() {
+        for input in [
+            "use std::io::missing; fn main()->(){return;}",
+            "use std::fs::ReadStatus; fn main()->(){return;}",
+            "use std::io::*; fn main()->(){return;}",
+            "use std::io::{ReadStatus,read_stdin}; fn main()->(){return;}",
+            "fn f()->std::io::ReadStatus{return;}",
+            "fn main()->(){std::io::read_stdin();}",
+        ] {
+            assert!(formatted(input).is_err(), "{input}");
+        }
+    }
 }
 
 #[cfg(test)]

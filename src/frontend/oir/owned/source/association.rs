@@ -176,7 +176,13 @@ pub(super) fn check(
     // Reuse the same provenance helper/result as fresh typing, after that
     // invocation has ended. Candidate-marked indices stay on the private seam.
     index.require_current_source_pipeline()?;
-    check_impl(raw, index, sources, index.enum_count() != 0, false)
+    check_impl(
+        raw,
+        index,
+        sources,
+        index.enum_count() != 0,
+        index.builtin_set() != BuiltinOrigins::None,
+    )
 }
 
 /// Private qualification also accepts intentionally candidate-marked indices.
@@ -191,7 +197,7 @@ pub(super) fn check_enum_candidate(
 }
 
 /// Import-derived identity is checked separately from the raw descriptor proof.
-/// Only the new private source continuation may admit this suffix.
+/// This entry retains the private marker even after current-source activation.
 #[cfg(test)]
 pub(super) fn check_builtin_candidate(
     raw: &RawOwnedProgram,

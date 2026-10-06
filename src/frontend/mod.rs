@@ -22,3 +22,5 @@ mod owned_syntax_tests;
 
 #[cfg(test)]
 mod enum_public_tests;
+#[cfg(test)]
+mod stdin_public_tests;

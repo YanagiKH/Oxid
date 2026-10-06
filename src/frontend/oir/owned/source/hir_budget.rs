@@ -1,16 +1,14 @@
 //! C3a affected-HIR sizing. This is not source admission authority.
 //!
-//! Only a cfg(test) resolver-storage observation consumes this plan. It accounts
-//! complete known carriers, cumulative scratch and Option-to-final coexistence.
-//! T0 preparation controls are prepaid without being called. Actual typechecker
-//! admission/receivers, match cursor frames and later allocation paths must be priced
-//! before they become reachable; the current frame types are not placeholders
-//! for those later types. There is deliberately no retained enum table or ledger.
+//! Fresh paid source typing and private observations consume this plan through
+//! separate provenance guards. It accounts complete known carriers, cumulative
+//! scratch and Option-to-final coexistence. New allocation paths must be priced
+//! before they become reachable. There is no retained enum table or ledger.
 //!
 //! AST/text, immutable index payload/query scratch, unchanged record-layout
 //! graph scratch, diagnostics, observation logs, raw/consumer plans and machine
 //! stack/allocator metadata are separate. This is not a global HIR or RSS cap.
-#![allow(dead_code)] // Production source/consumer activation remains closed.
+#![allow(dead_code)] // Some named accounting models are measured without construction.
 
 use super::{hir::*, lower, resolve, resolver_storage, type_storage, typeck};
 use crate::frontend::{
@@ -108,6 +106,15 @@ struct BuiltinPreflightCarriers {
 }
 #[allow(dead_code)]
 struct CandidatePreflightCarriers {
+    extra: usize,
+    extra_return: Result<usize, Box<Diagnostic>>,
+    additions: [Result<usize, Box<Diagnostic>>; 3],
+}
+/// Current source has its own preflight arithmetic roles. The complete
+/// production owner/caller banks are already in calculate's fixed charge;
+/// builtin identity and association add only their actual extra roles here.
+#[allow(dead_code)]
+struct ProductionBuiltinPreflightCarriers {
     extra: usize,
     extra_return: Result<usize, Box<Diagnostic>>,
     additions: [Result<usize, Box<Diagnostic>>; 3],
@@ -662,6 +669,20 @@ pub(super) fn preflight_enum_hir(
     preflight_hir(index, work, false)
 }
 
+/// Only current source can select the executable paid lane. The complete
+/// immutable index includes dependency enums for admitted builtin imports.
+/// Keep the older enum observer guard independent of this production entry.
+pub(super) fn preflight_current_hir(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    index.require_current_source_pipeline()?;
+    if index.enum_count() == 0 {
+        return Ok(None);
+    }
+    preflight_hir(index, work, false)
+}
+
 /// Private candidate selection remains paid even without imports or source enums.
 #[cfg(test)]
 pub(super) fn preflight_builtin_hir(
@@ -711,6 +732,14 @@ fn preflight_hir(
         let extra = add(extra, size_of::<CandidatePreflightCarriers>(), at)?;
         #[cfg(test)]
         let extra = add(extra, super::program::builtin_program_carrier_bytes(), at)?;
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    } else if index.builtin_set() != crate::frontend::builtin_catalog::BuiltinSet::None {
+        // Fresh production typing and pre-lowering each check the full F/I
+        // identity. Existing enum-only source pays no new work or bytes.
+        let extra = mul(2, resolve::signature_identity_carrier_bytes(), at)?;
+        let extra = add(extra, size_of::<ProductionBuiltinPreflightCarriers>(), at)?;
+        let extra = add(extra, super::program::builtin_production_extra_bytes(), at)?;
         plan.fixed = add(plan.fixed, extra, at)?;
         plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
     }

@@ -1264,6 +1264,54 @@ fn parse_enum_fingerprint(source: &SourceFile) -> Program {
 }
 
 #[test]
+fn builtin_current_formatter_preserves_structural_ast_and_fixed_point() {
+    fn parse_current(source: &SourceFile) -> Program {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    }
+    for text in [
+        "use std::io::read_stdin as input;use std::io::ReadStatus as S;fn main()->i32{let mut bytes=[-1,0];let status=input(&mut bytes);match status{S::Eof(n)=>{return n;},S::Full=>{return 2;},S::IoError=>{return -1;},}}",
+        "mod absent;use std/*root*/::/*edge*/io::ReadStatus as S;use crate::std::ReadStatus as User;fn f(s:S)->(){match s{S/*type*/::Full=>{return;},S::IoError=>{},S::Eof(n)=>{n;},}}",
+        "// input\r\nuse std :: io :: read_stdin as read;\r\nfn f(b:&mut [i32])->(){read(&mut *b);return;}\r\n",
+    ] {
+        let mut sources = SourceMap::new();
+        let id = sources.add("stdin-format.ox".into(), text.into());
+        let source = sources.get(id);
+        let program = parse_current(source);
+        // The convenience default stays closed; current source validation must
+        // select its import policy explicitly before the checked index walk.
+        assert!(!program.validate_spans_and_ids(|at| source.try_text(at).is_some()));
+        let mut enum_syntax = None;
+        let mut std_syntax = false;
+        assert!(program.validate_spans_and_ids_counted_with_syntax(
+            |at| at.is_none_or(|at| source.try_text(at).is_some()),
+            &mut enum_syntax,
+            parser::StdImportPolicy::Enabled,
+            &mut std_syntax,
+        ));
+        assert!(std_syntax);
+        let expected = fingerprint(source, &program);
+        let output = format_source(source).unwrap();
+        let mut formatted = SourceMap::new();
+        formatted.add("unrelated.ox".into(), "".into());
+        let id = formatted.add("stdin-formatted.ox".into(), output);
+        let after = formatted.get(id);
+        let reparsed = parse_current(after);
+        assert_eq!(expected, fingerprint(after, &reparsed));
+        assert!(super::same_projection(source, &program.tokens, after, &reparsed.tokens));
+        assert_eq!(format_source(after).unwrap(), after.text());
+    }
+}
+
+#[test]
 fn enum_formatter_independent_fingerprint_roundtrips_every_new_carrier() {
     let cases = [
         "enum E{Z,I(i32),B(bool),U(()),} fn f(e:E)->(){E::Z;E::Z();E::U(());match e{E::I(v)=>{v;},E::B(b)=>{b;},E::U(u)=>{u;},E::Z=>{},}}",
