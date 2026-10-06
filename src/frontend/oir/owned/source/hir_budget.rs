@@ -106,6 +106,7 @@ struct BuiltinPreflightCarriers {
 }
 #[allow(dead_code)]
 struct CandidatePreflightCarriers {
+    output_candidate: bool,
     extra: usize,
     extra_return: Result<usize, Box<Diagnostic>>,
     additions: [Result<usize, Box<Diagnostic>>; 3],
@@ -242,7 +243,7 @@ fn admit(total: usize, extra: usize, limit: usize, at: Span) -> Result<usize, Bo
 }
 impl HirPlan {
     fn calculate(c: HirCounts, at: Span) -> Result<Self, Box<Diagnostic>> {
-        if c.signatures < c.functions || c.signatures - c.functions > 1 {
+        if c.signatures < c.functions || c.signatures - c.functions > 2 {
             return Err(invalid(at));
         }
         let mut resolved = 0;
@@ -698,11 +699,8 @@ fn preflight_hir(
     work: &WorkMeter,
     builtin_candidate: bool,
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
-    // The private index can describe output identities; it grants no paid HIR
-    // construction until the complete output producer/consumer route is proved.
-    if index.builtin_set().has_output() {
-        return Err(invalid(index.sources().eof()));
-    }
+    // This passive count/plan grants no owner or admission. The fresh output
+    // entry and checker completion remain independently closed for review.
     let sources = index.sources();
     let at = sources.eof();
     let mut counts = HirCounts::default();
@@ -721,9 +719,23 @@ fn preflight_hir(
         let ast = sources.ast(module)?;
         count_function(ast, &ast.functions[key.index], work, &mut counts)?;
     }
-    if index.builtin_set() == crate::frontend::builtin_catalog::BuiltinSet::ReadStdin {
+    if index
+        .builtin_set()
+        .contains_function(crate::frontend::builtin_catalog::BuiltinFunction::ReadStdin)
+    {
         let anchor = index.builtin_function_anchor(
             crate::frontend::builtin_catalog::BuiltinFunction::ReadStdin,
+        )?;
+        visit(work, 2, anchor)?;
+        increment(&mut counts.signatures, 1, anchor)?;
+        increment(&mut counts.parameters, 1, anchor)?;
+    }
+    if index
+        .builtin_set()
+        .contains_function(crate::frontend::builtin_catalog::BuiltinFunction::WriteStdout)
+    {
+        let anchor = index.builtin_function_anchor(
+            crate::frontend::builtin_catalog::BuiltinFunction::WriteStdout,
         )?;
         visit(work, 2, anchor)?;
         increment(&mut counts.signatures, 1, anchor)?;
@@ -736,7 +748,11 @@ fn preflight_hir(
         let extra = mul(2, resolve::signature_identity_carrier_bytes(), at)?;
         let extra = add(extra, size_of::<CandidatePreflightCarriers>(), at)?;
         #[cfg(test)]
-        let extra = add(extra, super::program::builtin_program_carrier_bytes(), at)?;
+        let extra = if index.is_output_candidate_pipeline() {
+            add(extra, super::program::output_program_carrier_bytes(), at)?
+        } else {
+            add(extra, super::program::builtin_program_carrier_bytes(), at)?
+        };
         plan.fixed = add(plan.fixed, extra, at)?;
         plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
     } else if index.builtin_set() != crate::frontend::builtin_catalog::BuiltinSet::None {
@@ -1057,3 +1073,29 @@ impl Capacity {
 #[cfg(test)]
 #[path = "hir_budget_tests.rs"]
 mod tests;
+
+/// Fixed layout receipts only; this never returns a plan, owner or paid account.
+#[cfg(test)]
+pub(super) fn output_preflight_carrier_layouts() -> [(usize, usize); 6] {
+    use std::mem::align_of;
+    [
+        (size_of::<HirCounts>(), align_of::<HirCounts>()),
+        (size_of::<HirPlan>(), align_of::<HirPlan>()),
+        (
+            size_of::<PlanReturnEnvelope>(),
+            align_of::<PlanReturnEnvelope>(),
+        ),
+        (
+            size_of::<BuiltinPreflightCarriers>(),
+            align_of::<BuiltinPreflightCarriers>(),
+        ),
+        (
+            size_of::<CandidatePreflightCarriers>(),
+            align_of::<CandidatePreflightCarriers>(),
+        ),
+        (
+            size_of::<ProductionBuiltinPreflightCarriers>(),
+            align_of::<ProductionBuiltinPreflightCarriers>(),
+        ),
+    ]
+}

@@ -1497,12 +1497,14 @@ fn bounded_stdout_private_index_all_nine_suffixes_queries_and_views() {
                 (3, 2, 6)
             );
             assert!(facts.require_current_source_pipeline().is_err());
-            assert!(facts.require_builtin_candidate_pipeline().is_err());
+            assert!(facts.require_builtin_candidate_pipeline().is_ok());
             assert!(facts.require_no_builtin_candidate().is_err());
             let index = facts.finish(&work, &mut allocator).unwrap();
             assert!(index.require_current_source_pipeline().is_err());
-            assert!(index.require_builtin_candidate_pipeline().is_err());
+            assert!(index.require_builtin_candidate_pipeline().is_ok());
             assert!(index.require_no_builtin_candidate().is_err());
+            assert!(index.require_output_candidate_pipeline().is_ok());
+            assert!(index.is_output_candidate_pipeline());
             assert_eq!(index.builtin_set(), expected);
             assert_eq!(index.root_original_main(), Some(DefId(2)));
             assert_eq!(index.enum_count(), 2 + expected.extra_enums());
@@ -1919,7 +1921,7 @@ fn bounded_stdout_original_owner_keeps_absent_inventory_and_rejects_std_ast() {
             assert_eq!(index.builtin_anchor_borrows_for_test(), [None; 4]);
             assert_eq!(index.function(DefId(0)).unwrap().0.file, id);
             assert!(index.require_current_source_pipeline().is_err());
-            assert!(index.require_builtin_candidate_pipeline().is_err());
+            assert!(index.require_builtin_candidate_pipeline().is_ok());
         }
     }
 }

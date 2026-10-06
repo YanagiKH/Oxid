@@ -2238,17 +2238,21 @@ pub(super) fn lower_with_limits(
         )?;
     }
     if typed.index().builtin_set().extra_functions() != 0 {
-        let function = super::builtin_lower::function(typed.index())?;
-        bytes = budget::add(
-            bytes,
-            budget::function_bytes(super::builtin_lower::counts())?,
-        )?;
-        budget::append(
-            &mut functions,
-            function,
-            typed.index().function_count(),
-            typed.index().sources().eof(),
-        )?;
+        for kind in crate::frontend::builtin_catalog::BuiltinFunction::ALL {
+            if typed.index().builtin_set().contains_function(kind) {
+                let function = super::builtin_lower::function(typed.index(), kind)?;
+                bytes = budget::add(
+                    bytes,
+                    budget::function_bytes(super::builtin_lower::counts())?,
+                )?;
+                budget::append(
+                    &mut functions,
+                    function,
+                    typed.index().function_count(),
+                    typed.index().sources().eof(),
+                )?;
+            }
+        }
     }
     if bytes != expected.raw_bytes {
         let mut error = OwnedFailure::resource("source count mismatch");

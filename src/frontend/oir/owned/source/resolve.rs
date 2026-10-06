@@ -183,7 +183,7 @@ impl<'src> ResolvedOwnedProgram<'src> {
     pub(super) fn entry(&self) -> Option<DefId> {
         self.entry
     }
-    /// Check the source-body prefix and sole catalog signature suffix against
+    /// Check the source-body prefix and finite catalog signature suffix against
     /// the frozen index. Called before builtin paid typing and source lowering;
     /// a signature vector's length or diagnostic spelling is never authority.
     pub(super) fn validate_function_signatures(&self) -> Result<(), Box<Diagnostic>> {
@@ -202,25 +202,36 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 return Err(invalid_signature_identity(function.end));
             }
         }
-        if index.builtin_set() == BuiltinSet::ReadStdin {
-            let id = index.builtin_function_id(BuiltinFunction::ReadStdin)?;
-            let enumeration = index.builtin_enum_id(BuiltinEnum::ReadStatus)?;
-            let anchor = index.builtin_function_anchor(BuiltinFunction::ReadStdin)?;
+        for builtin in BuiltinFunction::ALL {
+            if !index.builtin_set().contains_function(builtin) {
+                continue;
+            }
+            let id = index.builtin_function_id(builtin)?;
+            let enumeration = index.builtin_enum_id(match builtin {
+                BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
+                BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
+            })?;
+            let anchor = index.builtin_function_anchor(builtin)?;
             let signature = self
                 .signatures
                 .get(id.0)
                 .ok_or_else(|| invalid_signature_identity(at))?;
-            let (parameter, result) = BuiltinFunction::ReadStdin.signature(enumeration);
+            let (parameter, result) = builtin.signature(enumeration);
+            let expected = self.functions.len()
+                + usize::from(
+                    builtin == BuiltinFunction::WriteStdout
+                        && index
+                            .builtin_set()
+                            .contains_function(BuiltinFunction::ReadStdin),
+                );
             self.work().debit(5, anchor, "builtin signature identity")?;
-            if id.0 != self.functions.len()
+            if id.0 != expected
                 || signature.params.as_slice() != [parameter]
                 || signature.result != result
                 || signature.span != anchor
             {
                 return Err(invalid_signature_identity(anchor));
             }
-        } else if self.signatures.len() != self.functions.len() {
-            return Err(invalid_signature_identity(at));
         }
         Ok(())
     }
@@ -477,7 +488,20 @@ fn type_paid_source<'s>(
     allocator: &mut Allocator,
     admission: SourceAdmission,
 ) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    if index.builtin_set().has_output() {
+    // Closed precursor: passive finite-family preflight and paid resolver
+    // controls do not activate the fresh output typing route. This includes an
+    // Output marker whose inventory is None. Remove only after the complete
+    // caller banks and observed reservations have been reviewed.
+    if index.builtin_set().has_output() || {
+        #[cfg(test)]
+        {
+            index.is_output_candidate_pipeline()
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    } {
         return Err(vec![*invalid_signature_identity(index.sources().eof())]);
     }
     let at = index.sources().eof();
@@ -1034,9 +1058,6 @@ fn resolve_index_impl(
     allocator: &mut Allocator,
     mut paid: Option<&mut PaidStorage>,
 ) -> Result<ResolvedParts, Vec<Diagnostic>> {
-    if index.builtin_set().has_output() {
-        return Err(vec![*invalid_signature_identity(index.sources().eof())]);
-    }
     if index.builtin_set() != BuiltinSet::None && paid.is_none() {
         return Err(vec![*invalid_signature_identity(index.sources().eof())]);
     }
@@ -1204,9 +1225,35 @@ fn resolve_index_impl(
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
-    if index.builtin_set() == BuiltinSet::ReadStdin {
-        append_builtin_signature(index, work, allocator, paid.as_deref_mut(), &mut signatures)
-            .map_err(|error| vec![*error])?;
+    // Explicit finite calls keep the canonical input-before-output order without
+    // retaining a generic inventory iterator in the source resolver.
+    if index
+        .builtin_set()
+        .contains_function(BuiltinFunction::ReadStdin)
+    {
+        append_builtin_signature(
+            index,
+            work,
+            allocator,
+            paid.as_deref_mut(),
+            &mut signatures,
+            BuiltinFunction::ReadStdin,
+        )
+        .map_err(|error| vec![*error])?;
+    }
+    if index
+        .builtin_set()
+        .contains_function(BuiltinFunction::WriteStdout)
+    {
+        append_builtin_signature(
+            index,
+            work,
+            allocator,
+            paid.as_deref_mut(),
+            &mut signatures,
+            BuiltinFunction::WriteStdout,
+        )
+        .map_err(|error| vec![*error])?;
     }
     if records.iter().any(|record| {
         record
@@ -1423,14 +1470,18 @@ fn append_builtin_signature(
     allocator: &mut Allocator,
     paid: Option<&mut PaidStorage>,
     signatures: &mut Vec<Signature>,
+    builtin: BuiltinFunction,
 ) -> Result<(), Box<Diagnostic>> {
-    let at = index.builtin_function_anchor(BuiltinFunction::ReadStdin)?;
-    let id = index.builtin_function_id(BuiltinFunction::ReadStdin)?;
-    if id.0 != signatures.len() || id.0 != index.source_function_count() {
+    let at = index.builtin_function_anchor(builtin)?;
+    let id = index.builtin_function_id(builtin)?;
+    if id.0 != signatures.len() || id.0 < index.source_function_count() {
         return Err(invalid_signature_identity(at));
     }
-    let enumeration = index.builtin_enum_id(BuiltinEnum::ReadStatus)?;
-    let (parameter, result) = BuiltinFunction::ReadStdin.signature(enumeration);
+    let enumeration = index.builtin_enum_id(match builtin {
+        BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
+        BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
+    })?;
+    let (parameter, result) = builtin.signature(enumeration);
     let paid = paid.ok_or_else(|| invalid_signature_identity(at))?;
     work.debit(2, at, "builtin signature construction")?;
     let mut params = paid.reserve(allocator, Kind::Parameters, 1, at)?;
@@ -2984,6 +3035,8 @@ struct BuiltinSignatureCarriers {
     paid_argument: Option<&'static mut PaidStorage>,
     paid: &'static mut PaidStorage,
     signatures: &'static mut Vec<Signature>,
+    builtin: BuiltinFunction,
+    enum_selector: BuiltinEnum,
     anchor: Span,
     function: DefId,
     enumeration: crate::frontend::oir::owned_types::EnumId,
@@ -3010,6 +3063,12 @@ struct SignatureIdentityCarriers {
     functions: std::iter::Enumerate<std::slice::Iter<'static, Function>>,
     next: Option<(usize, &'static Function)>,
     current: (usize, &'static Function),
+    builtin_array: [BuiltinFunction; 2],
+    builtin_functions: std::array::IntoIter<BuiltinFunction, 2>,
+    builtin_next: Option<BuiltinFunction>,
+    builtin: BuiltinFunction,
+    enum_selector: BuiltinEnum,
+    expected: usize,
     function: DefId,
     enumeration: crate::frontend::oir::owned_types::EnumId,
     anchor: Span,
@@ -3035,3 +3094,7 @@ pub(super) const fn signature_identity_carrier_bytes() -> usize {
 #[cfg(test)]
 #[path = "builtin_signature_tests.rs"]
 mod builtin_signature_tests;
+
+#[cfg(test)]
+#[path = "output_typing_tests.rs"]
+mod output_typing_tests;

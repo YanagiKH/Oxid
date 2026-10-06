@@ -415,10 +415,25 @@ impl Tables<'_> {
         Ok(())
     }
     fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
-        if !self.candidate_source_origin.is_builtin() {
+        let admitted = self.candidate_source_origin.is_builtin();
+        #[cfg(test)]
+        let admitted = admitted || self.is_output_candidate_pipeline();
+        if !admitted {
             return Err(bad(self.sources.eof()));
         }
         Ok(())
+    }
+    #[cfg(test)]
+    fn is_output_candidate_pipeline(&self) -> bool {
+        matches!(self.candidate_source_origin, CandidateOrigin::Output(_))
+    }
+    #[cfg(test)]
+    fn require_output_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        if self.is_output_candidate_pipeline() {
+            Ok(())
+        } else {
+            Err(bad(self.sources.eof()))
+        }
     }
     fn builtin_handle(&self, item: BuiltinItem) -> Result<DeclarationHandle, Box<Diagnostic>> {
         let extra = match item {

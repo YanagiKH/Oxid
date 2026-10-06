@@ -759,7 +759,18 @@ fn finish_paid_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    if program.index().builtin_set().has_output() {
+    // Independent completion gate for the closed output source precursor,
+    // including import-free Output markers. Passive plans are not admission.
+    if program.index().builtin_set().has_output() || {
+        #[cfg(test)]
+        {
+            program.index().is_output_candidate_pipeline()
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    } {
         return Err(vec![*paid_state(program.index().sources().eof())]);
     }
     let bodies;

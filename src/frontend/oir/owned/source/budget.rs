@@ -228,13 +228,17 @@ pub(super) fn preflight(
         scratch = scratch.max(lower::scratch_bytes(&view, count)?);
     }
     if typed.index().builtin_set().extra_functions() != 0 {
-        let count = super::builtin_lower::counts();
-        raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
-        bytes = cap(
-            add(bytes, function_bytes(count)?)?,
-            ceiling,
-            "source raw payload",
-        )?;
+        for kind in crate::frontend::builtin_catalog::BuiltinFunction::ALL {
+            if typed.index().builtin_set().contains_function(kind) {
+                let count = super::builtin_lower::counts();
+                raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+                bytes = cap(
+                    add(bytes, function_bytes(count)?)?,
+                    ceiling,
+                    "source raw payload",
+                )?;
+            }
+        }
     }
     // Status-only imports use the same fixed capacity-check roles for the new
     // enum suffix; conservatively admit the bounded builtin producer envelope.

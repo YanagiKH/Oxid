@@ -1148,6 +1148,14 @@ impl<'s> DeclarationFacts<'s> {
     pub fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_builtin_candidate_pipeline()
     }
+    #[cfg(test)]
+    pub fn is_output_candidate_pipeline(&self) -> bool {
+        self.tables.is_output_candidate_pipeline()
+    }
+    #[cfg(test)]
+    pub fn require_output_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        self.tables.require_output_candidate_pipeline()
+    }
     pub fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_no_builtin_candidate()
     }
@@ -1586,6 +1594,14 @@ impl<'s> DeclarationIndex<'s> {
     }
     pub fn require_builtin_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_builtin_candidate_pipeline()
+    }
+    #[cfg(test)]
+    pub fn is_output_candidate_pipeline(&self) -> bool {
+        self.tables.is_output_candidate_pipeline()
+    }
+    #[cfg(test)]
+    pub fn require_output_candidate_pipeline(&self) -> Result<(), Box<Diagnostic>> {
+        self.tables.require_output_candidate_pipeline()
     }
     pub fn require_no_builtin_candidate(&self) -> Result<(), Box<Diagnostic>> {
         self.tables.require_no_builtin_candidate()

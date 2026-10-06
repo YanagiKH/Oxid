@@ -152,9 +152,10 @@ fn bounded_stdin_hir_signature_suffix_prices_no_synthetic_body() {
             + resolve::builtin_signature_carrier_bytes()
             + size_of::<BuiltinPreflightCarriers>()
     );
+    // The closed inventory has at most two synthetic functions.
     assert!(HirPlan::calculate(
         HirCounts {
-            signatures: 4,
+            signatures: 5,
             ..source
         },
         at

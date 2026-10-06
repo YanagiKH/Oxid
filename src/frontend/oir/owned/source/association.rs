@@ -41,7 +41,7 @@ fn function(
     function: &RawOwnedFunction,
     visitor: &mut Visitor<'_>,
     allow_enums: bool,
-    allow_input: bool,
+    builtin: Option<BuiltinFunction>,
 ) -> Result<(), Box<Diagnostic>> {
     if !allow_enums && !function.matches.is_empty() {
         return Err(bad());
@@ -83,10 +83,13 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
-                // No source route may associate the closed output instruction.
-                OwnedInstruction::WriteStdout { .. } => return Err(bad()),
+                OwnedInstruction::WriteStdout { .. } => {
+                    if builtin != Some(BuiltinFunction::WriteStdout) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::ReadStdin { .. } => {
-                    if !allow_input {
+                    if builtin != Some(BuiltinFunction::ReadStdin) {
                         return Err(bad());
                     }
                 }
@@ -213,7 +216,7 @@ pub(super) fn check_builtin_candidate(
 
 // Only builtin identity/anchor transports, not inherited Visitor internals.
 // Selectors, iterator/next, checked-rank results, projected-ID results, receiver
-// borrows and retained input identity are separate roles: no lifetime reuse.
+// borrows and retained first-function identity are separate roles: no lifetime reuse.
 // The private caller pays this complete envelope before source lowering.
 #[allow(dead_code)]
 struct BuiltinAssociationCarriers {
@@ -239,12 +242,56 @@ struct BuiltinAssociationCarriers {
     next_family: Option<BuiltinEnum>,
     enumeration_id_return: Option<EnumId>,
     function_id_return: Option<hir::DefId>,
-    input_function: Option<hir::DefId>,
+    first_function: Option<hir::DefId>,
     enumeration_ids_borrow: &'static builtins::BuiltinIds,
     function_ids_borrow: &'static builtins::BuiltinIds,
+    // The old single retained function slot now holds the first admitted
+    // builtin function. Only builtin inventories enter the finite classifier;
+    // the source walk's old bool parameter becomes a one-byte exact-kind option.
+    first_function_kind: BuiltinFunction,
+    first_function_set_receiver: BuiltinOrigins,
+    first_function_selector: BuiltinFunction,
+    first_function_lookup_kind: BuiltinFunction,
+    first_function_has_input: bool,
+    classifier_set: BuiltinOrigins,
+    classifier_first: hir::DefId,
+    classifier_current: hir::DefId,
+    classifier_rank: usize,
+    classifier_rank_return: Option<usize>,
+    classifier_input: bool,
+    classifier_output: bool,
+    classifier_set_receivers: [BuiltinOrigins; 2],
+    classifier_kind_arguments: [BuiltinFunction; 2],
+    classifier_choice: (bool, bool, usize),
+    classifier_return: Option<BuiltinFunction>,
+    count_permission: Option<BuiltinFunction>,
+    validation_permission: Option<BuiltinFunction>,
+    function_permission: Option<BuiltinFunction>,
 }
 pub(super) const fn builtin_carrier_bytes() -> usize {
     std::mem::size_of::<BuiltinAssociationCarriers>()
+}
+
+#[cfg(test)]
+#[path = "output_lower_tests.rs"]
+mod output_lower_tests;
+
+/// The descriptor and index identity checks already establish independent
+/// canonical function ranks. Classify only that at-most-two-function suffix.
+/// This does not grant any ordinary source function an opcode permission.
+fn builtin_kind(
+    set: BuiltinOrigins,
+    first: hir::DefId,
+    current: hir::DefId,
+) -> Option<BuiltinFunction> {
+    let rank = current.0.checked_sub(first.0)?;
+    let input = set.contains_function(BuiltinFunction::ReadStdin);
+    let output = set.contains_function(BuiltinFunction::WriteStdout);
+    match (input, output, rank) {
+        (true, _, 0) => Some(BuiltinFunction::ReadStdin),
+        (false, true, 0) | (true, true, 1) => Some(BuiltinFunction::WriteStdout),
+        _ => None,
+    }
 }
 
 fn check_impl(
@@ -259,7 +306,7 @@ fn check_impl(
     if raw.builtins.has_output() || index.builtin_set().has_output() {
         return Err(bad());
     }
-    let input_function = if allow_builtins {
+    let first_function = if allow_builtins {
         if raw.builtins != index.builtin_set() {
             return Err(bad());
         }
@@ -295,7 +342,12 @@ fn check_impl(
                 }
             }
         }
-        ids.function(BuiltinFunction::ReadStdin)
+        let first_kind = if raw.builtins.contains_function(BuiltinFunction::ReadStdin) {
+            BuiltinFunction::ReadStdin
+        } else {
+            BuiltinFunction::WriteStdout
+        };
+        ids.function(first_kind)
     } else {
         raw.builtins.require_none().map_err(|_| bad())?;
         if index.builtin_set() != BuiltinOrigins::None {
@@ -318,7 +370,11 @@ fn check_impl(
             declaration,
             &mut count,
             allow_enums,
-            input_function == Some(hir::DefId(ordinal)),
+            if let Some(first) = first_function {
+                builtin_kind(raw.builtins, first, hir::DefId(ordinal))
+            } else {
+                None
+            },
         )?;
     }
     let mut visitor = Visitor::validate(sources);
@@ -390,7 +446,11 @@ fn check_impl(
                 declaration,
                 &mut visitor,
                 allow_enums,
-                input_function == Some(id),
+                if let Some(first) = first_function {
+                    builtin_kind(raw.builtins, first, id)
+                } else {
+                    None
+                },
             )?;
             continue;
         }
@@ -401,7 +461,7 @@ fn check_impl(
             return Err(bad());
         }
         visitor.file(original.name.file);
-        function(declaration, &mut visitor, allow_enums, false)?;
+        function(declaration, &mut visitor, allow_enums, None)?;
     }
     visitor.finish(count)
 }
@@ -518,6 +578,38 @@ mod output_layout_feasibility {
         enumeration_ids_borrow: &'static builtins::BuiltinIds,
         function_ids_borrow: &'static builtins::BuiltinIds,
     );
+    carriers!(ClosedSourceCarriers, builtins::BuiltinIds, BuiltinOrigins;
+        enumeration_kind: BuiltinEnum,
+        function_kind: BuiltinFunction,
+        enumeration_rank: Option<usize>,
+        function_rank: Option<usize>,
+        family_iteration: std::array::IntoIter<BuiltinEnum, 2>,
+        next_family: Option<BuiltinEnum>,
+        enumeration_id_return: Option<EnumId>,
+        function_id_return: Option<hir::DefId>,
+        first_function: Option<hir::DefId>,
+        enumeration_ids_borrow: &'static builtins::BuiltinIds,
+        function_ids_borrow: &'static builtins::BuiltinIds,
+        first_function_kind: BuiltinFunction,
+        first_function_set_receiver: BuiltinOrigins,
+        first_function_selector: BuiltinFunction,
+        first_function_lookup_kind: BuiltinFunction,
+        first_function_has_input: bool,
+        classifier_set: BuiltinOrigins,
+        classifier_first: hir::DefId,
+        classifier_current: hir::DefId,
+        classifier_rank: usize,
+        classifier_rank_return: Option<usize>,
+        classifier_input: bool,
+        classifier_output: bool,
+        classifier_set_receivers: [BuiltinOrigins; 2],
+        classifier_kind_arguments: [BuiltinFunction; 2],
+        classifier_choice: (bool, bool, usize),
+        classifier_return: Option<BuiltinFunction>,
+        count_permission: Option<BuiltinFunction>,
+        validation_permission: Option<BuiltinFunction>,
+        function_permission: Option<BuiltinFunction>,
+    );
 
     fn same_layout<T, U>() {
         assert_eq!(size_of::<T>(), size_of::<U>());
@@ -543,17 +635,16 @@ mod output_layout_feasibility {
     #[test]
     fn bounded_stdout_association_disconnected_layout_feasibility() {
         same_layout::<SuffixIds, builtins::BuiltinIds>();
-        same_layout::<ClosedTransportCarriers, BuiltinAssociationCarriers>();
+        same_layout::<ClosedSourceCarriers, BuiltinAssociationCarriers>();
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(size_of::<ClosedTransportCarriers>(), 568);
         same_layout::<Result<SuffixIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
         );
         same_layout::<
             Result<SuffixIds, Box<Diagnostic>>,
             Result<builtins::BuiltinIds, Box<Diagnostic>>,
         >();
-        assert_eq!(
-            builtin_carrier_bytes(),
-            size_of::<ClosedTransportCarriers>()
-        );
+        assert_eq!(builtin_carrier_bytes(), size_of::<ClosedSourceCarriers>());
 
         macro_rules! layouts {
             ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
@@ -589,6 +680,7 @@ mod output_layout_feasibility {
             ExplicitFamilyCarriers,
             SuffixFamilyCarriers,
             ClosedTransportCarriers,
+            ClosedSourceCarriers,
         );
         id_transports!(builtins::BuiltinIds);
         id_transports!(BaselineIds);
