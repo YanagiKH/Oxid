@@ -18,6 +18,15 @@ EXPRESSION_MEMBERS = (
     'fixtures/typed-expression-samples/evaluator.ox',
 )
 STDIN_ENTRY = 'fixtures/typed-expression-samples/stdin.ox'
+STACK_MAIN_ENTRY = 'fixtures/typed-expression-samples/stack_main.ox'
+STACK_STDIN_ENTRY = 'fixtures/typed-expression-samples/stack_stdin.ox'
+STACK_ADDED_FILES = (
+    STACK_MAIN_ENTRY,
+    'fixtures/typed-expression-samples/stack_code.ox',
+    'fixtures/typed-expression-samples/lowering.ox',
+    STACK_STDIN_ENTRY,
+)
+STACK_MEMBERS = STACK_ADDED_FILES[:-1] + EXPRESSION_MEMBERS[1:]
 
 class ProjectRegistrationTests(unittest.TestCase):
     def setUp(self):
@@ -30,9 +39,33 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]
+        self.members = sorted(set(self.members))
+
+    def assert_stack_addition(self, checks, entries, count):
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
+        self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_MEMBERS)
+        self.assertEqual(verify_repo.TYPED_PROJECT_SHARED_MEMBERS,
+                         {frozenset((EXPRESSION_MEMBERS[0], STACK_MAIN_ENTRY)): EXPRESSION_MEMBERS[1:]})
+        added = {self.root / name for name in STACK_ADDED_FILES}
+        stack_entry = self.root / STACK_MAIN_ENTRY
+        stack_stdin = self.root / STACK_STDIN_ENTRY
+        self.assertEqual([row for row in checks if row[0] in added],
+                         [(stack_entry, True), (stack_stdin, True)])
+        self.assertEqual([entry for entry in entries if entry in added], [stack_entry])
+        self.assertFalse(any(STACK_STDIN_ENTRY in members for members in verify_repo.TYPED_PROJECTS.values()))
+        for shared in EXPRESSION_MEMBERS[1:]:
+            self.assertNotIn(self.root / shared, [path for path, _ in checks])
+            self.assertNotIn(self.root / shared, entries)
+        # Remove only the four named additions, including two checks and one
+        # run. Shared expression members contribute no second inventory count.
+        predecessor_checks = [row for row in checks if row[0] not in added]
+        predecessor_entries = [entry for entry in entries if entry not in added]
+        predecessor_count = count - len(STACK_ADDED_FILES)
+        self.assertEqual((len(predecessor_checks), len(predecessor_entries), predecessor_count), (9, 7, 21))
+        return predecessor_checks, predecessor_entries, predecessor_count
 
     def assert_stdin_addition(self, checks, entries, count):
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY,))
+        checks, entries, count = self.assert_stack_addition(checks, entries, count)
         stdin_entry = self.root / STDIN_ENTRY
         self.assertEqual([row for row in checks if row[0] == stdin_entry], [(stdin_entry, True)])
         self.assertNotIn(stdin_entry, entries)
@@ -129,8 +162,47 @@ class ProjectRegistrationTests(unittest.TestCase):
             {'main.ox': ('main.ox', STDIN_ENTRY)},
         ]
         for inventory in bad:
-            with self.subTest(inventory=inventory), patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
+            with self.subTest(inventory=inventory), patch.object(verify_repo, 'TYPED_PROJECTS', inventory), \
+                    patch.object(verify_repo, 'TYPED_PROJECT_SHARED_MEMBERS', {}):
                 with self.assertRaises(RuntimeError):
+                    verify_repo.source_plan(self.members + self.data_sources, self.root)
+
+    def test_explicit_sharing_is_independent_of_project_order(self):
+        sources = self.members + self.data_sources
+        expected = verify_repo.source_plan(sources, self.root)
+        with patch.object(verify_repo, 'TYPED_PROJECTS', dict(reversed(list(verify_repo.TYPED_PROJECTS.items())))):
+            checks, entries, count = verify_repo.source_plan(sources, self.root)
+        self.assertEqual(set(checks), set(expected[0]))
+        self.assertEqual(set(entries), set(expected[1]))
+        self.assertEqual(count, expected[2])
+        self.assertEqual(count, len(self.members))
+
+    def test_only_the_exact_named_project_pair_may_share_modules(self):
+        extra = 'fixtures/typed-expression-samples/unregistered_main.ox'
+        inventory = dict(verify_repo.TYPED_PROJECTS)
+        inventory[extra] = (extra,) + EXPRESSION_MEMBERS[1:]
+        with patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
+            with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
+                verify_repo.source_plan(self.members + self.data_sources + [self.root / extra], self.root)
+
+    def test_wider_or_incomplete_shared_members_are_rejected(self):
+        for members in (STACK_MEMBERS + (EXPRESSION_MEMBERS[0],),
+                        STACK_MEMBERS + ('fixtures/typed-record-composition-samples/model.ox',),
+                        STACK_MEMBERS[:-1]):
+            inventory = dict(verify_repo.TYPED_PROJECTS)
+            inventory[STACK_MAIN_ENTRY] = members
+            with self.subTest(members=members), patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
+                with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
+                    verify_repo.source_plan(self.members + self.data_sources, self.root)
+
+    def test_shared_inventory_cannot_name_roots_or_missing_projects(self):
+        inventories = (
+            {frozenset((EXPRESSION_MEMBERS[0], STACK_MAIN_ENTRY)): (STACK_MAIN_ENTRY,)},
+            {frozenset((EXPRESSION_MEMBERS[0], 'missing.ox')): EXPRESSION_MEMBERS[1:]},
+        )
+        for inventory in inventories:
+            with self.subTest(inventory=inventory), patch.object(verify_repo, 'TYPED_PROJECT_SHARED_MEMBERS', inventory):
+                with self.assertRaisesRegex(RuntimeError, 'invalid explicit typed project sharing inventory'):
                     verify_repo.source_plan(self.members + self.data_sources, self.root)
 
     def test_overlapping_check_only_inventory_is_rejected(self):
@@ -138,6 +210,8 @@ class ProjectRegistrationTests(unittest.TestCase):
             (STDIN_ENTRY, STDIN_ENTRY),
             (STDIN_ENTRY, verify_repo.TYPED_SOURCE_FILES[0]),
             (STDIN_ENTRY, EXPRESSION_MEMBERS[1]),
+            (STDIN_ENTRY, STACK_MAIN_ENTRY),
+            (STDIN_ENTRY, STACK_MEMBERS[1]),
         )
         for inventory in inventories:
             with self.subTest(inventory=inventory), patch.object(verify_repo, 'TYPED_CHECK_ONLY_FILES', inventory):

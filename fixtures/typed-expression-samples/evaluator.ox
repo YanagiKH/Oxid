@@ -65,15 +65,22 @@ fn evaluate_valid_tree(arena: &crate::arena::Arena, root: i32) -> i32 {
     return values[root];
 }
 
-pub fn evaluate(arena: &crate::arena::Arena, root: i32) -> EvalResult {
+// -2 means valid; -1 is an invalid count/root; other values name a bad node.
+pub fn validate(arena: &crate::arena::Arena, root: i32) -> i32 {
     if arena.count < 1 || arena.count > 15 {
-        return EvalResult::InvalidArena(-1);
+        return -1;
     }
     if root != arena.count - 1 {
-        return EvalResult::InvalidArena(-1);
+        return -1;
     }
     let invalid = validate_tree(&*arena);
-    if invalid >= 0 {
+    if invalid < 0 { return -2; }
+    return invalid;
+}
+
+pub fn evaluate(arena: &crate::arena::Arena, root: i32) -> EvalResult {
+    let invalid = validate(&*arena, root);
+    if invalid != -2 {
         return EvalResult::InvalidArena(invalid);
     }
     let value = evaluate_valid_tree(&*arena, root);

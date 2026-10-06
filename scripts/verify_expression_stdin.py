@@ -127,6 +127,7 @@ def main():
     ap.add_argument("--oxid", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--native", action="store_true")
+    ap.add_argument("--component", choices=("arena", "stack"), default="arena")
     args = ap.parse_args()
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         ap.error("bounded stdin execution is qualified only on Linux x86_64")
@@ -138,13 +139,18 @@ def main():
     project.mkdir()
     source_free = output / "source-free"
     source_free.mkdir()
-    for name in MEMBERS:
+    members = MEMBERS if args.component == "arena" else (
+        "stack_stdin.ox", "arena.ox", "scanner.ox", "parser.ox", "evaluator.ox",
+        "stack_code.ox", "lowering.ox",
+    )
+    for name in members:
         shutil.copyfile(fixture / name, project / name)
-    entry = project / "stdin.ox"
+    entry = project / ("stdin.ox" if args.component == "arena" else "stack_stdin.ox")
     program = output / "expression-stdin"
     report = {
         "compiler_sha256": sha256(compiler),
-        "fixture_sha256": {name: sha256(project / name) for name in MEMBERS},
+        "fixture_sha256": {name: sha256(project / name) for name in members},
+        "component": args.component,
         "native": args.native, "setup": [], "cases": [], "passed": False,
         "application_compilations": 0,
         "native_execution": "One unchanged ELF; empty working directory and cleared environment. No filesystem isolation.",
@@ -177,6 +183,8 @@ def main():
         report["program_bytes"] = program.stat().st_size
     failed = False
     for name, data, value, diagnostic_source in CASES:
+        if args.component == "stack" and diagnostic_source == "evaluator.ox":
+            diagnostic_source = "stack_code.ox"
         directory = output / name
         directory.mkdir()
         expected_remaining = data[129:]

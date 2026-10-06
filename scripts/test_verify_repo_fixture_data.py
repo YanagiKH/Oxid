@@ -34,6 +34,15 @@ EXPRESSION_SAMPLE_MEMBERS = (
     "fixtures/typed-expression-samples/evaluator.ox",
 )
 STDIN_ENTRY = "fixtures/typed-expression-samples/stdin.ox"
+STACK_MAIN_ENTRY = "fixtures/typed-expression-samples/stack_main.ox"
+STACK_STDIN_ENTRY = "fixtures/typed-expression-samples/stack_stdin.ox"
+STACK_ADDED_FILES = (
+    STACK_MAIN_ENTRY,
+    "fixtures/typed-expression-samples/stack_code.ox",
+    "fixtures/typed-expression-samples/lowering.ox",
+    STACK_STDIN_ENTRY,
+)
+STACK_SAMPLE_MEMBERS = STACK_ADDED_FILES[:-1] + EXPRESSION_SAMPLE_MEMBERS[1:]
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -75,7 +84,22 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY,))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
+        self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_SAMPLE_MEMBERS)
+        self.assertEqual([name for name in language if name in STACK_ADDED_FILES], sorted(STACK_ADDED_FILES))
+        self.assertEqual([row for row in check_inventory if row[0] in STACK_ADDED_FILES],
+                         [(STACK_MAIN_ENTRY, True), (STACK_STDIN_ENTRY, True)])
+        self.assertEqual([row for row in run_inventory if row[0] in STACK_ADDED_FILES], [(STACK_MAIN_ENTRY, True)])
+        self.assertTrue(all(root / name not in data_sources for name in STACK_ADDED_FILES))
+        # Only four new files, two root checks, and one fixed entry run are
+        # added. The shared expression modules still count as single members.
+        language = [name for name in language if name not in STACK_ADDED_FILES]
+        check_inventory = [row for row in check_inventory if row[0] not in STACK_ADDED_FILES]
+        run_inventory = [row for row in run_inventory if row[0] not in STACK_ADDED_FILES]
+        typed_entries = [entry for entry in typed_entries if entry.relative_to(root).as_posix() not in STACK_ADDED_FILES]
+        typed_members -= len(STACK_ADDED_FILES)
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (142, 129, 74, 21, 7))
         self.assertEqual([name for name in language if name == STDIN_ENTRY], [STDIN_ENTRY])
         self.assertEqual([row for row in check_inventory if row[0] == STDIN_ENTRY], [(STDIN_ENTRY, True)])
         self.assertFalse(any(row[0] == STDIN_ENTRY for row in run_inventory))
@@ -123,13 +147,15 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
-        stdin_root = str(verify_repo.ROOT / STDIN_ENTRY)
-        self.assertEqual([command for command in commands if stdin_root in command],
-                         [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
-        predecessor_commands = [command for command in commands if stdin_root not in command]
+        for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY):
+            stdin_root = str(verify_repo.ROOT / relative)
+            self.assertEqual([command for command in commands if stdin_root in command],
+                             [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
+        added_roots = {str(verify_repo.ROOT / name) for name in (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY)}
+        predecessor_commands = [command for command in commands if not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
         self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
-        for members in SAMPLE_PROJECTS:
+        for members in SAMPLE_PROJECTS + (STACK_SAMPLE_MEMBERS,):
             with self.subTest(sample=members[0]):
                 sample_root = str(verify_repo.ROOT / members[0])
                 sample_commands = [command for command in commands if sample_root in command]
@@ -142,9 +168,9 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for call in run.call_args_list for arg in call.args[0]))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn("142 language sources, 129 checks, 74 runnable programs", output.getvalue())
-        self.assertIn("121 legacy sources, 67 legacy runnable programs, 21 typed source members / "
-                      "7 typed entry runs", output.getvalue())
+        self.assertIn("146 language sources, 131 checks, 75 runnable programs", output.getvalue())
+        self.assertIn("121 legacy sources, 67 legacy runnable programs, 25 typed source members / "
+                      "8 typed entry runs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
     def test_git_autocrlf_preserves_frozen_bytes_and_converts_other_text(self):
@@ -197,7 +223,7 @@ class FixtureAdmissionTests(unittest.TestCase):
 
     def assert_samples_use_root(self, checks, entries):
         checked = [path for path, _ in checks]
-        for members in SAMPLE_PROJECTS:
+        for members in SAMPLE_PROJECTS + (STACK_SAMPLE_MEMBERS,):
             sample_root = self.root / members[0]
             self.assertIn((sample_root, True), checks)
             self.assertIn(sample_root, entries)
@@ -206,6 +232,14 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        added = {self.root / name for name in STACK_ADDED_FILES}
+        stack_entry = self.root / STACK_MAIN_ENTRY
+        stack_stdin = self.root / STACK_STDIN_ENTRY
+        self.assertEqual([row for row in checks if row[0] in added], [(stack_entry, True), (stack_stdin, True)])
+        self.assertEqual([entry for entry in entries if entry in added], [stack_entry])
+        checks = [row for row in checks if row[0] not in added]
+        entries = [entry for entry in entries if entry not in added]
+        count -= len(STACK_ADDED_FILES)
         stdin_entry = self.root / STDIN_ENTRY
         self.assertEqual([row for row in checks if row[0] == stdin_entry], [(stdin_entry, True)])
         self.assertNotIn(stdin_entry, entries)
@@ -333,6 +367,10 @@ class FixtureAdmissionTests(unittest.TestCase):
 
     def test_missing_check_only_root_fails_before_compiler(self):
         (self.root / STDIN_ENTRY).unlink()
+        self.assert_no_compiler("typed source fixture missing from discovery")
+
+    def test_missing_stack_check_only_root_fails_before_compiler(self):
+        (self.root / STACK_STDIN_ENTRY).unlink()
         self.assert_no_compiler("typed source fixture missing from discovery")
 
     def test_explicit_legacy_runnable_overlap_fails_before_compiler(self):

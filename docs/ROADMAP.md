@@ -38,6 +38,13 @@ arena, and a separate evaluator. Its public reference/native example builds
 seven nodes and returns 39 for `12 + 3 * (4 + 5)`. This is a compiler-component
 exercise over fixed input, not a compiler provider, rebuild or self-hosting claim.
 
+The companion [stack-code component](../fixtures/typed-expression-samples/STACK_CODE.md)
+lowers that arena to at most 15 instructions and validates/executes the instruction
+buffer independently of tree links. Its stdin entry uses the existing bounded
+input operation. Exact rows and malformed instruction fixtures establish this
+small producer/consumer boundary; they do not establish a production backend or
+self-hosting.
+
 ## Native AI work
 
 Native AI support needs typed buffers and CPU tensors first, followed by automatic differentiation, optimizers, and complete training loops. GPU execution, tensor compilation, multi-device training, and resumable checkpoints add separate hardware and correctness requirements. Calling an external framework through a process adapter does not satisfy these milestones.

@@ -127,6 +127,12 @@ must be new.
 
 ## Evidence and scope
 
+The [stack-code component](STACK_CODE.md) adds a bounded instruction producer and
+a separate code-only verifier/interpreter using the same grammar. Its dedicated
+corpus checks exact instruction rows, malformed standalone code and preservation
+of the output buffer when arena validation fails. `stack_stdin.ox` uses the same
+input contract and scalar output ABI.
+
 The original fixed-input component passed public check, reference run, LLVM
 compile and ELF execution for all 45 hand-derived cases in `cases.json`: 33
 parser/evaluation cases and 12 malformed-arena cases. Exact tree rows distinguish
