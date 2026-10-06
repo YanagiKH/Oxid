@@ -2,6 +2,9 @@
 //! builder, and successful descriptor checks never grant execution authority.
 use super::*;
 
+type ProgramMutation = (&'static str, fn(&mut RawOwnedProgram));
+type FunctionMutation = (&'static str, fn(&mut RawOwnedFunction));
+
 fn anchor(start: usize) -> Span {
     Span {
         file: crate::frontend::source::SourceFileId(0),
@@ -219,7 +222,7 @@ fn builtin_descriptor_missing_claimed_rows_fail_before_suffix_arithmetic() {
 
 #[test]
 fn builtin_descriptor_enum_rejects_identity_count_order_and_payload_mutations() {
-    let mutations: &[(&str, fn(&mut RawOwnedProgram))] = &[
+    let mutations: &[ProgramMutation] = &[
         ("enum ordinal", |p| p.enums[0].id = EnumId(1)),
         ("missing member", |p| {
             p.enums[0].variants.pop();
@@ -280,7 +283,7 @@ fn builtin_descriptor_enum_rejects_identity_count_order_and_payload_mutations() 
 
 #[test]
 fn builtin_descriptor_signature_rejects_binding_and_slot_mutations() {
-    let mutations: &[(&str, fn(&mut RawOwnedFunction))] = &[
+    let mutations: &[FunctionMutation] = &[
         ("function ordinal", |f| f.id = hir::DefId(1)),
         ("scalar result", |f| {
             f.result = ValueTy::Scalar(hir::Ty::I32)
@@ -370,7 +373,7 @@ fn builtin_descriptor_signature_rejects_binding_and_slot_mutations() {
 
 #[test]
 fn builtin_descriptor_rejects_extra_function_rows() {
-    let mutations: &[(&str, fn(&mut RawOwnedFunction))] = &[
+    let mutations: &[FunctionMutation] = &[
         ("local", |f| {
             f.locals.push(LocalDecl {
                 ty: hir::Ty::I32,
@@ -421,7 +424,7 @@ fn builtin_descriptor_rejects_extra_function_rows() {
 
 #[test]
 fn builtin_descriptor_rejects_every_body_site_mutation() {
-    let mutations: &[(&str, fn(&mut RawOwnedFunction))] = &[
+    let mutations: &[FunctionMutation] = &[
         ("wrong entry", |f| f.entry = BlockId(1)),
         ("no blocks", |f| f.blocks.clear()),
         ("extra unreachable block", |f| {
@@ -527,7 +530,7 @@ fn builtin_descriptor_requires_common_enum_and_function_anchors() {
             Some(anchor(4))
         );
     }
-    let mutations: &[(&str, fn(&mut RawOwnedFunction))] = &[
+    let mutations: &[FunctionMutation] = &[
         ("reference anchor", |f| f.references[0].span = anchor(4)),
         ("owner anchor", |f| f.owners[0].span = anchor(4)),
         ("block anchor", |f| f.blocks[0].span = anchor(4)),
