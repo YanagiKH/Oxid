@@ -1,6 +1,7 @@
-//! Closed reference-output precursor controls. These do not fabricate output
-//! witnesses or claim that the admitted-input path exercises an output effect.
+//! Effect-free reference-output controls. These neither establish SIGPIPE
+//! policy nor call the positive subprocess entry inside the unit-test runner.
 use super::super::builtin_input_fixtures as input_fixture;
+use super::super::builtin_output_fixtures as output_fixture;
 use super::super::consumer_fixtures as fixture;
 use super::*;
 
@@ -67,27 +68,71 @@ fn output_identity_denial_precedes_runtime_view_and_fuel() {
 }
 
 #[test]
-fn process_reference_entry_stays_closed_before_allocation_and_activation() {
+fn process_reference_admission_checks_signature_without_setup_or_allocation() {
     let (sources, raw, schedule) = fixture::empty_record();
     let witness = verified::verify_owned(raw, &sources).unwrap();
+    let span = witness.functions()[schedule.entry.0].span;
     let denied = plan::fail_allocation_after(0, || {
-        run_process_limits(
-            &witness,
-            Some(schedule.entry),
-            Limits {
-                fuel: 0,
-                ..Limits::default()
-            },
-        )
+        checked_entry_policy(&witness, Some(schedule.entry), EntryPolicy::Process)
+    });
+    let expected = if output::supported_host() {
+        OwnedRunFailure::ProcessEntry(span)
+    } else {
+        OwnedRunFailure::ProcessHost
+    };
+    assert_eq!(denied, Err(expected));
+    assert_eq!(run(&witness, Some(schedule.entry)), Ok(schedule.result));
+
+    let (sources, raw) = output_fixture::inventory(BuiltinOrigins::None);
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let admitted = plan::fail_allocation_after(0, || {
+        checked_entry_policy(&witness, Some(hir::DefId(0)), EntryPolicy::Process)
     });
     assert_eq!(
-        denied,
-        Err(OwnedRunFailure::Invariant(
-            "process execution admission closed",
-            None,
-        )),
+        admitted,
+        if output::supported_host() {
+            Ok(hir::DefId(0))
+        } else {
+            Err(OwnedRunFailure::ProcessHost)
+        },
     );
-    assert_eq!(run(&witness, Some(schedule.entry)), Ok(schedule.result));
+}
+
+#[test]
+fn default_output_inventory_denial_precedes_plan_allocation_and_fuel() {
+    let (sources, raw) = output_fixture::inventory(BuiltinOrigins::WriteStdout);
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let builtin = witness.builtin_output_function().unwrap();
+    let span = witness.functions()[builtin.0].span;
+    // The output function is unused. Its admitted inventory still requires
+    // Process policy, even when the entry or zero fuel could fail first.
+    for entry in [None, Some(hir::DefId(0)), Some(hir::DefId(usize::MAX))] {
+        assert_eq!(
+            plan::fail_allocation_after(0, || run_limits(
+                &witness,
+                entry,
+                Limits {
+                    fuel: 0,
+                    ..Limits::default()
+                },
+            )),
+            Err(OwnedRunFailure::OutputEntry(span)),
+        );
+    }
+    let checked = plan::fail_allocation_after(0, || {
+        checked_entry_policy(&witness, Some(hir::DefId(0)), EntryPolicy::Process)
+    });
+    assert_eq!(
+        checked,
+        if output::supported_host() {
+            Ok(hir::DefId(0))
+        } else {
+            Err(OwnedRunFailure::OutputHost(span))
+        },
+    );
+    let (sources, raw) = output_fixture::inventory(BuiltinOrigins::WriteStatus);
+    let status_only = verified::verify_owned(raw, &sources).unwrap();
+    assert_eq!(run(&status_only, Some(hir::DefId(0))), Ok(Scalar::I32(0)),);
 }
 
 #[test]

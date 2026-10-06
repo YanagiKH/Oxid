@@ -1,5 +1,5 @@
-//! Ordinary descriptor/CFG/ownership proofs for the denied output precursor.
-//! No test here manufactures an executable witness or performs output.
+//! Raw output descriptor/CFG/ownership and witness-bound planning proofs.
+//! Only the complete production verifier grants witnesses; no output is run.
 use super::builtin_output_fixtures as fixture;
 use super::consumer_fixtures as f;
 use super::enum_consumer_fixtures as e;
@@ -11,76 +11,67 @@ fn probe(raw: &RawOwnedProgram, sources: &SourceMap) -> Result<OwnershipUsage, O
 }
 
 #[test]
-fn builtin_output_candidate_checks_all_nine_independent_suffixes_without_admission() {
+fn builtin_output_all_nine_suffixes_require_complete_verification_and_planning() {
     use BuiltinOrigins::*;
     // These expectations do not call catalog rank/member/signature helpers.
-    for (inventory, enums, functions, visits, output_denied) in [
+    for (inventory, enums, functions, visits) in [
         (
             None,
             [Option::None, Option::None],
             [Option::None, Option::None],
             0,
-            false,
         ),
         (
             ReadStatus,
             [Some(1), Option::None],
             [Option::None, Option::None],
             5,
-            false,
         ),
         (
             ReadStdin,
             [Some(1), Option::None],
             [Some(1), Option::None],
             12,
-            false,
         ),
         (
             WriteStatus,
             [Option::None, Some(1)],
             [Option::None, Option::None],
             5,
-            true,
         ),
         (
             WriteStdout,
             [Option::None, Some(1)],
             [Option::None, Some(1)],
             12,
-            true,
         ),
         (
             ReadStatusWriteStatus,
             [Some(1), Some(2)],
             [Option::None, Option::None],
             9,
-            true,
         ),
         (
             ReadStatusWriteStdout,
             [Some(1), Some(2)],
             [Option::None, Some(1)],
             16,
-            true,
         ),
         (
             ReadStdinWriteStatus,
             [Some(1), Some(2)],
             [Some(1), Option::None],
             16,
-            true,
         ),
         (
             ReadStdinWriteStdout,
             [Some(1), Some(2)],
             [Some(1), Some(2)],
             23,
-            true,
         ),
     ] {
         let (sources, raw) = fixture::inventory(inventory);
-        let ids = builtins::check_candidate(&raw).unwrap();
+        let ids = builtins::check(&raw).unwrap();
         assert_eq!(
             ids.enumeration(BuiltinEnum::ReadStatus),
             enums[0].map(EnumId)
@@ -98,9 +89,31 @@ fn builtin_output_candidate_checks_all_nine_independent_suffixes_without_admissi
             functions[1].map(hir::DefId)
         );
         assert_eq!(builtins::descriptor_visits(inventory), visits);
-        probe(&raw, &sources).unwrap();
-        assert_eq!(builtins::check(&raw).is_err(), output_denied);
-        assert_eq!(verify_owned(raw, &sources).is_err(), output_denied);
+        let witness = verify_owned(raw, &sources).unwrap();
+        assert_eq!(witness.builtin_enumeration(), enums[0].map(EnumId));
+        assert_eq!(witness.builtin_output_enumeration(), enums[1].map(EnumId));
+        assert_eq!(witness.builtin_function(), functions[0].map(hir::DefId));
+        assert_eq!(
+            witness.builtin_output_function(),
+            functions[1].map(hir::DefId)
+        );
+        let plan = plan::ExecutionPlan::build(&witness).unwrap();
+        for function in witness.functions() {
+            let input = functions[0] == Some(function.id.0);
+            let output = functions[1] == Some(function.id.0);
+            assert_eq!(
+                plan.input_scratch_range(function.id),
+                input.then_some(8..1032)
+            );
+            assert_eq!(
+                plan.output_scratch_range(function.id),
+                output.then_some(8..1032)
+            );
+            assert_eq!(
+                plan.function(function.id).usage().payload_bytes,
+                if input || output { 1032 } else { 0 }
+            );
+        }
     }
 }
 
@@ -414,9 +427,10 @@ fn builtin_output_projection_and_forwarding_retain_ordinary_view_proofs() {
 #[test]
 fn builtin_output_staging_is_1024_physical_bytes_per_function_without_fuel_growth() {
     let (sources, raw, entry) = fixture::program(3);
-    let candidate = probe(&raw, &sources).unwrap();
-    let output_usage = plan::probe_builtin_frame_usage(&raw, &sources, hir::DefId(1)).unwrap();
-    let caller_usage = plan::probe_builtin_frame_usage(&raw, &sources, entry).unwrap();
+    let output = verify_owned(raw, &sources).unwrap();
+    let output_plan = plan::ExecutionPlan::build(&output).unwrap();
+    let output_usage = output_plan.function(hir::DefId(1)).usage();
+    let caller_usage = output_plan.function(entry).usage();
     let (sources, ordinary, _) = fixture::ordinary_control(3);
     let witness = verify_owned(ordinary, &sources).unwrap();
     let plan = plan::ExecutionPlan::build(&witness).unwrap();
@@ -430,30 +444,49 @@ fn builtin_output_staging_is_1024_physical_bytes_per_function_without_fuel_growt
     expected.reference_bytes += 1024;
     expected.native_bytes += 1024;
     assert_eq!(output_usage, expected);
+    assert_eq!(output_plan.input_scratch_range(entry), None);
+    assert_eq!(output_plan.output_scratch_range(entry), None);
+    assert_eq!(output_plan.input_scratch_range(hir::DefId(1)), None);
+    assert_eq!(
+        output_plan.output_scratch_range(hir::DefId(1)),
+        Some(8..1032)
+    );
     assert_eq!(plan.input_scratch_range(hir::DefId(1)), None);
     assert_eq!(plan.output_scratch_range(hir::DefId(1)), None);
-    assert_eq!(candidate.work, witness.usage().work + 12);
-    assert_eq!(candidate.metadata_bytes, witness.usage().metadata_bytes);
+    assert_eq!(output.usage().work, witness.usage().work + 12);
     assert_eq!(
-        candidate.owner_layout_bytes,
+        output.usage().metadata_bytes,
+        witness.usage().metadata_bytes
+    );
+    assert_eq!(
+        output.usage().owner_layout_bytes,
         witness.usage().owner_layout_bytes
     );
-    assert_eq!(candidate.owner_cells, witness.usage().owner_cells);
+    assert_eq!(output.usage().owner_cells, witness.usage().owner_cells);
+    assert_eq!(output_plan.metadata_bytes(), plan.metadata_bytes());
+    let required = output_plan.metadata_bytes();
+    plan::ExecutionPlan::build_with_test_limit(&output, required).unwrap();
+    let failure = plan::fail_allocation_after(0, || {
+        plan::ExecutionPlan::build_with_test_limit(&output, required - 1)
+    })
+    .unwrap_err();
+    assert_eq!(failure.name, "owned plan bytes");
 
     let (sources, both) = fixture::inventory(BuiltinOrigins::ReadStdinWriteStdout);
+    let both = verify_owned(both, &sources).unwrap();
+    let both_plan = plan::ExecutionPlan::build(&both).unwrap();
     for function in [hir::DefId(1), hir::DefId(2)] {
-        let usage = plan::probe_builtin_frame_usage(&both, &sources, function).unwrap();
+        let usage = both_plan.function(function).usage();
         assert_eq!(usage.payload_bytes, 1032);
         assert_eq!(usage.reference_bytes, 1144);
         assert_eq!(usage.native_bytes, 1044);
         assert_eq!(usage.activation_fuel_cells(), 14);
     }
-    assert_eq!(
-        plan::probe_builtin_frame_usage(&both, &sources, hir::DefId(0))
-            .unwrap()
-            .payload_bytes,
-        0
-    );
+    assert_eq!(both_plan.input_scratch_range(hir::DefId(1)), Some(8..1032));
+    assert_eq!(both_plan.output_scratch_range(hir::DefId(1)), None);
+    assert_eq!(both_plan.input_scratch_range(hir::DefId(2)), None);
+    assert_eq!(both_plan.output_scratch_range(hir::DefId(2)), Some(8..1032));
+    assert_eq!(both_plan.function(hir::DefId(0)).usage().payload_bytes, 0);
 }
 
 #[test]

@@ -271,9 +271,6 @@ enum NativeEntryPolicy {
     Process,
 }
 
-// Closed while the independent raw/output consumer review is incomplete.
-const PROCESS_ENTRY_ENABLED: bool = false;
-
 #[cfg(test)]
 pub(super) fn native_process_module_with_fuel(
     witness: &VerifiedOwnedProgram,
@@ -355,9 +352,6 @@ fn native_module_policy_accounted(
     // unused output functions. Status-only declarations do not require it.
     if policy == NativeEntryPolicy::Result && witness.builtin_output_function().is_some() {
         return Err(reject("write_stdout requires process entry", None));
-    }
-    if policy == NativeEntryPolicy::Process && !PROCESS_ENTRY_ENABLED {
-        return Err(reject("native process entry is not enabled", None));
     }
     // Entry denial is deliberately before plan construction, diagnostics,
     // output text or tools. An invalid identity is an internal error.

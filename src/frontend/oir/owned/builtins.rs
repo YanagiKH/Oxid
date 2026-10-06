@@ -44,15 +44,12 @@ impl BuiltinIds {
 /// claim. In particular, ordinary declarations with matching shapes never
 /// acquire builtin identity, and the None case does not visit any raw row.
 pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
-    // Output consumers are not activated yet. Reject
-    // every output family claim before reading even the first descriptor row.
-    if raw.builtins.has_output() {
-        return Err(missing());
-    }
+    // Descriptor identity alone is inert. The ordinary declaration, shape,
+    // CFG and ownership proof must still succeed before any witness exists.
     check_candidate(raw)
 }
 
-/// Complete inert descriptor validation, including the denied output candidate.
+/// Complete inert descriptor validation for both closed builtin families.
 /// This cannot produce an executable witness or bypass ordinary proofs. The
 /// production entry above remains the sole builtin admission gate.
 pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {

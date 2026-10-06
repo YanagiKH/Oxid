@@ -183,16 +183,7 @@ pub(super) fn probe_output_validation(
     sources: &SourceMap,
     limits: budget::Limits,
 ) -> Result<OwnershipUsage, OwnedFailure> {
-    let mut usage = budget::preflight(raw, limits)?;
-    builtins::check_candidate(raw)?;
-    let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
-    let mut meter = budget::Meter {
-        visits: 0,
-        ceiling: usage.work,
-    };
-    for _ in 0..builtins::descriptor_visits(raw.builtins) {
-        meter.visit()?;
-    }
+    let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
     inventory_carriers(raw, &mut meter)?;
     validate_proof(raw, &declarations, sources, &mut usage, &mut meter)?;
     Ok(usage)

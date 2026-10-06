@@ -25,6 +25,7 @@ pub(super) enum OwnedRunFailure {
     OutputHost(Span),
     OutputEntry(Span),
     ProcessHost,
+    ProcessSetup,
     ProcessEntry(Span),
     ProcessResult(Span),
     Resource(plan::AdmissionFailure),
@@ -86,6 +87,15 @@ impl OwnedRunFailure {
                 "E0608",
                 "oir-owned-run",
                 "process execution requires Linux x86_64",
+                None,
+            ),
+            // Process drivers must intercept this and exit 74 silently. This
+            // fallback identifies a violated internal reporting contract; it
+            // must never itself be sent to a potentially unsafe descriptor.
+            Self::ProcessSetup => Diagnostic::new(
+                "E0500",
+                "oir-owned-run",
+                "internal compiler error: process setup failure requires silent exit 74",
                 None,
             ),
             Self::ProcessEntry(span) => Diagnostic::new(
@@ -2675,14 +2685,6 @@ fn checked_entry_policy(
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
-    if policy == EntryPolicy::Process {
-        // Closed precursor: no positive process consumer is reachable until its
-        // raw proof, process signal setup and complete consumers are qualified.
-        return Err(OwnedRunFailure::Invariant(
-            "process execution admission closed",
-            None,
-        ));
-    }
     if policy == EntryPolicy::Result {
         if let Some(function) = witness.builtin_output_function() {
             // The ordinary result-mode route must deny even an unused output
@@ -2754,9 +2756,8 @@ fn execute_plan_inner(
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<Scalar> {
-    // Test observers and private callers also share the result-mode gate.
-    // A future process entry must first establish its process signal policy;
-    // there is deliberately no positive output entry in this checkpoint.
+    // All callers share entry validation. The sole private Process caller
+    // establishes host support and signal policy before reaching this point.
     checked_entry_policy(plan.witness(), Some(entry), policy)?;
     let limits = limits.bounded();
     let f = &plan.witness().functions()[entry.0];
@@ -2828,15 +2829,24 @@ fn execute_plan_inner(
         result
     }
 }
-/// A closed subprocess test seam. Only a scalar result or failure escapes;
+/// Private subprocess execution. Only a scalar result or failure escapes;
 /// machine storage and all owners are dropped inside the ordinary executor.
-/// The subprocess wrapper must establish process signal policy before calling.
+/// SIGPIPE setup precedes entry diagnostics, planning and the activation guard.
+/// The subprocess driver must turn ProcessSetup into a silent status 74.
 #[cfg(test)]
 pub(super) fn run_process_limits(
     witness: &VerifiedOwnedProgram,
     entry: Option<hir::DefId>,
     limits: Limits,
 ) -> Result<Scalar> {
+    // This host-only check intentionally precedes setup and does not validate
+    // the entry, inspect source cells, allocate a plan or debit source fuel.
+    if !output::supported_host() {
+        return Err(OwnedRunFailure::ProcessHost);
+    }
+    if !process::setup() {
+        return Err(OwnedRunFailure::ProcessSetup);
+    }
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Process)?;
     let plan = ExecutionPlan::build(witness)?;
     execute_plan_inner(&plan, entry, limits, EntryPolicy::Process, None, None, None)

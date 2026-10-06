@@ -392,8 +392,7 @@ fn usage(
     frame_usage(witness.declarations(), f, scratch_bytes)
 }
 
-/// Inert physical arithmetic shared by production witness-bound planning and
-/// precursor measurement. It cannot construct a plan or executable authority.
+/// Physical accounting over declarations established by the plan's witness.
 fn frame_usage(
     declarations: &Declarations,
     f: &RawOwnedFunction,
@@ -463,32 +462,6 @@ fn frame_usage(
     Ok(u)
 }
 
-/// Returns only measured counters after the complete ordinary precursor proof.
-/// Neither a witness nor an execution plan can escape this test observation.
-#[cfg(test)]
-pub(super) fn probe_builtin_frame_usage(
-    raw: &RawOwnedProgram,
-    sources: &SourceMap,
-    function: hir::DefId,
-) -> Result<FrameUsage, OwnedFailure> {
-    use crate::frontend::builtin_catalog::BuiltinFunction;
-    verified::probe_output_validation(raw, sources, budget::Limits::DEFAULT)?;
-    let ids = builtins::check_candidate(raw)?;
-    let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
-    let f = raw
-        .functions
-        .get(function.0)
-        .ok_or_else(|| OwnedFailure::resource("missing measurement function"))?;
-    let mut scratch_bytes = 0;
-    if ids.function(BuiltinFunction::ReadStdin) == Some(function) {
-        scratch_bytes += builtins::INPUT_SCRATCH_BYTES;
-    }
-    if ids.function(BuiltinFunction::WriteStdout) == Some(function) {
-        scratch_bytes += builtins::OUTPUT_SCRATCH_BYTES;
-    }
-    frame_usage(&declarations, f, scratch_bytes)
-        .map_err(|failure| OwnedFailure::resource(failure.name))
-}
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {
         OwnedInstruction::Scalar(s) => s.span(),
