@@ -188,6 +188,13 @@ mod tests {
 
     #[test]
     fn admission_precedes_input_and_preserves_memory() {
+        let mut untouched = Script::new(&[]);
+        let mut zero_fuel = 4;
+        assert_eq!(
+            fill(&mut [], &mut [], &mut zero_fuel, &mut untouched),
+            Ok(ReadStatus::Full)
+        );
+        assert_eq!((zero_fuel, untouched.attempts), (0, 0));
         let mut input = Script::new(&[ReadEvent::Byte(1)]);
         let mut fuel = 100;
         let mut destination = [71, 72];
@@ -251,5 +258,91 @@ mod tests {
         );
         assert_eq!((fuel, input.consumed), (0, 1024));
         assert!(destination.iter().all(|v| *v == 255));
+    }
+    #[test]
+    fn explicit_application_witness_reads_128_eof_or_129_bytes_only() {
+        for length in [128, 129, 130] {
+            let mut events = [ReadEvent::Byte(32); 131];
+            events[length] = ReadEvent::Eof;
+            let mut input = Script::new(&events);
+            let mut destination = [-7; 129];
+            let mut staging = [0xa5; 129];
+            let mut fuel = 262;
+            let expected = if length == 128 {
+                ReadStatus::Eof(128)
+            } else {
+                ReadStatus::Full
+            };
+            assert_eq!(
+                fill(&mut destination, &mut staging, &mut fuel, &mut input),
+                Ok(expected)
+            );
+            assert_eq!((fuel, input.consumed), (0, 129));
+            assert!(destination[..128].iter().all(|v| *v == 32));
+            assert_eq!(destination[128], if length == 128 { -7 } else { 32 });
+            assert_eq!(staging[128], if length == 128 { 0xa5 } else { 32 });
+            assert_eq!(
+                input.events[input.consumed],
+                if length == 129 {
+                    ReadEvent::Eof
+                } else {
+                    ReadEvent::Byte(32)
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn unused_staging_prefix_tail_is_preserved_on_eof_and_error() {
+        for last in [ReadEvent::Eof, ReadEvent::Error] {
+            let events = [ReadEvent::Byte(9), last];
+            let mut input = Script::new(&events);
+            let mut destination = [-7; 3];
+            let mut staging = [0xa5; 4];
+            let mut fuel = 9;
+            let expected = if last == ReadEvent::Eof {
+                ReadStatus::Eof(1)
+            } else {
+                ReadStatus::IoError
+            };
+            assert_eq!(
+                fill(&mut destination, &mut staging, &mut fuel, &mut input),
+                Ok(expected)
+            );
+            assert_eq!(staging, [9, 0xa5, 0xa5, 0xa5]);
+            assert_eq!(
+                destination,
+                if last == ReadEvent::Eof {
+                    [9, -7, -7]
+                } else {
+                    [-7; 3]
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn base_fuel_failure_precedes_staging_failure() {
+        let mut input = Script::new(&[]);
+        let mut destination = [71];
+        let mut fuel = 4;
+        assert_eq!(
+            fill(&mut destination, &mut [], &mut fuel, &mut input),
+            Err(Failure::Fuel)
+        );
+        assert_eq!((destination, fuel, input.attempts), ([71], 4, 0));
+    }
+
+    #[test]
+    fn later_caller_failure_does_not_roll_back_completed_commit() {
+        let mut input = Script::new(&[ReadEvent::Byte(9)]);
+        let mut destination = [71];
+        let mut fuel = 6;
+        assert_eq!(
+            fill(&mut destination, &mut [0], &mut fuel, &mut input),
+            Ok(ReadStatus::Full)
+        );
+        assert_eq!(charge(&mut fuel, 1), Err(Failure::Fuel));
+        assert_eq!((destination, fuel, input.consumed), ([9], 0, 1));
     }
 }
