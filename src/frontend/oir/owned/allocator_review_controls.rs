@@ -134,3 +134,90 @@ fn allocator_review_controls_other_thread_is_invisible_to_both_parent_trackers()
     assert_eq!(child_attempts, 3);
     assert_eq!(child_stats, (3, 0, 384));
 }
+
+#[test]
+fn allocator_review_controls_real_null_exact_reserve_is_one_shot_and_accounted() {
+    use crate::frontend::project::budget::{real_null_observer as null, Allocator, ReserveFailure};
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(2).unwrap();
+    let target = null::Target {
+        attempt: 1,
+        kind: "real null calibration",
+        slots: 8,
+        element_bytes: std::mem::size_of::<u64>(),
+        layout: Layout::array::<u64>(8).unwrap(),
+    };
+    let action = |allocator: &mut Allocator| {
+        raw::integration_counted(|| {
+            source::integration_measured(|| {
+                let mut denied = Vec::<u64>::new();
+                let failure = allocator.vector_exact(&mut denied, 8, "real null calibration");
+                let denied_capacity = denied.capacity();
+                let mut ordinary = Vec::<u64>::new();
+                let success = allocator.vector_exact(&mut ordinary, 8, "after real null");
+                let ordinary_capacity = ordinary.capacity();
+                drop(ordinary);
+                drop(denied);
+                (failure, success, denied_capacity, ordinary_capacity)
+            })
+        })
+    };
+    let control_bytes = null::selection_carriers_bytes(&action);
+    let ((outcome, attempts), report) =
+        null::with_selected(&mut allocator, target, action).unwrap();
+    let ((failure, success, denied_capacity, ordinary_capacity), stats) = outcome;
+    assert_eq!(failure, Err(ReserveFailure::Allocation));
+    assert_eq!(success, Ok(()));
+    assert_eq!(denied_capacity, 0);
+    assert_eq!(ordinary_capacity, 8);
+    assert_eq!(attempts, 2);
+    assert_eq!(stats, (1, 0, 64));
+    assert!(report.selected && report.matched && report.fired);
+    assert_eq!(report.rejection, None);
+    assert_eq!(
+        report.actual,
+        Some(null::GlobalEvent {
+            operation: null::Operation::Alloc,
+            layout: target.layout,
+            new_size: None,
+        })
+    );
+    assert_eq!(allocator.attempts, 2);
+    assert_eq!(allocator.trace.len(), 2);
+    assert!(!allocator.trace[0].success);
+    assert!(allocator.trace[1].success);
+    assert!(!allocator.observer_trace_overflow);
+    assert!(!raw::integration_enabled());
+    assert!(!source::integration_enabled());
+    println!("REAL_NULL_EXACT_CONTROL_BYTES {control_bytes}");
+}
+
+#[test]
+fn allocator_review_controls_real_null_selected_unarmed_forwards_all_operations() {
+    use crate::frontend::project::budget::{real_null_observer as null, Allocator};
+    let mut allocator = Allocator::default();
+    let target = null::Target {
+        attempt: 1,
+        kind: "unreached calibration",
+        slots: 8,
+        element_bytes: std::mem::size_of::<u64>(),
+        layout: Layout::array::<u64>(8).unwrap(),
+    };
+    let action = |_: &mut Allocator| {
+        raw::integration_counted(|| source::integration_measured(real_operations))
+    };
+    let control_bytes = null::selection_carriers_bytes(&action);
+    let ((((), stats), attempts), report) =
+        null::with_selected(&mut allocator, target, action).unwrap();
+    assert_eq!(attempts, 3);
+    assert_eq!(stats, (3, 0, 384));
+    assert!(report.selected);
+    assert!(!report.matched && !report.fired);
+    assert_eq!(report.rejection, Some(null::Reason::MissingTarget));
+    assert_eq!(report.actual, None);
+    assert_eq!(allocator.attempts, 0);
+    assert!(allocator.trace.is_empty());
+    assert!(!raw::integration_enabled());
+    assert!(!source::integration_enabled());
+    println!("REAL_NULL_SELECTED_CONTROL_BYTES {control_bytes}");
+}
