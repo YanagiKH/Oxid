@@ -1,6 +1,9 @@
 //! Current imports and the permanently private candidate share nominal facts.
 use super::*;
-use crate::frontend::{parser, project::ProjectLimits};
+use crate::frontend::{
+    parser,
+    project::{LoadFailure, ProjectLimits},
+};
 use std::{
     fs,
     path::PathBuf,
@@ -51,6 +54,23 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.0).unwrap();
     }
+}
+fn assert_module_policy_denial(failure: LoadFailure, primary: Span) {
+    assert_eq!(failure.diagnostics.len(), 1);
+    let diagnostic = &failure.diagnostics[0];
+    assert_eq!((diagnostic.code, diagnostic.stage), ("E0005", "source"));
+    assert_eq!(
+        diagnostic.message,
+        "module source policy is not qualified on this host"
+    );
+    assert_eq!(diagnostic.primary, Some(primary));
+    assert!(diagnostic.secondary.is_empty());
+    assert!(diagnostic.notes.is_empty());
+    assert_eq!(failure.sources.files().len(), 1);
+    assert_eq!(failure.usage.modules, 1);
+    assert_eq!(failure.usage.probes, 0);
+    assert_eq!(failure.usage.directory_entries, 0);
+    assert_eq!(failure.usage.directory_name_units, 0);
 }
 fn collect<'a>(
     project: &'a ProjectSources,
@@ -1058,7 +1078,22 @@ mod output_layout_feasibility {
                 "use std::io::read_stdin as input; fn helper()->(){return;}",
             ),
         ]);
-        let project = fixture.load_current();
+        let result = ProjectSources::load_typed(
+            fixture.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        );
+        if !cfg!(target_os = "linux") {
+            assert_module_policy_denial(
+                result.unwrap_err(),
+                Span {
+                    file: SourceFileId(0),
+                    start: 4,
+                    end: 9,
+                },
+            );
+            return;
+        }
+        let project = result.unwrap();
         let owner = SourceOwner::project(&project);
         let root_ast = owner.ast(ModuleId(0)).unwrap();
         let child_ast = owner.ast(ModuleId(1)).unwrap();
@@ -1787,7 +1822,23 @@ fn bounded_stdout_private_borrowed_anchors_preserve_dependency_and_module_order(
             "use std::io::read_stdin as input; use std::io::WriteStatus as OutStatus; pub fn helper()->(){return;}"
         };
         let fixture = Fixture::new(&[("main.ox", root), ("first.ox", child), ("second.ox", "use std::io::write_stdout as again; use std::io::read_stdin as input; pub fn other()->(){return;}")]);
-        let project = fixture.load_output();
+        let result = ProjectSources::load_output_candidate(
+            fixture.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+            &mut Allocator::default(),
+        );
+        if !cfg!(target_os = "linux") {
+            assert_module_policy_denial(
+                result.unwrap_err(),
+                Span {
+                    file: SourceFileId(0),
+                    start: 8,
+                    end: 13,
+                },
+            );
+            continue;
+        }
+        let project = result.unwrap();
         let owner = SourceOwner::project(&project);
         let endpoint = |module: usize, import: usize| {
             let ast = owner.ast(ModuleId(module)).unwrap();
