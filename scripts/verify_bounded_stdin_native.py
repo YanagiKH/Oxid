@@ -27,7 +27,7 @@ require = controls.require
 REVIEWED_SOURCE_SHA256 = "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f"
 MANIFEST_PATH = "tests/fixtures/typed_project_source_binding/current-source.json"
 CORE_PATHS = ("src", "native", "Cargo.toml", "Cargo.lock", "build.rs")
-HELPER_FILES = ("controls.py", "read_retry_shim.c", "calibration_probe.c", "smoke.ox", "test_controller.py")
+HELPER_FILES = ("controls.py", "read_retry_shim.c", "calibration_probe.c", "smoke.txt", "test_controller.py")
 
 
 def source_manifest(repo, digest):

@@ -380,7 +380,7 @@ class Suite:
         self.record_artifact(target, {"source": "private parsed-source"})
         public = fresh(self.artifacts / "public-source")
         source = public / "main.ox"
-        source.write_bytes(read_file(HELPERS / "smoke.ox"))
+        source.write_bytes(read_file(HELPERS / "smoke.txt"))
         require(read_file(target / "main.ox").strip() == source.read_bytes().strip(),
                 "public and private smoke source differ")
         elf = public / "program"

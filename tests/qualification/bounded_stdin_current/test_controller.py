@@ -45,6 +45,9 @@ class SelectionTests(unittest.TestCase):
                 c.admit_child(subprocess.CompletedProcess([], 0, data, b""), c.RAW_TEST, markers)
 
     def test_fixed_roster_includes_reviewed_boundaries(self):
+        self.assertIn("smoke.txt", gate.HELPER_FILES)
+        self.assertEqual(list(c.HELPERS.glob("*.ox")), [])
+        self.assertTrue((c.HELPERS / "smoke.txt").is_file())
         self.assertEqual(c.ROSTER, {"raw": 24, "fuel": 25, "shapes": 15, "private-source": 6, "public-source": 7})
         self.assertEqual((len(c.RAW_CASES), len(c.FUEL_CASES), len(c.SHAPE_CASES), len(c.SOURCE_CASES)), (12, 25, 5, 6))
         self.assertEqual({row[1] for row in c.RAW_CASES}, {0, 3, 129, 1024})
