@@ -27,8 +27,11 @@ RUNNABLE_PACKAGE_FILES = (
 # existing legacy checks. Never exclude an entire fixture directory.
 TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
 # Effectful roots are checked here, but run only by dedicated verifiers that
-# supply their input explicitly. Shared modules remain registered once below.
-TYPED_CHECK_ONLY_FILES = ("fixtures/typed-expression-samples/stdin.ox",)
+# supply their input explicitly. Shared modules count only once below.
+TYPED_CHECK_ONLY_FILES = (
+    "fixtures/typed-expression-samples/stdin.ox",
+    "fixtures/typed-expression-samples/stack_stdin.ox",
+)
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
@@ -58,6 +61,26 @@ TYPED_PROJECTS = {
     ),
     "fixtures/typed-expression-samples/main.ox": (
         "fixtures/typed-expression-samples/main.ox",
+        "fixtures/typed-expression-samples/arena.ox",
+        "fixtures/typed-expression-samples/scanner.ox",
+        "fixtures/typed-expression-samples/parser.ox",
+        "fixtures/typed-expression-samples/evaluator.ox",
+    ),
+    "fixtures/typed-expression-samples/stack_main.ox": (
+        "fixtures/typed-expression-samples/stack_main.ox",
+        "fixtures/typed-expression-samples/stack_code.ox",
+        "fixtures/typed-expression-samples/lowering.ox",
+        "fixtures/typed-expression-samples/arena.ox",
+        "fixtures/typed-expression-samples/scanner.ox",
+        "fixtures/typed-expression-samples/parser.ox",
+        "fixtures/typed-expression-samples/evaluator.ox",
+    ),
+}
+# Only this exact pair of roots shares these exact modules. Neither roots nor
+# standalone/check-only files may overlap, and members are counted only once.
+TYPED_PROJECT_SHARED_MEMBERS = {
+    frozenset(("fixtures/typed-expression-samples/main.ox",
+               "fixtures/typed-expression-samples/stack_main.ox")): (
         "fixtures/typed-expression-samples/arena.ox",
         "fixtures/typed-expression-samples/scanner.ox",
         "fixtures/typed-expression-samples/parser.ox",
@@ -146,14 +169,25 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     if len(typed_check_only) != len(set(typed_check_only)) or typed_members & set(typed_check_only):
         raise RuntimeError("overlapping typed source inventories")
     typed_members.update(typed_check_only)
+    standalone_members = set(typed_members)
+    project_members = {}
+    for entries, shared in TYPED_PROJECT_SHARED_MEMBERS.items():
+        if (len(entries) != 2 or not entries <= TYPED_PROJECTS.keys()
+                or not shared or len(shared) != len(set(shared)) or entries & set(shared)):
+            raise RuntimeError("invalid explicit typed project sharing inventory")
     for entry, members in TYPED_PROJECTS.items():
         if entry not in members or len(members) != len(set(members)):
             raise RuntimeError("invalid explicit typed project inventory")
         paths = {root / relative for relative in members}
-        if paths & typed_members:
+        if paths & standalone_members:
             raise RuntimeError("overlapping typed source inventories")
+        for other_entry, other_paths in project_members.items():
+            shared = TYPED_PROJECT_SHARED_MEMBERS.get(frozenset((entry, other_entry)), ())
+            if (paths & other_paths) != {root / relative for relative in shared}:
+                raise RuntimeError("overlapping typed source inventories")
         typed_entries.append(root / entry)
         typed_members.update(paths)
+        project_members[entry] = paths
     if not typed_members <= available:
         raise RuntimeError("typed source fixture missing from discovery")
     if not fixture_data <= available:
