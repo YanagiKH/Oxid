@@ -5,7 +5,7 @@ use super::{
     type_storage::{self as storage, Kind},
 };
 use crate::frontend::{
-    declaration_index::{Access, PreparedTypeName},
+    declaration_index::{Access, NominalId, PreparedTypeName},
     diagnostic::Diagnostic,
     lexer::Token,
     owned_diagnostic,
@@ -106,6 +106,16 @@ impl TypedOwnedProgram<'_> {
     }
     pub(super) fn index(&self) -> &crate::frontend::declaration_index::DeclarationIndex<'_> {
         self.program.index()
+    }
+    /// Immutable snapshot of the fresh enum-bearing paid owner's current source
+    /// charge. Ordinary owners have no enum index; this grants no admission and
+    /// exposes neither the Cell nor a way to seed/reset it.
+    pub(super) fn source_storage_bytes(&self) -> Option<usize> {
+        #[cfg(test)]
+        if self.index().enum_count() != 0 {
+            return Some(self.program.type_storage_cell().get());
+        }
+        None
     }
     pub(super) fn records(&self) -> &[Record] {
         self.program.records()
@@ -235,9 +245,10 @@ fn type_name<'a>(
             program.prepare_name(record, span).map(TypeName::Record)
         }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => Ok(TypeName::Array(array)),
-        ValueTy::Owned(AggregateTy::Enum(_)) => {
-            Err(error("E0300", "enum source types are unavailable", span))
-        }
+        ValueTy::Owned(AggregateTy::Enum(enumeration)) => program
+            .query()
+            .prepare_nominal_type_name(NominalId::Enum(enumeration), span)
+            .map(TypeName::Record),
     }
 }
 fn mismatch(
@@ -1053,7 +1064,73 @@ pub(super) mod semantic_carriers {
         local_index: ExprId,
         otherwise: BodyBlockId,
     }
+    // Actual new enum branch controls. Coverage's [u64;4] is already paid per
+    // source match in T0, so it is deliberately not duplicated in this bank.
+    pub(in crate::frontend::oir::owned::source) struct EnumMatchCarriers {
+        validation_inputs: (
+            &'static ResolvedOwnedProgram<'static>,
+            &'static Function,
+            BindingId,
+            &'static [MatchArm],
+            &'static [Option<ParameterTy>],
+            Span,
+        ),
+        scrutinee_option: Option<ParameterTy>,
+        enumeration: crate::frontend::oir::owned_types::EnumId,
+        declaration_result:
+            Result<crate::frontend::declaration_index::EnumView<'static>, Box<Diagnostic>>,
+        declared: crate::frontend::declaration_index::EnumView<'static>,
+        variants: usize,
+        cursor: slice::Iter<'static, MatchArm>,
+        next: Option<&'static MatchArm>,
+        arm: &'static MatchArm,
+        bit: u64,
+        word: &'static mut u64,
+        variant_result:
+            Result<crate::frontend::declaration_index::VariantView<'static>, Box<Diagnostic>>,
+        variant: crate::frontend::declaration_index::VariantView<'static>,
+        shape: (Option<Ty>, Option<BindingId>),
+        payload: Ty,
+        binding: BindingId,
+        declaration: &'static Binding,
+        coverage_cursor: std::ops::Range<usize>,
+        coverage_variant: usize,
+        initialize_inputs: (
+            &'static ResolvedOwnedProgram<'static>,
+            &'static Function,
+            &'static MatchArm,
+            &'static mut [Option<ParameterTy>],
+        ),
+        initialized_binding: BindingId,
+        initialized_declaration: &'static Binding,
+        initialized_payload: Ty,
+        slot: &'static mut Option<ParameterTy>,
+        helper_returns_and_callers: [Result<(), Box<Diagnostic>>; 4],
+        next_arm: usize,
+        combined: FlowSummary,
+        previous: &'static MatchArm,
+        scheduled: &'static MatchArm,
+        resumed_statement: &'static Stmt,
+        resumed_arms: &'static Vec<MatchArm>,
+        statement_scrutinee: BindingId,
+        statement_arms: &'static Vec<MatchArm>,
+    }
+    pub(in crate::frontend::oir::owned::source) struct EnumConstructorCarriers {
+        variant_pattern: &'static VariantId,
+        payload_pattern: &'static Option<ExprId>,
+        declaration_result:
+            Result<crate::frontend::declaration_index::EnumView<'static>, Box<Diagnostic>>,
+        enumeration: crate::frontend::declaration_index::EnumView<'static>,
+        variant_result:
+            Result<crate::frontend::declaration_index::VariantView<'static>, Box<Diagnostic>>,
+        declared: crate::frontend::declaration_index::VariantView<'static>,
+        shape: (Option<ExprId>, Option<Ty>),
+        payload: ExprId,
+        expected: Ty,
+        actual: ValueTy,
+    }
     pub(in crate::frontend::oir::owned::source) struct BodyFrameSemanticCarriers {
+        enum_match: EnumMatchCarriers,
         program: &'static ResolvedOwnedProgram<'static>,
         function: &'static Function,
         signature: &'static Signature,
@@ -1128,6 +1205,7 @@ pub(super) mod semantic_carriers {
         returned: Result<ValueTy, Box<Diagnostic>>,
     }
     pub(in crate::frontend::oir::owned::source) struct ExpressionSemanticCarriers {
+        enum_constructor: EnumConstructorCarriers,
         program: &'static ResolvedOwnedProgram<'static>,
         function: &'static Function,
         id: ExprId,
@@ -1226,6 +1304,36 @@ pub(super) mod semantic_carriers {
     }
     #[test]
     fn c3_t1_explicit_semantic_role_schemas_cover_each_named_typed_field() {
+        roles!(EnumConstructorCarriers, 10, true;
+            variant_pattern: &'static VariantId, payload_pattern: &'static Option<ExprId>,
+            declaration_result: Result<crate::frontend::declaration_index::EnumView<'static>, Box<Diagnostic>>,
+            enumeration: crate::frontend::declaration_index::EnumView<'static>,
+            variant_result: Result<crate::frontend::declaration_index::VariantView<'static>, Box<Diagnostic>>,
+            declared: crate::frontend::declaration_index::VariantView<'static>,
+            shape: (Option<ExprId>, Option<Ty>), payload: ExprId, expected: Ty, actual: ValueTy,
+        );
+        roles!(EnumMatchCarriers, 33, true;
+            validation_inputs: (&'static ResolvedOwnedProgram<'static>, &'static Function,
+                BindingId, &'static [MatchArm], &'static [Option<ParameterTy>], Span),
+            scrutinee_option: Option<ParameterTy>,
+            enumeration: crate::frontend::oir::owned_types::EnumId,
+            declaration_result: Result<crate::frontend::declaration_index::EnumView<'static>, Box<Diagnostic>>,
+            declared: crate::frontend::declaration_index::EnumView<'static>, variants: usize,
+            cursor: slice::Iter<'static, MatchArm>, next: Option<&'static MatchArm>, arm: &'static MatchArm,
+            bit: u64, word: &'static mut u64,
+            variant_result: Result<crate::frontend::declaration_index::VariantView<'static>, Box<Diagnostic>>,
+            variant: crate::frontend::declaration_index::VariantView<'static>,
+            shape: (Option<Ty>, Option<BindingId>), payload: Ty, binding: BindingId,
+            declaration: &'static Binding, coverage_cursor: std::ops::Range<usize>, coverage_variant: usize,
+            initialize_inputs: (&'static ResolvedOwnedProgram<'static>, &'static Function,
+                &'static MatchArm, &'static mut [Option<ParameterTy>]),
+            initialized_binding: BindingId, initialized_declaration: &'static Binding,
+            initialized_payload: Ty, slot: &'static mut Option<ParameterTy>,
+            helper_returns_and_callers: [Result<(), Box<Diagnostic>>; 4], next_arm: usize,
+            combined: FlowSummary, previous: &'static MatchArm, scheduled: &'static MatchArm,
+            resumed_statement: &'static Stmt, resumed_arms: &'static Vec<MatchArm>,
+            statement_scrutinee: BindingId, statement_arms: &'static Vec<MatchArm>,
+        );
         roles!(ProjectionSemanticCarriers, 60, true;
             programs: [&'static ResolvedOwnedProgram<'static>; 2],
             functions: [&'static Function; 2],
@@ -1372,7 +1480,8 @@ pub(super) mod semantic_carriers {
             local_index: ExprId,
             otherwise: BodyBlockId,
         );
-        roles!(BodyFrameSemanticCarriers, 52, true;
+        roles!(BodyFrameSemanticCarriers, 53, true;
+            enum_match: EnumMatchCarriers,
             program: &'static ResolvedOwnedProgram<'static>,
             function: &'static Function,
             signature: &'static Signature,
@@ -1445,7 +1554,8 @@ pub(super) mod semantic_carriers {
             array_elements: &'static Vec<ExprId>,
             returned: Result<ValueTy, Box<Diagnostic>>,
         );
-        roles!(ExpressionSemanticCarriers, 39, true;
+        roles!(ExpressionSemanticCarriers, 40, true;
+            enum_constructor: EnumConstructorCarriers,
             program: &'static ResolvedOwnedProgram<'static>,
             function: &'static Function,
             id: ExprId,
@@ -1811,12 +1921,34 @@ fn expression_type(
         };
     }
     let ty = match &expr.kind {
-        ExprKind::ConstructEnum { .. } => {
-            return Err(error(
-                "E0300",
-                "enum source constructors are unavailable",
-                expr.span,
-            ));
+        ExprKind::ConstructEnum { variant, payload } => {
+            program
+                .work()
+                .debit(1, expr.span, "enum constructor type")?;
+            let enumeration = program.index().enum_view(variant.enumeration)?;
+            let declared = enumeration.variant(*variant)?;
+            match (*payload, declared.payload()) {
+                (None, None) => {}
+                (Some(payload), Some(expected)) => {
+                    let actual = child!(payload)?;
+                    if actual != scalar(expected) {
+                        return Err(mismatch(
+                            program,
+                            scalar(expected),
+                            actual,
+                            function.expressions[payload.0].span,
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(error(
+                        "E0300",
+                        "enum constructor payload shape differs from declaration",
+                        expr.span,
+                    ))
+                }
+            }
+            ValueTy::Owned(AggregateTy::Enum(variant.enumeration))
         }
         ExprKind::Bool(_) => scalar(Ty::Bool),
         ExprKind::I32(_) => scalar(Ty::I32),
@@ -2320,6 +2452,117 @@ fn initializer_type(
         paid,
     )
 }
+/// Independent typed coverage uses the scrutinee's actual nominal identity.
+/// The fixed bitmap is already charged per source Match by HirPlan.
+fn check_enum_match(
+    program: &ResolvedOwnedProgram<'_>,
+    function: &Function,
+    scrutinee: BindingId,
+    arms: &[MatchArm],
+    bindings: &[Option<ParameterTy>],
+    span: Span,
+) -> Result<(), Box<Diagnostic>> {
+    program.work().debit(1, span, "enum match type")?;
+    let Some(ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(enumeration)))) =
+        bindings.get(scrutinee.0).copied().flatten()
+    else {
+        return Err(error(
+            "E0300",
+            "match requires a by-value enum binding",
+            span,
+        ));
+    };
+    let declared = program.index().enum_view(enumeration)?;
+    let variants = declared.variant_count();
+    if variants == 0 || variants > 256 || arms.len() > 256 {
+        return Err(paid_state(span));
+    }
+    let mut covered = [0_u64; 4];
+    for arm in arms {
+        program.work().debit(1, arm.span, "enum match coverage")?;
+        if arm.variant.enumeration != enumeration {
+            return Err(error(
+                "E0300",
+                "match arm belongs to a different enum",
+                arm.span,
+            ));
+        }
+        if arm.variant.index >= variants {
+            return Err(paid_state(arm.span));
+        }
+        let bit = 1_u64 << (arm.variant.index % 64);
+        let word = &mut covered[arm.variant.index / 64];
+        if *word & bit != 0 {
+            return Err(error("E0300", "duplicate enum match arm", arm.span));
+        }
+        *word |= bit;
+        let variant = declared.variant(arm.variant)?;
+        match (variant.payload(), arm.binding) {
+            (None, None) => {}
+            (Some(payload), Some(binding)) => {
+                let declaration = function
+                    .bindings
+                    .get(binding.0)
+                    .ok_or_else(|| paid_state(arm.span))?;
+                if declaration.scope != arm.body
+                    || declaration.parameter_position.is_some()
+                    || declaration.annotation != Some(ValueTy::Scalar(payload))
+                {
+                    return Err(paid_state(arm.span));
+                }
+            }
+            _ => {
+                return Err(error(
+                    "E0300",
+                    "match arm payload binding differs from declaration",
+                    arm.span,
+                ))
+            }
+        }
+    }
+    for variant in 0..variants {
+        program.work().debit(1, span, "enum match exhaustiveness")?;
+        if covered[variant / 64] & (1_u64 << (variant % 64)) == 0 {
+            return Err(error("E0300", "enum match is not exhaustive", span));
+        }
+    }
+    Ok(())
+}
+
+fn initialize_enum_arm(
+    program: &ResolvedOwnedProgram<'_>,
+    function: &Function,
+    arm: &MatchArm,
+    bindings: &mut [Option<ParameterTy>],
+) -> Result<(), Box<Diagnostic>> {
+    program.work().debit(1, arm.span, "enum match arm type")?;
+    if let Some(binding) = arm.binding {
+        let declaration = function
+            .bindings
+            .get(binding.0)
+            .ok_or_else(|| paid_state(arm.span))?;
+        let Some(ValueTy::Scalar(payload)) = declaration.annotation else {
+            return Err(paid_state(arm.span));
+        };
+        let slot = bindings
+            .get_mut(binding.0)
+            .ok_or_else(|| paid_state(arm.span))?;
+        if slot.is_some() {
+            return Err(paid_state(arm.span));
+        }
+        *slot = Some(ParameterTy::Value(ValueTy::Scalar(payload)));
+        #[cfg(test)]
+        program
+            .work()
+            .observe(crate::frontend::declaration_index::Observation::Binding {
+                function: function.id,
+                origin: declaration.span,
+                ty: ParameterTy::Value(ValueTy::Scalar(payload)),
+            });
+    }
+    Ok(())
+}
+
 pub(super) enum TypeFrame {
     Block {
         block: BodyBlockId,
@@ -2341,6 +2584,14 @@ pub(super) enum TypeFrame {
         before: FlowSummary,
         active_loop: Option<LoopId>,
         body: BodyBlockId,
+    },
+    MatchContinue {
+        block: BodyBlockId,
+        index: usize,
+        before: FlowSummary,
+        active_loop: Option<LoopId>,
+        next_arm: usize,
+        combined: FlowSummary,
     },
 }
 fn check_body(
@@ -2519,6 +2770,52 @@ fn check_body(
                     active_loop,
                 )
             }
+            TypeFrame::MatchContinue {
+                block,
+                index,
+                before,
+                active_loop,
+                next_arm,
+                mut combined,
+            } => {
+                let statement = &function.blocks[block.0].body[index];
+                let StmtKind::Match { arms, .. } = &statement.kind else {
+                    return Err(paid_state(statement.span));
+                };
+                if next_arm != 0 {
+                    let previous = arms
+                        .get(next_arm - 1)
+                        .ok_or_else(|| paid_state(statement.span))?;
+                    combined = combined.union(
+                        block_flows[previous.body.0].ok_or_else(|| paid_state(previous.span))?,
+                    );
+                }
+                if let Some(arm) = arms.get(next_arm) {
+                    initialize_enum_arm(program, function, arm, &mut bindings)?;
+                    if let Some(paid) = paid.as_deref() {
+                        storage::room(&frames, paid.quota.counts.type_frames, arm.span)?;
+                    }
+                    frames.push(TypeFrame::MatchContinue {
+                        block,
+                        index,
+                        before,
+                        active_loop,
+                        next_arm: next_arm + 1,
+                        combined,
+                    });
+                    if let Some(paid) = paid.as_deref() {
+                        storage::room(&frames, paid.quota.counts.type_frames, arm.span)?;
+                    }
+                    frames.push(TypeFrame::Block {
+                        block: arm.body,
+                        index: 0,
+                        flow: FlowSummary::FALLTHROUGH,
+                        active_loop,
+                    });
+                    continue;
+                }
+                (block, index + 1, before.then(combined), active_loop)
+            }
             TypeFrame::WhileJoin {
                 block,
                 index,
@@ -2552,13 +2849,7 @@ fn check_body(
             ));
         }
         let root = match statement.kind {
-            StmtKind::Match { .. } => {
-                return Err(error(
-                    "E0300",
-                    "enum source matches are unavailable",
-                    statement.span,
-                ));
-            }
+            StmtKind::Match { .. } => None,
             StmtKind::Let { binding, init } => {
                 initializer_type(
                     program,
@@ -2613,12 +2904,30 @@ fn check_body(
             )?;
         }
         match statement.kind {
-            StmtKind::Match { .. } => {
-                return Err(error(
-                    "E0300",
-                    "enum source matches are unavailable",
+            StmtKind::Match {
+                scrutinee,
+                ref arms,
+            } => {
+                check_enum_match(
+                    program,
+                    function,
+                    scrutinee,
+                    arms,
+                    &bindings,
                     statement.span,
-                ));
+                )?;
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
+                frames.push(TypeFrame::MatchContinue {
+                    block,
+                    index,
+                    before: flow,
+                    active_loop,
+                    next_arm: 0,
+                    combined: FlowSummary::new(false, false, false, false),
+                });
+                continue;
             }
             StmtKind::Let { binding, init } => {
                 let actual = expressions[init.0].expect("typed initializer");

@@ -1373,7 +1373,7 @@ fn rich_parts() -> (Vec<Record>, Vec<Signature>, Vec<Function>, HirPlan) {
 }
 
 #[test]
-fn c3_t0_enum_values_references_annotations_constructors_and_match_remain_denied() {
+fn c3_t0_enum_values_are_counted_but_containment_references_and_empty_match_are_denied() {
     use crate::frontend::oir::owned_types::EnumId;
     let at = origin();
     let enumeration = AggregateTy::Enum(EnumId(0));
@@ -1401,26 +1401,25 @@ fn c3_t0_enum_values_references_annotations_constructors_and_match_remain_denied
             }
             _ => unreachable!(),
         }
-        assert_eq!(
-            prepare(
-                &records,
-                &signatures,
-                &functions,
-                &source,
-                &WorkMeter::default(),
-                at
-            )
-            .err()
-            .unwrap()
-            .code,
-            "E0500",
-            "mutant {mutant}"
+        let result = prepare(
+            &records,
+            &signatures,
+            &functions,
+            &source,
+            &WorkMeter::default(),
+            at,
         );
+        if matches!(mutant, 0 | 3) {
+            assert_eq!(result.err().unwrap().code, "E0500", "mutant {mutant}");
+        } else {
+            // Resource preparation permits by-value enum storage. It is not
+            // semantic typing, nominal identity proof, or owner admission.
+            assert!(result.is_ok(), "mutant {mutant}");
+        }
     }
 
-    // Isolate the Match-stage fence from canonical-tree rejection. There is one
-    // block and no arm children, so removing only that fence would otherwise
-    // admit the same resource counts as the ordinary-statement positive control.
+    // An empty match cannot certify arm preorder, even though its resource
+    // dimensions alone would match this ordinary-statement control.
     let signatures = [plain_signature()];
     let mut functions = [plain_function(0)];
     functions[0].blocks[0].body.insert(

@@ -1171,7 +1171,8 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
     assert_eq!(plan.fixed - old_fixed, delta);
     #[cfg(target_pointer_width = "64")]
     {
-        assert_eq!(delta, 872);
+        // MatchArms adds two usize slots to the returned resolver facts.
+        assert_eq!(delta, 888);
         assert_eq!(observation_components(), (11792, 320, 24, 24));
         assert_eq!(checker_only_components(), (33448, 1928, 24, 784, 88));
     }
@@ -1194,4 +1195,58 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
         "E0400"
     );
     assert_eq!(bytes, before);
+}
+
+#[test]
+fn bounded_enum_resolver_branch_charges_follow_actual_visit_dimensions() {
+    let at = sources("x").get(SourceFileId(0)).span(0, 1);
+    let empty = HirPlan::calculate(HirCounts::default(), at).unwrap();
+    for visits in [0, 1, 64] {
+        // Arithmetic-only dimension controls, not manufactured source owners.
+        let expressions = HirPlan::calculate(
+            HirCounts {
+                max_expression_depth: visits,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(
+            expressions.resolver_scratch - empty.resolver_scratch,
+            visits * resolve::enum_expression_carrier_bytes()
+        );
+        let matches = HirPlan::calculate(
+            HirCounts {
+                matches: visits,
+                ..HirCounts::default()
+            },
+            at,
+        )
+        .unwrap();
+        assert_eq!(
+            matches.resolver_scratch - empty.resolver_scratch,
+            visits * resolve::enum_match_carrier_bytes()
+        );
+    }
+    let arms = HirPlan::calculate(
+        HirCounts {
+            match_arms: 256,
+            ..HirCounts::default()
+        },
+        at,
+    )
+    .unwrap();
+    assert_eq!(arms.resolved - empty.resolved, 256 * size_of::<MatchArm>());
+    assert_eq!(arms.resolver_scratch, empty.resolver_scratch);
+    assert_eq!(MAX_HIR_BYTES, 64 * 1024 * 1024);
+    let remainder = MAX_HIR_BYTES - arms.total;
+    assert_eq!(
+        arms.with_dynamic(remainder - 1, at).unwrap(),
+        MAX_HIR_BYTES - 1
+    );
+    assert_eq!(arms.with_dynamic(remainder, at).unwrap(), MAX_HIR_BYTES);
+    assert_eq!(
+        arms.with_dynamic(remainder + 1, at).unwrap_err().code,
+        "E0400"
+    );
 }

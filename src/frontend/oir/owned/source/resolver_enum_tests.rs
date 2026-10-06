@@ -1,9 +1,12 @@
 //! Private resolver semantics and independent storage controls, never executable admission.
 use super::*;
-use crate::frontend::{lexer, parser};
+use crate::frontend::{
+    lexer, parser,
+    project::{ProjectLimits, ProjectSources},
+};
 use std::mem::{align_of, size_of};
 
-fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
+pub(super) fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
     let mut sources = SourceMap::new();
     let file = sources.add("resolver-enum.ox".into(), text.into());
     let source = sources.get(file);
@@ -17,6 +20,25 @@ fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
     )
     .unwrap()
     .0;
+    if ast.uses_project_syntax() {
+        // Absolute paths need an honestly loaded project owner. The original
+        // single-file adapter correctly rejects project syntax; keep that fence.
+        let fixture = ProjectFixture::new(&[("main.ox", text)]);
+        let project = fixture.candidate();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = index::collect_enum_candidate(
+            SourceOwner::project(&project),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        action(&index);
+        return;
+    }
     let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
     let work = WorkMeter::default();
     let mut allocator = Allocator::default();
@@ -25,6 +47,45 @@ fn with_index(text: &str, action: impl FnOnce(&DeclarationIndex<'_>)) {
         .finish(&work, &mut allocator)
         .unwrap();
     action(&index);
+}
+
+struct ProjectFixture(std::path::PathBuf);
+impl ProjectFixture {
+    fn new(files: &[(&str, &str)]) -> Self {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "oxid-resolver-enum-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&root).unwrap();
+        for (name, text) in files {
+            let path = root.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        Self(root)
+    }
+    fn candidate(&self) -> ProjectSources {
+        ProjectSources::load_enum_index_candidate(
+            self.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap()
+    }
+    fn ordinary(&self) -> ProjectSources {
+        ProjectSources::load_project_candidate(
+            self.0.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        )
+        .unwrap()
+    }
+}
+impl Drop for ProjectFixture {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).unwrap();
+    }
 }
 
 const POSITIVE: &str = "
@@ -364,6 +425,12 @@ fn bounded_enum_resolver_actual_changed_carrier_layouts() {
         index::EnumView<'_>, Result<index::EnumView<'_>, Box<Diagnostic>>,
         index::VariantView<'_>, Result<index::VariantView<'_>, Box<Diagnostic>>,
         Expr, Stmt, Function, ResolvedOwnedProgram<'_>);
+    layout!(
+        (Option<Ty>, Option<&[ast::Argument]>), Result<ExprId, Box<Diagnostic>>,
+        ast::ExprId, &ast::ExprId, Option<&Vec<ast::Argument>>, BindingId,
+        crate::frontend::oir::owned_types::EnumId, Span,
+        &Vec<ast::MatchArmSyntax>, &mut Vec<MatchArm>
+    );
     println!(
         "ENUM_RESOLVER_CHARGES expression={} match={}",
         enum_expression_carrier_bytes(),
@@ -376,4 +443,136 @@ fn bounded_enum_resolver_actual_changed_carrier_layouts() {
         size_of::<MatchArm>()
     );
     assert!(enum_match_carrier_bytes() >= size_of::<MatchBuilder>());
+}
+
+#[test]
+fn bounded_enum_resolver_zero_enum_qualified_calls_preserve_the_legacy_route_exactly() {
+    for text in [
+        "fn get()->i32{return 7;} fn main()->i32{return crate::get();}",
+        "fn first()->i32{return 1;} fn pair(a:i32,b:i32)->i32{return a+b;} fn main()->i32{return crate::pair(crate::first(),crate::first());}",
+        "struct R{x:i32} fn get(p:&R)->i32{return p.x;} fn forward(p:&R)->i32{return crate::get(&*p);} fn main()->i32{let r=R{x:7};return crate::forward(&r);}",
+        "fn main()->i32{return crate::missing(unknown_argument);}",
+        "fn get(a:i32,b:i32)->i32{return a+b;} fn main()->i32{return crate::get(first_missing,second_missing);}",
+    ] {
+        let fixture = ProjectFixture::new(&[("main.ox", text)]);
+        let ordinary = fixture.ordinary();
+        let candidate = fixture.candidate();
+        let ordinary_work = WorkMeter::default();
+        let candidate_work = WorkMeter::default();
+        let legacy = index::collect_originals(SourceOwner::project(&ordinary), IndexLimits::default(), &ordinary_work, &mut Allocator::default())
+            .unwrap().finish(&ordinary_work, &mut Allocator::default()).unwrap();
+        let candidate = index::collect_enum_candidate(SourceOwner::project(&candidate), IndexLimits::default(), &candidate_work, &mut Allocator::default())
+            .unwrap().finish(&candidate_work, &mut Allocator::default()).unwrap();
+        assert_eq!(candidate.enum_count(), 0);
+        let snapshot = |index: &DeclarationIndex<'_>, limit| {
+            let work = WorkMeter::new(limit);
+            work.enable_observation();
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(32).unwrap();
+            let result = resolve_index_impl(index, &work, &mut allocator, None);
+            (
+                format!("{result:?}"),
+                format!("{:?}", work.events.borrow()),
+                format!("{:?}", work.observations.borrow()),
+                format!("{:?}", allocator.trace),
+                work.used(), allocator.attempts,
+            )
+        };
+        let old = snapshot(&legacy, IndexLimits::default().work);
+        let new = snapshot(&candidate, IndexLimits::default().work);
+        assert_eq!(old, new, "{text}");
+        for limit in [old.4.saturating_sub(1), old.4, old.4 + 1] {
+            assert_eq!(snapshot(&legacy, limit), snapshot(&candidate, limit), "limit={limit}: {text}");
+        }
+    }
+}
+
+#[test]
+fn bounded_enum_resolver_project_aliases_and_signature_privacy_use_nominal_index() {
+    let fixture = ProjectFixture::new(&[
+        ("main.ox", "mod tokens;use crate::tokens::Token as Token;fn main()->i32{let value:Token=Token::Integer(7);match value{Token::Integer(n)=>{return n;},crate::tokens::Token::End=>{return 0;}}}"),
+        ("tokens.ox", "pub enum Token{Integer(i32),End}"),
+    ]);
+    let project = fixture.candidate();
+    let work = WorkMeter::default();
+    let index = index::collect_enum_candidate(
+        SourceOwner::project(&project),
+        IndexLimits::default(),
+        &work,
+        &mut Allocator::default(),
+    )
+    .unwrap()
+    .finish(&work, &mut Allocator::default())
+    .unwrap();
+    let facts =
+        probe_enum_resolver_storage(&index, &WorkMeter::default(), &mut Allocator::default())
+            .unwrap()
+            .unwrap();
+    assert_eq!(facts.retained_counts[Kind::MatchArms as usize], 2);
+
+    for (source, code, expected) in [
+        (
+            "enum E{V} pub fn expose(value:E)->(){return;}",
+            "E0207",
+            "E",
+        ),
+        ("enum E{V} pub fn expose()->E{return E::V;}", "E0207", "E"),
+        ("enum E{V} struct R{value:E}", "E0300", "value:E"),
+    ] {
+        with_index(source, |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(64).unwrap();
+            let errors = probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator)
+                .unwrap_err();
+            assert_eq!(errors[0].code, code);
+            assert_eq!(
+                index.sources().text(errors[0].primary.unwrap()).unwrap(),
+                expected
+            );
+            assert!(!allocator
+                .trace
+                .iter()
+                .any(|event| event.kind == "paid HIR functions"));
+        });
+    }
+}
+
+#[test]
+fn bounded_enum_resolver_match_work_boundaries_fail_before_arm_visits() {
+    with_index("enum E{A(i32),B} fn take(token:E)->i32{match token{E::A(n)=>{return n;},E::B=>{return 0;}}}", |index| {
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let baseline = probe_enum_resolver_storage(index, &work, &mut Allocator::default()).unwrap().unwrap();
+        let mut before = 0;
+        let mut boundaries = Vec::new();
+        for event in work.events.borrow().iter() {
+            if matches!(event.operation, "enum resolve arm" | "enum resolve arm entry") {
+                boundaries.push((before, event.operation, event.origin));
+            }
+            before += event.units;
+        }
+        assert_eq!(boundaries.len(), 4);
+        for (limit, operation, origin) in boundaries {
+            let limited = WorkMeter::new(limit);
+            limited.enable_observation();
+            let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                let errors = probe_enum_resolver_storage(index, &limited, &mut Allocator::default()).unwrap_err();
+                assert!(errors.iter().any(|error| error.code == "E0400" && error.primary == Some(origin)));
+                assert!(!limited.events.borrow().iter().any(|event| event.operation == operation && event.origin == origin));
+                drop(errors);
+                // Observation storage belongs to the test; release it inside
+                // the measurement before checking production cleanup.
+                limited.events.borrow_mut().clear();
+                limited.events.borrow_mut().shrink_to_fit();
+                limited.observations.borrow_mut().clear();
+                limited.observations.borrow_mut().shrink_to_fit();
+            });
+            assert_eq!(live, 0);
+        }
+        for limit in [work.used() - 1, work.used(), work.used() + 1] {
+            let actual = probe_enum_resolver_storage(index, &WorkMeter::new(limit), &mut Allocator::default());
+            if limit < work.used() { assert!(actual.is_err()); }
+            else { assert_eq!(actual.unwrap().unwrap(), baseline); }
+        }
+    });
 }

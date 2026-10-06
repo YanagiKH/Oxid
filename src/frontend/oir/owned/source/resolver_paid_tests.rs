@@ -681,7 +681,7 @@ fn c3a_paid_resolver_enum_branches_preserve_payload_and_scrutinee_diagnostics() 
                 .any(|event| event.kind == "paid HIR arguments"));
         });
     }
-    with_index(
+    super::enum_semantic_tests::with_index(
         "enum E{V} fn helper()->i32{return 0;} fn main()->i32{return crate::helper();}",
         |index| {
             let mut allocator = Allocator::default();
@@ -825,17 +825,19 @@ fn c3a_paid_resolver_reports_checked_attempt_delta_without_resetting_allocator()
 fn c3a_paid_resolver_final_work_failures_drop_parts_constructed_inside_heap_window() {
     with_index("enum Unused{V} fn main()->i32{return 0;}", |index| {
         // Independently: preflight4 + i32 result query7 + local recount3 +
-        // name inventory1 =15; completed-HIR inventory13 + reconcile17 =45.
+        // name inventory1 =15; completed-HIR inventory13 + reconcile18 =46.
+        // The real MatchArms kind adds exactly one scalar reconcile debit,
+        // even when its row/capacity quota is zero; no synthetic work padding.
         // Every chosen failure occurs after all 13 exact reserves succeeded.
-        for limit in [15, 20, 28, 44, 45, 46] {
+        for limit in [15, 20, 28, 45, 46, 47] {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(13).unwrap();
             let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
                 let work = WorkMeter::new(limit);
                 let result = probe_enum_resolver_storage(index, &work, &mut allocator);
-                assert_eq!(result.is_ok(), limit >= 45);
-                assert_eq!(work.used(), limit.min(45));
-                if limit < 45 {
+                assert_eq!(result.is_ok(), limit >= 46);
+                assert_eq!(work.used(), limit.min(46));
+                if limit < 46 {
                     assert_eq!(result.as_ref().unwrap_err()[0].code, "E0400");
                 } else {
                     assert_eq!(
@@ -1150,7 +1152,9 @@ fn c3_t1_inhabited_denied_selector_prices_its_complete_return_representation() {
             denied_type_probe_carrier_bytes(),
             delta
         ),
-        (112, 24, 896, 984, 872)
+        // One new retained count and one new capacity slot add 16 bytes
+        // to resolver facts and every complete enclosing inhabited payload.
+        (112, 24, 912, 1000, 888)
     );
     println!("C3_T1_DENIED_SELECTOR_LAYOUT fields={} typed_bytes={} carrier={} return={} old_carrier={} fixed_delta={}",
         roles.len(), occupied, denied_type_probe_carrier_bytes(), size_of::<Returned>(), old_carrier, delta);

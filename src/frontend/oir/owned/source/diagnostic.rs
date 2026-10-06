@@ -67,10 +67,18 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         && facts.role == Role::BorrowAuthority
         && facts.counterpart.is_none()
         && facts.requested_borrow.is_some();
+    let enum_match = matches!(
+        (facts.operation, facts.role),
+        (Op::MatchDispatch, Role::MatchSource) | (Op::ConsumeVariant, Role::SourceConsume)
+    ) && facts.counterpart.is_none()
+        && facts.requested_borrow.is_none()
+        && matches!(facts.subject, DeniedSubject::Owner(owner)
+            if named(owner) && matches!(owner.aggregate(), AggregateTy::Enum(_)));
     match kind {
         OwnedFailureKind::Ownership(Violation::Unavailable)
             if facts.state == ObservedState::Moved
                 && (named_move
+                    || enum_match
                     || ((field || array || borrow)
                         && matches!(facts.subject, DeniedSubject::Owner(owner) if named(owner)))) =>
         {

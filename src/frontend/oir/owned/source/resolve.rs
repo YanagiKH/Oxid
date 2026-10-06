@@ -2374,6 +2374,13 @@ pub(super) const fn enum_expression_carrier_bytes() -> usize {
         + size_of::<VariantId>()
         + size_of::<DefId>()
         + size_of::<&Vec<ast::Argument>>()
+        + size_of::<Option<&Vec<ast::Argument>>>()
+        // The match discriminant tuple is its own complete temporary, in
+        // addition to the separately received payload/slice values above.
+        + size_of::<(Option<Ty>, Option<&[ast::Argument]>)>()
+        + size_of::<Result<ExprId, Box<Diagnostic>>>()
+        + size_of::<&ast::ExprId>()
+        + size_of::<ast::ExprId>()
 }
 /// A complete actual builder, the shape loop and the later incremental arm
 /// entry's borrowed row/view receivers. The phases do not recursively call one
@@ -2382,6 +2389,15 @@ pub(super) const fn enum_expression_carrier_bytes() -> usize {
 pub(super) const fn enum_match_carrier_bytes() -> usize {
     use std::mem::size_of;
     size_of::<MatchBuilder>()
+        // Row construction and the local scrutinee copy precede their moves
+        // into admitted retained carriers; do not assume compiler slot reuse.
+        + size_of::<MatchArm>()
+        + size_of::<BindingId>()
+        + size_of::<crate::frontend::oir::owned_types::EnumId>()
+        + size_of::<Span>()
+        + size_of::<&Vec<ast::MatchArmSyntax>>()
+        + size_of::<&mut Vec<MatchArm>>()
+        + size_of::<ResolveFrame>()
         + size_of::<std::slice::Iter<'_, ast::MatchArmSyntax>>()
         + size_of::<Option<&ast::MatchArmSyntax>>()
         + 2 * size_of::<&ast::MatchArmSyntax>()

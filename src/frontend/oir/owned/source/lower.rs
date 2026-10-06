@@ -70,8 +70,21 @@ impl<T: Copy, const N: usize> Stack<T, N> {
         self.len.checked_sub(1).and_then(|i| self.values[i])
     }
 }
+/// One pending sibling, regardless of arm count. The cursor retains only the
+/// source location and contiguous raw entry base; it owns no arm/block cache.
+#[derive(Clone, Copy)]
+struct MatchCursor {
+    block: source::BodyBlockId,
+    statement: usize,
+    match_id: MatchId,
+    next: usize,
+    entry_base: BlockId,
+    join: Option<BlockId>,
+    prefix: usize,
+}
 #[derive(Clone, Copy)]
 enum BodyFrame {
+    MatchArm(MatchCursor),
     Body {
         block: source::BodyBlockId,
         next: usize,
@@ -173,7 +186,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                     references: budget::reserve(c.references)?,
                     calls: budget::reserve(c.calls)?,
                     loans: budget::reserve(c.loans)?,
-                    matches: Vec::new(),
+                    matches: if c.matches == 0 {
+                        // Preserve the ordinary zero-enum reservation sequence.
+                        Vec::new()
+                    } else {
+                        budget::reserve(c.matches)?
+                    },
                     entry: BlockId(0),
                     blocks: budget::reserve(c.blocks)?,
                 },
@@ -333,6 +351,8 @@ impl<'a, 'b> Walk<'a, 'b> {
                 budget::add(c.composite_fields, c.projection_fields)?,
             )?,
         )?;
+        let expanded = budget::add(expanded, budget::add(c.matches, c.match_arms)?)?;
+        budget::cap(c.max_match_arms, 256, "match arms")?;
         budget::cap(expanded, MAX_ASSIGNMENTS, "expanded ownership events")?;
         budget::cap(
             budget::function_bytes(c)?,
@@ -562,19 +582,47 @@ impl<'a, 'b> Walk<'a, 'b> {
         Ok(())
     }
     fn close(&mut self, kind: OwnedTerminatorKind, span: Span, cause: Span) -> Result<()> {
+        let edges = match kind {
+            OwnedTerminatorKind::Branch { .. } => 2,
+            OwnedTerminatorKind::Goto(_) | OwnedTerminatorKind::Invoke { .. } => 1,
+            // Only close_match has the borrowed source arm count needed by all
+            // passes. Never infer this from an emission-only descriptor table.
+            OwnedTerminatorKind::MatchDispatch { .. } => return Err(invariant(span)),
+            _ => 0,
+        };
+        self.close_with_edges(kind, edges, span, cause)
+    }
+    fn close_match(
+        &mut self,
+        match_id: MatchId,
+        arm: usize,
+        arms: usize,
+        span: Span,
+    ) -> Result<()> {
+        require(arm < arms && arms <= 256, span)?;
+        let edges = budget::add(1, usize::from(budget::add(arm, 1)? < arms))?;
+        self.close_with_edges(
+            OwnedTerminatorKind::MatchDispatch { match_id, arm },
+            edges,
+            span,
+            span,
+        )
+    }
+    fn close_with_edges(
+        &mut self,
+        kind: OwnedTerminatorKind,
+        edges: usize,
+        span: Span,
+        cause: Span,
+    ) -> Result<()> {
         let block = self.current.take().ok_or_else(|| invariant(span))?;
-        self.counts.edges = budget::add(
-            self.counts.edges,
-            match kind {
-                OwnedTerminatorKind::Branch { .. } => 2,
-                OwnedTerminatorKind::Goto(_) | OwnedTerminatorKind::Invoke { .. } => 1,
-                _ => 0,
-            },
-        )?;
+        self.counts.edges = budget::add(self.counts.edges, edges)?;
         self.counts.diagnostic_origins = budget::add(self.counts.diagnostic_origins, 1)?;
         if matches!(
             kind,
-            OwnedTerminatorKind::Invoke { .. } | OwnedTerminatorKind::ReturnOwned(_)
+            OwnedTerminatorKind::Invoke { .. }
+                | OwnedTerminatorKind::ReturnOwned(_)
+                | OwnedTerminatorKind::MatchDispatch { .. }
         ) {
             self.counts.ownership_active = true;
         }
@@ -645,9 +693,6 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
-                        source::ExprKind::ConstructEnum { .. } => {
-                            return Err(invariant(expression.span))
-                        }
                         source::ExprKind::ArrayLiteral { .. } => frames.push(
                             ExprFrame::ArrayLiteral {
                                 expression: id,
@@ -673,6 +718,11 @@ impl<'a, 'b> Walk<'a, 'b> {
                         other => {
                             frames.push(ExprFrame::Emit(id), cause)?;
                             match other {
+                                source::ExprKind::ConstructEnum { payload, .. } => {
+                                    if let Some(child) = payload {
+                                        frames.push(ExprFrame::Visit(*child), cause)?;
+                                    }
+                                }
                                 source::ExprKind::Group(inner)
                                 | source::ExprKind::Negate { operand: inner, .. }
                                 | source::ExprKind::Not { operand: inner, .. }
@@ -1083,7 +1133,29 @@ impl<'a, 'b> Walk<'a, 'b> {
         let span = expression.span;
         if let ValueTy::Owned(record) = self.view.expression_ty(id) {
             match expression.kind {
-                source::ExprKind::ConstructEnum { .. } => return Err(invariant(span)),
+                source::ExprKind::ConstructEnum { variant, payload } => {
+                    require(record == AggregateTy::Enum(variant.enumeration), span)?;
+                    // Complete the scalar child before the enum lifetime begins.
+                    let payload = payload.map(|child| self.operand(child)).transpose()?;
+                    let destination = self.owner(record, OwnerKind::Temporary, span)?;
+                    self.statement(
+                        OwnedInstruction::StorageLive(destination),
+                        span,
+                        span,
+                        cause,
+                    )?;
+                    self.statement(
+                        OwnedInstruction::ConstructEnum {
+                            destination,
+                            variant,
+                            payload,
+                        },
+                        span,
+                        span,
+                        cause,
+                    )?;
+                    self.set_owned(id, destination);
+                }
                 source::ExprKind::ArrayLiteral { .. }
                 | source::ExprKind::IndexRead { .. }
                 | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
@@ -1338,6 +1410,92 @@ impl<'a, 'b> Walk<'a, 'b> {
         })
     }
 
+    fn start_match(
+        &mut self,
+        block: source::BodyBlockId,
+        statement: usize,
+        scrutinee: source::BindingId,
+        arms: &[source::MatchArm],
+        span: Span,
+    ) -> Result<MatchCursor> {
+        require(!arms.is_empty(), span)?;
+        budget::cap(arms.len(), 256, "match arms")?;
+        let BindingLocation::Owner(owner) = self.location(scrutinee, span)? else {
+            return Err(invariant(span));
+        };
+        require(
+            matches!(
+                self.view.binding_ty(scrutinee),
+                ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_)))
+            ),
+            span,
+        )?;
+        let match_id = MatchId(self.counts.matches);
+        self.counts.matches = budget::add(self.counts.matches, 1)?;
+        self.counts.match_arms = budget::add(self.counts.match_arms, arms.len())?;
+        self.counts.max_match_arms = self.counts.max_match_arms.max(arms.len());
+        self.counts.ownership_active = true;
+        self.check_counts()?;
+
+        // Always bridge to fresh dispatch blocks, including at an outer arm's
+        // first source statement. Raw dispatch/entry roles must stay disjoint.
+        let dispatch_base = BlockId(self.counts.blocks);
+        for _ in arms {
+            self.block(span)?;
+        }
+        let entry_base = BlockId(self.counts.blocks);
+        for _ in arms {
+            self.block(span)?;
+        }
+        let join = if arms
+            .iter()
+            .any(|arm| self.view.block_flow(arm.body).falls_through())
+        {
+            Some(self.block(span)?)
+        } else {
+            None
+        };
+        if let Some(out) = &mut self.output {
+            let mut rows = budget::reserve(arms.len())?;
+            for (ordinal, arm) in arms.iter().enumerate() {
+                budget::append(
+                    &mut rows,
+                    MatchArm {
+                        variant: arm.variant,
+                        dispatch: BlockId(budget::add(dispatch_base.0, ordinal)?),
+                        entry: BlockId(budget::add(entry_base.0, ordinal)?),
+                    },
+                    arms.len(),
+                    span,
+                )?;
+            }
+            budget::append(
+                &mut out.raw.matches,
+                MatchDecl {
+                    source: owner,
+                    arms: rows,
+                    span,
+                },
+                out.expected.matches,
+                span,
+            )?;
+        }
+        self.close(OwnedTerminatorKind::Goto(dispatch_base), span, span)?;
+        for arm in 0..arms.len() {
+            self.enter(Some(BlockId(budget::add(dispatch_base.0, arm)?)), span)?;
+            self.close_match(match_id, arm, arms.len(), span)?;
+        }
+        Ok(MatchCursor {
+            block,
+            statement,
+            match_id,
+            next: 0,
+            entry_base,
+            join,
+            prefix: self.active,
+        })
+    }
+
     fn body(&mut self) -> Result<()> {
         let f = self.view.hir();
         let span = self.view.signature().span;
@@ -1352,6 +1510,70 @@ impl<'a, 'b> Walk<'a, 'b> {
         )?;
         while let Some(frame) = frames.pop() {
             let (block, index, statement) = match frame {
+                BodyFrame::MatchArm(mut cursor) => {
+                    let statement = &f.blocks[cursor.block.0].body[cursor.statement];
+                    let source::StmtKind::Match { arms, .. } = &statement.kind else {
+                        return Err(invariant(statement.span));
+                    };
+                    let match_span = statement.span;
+                    self.restore(cursor.prefix, match_span)?;
+                    let Some(arm) = arms.get(cursor.next) else {
+                        require(cursor.next == arms.len(), match_span)?;
+                        self.enter(cursor.join, match_span)?;
+                        continue;
+                    };
+                    self.enter(
+                        Some(BlockId(budget::add(cursor.entry_base.0, cursor.next)?)),
+                        match_span,
+                    )?;
+                    let destination = if let Some(binding) = arm.binding {
+                        let declaration = &f.bindings[binding.0];
+                        require(
+                            !declaration.mutable
+                                && declaration.parameter_position.is_none()
+                                && declaration.scope == arm.body,
+                            match_span,
+                        )?;
+                        let BindingLocation::ScalarValue(local) =
+                            self.location(binding, match_span)?
+                        else {
+                            return Err(invariant(match_span));
+                        };
+                        Some(local)
+                    } else {
+                        None
+                    };
+                    self.statement(
+                        OwnedInstruction::ConsumeVariant {
+                            match_id: cursor.match_id,
+                            arm: cursor.next,
+                            destination,
+                        },
+                        match_span,
+                        match_span,
+                        match_span,
+                    )?;
+                    cursor.next = budget::add(cursor.next, 1)?;
+                    // Only this one sibling continuation is retained. The
+                    // ordinary Finish restores arm-local lexical ownership.
+                    frames.push(BodyFrame::MatchArm(cursor), match_span)?;
+                    frames.push(
+                        BodyFrame::Finish {
+                            end: f.blocks[arm.body.0].end,
+                            join: cursor.join,
+                            prefix: cursor.prefix,
+                        },
+                        match_span,
+                    )?;
+                    frames.push(
+                        BodyFrame::Body {
+                            block: arm.body,
+                            next: 0,
+                        },
+                        match_span,
+                    )?;
+                    continue;
+                }
                 BodyFrame::Body { block, next } => {
                     let Some(statement) = f.blocks[block.0].body.get(next) else {
                         continue;
@@ -1509,7 +1731,13 @@ impl<'a, 'b> Walk<'a, 'b> {
                 self.expression(root, s)?;
             }
             match statement.kind {
-                source::StmtKind::Match { .. } => return Err(invariant(s)),
+                source::StmtKind::Match {
+                    scrutinee,
+                    ref arms,
+                } => {
+                    let cursor = self.start_match(block, index, scrutinee, arms, s)?;
+                    frames.push(BodyFrame::MatchArm(cursor), s)?;
+                }
                 source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
@@ -1835,6 +2063,51 @@ pub(super) fn lower_with_limits(
     limits: budget::Limits,
 ) -> Result<RawOwnedProgram> {
     let expected = budget::preflight(typed, limits)?;
+    let enum_count = typed.index().enum_count();
+    let mut enums = if enum_count == 0 {
+        Vec::new()
+    } else {
+        budget::reserve(enum_count)?
+    };
+    for ordinal in 0..enum_count {
+        let id = EnumId(ordinal);
+        let enumeration = typed
+            .index()
+            .enum_view(id)
+            .map_err(|_| invariant(typed.index().sources().eof()))?;
+        let mut variants = budget::reserve(enumeration.variant_count())?;
+        for index in 0..enumeration.variant_count() {
+            let id = VariantId {
+                enumeration: id,
+                index,
+            };
+            let variant = enumeration
+                .variant(id)
+                .map_err(|_| invariant(enumeration.name_span()))?;
+            budget::append(
+                &mut variants,
+                RawVariantDecl {
+                    id,
+                    payload: variant
+                        .payload()
+                        .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty))),
+                    span: variant.name_span(),
+                },
+                enumeration.variant_count(),
+                variant.name_span(),
+            )?;
+        }
+        budget::append(
+            &mut enums,
+            RawEnumDecl {
+                id,
+                span: enumeration.name_span(),
+                variants,
+            },
+            enum_count,
+            enumeration.name_span(),
+        )?;
+    }
     let mut records = budget::reserve(typed.records().len())?;
     for record in typed.records() {
         let mut fields = budget::reserve(record.fields.len())?;
@@ -1866,6 +2139,13 @@ pub(super) fn lower_with_limits(
         size_of::<RawOwnedProgram>(),
         budget::mul(records.len(), size_of::<RawRecordDecl>())?,
     )?;
+    bytes = budget::add(bytes, budget::mul(enums.len(), size_of::<RawEnumDecl>())?)?;
+    for enumeration in &enums {
+        bytes = budget::add(
+            bytes,
+            budget::mul(enumeration.variants.len(), size_of::<RawVariantDecl>())?,
+        )?;
+    }
     for r in &records {
         bytes = budget::add(
             bytes,
@@ -1915,10 +2195,17 @@ pub(super) fn lower_with_limits(
                 && f.references.len() == count.references
                 && f.calls.len() == count.calls
                 && f.loans.len() == count.loans
-                && f.matches.is_empty()
-                && count.matches == 0
-                && count.match_arms == 0
-                && count.max_match_arms == 0
+                && f.matches.len() == count.matches
+                && f.matches
+                    .iter()
+                    .try_fold(0usize, |total, item| budget::add(total, item.arms.len()))?
+                    == count.match_arms
+                && f.matches
+                    .iter()
+                    .map(|item| item.arms.len())
+                    .max()
+                    .unwrap_or(0)
+                    == count.max_match_arms
                 && f.blocks.len() == count.blocks,
             view.signature().span,
         )?;
@@ -1943,7 +2230,7 @@ pub(super) fn lower_with_limits(
         return Err(error);
     }
     Ok(RawOwnedProgram {
-        enums: vec![],
+        enums,
         records,
         functions,
     })
@@ -2021,4 +2308,125 @@ pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
         size_of::<Stack<LoopTargets, LOOP_FRAMES>>(),
         size_of::<TypedOwnedFunction<'_>>(),
     ]
+}
+
+/// Actual standalone lower invocation roles absent from the paid typed seed.
+/// The output/cache holders inside Walk and all Stack storage are deliberately
+/// excluded: fixed_carrier_bytes already charges their complete enclosing sizes.
+/// Nested raw payload is separately priced by source::budget::function_bytes.
+#[allow(dead_code)]
+struct InvocationControls {
+    // Caller-held preflight/count results and the standalone per-block cache
+    // header coexist with Walk. Result envelopes include their inline payload.
+    seed: Option<usize>,
+    preflight_return: Result<budget::Usage>,
+    preflight_usage: budget::Usage,
+    count_return: Result<Counts>,
+    emission_count: Counts,
+    block_count_return: Result<Counts>,
+    block_counts: Vec<usize>,
+    // Source enum declaration iteration, construction and value transports.
+    enum_usage: EnumUsage,
+    enum_usage_return: std::result::Result<EnumUsage, EnumDeclarationError>,
+    enum_counts: crate::frontend::declaration_index::EnumVariantCounts<'static>,
+    enum_ordinals: std::ops::Range<usize>,
+    variant_ordinals: std::ops::Range<usize>,
+    enum_view: crate::frontend::declaration_index::EnumView<'static>,
+    enum_view_return:
+        std::result::Result<crate::frontend::declaration_index::EnumView<'static>, Box<Diagnostic>>,
+    variant_view: crate::frontend::declaration_index::VariantView<'static>,
+    variant_view_return: std::result::Result<
+        crate::frontend::declaration_index::VariantView<'static>,
+        Box<Diagnostic>,
+    >,
+    enums: Vec<RawEnumDecl>,
+    variants: Vec<RawVariantDecl>,
+    enumeration: RawEnumDecl,
+    variant: RawVariantDecl,
+    // These are temporary source-to-raw match builders, not retained plans.
+    match_rows: Vec<MatchArm>,
+    match_row: MatchArm,
+    match_descriptor: MatchDecl,
+    match_cursor: MatchCursor,
+    match_return: Result<MatchCursor>,
+    match_arms: std::slice::Iter<'static, source::MatchArm>,
+    match_rows_iter: std::iter::Enumerate<std::slice::Iter<'static, source::MatchArm>>,
+    match_ordinals: std::ops::Range<usize>,
+    match_locations: (MatchId, OwnerPlaceId, BlockId, BlockId, Option<BlockId>),
+    constructor_operand: Option<Operand>,
+    constructor_operand_return: Result<Option<Operand>>,
+}
+pub(super) const fn invocation_control_bytes() -> usize {
+    size_of::<InvocationControls>()
+}
+
+#[test]
+fn enum_lower_cursor_stack_is_independent_of_sibling_count() {
+    // A match suspends a parent Body, one sibling cursor and one Finish while
+    // traversing a child Body: three pending frames per level. The existing If
+    // scheduler has the larger four-frame slope used by BODY_FRAMES. Neither
+    // expression payloads nor arm count adds source block nesting.
+    let span = Span {
+        file: crate::frontend::source::SourceFileId(0),
+        start: 0,
+        end: 0,
+    };
+    for siblings in [1, 256] {
+        let mut frames = Stack::<BodyFrame, BODY_FRAMES>::new();
+        let mut peak = 0;
+        for depth in 0..=crate::frontend::parser::MAX_BLOCK_NESTING {
+            frames
+                .push(
+                    BodyFrame::Body {
+                        block: source::BodyBlockId(depth),
+                        next: 1,
+                    },
+                    span,
+                )
+                .unwrap();
+            frames
+                .push(
+                    BodyFrame::MatchArm(MatchCursor {
+                        block: source::BodyBlockId(depth),
+                        statement: 0,
+                        match_id: MatchId(depth),
+                        next: siblings,
+                        entry_base: BlockId(1),
+                        join: Some(BlockId(2)),
+                        prefix: 0,
+                    }),
+                    span,
+                )
+                .unwrap();
+            frames
+                .push(
+                    BodyFrame::Finish {
+                        end: span,
+                        join: Some(BlockId(2)),
+                        prefix: 0,
+                    },
+                    span,
+                )
+                .unwrap();
+            peak = peak.max(frames.len);
+        }
+        frames
+            .push(
+                BodyFrame::Body {
+                    block: source::BodyBlockId(0),
+                    next: 0,
+                },
+                span,
+            )
+            .unwrap();
+        peak = peak.max(frames.len);
+        assert_eq!(
+            peak,
+            3 * (crate::frontend::parser::MAX_BLOCK_NESTING + 1) + 1
+        );
+        assert!(peak < BODY_FRAMES);
+    }
+    println!("ENUM_LOWER_LAYOUT BodyFrame={} OptionBodyFrame={} BodyStack={} MatchCursor={} MatchReturn={} InvocationControls={}",
+        size_of::<BodyFrame>(), size_of::<Option<BodyFrame>>(), size_of::<Stack<BodyFrame, BODY_FRAMES>>(),
+        size_of::<MatchCursor>(), size_of::<Result<MatchCursor>>(), invocation_control_bytes());
 }

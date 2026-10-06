@@ -335,7 +335,7 @@ fn add(left: usize, right: usize, at: Span) -> Result<usize, Box<Diagnostic>> {
 fn visit(work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
     work.debit(1, at, "typed storage preparation")
 }
-fn ordinary_value(value: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
+fn contained_value(value: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
     if matches!(value, ValueTy::Owned(AggregateTy::Enum(_))) {
         Err(invalid(at))
     } else {
@@ -344,7 +344,7 @@ fn ordinary_value(value: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
 }
 fn ordinary_parameter(value: &ParameterTy, at: Span) -> Result<(), Box<Diagnostic>> {
     match value {
-        ParameterTy::Value(value) => ordinary_value(value, at),
+        ParameterTy::Value(_) => Ok(()),
         ParameterTy::Reference {
             referent: BorrowedTy::Exact(AggregateTy::Enum(_)),
             ..
@@ -377,7 +377,7 @@ struct BlockCursor {
     statement: usize,
     child: usize,
 }
-/// Exact ordinary HIR tree certificate, with no bitmap, recursion or heap.
+/// Exact HIR tree certificate, including arm preorder, with no heap or recursion.
 fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), Box<Diagnostic>> {
     let at = function.end;
     if function.body.0 != 0 || function.blocks.is_empty() {
@@ -408,11 +408,14 @@ fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), 
         if cursor.child == 0 {
             visit(work, statement.span)?;
             statements = add(statements, 1, statement.span)?;
-            if matches!(statement.kind, StmtKind::Match { .. }) {
-                return Err(invalid(statement.span));
+            if let StmtKind::Match { arms, .. } = &statement.kind {
+                if arms.is_empty() || arms.len() > 256 {
+                    return Err(invalid(statement.span));
+                }
             }
         }
         let child = match &statement.kind {
+            StmtKind::Match { arms, .. } => arms.get(cursor.child).map(|arm| arm.body),
             StmtKind::While { body, .. } if cursor.child == 0 => Some(*body),
             StmtKind::If {
                 then_block,
@@ -474,14 +477,10 @@ fn count_function(
     };
     for binding in &function.bindings {
         visit(work, binding.span)?;
-        if let Some(value) = &binding.annotation {
-            ordinary_value(value, binding.span)?;
-        }
     }
     for expression in &function.expressions {
         visit(work, expression.span)?;
         match &expression.kind {
-            ExprKind::ConstructEnum { .. } => return Err(invalid(expression.span)),
             ExprKind::Call { args, .. } => {
                 counts.calls = add(counts.calls, 1, expression.span)?;
                 counts.call_arguments = add(counts.call_arguments, args.len(), expression.span)?;
@@ -515,7 +514,8 @@ fn count_function(
     counts.statements = statements;
     // Current TypeFrame schedule: at most join+pending else per ancestor and
     // one active block, <=2*H-1. While and ordinary continuations are smaller.
-    // The already-agreed 3*H+8 allowance dominates, without pricing any Match.
+    // Match resumes one arm at a time, retaining only its join and active child.
+    // The already-agreed 3*H+8 allowance also dominates that schedule.
     counts.type_frames = maximum
         .checked_mul(3)
         .and_then(|frames| frames.checked_add(8))
@@ -607,7 +607,7 @@ pub(super) fn prepare<'hir>(
         record_fields = add(record_fields, record.fields.len(), record.span)?;
         for field in &record.fields {
             visit(work, field.span)?;
-            ordinary_value(&field.ty, field.span)?;
+            contained_value(&field.ty, field.span)?;
         }
     }
     if record_fields > source.counts.record_fields {
@@ -615,7 +615,6 @@ pub(super) fn prepare<'hir>(
     }
     for signature in signatures {
         visit(work, signature.span)?;
-        ordinary_value(&signature.result, signature.span)?;
         for parameter in &signature.params {
             visit(work, signature.span)?;
             ordinary_parameter(parameter, signature.span)?;
