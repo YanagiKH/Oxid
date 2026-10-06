@@ -31,6 +31,11 @@ impl Fixture {
         )
         .unwrap()
     }
+    fn load_output(&self) -> ProjectSources {
+        ProjectSources::load_output_candidate(
+            self.0.join("main.ox").to_str().unwrap(), ProjectLimits::default(), &mut Allocator::default(),
+        ).unwrap()
+    }
     fn load_current(&self) -> ProjectSources {
         ProjectSources::load_typed(
             self.0.join("main.ox").to_str().unwrap(),
@@ -522,7 +527,7 @@ fn builtin_index_resource_endpoints_and_layouts_are_explicit() {
         }
     }
     println!("builtin-index-layout set={} admission={} marker={} handle={} projection={} projection-result={} handle-option={} handle-result={} item-result={} origin-result={} tables={} index={} facts={} counts={} plan={} prepared={} prepared-option={} enum-view={} enum-option={} enum-result={} variant-view={} variant-option={} variant-result={} enum-counts={} fixed={}",
-        size_of::<BuiltinSet>(),size_of::<BuiltinAdmission>(),size_of::<CandidateOrigin>(),size_of::<DeclarationHandle>(),size_of::<DeclarationProjection>(),size_of::<Result<DeclarationProjection,Box<Diagnostic>>>(),size_of::<Option<DeclarationHandle>>(),size_of::<Result<Option<DeclarationHandle>,Box<Diagnostic>>>(),size_of::<Result<BuiltinItem,Box<Diagnostic>>>(),size_of::<Result<DeclarationOrigin,Box<Diagnostic>>>(),size_of::<Tables<'_>>(),size_of::<DeclarationIndex<'_>>(),size_of::<DeclarationFacts<'_>>(),size_of::<Counts>(),size_of::<IndexPlan>(),size_of::<PreparedTypeName<'_>>(),size_of::<Option<PreparedTypeName<'_>>>(),size_of::<EnumView<'_>>(),size_of::<Option<EnumView<'_>>>(),size_of::<Result<EnumView<'_>,Box<Diagnostic>>>(),size_of::<VariantView<'_>>(),size_of::<Option<VariantView<'_>>>(),size_of::<Result<VariantView<'_>,Box<Diagnostic>>>(),size_of::<EnumVariantCounts<'_>>(),FIXED_SCRATCH);
+        size_of::<BuiltinSet>(),size_of::<BuiltinAdmission<'static>>(),size_of::<CandidateOrigin>(),size_of::<DeclarationHandle>(),size_of::<DeclarationProjection>(),size_of::<Result<DeclarationProjection,Box<Diagnostic>>>(),size_of::<Option<DeclarationHandle>>(),size_of::<Result<Option<DeclarationHandle>,Box<Diagnostic>>>(),size_of::<Result<BuiltinItem,Box<Diagnostic>>>(),size_of::<Result<DeclarationOrigin,Box<Diagnostic>>>(),size_of::<Tables<'_>>(),size_of::<DeclarationIndex<'_>>(),size_of::<DeclarationFacts<'_>>(),size_of::<Counts>(),size_of::<IndexPlan>(),size_of::<PreparedTypeName<'_>>(),size_of::<Option<PreparedTypeName<'_>>>(),size_of::<EnumView<'_>>(),size_of::<Option<EnumView<'_>>>(),size_of::<Result<EnumView<'_>,Box<Diagnostic>>>(),size_of::<VariantView<'_>>(),size_of::<Option<VariantView<'_>>>(),size_of::<Result<VariantView<'_>,Box<Diagnostic>>>(),size_of::<EnumVariantCounts<'_>>(),FIXED_SCRATCH);
     assert_eq!(size_of::<EnumView<'_>>(), 16);
     assert_eq!(size_of::<VariantView<'_>>(), 24);
     const { assert!(FIXED_SCRATCH <= 4096) };
@@ -717,7 +722,7 @@ mod output_layout_feasibility {
             }
         };
     }
-    tables_model!(BaselineTables, BuiltinAdmission);
+    tables_model!(BaselineTables, FamilySpanState);
     tables_model!(SpanTables, DuplicatedSpanAdmission);
     tables_model!(OrdinalTables, ImportOrdinalAdmission);
     macro_rules! enclosing_models {
@@ -804,8 +809,8 @@ mod output_layout_feasibility {
     fn substituted_fixed<TablesModel, Admission, Projection, Item, Origin>() -> usize {
         // Start from the complete actual bank. Embedded admission is replaced
         // once through Tables; the collection-local admission is separate.
-        let old = size_of::<Tables<'static>>()
-            + size_of::<BuiltinAdmission>()
+        let old = size_of::<BaselineTables<'static>>()
+            + size_of::<FamilySpanState>()
             + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
             + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
             + size_of::<Result<DeclarationOrigin, Box<Diagnostic>>>();
@@ -814,7 +819,7 @@ mod output_layout_feasibility {
             + size_of::<Result<Projection, Box<Diagnostic>>>()
             + size_of::<Result<Item, Box<Diagnostic>>>()
             + size_of::<Result<Origin, Box<Diagnostic>>>();
-        FIXED_SCRATCH
+        4094usize
             .checked_sub(old)
             .unwrap()
             .checked_add(new)
@@ -833,39 +838,43 @@ mod output_layout_feasibility {
 
     #[test]
     fn bounded_stdout_index_disconnected_enclosing_layout_feasibility() {
-        same_layout::<BaselineTables<'static>, Tables<'static>>();
-        same_layout::<BaselineIndex<'static>, DeclarationIndex<'static>>();
-        same_layout::<BaselineFacts<'static>, DeclarationFacts<'static>>();
-        same_layout::<FamilySpanState, BuiltinAdmission>();
+        assert_eq!(size_of::<BaselineTables<'static>>(), 368);
+        assert_eq!(size_of::<BaselineIndex<'static>>(), 368);
+        assert_eq!(size_of::<BaselineFacts<'static>>(), 584);
+        assert_eq!(size_of::<FamilySpanState>(), 28);
+        same_layout::<BorrowedTables<'static>, Tables<'static>>();
+        same_layout::<BorrowedIndex<'static>, DeclarationIndex<'static>>();
+        same_layout::<BorrowedFacts<'static>, DeclarationFacts<'static>>();
+        same_layout::<BorrowedAdmission<'static>, BuiltinAdmission<'static>>();
         same_layout::<
-            Result<BaselineTables<'static>, Box<Diagnostic>>,
+            Result<BorrowedTables<'static>, Box<Diagnostic>>,
             Result<Tables<'static>, Box<Diagnostic>>,
         >();
         same_layout::<
-            Result<BaselineIndex<'static>, Box<Diagnostic>>,
+            Result<BorrowedIndex<'static>, Box<Diagnostic>>,
             Result<DeclarationIndex<'static>, Box<Diagnostic>>,
         >();
         same_layout::<
-            Result<BaselineFacts<'static>, Box<Diagnostic>>,
+            Result<BorrowedFacts<'static>, Box<Diagnostic>>,
             Result<DeclarationFacts<'static>, Box<Diagnostic>>,
         >();
         same_layout::<
-            Result<BaselineIndex<'static>, Vec<Diagnostic>>,
+            Result<BorrowedIndex<'static>, Vec<Diagnostic>>,
             Result<DeclarationIndex<'static>, Vec<Diagnostic>>,
         >();
         assert_eq!(size_of::<ImportOrdinalAdmission>(), 4 * size_of::<u32>());
         assert_eq!(
             substituted_fixed::<
                 BaselineTables<'static>,
-                BuiltinAdmission,
+                FamilySpanState,
                 DeclarationProjection,
                 BuiltinItem,
                 DeclarationOrigin,
             >(),
-            FIXED_SCRATCH
+            4094
         );
         #[cfg(target_pointer_width = "64")]
-        assert_eq!(FIXED_SCRATCH, 4094);
+        assert_eq!(FIXED_SCRATCH, 4096);
         const { assert!(FIXED_SCRATCH <= 4096) };
 
         macro_rules! layouts {
@@ -886,7 +895,7 @@ mod output_layout_feasibility {
         }
         layouts!(
             BuiltinSet, BuiltinEnum, BuiltinFunction, BuiltinItem,
-            DeclarationOrigin, DeclarationProjection, BuiltinAdmission,
+            DeclarationOrigin, DeclarationProjection, BuiltinAdmission<'static>,
             Result<DeclarationProjection, Box<Diagnostic>>,
             Result<BuiltinItem, Box<Diagnostic>>,
             Result<DeclarationOrigin, Box<Diagnostic>>,
@@ -962,11 +971,11 @@ mod output_layout_feasibility {
 
     #[test]
     fn bounded_stdout_borrowed_anchor_enclosing_layout_feasibility() {
-        same_layout::<BaselineTables<'static>, Tables<'static>>();
-        same_layout::<BaselineIndex<'static>, DeclarationIndex<'static>>();
-        same_layout::<BaselineFacts<'static>, DeclarationFacts<'static>>();
+        same_layout::<BorrowedTables<'static>, Tables<'static>>();
+        same_layout::<BorrowedIndex<'static>, DeclarationIndex<'static>>();
+        same_layout::<BorrowedFacts<'static>, DeclarationFacts<'static>>();
         same_layout::<
-            Result<BaselineFacts<'static>, Box<Diagnostic>>,
+            Result<BorrowedFacts<'static>, Box<Diagnostic>>,
             Result<DeclarationFacts<'static>, Box<Diagnostic>>,
         >();
         let substituted = substituted_fixed::<
@@ -980,6 +989,8 @@ mod output_layout_feasibility {
         .unwrap()
         .checked_add(size_of::<u32>())
         .unwrap();
+        assert_eq!(substituted, 4094);
+        assert_eq!(FIXED_SCRATCH, substituted + size_of::<BuiltinEnum>() + size_of::<BuiltinFunction>());
         let old_transports = size_of::<ExistingAnchorTransports<'static>>();
         let new_transports = size_of::<BorrowedAnchorTransports<'static>>();
         assert!(new_transports <= old_transports);
@@ -1226,40 +1237,41 @@ mod output_layout_feasibility {
     }
 }
 
-// Calibrates the named retained-header successor before replacing production
-// carriers. The recorded old endpoint must remain in the successor regression.
+// Preserve the pinned predecessor receipt from 35e7/e33b while exercising the
+// actual successor. The new selector arguments add two scratch bytes; none of
+// the old endpoint evidence is relabeled as a successor execution.
 #[test]
 fn bounded_stdout_retained_header_predecessor_endpoints() {
-    assert_eq!(size_of::<DeclarationIndex<'static>>(), 368);
-    for (name, source) in [
-        ("absent", "fn main()->(){return;}"),
-        (
-            "read_stdin",
-            "use std::io::read_stdin; fn main()->(){return;}",
-        ),
+    assert_eq!(size_of::<DeclarationIndex<'static>>(), 376);
+    assert_eq!(size_of::<DeclarationFacts<'static>>(), 592);
+    assert_eq!(FIXED_SCRATCH, 4096);
+    for (name, source, old_retained, old_scratch) in [
+        ("absent", "fn main()->(){return;}", 488, 4102),
+        ("read_stdin", "use std::io::read_stdin; fn main()->(){return;}", 528, 4114),
     ] {
         let fixture = Fixture::new(&[("main.ox", source)]);
         let project = fixture.load();
         let facts = collect(&project, &WorkMeter::default(), &mut Allocator::default());
         let plan = facts.plan();
-        for (limit, expected) in [(plan.retained, true), (plan.retained - 1, false)] {
+        assert_eq!(plan.retained, old_retained + 8);
+        assert_eq!(plan.scratch, old_scratch + 2);
+        for (retained, scratch, expected) in [
+            (old_retained, plan.scratch, false),
+            (plan.retained - 1, plan.scratch, false),
+            (plan.retained, old_scratch, false),
+            (plan.retained, plan.scratch - 1, false),
+            (plan.retained, plan.scratch, true),
+        ] {
             let mut allocator = Allocator::default();
-            let result = collect_originals(
-                SourceOwner::project(&project),
-                IndexLimits {
-                    retained: limit,
-                    scratch: plan.scratch,
-                    ..IndexLimits::default()
-                },
-                &WorkMeter::default(),
-                &mut allocator,
-            );
+            let result = collect_originals(SourceOwner::project(&project), IndexLimits {
+                retained, scratch, ..IndexLimits::default()
+            }, &WorkMeter::default(), &mut allocator);
             assert_eq!(result.is_ok(), expected);
             if !expected {
                 assert_eq!(allocator.attempts, 0);
                 assert_eq!(result.unwrap_err().code, "E0400");
             }
         }
-        println!("OUTPUT_RETAINED_PREDECESSOR name={name} header=368 retained={} scratch={} proposed_header=376 proposed_retained={} source={source:?} new_endpoint_execution=NOT_IMPLEMENTED", plan.retained, plan.scratch, plan.retained.checked_add(8).unwrap());
+        println!("OUTPUT_RETAINED_SUCCESSOR name={name} predecessor_header=368 predecessor_retained={old_retained} predecessor_scratch={old_scratch} header=376 retained={} scratch={} fixed={} selector_bytes=2 source={source:?}", plan.retained, plan.scratch, FIXED_SCRATCH);
     }
 }

@@ -14,7 +14,16 @@ fn empty(builtins: BuiltinOrigins) -> RawOwnedProgram {
 #[test]
 fn builtin_origins_are_denied_before_declaration_or_proof_allocation() {
     let sources = SourceMap::new();
-    for origin in [BuiltinOrigins::ReadStatus, BuiltinOrigins::ReadStdin] {
+    for origin in [
+        BuiltinOrigins::ReadStatus,
+        BuiltinOrigins::ReadStdin,
+        BuiltinOrigins::WriteStatus,
+        BuiltinOrigins::WriteStdout,
+        BuiltinOrigins::ReadStatusWriteStatus,
+        BuiltinOrigins::ReadStatusWriteStdout,
+        BuiltinOrigins::ReadStdinWriteStatus,
+        BuiltinOrigins::ReadStdinWriteStdout,
+    ] {
         budget::fail_allocation_after(0, || {
             let error = verify_owned(empty(origin), &sources).unwrap_err();
             assert_eq!(error.kind, OwnedFailureKind::Malformed(Malformed::Binding));
@@ -29,6 +38,33 @@ fn builtin_origins_are_denied_before_declaration_or_proof_allocation() {
                 verified::probe_array_validation(&empty(origin), &sources, budget::Limits::DEFAULT)
                     .unwrap_err()
                     .kind,
+                error.kind
+            );
+            assert_eq!(
+                verified::probe_array_reference(
+                    empty(origin),
+                    &sources,
+                    budget::Limits::DEFAULT,
+                    None,
+                    execute::Limits::default(),
+                    execute::ObservationControl::default(),
+                )
+                .unwrap_err()
+                .kind,
+                error.kind
+            );
+            assert_eq!(
+                verified::probe_array_native(
+                    empty(origin),
+                    &sources,
+                    budget::Limits::DEFAULT,
+                    None,
+                    &sources,
+                    native::NativeControl::default(),
+                )
+                .err()
+                .expect("closed claims cannot construct a native witness")
+                .kind,
                 error.kind
             );
         });

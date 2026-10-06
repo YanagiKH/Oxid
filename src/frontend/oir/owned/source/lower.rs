@@ -2063,6 +2063,9 @@ pub(super) fn lower_with_limits(
     typed: &TypedOwnedProgram<'_>,
     limits: budget::Limits,
 ) -> Result<RawOwnedProgram> {
+    if typed.index().builtin_set().has_output() {
+        return Err(invariant(typed.index().sources().eof()));
+    }
     let expected = budget::preflight(typed, limits)?;
     let enum_count = typed.index().enum_count();
     let mut enums = if enum_count == 0 {

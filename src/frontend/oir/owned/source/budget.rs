@@ -139,6 +139,12 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
+    if typed.index().builtin_set().has_output() {
+        return Err(OwnedFailure::malformed(
+            Malformed::Binding,
+            typed.index().sources().eof(),
+        ));
+    }
     if !typed.admission().allows_lowering() {
         return Err(OwnedFailure::malformed(
             Malformed::CanonicalSite,

@@ -1,5 +1,6 @@
 //! The sealed boundary. Sibling consumers cannot construct or mutate fields.
 use super::*;
+use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 
 #[derive(Debug)]
 pub(super) struct VerifiedOwnedProgram {
@@ -12,18 +13,25 @@ pub(super) struct VerifiedOwnedProgram {
 struct OwnershipSeal;
 impl VerifiedOwnedProgram {
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
-        if self.program.builtins == BuiltinOrigins::ReadStdin {
-            self.program.functions.len().checked_sub(1).map(hir::DefId)
-        } else {
-            None
-        }
+        let rank = self
+            .program
+            .builtins
+            .function_rank(BuiltinFunction::ReadStdin)?;
+        self.program
+            .functions
+            .len()
+            .checked_sub(self.program.builtins.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
     }
     pub(super) fn builtin_enumeration(&self) -> Option<EnumId> {
-        if self.program.builtins != BuiltinOrigins::None {
-            self.program.enums.len().checked_sub(1).map(EnumId)
-        } else {
-            None
-        }
+        let rank = self.program.builtins.enum_rank(BuiltinEnum::ReadStatus)?;
+        self.program
+            .enums
+            .len()
+            .checked_sub(self.program.builtins.extra_enums())?
+            .checked_add(rank)
+            .map(EnumId)
     }
     pub(super) fn has_builtin_origins(&self) -> bool {
         self.program.builtins != BuiltinOrigins::None

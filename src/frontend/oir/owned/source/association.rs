@@ -1,6 +1,7 @@
 //! The owned source association walk; raw ownership/shape verification is unchanged.
 use super::super::*;
 use crate::frontend::{
+    builtin_catalog::{BuiltinEnum, BuiltinFunction},
     declaration_index::DeclarationIndex,
     oir::source::association::{bad, BindUsage, Visitor},
 };
@@ -208,7 +209,9 @@ pub(super) fn check_builtin_candidate(
     check_impl(raw, index, sources, true, true)
 }
 
-// Only new builtin identity/anchor transports, not inherited Visitor internals.
+// Only builtin identity/anchor transports, not inherited Visitor internals.
+// Selectors, iterator/next, checked-rank results, projected-ID results, and the
+// retained input identity are separate roles: no overlay or lifetime reuse.
 // The private caller pays this complete envelope before source lowering.
 #[allow(dead_code)]
 struct BuiltinAssociationCarriers {
@@ -226,6 +229,15 @@ struct BuiltinAssociationCarriers {
     function_row_return: Result<&'static RawOwnedFunction, Box<Diagnostic>>,
     set: BuiltinOrigins,
     iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
+    enumeration_kind: BuiltinEnum,
+    function_kind: BuiltinFunction,
+    enumeration_rank: Option<usize>,
+    function_rank: Option<usize>,
+    family_iteration: std::array::IntoIter<BuiltinEnum, 2>,
+    next_family: Option<BuiltinEnum>,
+    enumeration_id_return: Option<EnumId>,
+    function_id_return: Option<hir::DefId>,
+    input_function: Option<hir::DefId>,
 }
 pub(super) const fn builtin_carrier_bytes() -> usize {
     std::mem::size_of::<BuiltinAssociationCarriers>()
@@ -238,45 +250,55 @@ fn check_impl(
     allow_enums: bool,
     allow_builtins: bool,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    if allow_builtins {
+    // Closed identity transport does not activate output source descriptors.
+    // Keep this gate in addition to the parser/index and raw verifier gates.
+    if raw.builtins.has_output() || index.builtin_set().has_output() {
+        return Err(bad());
+    }
+    let input_function = if allow_builtins {
         if raw.builtins != index.builtin_set() {
             return Err(bad());
         }
         let ids = builtins::check(raw).map_err(|_| bad())?;
-        if let Some(id) = ids.enumeration {
-            use crate::frontend::builtin_catalog::BuiltinEnum;
-            if id
-                != index
-                    .builtin_enum_id(BuiltinEnum::ReadStatus)
-                    .map_err(|_| bad())?
-                || raw.enums.get(id.0).ok_or_else(bad)?.span
+        // Enum and function suffixes have independent family ranks. A status
+        // without a function must never shift another family's function ID.
+        for enumeration_kind in BuiltinEnum::ALL {
+            let function_kind = match enumeration_kind {
+                BuiltinEnum::ReadStatus => BuiltinFunction::ReadStdin,
+                BuiltinEnum::WriteStatus => BuiltinFunction::WriteStdout,
+            };
+            if let Some(id) = ids.enumeration(enumeration_kind) {
+                if id != index.builtin_enum_id(enumeration_kind).map_err(|_| bad())?
+                    || raw.enums.get(id.0).ok_or_else(bad)?.span
+                        != index
+                            .builtin_enum_anchor(enumeration_kind)
+                            .map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
+            }
+            if let Some(id) = ids.function(function_kind) {
+                if id
                     != index
-                        .builtin_enum_anchor(BuiltinEnum::ReadStatus)
+                        .builtin_function_id(function_kind)
                         .map_err(|_| bad())?
-            {
-                return Err(bad());
+                    || raw.functions.get(id.0).ok_or_else(bad)?.span
+                        != index
+                            .builtin_function_anchor(function_kind)
+                            .map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
             }
         }
-        if let Some(id) = ids.function {
-            use crate::frontend::builtin_catalog::BuiltinFunction;
-            if id
-                != index
-                    .builtin_function_id(BuiltinFunction::ReadStdin)
-                    .map_err(|_| bad())?
-                || raw.functions.get(id.0).ok_or_else(bad)?.span
-                    != index
-                        .builtin_function_anchor(BuiltinFunction::ReadStdin)
-                        .map_err(|_| bad())?
-            {
-                return Err(bad());
-            }
-        }
+        ids.function(BuiltinFunction::ReadStdin)
     } else {
         raw.builtins.require_none().map_err(|_| bad())?;
         if index.builtin_set() != BuiltinOrigins::None {
             return Err(bad());
         }
-    }
+        None
+    };
     if !allow_enums && (!raw.enums.is_empty() || index.enum_count() != 0) {
         return Err(bad());
     }
@@ -292,7 +314,7 @@ fn check_impl(
             declaration,
             &mut count,
             allow_enums,
-            allow_builtins && ordinal == index.source_function_count(),
+            input_function == Some(hir::DefId(ordinal)),
         )?;
     }
     let mut visitor = Visitor::validate(sources);
@@ -360,7 +382,12 @@ fn check_impl(
                 return Err(bad());
             }
             visitor.file(declaration.span.file);
-            function(declaration, &mut visitor, allow_enums, true)?;
+            function(
+                declaration,
+                &mut visitor,
+                allow_enums,
+                input_function == Some(id),
+            )?;
             continue;
         }
         let (key, module) = index.function(id).map_err(|_| bad())?;
@@ -375,15 +402,15 @@ fn check_impl(
     visitor.finish(count)
 }
 
-/// RFC 0025 layout models only. None of these types constructs builtin IDs,
-/// performs source association, or supplies an executable witness.
+/// Preserve the RFC 0025 predecessor/candidate layout evidence alongside the
+/// actual closed transport. None of these model types supplies a witness.
 #[cfg(test)]
 #[allow(dead_code)]
 mod output_layout_feasibility {
     use super::*;
     use std::mem::{align_of, size_of};
 
-    // Preserve the actual singleton fields and their declaration order.
+    // Preserve the predecessor's singleton fields and their declaration order.
     struct BaselineIds {
         enumeration: Option<EnumId>,
         function: Option<hir::DefId>,
@@ -429,8 +456,8 @@ mod output_layout_feasibility {
         WriteStdout,
     }
 
-    // Complete actual BuiltinAssociationCarriers, in actual declaration order.
-    // Only the test models substitute IDs/inventory and append named roles.
+    // Complete predecessor envelope, in its original declaration order.
+    // Candidate and current models append the named extra roles below.
     macro_rules! carriers {
         ($name:ident, $ids:ty, $inventory:ty; $($extra:tt)*) => {
             struct $name {
@@ -474,6 +501,17 @@ mod output_layout_feasibility {
     }
     family_carriers!(ExplicitFamilyCarriers, ExplicitIds);
     family_carriers!(SuffixFamilyCarriers, SuffixIds);
+    carriers!(ClosedTransportCarriers, builtins::BuiltinIds, BuiltinOrigins;
+        enumeration_kind: BuiltinEnum,
+        function_kind: BuiltinFunction,
+        enumeration_rank: Option<usize>,
+        function_rank: Option<usize>,
+        family_iteration: std::array::IntoIter<BuiltinEnum, 2>,
+        next_family: Option<BuiltinEnum>,
+        enumeration_id_return: Option<EnumId>,
+        function_id_return: Option<hir::DefId>,
+        input_function: Option<hir::DefId>,
+    );
 
     fn same_layout<T, U>() {
         assert_eq!(size_of::<T>(), size_of::<U>());
@@ -488,25 +526,28 @@ mod output_layout_feasibility {
     }
     fn candidate<T>(name: &str) {
         println!(
-            "OUTPUT_ASSOCIATION_CANDIDATE {name} actual_carriers={} \
+            "OUTPUT_ASSOCIATION_CANDIDATE {name} historical_carriers={} \
              candidate_carriers={} delta={} admission=NOT_ESTABLISHED",
-            size_of::<BuiltinAssociationCarriers>(),
+            size_of::<BaselineCarriers>(),
             size_of::<T>(),
-            size_of::<T>() as i128 - size_of::<BuiltinAssociationCarriers>() as i128,
+            size_of::<T>() as i128 - size_of::<BaselineCarriers>() as i128,
         );
     }
 
     #[test]
     fn bounded_stdout_association_disconnected_layout_feasibility() {
-        same_layout::<BaselineIds, builtins::BuiltinIds>();
-        same_layout::<BaselineCarriers, BuiltinAssociationCarriers>();
-        same_layout::<Result<BaselineIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
+        same_layout::<SuffixIds, builtins::BuiltinIds>();
+        same_layout::<ClosedTransportCarriers, BuiltinAssociationCarriers>();
+        same_layout::<Result<SuffixIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
         );
         same_layout::<
-            Result<BaselineIds, Box<Diagnostic>>,
+            Result<SuffixIds, Box<Diagnostic>>,
             Result<builtins::BuiltinIds, Box<Diagnostic>>,
         >();
-        assert_eq!(builtin_carrier_bytes(), size_of::<BaselineCarriers>());
+        assert_eq!(
+            builtin_carrier_bytes(),
+            size_of::<ClosedTransportCarriers>()
+        );
 
         macro_rules! layouts {
             ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
@@ -541,6 +582,7 @@ mod output_layout_feasibility {
             SuffixSubstitutionCarriers,
             ExplicitFamilyCarriers,
             SuffixFamilyCarriers,
+            ClosedTransportCarriers,
         );
         id_transports!(builtins::BuiltinIds);
         id_transports!(BaselineIds);
@@ -551,11 +593,11 @@ mod output_layout_feasibility {
         candidate::<ExplicitFamilyCarriers>("four_optional_ids_with_family_roles");
         candidate::<SuffixFamilyCarriers>("suffix_bases_with_family_roles");
         println!(
-            "OUTPUT_ASSOCIATION_SCOPE disconnected_layouts_only; \
-             existing_raw_and_witness_types_unchanged; \
-             named_selector_rank_iterator_and_next_roles_measured; \
-             future_checked_rank_projection_and_source_anchor_control_flow_unproved; \
-             no_complete_program_coexistence_or_production_admission_claim"
+            "OUTPUT_ASSOCIATION_INTEGRATED historical_carriers={} actual_carriers={} \
+             delta={} selectors_ranks_iteration_values_results=PAID output_admission=DENIED",
+            size_of::<BaselineCarriers>(),
+            builtin_carrier_bytes(),
+            builtin_carrier_bytes() as i128 - size_of::<BaselineCarriers>() as i128,
         );
     }
 }
@@ -564,6 +606,47 @@ mod output_layout_feasibility {
 mod array_tests {
     use super::*;
     use crate::frontend::{lexer, parser};
+
+    #[test]
+    fn builtin_association_output_claims_are_denied_before_the_source_walk() {
+        let mut sources = SourceMap::new();
+        let text = "struct C {} fn main()->(){let c=C{};return;}";
+        let file = sources.add("closed-output-association.ox".into(), text.into());
+        let source = sources.get(file);
+        let ast = parser::parse_with_mode(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let typed =
+            super::super::typeck::check(super::super::resolve::resolve(source, &ast).unwrap())
+                .unwrap();
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        assert!(check(&raw, typed.index(), &sources).is_ok());
+        for origin in [
+            BuiltinOrigins::WriteStatus,
+            BuiltinOrigins::WriteStdout,
+            BuiltinOrigins::ReadStatusWriteStatus,
+            BuiltinOrigins::ReadStatusWriteStdout,
+            BuiltinOrigins::ReadStdinWriteStatus,
+            BuiltinOrigins::ReadStdinWriteStdout,
+        ] {
+            raw.builtins = origin;
+            // Even the private builtin-allowed continuation cannot admit these
+            // raw claims. No source/descriptor traversal or proof allocation
+            // occurs; only the existing boxed diagnostic is allocated.
+            let (denied, allocations) =
+                super::super::super::reviewer_origins::integration_counted(|| {
+                    check_impl(&raw, typed.index(), &sources, true, true)
+                });
+            let error = denied.unwrap_err();
+            assert_eq!(error.code, "E0500");
+            assert_eq!(error.stage, "oir-project-bind");
+            assert_eq!(allocations, 2);
+            assert!(check(&raw, typed.index(), &sources).is_err());
+        }
+    }
 
     #[test]
     fn unit2b_association_walks_every_array_operand_in_both_passes() {
@@ -833,7 +916,16 @@ mod enum_tests {
         assert_eq!(usage.count, usage.validation);
         assert_eq!((usage.count.declarations, usage.count.spans), (7, 17));
         assert_eq!(usage.dimensions, 4);
-        for origin in [BuiltinOrigins::ReadStatus, BuiltinOrigins::ReadStdin] {
+        for origin in [
+            BuiltinOrigins::ReadStatus,
+            BuiltinOrigins::ReadStdin,
+            BuiltinOrigins::WriteStatus,
+            BuiltinOrigins::WriteStdout,
+            BuiltinOrigins::ReadStatusWriteStatus,
+            BuiltinOrigins::ReadStatusWriteStdout,
+            BuiltinOrigins::ReadStdinWriteStatus,
+            BuiltinOrigins::ReadStdinWriteStdout,
+        ] {
             raw.builtins = origin;
             let (denied, allocations) =
                 super::super::super::reviewer_origins::integration_counted(|| {

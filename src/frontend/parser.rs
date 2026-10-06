@@ -106,6 +106,8 @@ impl EnumSyntaxPolicy {
 /// catalog; the candidate policy retains its separate qualification route.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum StdImportPolicy {
+    #[cfg(test)]
+    OutputCandidate,
     Closed,
     Enabled,
     #[cfg(test)]
@@ -117,7 +119,7 @@ impl StdImportPolicy {
             Self::Closed => false,
             Self::Enabled => true,
             #[cfg(test)]
-            Self::Candidate => true,
+            Self::Candidate | Self::OutputCandidate => true,
         }
     }
 }
@@ -283,6 +285,20 @@ pub(super) fn parse_builtin_candidate_counted(
         StdImportPolicy::Candidate,
         storage,
     )
+}
+
+#[cfg(test)]
+pub(super) fn parse_output_candidate_counted(
+    source: &SourceFile,
+    tokens: Vec<Token>,
+    mode: SourceMode,
+    node_limit: usize,
+    allocator: &mut Allocator,
+    storage: &mut enums::SyntaxStorage,
+) -> Result<(Program, usize), Vec<Diagnostic>> {
+    parse_counted_with_policies(source, tokens, mode, node_limit, allocator,
+        ArraySyntaxPolicy::Enabled, EnumSyntaxPolicy::Enabled,
+        StdImportPolicy::OutputCandidate, storage)
 }
 
 #[allow(clippy::too_many_arguments)]

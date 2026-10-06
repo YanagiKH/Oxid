@@ -698,6 +698,11 @@ fn preflight_hir(
     work: &WorkMeter,
     builtin_candidate: bool,
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    // The private index can describe output identities; it grants no paid HIR
+    // construction until the complete output producer/consumer route is proved.
+    if index.builtin_set().has_output() {
+        return Err(invalid(index.sources().eof()));
+    }
     let sources = index.sources();
     let at = sources.eof();
     let mut counts = HirCounts::default();

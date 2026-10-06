@@ -3,6 +3,7 @@ use super::builtin_input_fixtures::{self as fixture, Observation};
 use super::consumer_fixtures as f;
 use super::enum_consumer_fixtures as e;
 use super::*;
+use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 
 #[test]
 fn builtin_input_raw_programs_require_the_complete_verifier_and_plan() {
@@ -12,13 +13,14 @@ fn builtin_input_raw_programs_require_the_complete_verifier_and_plan() {
         .chain([(3, Observation::Checksum)])
     {
         let (sources, raw, entry) = fixture::program(capacity, observation);
+        let ids = builtins::check(&raw).unwrap();
+        assert_eq!(ids.enumeration(BuiltinEnum::ReadStatus), Some(EnumId(0)));
         assert_eq!(
-            builtins::check(&raw).unwrap(),
-            builtins::BuiltinIds {
-                enumeration: Some(EnumId(0)),
-                function: Some(hir::DefId(1)),
-            }
+            ids.function(BuiltinFunction::ReadStdin),
+            Some(hir::DefId(1))
         );
+        assert_eq!(ids.enumeration(BuiltinEnum::WriteStatus), None);
+        assert_eq!(ids.function(BuiltinFunction::WriteStdout), None);
         let witness = verify_owned(raw, &sources).unwrap();
         assert_eq!(witness.builtin_function(), Some(hir::DefId(1)));
         let plan = plan::ExecutionPlan::build(&witness).unwrap();

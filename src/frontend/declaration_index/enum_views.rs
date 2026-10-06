@@ -91,9 +91,10 @@ impl<'a> VariantView<'a> {
     pub fn name(&self) -> &'a str {
         match self.source_syntax() {
             Some(syntax) => self.index.sources().frozen_text(syntax.name),
-            None => BuiltinEnum::ReadStatus
-                .member_name(self.id.index)
-                .expect("checked builtin variant"),
+            None => match self.origin() {
+                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item.member_name(self.id.index).expect("checked builtin variant"),
+                _ => unreachable!("checked builtin variant"),
+            },
         }
     }
     pub fn diagnostic_span(&self) -> Span {
@@ -126,7 +127,10 @@ impl<'a> VariantView<'a> {
                 ast::ScalarTypeSyntax::I32 => Ty::I32,
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
             }),
-            None => BuiltinEnum::ReadStatus.member_payload(self.id.index),
+            None => match self.origin() {
+                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item.member_payload(self.id.index),
+                _ => unreachable!("checked builtin variant"),
+            },
         }
     }
 }

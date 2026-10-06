@@ -16,7 +16,8 @@ not an extension of its instruction set or a self-hosting claim.
 
 Proposed `--entry-mode process` applies only to typed `run` and native `compile`.
 Default result mode keeps all existing bool/i32/unit rendering, JSON records,
-exit statuses, admission and fuel behavior. Process mode requires the original
+exit statuses and source fuel behavior. The named physical-admission differences
+are specified below. Process mode requires the original
 resolved zero-argument `main() -> i32`; values 0..255 become exact process exit
 statuses without a scalar trailer. Other values produce a runtime diagnostic
 and status 1 when that diagnostic completes, or 74 if its stderr output fails;

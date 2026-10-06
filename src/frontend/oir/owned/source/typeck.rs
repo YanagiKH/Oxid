@@ -759,6 +759,9 @@ fn finish_paid_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    if program.index().builtin_set().has_output() {
+        return Err(vec![*paid_state(program.index().sources().eof())]);
+    }
     let bodies;
     let _typed_observation;
     {

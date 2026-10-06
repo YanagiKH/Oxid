@@ -2,14 +2,30 @@ use super::{
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
     oir,
-    options::{self, Operation, Route},
+    options::{self, EntryPolicy, Operation, Route},
     project::{budget::Allocator, ProjectLimits, ProjectSources, SyntaxFlavor},
     source::SourceMap,
 };
 
 /// None returns an untouched/default or explicitly legacy command to the old CLI.
 pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
-    match options::route(args) {
+    dispatch_route(options::route(args), args)
+}
+
+fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
+    match route {
+        // Temporary closed nonactivation, not process diagnostic parity. Until
+        // signal setup and fallible diagnostics are admitted, these data routes
+        // cannot load a path, compile, activate source or even invoke a reporter.
+        Route::TypedRun {
+            entry_policy: EntryPolicy::Process,
+            ..
+        }
+        | Route::TypedCompile {
+            entry_policy: EntryPolicy::Process,
+            ..
+        }
+        | Route::ProcessError { .. } => Some(1),
         Route::Legacy(legacy) => {
             *args = legacy;
             None
@@ -27,10 +43,17 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         Route::FormatError { message } => Some(super::format_cli::cli_error(&message)),
         Route::TypedFormat { path, check } => Some(super::format_cli::process_file(&path, check)),
         Route::TypedCheck { path, json } => Some(process_file(&path, json, Operation::Check, None)),
-        Route::TypedRun { path, json } => Some(process_file(&path, json, Operation::Run, None)),
-        Route::TypedCompile { path, json, output } => {
-            Some(process_file(&path, json, Operation::Compile, Some(&output)))
-        }
+        Route::TypedRun {
+            path,
+            json,
+            entry_policy: EntryPolicy::Result,
+        } => Some(process_file(&path, json, Operation::Run, None)),
+        Route::TypedCompile {
+            path,
+            json,
+            output,
+            entry_policy: EntryPolicy::Result,
+        } => Some(process_file(&path, json, Operation::Compile, Some(&output))),
     }
 }
 enum Summary {
@@ -170,6 +193,37 @@ fn process_loaded(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closed_process_routes_deny_before_source_or_output_path_access() {
+        // NUL makes either path unusable even if it happened to exist. These
+        // closed carriers are created only here, never by the public classifier.
+        let absent_source = "\0closed-process-source.ox";
+        let absent_output = "\0closed-process-output";
+        for json in [false, true] {
+            let mut arguments = vec!["unchanged".to_string()];
+            for route in [
+                Route::TypedRun {
+                    path: absent_source.into(),
+                    json,
+                    entry_policy: EntryPolicy::Process,
+                },
+                Route::TypedCompile {
+                    path: absent_source.into(),
+                    json,
+                    output: absent_output.into(),
+                    entry_policy: EntryPolicy::Process,
+                },
+                Route::ProcessError {
+                    message: "closed process diagnostic data".into(),
+                },
+            ] {
+                assert_eq!(dispatch_route(route, &mut arguments), Some(1));
+                assert_eq!(arguments, ["unchanged"]);
+            }
+        }
+    }
+
     #[test]
     fn diagnostic_exit_status_preserves_source_errors_and_distinguishes_oir_internal_errors() {
         assert_eq!(exit_status(&[]), 0);

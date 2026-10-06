@@ -1,6 +1,7 @@
 //! Independently authored raw descriptors. The checker supplies no fixture
 //! builder, and successful descriptor checks never grant execution authority.
 use super::*;
+use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 
 type ProgramMutation = (&'static str, fn(&mut RawOwnedProgram));
 type FunctionMutation = (&'static str, fn(&mut RawOwnedFunction));
@@ -122,18 +123,23 @@ fn assert_bad(raw: &RawOwnedProgram, kind: Malformed, label: &str) -> OwnedFailu
     error
 }
 
+fn assert_input_ids(
+    ids: builtins::BuiltinIds,
+    enumeration: Option<EnumId>,
+    function: Option<hir::DefId>,
+) {
+    assert_eq!(ids.enumeration(BuiltinEnum::ReadStatus), enumeration);
+    assert_eq!(ids.function(BuiltinFunction::ReadStdin), function);
+    assert_eq!(ids.enumeration(BuiltinEnum::WriteStatus), None);
+    assert_eq!(ids.function(BuiltinFunction::WriteStdout), None);
+}
+
 #[test]
 fn builtin_descriptor_empty_origin_returns_no_identity_without_visiting_rows() {
     let mut raw = canonical(BuiltinOrigins::ReadStdin);
     raw.builtins = BuiltinOrigins::None;
     // Even a matching descriptor has no builtin identity without the claim.
-    assert_eq!(
-        builtins::check(&raw).unwrap(),
-        builtins::BuiltinIds {
-            enumeration: None,
-            function: None,
-        }
-    );
+    assert_input_ids(builtins::check(&raw).unwrap(), None, None);
     // This intentionally malformed source prefix still belongs to the ordinary
     // proof. The absent builtin fast path must not inspect or validate it.
     raw.enums[0].id = EnumId(usize::MAX);
@@ -141,17 +147,11 @@ fn builtin_descriptor_empty_origin_returns_no_identity_without_visiting_rows() {
     raw.functions[0].id = hir::DefId(usize::MAX);
     raw.functions[0].blocks.clear();
     budget::fail_allocation_after(0, || {
-        assert_eq!(
-            builtins::check(&raw).unwrap(),
-            builtins::BuiltinIds {
-                enumeration: None,
-                function: None,
-            }
-        );
+        assert_input_ids(builtins::check(&raw).unwrap(), None, None);
     });
     raw.enums.clear();
     raw.functions.clear();
-    assert_eq!(builtins::check(&raw).unwrap().enumeration, None);
+    assert_input_ids(builtins::check(&raw).unwrap(), None, None);
 }
 
 #[test]
@@ -159,19 +159,11 @@ fn builtin_descriptor_claim_selects_only_the_canonical_suffix() {
     let status = canonical(BuiltinOrigins::ReadStatus);
     let stdin = canonical(BuiltinOrigins::ReadStdin);
     budget::fail_allocation_after(0, || {
-        assert_eq!(
-            builtins::check(&status).unwrap(),
-            builtins::BuiltinIds {
-                enumeration: Some(EnumId(0)),
-                function: None,
-            }
-        );
-        assert_eq!(
+        assert_input_ids(builtins::check(&status).unwrap(), Some(EnumId(0)), None);
+        assert_input_ids(
             builtins::check(&stdin).unwrap(),
-            builtins::BuiltinIds {
-                enumeration: Some(EnumId(0)),
-                function: Some(hir::DefId(0)),
-            }
+            Some(EnumId(0)),
+            Some(hir::DefId(0)),
         );
     });
     let mut prefixed = RawOwnedProgram {
@@ -185,21 +177,43 @@ fn builtin_descriptor_claim_selects_only_the_canonical_suffix() {
     // Source-prefix validation is intentionally outside this helper. The new
     // opcode in this prefix is denied by the ordinary shape proof, not inferred
     // to be another builtin from its matching body.
-    assert_eq!(
+    assert_input_ids(
         builtins::check(&prefixed).unwrap(),
-        builtins::BuiltinIds {
-            enumeration: Some(EnumId(1)),
-            function: Some(hir::DefId(1)),
-        }
+        Some(EnumId(1)),
+        Some(hir::DefId(1)),
     );
     prefixed.builtins = BuiltinOrigins::ReadStatus;
-    assert_eq!(
-        builtins::check(&prefixed).unwrap(),
-        builtins::BuiltinIds {
-            enumeration: Some(EnumId(1)),
-            function: None,
-        }
-    );
+    assert_input_ids(builtins::check(&prefixed).unwrap(), Some(EnumId(1)), None);
+}
+
+#[test]
+fn builtin_descriptor_output_claims_fail_before_any_descriptor_row() {
+    for origin in [
+        BuiltinOrigins::WriteStatus,
+        BuiltinOrigins::WriteStdout,
+        BuiltinOrigins::ReadStatusWriteStatus,
+        BuiltinOrigins::ReadStatusWriteStdout,
+        BuiltinOrigins::ReadStdinWriteStatus,
+        BuiltinOrigins::ReadStdinWriteStdout,
+    ] {
+        // Rows deliberately carry invalid ordinals and unequal anchors. An
+        // attempted descriptor proof would report a row's origin, not NONE.
+        let mut raw = canonical(BuiltinOrigins::ReadStdin);
+        raw.builtins = origin;
+        raw.enums[0].id = EnumId(usize::MAX);
+        raw.enums[0].variants[0].span = anchor(4);
+        raw.functions[0].id = hir::DefId(usize::MAX);
+        budget::fail_allocation_after(0, || {
+            let denied = assert_bad(&raw, Malformed::Binding, "closed output claim");
+            assert_eq!(denied.primary, Origin::NONE);
+        });
+        raw.enums.clear();
+        raw.functions.clear();
+        assert_eq!(
+            assert_bad(&raw, Malformed::Binding, "empty closed output claim").primary,
+            Origin::NONE
+        );
+    }
 }
 
 #[test]

@@ -477,6 +477,9 @@ fn type_paid_source<'s>(
     allocator: &mut Allocator,
     admission: SourceAdmission,
 ) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    if index.builtin_set().has_output() {
+        return Err(vec![*invalid_signature_identity(index.sources().eof())]);
+    }
     let at = index.sources().eof();
     let attempts_before = allocator.attempts;
     let plan = match admission {
@@ -1031,6 +1034,9 @@ fn resolve_index_impl(
     allocator: &mut Allocator,
     mut paid: Option<&mut PaidStorage>,
 ) -> Result<ResolvedParts, Vec<Diagnostic>> {
+    if index.builtin_set().has_output() {
+        return Err(vec![*invalid_signature_identity(index.sources().eof())]);
+    }
     if index.builtin_set() != BuiltinSet::None && paid.is_none() {
         return Err(vec![*invalid_signature_identity(index.sources().eof())]);
     }
