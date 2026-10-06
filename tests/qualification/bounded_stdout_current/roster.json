@@ -1,0 +1,87 @@
+{
+  "modules": {
+    "frontend::oir::owned::builtin_output_descriptor_tests::": [
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_all_nine_suffixes_require_complete_verification_and_planning",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_descriptor_canonical_mutations_are_denied",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_shape_confines_opcodes_even_in_unreachable_source_rows",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_suffixes_cannot_swap_families_or_select_source_lookalikes",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_status_payload_and_matches_use_member_two",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_shared_call_still_requires_complete_available_view_and_cfg",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_projection_and_forwarding_retain_ordinary_view_proofs",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_staging_is_1024_physical_bytes_per_function_without_fuel_growth",
+      "frontend::oir::owned::builtin_output_descriptor_tests::builtin_output_candidate_resource_rejection_precedes_allocation"
+    ],
+    "frontend::oir::owned::execute::output_tests::": [
+      "frontend::oir::owned::execute::output_tests::output_staging_preserves_bytes_and_rejects_invalid_last_cell",
+      "frontend::oir::owned::execute::output_tests::output_identity_denial_precedes_runtime_view_and_fuel",
+      "frontend::oir::owned::execute::output_tests::process_reference_admission_checks_signature_without_setup_or_allocation",
+      "frontend::oir::owned::execute::output_tests::default_output_inventory_denial_precedes_plan_allocation_and_fuel",
+      "frontend::oir::owned::execute::output_tests::process_silent_observer_does_not_reserve_or_emit_charge_events",
+      "frontend::oir::owned::execute::output_tests::output_reference_carriers_keep_the_existing_frame_reservations"
+    ],
+    "frontend::oir::owned::native::builtin_output_tests::": [
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_default_policy_checks_complete_inventory_before_allocation",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_process_entry_rejects_invalid_signatures_before_allocation",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_physical_storage_has_exact_inclusive_endpoint",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_acyclic_process_charges_runtime_fuel_storage",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_stages_whole_shared_view_before_attempts",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_count_render_and_output_limits_agree",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_process_setup_precedes_every_guard_and_status_is_exact",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_default_input_entry_retains_scalar_rendering",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_enclosing_carriers_preserve_current_sizes",
+      "frontend::oir::owned::native::builtin_output_tests::builtin_output_native_diagnostics_have_exact_fixed_envelopes"
+    ],
+    "frontend::oir::owned::source::resolve::output_typing_tests::": [
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_typing_denies_public_and_observer_admissions_before_reserve",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_fresh_paid_typing_reconciles_all_nine_inventories",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_typing_carriers_have_actual_layout_receipts",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_signature_identity_rejects_family_and_suffix_corruption",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_fresh_typing_reserve_failures_drop_prior_family_storage",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_second_parameter_real_null_cleans_both_suffixes",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_fresh_typing_accepts_calls_forwarded_views_and_status_payloads",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_fresh_typing_rejects_wrong_borrows_nominals_and_payloads",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_fresh_typing_work_endpoint_is_exact",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_completion_rejects_seed_checkpoint_and_plan_mismatch_before_typed_reserve",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_current_paid_typing_measures_all_nine_inventories",
+      "frontend::oir::owned::source::resolve::output_typing_tests::bounded_stdout_current_provenance_rejects_private_and_observer_policies_before_work"
+    ],
+    "frontend::oir::owned::source::association::output_lower_tests::": [
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_lower_nine_suffixes_preserve_independent_ranks_and_raw_proofs",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_lower_missing_family_denies_before_reservation_and_all_requests_fail_closed",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_association_walk_scopes_each_opcode_and_checks_unreachable_blocks",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_lower_measures_complete_finite_producer_and_association_envelopes",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_paid_lowering_all_nine_reconcile_both_preflights_and_exact_boundaries",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_paid_lowering_every_reservation_failure_drops_prior_payload",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_paid_association_rejects_identity_anchor_opcode_and_role_tampering",
+      "frontend::oir::owned::source::association::output_lower_tests::bounded_output_paid_source_calls_and_child_aliases_preserve_earliest_family_anchors"
+    ],
+    "frontend::oir::owned::source::output_source_tests::": [
+      "frontend::oir::owned::source::output_source_tests::output_source_subprocess_child",
+      "frontend::oir::owned::source::output_source_tests::output_source_single_file_emit_is_effect_free_and_portable",
+      "frontend::oir::owned::source::output_source_tests::output_source_aliases_and_status_dependencies_remain_scoped",
+      "frontend::oir::owned::source::output_source_tests::output_source_emit_requires_original_zero_argument_i32_main",
+      "frontend::oir::owned::source::output_source_tests::output_source_public_loader_admits_but_default_consumers_deny_effects",
+      "frontend::oir::owned::source::output_source_tests::output_source_module_policy_and_local_aliases_are_preserved",
+      "frontend::oir::owned::source::output_source_tests::subprocess::output_source_reference_bytes_and_statuses"
+    ]
+  },
+  "named": [
+    "frontend::oir::owned::builtin_output_process_tests::builtin_output_process_candidates_require_the_ordinary_verifier",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_retained_header_predecessor_endpoints",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_catalog_nine_state_closure_ranks_and_signatures",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_index_all_nine_suffixes_queries_and_views",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_current_output_admitted_but_historical_collections_stay_closed",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_index_all_nine_resource_boundaries",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_function_dependency_does_not_bind_output_status",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_borrowed_anchors_preserve_dependency_and_module_order",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_borrowed_anchors_choose_first_within_module",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_original_owner_keeps_absent_inventory_and_rejects_std_ast",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_invalid_imports_and_duplicate_aliases_fail_closed",
+    "frontend::declaration_index::builtin_tests::bounded_stdout_private_allocation_failures_never_freeze_identity",
+    "frontend::declaration_index::enum_query_tests::enum_query_bare_module_rejects_after_permission_with_unchanged_work",
+    "frontend::declaration_index::enum_query_tests::enum_query_bare_module_current_source_rejects_and_crate_call_runs",
+    "frontend::declaration_index::enum_query_tests::enum_query_bare_module_neighbor_and_frozen_undeclared_diagnostics_are_unchanged",
+    "frontend::options::tests::process_run_json_and_early_errors_are_text_only"
+  ]
+}

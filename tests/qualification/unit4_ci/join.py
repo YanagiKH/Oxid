@@ -84,7 +84,7 @@ def verify_qualified_paths_receipts(run, predecessors, rows, values, policy, aut
            'public predecessor semantic amendment authority differs')
     q.need(authority['source_manifest']['sha256'] == q.ENUM_SHA and authority['source_manifest']['members'] == 237 and
            authority['execution_source_manifest']['sha256'] == q.CURRENT_SHA and
-           authority['execution_source_manifest']['members'] == 252,
+           authority['execution_source_manifest']['members'] == 262,
            'public predecessor semantic and execution source roles differ')
     try:
         q.need(len(rows) == len(values), 'public predecessor semantic receipt count')

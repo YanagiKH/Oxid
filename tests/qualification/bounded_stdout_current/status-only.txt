@@ -1,0 +1,18 @@
+
+use std::io::ReadStatus as R;
+use std::io::WriteStatus as W;
+fn main() -> i32 {
+    let read = R::Full;
+    match read {
+        R::Eof(n) => { return n; },
+        R::Full => {
+            let written = W::IoError(5);
+            match written {
+                W::Complete => { return 0; },
+                W::InvalidInput => { return 1; },
+                W::IoError(n) => { return n + 2; },
+            }
+        },
+        R::IoError => { return 11; },
+    }
+}

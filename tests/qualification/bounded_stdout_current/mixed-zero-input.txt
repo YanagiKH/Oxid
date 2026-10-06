@@ -1,0 +1,22 @@
+
+use std::io::write_stdout as output;
+use std::io::WriteStatus as Written;
+use std::io::read_stdin as input;
+use std::io::ReadStatus as Read;
+fn main() -> i32 {
+    let mut empty: [i32; 0] = [];
+    let read = input(&mut empty);
+    match read {
+        Read::Eof(n) => { return n + 10; },
+        Read::Full => {
+            let bytes = [65, 66, 67];
+            let written = output(&bytes);
+            match written {
+                Written::Complete => { return 0; },
+                Written::InvalidInput => { return 1; },
+                Written::IoError(n) => { return n + 2; },
+            }
+        },
+        Read::IoError => { return 11; },
+    }
+}

@@ -1,0 +1,11 @@
+
+use std::io::write_stdout as output;
+use std::io::WriteStatus as Status;
+pub fn relay(bytes: &[i32]) -> i32 {
+    let status = output(&*bytes);
+    match status {
+        Status::Complete => { return 0; },
+        Status::InvalidInput => { return 1; },
+        Status::IoError(n) => { return n + 2; },
+    }
+}
