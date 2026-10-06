@@ -67,17 +67,19 @@ fn prepare(
     sources: &SourceMap,
     limits: budget::Limits,
 ) -> Result<(OwnershipUsage, Declarations, budget::Meter), OwnedFailure> {
-    raw.builtins.require_none()?;
     let usage = budget::preflight(raw, limits)?;
+    // Canonical builtin descriptors are an additional untrusted-raw check;
+    // declarations and every ordinary shape/CFG/ownership pass still follow.
+    builtins::check(raw)?;
     let declarations = Declarations::check_combined(&raw.records, &raw.enums, sources)?;
-    Ok((
-        usage,
-        declarations,
-        budget::Meter {
-            visits: 0,
-            ceiling: usage.work,
-        },
-    ))
+    let mut meter = budget::Meter {
+        visits: 0,
+        ceiling: usage.work,
+    };
+    for _ in 0..builtins::descriptor_visits(raw.builtins) {
+        meter.visit()?;
+    }
+    Ok((usage, declarations, meter))
 }
 
 /// One authoritative continuation for production and the non-executable test

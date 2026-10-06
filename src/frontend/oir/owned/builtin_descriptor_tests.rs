@@ -588,15 +588,16 @@ fn builtin_descriptor_rejects_diagnostic_origin_overrides_even_at_the_same_ancho
 }
 
 #[test]
-fn builtin_descriptor_acceptance_does_not_open_any_witness_entrypoint() {
-    let mut sources = SourceMap::new();
-    sources.add("builtin-descriptor.ox".into(), "abcdef".into());
+fn builtin_descriptor_acceptance_does_not_replace_complete_source_span_proof() {
+    let sources = SourceMap::new();
     for origin in [BuiltinOrigins::ReadStatus, BuiltinOrigins::ReadStdin] {
         let raw = canonical(origin);
         assert!(builtins::check(&raw).is_ok());
-        budget::fail_allocation_after(0, || {
+        {
             let limits = budget::Limits::DEFAULT;
-            let expected = OwnedFailureKind::Malformed(Malformed::Binding);
+            let expected = OwnedFailureKind::Malformed(Malformed::Declaration(
+                DeclarationError::InvalidSpan(anchor(0)),
+            ));
             assert_eq!(
                 verify_owned(canonical(origin), &sources).unwrap_err().kind,
                 expected
@@ -642,10 +643,10 @@ fn builtin_descriptor_acceptance_does_not_open_any_witness_entrypoint() {
                     native::NativeControl::default(),
                 )
                 .err()
-                .expect("builtin native probe remains denied")
+                .expect("unassociated source spans remain denied")
                 .kind,
                 expected
             );
-        });
+        }
     }
 }

@@ -223,12 +223,6 @@ impl<'a> ExecutionPlan<'a> {
         witness: &'a VerifiedOwnedProgram,
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
-        if witness.has_builtin_origins() {
-            return Err(AdmissionFailure::new(
-                "builtin input plans are unavailable",
-                None,
-            ));
-        }
         let functions = witness.functions();
         let mut metadata_bytes = mul(functions.len(), size_of::<FunctionPlan>())?;
         let mut largest_frame = 0;

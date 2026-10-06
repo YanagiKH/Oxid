@@ -38,8 +38,8 @@ struct MatchArm {
     dispatch: BlockId,
     entry: BlockId,
 }
-/// Closed origin claims, not execution authority. Non-None remains denied at
-/// all admission seams until canonical builtin identity and body proofs exist.
+/// Closed origin claims, not execution authority. Raw admission requires the
+/// canonical descriptor plus full ordinary proof; source association stays closed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BuiltinOrigins {
     None,
@@ -195,7 +195,7 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
-    // Carrier only: canonical template checks are inert and all consumers deny.
+    // Atomic input is confined to the verified canonical builtin body.
     ReadStdin {
         buffer: ReferenceParamId,
         destination: OwnerPlaceId,
@@ -453,6 +453,10 @@ struct OwnershipUsage {
 }
 #[cfg(test)]
 mod builtin_descriptor_tests;
+#[cfg(test)]
+mod builtin_input_fixtures;
+#[cfg(test)]
+mod builtin_input_tests;
 #[cfg(test)]
 mod builtin_origin_tests;
 #[cfg(test)]
