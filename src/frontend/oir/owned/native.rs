@@ -1969,6 +1969,39 @@ fn transfer_leaves(
     }
 }
 
+// Closed Phase 2 policy precursor. Production still calls only the original
+// X-based admission above. These lower-only controls return fixed count facts,
+// never a native plan, emitter handle or verified owner.
+#[cfg(test)]
+const MAX_NATIVE_INVENTORY_ITEMS: usize = 8192;
+#[cfg(test)]
+const MAX_NATIVE_OWNER_WIDTH: usize = 8192;
+#[cfg(test)]
+pub(super) fn admit_inventory_policy(
+    execution: &ExecutionPlan<'_>,
+    limits: (usize, usize),
+) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    let counts = plan::native_storage::NativeInventories::checked(execution)
+        .map_err(|failure| reject(failure.name, failure.span))?;
+    // An empty library has zero inventory but is not an executable entry.
+    // Existing entry validation remains a separate, earlier native gate.
+    if let Some(function) = execution.witness().functions().first() {
+        limit(
+            counts.items(),
+            limits.0.min(MAX_NATIVE_INVENTORY_ITEMS),
+            "aggregate compiler inventory items",
+            function.span,
+        )?;
+        limit(
+            counts.owner_width(),
+            limits.1.min(MAX_NATIVE_OWNER_WIDTH),
+            "aggregate owner width cells",
+            function.span,
+        )?;
+    }
+    Ok(counts)
+}
+
 fn emit(
     storage: &NativeStoragePlan<'_, '_>,
     entry: hir::DefId,
