@@ -1,6 +1,6 @@
 # RFC 0028: private checked scalar HIR import
 
-Status: **private Verify enabled; execution qualification in progress**.
+Status: **private Verify enabled and locally qualified**.
 Run, Emit and public provider integration remain outside the enabled scope.
 Updated 2026-10-07.
 
@@ -265,7 +265,7 @@ type/flow import remained closed.
 ## Accepted private Verify phase
 
 Status: private Verify success entry is enabled after the closed layout and
-independent boundary review. Execution qualification is pending. The existing
+independent boundary review. Focused execution qualification has passed; the
 still-denied comparison controls remain the predecessor evidence.
 
 Add a closed Verify-only request that owns the newly constructed candidate HIR.
@@ -302,3 +302,28 @@ First compile and measure the complete new layouts, then obtain independent
 boundary review before executing Verify success. Run is a later gate after
 Verify proof review. Emit additionally requires a private pre-allocation final
 text bound. Current-source qualification and public integration remain separate.
+
+## Private Verify execution evidence
+
+The contained terminal has passed genuine original/public fixture verification,
+complete supplied type/flow comparison, and ordinary source-associated OIR
+verification. All 36 row kinds are covered; 1,178 decoder-valid supplied-fact
+mutations reject before lowering. Explicitly synthetic empty/self-recursive/
+mutually recursive controls establish the same boundary for library inputs.
+Authentic typechecker diagnostic vectors preserve all fields and function order.
+
+For the rich fixture, exact private admission is 95,890 retained affected bytes,
+90,177 fixed scratch bytes and 1,276,867 shared compile-work units. Each exact
+threshold passes and each minus-one rejects before candidate reserves and
+checking. This is importer accounting; inherited pass capacities are measured
+separately and are not a whole-stack, heap or RSS limit.
+
+Whole-pipeline observation establishes zero retained live bytes after rich
+success and all 16 logical and real-null candidate reserve failures. Diagnostic
+and typed-mismatch exits are executed and reviewed for ownership cleanup; they
+do not carry a separate whole-pipeline zero-live-byte measurement claim.
+
+Local bounded-profile qualification passed 1,570 unit tests with 55 intentionally
+ignored tests, strict all-target lint and formatting. Public-project positives
+are Linux-only under the existing loader policy. Hosted current-source binding
+qualification and private Run/Emit activation remain separate gates.
