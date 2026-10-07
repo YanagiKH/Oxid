@@ -108,3 +108,20 @@ A later enabled consumer may run real resolution and typing and emit the existin
 OPA1+STF1 result. Even then it remains a component observation, not a TypedProgram,
 source-association witness or production provider. Future provider use must bind
 to the compiler's actual source identity and ordinary authoritative pipeline.
+
+## Closed precursor measurement
+
+The first role dispatcher exceeded the unchanged 256 scalar-slot function limit.
+An acyclic declaration/statement/expression role split preserves the checks and
+admits the closed precursor at I = 7,036, W = 4,199, 93 functions and 1,741 blocks.
+The new transport/representative-validation modules account for 2,410 I. This is
+not complete-validator admission: 1,156 I remain, and calls/group/prefix plus the
+remaining statement/control/block families are still pending.
+
+Fifty-three focused closed controls pass: 14 pending outcomes, 38 malformed
+records and one I/O error, all with empty stdout and stderr. Repaired physical
+row permutations preserve the logical Binary/ExprStmt graph yet reject, while
+canonical allocation positives pass. A trailing-data control consumes exactly
+one witness byte beyond the record and leaves the rest unread. No resolver or
+typing invocation occurs in this root. Full validation, independent adversarial
+review and later semantic enablement remain separate gates.
