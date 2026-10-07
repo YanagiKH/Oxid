@@ -332,9 +332,9 @@ fn native_owned_guarded_table_has_independent_costs_and_origins() {
     }
 }
 
-struct Scratch(std::path::PathBuf);
+pub(super) struct Scratch(std::path::PathBuf);
 impl Scratch {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let stamp = std::time::SystemTime::now()
@@ -348,7 +348,7 @@ impl Scratch {
         std::fs::create_dir(&root).unwrap();
         Self(root)
     }
-    fn compile(&self, module: &str, name: &str) -> std::path::PathBuf {
+    pub(super) fn compile(&self, module: &str, name: &str) -> std::path::PathBuf {
         let assembler = std::env::var_os("OXID_LLVM_BIN").map_or_else(
             || std::path::PathBuf::from("llvm-as-19"),
             |p| std::path::PathBuf::from(p).join("llvm-as"),
@@ -391,7 +391,7 @@ impl Scratch {
         }
         output
     }
-    fn run(&self, output: &std::path::Path, args: &[String]) -> std::process::Output {
+    pub(super) fn run(&self, output: &std::path::Path, args: &[String]) -> std::process::Output {
         std::process::Command::new(output)
             .args(args)
             .current_dir(&self.0)

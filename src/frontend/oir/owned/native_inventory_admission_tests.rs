@@ -362,3 +362,153 @@ fn native_inventory_shared_fixed_roles_include_actual_caller() {
         );
     }
 }
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires pinned LLVM 19.1.7; explicitly run the native inventory gate"]
+fn native_inventory_shared_source_reuses_helper_beyond_historical_x() {
+    use super::super::{execute, source::resource_fixtures as source};
+    use super::tests::Scratch;
+
+    // Ordinary source owns the declarations and every borrow/call. The unused
+    // source loop selects the production guarded ABI without changing main.
+    let parameters = (0..32)
+        .map(|i| format!("p{i}:&T"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let arguments = ["&x"; 32].join(",");
+    let text = format!(
+        "struct T{{value:i32}}\nfn sink({parameters})->i32{{return p0.value;}}\nfn main()->i32{{let x=T{{value:7}};{}return 7;}}\nfn guard()->(){{while false{{}}return;}}\n",
+        format!("sink({arguments});").repeat(20),
+    );
+    let case = source::checked(&text);
+    let plan = ExecutionPlan::build(&case.witness).unwrap();
+    assert_eq!(case.witness.functions().len(), 3);
+    assert_eq!(case.entry, hir::DefId(1));
+
+    // Source census, independent of native admission: sink has one field-read
+    // scalar and 32 parameters; main has initializer/return scalars and 20
+    // call-result scalars, two owners, and 32 loans/arguments per call. guard
+    // adds one bool and one unit scalar. W counts the two one-field owners.
+    // X=S+A+W+4O+10R+14L+2C remains reference/fuel data, not native policy.
+    for (id, s, a, o, r, l, c, w, x, bytes) in [
+        (0, 1, 0, 0, 32, 0, 0, 0, 321, 264),
+        (1, 22, 640, 2, 0, 640, 20, 2, 9672, 10424),
+        (2, 2, 0, 0, 0, 0, 0, 0, 2, 16),
+    ] {
+        let usage = plan.function(hir::DefId(id)).usage();
+        assert_eq!(
+            (
+                usage.scalar_slots,
+                usage.arguments,
+                usage.owners,
+                usage.references,
+                usage.loans,
+                usage.calls,
+                usage.owner_cells,
+                usage.expanded_cells,
+                usage.native_bytes,
+            ),
+            (s, a, o, r, l, c, w, x, bytes),
+        );
+    }
+    let inventories = plan::native_storage::NativeInventories::checked(&plan).unwrap();
+    assert_eq!((inventories.items(), inventories.owner_width()), (1359, 2));
+    assert_eq!(
+        plan.functions()
+            .iter()
+            .map(|f| f.usage().expanded_cells)
+            .sum::<usize>(),
+        9995,
+    );
+    let bounds = admit(&plan, Limits::DEFAULT).unwrap();
+    assert_eq!(
+        (bounds[case.entry.0].cells, bounds[case.entry.0].bytes),
+        (9993, 10688)
+    );
+    assert!(bounds[2].cyclic);
+
+    // Find the reference's first success without consulting native cost bounds
+    // or replacing the production wrapper. Every failed probe must be fuel.
+    let reference = |fuel| {
+        execute::run_limits(
+            &case.witness,
+            Some(case.entry),
+            execute::Limits {
+                fuel,
+                ..execute::Limits::default()
+            },
+        )
+    };
+    assert_eq!(reference(plan::MAX_FUEL), Ok(Scalar::I32(7)));
+    let (mut low, mut first) = (0, plan::MAX_FUEL);
+    while low < first {
+        let middle = low + (first - low) / 2;
+        match reference(middle) {
+            Ok(value) => {
+                assert_eq!(value, Scalar::I32(7));
+                first = middle;
+            }
+            Err(execute::OwnedRunFailure::Scalar(RunFailure::Fuel(_))) => low = middle + 1,
+            other => panic!("unexpected reference fuel probe at {middle}: {other:?}"),
+        }
+    }
+    assert!(first > 0 && first < plan::MAX_FUEL);
+    let evidence = std::env::var_os("OXID_OWNED_NATIVE_EVIDENCE").map(std::path::PathBuf::from);
+    if let Some(dir) = &evidence {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("shared-record-32x20.ox"), &text).unwrap();
+        std::fs::write(
+            dir.join("shared-record-32x20-inventory.json"),
+            format!("{{\"S\":25,\"A\":640,\"O\":2,\"R\":32,\"L\":640,\"C\":20,\"I\":1359,\"W\":2,\"X\":9995,\"aggregate_native_bytes\":10712,\"live_native_bytes\":10696,\"first_success_fuel\":{first}}}\n"),
+        )
+        .unwrap();
+    }
+    let scratch = Scratch::new();
+    for fuel in [first - 1, first, first + 1] {
+        let (status, stdout, stderr) = match reference(fuel) {
+            Ok(value) => {
+                assert!(fuel >= first);
+                assert_eq!(value, Scalar::I32(7));
+                (0, b"7\n".to_vec(), Vec::new())
+            }
+            Err(error @ execute::OwnedRunFailure::Scalar(RunFailure::Fuel(_))) => {
+                assert_eq!(fuel, first - 1);
+                (
+                    1,
+                    Vec::new(),
+                    error
+                        .diagnostic(&case.sources)
+                        .render_human(&case.sources)
+                        .into_bytes(),
+                )
+            }
+            other => panic!("unexpected reference boundary at {fuel}: {other:?}"),
+        };
+        let module =
+            native_module_with_fuel(&case.witness, case.entry, &case.sources, fuel).unwrap();
+        assert!(module.contains("%fuel = alloca"));
+        let name = format!("shared-record-32x20-fuel-{fuel}");
+        let binary = scratch.compile(&module, &name);
+        let actual = scratch.run(&binary, &[]);
+        if let Some(dir) = &evidence {
+            for (suffix, contents) in [
+                ("stdout", actual.stdout.as_slice()),
+                ("stderr", actual.stderr.as_slice()),
+                ("reference.stdout", stdout.as_slice()),
+                ("reference.stderr", stderr.as_slice()),
+            ] {
+                std::fs::write(dir.join(format!("{name}.{suffix}")), contents).unwrap();
+            }
+            std::fs::write(
+                dir.join(format!("{name}.status")),
+                format!("native={:?}\nreference={status}\n", actual.status.code()),
+            )
+            .unwrap();
+        }
+        assert_eq!(actual.status.code(), Some(status), "fuel={fuel}");
+        assert_eq!(actual.stdout, stdout, "fuel={fuel}");
+        assert_eq!(actual.stderr, stderr, "fuel={fuel}");
+    }
+    eprintln!("native inventory ordinary source: I1359 W2 historical X9995; first reference success {first}; three production source-free ELF fuel boundaries match");
+}

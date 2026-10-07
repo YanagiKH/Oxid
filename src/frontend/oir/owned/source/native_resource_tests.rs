@@ -193,10 +193,8 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
     ] {
         denial(&admit(&plan, lowered).unwrap_err(), name, maximum, origin);
     }
-    // Dnative<=8X by the same scalar/payload bound; a guarded module adds8.
-    // Native byte maxima are therefore masked by aggregate/path8192 cells.
-    assert_eq!(8 * MAX_SLOTS + 8, 65_544);
-    const { assert!(8 * MAX_SLOTS + 8 < MAX_NATIVE_BYTES) };
+    // Explicit native bytes remain a separate gate under the independent
+    // inventory and owner-width limits, including builtin and wrapper scratch.
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
