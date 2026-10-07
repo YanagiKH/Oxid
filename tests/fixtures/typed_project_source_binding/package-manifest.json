@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 24602,
+      "bytes": 24696,
       "path": "README.md",
-      "sha256": "7d973422675811a8a7360f1e32d4d6ecd925eaed08592f362d7d689c38662910"
+      "sha256": "746faff1aeb34839097ecebe1b30aa0c6b3ded12a986832838a9284c49dc5e2c"
     },
     {
       "bytes": 9916,
@@ -41,9 +41,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 50310,
+      "bytes": 50842,
       "path": "current-source.json",
-      "sha256": "3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936"
+      "sha256": "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303"
     },
     {
       "bytes": 29723,
@@ -106,6 +106,16 @@
       "sha256": "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4"
     },
     {
+      "bytes": 102974,
+      "path": "native-storage-authority.json",
+      "sha256": "1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da"
+    },
+    {
+      "bytes": 53819,
+      "path": "native-storage-transition.patch",
+      "sha256": "9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c"
+    },
+    {
       "bytes": 22314,
       "path": "predecessor-source.json",
       "sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8"
@@ -126,9 +136,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 152263,
+      "bytes": 159625,
       "path": "run.py",
-      "sha256": "946d1fd7b5fda02d9a052dd5010140965afb01d12c4d8a692a4783cae731a049"
+      "sha256": "0cde409cce83a6c1f5d3fa576239c0662aec15a67571d442fdea00f3e4378db1"
     },
     {
       "bytes": 55961,
@@ -169,6 +179,11 @@
       "bytes": 132738,
       "path": "stdout-authority.json",
       "sha256": "3015dfb1237578b4903b5a865f3ae7daf7819485c3399c2bfd589b8749d4066e"
+    },
+    {
+      "bytes": 50310,
+      "path": "stdout-source.json",
+      "sha256": "3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936"
     },
     {
       "bytes": 527951,
