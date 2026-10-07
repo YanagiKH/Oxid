@@ -2310,11 +2310,11 @@ fn native_owned_count_pass_stops_wide_expansion_at_the_byte_cap() {
         let mut visits = vec![];
         for cap in [1_024, 4_096, 65_536] {
             let mut count = Emission::count(cap);
+            let storage = NativeStoragePlan::checked(&plan, true).unwrap();
             emit(
-                &plan,
+                &storage,
                 hir::DefId(0),
                 &diagnostics,
-                true,
                 plan::MAX_FUEL,
                 &mut count,
             );

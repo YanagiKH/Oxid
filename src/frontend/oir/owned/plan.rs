@@ -3,6 +3,9 @@
 use super::{storage::*, verified::VerifiedOwnedProgram, *};
 use std::mem::size_of;
 
+#[path = "native_storage.rs"]
+pub(super) mod native_storage;
+
 pub(super) const ENUM_VALUE_COST: usize = 3;
 pub(super) const MATCH_DISPATCH_COST: usize = 1;
 
