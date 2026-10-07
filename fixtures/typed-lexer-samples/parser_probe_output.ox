@@ -15,18 +15,22 @@ fn column(values: &[i32]) -> i32 {
     let low = write(&bytes);
     if low != 0 { return low; }
     i = 0;
-    while i < 129 { bytes[i] = values[i] / 256; i = i + 1; }
+    while i < 129 { bytes[i] = values[i] / 256 % 256; i = i + 1; }
+    let middle = write(&bytes);
+    if middle != 0 { return middle; }
+    i = 0;
+    while i < 129 { bytes[i] = values[i] / 65536 % 256; i = i + 1; }
+    let high = write(&bytes);
+    if high != 0 { return high; }
+    i = 0;
+    while i < 129 { bytes[i] = values[i] / 16777216; i = i + 1; }
     return write(&bytes);
 }
 pub fn emit(rows: &crate::parser_banks::Rows) -> i32 {
     if !crate::parser_banks::valid(&*rows) { return 70; }
-    let header = [80, 65, 66, 49, 128];
+    let header = [80, 65, 66, 51, 128];
     let h = write(&header); if h != 0 { return h; }
-    let k = column(&*rows.kind); if k != 0 { return k; }
-    let s = column(&*rows.span); if s != 0 { return s; }
-    let a = column(&*rows.a); if a != 0 { return a; }
-    let b = column(&*rows.b); if b != 0 { return b; }
-    let c = column(&*rows.c); if c != 0 { return c; }
-    let d = column(&*rows.d); if d != 0 { return d; }
-    return column(&*rows.next);
+    let a = column(&*rows.header_links); if a != 0 { return a; }
+    let b = column(&*rows.ab); if b != 0 { return b; }
+    return column(&*rows.cd);
 }
