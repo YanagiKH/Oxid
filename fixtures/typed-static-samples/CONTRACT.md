@@ -21,7 +21,11 @@ conflicts first; functions in order; parameter types, result, then let annotatio
 in canonical block-vector order. Unknown types use E0202/resolve and the existing
 64-byte name-display rule. No ownership semantics are added by this branch.
 
-Primitive-only inputs use scalar resolution and typing. Names are exact original
+Primitive-only inputs use scalar resolution and typing. A public function selects
+project syntax: the canonical observation must use the genuine project loader
+and project source owner, with exact source bytes and identity. The original
+single-source adapter is only valid when project syntax is absent. Neither route
+may manufacture declaration-index or source-association authority. Names are exact original
 source spellings. All functions exist before body resolution; active locals and
 parameters cannot shadow one another or any function. Let initializers resolve
 before their new binding; assignment/call target lookup precedes their children.
@@ -35,7 +39,8 @@ children before parent operand/arity/mutability constraints. Let annotation and
 assignment type equality are exact. All functions require an explicit return on
 all conservative paths, including unit functions. While retains fallthrough even
 for literal true. Flow bits are F=1, R=2, B=4, C=8; branches union exits, sequencing
-substitutes the next summary only on F, and while consumes its own B/C exits.
+keeps the first summary without F and unions the next summary when F is present
+(otherwise it keeps the first summary), and while consumes its own B/C exits.
 
 ## Facts indexed by immutable AST row
 
@@ -88,7 +93,10 @@ The suffix header is exactly 16 bytes:
 | 14..15 | expected/actual argument count, otherwise 0 |
 
 Static success appends the two columns in the same byte-plane order as OPA1:
-four planes of 129 bytes for each column, signed i32 encoded as exact little-
+resolution first, then semantic, with planes 0 through 3 and cells 0 through 128
+within each plane. The combined offsets are header 1,559, resolution 1,575,
+semantic 2,091, and exact end 2,607. Each column has four planes of 129 bytes,
+with signed i32 encoded as exact little-
 endian two's-complement bits. Total combined success size is 2,607 bytes. All
 success diagnostic fields are zero. A static diagnostic appends no columns:
 total combined size is 1,575 bytes. Header fields unused by its diagnostic kind
@@ -97,10 +105,10 @@ this bounded canonical domain. Source spans are half-open and bounded by input.
 
 Diagnostic kinds bind exact canonical code/stage/message templates:
 
-1. E0200/resolve: `unknown local `{name}``
-2. E0200/resolve: `unknown direct function `{name}``
+1. E0200/resolve: ``unknown local `{name}```
+2. E0200/resolve: ``unknown direct function `{name}```
 3. E0201/resolve: `duplicate binding; shadowing is unavailable in typed-preview`
-4. E0202/resolve: `unknown type `{name}`` (public owned-name display rule)
+4. E0202/resolve: ``unknown type `{name}``` (public owned-name display rule)
 5. E0203/resolve: `decimal literal is outside the i32 range [-2147483648, 2147483647]`
 6. E0204/resolve: `` `break` requires an enclosing while in the same function ``
 7. E0204/resolve: `` `continue` requires an enclosing while in the same function ``
@@ -111,6 +119,25 @@ Diagnostic kinds bind exact canonical code/stage/message templates:
 12. E0303/type: `statement after terminal return is unavailable in typed-preview`
 13. E0303/type: `statement after terminal control transfer is unavailable in typed-preview`
 14. E0304/type: `assignment requires a mutable local`
+
+| Kind | Primary | Secondary label and span | Nonzero payload fields |
+| --- | --- | --- | --- |
+| 1, unknown local | Missing Name identifier or assignment target identifier | None | None |
+| 2, unknown direct function | Callee identifier, not whole call | None | None |
+| 3, duplicate binding | Later declaration's name | Label 1, first conflicting declaration's name | None |
+| 4, unknown type | Complete TypeName identifier | None | None |
+| 5, i32 range | Complete Number expression, including literal minus/trivia | None | None |
+| 6, break placement | Whole break statement, including semicolon | None | None |
+| 7, continue placement | Whole continue statement, including semicolon | None | None |
+| 8, ordinary mismatch | Failing operand, argument, initializer, RHS, returned value, or condition; full `return;` when value absent | Label 2 on a call argument mismatch; label 3 on let/assignment mismatch; otherwise none | Expected and actual primitive type codes |
+| 9, unit equality | Left operand expression | None | None; the message already fixes unit |
+| 10, arity | Whole call expression | Label 2, called function name | Expected and actual argument counts, including valid zero counts |
+| 11, missing terminal return | Function closing-brace span | None | None |
+| 12, after terminal return | Whole next statement | None | None |
+| 13, after terminal control transfer | Whole next statement | None | None |
+| 14, immutable assignment | Assignment target identifier | Label 4, declaration name | None |
+
+For kind 8, expected/actual codes are each in 1..3 and differ. For kind 10, counts must fit the actual bounded AST and differ; zero is a legitimate count. For all other kinds bytes 12..15 are zero. If label is absent, bytes 9..11 are zero. The primary must denote the context listed above rather than merely be some in-bounds span. Named secondary labels must match their exact canonical text. Kind 8's allowed secondary label depends on the actual failing constraint; it must not accept an arbitrary label among 0/2/3.
 
 The quoted templates, source-derived name spelling and context-specific spans
 are checked against the unchanged canonical observer before semantic activation.
@@ -142,7 +169,12 @@ No runtime recursion, callback framework, dynamic table, source fusion, new
 input framing or cap increase is authorized to make the probe fit.
 
 Measure the whole actual combined program, including constructor/return/binding
-copies and output helpers. Existing parser baseline is I = 6,460, W = 2,571, F = 87,
+copies and output helpers. The measured tag-2 carrier has I = 7,404, W = 3,645,
+103 functions, 1,747 blocks and 75,020 explicit native bytes including the process
+wrapper. Its 788 remaining I items do not establish full semantic feasibility.
+Replacing its 313-item synthetic driver would make at most 1,101 items available
+for all replacement semantic code; future control/diagnostic state is not yet
+priced. Existing parser baseline is I = 6,460, W = 2,571, F = 87,
 blocks = 1,485 and explicit bytes = 63,384. Three additional arrays model 774 owner-width
 cells before the new State and output/control temporaries; this is not measured
 successor admission. Existing I/W ceilings are 8,192 each and all other gates stay.
