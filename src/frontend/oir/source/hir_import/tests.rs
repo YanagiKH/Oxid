@@ -88,7 +88,7 @@ fn checked_hir_import_framing_and_inactive_controls() {
         }
     }
     let mut changed = bytes;
-    changed[9] = 129;
+    changed[8] = 129;
     changed[OPA_BYTES + 5] = 129;
     assert!(matches!(Wire::decode(&changed, 0), Err(Boundary::Frame)));
 }
@@ -137,7 +137,14 @@ fn checked_hir_import_real_owner_and_source_checks_precede_wire() {
     }
 }
 
-const RICH: &str = "fn f(x:i32)->i32{return x;}fn main()->i32{let mut n=f(1);while false{n=n+1;}if true{return n;}else{return f(2);}}";
+const RICH: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/checked_hir_import/rich-source.txt"
+));
+const RICH_WIRE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/checked_hir_import/rich-success.bin"
+));
 #[test]
 fn checked_hir_import_canonical_storage_is_observed_but_never_imported() {
     let (sources, ast) = parsed(RICH);
@@ -173,7 +180,14 @@ fn checked_hir_import_canonical_storage_is_observed_but_never_imported() {
 
 #[test]
 fn checked_hir_import_public_source_uses_genuine_project_owner() {
-    let text = format!("pub {RICH}");
+    let text = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/public-source.txt"
+    ));
+    let public_wire = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/public-success.bin"
+    ));
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -194,8 +208,16 @@ fn checked_hir_import_public_source_uses_genuine_project_owner() {
         ProjectSources::load_typed(file.to_str().unwrap(), ProjectLimits::default()).unwrap();
     assert_eq!(project.syntax_flavor(), SyntaxFlavor::ProjectSyntax);
     let owner = SourceOwner::project(&project);
-    let Err(Rejection::Disabled(facts)) = denied_probe(owner, text.as_bytes(), &frame(text.len()))
-    else {
+    let source = owner.file(ModuleId(0)).unwrap();
+    let ast = owner.ast(ModuleId(0)).unwrap();
+    let forced_original =
+        SourceOwner::original(source, ast, SourceView::Map(project.sources())).unwrap();
+    assert!(matches!(
+        denied_probe(forced_original, text.as_bytes(), b""),
+        Err(Rejection::Boundary(Boundary::Source))
+    ));
+
+    let Err(Rejection::Disabled(facts)) = denied_probe(owner, text.as_bytes(), public_wire) else {
         panic!("denial required")
     };
     assert_eq!(facts.requested, Counts([2, 2, 1, 2, 11, 5, 7, 2]));
@@ -230,4 +252,68 @@ fn checked_hir_import_actual_layouts() {
         size_of::<Result<Infallible, Rejection>>(),
         size_of::<Rejection>()
     );
+}
+
+#[test]
+fn checked_hir_import_actual_producer_frame_has_distinct_count_and_head() {
+    assert_eq!(
+        (
+            RICH_WIRE.len(),
+            RICH_WIRE[8],
+            RICH_WIRE[9],
+            RICH_WIRE[OPA_BYTES + 5]
+        ),
+        (2607, 29, 1, 29)
+    );
+    let wire = Wire::decode(RICH_WIRE, RICH.len()).unwrap();
+    assert_eq!(wire.rows, 29);
+    let (sources, ast) = parsed(RICH);
+    let owner = original(&sources, &ast);
+    let bound = BoundObservation::bind(owner, RICH.as_bytes(), RICH_WIRE).unwrap();
+    assert!(std::ptr::eq(
+        bound.source.as_ptr(),
+        sources
+            .get(crate::frontend::source::SourceFileId(0))
+            .text()
+            .as_ptr()
+    ));
+    let Err(Rejection::Disabled(facts)) = denied_probe(owner, RICH.as_bytes(), RICH_WIRE) else {
+        panic!("denial required")
+    };
+    assert_eq!(facts.rows, 29);
+    assert_eq!(facts.requested, Counts([2, 2, 1, 2, 11, 5, 7, 2]));
+    let mut changed = RICH_WIRE.to_vec();
+    changed.swap(8, 9);
+    assert!(matches!(
+        Wire::decode(&changed, RICH.len()),
+        Err(Boundary::Frame)
+    ));
+    for head in [0, 30, 255] {
+        let mut changed = RICH_WIRE.to_vec();
+        changed[9] = head;
+        assert!(matches!(
+            Wire::decode(&changed, RICH.len()),
+            Err(Boundary::Frame)
+        ));
+    }
+}
+
+#[test]
+fn checked_hir_import_excluded_ast_domains_do_not_reach_resolution() {
+    for text in [
+        "struct S{}",
+        "enum E{A}",
+        "fn f(x:&i32)->(){return;}",
+        "fn f()->(){let x=[1];return;}",
+        "fn f()->(){let x=1;g(&x);return;}",
+    ] {
+        let (sources, ast) = parsed(text);
+        assert!(
+            matches!(
+                denied_probe(original(&sources, &ast), text.as_bytes(), b""),
+                Err(Rejection::Boundary(Boundary::Domain))
+            ),
+            "{text}"
+        );
+    }
 }

@@ -16,3 +16,9 @@ tests/fixtures/bounded_typed_static/cases.json -text
 tests/fixtures/bounded_typed_static/malformed_controls.py -text
 tests/fixtures/bounded_typed_static/stdout_prefix_eio.c -text
 tests/fixtures/bounded_typed_static/calibrate_stdout_prefix.c -text
+
+# Actual producer observation retained for denied HIR-import interoperability.
+tests/fixtures/checked_hir_import/rich-source.txt -text
+tests/fixtures/checked_hir_import/rich-success.bin -text
+tests/fixtures/checked_hir_import/public-source.txt -text
+tests/fixtures/checked_hir_import/public-success.bin -text

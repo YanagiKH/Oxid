@@ -1,7 +1,11 @@
 //! Denied, source-bound observation probe. Framing is not semantic validation.
 //! No candidate constructor, checker, lowerer or executable consumer is called.
 use crate::frontend::{
-    declaration_index::SourceOwner, diagnostic::Diagnostic, hir, project::ModuleId,
+    ast,
+    declaration_index::SourceOwner,
+    diagnostic::Diagnostic,
+    hir,
+    project::{ModuleId, SyntaxFlavor},
 };
 use std::{convert::Infallible, mem::size_of};
 
@@ -39,17 +43,17 @@ impl<'w> Wire<'w> {
         if bytes.len() != SUCCESS_BYTES
             || &bytes[..4] != b"OPA1"
             || bytes[4..8] != [0; 4]
-            || usize::from(bytes[9]) > MAX_ROWS
+            || usize::from(bytes[8]) > MAX_ROWS
             || usize::from(bytes[10]) != source_len
             || &bytes[OPA_BYTES..OPA_BYTES + 4] != b"STF1"
             || bytes[OPA_BYTES + 4] != 0
-            || bytes[OPA_BYTES + 5] != bytes[9]
+            || bytes[OPA_BYTES + 5] != bytes[8]
             || bytes[OPA_BYTES + 6..OPA_BYTES + 16] != [0; 10]
         {
             return Err(Boundary::Frame);
         }
-        let rows = bytes[9];
-        if (rows == 0) != (bytes[8] == 0) || bytes[8] > rows {
+        let rows = bytes[8];
+        if (rows == 0) != (bytes[9] == 0) || bytes[9] > rows {
             return Err(Boundary::Frame);
         }
         let wire = Self { bytes, rows };
@@ -80,10 +84,100 @@ impl<'w> Wire<'w> {
         Ok(i32::from_le_bytes(value))
     }
 }
+fn scalar_type(ty: ast::TypeSyntax) -> bool {
+    matches!(
+        ty.kind,
+        ast::TypeSyntaxKind::Unit | ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(_))
+    )
+}
+fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
+    if !program.records.is_empty()
+        || !program.enums.is_empty()
+        || !program.modules.is_empty()
+        || !program.imports.is_empty()
+        || !program.paths.is_empty()
+        || !program.path_segments.is_empty()
+    {
+        return Err(Boundary::Domain);
+    }
+    // Exact unified scalar-row count; this is a domain bound, not wire equality.
+    let mut rows = program.expressions.len();
+    let mut add = |amount: usize| -> Result<(), Boundary> {
+        rows = rows
+            .checked_add(amount)
+            .filter(|&n| n <= MAX_ROWS)
+            .ok_or(Boundary::Domain)?;
+        Ok(())
+    };
+    add(program.functions.len())?;
+    for function in &program.functions {
+        if !scalar_type(function.result) || function.params.iter().any(|p| !scalar_type(p.ty)) {
+            return Err(Boundary::Domain);
+        }
+        add(1)?; // result type
+        add(function
+            .params
+            .len()
+            .checked_mul(2)
+            .ok_or(Boundary::Overflow)?)?;
+        add(function.blocks.len())?;
+        for block in &function.blocks {
+            add(block.body.len())?;
+            for statement in &block.body {
+                match statement.kind {
+                    ast::StmtKind::Let { annotation, .. } => {
+                        if let Some(ty) = annotation {
+                            if !scalar_type(ty) {
+                                return Err(Boundary::Domain);
+                            }
+                            add(1)?;
+                        }
+                    }
+                    ast::StmtKind::Assign { .. }
+                    | ast::StmtKind::Expr(_)
+                    | ast::StmtKind::Return(_)
+                    | ast::StmtKind::Break
+                    | ast::StmtKind::Continue
+                    | ast::StmtKind::While { .. }
+                    | ast::StmtKind::If { .. } => (),
+                    ast::StmtKind::FieldAssign { .. }
+                    | ast::StmtKind::IndexAssign { .. }
+                    | ast::StmtKind::Match { .. } => return Err(Boundary::Domain),
+                }
+            }
+        }
+    }
+    for expression in &program.expressions {
+        match &expression.kind {
+            ast::ExprKind::Negate { .. }
+            | ast::ExprKind::Not { .. }
+            | ast::ExprKind::Logical { .. }
+            | ast::ExprKind::Comparison { .. }
+            | ast::ExprKind::Bool(_)
+            | ast::ExprKind::Number { .. }
+            | ast::ExprKind::Unit
+            | ast::ExprKind::Name(_)
+            | ast::ExprKind::Group(_)
+            | ast::ExprKind::Arithmetic { .. } => (),
+            ast::ExprKind::Call {
+                callee: ast::ItemPath::Unqualified(_),
+                args,
+            } if args
+                .iter()
+                .all(|arg| matches!(arg, ast::Argument::Value(_))) =>
+            {
+                ()
+            }
+            _ => return Err(Boundary::Domain),
+        }
+    }
+    Ok(())
+}
+
 struct BoundObservation<'s, 'w> {
     owner: SourceOwner<'s>,
     wire: Wire<'w>,
-    source_len: u8,
+    source: &'s [u8],
 }
 impl<'s, 'w> BoundObservation<'s, 'w> {
     fn bind(
@@ -95,18 +189,22 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
             return Err(Boundary::Domain);
         }
         let source = owner.file(ModuleId(0)).map_err(|_| Boundary::Source)?;
-        owner.ast(ModuleId(0)).map_err(|_| Boundary::Source)?;
+        let ast = owner.ast(ModuleId(0)).map_err(|_| Boundary::Source)?;
+        if owner.flavor() == SyntaxFlavor::OriginalSingleFile && ast.uses_project_syntax() {
+            return Err(Boundary::Source);
+        }
         if captured_source != source.text().as_bytes() {
             return Err(Boundary::Source);
         }
         if captured_source.len() > MAX_ROWS || !captured_source.is_ascii() {
             return Err(Boundary::Domain);
         }
+        bounded_ast_domain(ast)?;
         let wire = Wire::decode(bytes, captured_source.len())?;
         Ok(Self {
             owner,
             wire,
-            source_len: u8::try_from(captured_source.len()).map_err(|_| Boundary::Domain)?,
+            source: source.text().as_bytes(),
         })
     }
 }
@@ -230,7 +328,7 @@ fn denied_probe(
         canonical_payload_bytes: plan.canonical_payload_bytes,
         hypothetical_hir_pair_bytes: plan.hypothetical_hir_pair_bytes,
         rows: bound.wire.rows,
-        source_len: bound.source_len,
+        source_len: u8::try_from(bound.source.len()).map_err(|_| Boundary::Domain)?,
     };
     drop(canonical);
     Err(Rejection::Disabled(facts))
