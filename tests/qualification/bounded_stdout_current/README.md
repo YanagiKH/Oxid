@@ -4,7 +4,7 @@
 profiles. It never builds Rust. The enum gate's existing source identity,
 Cargo JSON artifact streams, command receipts, profile flags and binary hashes
 are admitted using the enum/stdin helpers before any selected program runs.
-The complete 262-member current authority and 207 compiler/build bodies, exact
+The complete 264-member current authority and 209 compiler/build bodies, exact
 checkout head/tree/event, tools, helper inputs, build receipts and binaries
 are checked before and after execution. `--profiles debug` is an explicitly
 partial local rehearsal, never a claim that release passed.
@@ -59,7 +59,7 @@ Full native gate, after the enum gate has produced both ordinary profiles:
     python3 -B scripts/verify_bounded_stdout_native.py \
       --repo "$PWD" --output "$OUT/stdout" --build-evidence "$OUT/enum" \
       --llvm-bin "$OXID_LLVM_BIN" --expected-head "$Q" --event-sha "$EVENT_SHA" \
-      --source-manifest-sha256 3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936
+      --source-manifest-sha256 0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303
 
 CI always uploads the new stdout evidence directory, including nested public
 artifact evidence, even when qualification fails.

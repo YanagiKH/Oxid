@@ -33,12 +33,12 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [425, 428, 428])
-        self.assertEqual(len(a['current_source']['files']), 262)
-        self.assertEqual(len(p.compiler_map(a)), 207)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [427, 430, 430])
+        self.assertEqual(len(a['current_source']['files']), 264)
+        self.assertEqual(len(p.compiler_map(a)), 209)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 220)
+        self.assertEqual(len(a['current']['source_delta']), 222)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
@@ -85,6 +85,8 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned/enum_query_allocation_tests.rs',
  'src/frontend/oir/owned/enum_reference_tests.rs',
  'src/frontend/oir/owned/input.rs',
+ 'src/frontend/oir/owned/native_storage.rs',
+ 'src/frontend/oir/owned/native_storage_tests.rs',
  'src/frontend/oir/owned/negation_raw_tests.rs',
  'src/frontend/oir/owned/output.rs',
  'src/frontend/oir/owned/process.rs',
@@ -182,8 +184,20 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 78)
-        self.assertEqual(a['current']['reviewed_source_head'], '63db2c290031d76b5925fdd672c38eac2ca50578')
-        self.assertEqual(a['current']['source_only_tree'], 'f01525a95f2e4b3dfa69237108cfbc67a1f43eab')
+        self.assertEqual(a['current']['reviewed_source_head'], '983dad1f21bdc9d37cf0d1364b58aad219e553d0')
+        self.assertEqual(a['current']['source_only_tree'], '4380d906e868ad992d97ffc652e657773f1c2947')
+
+    def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
+        original_read = p.read
+        path = p.REPOSITORY / 'tests/fixtures/typed_project_source_binding/native-storage-authority.json'
+        original = original_read(path)
+        for name in ('src/frontend/parser.rs', 'src/frontend/lexer.rs'):
+            altered = copy.deepcopy(original)
+            altered['transition_paths'].append(name)
+            with self.subTest(path=name), patch.object(
+                    p, 'read', side_effect=lambda candidate: altered if Path(candidate) == path else original_read(candidate)):
+                with self.assertRaisesRegex(p.Rejected, 'native storage transition must not overlap parser instrumentation'):
+                    p.authority()
 
     def test_copied_algorithms_have_only_reviewed_change_boundaries(self):
         old_text = (p.FROZEN / 'portable.py').read_text()
@@ -231,7 +245,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 425)
+        self.assertEqual(len(candidate['files']), 427)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -708,8 +722,15 @@ class StdoutCompositionControls(unittest.TestCase):
         current = self.a['current']
         stdout = p.read(p.REPOSITORY / current['stdout_authority']['path'])
         stdin = p.read(p.REPOSITORY / current['stdin_authority']['path'])
-        self.assertEqual(stdout['current_source_sha256'], current['current_source_manifest']['sha256'])
-        self.assertEqual(stdout['reviewed_source_head'], current['reviewed_source_head'])
+        self.assertEqual(stdout['current_source_sha256'], current['stdout_source_manifest']['sha256'])
+        native_storage = p.read(p.REPOSITORY / current['native_storage_authority']['path'])
+        self.assertEqual(native_storage['reviewed_source_head'], current['reviewed_source_head'])
+        self.assertEqual(native_storage['current_source_sha256'], current['current_source_manifest']['sha256'])
+        self.assertEqual(native_storage['stdout_source_sha256'], current['stdout_source_manifest']['sha256'])
+        self.assertEqual(native_storage['base_head'], stdout['reviewed_source_head'])
+        self.assertNotEqual(stdout['reviewed_source_head'], current['reviewed_source_head'])
+        for field in ('instrumentation', 'control_instrumentation'):
+            self.assertFalse(set(native_storage['transition_paths']).intersection(row['path'] for row in self.a[field]))
         self.assertEqual(stdin['current_source_sha256'], current['stdin_source_manifest']['sha256'])
         self.assertEqual(stdin['reviewed_source_head'], 'c1d73740268d64d4e908ad86ed9dabaa48dd1c23')
         self.assertNotEqual(stdout['reviewed_source_head'], stdin['reviewed_source_head'])
@@ -1061,7 +1082,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 207)
+        self.assertEqual(len(bound['compiler_files']), 209)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())
