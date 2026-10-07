@@ -324,6 +324,11 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         // Run entry capture: complete helper arguments, fixed scan locals,
         // source-file lookup/conversion, and helper call/return transports.
         copies(size_of::<(&ast::Program, &SourceFile, &hir::Program)>(), 2)?,
+        size_of::<(
+            crate::frontend::declaration_index::SourceOwner<'_>,
+            ModuleId,
+        )>(),
+        size_of::<(&SourceFile, Span)>(),
         copies(size_of::<&SourceFile>(), 2)?,
         size_of::<Result<&SourceFile, Box<Diagnostic>>>(),
         size_of::<Result<&SourceFile, Failure>>(),
@@ -402,12 +407,13 @@ mod tests {
         assert!(WorkPlan::calculate(Counts([MAX_ROWS + 1; 8]), MAX_ROWS).is_err());
         assert!(WorkPlan::calculate(Counts::default(), MAX_ROWS + 1).is_err());
         println!(
-            "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={} request={} entry={} entry_result={} scalar={} run_failure={} runtime={} optional_runtime={}",
+            "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={} request={} entry={} entry_result={} scalar={} run_failure={} runtime={} optional_runtime={} source_lookup_call={} source_text_call={}",
             named_bytes().unwrap(), size_of::<Context<'_>>(), size_of::<WorkPlan>(),
             size_of::<Facts>(), size_of::<Rejected>(), size_of::<Result<Facts, Rejected>>(),
             size_of::<typeck::TypedProgram>(), size_of::<oir::Program>(), size_of::<oir::VerifiedProgram>(),
             size_of::<Request>(), size_of::<Option<hir::DefId>>(), size_of::<Result<Option<hir::DefId>, Failure>>(),
             size_of::<Scalar>(), size_of::<RunFailure>(), size_of::<Result<Scalar, RunFailure>>(), size_of::<Option<Result<Scalar, RunFailure>>>(),
+            size_of::<(crate::frontend::declaration_index::SourceOwner<'_>, ModuleId)>(), size_of::<(&SourceFile, Span)>(),
         );
     }
 }

@@ -463,6 +463,63 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_hir_import_run_carriers_reject_predecessor_private_admissions() {
+        // Measured private predecessor envelopes. The current complete
+        // enclosing carriers are charged without increasing any ceiling.
+        assert!(matches!(
+            SourcePlan::calculate(IndexLimits {
+                scratch: 74_924,
+                ..IndexLimits::default()
+            }),
+            Err(Rejected::Budget)
+        ));
+        assert!(matches!(
+            SourcePlan::calculate_verify(IndexLimits {
+                scratch: 90_177,
+                ..IndexLimits::default()
+            }),
+            Err(Rejected::Budget)
+        ));
+        let text = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/rich-source.txt"
+        ));
+        let wire = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/rich-success.bin"
+        ));
+        let mut sources = crate::frontend::source::SourceMap::new();
+        let id = sources.add("predecessor-admission.ox".into(), text.into());
+        let source = sources.get(id);
+        let ast =
+            crate::frontend::parser::parse(source, crate::frontend::lexer::lex(source).unwrap())
+                .unwrap();
+        let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+        let mut allocator = Allocator::default();
+        let checker = crate::frontend::typeck::measurement::begin();
+        let result = verify(
+            owner,
+            text.as_bytes(),
+            wire,
+            &mut allocator,
+            IndexLimits {
+                retained: 95_890,
+                scratch: IndexLimits::default().scratch,
+                work: 1_276_867,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(VerifyRejected::Terminal(
+                candidate::VerifyRejected::Candidate(allocation::Failure::Admission)
+            ))
+        ));
+        assert_eq!(allocator.attempts, 0);
+        assert_eq!(checker.finish().frame_bytes, 0);
+    }
+
     #[test]
     fn checked_hir_import_leaf_layout_and_preflight_only() {
         let limits = IndexLimits::default();

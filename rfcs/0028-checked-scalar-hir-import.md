@@ -365,3 +365,26 @@ Keep the Run entrance hard denied until complete carrier measurement and an
 independent boundary review pass. Then separately qualify fixed results, entry
 identity, arithmetic/runtime failures, fuel/frame limits and owner cleanup
 against the ordinary source route before considering further activation.
+
+### Denied Run carrier observation
+
+The compiled denied precursor measures Request at 1 byte, Context at 40,
+WorkPlan at 56, terminal facts/result at 288 and outer facts/result at 320 on the
+qualified local 64-bit target. The first, incomplete carrier sample changed the private Verify fixed
+envelope from 90,177 to 94,835 bytes and rich retained admission from 95,890 to
+100,548 bytes. Review then identified two missing complete method-call argument
+carriers, which are now included and require a fresh measurement before admission. The shared construction carrier also
+changes the private Observe fixed envelope from 74,924 to 75,356 bytes. These are
+explicit private admission successors under the same ceilings; public/default
+source admission does not use these disconnected leaves. Verify compilation
+work remains 1,276,867 for the rich fixture, with entry_work zero and no runtime
+outcome.
+
+The separately measured inherited interpreter Frame is 144 bytes. Its ordinary
+1,024-frame vector capacity retains 147,456 bytes; the rich call's maximum sampled
+simultaneous vector payload is 147,592 bytes and the recursive frame-limit case
+is 155,648 bytes. Missing/wrong-arity main creates no observed runtime storage.
+These are successful-allocation capacity samples, excluding allocation metadata,
+failed partial construction and realloc transients. They do not replace the new
+importer ledger or establish a total memory bound. Private Run remains denied
+pending entry/denial controls and independent accounting review.
