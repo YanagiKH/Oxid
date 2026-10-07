@@ -1,6 +1,6 @@
-// Actual bounded scalar resolution. Successful STF1 tag 2 is pending typing.
+// Actual bounded scalar resolution followed by complete scalar typing and flow.
 mod buffers; mod lexer_core; mod keywords;
-mod static_state; mod static_common; mod resolver_names; mod resolver_driver; mod resolver_output; mod static_output; mod static_column;
+mod static_state; mod static_common; mod resolver_names; mod resolver_driver; mod static_column; mod typed_diagnostic; mod typed_expression; mod typed_statement; mod typed_driver; mod typed_output;
 mod parser_state; mod parser_signature; mod parser_atom; mod parser_call; mod parser_expression; mod parser_statement; mod parser_control; mod parser_driver; mod parser_output;
 use std::io::read_stdin;
 use std::io::ReadStatus;
@@ -24,7 +24,17 @@ fn build(codes: &[i32], tokens: &[i32], count: i32, used: i32) -> i32 {
     let mut locals = crate::buffers::zeros();
     let mut resolution = crate::static_state::State { stack: 0, locals: 0, value: 0 };
     if !crate::resolver_driver::run(&*codes, &*tokens, &headers, &ab, &cd, &mut resolved, &mut locals, &mut frames, &mut resolution, state.rows, used) { return 70; }
-    return crate::resolver_output::emit(&resolved, &semantic, &resolution, state.rows, used);
+    if resolution.stack != 0 {
+        let kind = resolution.stack;
+        let primary = resolution.locals;
+        let secondary = resolution.value;
+        let mut label = 0;
+        if kind == 3 { label = 1; }
+        crate::typed_diagnostic::fail(&mut resolution, kind, primary, secondary, label, 0, 0);
+    } else {
+        if !crate::typed_driver::run(&*tokens, &headers, &ab, &cd, &resolved, &mut semantic, &mut frames, &mut resolution, state.rows) { return 70; }
+    }
+    return crate::typed_output::emit(&resolved, &semantic, &resolution, state.rows, used);
 }
 fn observe(codes: &[i32], used: i32) -> i32 {
     let mut i = 0;

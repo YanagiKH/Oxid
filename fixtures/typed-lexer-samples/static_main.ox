@@ -1,6 +1,6 @@
 // Combined source-to-parser carrier probe. STF1 tag 2 is never static acceptance.
 mod buffers; mod lexer_core; mod keywords;
-mod static_state; mod static_common; mod static_probe; mod static_output;
+mod static_state; mod static_common; mod static_probe; mod static_output; mod static_column;
 mod parser_state; mod parser_signature; mod parser_atom; mod parser_call; mod parser_expression; mod parser_statement; mod parser_control; mod parser_driver; mod parser_output;
 use std::io::read_stdin;
 use std::io::ReadStatus;
