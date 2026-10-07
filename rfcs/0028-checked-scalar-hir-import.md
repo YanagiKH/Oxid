@@ -442,3 +442,25 @@ headroom shown under the existing ceiling.
 Keep Emit hard denied until complete carrier pricing, the work bound, default
 behavior preservation and private no-growth checks have independent review.
 LLVM invocation and executable publication require a later explicit stage.
+
+### Hard-denied Emit transport checkpoint
+
+The private leaf now has a compiled Emit request and an unboxed owned-text
+artifact alternative. Literal false gates remain at the leaf, common dispatch,
+candidate entry, direct construction and terminal entry; the terminal also
+returns Disabled for Emit before any emission work is connected. No scan,
+formula, native call, final text reserve or successful artifact is enabled by
+this transport checkpoint.
+
+Verify and Run keep their existing outward fixed-facts types and work semantics.
+Complete shared enum, input and Result carriers nevertheless grow. Their actual
+layouts are included in the enabled comparison/Verify/Run named ledgers, so this
+is a new private storage-admission successor under the same ceilings. Previous
+private byte thresholds are not promised to admit. Exact measurements and fresh
+boundary controls are required before qualifying this successor.
+
+The future artifact has no borrowed source lifetime. The terminal must drop its
+verified/compiler owners before returning it; qualification must inspect the
+String after the caller's genuine SourceMap/AST backing scope ends. Dropping the
+Copy SourceOwner adapter alone does not destroy that backing. Default compiler
+routes, source ownership and public/provider selection remain unchanged.

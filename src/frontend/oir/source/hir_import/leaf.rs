@@ -1,5 +1,5 @@
 //! Private comparison and fixed-facts Verify entries. No default caller is
-//! connected. Successful terminal values contain fixed facts only.
+//! connected. Verify/Run keep fixed facts; the Emit transport is hard denied.
 use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
@@ -62,6 +62,19 @@ pub(super) struct VerifyFacts {
     pub(super) canonical_work: u64,
     pub(super) total_work: u64,
     pub(super) outside_fixed_bytes: usize,
+}
+#[derive(Debug)]
+pub(super) struct EmitOutput {
+    pub(super) artifact: candidate::EmitArtifact,
+    pub(super) source_work: u64,
+    pub(super) canonical_work: u64,
+    pub(super) total_work: u64,
+    pub(super) outside_fixed_bytes: usize,
+}
+#[derive(Debug)]
+enum Requested {
+    Fixed(VerifyFacts),
+    Emitted(EmitOutput),
 }
 #[derive(Debug)]
 pub(super) enum VerifyRejected {
@@ -149,14 +162,19 @@ pub(super) fn verify(
     candidate_allocator: &mut Allocator,
     limits: IndexLimits,
 ) -> Result<VerifyFacts, VerifyRejected> {
-    requested(
+    match requested(
         candidate::Request::Verify,
         owner,
         captured_source,
         observation,
         candidate_allocator,
         limits,
-    )
+    )? {
+        Requested::Fixed(facts) => Ok(facts),
+        Requested::Emitted(_) => {
+            Err(candidate::VerifyRejected::Candidate(allocation::Failure::Shape).into())
+        }
+    }
 }
 
 /// Private Run uses the same complete checked terminal. No test-only switch,
@@ -172,17 +190,51 @@ pub(super) fn run(
     if !candidate::RUN_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
-    requested(
+    match requested(
         candidate::Request::Run,
         owner,
         captured_source,
         observation,
         candidate_allocator,
         limits,
-    )
+    )? {
+        Requested::Fixed(facts) => Ok(facts),
+        Requested::Emitted(_) => {
+            Err(candidate::VerifyRejected::Candidate(allocation::Failure::Shape).into())
+        }
+    }
 }
 
-/// One complete source/canonical/candidate/checker terminal for both requests.
+/// Compiled owned-text transport only. Every internal seam also hard denies
+/// Emit; no supplied input, caller flag, or test configuration can enable it.
+#[allow(clippy::result_large_err)]
+pub(super) fn emit(
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<EmitOutput, VerifyRejected> {
+    if !candidate::EMIT_ADMITTED {
+        return Err(VerifyRejected::Disabled);
+    }
+    match requested(
+        candidate::Request::Emit,
+        owner,
+        captured_source,
+        observation,
+        candidate_allocator,
+        limits,
+    )? {
+        Requested::Emitted(output) => Ok(output),
+        Requested::Fixed(_) => {
+            Err(candidate::VerifyRejected::Candidate(allocation::Failure::Shape).into())
+        }
+    }
+}
+
+/// One complete source/canonical/candidate/checker terminal. The shared enum's
+/// full layout is paid even for the enabled fixed-facts requests.
 #[allow(clippy::result_large_err)]
 fn requested(
     request: candidate::Request,
@@ -191,11 +243,14 @@ fn requested(
     observation: &[u8],
     candidate_allocator: &mut Allocator,
     limits: IndexLimits,
-) -> Result<VerifyFacts, VerifyRejected> {
+) -> Result<Requested, VerifyRejected> {
     if !candidate::VERIFY_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
     if request == candidate::Request::Run && !candidate::RUN_ADMITTED {
+        return Err(VerifyRejected::Disabled);
+    }
+    if request == candidate::Request::Emit && !candidate::EMIT_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
     let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
@@ -239,7 +294,7 @@ fn requested(
     // Canonical ownership is moved into the one candidate construction body.
     // Its admitted metadata prepays candidate/helper + all downstream work on
     // this same meter before the first reserve. No second debit follows here.
-    let verified_result = candidate::request_candidate(
+    let outcome_result = candidate::request_candidate(
         request,
         &syntax,
         canonical,
@@ -249,14 +304,23 @@ fn requested(
         &work,
         origin,
     );
-    let verified = verified_result?;
-    Ok(VerifyFacts {
-        verified,
-        source_work: plan.source_work,
-        canonical_work,
-        total_work: work.used(),
-        outside_fixed_bytes: plan.outside_fixed_bytes,
-    })
+    let outcome = outcome_result?;
+    match outcome {
+        candidate::Outcome::Fixed(verified) => Ok(Requested::Fixed(VerifyFacts {
+            verified,
+            source_work: plan.source_work,
+            canonical_work,
+            total_work: work.used(),
+            outside_fixed_bytes: plan.outside_fixed_bytes,
+        })),
+        candidate::Outcome::Emitted(artifact) => Ok(Requested::Emitted(EmitOutput {
+            artifact,
+            source_work: plan.source_work,
+            canonical_work,
+            total_work: work.used(),
+            outside_fixed_bytes: plan.outside_fixed_bytes,
+        })),
+    }
 }
 
 /// Not called by any production/default path. Paid controls exercise only
@@ -418,8 +482,8 @@ fn outer_named_bytes() -> Result<usize, Boundary> {
 fn verify_outer_named_bytes() -> Result<usize, Boundary> {
     let copies = |bytes: usize, count: usize| bytes.checked_mul(count).ok_or(Boundary::Overflow);
     let roles = [
-        // Both wrappers and their complete common dispatch call/return roles
-        // are paid, even though Run currently rejects before dispatch.
+        // Both fixed-facts wrappers and their complete larger common dispatch
+        // call/return roles are paid. Emit-only wrapper roles are separate.
         copies(
             size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
             2,
@@ -442,11 +506,20 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
         size_of::<Result<SourcePlan, VerifyRejected>>(),
         size_of::<Result<hir::Program, VerifyRejected>>(),
         size_of::<candidate::VerifyFacts>(),
-        size_of::<Result<candidate::VerifyFacts, candidate::VerifyRejected>>(),
-        size_of::<Result<candidate::VerifyFacts, VerifyRejected>>(),
+        size_of::<candidate::Outcome>(),
+        size_of::<Result<candidate::Outcome, candidate::VerifyRejected>>(),
+        size_of::<Result<candidate::Outcome, VerifyRejected>>(),
         size_of::<VerifyFacts>(),
+        // Common result construction plus the two wrapper pattern bindings.
+        copies(size_of::<Requested>(), 3)?,
+        copies(size_of::<Result<Requested, VerifyRejected>>(), 5)?,
         copies(size_of::<VerifyRejected>(), 2)?,
         copies(size_of::<Result<VerifyFacts, VerifyRejected>>(), 5)?,
+        // Each old wrapper's impossible Emit conversion is fixed; no boxed
+        // artifact or new error allocation hides the larger transport.
+        copies(size_of::<allocation::Failure>(), 2)?,
+        copies(size_of::<candidate::VerifyRejected>(), 2)?,
+        copies(size_of::<VerifyRejected>(), 2)?,
         copies(size_of::<u64>(), 4)?,
         copies(size_of::<usize>(), 4)?,
         copies(size_of::<Result<usize, Boundary>>(), 3)?,
@@ -512,9 +585,10 @@ mod tests {
         );
         assert!(matches!(
             result,
-            Err(VerifyRejected::Terminal(
-                candidate::VerifyRejected::Candidate(allocation::Failure::Admission)
-            ))
+            Err(VerifyRejected::Source(Rejected::Budget))
+                | Err(VerifyRejected::Terminal(
+                    candidate::VerifyRejected::Candidate(allocation::Failure::Admission)
+                ))
         ));
         assert_eq!(allocator.attempts, 0);
         assert_eq!(checker.finish().frame_bytes, 0);
@@ -607,10 +681,80 @@ mod tests {
             ));
         }
         println!(
-            "HIR_IMPORT_VERIFY_LEAF extra={} candidate={} outside={} fixed={} facts={} rejection={} result={}",
+            "HIR_IMPORT_VERIFY_LEAF extra={} candidate={} outside={} fixed={} facts={} rejection={} result={} requested={} requested_result={} emit_output={} emit_result={}",
             verify_outer_named_bytes().unwrap(), candidate::verify_named_bytes().unwrap(),
             plan.outside_fixed_bytes, plan.fixed_bytes, size_of::<VerifyFacts>(),
             size_of::<VerifyRejected>(), size_of::<Result<VerifyFacts, VerifyRejected>>(),
+            size_of::<Requested>(), size_of::<Result<Requested, VerifyRejected>>(),
+            size_of::<EmitOutput>(), size_of::<Result<EmitOutput, VerifyRejected>>(),
         );
+    }
+
+    #[test]
+    fn checked_hir_import_emit_shared_carriers_require_successor_admission() {
+        // The enabled fixed-facts wrappers retain their historical layouts;
+        // their genuinely larger common dispatch carriers do not get free bytes.
+        assert_eq!(size_of::<candidate::VerifyFacts>(), 288);
+        assert_eq!(size_of::<VerifyFacts>(), 320);
+        assert!(size_of::<Requested>() > size_of::<VerifyFacts>());
+        assert!(matches!(
+            SourcePlan::calculate_verify(IndexLimits {
+                scratch: 94_955,
+                ..IndexLimits::default()
+            }),
+            Err(Rejected::Budget)
+        ));
+    }
+
+    #[test]
+    fn checked_hir_import_emit_leaf_and_dispatch_stay_denied() {
+        use crate::frontend::{lexer, oir::owned, parser, source::SourceMap, typeck};
+
+        let mut sources = SourceMap::new();
+        let id = sources.add("denied-emit.ox".into(), String::new());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+        for limits in [
+            IndexLimits::default(),
+            IndexLimits {
+                retained: 0,
+                scratch: 0,
+                work: 0,
+            },
+        ] {
+            for direct in [false, true] {
+                let mut allocator = Allocator {
+                    fail_at: Some(1),
+                    ..Allocator::default()
+                };
+                let checker = typeck::measurement::begin();
+                let mut denied = false;
+                let observed = owned::hir_import_measure_allocations(|| {
+                    denied = if direct {
+                        matches!(
+                            requested(
+                                candidate::Request::Emit,
+                                owner,
+                                b"wrong",
+                                b"bad",
+                                &mut allocator,
+                                limits
+                            ),
+                            Err(VerifyRejected::Disabled)
+                        )
+                    } else {
+                        matches!(
+                            emit(owner, b"wrong", b"bad", &mut allocator, limits),
+                            Err(VerifyRejected::Disabled)
+                        )
+                    };
+                });
+                assert!(denied);
+                assert_eq!(observed, (0, 0, 0, 0));
+                assert_eq!(allocator.attempts, 0);
+                assert_eq!(checker.finish().frame_bytes, 0);
+            }
+        }
     }
 }

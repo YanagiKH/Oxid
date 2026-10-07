@@ -1,13 +1,14 @@
 //! Private Verify terminal. Only candidate's single construction body calls it.
 //! The public/default source path remains disconnected. Only fixed verification
 //! facts escape after all candidate, typed and verified owners are dropped.
+//! The owned Emit alternative is compiled but unconditionally denied.
 use super::super::{Counts, MAX_ROWS};
 use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, Request};
 use crate::frontend::{
-    declaration_index::WorkMeter,
+    declaration_index::{IndexLimits, WorkMeter},
     diagnostic::Diagnostic,
     oir::{self, lower, source::association, verify, RunFailure, Scalar},
-    project::ModuleId,
+    project::{budget::Allocator, ModuleId},
     source::{SourceFile, SourceMap, SourceView, Span},
     typeck,
 };
@@ -43,6 +44,24 @@ pub(in crate::frontend::oir::source::hir_import) struct Facts {
     pub(in crate::frontend::oir::source::hir_import) typed_work: u64,
     pub(in crate::frontend::oir::source::hir_import) entry_work: u64,
     pub(in crate::frontend::oir::source::hir_import) runtime: Option<Result<Scalar, RunFailure>>,
+}
+
+/// One future owned text payload, with no source/witness lifetime. This type
+/// adds transport storage, not permission to construct an emitted artifact.
+#[derive(Debug)]
+pub(in crate::frontend::oir::source::hir_import) struct EmitArtifact {
+    pub(in crate::frontend::oir::source::hir_import) text: String,
+    pub(in crate::frontend::oir::source::hir_import) verified: Facts,
+    pub(in crate::frontend::oir::source::hir_import) scan_work: u64,
+    pub(in crate::frontend::oir::source::hir_import) body_work: u64,
+    pub(in crate::frontend::oir::source::hir_import) bytes: usize,
+    pub(in crate::frontend::oir::source::hir_import) capacity: usize,
+}
+
+#[derive(Debug)]
+pub(in crate::frontend::oir::source::hir_import) enum Outcome {
+    Fixed(Facts),
+    Emitted(EmitArtifact),
 }
 
 #[derive(Debug)]
@@ -160,7 +179,7 @@ impl WorkPlan {
         request: Request,
     ) -> Result<Self, Failure> {
         let mut plan = Self::calculate(counts, rows)?;
-        if request == Request::Run {
+        if matches!(request, Request::Run | Request::Emit) {
             // Complete source/OPA admission has bounded functions and source
             // bytes by MAX_ROWS. Each function's identity/name check plus all
             // name-byte comparisons fit functions + MAX_ROWS visits; two
@@ -210,15 +229,21 @@ pub(super) fn root_entry(
 /// The construction body has completed exact HIR equality, completed/dropped
 /// Session, dropped canonical HIR, and prepaid every operation below on the
 /// original shared WorkMeter. No callback or owner-return channel is accepted.
-#[allow(clippy::result_large_err)]
+#[allow(clippy::too_many_arguments, clippy::result_large_err)]
 pub(super) fn run(
-    request: Request,
+    context: Context<'_>,
     syntax: &ComparedSyntax<'_, '_, '_>,
     candidate: hir::Program,
     comparison: ComparisonFacts,
     plan: WorkPlan,
-) -> Result<Facts, Rejected> {
-    if !super::VERIFY_ADMITTED || (request == Request::Run && !super::RUN_ADMITTED) {
+    _allocator: &mut Allocator,
+    _limits: IndexLimits,
+) -> Result<Outcome, Rejected> {
+    let request = context.request;
+    if !super::VERIFY_ADMITTED
+        || (request == Request::Run && !super::RUN_ADMITTED)
+        || (request == Request::Emit && !super::EMIT_ADMITTED)
+    {
         return Err(Rejected::Disabled);
     }
     super::require(comparison.equal)?;
@@ -228,7 +253,7 @@ pub(super) fn run(
     };
     let root = owner.ast(ModuleId(0)).map_err(|_| Failure::Shape)?;
     super::require(owner.count() == 1 && root.modules.is_empty() && root.imports.is_empty())?;
-    let entry = if request == Request::Run {
+    let entry = if matches!(request, Request::Run | Request::Emit) {
         let source_result = owner.file(ModuleId(0));
         let source = source_result.map_err(|_| Failure::Shape)?;
         root_entry(root, source, &candidate)?
@@ -260,9 +285,12 @@ pub(super) fn run(
     let runtime = match request {
         Request::Verify => None,
         Request::Run => Some(verified.run(entry)),
+        // No scan, formula, native admission, or final-text reserve is wired
+        // at this transport checkpoint, even behind the false entry gate.
+        Request::Emit => return Err(Rejected::Disabled),
     };
     drop(verified);
-    Ok(Facts {
+    Ok(Outcome::Fixed(Facts {
         candidate: comparison,
         typed_cells: compared.cells,
         functions,
@@ -272,7 +300,7 @@ pub(super) fn run(
         typed_work: plan.typed_work,
         entry_work: plan.entry_work,
         runtime,
-    })
+    }))
 }
 
 /// New importer-owned fixed carriers only. Inherited checker/lower/verifier
@@ -309,13 +337,18 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<std::array::IntoIter<(u64, u64), 6>>(),
         copies(size_of::<[(u64, u64); 4]>(), 2)?,
         size_of::<std::array::IntoIter<(u64, u64), 4>>(),
-        size_of::<(
-            Request,
-            &ComparedSyntax<'_, '_, '_>,
-            hir::Program,
-            ComparisonFacts,
-            WorkPlan,
-        )>(),
+        copies(
+            size_of::<(
+                Context<'_>,
+                &ComparedSyntax<'_, '_, '_>,
+                hir::Program,
+                ComparisonFacts,
+                WorkPlan,
+                &mut Allocator,
+                IndexLimits,
+            )>(),
+            2,
+        )?,
         size_of::<crate::frontend::declaration_index::SourceOwner<'_>>(),
         size_of::<SourceView<'_>>(),
         size_of::<&SourceMap>(),
@@ -370,8 +403,9 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         copies(size_of::<Option<Result<Scalar, RunFailure>>>(), 2)?,
         size_of::<usize>(),
         size_of::<Facts>(),
+        copies(size_of::<Outcome>(), 3)?,
         copies(size_of::<Rejected>(), 2)?,
-        copies(size_of::<Result<Facts, Rejected>>(), 3)?,
+        copies(size_of::<Result<Outcome, Rejected>>(), 3)?,
         size_of::<(&WorkMeter, u64, Span, &'static str)>(),
         size_of::<Result<(), Box<Diagnostic>>>(),
         copies(size_of::<Result<(), Failure>>(), 4)?,
@@ -407,13 +441,14 @@ mod tests {
         assert!(WorkPlan::calculate(Counts([MAX_ROWS + 1; 8]), MAX_ROWS).is_err());
         assert!(WorkPlan::calculate(Counts::default(), MAX_ROWS + 1).is_err());
         println!(
-            "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={} request={} entry={} entry_result={} scalar={} run_failure={} runtime={} optional_runtime={} source_lookup_call={} source_text_call={}",
+            "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={} request={} entry={} entry_result={} scalar={} run_failure={} runtime={} optional_runtime={} source_lookup_call={} source_text_call={} outcome={} emit_artifact={}",
             named_bytes().unwrap(), size_of::<Context<'_>>(), size_of::<WorkPlan>(),
-            size_of::<Facts>(), size_of::<Rejected>(), size_of::<Result<Facts, Rejected>>(),
+            size_of::<Facts>(), size_of::<Rejected>(), size_of::<Result<Outcome, Rejected>>(),
             size_of::<typeck::TypedProgram>(), size_of::<oir::Program>(), size_of::<oir::VerifiedProgram>(),
             size_of::<Request>(), size_of::<Option<hir::DefId>>(), size_of::<Result<Option<hir::DefId>, Failure>>(),
             size_of::<Scalar>(), size_of::<RunFailure>(), size_of::<Result<Scalar, RunFailure>>(), size_of::<Option<Result<Scalar, RunFailure>>>(),
             size_of::<(crate::frontend::declaration_index::SourceOwner<'_>, ModuleId)>(), size_of::<(&SourceFile, Span)>(),
+            size_of::<Outcome>(), size_of::<EmitArtifact>(),
         );
     }
 }

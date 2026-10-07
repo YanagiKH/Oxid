@@ -1,5 +1,5 @@
 //! Contained scalar candidate comparison and private Verify construction.
-//! No default compiler caller is connected; only fixed facts leave the leaf.
+//! No default compiler caller is connected. Emit transport is hard denied.
 //!
 //! Values come from source/OPA correspondence and supplied resolution column 3.
 //! Canonical HIR is used only by Session for shape and by the equality oracle.
@@ -21,7 +21,9 @@ use std::mem::{size_of, size_of_val};
 // Complete STF1 comparison precedes private Verify lowering.
 mod typed_compare;
 mod verify_terminal;
-pub(super) use verify_terminal::{Facts as VerifyFacts, Rejected as VerifyRejected};
+pub(super) use verify_terminal::{
+    EmitArtifact, Facts as VerifyFacts, Outcome, Rejected as VerifyRejected,
+};
 
 // Enabled only after carrier measurement and independent boundary review.
 // There is no caller-controlled enablement flag or default compiler route.
@@ -29,11 +31,14 @@ pub(super) const VERIFY_ADMITTED: bool = true;
 // Run remains a compiled, hard-denied precursor until its complete carrier and
 // entry/runtime boundary has been measured and independently reviewed.
 pub(super) const RUN_ADMITTED: bool = true;
+// Compiled transport only. No caller/test switch can enable private emission.
+pub(super) const EMIT_ADMITTED: bool = false;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Request {
     Verify,
     Run,
+    Emit,
 }
 
 enum CanonicalInput<'h, 'm> {
@@ -54,7 +59,7 @@ impl CanonicalInput<'_, '_> {
 
 enum Completion {
     Observed(ComparisonFacts),
-    Verified(VerifyFacts),
+    Terminal(Outcome),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -312,7 +317,7 @@ pub(super) fn compare_candidate(
         Ok(Completion::Observed(facts)) => Ok(facts),
         Err(VerifyRejected::Candidate(failure)) => Err(failure),
         // Neither can arise from Observe; no compiler owner crosses the match.
-        Ok(Completion::Verified(_)) | Err(_) => Err(Failure::Shape),
+        Ok(Completion::Terminal(_)) | Err(_) => Err(Failure::Shape),
     }
 }
 
@@ -326,8 +331,11 @@ pub(super) fn request_candidate(
     remaining: IndexLimits,
     work: &WorkMeter,
     origin: Span,
-) -> Result<VerifyFacts, VerifyRejected> {
-    if !VERIFY_ADMITTED || (request == Request::Run && !RUN_ADMITTED) {
+) -> Result<Outcome, VerifyRejected> {
+    if !VERIFY_ADMITTED
+        || (request == Request::Run && !RUN_ADMITTED)
+        || (request == Request::Emit && !EMIT_ADMITTED)
+    {
         return Err(VerifyRejected::Disabled);
     }
     match construct(
@@ -344,7 +352,7 @@ pub(super) fn request_candidate(
         outside_fixed_bytes,
         remaining,
     )? {
-        Completion::Verified(facts) => Ok(facts),
+        Completion::Terminal(outcome) => Ok(outcome),
         Completion::Observed(_) => Err(Failure::Shape.into()),
     }
 }
@@ -360,6 +368,11 @@ fn construct(
     outside_fixed_bytes: usize,
     remaining: IndexLimits,
 ) -> Result<Completion, VerifyRejected> {
+    if let CanonicalInput::Verify { context, .. } = &input {
+        if context.request == Request::Emit && !EMIT_ADMITTED {
+            return Err(VerifyRejected::Disabled);
+        }
+    }
     let canonical = input.program();
     let program = syntax
         .bound
@@ -625,13 +638,15 @@ fn construct(
                 return Err(VerifyRejected::HirMismatch(facts));
             }
             verify_terminal::run(
-                context.request,
+                context,
                 syntax,
                 candidate,
                 facts,
                 prepaid.ok_or(Failure::Shape)?,
+                allocator,
+                remaining,
             )
-            .map(Completion::Verified)
+            .map(Completion::Terminal)
         }
     }
 }
@@ -1415,7 +1430,7 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
 pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
     let roles = [
         verify_terminal::named_bytes()?,
-        size_of::<(
+        copies::<(
             Request,
             &ComparedSyntax<'_, '_, '_>,
             hir::Program,
@@ -1424,8 +1439,9 @@ pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
             IndexLimits,
             &WorkMeter,
             Span,
-        )>(),
-        copies::<Result<VerifyFacts, VerifyRejected>>(2)?,
+        )>(2)?,
+        copies::<Outcome>(2)?,
+        copies::<Result<Outcome, VerifyRejected>>(2)?,
         copies::<Request>(3)?,
         copies::<verify_terminal::Context<'_>>(2)?,
         size_of::<verify_terminal::WorkPlan>(),
@@ -1466,6 +1482,8 @@ fn work_bound(rows: usize) -> Result<u64, Failure> {
         .ok_or(Failure::Overflow)
 }
 
+#[cfg(test)]
+mod emit_entry_tests;
 #[cfg(test)]
 mod run_entry_tests;
 #[cfg(test)]

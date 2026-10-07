@@ -81,7 +81,7 @@ fn reconcile(dimensions: &Dimensions, upper: Upper) -> Result<(), Failure> {
 /// diagnostic failure branches are unreachable on this call; ordinary scan
 /// denial returns a fixed Failure before invoking them. No fresh meter, reset,
 /// refund, source inspection, or diagnostic construction is introduced.
-fn debit(
+pub(in crate::frontend::oir) fn debit(
     work: &WorkMeter,
     units: u64,
     origin: Span,
