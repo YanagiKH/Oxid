@@ -445,12 +445,10 @@ LLVM invocation and executable publication require a later explicit stage.
 
 ### Hard-denied Emit transport checkpoint
 
-The private leaf now has a compiled Emit request and an unboxed owned-text
-artifact alternative. Literal false gates remain at the leaf, common dispatch,
-candidate entry, direct construction and terminal entry; the terminal also
-returns Disabled for Emit before any emission work is connected. No scan,
-formula, native call, final text reserve or successful artifact is enabled by
-this transport checkpoint.
+The first transport checkpoint added a compiled Emit request and an unboxed
+owned-text artifact alternative. Literal false gates remained at the leaf,
+common dispatch, candidate entry, direct construction and terminal entry, with
+an additional Disabled terminal branch. No emission work was connected there.
 
 Verify and Run keep their existing outward fixed-facts types and work semantics.
 Complete shared enum, input and Result carriers nevertheless grow. Their actual
@@ -464,3 +462,40 @@ verified/compiler owners before returning it; qualification must inspect the
 String after the caller's genuine SourceMap/AST backing scope ends. Dropping the
 Copy SourceOwner adapter alone does not destroy that backing. Default compiler
 routes, source ownership and public/provider selection remain unchanged.
+
+### Hard-denied paid Emit connection
+
+The next compiled connection retains every false entry gate and adds a private
+terminal child which receives the existing genuine VerifiedProgram by move.
+Neither the importer Emit constant nor the scalar native Emit constant is
+enabled. The entire source/candidate/checker/STF/lower/associate/verify sequence
+is preserved; there is no alternate constructor, witness or public route.
+
+Emit's WorkPlan prepays a separate 32,768-unit fixed connection allowance before
+candidate reserves and genuine checking. Its enumerated 240 fixed-handler
+visits, at 128 units each, fit a 256-handler allowance; this proposed actual-code
+tariff remains subject to independent review. The immutable OIR scan pays on the
+original meter at its existing boundaries. The actual owned root display-path
+UTF-8 length is then read without scanning or allocating. A distinct 4,096 debit
+precedes the checked formula, and its complete body cost is debited before the
+native call. No stage reuses scan setup, resets the meter, or changes runtime
+fuel. Connection, scan, formula and body costs are separate artifact facts.
+
+The two new fees total 36,864; old passive work examples omit them. For the rich
+fixture's historical 1,310,659 source/check/entry prefix, the analytical p=7 total
+is now 10,069,187. A p=3,365 path totals 255,928,515, while p=3,366 totals
+256,001,731 and fails the unchanged 256M work ceiling. These are isolated paid
+prefix/formula controls, not successful private Emit executions or native
+admission/output-cap guarantees.
+
+Before any future Emit consumer, its source plan admits the complete common and
+Emit-only carrier banks, including scan/formula/native and owned artifact
+transports. The completed Session receipt carries F. After Session drops its
+allocator borrow, native admission receives F minus the separately added native
+bank, so final preflight checks exactly F+N once. HIR-pair admission remains
+Hc+Hn+F. Verified OIR, native metadata/temporaries and genuine source backing are
+observed inherited heaps, not secretly included in the affected-importer cap.
+
+Both gates stay false while complete successor layouts, fixed bounds, default
+regressions, independent review and later private-output qualification remain
+pending. No native tool invocation or publication is part of this connection.

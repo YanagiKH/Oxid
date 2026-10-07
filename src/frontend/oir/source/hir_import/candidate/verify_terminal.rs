@@ -7,12 +7,22 @@ use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, R
 use crate::frontend::{
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::Diagnostic,
-    oir::{self, lower, source::association, verify, RunFailure, Scalar},
+    oir::{
+        self, lower,
+        native::{emit_work, private_emit},
+        source::association,
+        verify, RunFailure, Scalar,
+    },
     project::{budget::Allocator, ModuleId},
     source::{SourceFile, SourceMap, SourceView, Span},
     typeck,
 };
 use std::mem::{size_of, size_of_val};
+
+// Only this genuine terminal can transfer verified ownership to the private
+// Emit helper. Its entry and the separate native entry both remain hard denied.
+#[path = "emit_terminal.rs"]
+mod emit_terminal;
 
 pub(super) struct Context<'m> {
     pub(super) request: Request,
@@ -52,7 +62,9 @@ pub(in crate::frontend::oir::source::hir_import) struct Facts {
 pub(in crate::frontend::oir::source::hir_import) struct EmitArtifact {
     pub(in crate::frontend::oir::source::hir_import) text: String,
     pub(in crate::frontend::oir::source::hir_import) verified: Facts,
+    pub(in crate::frontend::oir::source::hir_import) connection_work: u64,
     pub(in crate::frontend::oir::source::hir_import) scan_work: u64,
+    pub(in crate::frontend::oir::source::hir_import) formula_work: u64,
     pub(in crate::frontend::oir::source::hir_import) body_work: u64,
     pub(in crate::frontend::oir::source::hir_import) bytes: usize,
     pub(in crate::frontend::oir::source::hir_import) capacity: usize,
@@ -73,6 +85,8 @@ pub(in crate::frontend::oir::source::hir_import) enum Rejected {
     TypedMismatch { cells: usize },
     Association(Box<Diagnostic>),
     Oir(oir::OirFailure),
+    EmitWork(emit_work::Failure),
+    Native(private_emit::Failure),
 }
 impl From<Failure> for Rejected {
     fn from(value: Failure) -> Self {
@@ -82,6 +96,16 @@ impl From<Failure> for Rejected {
 impl From<super::super::Boundary> for Rejected {
     fn from(value: super::super::Boundary) -> Self {
         Self::Candidate(value.into())
+    }
+}
+impl From<emit_work::Failure> for Rejected {
+    fn from(value: emit_work::Failure) -> Self {
+        Self::EmitWork(value)
+    }
+}
+impl From<private_emit::Failure> for Rejected {
+    fn from(value: private_emit::Failure) -> Self {
+        Self::Native(value)
     }
 }
 
@@ -190,6 +214,11 @@ impl WorkPlan {
             plan.entry_work = mul(256, add(add(functions, source_bytes)?, 2)?)?;
             plan.total = add(plan.total, plan.entry_work)?;
         }
+        if request == Request::Emit {
+            // Connection setup/transport is paid before candidate reserves and
+            // every genuine pass. Scan, formula and native body pay separately.
+            plan.total = add(plan.total, emit_terminal::CONNECTION_WORK)?;
+        }
         Ok(plan)
     }
 }
@@ -227,8 +256,9 @@ pub(super) fn root_entry(
 }
 
 /// The construction body has completed exact HIR equality, completed/dropped
-/// Session, dropped canonical HIR, and prepaid every operation below on the
-/// original shared WorkMeter. No callback or owner-return channel is accepted.
+/// Session, dropped canonical HIR, and prepaid the genuine passes below on the
+/// original shared WorkMeter. Emit separately pays its scan/formula/native work.
+/// No callback or compiler-owner return channel is accepted.
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
 pub(super) fn run(
     context: Context<'_>,
@@ -236,8 +266,8 @@ pub(super) fn run(
     candidate: hir::Program,
     comparison: ComparisonFacts,
     plan: WorkPlan,
-    _allocator: &mut Allocator,
-    _limits: IndexLimits,
+    allocator: &mut Allocator,
+    limits: IndexLimits,
 ) -> Result<Outcome, Rejected> {
     let request = context.request;
     if !super::VERIFY_ADMITTED
@@ -283,14 +313,10 @@ pub(super) fn run(
     let verified = verified_result.map_err(Rejected::Oir)?;
     let functions = verified.function_count();
     let runtime = match request {
-        Request::Verify => None,
+        Request::Verify | Request::Emit => None,
         Request::Run => Some(verified.run(entry)),
-        // No scan, formula, native admission, or final-text reserve is wired
-        // at this transport checkpoint, even behind the false entry gate.
-        Request::Emit => return Err(Rejected::Disabled),
     };
-    drop(verified);
-    Ok(Outcome::Fixed(Facts {
+    let facts = Facts {
         candidate: comparison,
         typed_cells: compared.cells,
         functions,
@@ -300,7 +326,22 @@ pub(super) fn run(
         typed_work: plan.typed_work,
         entry_work: plan.entry_work,
         runtime,
-    }))
+    };
+    if request == Request::Emit {
+        emit_terminal::run(
+            verified, syntax, entry, facts, plan, context, allocator, limits,
+        )
+        .map(Outcome::Emitted)
+    } else {
+        drop(verified);
+        Ok(Outcome::Fixed(facts))
+    }
+}
+
+/// Emit-only consumers and their full input/return/owner carriers. The source
+/// plan adds this before Session admission; Verify/Run do not pay this bank.
+pub(super) fn emit_named_bytes() -> Result<usize, Failure> {
+    emit_terminal::named_bytes()
 }
 
 /// New importer-owned fixed carriers only. Inherited checker/lower/verifier

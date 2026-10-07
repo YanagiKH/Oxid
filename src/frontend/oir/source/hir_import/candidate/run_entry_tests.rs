@@ -267,10 +267,10 @@ fn checked_hir_import_run_work_and_complete_carriers_only() {
     assert!(
         verify_terminal::WorkPlan::calculate_request(counts, MAX_ROWS + 1, Request::Run).is_err()
     );
-    println!("HIR_IMPORT_RUN_CARRIERS request={} canonical_input={} completion={} completion_result={} context={} plan={} terminal_facts={} terminal_rejected={} terminal_result={} builder_named={} terminal_named={} candidate_named={}",
+    println!("HIR_IMPORT_RUN_CARRIERS request={} canonical_input={} completion={} completion_result={} context={} plan={} terminal_facts={} terminal_rejected={} fixed_facts_result={} builder_named={} terminal_named={} candidate_named={} terminal_outcome={} terminal_result={}",
         size_of::<Request>(), size_of::<CanonicalInput<'_, '_>>(), size_of::<Completion>(), size_of::<Result<Completion, VerifyRejected>>(),
         size_of::<verify_terminal::Context<'_>>(), size_of::<verify_terminal::WorkPlan>(), size_of::<VerifyFacts>(), size_of::<VerifyRejected>(), size_of::<Result<VerifyFacts, VerifyRejected>>(),
-        builder_named_bytes().unwrap(), verify_terminal::named_bytes().unwrap(), verify_named_bytes().unwrap());
+        builder_named_bytes().unwrap(), verify_terminal::named_bytes().unwrap(), verify_named_bytes().unwrap(), size_of::<Outcome>(), size_of::<Result<Outcome, VerifyRejected>>());
 }
 
 #[test]

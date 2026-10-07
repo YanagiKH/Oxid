@@ -150,6 +150,30 @@ impl SourcePlan {
         }
         Ok(plan)
     }
+
+    #[allow(clippy::result_large_err)]
+    fn calculate_emit(limits: IndexLimits) -> Result<Self, Rejected> {
+        let mut plan = Self::calculate_verify(limits)?;
+        let extra = emit_outer_named_bytes()?
+            .checked_add(candidate::emit_named_bytes()?)
+            .ok_or(Boundary::Overflow)?;
+        plan.outside_fixed_bytes = plan
+            .outside_fixed_bytes
+            .checked_add(extra)
+            .ok_or(Boundary::Overflow)?;
+        plan.fixed_bytes = plan
+            .fixed_bytes
+            .checked_add(extra)
+            .ok_or(Boundary::Overflow)?;
+        let default = IndexLimits::default();
+        let bytes = u64::try_from(plan.fixed_bytes).map_err(|_| Boundary::Overflow)?;
+        if bytes > limits.scratch.min(default.scratch)
+            || bytes > limits.retained.min(default.retained)
+        {
+            return Err(Rejected::Budget);
+        }
+        Ok(plan)
+    }
 }
 
 /// Private fixed-facts Verify entry. Admission is compile-time only; no caller
@@ -253,7 +277,13 @@ fn requested(
     if request == candidate::Request::Emit && !candidate::EMIT_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
-    let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
+    let plan = match request {
+        candidate::Request::Emit => SourcePlan::calculate_emit(limits),
+        candidate::Request::Verify | candidate::Request::Run => {
+            SourcePlan::calculate_verify(limits)
+        }
+    }
+    .map_err(VerifyRejected::Source)?;
     if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
         return Err(Boundary::Domain.into());
     }
@@ -292,8 +322,9 @@ fn requested(
             .ok_or(Boundary::Overflow)?,
     };
     // Canonical ownership is moved into the one candidate construction body.
-    // Its admitted metadata prepays candidate/helper + all downstream work on
-    // this same meter before the first reserve. No second debit follows here.
+    // Its admitted metadata prepays candidate/helper + genuine compiler passes
+    // on this meter before the first reserve. Emit prepays fixed connection
+    // glue there too, then separately pays its scan/formula/native phases.
     let outcome_result = candidate::request_candidate(
         request,
         &syntax,
@@ -530,6 +561,63 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
         .ok_or(Boundary::Overflow)?;
     roles.into_iter().try_fold(bank, |sum, value| {
         sum.checked_add(value).ok_or(Boundary::Overflow)
+    })
+}
+
+/// Only the denied Emit plan adds these actual additional outer roles. Shared
+/// Requested/Outcome growth is already fully paid by the ordinary private bank.
+fn emit_outer_named_bytes() -> Result<usize, Boundary> {
+    let roles = [
+        // Emit wrapper input, common dispatch call, wrapper success/error and
+        // caller return. The String payload is not duplicated by these moves.
+        size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
+        size_of::<(
+            candidate::Request,
+            SourceOwner<'_>,
+            &[u8],
+            &[u8],
+            &mut Allocator,
+            IndexLimits,
+        )>(),
+        size_of::<Result<Requested, VerifyRejected>>(),
+        size_of::<Requested>(),
+        size_of::<candidate::EmitArtifact>(),
+        size_of::<EmitOutput>(),
+        size_of::<EmitOutput>(),
+        size_of::<Result<EmitOutput, VerifyRejected>>(),
+        size_of::<Result<EmitOutput, VerifyRejected>>(),
+        size_of::<Result<EmitOutput, VerifyRejected>>(),
+        size_of::<Result<Requested, VerifyRejected>>(),
+        size_of::<allocation::Failure>(),
+        size_of::<candidate::VerifyRejected>(),
+        size_of::<VerifyRejected>(),
+        // Complete added source-plan input/local/result/forwarding carriers.
+        size_of::<[IndexLimits; 2]>(),
+        size_of::<[SourcePlan; 2]>(),
+        size_of::<[Result<SourcePlan, Rejected>; 2]>(),
+        size_of::<Result<SourcePlan, VerifyRejected>>(),
+        size_of::<[usize; 2]>(),
+        size_of::<[Result<usize, Boundary>; 2]>(),
+        size_of::<Result<usize, allocation::Failure>>(),
+        size_of::<[Option<usize>; 3]>(),
+        size_of::<[(usize, usize); 3]>(),
+        size_of::<u64>(),
+        size_of::<Result<u64, std::num::TryFromIntError>>(),
+        size_of::<std::num::TryFromIntError>(),
+        size_of::<Result<u64, Boundary>>(),
+        size_of::<[u64; 2]>(),
+        // Actual accounting loop/checked sum roles and forwarded results.
+        size_of::<[usize; 3]>(),
+        size_of::<[Option<usize>; 3]>(),
+        size_of::<[Result<usize, Boundary>; 2]>(),
+        size_of::<Option<usize>>(),
+    ];
+    let bank = size_of_val(&roles)
+        .checked_mul(2)
+        .and_then(|bytes| bytes.checked_add(size_of_val(&roles.into_iter())))
+        .ok_or(Boundary::Overflow)?;
+    roles.into_iter().try_fold(bank, |total, bytes| {
+        total.checked_add(bytes).ok_or(Boundary::Overflow)
     })
 }
 

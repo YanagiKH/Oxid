@@ -28,10 +28,9 @@ pub(super) use verify_terminal::{
 // Enabled only after carrier measurement and independent boundary review.
 // There is no caller-controlled enablement flag or default compiler route.
 pub(super) const VERIFY_ADMITTED: bool = true;
-// Run remains a compiled, hard-denied precursor until its complete carrier and
-// entry/runtime boundary has been measured and independently reviewed.
+// Run's fixed entry/runtime boundary is separately measured and qualified.
 pub(super) const RUN_ADMITTED: bool = true;
-// Compiled transport only. No caller/test switch can enable private emission.
+// Compiled connection only. No caller/test switch can enable private emission.
 pub(super) const EMIT_ADMITTED: bool = false;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1453,6 +1452,11 @@ pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
         .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
         .ok_or(Failure::Overflow)?;
     sum(roles)?.checked_add(bank).ok_or(Failure::Overflow)
+}
+
+/// The separately admitted Emit-only terminal and native consumer bank.
+pub(super) fn emit_named_bytes() -> Result<usize, Failure> {
+    verify_terminal::emit_named_bytes()
 }
 
 /// A deterministic bookkeeping bound, not elapsed time or CPU instructions.
