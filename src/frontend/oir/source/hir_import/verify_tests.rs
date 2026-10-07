@@ -1,4 +1,5 @@
 use super::*;
+use crate::frontend::declaration_index::IndexLimits;
 use crate::frontend::{
     lexer, parser,
     project::budget::Allocator,
@@ -45,4 +46,99 @@ fn checked_hir_import_verify_genuine_rich_fixed_facts() {
             + facts.verified.typed_work
     );
     println!("HIR_IMPORT_VERIFY_SUCCESS {facts:?}");
+}
+
+#[test]
+fn checked_hir_import_verify_exact_shared_work_and_byte_boundaries() {
+    let text = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/rich-source.txt"
+    ));
+    let wire = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/rich-success.bin"
+    ));
+    let baseline = verify_original(
+        text,
+        wire,
+        &mut Allocator::default(),
+        IndexLimits::default(),
+    )
+    .unwrap();
+    let receipt = baseline.verified.candidate.allocation;
+    let exact = IndexLimits {
+        retained: receipt.affected_bytes as u64,
+        scratch: receipt.fixed_bytes as u64,
+        work: baseline.total_work,
+    };
+    let accepted = verify_original(text, wire, &mut Allocator::default(), exact).unwrap();
+    assert_eq!(accepted.total_work, baseline.total_work);
+    for limits in [
+        IndexLimits {
+            retained: exact.retained - 1,
+            ..exact
+        },
+        IndexLimits {
+            scratch: exact.scratch - 1,
+            ..exact
+        },
+        IndexLimits {
+            work: exact.work - 1,
+            ..exact
+        },
+    ] {
+        let mut allocator = Allocator::default();
+        let guard = crate::frontend::typeck::measurement::begin();
+        let result = verify_original(text, wire, &mut allocator, limits);
+        let observed = guard.finish();
+        assert!(matches!(
+            result,
+            Err(leaf::VerifyRejected::Source(leaf::Rejected::Budget))
+                | Err(leaf::VerifyRejected::Terminal(
+                    candidate::VerifyRejected::Candidate(allocation::Failure::Admission)
+                ))
+        ));
+        assert_eq!(allocator.attempts, 0);
+        assert_eq!(observed.frame_bytes, 0);
+    }
+}
+
+#[test]
+fn checked_hir_import_verify_owned_pipeline_drops_success_and_failure_storage() {
+    use crate::frontend::oir::owned;
+    let text = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/rich-source.txt"
+    ));
+    let wire = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/rich-success.bin"
+    ));
+    for ordinal in 0..=16 {
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(32).unwrap();
+        if ordinal != 0 {
+            allocator.fail_at = Some(ordinal);
+        }
+        let mut accepted = false;
+        let (attempts, calls, live, peak) = owned::hir_import_measure_allocations(|| {
+            let result = verify_original(text, wire, &mut allocator, IndexLimits::default());
+            accepted = if ordinal == 0 {
+                result.is_ok()
+            } else {
+                matches!(
+                    result,
+                    Err(leaf::VerifyRejected::Terminal(
+                        candidate::VerifyRejected::Candidate(allocation::Failure::Allocation)
+                    ))
+                )
+            };
+            // Any diagnostic/error owners are also dropped inside this interval.
+        });
+        assert!(accepted, "ordinal {ordinal}");
+        assert_eq!(allocator.attempts, if ordinal == 0 { 16 } else { ordinal });
+        assert_eq!(live, 0, "ordinal {ordinal}");
+        assert!(attempts >= calls && peak > 0);
+        assert!(owned::hir_import_allocation_observers_idle());
+    }
 }
