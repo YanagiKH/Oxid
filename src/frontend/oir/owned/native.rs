@@ -523,11 +523,39 @@ fn admit_accounted(
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
     admit_policy_accounted(plan, limits, NativeEntryPolicy::Result, accounting)
 }
+// The production variant remains the old rule. The test-only variant stops
+// inside this shared admission analysis; it is never selected by emission.
+#[derive(Clone, Copy)]
+enum AdmissionInventoryRule {
+    ExpandedCells,
+    #[cfg(test)]
+    NativeInventories {
+        items: usize,
+        owner_width: usize,
+    },
+}
+
 fn admit_policy_accounted(
     plan: &ExecutionPlan<'_>,
     limits: Limits,
     policy: NativeEntryPolicy,
     accounting: &mut Accounting,
+) -> Result<Vec<Bound>, Box<Diagnostic>> {
+    admit_inventory_rule_accounted(
+        plan,
+        limits,
+        policy,
+        accounting,
+        AdmissionInventoryRule::ExpandedCells,
+    )
+}
+
+fn admit_inventory_rule_accounted(
+    plan: &ExecutionPlan<'_>,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    inventory_rule: AdmissionInventoryRule,
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
     let functions = plan.witness().functions();
     let origin = functions[0].span; // Entry validation proves a nonempty program.
@@ -596,7 +624,16 @@ fn admit_policy_accounted(
         origin,
     )?;
     limit(blocks, limits.blocks, "aggregate blocks", origin)?;
-    limit(cells, limits.cells, "aggregate expanded cells", origin)?;
+    match inventory_rule {
+        AdmissionInventoryRule::ExpandedCells => {
+            limit(cells, limits.cells, "aggregate expanded cells", origin)?;
+        }
+        #[cfg(test)]
+        AdmissionInventoryRule::NativeInventories { items, owner_width } => {
+            // Facts are discarded before graph/diagnostic/emission phases.
+            admit_inventory_policy(plan, (items, owner_width))?;
+        }
+    }
     let mut ready: Vec<_> = remaining
         .iter()
         .enumerate()
@@ -696,12 +733,14 @@ fn admit_policy_accounted(
             "live scalar slots",
             f.span,
         )?;
-        limit(
-            bound.cells,
-            limits.live_cells,
-            "live expanded cells",
-            f.span,
-        )?;
+        if matches!(inventory_rule, AdmissionInventoryRule::ExpandedCells) {
+            limit(
+                bound.cells,
+                limits.live_cells,
+                "live expanded cells",
+                f.span,
+            )?;
+        }
         bounds[i] = bound;
         for &caller in &callers[i] {
             remaining[caller] -= 1;
@@ -3663,3 +3702,7 @@ mod division_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_inventory_admission_tests.rs"]
+mod inventory_admission_tests;

@@ -83,7 +83,7 @@ fn append_owner(f: &mut RawOwnedFunction, length: Option<usize>, span: Span) {
 /// 32 * (255 scalar declarations + one owner) = 8192 items. The optional
 /// 33rd scalar-only function gives exactly one additional item without crossing
 /// the independent 8192-scalar or 256-slot-per-function limits.
-fn item_boundary(
+pub(in super::super::super) fn item_boundary(
     extra_item: bool,
     arrays: bool,
     extra_width: bool,
@@ -115,7 +115,7 @@ fn item_boundary(
 
 /// Eight independently bounded arrays contribute 8*1024 width cells. An
 /// additional empty array contributes its existing one-cell sentinel, not zero.
-fn width_boundary(extra: bool) -> (SourceMap, RawOwnedProgram) {
+pub(in super::super::super) fn width_boundary(extra: bool) -> (SourceMap, RawOwnedProgram) {
     let (sources, s) = fixtures::context();
     let mut f = scalar_function(0, 1, s(0));
     for _ in 0..8 {
@@ -171,7 +171,9 @@ fn check_boundary(sources: SourceMap, raw: RawOwnedProgram, expected: [usize; 6]
             <= 4096
     );
     let storage = NativeStoragePlan::checked(&plan, false).unwrap();
-    let explicit_bytes = witness.functions().iter()
+    let explicit_bytes = witness
+        .functions()
+        .iter()
         .map(|f| storage.function(f.id).native_bytes().unwrap())
         .sum::<usize>();
     // Every owner here is either an i32 array or an empty record in its own
@@ -341,6 +343,57 @@ fn native_inventory_source_unused_untaken_and_zero_argument_calls_count() {
 }
 
 #[test]
+fn native_inventory_source_unused_and_untaken_borrow_calls_count() {
+    // read: S1,R1; caller: S3,O2,A1,L1,C1; unused case main: S1.
+    // In the untaken case main is the caller and its false literal replaces
+    // the otherwise separate main's return slot. Both totals are written from
+    // the source templates, not sampled from the execution/inventory counters.
+    for (text, unused) in [
+        (
+            "struct T{value:i32} fn read(p:&T)->i32{return p.value;} fn unused()->(){let x=T{value:7};read(&x);return;} fn main()->(){return;}",
+            true,
+        ),
+        (
+            "struct T{value:i32} fn read(p:&T)->i32{return p.value;} fn main()->(){if false{let x=T{value:7};read(&x);}return;}",
+            false,
+        ),
+    ] {
+        let case = source::checked(text);
+        assert_eq!(declaration_census(&case.witness), [5, 1, 2, 1, 1, 1]);
+        let borrower = &case.witness.functions()[1];
+        assert_eq!((borrower.calls.len(), borrower.loans.len()), (1, 1));
+        assert_eq!(borrower.calls[0].arguments, [ArgumentSlot::Borrow(LoanId(0))]);
+        assert_eq!(case.witness.functions()[0].references.len(), 1);
+        if unused {
+            assert_ne!(borrower.id, case.entry);
+            assert!(case.witness.functions()[case.entry.0].calls.is_empty());
+        } else {
+            assert_eq!(borrower.id, case.entry);
+            let entry = &borrower.blocks[borrower.entry.0];
+            let OwnedTerminatorKind::Branch { condition, then_block, else_block } =
+                &entry.terminator.as_ref().unwrap().kind else { panic!("source if branch") };
+            assert!(entry.statements.iter().any(|statement| matches!(
+                &statement.kind,
+                OwnedInstruction::Scalar(Statement::Assign(Assign {
+                    destination, value: Rvalue::Bool(false), ..
+                })) if *destination == condition.local
+            )));
+            assert!(matches!(
+                borrower.blocks[then_block.0].terminator.as_ref().unwrap().kind,
+                OwnedTerminatorKind::Invoke { call: CallSiteId(0), .. }
+            ));
+            assert!(!matches!(
+                borrower.blocks[else_block.0].terminator.as_ref().unwrap().kind,
+                OwnedTerminatorKind::Invoke { .. }
+            ));
+        }
+        let plan = ExecutionPlan::build(&case.witness).unwrap();
+        let inventory = NativeInventories::checked(&plan).unwrap();
+        assert_eq!((inventory.items(), inventory.owner_width()), (11, 2));
+    }
+}
+
+#[test]
 fn native_inventory_raw_empty_and_enum_widths_keep_existing_sentinels() {
     let (sources, s) = fixtures::context();
     let mut f = scalar_function(0, 1, s(0));
@@ -425,4 +478,107 @@ fn native_inventory_checked_counters_use_no_new_reservation() {
     assert_eq!(attempts, 0);
     assert_eq!(size_of::<NativeInventories>(), 2 * size_of::<usize>());
     assert!(!std::mem::needs_drop::<NativeInventories>());
+}
+
+/// Named fixed carriers at the count/check/policy seam, excluding the admission
+/// caller's existing locals. The sibling admission controls add the real caller
+/// types at the actual insertion point. Neither side changes the Vec-capacity
+/// heap ledger or claims to inventory all machine stack, spills, frames or RSS.
+pub(in super::super::super) fn inventory_fixed_counter_phases(
+    execution: &ExecutionPlan<'_>,
+) -> [(&'static str, usize); 5] {
+    let raw = &execution.witness().functions()[0];
+    let owner = &raw.owners[0];
+    let width_result = execution
+        .witness()
+        .declarations()
+        .aggregate_width(owner.aggregate());
+    let checked_result = NativeInventories::checked(execution);
+    let mapped_result = native::admit_inventory_policy(execution, (CAP, CAP));
+    // Include the produced value and both actual return transports together
+    // conservatively, including the caller-retained value through its guards.
+    // Thirty-two words cover bounded scalar/reference temporaries. Array and
+    // owning-iterator storage are both charged even when the array is moved.
+    let handoff = size_of::<NativeInventories>()
+        + std::mem::size_of_val(&checked_result)
+        + std::mem::size_of_val(&mapped_result)
+        + size_of::<&ExecutionPlan<'_>>()
+        + size_of::<(usize, usize)>()
+        + size_of::<[usize; 32]>();
+    let arithmetic = size_of::<Result<usize, AdmissionFailure>>();
+    let checker_result = size_of::<Result<(), AdmissionFailure>>();
+    let six_counts = size_of::<[usize; 6]>() + size_of::<std::array::IntoIter<usize, 6>>();
+    let raw_scan = std::mem::size_of_val(&execution.witness().functions().iter().enumerate())
+        + size_of::<&RawOwnedFunction>()
+        + size_of::<&NativeInventories>()
+        + checker_result;
+    [
+        (
+            "cached usage census",
+            handoff
+                + std::mem::size_of_val(&execution.functions().iter())
+                + size_of::<&FunctionPlan>()
+                + size_of::<FrameUsage>()
+                + six_counts
+                + arithmetic,
+        ),
+        (
+            "raw declaration census",
+            handoff + raw_scan + six_counts + arithmetic,
+        ),
+        (
+            "raw argument census",
+            handoff
+                + raw_scan
+                + std::mem::size_of_val(&raw.calls.iter())
+                + size_of::<&CallDecl>()
+                + arithmetic,
+        ),
+        (
+            "raw owner-width census",
+            handoff
+                + raw_scan
+                + std::mem::size_of_val(&raw.owners.iter())
+                + size_of::<&OwnerDecl>()
+                + std::mem::size_of_val(&width_result)
+                + arithmetic,
+        ),
+        (
+            "policy limit guards",
+            handoff
+                + size_of::<Result<(), Box<Diagnostic>>>()
+                + std::mem::size_of_val(&execution.witness().functions().first())
+                + size_of::<Span>(),
+        ),
+    ]
+}
+
+#[test]
+fn native_inventory_named_fixed_roles_fit_existing_transient_partition() {
+    let (sources, raw, _) = fixtures::owned_relay();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    println!(
+        "native inventory fixed values: inventory={} checked_result={} mapped_result={} checker_result={} usage={} six_counts={} count_iterator={} plan_iterator={} raw_iterator={} call_iterator={} owner_iterator={}",
+        size_of::<NativeInventories>(),
+        size_of::<Result<NativeInventories, AdmissionFailure>>(),
+        size_of::<Result<NativeInventories, Box<Diagnostic>>>(),
+        size_of::<Result<(), AdmissionFailure>>(),
+        size_of::<FrameUsage>(),
+        size_of::<[usize; 6]>(),
+        size_of::<std::array::IntoIter<usize, 6>>(),
+        std::mem::size_of_val(&plan.functions().iter()),
+        std::mem::size_of_val(&witness.functions().iter().enumerate()),
+        std::mem::size_of_val(&witness.functions()[0].calls.iter()),
+        std::mem::size_of_val(&witness.functions()[0].owners.iter()),
+    );
+    for (phase, bytes) in inventory_fixed_counter_phases(&plan) {
+        println!(
+            "native inventory fixed {phase}: counters={bytes} allowance={FIXED_CARRIER_ALLOWANCE}"
+        );
+        assert!(bytes <= FIXED_CARRIER_ALLOWANCE, "{phase}");
+    }
+    // Usage loops and raw loops are sequential. These facts are dropped after
+    // the policy guards, so graph, diagnostic and emission phases do not inherit
+    // this new inventory's lifetime or an additional allocation-ledger charge.
 }

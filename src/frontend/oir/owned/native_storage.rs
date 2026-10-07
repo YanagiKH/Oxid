@@ -477,7 +477,7 @@ impl NativeInventories {
 
 #[cfg(test)]
 #[path = "native_inventory_tests.rs"]
-mod inventory_tests;
+pub(in super::super) mod inventory_tests;
 
 #[cfg(test)]
 #[path = "native_storage_tests.rs"]
