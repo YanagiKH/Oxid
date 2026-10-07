@@ -64,8 +64,20 @@ STDIN_SOURCE_SHA = 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722
 STDIN_SOURCE_BYTES = 48300
 STDOUT_SOURCE_SHA = '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936'
 STDOUT_SOURCE_BYTES = 50310
-CURRENT_SOURCE_SHA = '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303'
-CURRENT_SOURCE_BYTES = 50842
+NATIVE_STORAGE_SOURCE_SHA = '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303'
+NATIVE_STORAGE_SOURCE_BYTES = 50842
+CURRENT_SOURCE_BYTES = 51412
+CURRENT_SOURCE_SHA = '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842'
+NATIVE_INVENTORY_ADDITIONS = ('src/frontend/oir/owned/native_inventory_admission_tests.rs', 'src/frontend/oir/owned/native_inventory_tests.rs')
+NATIVE_INVENTORY_AUTHORITY_BYTES = 104690
+NATIVE_INVENTORY_AUTHORITY_SHA = '7c8edaeea1a69abce66b40f7b59bd29584c4927584fbb3f05a633b0ebdb8ca58'
+NATIVE_INVENTORY_BASE = 'cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050'
+NATIVE_INVENTORY_BASE_TREE = '4c315696f1e7d324dcf3f00f077fbf9e17f9a722'
+NATIVE_INVENTORY_HEAD = 'ffa2e00543b7a1958321b719677ed3b48f42bc74'
+NATIVE_INVENTORY_PATCH_BYTES = 61893
+NATIVE_INVENTORY_PATCH_SHA = '4be68264904f4c059d98f49fb86de16dc9f9af6332801a175b0e118bf2277f76'
+NATIVE_INVENTORY_PATHS = ('src/frontend/oir/owned/enum_native_tests.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/native_inventory_admission_tests.rs', 'src/frontend/oir/owned/native_inventory_tests.rs', 'src/frontend/oir/owned/native_storage.rs', 'src/frontend/oir/owned/native_tests.rs', 'src/frontend/oir/owned/source/native_resource_tests.rs')
+NATIVE_INVENTORY_TREE = '8a717f36016d86130ad5acc28a23f87852c76064'
 NATIVE_STORAGE_AUTHORITY_SHA = '1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da'
 NATIVE_STORAGE_AUTHORITY_BYTES = 102974
 NATIVE_STORAGE_PATCH_SHA = '9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c'
@@ -920,6 +932,12 @@ def inverse_enum_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, ENUM_PATCH_SHA, ENUM_PATCH_BYTES, ENUM_PATHS)
 
 
+def inverse_native_inventory_patch(inputs, patch):
+    """Restore exactly the frozen Phase1 native storage source view."""
+    return apply_inverse_patch(inputs, patch, NATIVE_INVENTORY_PATCH_SHA,
+                               NATIVE_INVENTORY_PATCH_BYTES, NATIVE_INVENTORY_PATHS)
+
+
 def inverse_native_storage_patch(inputs, patch):
     """Restore exactly the frozen bounded-stdout source view."""
     return apply_inverse_patch(inputs, patch, NATIVE_STORAGE_PATCH_SHA,
@@ -1181,6 +1199,12 @@ def preflight(repo, package=PACKAGE):
     require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA
             and len(package_bytes["current-source.json"]) == CURRENT_SOURCE_BYTES,
             "unapproved current source manifest")
+    require(digest(package_bytes["native-storage-source.json"]) == NATIVE_STORAGE_SOURCE_SHA
+            and len(package_bytes["native-storage-source.json"]) == NATIVE_STORAGE_SOURCE_BYTES,
+            "unapproved native storage source manifest")
+    require(digest(package_bytes["native-inventory-authority.json"]) == NATIVE_INVENTORY_AUTHORITY_SHA
+            and len(package_bytes["native-inventory-authority.json"]) == NATIVE_INVENTORY_AUTHORITY_BYTES,
+            "stale native inventory authority")
     require(digest(package_bytes["stdout-source.json"]) == STDOUT_SOURCE_SHA
             and len(package_bytes["stdout-source.json"]) == STDOUT_SOURCE_BYTES,
             "unapproved stdout source manifest")
@@ -1396,7 +1420,71 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    native_storage_current = json.loads(package_bytes["current-source.json"])
+    native_inventory_current = json.loads(package_bytes["current-source.json"])
+    native_storage_current = json.loads(package_bytes["native-storage-source.json"])
+    native_inventory = json.loads(package_bytes["native-inventory-authority.json"])
+    require(native_inventory["schema"] == "oxid-native-inventory-source-transition-v1"
+            and native_inventory["base_head"] == native_inventory_current["native_inventory_base_head"] == NATIVE_INVENTORY_BASE
+            and native_inventory["base_tree"] == NATIVE_INVENTORY_BASE_TREE
+            and native_inventory["reviewed_source_head"] == native_inventory_current["reviewed_source_head"] == NATIVE_INVENTORY_HEAD
+            and native_inventory["source_only_tree"] == native_inventory_current["source_only_tree"] == NATIVE_INVENTORY_TREE
+            and native_inventory["recipe"] == SOURCE_DELTA_RECIPE
+            and native_inventory["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and native_inventory["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and native_inventory["native_storage_source_sha256"] == native_inventory_current["native_storage_source_sha256"] == NATIVE_STORAGE_SOURCE_SHA
+            and native_inventory["native_storage_source_bytes"] == NATIVE_STORAGE_SOURCE_BYTES
+            and native_inventory["native_storage_authority_sha256"] == NATIVE_STORAGE_AUTHORITY_SHA
+            and native_inventory["transition_patch_sha256"] == NATIVE_INVENTORY_PATCH_SHA
+            and native_inventory["transition_patch_bytes"] == NATIVE_INVENTORY_PATCH_BYTES
+            and native_inventory["transition_paths"] == list(NATIVE_INVENTORY_PATHS)
+            and native_inventory["additions"] == list(NATIVE_INVENTORY_ADDITIONS)
+            and native_inventory["removed_paths"] == []
+            and (native_inventory["current_source_members"], native_inventory["native_storage_source_members"],
+                 native_inventory["compiler_source_members"], native_inventory["compiler_bodies"]) == (266, 264, 208, 211),
+            "stale native inventory transition authority")
+    require({key: value for key, value in native_inventory_current.items()
+             if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree",
+                            "native_inventory_base_head", "native_storage_source_sha256")}
+            == {key: value for key, value in native_storage_current.items()
+                if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
+            "stale native inventory checkpoint provenance")
+    native_inventory_inputs = check_entries(repo, native_inventory_current["files"])
+    native_storage_rows = {row["path"]: row for row in native_storage_current["files"]}
+    require(set(native_inventory_inputs) == set(native_storage_rows) | set(NATIVE_INVENTORY_ADDITIONS),
+            "unexpected native inventory source membership")
+    require([row["path"] for row in native_inventory_current["files"] if row != native_storage_rows.get(row["path"])]
+            == list(NATIVE_INVENTORY_PATHS), "unexpected native inventory source delta")
+    require(native_inventory["current_input_git_modes"] == [
+        {"path": row["path"], "mode": "100644"} for row in native_inventory_current["files"]],
+        "unexpected native inventory input modes")
+    native_inventory_identities = []
+    for name, data in native_inventory_inputs.items():
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, "changed input mode: " + name)
+        native_inventory_identities.append({**entry(name, data), "mode": "100644",
+            "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
+    require(native_inventory["current_input_identities"] == native_inventory_identities,
+            "stale native inventory complete input identities")
+    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
+    expected = [name for name in native_inventory_inputs if name.startswith(("src/", "native/"))]
+    require(len(expected) == 208 and sorted(actual) == sorted(expected),
+            "missing or extra compiler source member")
+    require(len([name for name in native_inventory_inputs if name.startswith(("src/", "native/"))
+                 or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 211,
+            "unexpected native inventory compiler/build closure")
+    native_storage_inputs, native_inventory_touched = inverse_native_inventory_patch(
+        native_inventory_inputs, package_bytes["native-inventory-transition.patch"])
+    check_bytes(native_storage_inputs, native_storage_current["files"])
+    native_inventory_transition = []
+    for name in NATIVE_INVENTORY_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", native_storage_inputs), ("after", native_inventory_inputs)):
+            data = source_inputs.get(name)
+            identities[label] = None if data is None else {
+                **entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        native_inventory_transition.append(identities)
+    require(native_inventory["transition_inputs"] == native_inventory_transition,
+            "stale native inventory transition input identities")
     stdout_current = json.loads(package_bytes["stdout-source.json"])
     native_storage = json.loads(package_bytes["native-storage-authority.json"])
     require(native_storage["schema"] == "oxid-native-storage-source-transition-v1"
@@ -1404,8 +1492,8 @@ def preflight(repo, package=PACKAGE):
             and native_storage["reviewed_source_head"] == native_storage_current["reviewed_source_head"] == NATIVE_STORAGE_HEAD
             and native_storage["source_only_tree"] == native_storage_current["source_only_tree"] == NATIVE_STORAGE_TREE
             and native_storage["recipe"] == SOURCE_DELTA_RECIPE
-            and native_storage["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and native_storage["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and native_storage["current_source_sha256"] == NATIVE_STORAGE_SOURCE_SHA
+            and native_storage["current_source_bytes"] == NATIVE_STORAGE_SOURCE_BYTES
             and native_storage["stdout_source_sha256"] == native_storage_current["stdout_source_sha256"] == STDOUT_SOURCE_SHA
             and native_storage["stdout_source_bytes"] == STDOUT_SOURCE_BYTES
             and native_storage["stdout_authority_sha256"] == STDOUT_AUTHORITY_SHA
@@ -1423,7 +1511,6 @@ def preflight(repo, package=PACKAGE):
             == {key: value for key, value in stdout_current.items()
                 if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
             "stale native storage checkpoint provenance")
-    native_storage_inputs = check_entries(repo, native_storage_current["files"])
     stdout_rows = {row["path"]: row for row in stdout_current["files"]}
     require(set(native_storage_inputs) == set(stdout_rows) | set(NATIVE_STORAGE_ADDITIONS),
             "unexpected native storage source membership")
@@ -1439,10 +1526,8 @@ def preflight(repo, package=PACKAGE):
             "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
     require(native_storage["current_input_identities"] == native_storage_identities,
             "stale native storage complete input identities")
-    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [name for name in native_storage_inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 206 and sorted(actual) == sorted(expected),
-            "missing or extra compiler source member")
+    require(len([name for name in native_storage_inputs if name.startswith(("src/", "native/"))]) == 206,
+            "unexpected native storage compiler source membership")
     require(len([name for name in native_storage_inputs if name.startswith(("src/", "native/"))
                  or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 209,
             "unexpected native storage compiler/build closure")
@@ -1745,7 +1830,7 @@ def preflight(repo, package=PACKAGE):
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [x for x in native_storage_inputs if x.startswith(("src/", "native/"))]
+    expected = [x for x in native_inventory_inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
@@ -1899,7 +1984,10 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": native_storage_current, "stdout_source": stdout_current, "stdout_inputs": stdout_inputs,
+    return {"current": native_inventory_current,
+            "native_inventory_authority": native_inventory, "native_inventory_touched": native_inventory_touched,
+            "native_storage_source": native_storage_current, "native_storage_inputs": native_storage_inputs,
+            "stdout_source": stdout_current, "stdout_inputs": stdout_inputs,
             "native_storage_authority": native_storage, "native_storage_touched": native_storage_touched,
             "stdin_source": stdin_current, "stdin_inputs": stdin_inputs,
             "stdout_authority": stdout_authority, "stdout_touched": stdout_touched,
@@ -1913,7 +2001,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": native_storage_inputs, "archived": reconstructed, "references": references,
+            "inputs": native_inventory_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -1967,6 +2055,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "native_inventory_authority_sha256": NATIVE_INVENTORY_AUTHORITY_SHA,
+            "native_inventory_inverse_patch_sha256": NATIVE_INVENTORY_PATCH_SHA,
+            "native_inventory_inverse_touched": captured["native_inventory_touched"],
+            "native_storage_source_sha256": NATIVE_STORAGE_SOURCE_SHA,
             "native_storage_authority_sha256": NATIVE_STORAGE_AUTHORITY_SHA,
             "native_storage_inverse_patch_sha256": NATIVE_STORAGE_PATCH_SHA,
             "native_storage_inverse_touched": captured["native_storage_touched"],
@@ -2223,6 +2315,9 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      native_inventory_authority_sha256=NATIVE_INVENTORY_AUTHORITY_SHA,
+                      native_inventory_inverse_patch_sha256=NATIVE_INVENTORY_PATCH_SHA,
+                      native_storage_source_sha256=NATIVE_STORAGE_SOURCE_SHA,
                       native_storage_authority_sha256=NATIVE_STORAGE_AUTHORITY_SHA,
                       native_storage_inverse_patch_sha256=NATIVE_STORAGE_PATCH_SHA,
                       stdout_source_sha256=STDOUT_SOURCE_SHA,
@@ -2247,6 +2342,7 @@ def main():
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
                 "current_source_members": len(captured["inputs"]),
+                "native_storage_source_members": len(captured["native_storage_inputs"]),
                 "stdout_source_members": len(captured["stdout_inputs"]),
                 "stdin_source_members": len(captured["stdin_inputs"]),
                 "enum_source_members": len(captured["enum_inputs"]),

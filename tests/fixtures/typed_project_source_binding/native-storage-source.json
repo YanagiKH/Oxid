@@ -450,9 +450,9 @@
       "sha256": "a3945e9d53787d0cec6aab3b89f88667a9d088c71c62e93f5af454812b19fe7b"
     },
     {
-      "bytes": 57249,
+      "bytes": 57005,
       "path": "src/frontend/oir/owned/enum_native_tests.rs",
-      "sha256": "7a3f0c96febe89ad1efe2f9ee0124a2734b9c60960272419e92f5e71ebdb96f9"
+      "sha256": "b2196372b3b421f51bef3fc54237a371ba33cf5e6f502e4cb6a3fa443eeef41c"
     },
     {
       "bytes": 19475,
@@ -495,9 +495,9 @@
       "sha256": "994b271b1e828e77344e717dc3d8ac41dd27f4c9e3feb4e84725c55c0ec6f511"
     },
     {
-      "bytes": 141153,
+      "bytes": 139687,
       "path": "src/frontend/oir/owned/native.rs",
-      "sha256": "c77a23f6076d3b978702fc486c8858247f7a644db58fccc5254cd7fb8b4bede5"
+      "sha256": "dd33be3f6b3a04959c8c1f10a6816fb0126992b8ae52d34d776d56e7fa1474b7"
     },
     {
       "bytes": 25498,
@@ -505,19 +505,9 @@
       "sha256": "e8534ff9ac0ff275970de0bc0b8bfc59605a395bba7f96bd093c5b91e22fc4b2"
     },
     {
-      "bytes": 17805,
-      "path": "src/frontend/oir/owned/native_inventory_admission_tests.rs",
-      "sha256": "d0d5d1b80e725b9bdaeda7bf8dcfe483b6c71e941acb33dd3504cb42f7814029"
-    },
-    {
-      "bytes": 22820,
-      "path": "src/frontend/oir/owned/native_inventory_tests.rs",
-      "sha256": "8192cd48ba0f8e147c7d6f09662a52f41b8439da2144117189d319935259a4ae"
-    },
-    {
-      "bytes": 18118,
+      "bytes": 14980,
       "path": "src/frontend/oir/owned/native_storage.rs",
-      "sha256": "fd9451ebda9e1d27d896fc4e2a31a0c45cb226dea0c71cdda4463ad6811a15c0"
+      "sha256": "04848c1ca1e7484dff9e07db8d0f7b3714eeaa976ca57ee6abf9271ad6d6d9ba"
     },
     {
       "bytes": 17001,
@@ -525,9 +515,9 @@
       "sha256": "12c3e0d6202a46f3c58b9462c781e80a484118f34ddee8075e38d5bebfa6afc1"
     },
     {
-      "bytes": 85825,
+      "bytes": 85392,
       "path": "src/frontend/oir/owned/native_tests.rs",
-      "sha256": "a29fa98d8842feeb7f26e34804662bd807ccfaf62e5609fc76de3ac7e639d35f"
+      "sha256": "968b4ad46ae4ae02719aa04354c6b4b5f8df12fcd4507e2ebd26330ed28daece"
     },
     {
       "bytes": 13503,
@@ -740,9 +730,9 @@
       "sha256": "cb5ab96310d83f79a939471a40b96ba2791300385ce233084b1072aa3d4384a2"
     },
     {
-      "bytes": 7238,
+      "bytes": 7025,
       "path": "src/frontend/oir/owned/source/native_resource_tests.rs",
-      "sha256": "ce881a1637bd4f2971adf231449e0e50eb90d1910456a12e80fe3945daa47f91"
+      "sha256": "721fa3c78e38a2280526a2c07664f72a8d41732145c2cc0f9c5980100ed6a338"
     },
     {
       "bytes": 30851,
@@ -1347,18 +1337,16 @@
   ],
   "formatter_base_head": "17ed3de243785006ab888d87af4428d06117b21d",
   "formatter_source_sha256": "69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06",
-  "native_inventory_base_head": "cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050",
   "native_storage_base_head": "63db2c290031d76b5925fdd672c38eac2ca50578",
-  "native_storage_source_sha256": "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303",
   "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
-  "purpose": "Current native inventory admission source inputs; exact Phase1 native storage predecessor retained separately",
-  "reviewed_source_head": "ffa2e00543b7a1958321b719677ed3b48f42bc74",
+  "purpose": "Current native storage plan source inputs; exact bounded-stdout predecessor retained separately",
+  "reviewed_source_head": "983dad1f21bdc9d37cf0d1364b58aad219e553d0",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "8a717f36016d86130ad5acc28a23f87852c76064",
+  "source_only_tree": "4380d906e868ad992d97ffc652e657773f1c2947",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",
