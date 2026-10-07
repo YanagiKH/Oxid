@@ -1,7 +1,7 @@
 # Bounded scalar static frontend: precursor contract
 
-Status: accepted scope for an isolated carrier/control precursor only. The full
-semantic implementation and provider activation are not enabled. Input remains
+Status: the isolated carrier/control precursor and scalar resolution stage are
+implemented. Complete typing and provider activation are not enabled. Input remains
 one source of at most 128 ASCII bytes, with the existing lexer and scalar parser.
 
 ## Semantic endpoint
@@ -156,6 +156,21 @@ with zero diagnostic fields and full-width synthetic probe columns. Those
 columns need not obey semantic row roles; a semantic consumer rejects tag 2
 before reading them as typed facts. Their last cell remains zero. Probe success
 is never static acceptance, a TypedProgram or a source-association witness.
+
+## Resolution-only stage
+
+The separate `resolver_main.ox` root resolves the complete bounded program before
+any typing. Its successful suffix remains tag 2, with the complete resolution
+column, all semantic cells zero, and no diagnostic fields. Its host observation
+is explicitly `resolved`, phase `resolve`, typing `pending`; it cannot be consumed
+as complete static success. A real first resolution failure uses tag 1 with kinds
+1 through 7 and no fact columns. The permanent synthetic probe root is unchanged.
+
+The canonical resolution observer returns actual HIR before invoking the checker.
+It preserves both genuine scalar/project source routes and the diagnostic-only
+unknown-type route. The projection derives only structural IDs and copies observed
+binding targets and literal values; it does not resolve names, convert decimals,
+infer types or compute expected flow. See [RESOLUTION.md](RESOLUTION.md).
 
 ## Carrier/control precursor
 
