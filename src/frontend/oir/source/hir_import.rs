@@ -15,6 +15,8 @@ mod ast_compare;
 mod allocation;
 // Contained candidate helper is compiled for layout review; consumers remain disconnected.
 mod candidate;
+// Still-denied complete comparison leaf is uninvoked pending boundary review.
+mod leaf;
 
 const CELLS: usize = 129;
 const MAX_ROWS: usize = 128;
@@ -345,6 +347,32 @@ struct ProbeFacts {
     hypothetical_hir_pair_bytes: usize,
     rows: u8,
     source_len: u8,
+}
+
+// Prepaid source/domain/wire/OPA work, including malformed prefixes. This is
+// the named logical-visit model reviewed separately from the old 2,690 event
+// statistic. It includes full per-token lexical and per-number byte scans.
+fn source_work_bound() -> Result<u64, Boundary> {
+    let add = |a: u64, b: u64| a.checked_add(b).ok_or(Boundary::Overflow);
+    let mul = |a: u64, b: u64| a.checked_mul(b).ok_or(Boundary::Overflow);
+    let b = u64::try_from(MAX_ROWS).map_err(|_| Boundary::Overflow)?;
+    let r = b;
+    let t = u64::try_from(CELLS).map_err(|_| Boundary::Overflow)?;
+    let c = t;
+    let e = add(mul(16, r)?, 1)?;
+    let q = r;
+    // Equivalent checked sum of the reviewed category table: boundary/domain,
+    // wire reads, event initialization/visits, token/lexical, numbers/heights.
+    let terms = [
+        173,
+        mul(2, b)?,
+        mul(30, c)?,
+        mul(5, e)?,
+        mul(t, add(mul(3, add(b, 1)?)?, 258)?)?,
+        mul(r, add(b, 80)?)?,
+        q,
+    ];
+    terms.into_iter().try_fold(0u64, add)
 }
 
 fn denied_probe(

@@ -236,7 +236,7 @@ pub(super) fn resolve_observed(
         SourceOwner::original(source, ast, SourceView::Single(source)).map_err(|e| vec![*e])?;
     resolve_sources_with_meter(sources, work, allocator)
 }
-fn resolve_sources_with_meter(
+pub(super) fn resolve_sources_with_meter(
     sources: SourceOwner<'_>,
     work: &WorkMeter,
     allocator: &mut Allocator,

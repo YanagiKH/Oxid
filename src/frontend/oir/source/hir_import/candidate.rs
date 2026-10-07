@@ -1027,6 +1027,13 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
         copies::<(&Mapping<'_, '_, '_, '_>, u8)>(5)?,
         copies::<(&Mapping<'_, '_, '_, '_>, FunctionWindow, u8)>(3)?,
         size_of::<(FunctionWindow, ast::ExprId, usize)>(),
+        // Distinct nested window receiver inputs and compared-ID transports;
+        // these are additional to the window-construction/caller copies above.
+        size_of::<(FunctionWindow, ast::ExprId)>(),
+        size_of::<(FunctionWindow, u8)>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_>, ast::ExprId)>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_>, usize)>(),
+        copies::<Result<u8, super::Boundary>>(2)?,
         size_of::<(
             &Mapping<'_, '_, '_, '_>,
             FunctionWindow,

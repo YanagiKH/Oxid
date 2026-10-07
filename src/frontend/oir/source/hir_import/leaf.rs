@@ -1,0 +1,264 @@
+//! Uninvoked still-denied comparison leaf. No default caller is connected.
+//! Only fixed facts can leave after candidate and canonical owners are dropped.
+use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
+use crate::frontend::{
+    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
+    diagnostic::Diagnostic,
+    hir,
+    project::{budget::Allocator, ModuleId},
+    source::{SourceFile, Span},
+};
+use std::{
+    convert::Infallible,
+    mem::{size_of, size_of_val},
+};
+
+#[derive(Debug)]
+pub(super) struct Facts {
+    pub(super) candidate: candidate::ComparisonFacts,
+    pub(super) source_work: u64,
+    pub(super) canonical_work: u64,
+    pub(super) total_work: u64,
+    pub(super) outside_fixed_bytes: usize,
+}
+#[derive(Debug)]
+pub(super) enum Rejected {
+    Boundary(Boundary),
+    Budget,
+    Canonical(Vec<Diagnostic>),
+    Candidate(allocation::Failure),
+    Mismatch(Facts),
+    Compared(Facts),
+}
+impl From<Boundary> for Rejected {
+    fn from(value: Boundary) -> Self {
+        Self::Boundary(value)
+    }
+}
+impl From<allocation::Failure> for Rejected {
+    fn from(value: allocation::Failure) -> Self {
+        Self::Candidate(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SourcePlan {
+    outside_fixed_bytes: usize,
+    fixed_bytes: usize,
+    source_work: u64,
+}
+impl SourcePlan {
+    fn calculate(limits: IndexLimits) -> Result<Self, Rejected> {
+        let outside_fixed_bytes = outer_named_bytes()?
+            .checked_add(ast_compare::named_bytes()?)
+            .ok_or(Boundary::Overflow)?;
+        let builder_named = candidate::builder_named_bytes()?;
+        let helper_named = allocation::helper_named_bytes()?;
+        let fixed_bytes = outside_fixed_bytes
+            .checked_add(builder_named)
+            .and_then(|n| n.checked_add(helper_named))
+            .ok_or(Boundary::Overflow)?;
+        let source_work = source_work_bound()?;
+        let default = IndexLimits::default();
+        let bytes = u64::try_from(fixed_bytes).map_err(|_| Boundary::Overflow)?;
+        if bytes > limits.scratch.min(default.scratch)
+            || bytes > limits.retained.min(default.retained)
+            || source_work > limits.work.min(default.work)
+        {
+            return Err(Rejected::Budget);
+        }
+        Ok(Self {
+            outside_fixed_bytes,
+            fixed_bytes,
+            source_work,
+        })
+    }
+}
+
+/// Not called by any production/default path. Construction tests stay ignored
+/// until complete actual-carrier and boundary review has cleared this leaf.
+pub(super) fn denied(
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<Infallible, Rejected> {
+    let plan = SourcePlan::calculate(limits)?;
+    if owner.count() != 1 {
+        return Err(Rejected::Boundary(Boundary::Domain));
+    }
+    let origin = owner
+        .file(ModuleId(0))
+        .map_err(|_| Boundary::Source)?
+        .span(0, 0);
+    let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
+    work.debit(
+        plan.source_work,
+        origin,
+        "checked HIR source/OPA comparison",
+    )
+    .map_err(|_| Rejected::Budget)?;
+    let bound_result = BoundObservation::bind(owner, captured_source, observation);
+    let bound = bound_result?;
+    let syntax_result = ast_compare::compare(&bound);
+    let syntax = syntax_result?;
+    // Full source correspondence precedes canonical resolver assumptions.
+    // Its own existing checks run with this same work meter. The inherited
+    // resolver's allocations are not reclassified as newly fallible imports.
+    let canonical_result = {
+        let mut canonical_allocator = Allocator::default();
+        hir::resolve_sources_with_meter(owner, &work, &mut canonical_allocator)
+    };
+    let canonical = canonical_result.map_err(Rejected::Canonical)?;
+    let canonical_work = work
+        .used()
+        .checked_sub(plan.source_work)
+        .ok_or(Boundary::Overflow)?;
+    let remaining = IndexLimits {
+        retained: limits.retained.min(IndexLimits::default().retained),
+        scratch: limits.scratch.min(IndexLimits::default().scratch),
+        work: work
+            .limit()
+            .checked_sub(work.used())
+            .ok_or(Boundary::Overflow)?,
+    };
+    // Session admits observed Hc + exact Hn + this complete fixed envelope
+    // before the first candidate reserve; its work includes the builder.
+    let candidate_result = candidate::compare_candidate(
+        &syntax,
+        &canonical,
+        candidate_allocator,
+        plan.outside_fixed_bytes,
+        remaining,
+    );
+    let candidate = candidate_result?;
+    // Admission already checked this against the same remaining allowance.
+    // No intervening callback can use or replace the private meter.
+    work.debit(
+        candidate.charged_work,
+        origin,
+        "checked HIR candidate comparison",
+    )
+    .map_err(|_| Rejected::Budget)?;
+    let facts = Facts {
+        candidate,
+        source_work: plan.source_work,
+        canonical_work,
+        total_work: work.used(),
+        outside_fixed_bytes: plan.outside_fixed_bytes,
+    };
+    drop(canonical);
+    if facts.candidate.equal {
+        Err(Rejected::Compared(facts))
+    } else {
+        Err(Rejected::Mismatch(facts))
+    }
+}
+
+/// Additional named leaf roles, conservatively added across phases. Candidate
+/// owns its Program header; this term owns the canonical Program header. The
+/// helper and comparator each price their complete banks/transport separately.
+/// Already-owned source/AST/capture payload and test-observer trace backing are
+/// explicit baseline/instrumentation, not hidden candidate allocations. This
+/// does not claim a cap on inherited resolver internals, diagnostics or RSS.
+fn outer_named_bytes() -> Result<usize, Boundary> {
+    let copies = |n: usize, count: usize| n.checked_mul(count).ok_or(Boundary::Overflow);
+    let roles = [
+        size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
+        size_of::<SourcePlan>(),
+        copies(size_of::<Result<SourcePlan, Rejected>>(), 3)?,
+        size_of::<SourcePlan>(),
+        size_of::<WorkMeter>(),
+        size_of::<Allocator>(), // canonical allocator within resolution scope
+        size_of::<Allocator>(), // selected candidate allocator outside the borrow
+        size_of::<Span>(),
+        size_of::<BoundObservation<'_, '_>>(),
+        size_of::<Result<BoundObservation<'_, '_>, Boundary>>(),
+        size_of::<hir::Program>(),
+        size_of::<Result<hir::Program, Vec<Diagnostic>>>(),
+        size_of::<Result<hir::Program, Rejected>>(),
+        size_of::<(SourceOwner<'_>, &WorkMeter, &mut Allocator)>(),
+        size_of::<Result<&SourceFile, Box<Diagnostic>>>(),
+        size_of::<Result<&super::ast::Program, Box<Diagnostic>>>(),
+        copies(size_of::<IndexLimits>(), 3)?,
+        size_of::<candidate::ComparisonFacts>(),
+        size_of::<Result<candidate::ComparisonFacts, allocation::Failure>>(),
+        size_of::<Result<candidate::ComparisonFacts, Rejected>>(),
+        size_of::<Facts>(),
+        copies(size_of::<Rejected>(), 2)?,
+        copies(size_of::<Result<Infallible, Rejected>>(), 3)?,
+        // Work meter input/return, checked cost calculation and local counters.
+        size_of::<(&WorkMeter, u64, Span, &'static str)>(),
+        size_of::<Result<(), Box<Diagnostic>>>(),
+        copies(size_of::<u64>(), 12)?,
+        copies(size_of::<usize>(), 8)?,
+        copies(size_of::<Result<u64, Boundary>>(), 3)?,
+        copies(size_of::<Result<usize, Boundary>>(), 3)?,
+        copies(size_of::<[u64; 7]>(), 2)?,
+        size_of::<std::array::IntoIter<u64, 7>>(),
+    ];
+    let bank = size_of_val(&roles)
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
+        .ok_or(Boundary::Overflow)?;
+    roles
+        .into_iter()
+        .try_fold(bank, |sum, n| sum.checked_add(n).ok_or(Boundary::Overflow))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn checked_hir_import_leaf_layout_and_preflight_only() {
+        let limits = IndexLimits::default();
+        let plan = SourcePlan::calculate(limits).unwrap();
+        println!(
+            "HIR_IMPORT_LEAF outer={} outside={} fixed={} work={} facts={} rejection={} result={}",
+            outer_named_bytes().unwrap(),
+            plan.outside_fixed_bytes,
+            plan.fixed_bytes,
+            plan.source_work,
+            size_of::<Facts>(),
+            size_of::<Rejected>(),
+            size_of::<Result<Infallible, Rejected>>()
+        );
+        assert_eq!(plan.source_work, 124_501);
+        let exact = IndexLimits {
+            retained: plan.fixed_bytes as u64,
+            scratch: plan.fixed_bytes as u64,
+            work: plan.source_work,
+        };
+        assert!(SourcePlan::calculate(exact).is_ok());
+        for limits in [
+            IndexLimits {
+                retained: exact.retained - 1,
+                ..exact
+            },
+            IndexLimits {
+                scratch: exact.scratch - 1,
+                ..exact
+            },
+            IndexLimits {
+                work: exact.work - 1,
+                ..exact
+            },
+        ] {
+            assert!(matches!(
+                SourcePlan::calculate(limits),
+                Err(Rejected::Budget)
+            ));
+        }
+        assert_eq!(
+            SourcePlan::calculate(IndexLimits {
+                retained: u64::MAX,
+                scratch: u64::MAX,
+                work: u64::MAX
+            })
+            .unwrap()
+            .fixed_bytes,
+            plan.fixed_bytes
+        );
+    }
+}

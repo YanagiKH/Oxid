@@ -458,3 +458,13 @@ fn checked_hir_import_oversized_equal_length_capture_stops_before_bytes() {
         Err(Boundary::Source)
     ));
 }
+
+#[test]
+fn checked_hir_import_total_source_work_is_distinct_from_visit_counter() {
+    assert_eq!(source_work_bound().unwrap(), 124_501);
+    assert!(source_work_bound().unwrap() > ast_compare::MAX_WORK as u64);
+    assert!(
+        source_work_bound().unwrap()
+            < crate::frontend::declaration_index::IndexLimits::default().work
+    );
+}

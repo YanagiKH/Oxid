@@ -184,3 +184,35 @@ actual candidate construction and simultaneous partial-candidate cleanup remain
 separate integration obligations. Exact requested capacities and observed
 retained capacities are distinguished from allocator metadata or transient
 excess capacity, which this model does not bound.
+
+### Complete comparison leaf before execution
+
+The next compiled leaf remains uninvoked and its construction controls remain
+ignored pending carrier measurement and review. It has an uninhabited success
+result and returns only fixed comparison or mismatch facts after dropping both
+candidate and canonical HIR. It does not replace the earlier passive probe or
+connect a default compiler caller.
+
+Its sequence is fixed-cost preflight, bounded source/OPA comparison, genuine
+canonical resolution, observed canonical-capacity plus exact candidate reserve
+admission, candidate construction, exhaustive HIR equality, and owner teardown.
+Source/AST/capture storage is an already-owned baseline. Canonical resolution's
+inherited allocator behavior and diagnostic storage are not presented as a new
+general HIR memory cap. Actual canonical vector capacity is included with new
+candidate payload in the affected comparison bound before candidate reserves.
+
+The source/OPA prepayment is 124,501 logical units. It includes oversized and
+malformed rejection prefixes, full bounded lexical/literal scans, row decoders,
+stack operations, child-height checks and final claim scans. It is separate from
+machine instructions and replaces no public fuel rule. The existing resolver's
+meter-taking helper becomes visible within the frontend solely so the private
+leaf can share one actual work meter; its implementation and default callers do
+not change. Builder and allocation work must fit the same remaining allowance.
+
+The allocation helper owns its typed vector transports; the builder owns its
+candidate Program header; the outer leaf owns the canonical Program header,
+source/request/result roles and full allocator/meter owners. The complete source
+comparison bank is added separately. Named envelopes conservatively add roles
+across phases and are not claims about optimized stack size. No construction
+execution or full failure-cleanup qualification follows from compiling these
+carriers; those remain the next measured gate.
