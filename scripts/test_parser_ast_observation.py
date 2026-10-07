@@ -17,15 +17,18 @@ def token(label, kind, spelling):
 class Fixture:
     """An explicitly authored single-return function and its logical row table."""
 
-    def __init__(self, expression_tokens):
+    def __init__(self, expression_tokens, *, statements=False):
         pieces = [token("fn", "Fn", "fn"), token("space", "Trivia", " "),
                   token("function", "Ident", "f"), token("params", "LParen", "("),
                   token("params_end", "RParen", ")"), token("arrow", "Arrow", "->"),
                   token("type", "LParen", "("), token("type_end", "RParen", ")"),
-                  token("block", "LBrace", "{"), token("return", "Return", "return"),
-                  token("value_space", "Trivia", " ")]
+                  token("block", "LBrace", "{")]
+        if not statements:
+            pieces += [token("return", "Return", "return"), token("value_space", "Trivia", " ")]
         pieces += expression_tokens
-        pieces += [token("semi", "Semi", ";"), token("end", "RBrace", "}")]
+        if not statements:
+            pieces.append(token("semi", "Semi", ";"))
+        pieces.append(token("end", "RBrace", "}"))
         self.source, self.tokens, self.labels = b"", [], {}
         for label, kind, spelling in pieces:
             start = len(self.source)
@@ -39,7 +42,10 @@ class Fixture:
         self.add(1, "function", "function", c=2, d=3)
         self.add(4, "type", "type_end")
         self.add(5, "block", "end", a=self.labels["end"], b=4)
-        self.add(10, "return", "semi")
+        if statements:
+            self.add(9, expression_tokens[0][0], expression_tokens[-1][0])
+        else:
+            self.add(10, "return", "semi")
 
     def at(self, label):
         t = self.tokens[self.labels[label] - 1]
@@ -375,12 +381,124 @@ class ProjectionExpressionTests(unittest.TestCase):
             else:
                 self.reject(f, "computed expression height")
 
+    def test_let_mutability_optional_types_and_complete_statement_fields(self):
+        for mutable in (False, True):
+            for annotation in (None, "wat", "()"):
+                with self.subTest(mutable=mutable, annotation=annotation):
+                    pieces = [token("let", "Let", "let"), token("let_space", "Trivia", " ")]
+                    if mutable:
+                        pieces += [token("mut", "Mut", "mut"), token("mut_space", "Trivia", " ")]
+                    pieces.append(token("binding", "Ident", "x"))
+                    if annotation:
+                        pieces.append(token("colon", "Colon", ":"))
+                        pieces += ([token("annotation", "Ident", "wat")] if annotation == "wat" else [
+                            token("annotation", "LParen", "("), token("annotation_end", "RParen", ")")])
+                    pieces += [token("equal", "Equal", "="), token("number", "Number", "1"), token("semi", "Semi", ";")]
+                    f = Fixture(pieces, statements=True)
+                    ty, expected_type = 0, None
+                    if annotation == "wat":
+                        ty = f.add(3, "annotation", "annotation", a=f.labels["annotation"])
+                        expected_type = {"kind": "TypeName", "name": f.at("annotation"), "span": f.at("annotation")}
+                    elif annotation:
+                        ty = f.add(4, "annotation", "annotation_end")
+                        expected_type = {"kind": "TypeUnit", "span": observation.span(
+                            f.at("annotation")["start"], f.at("annotation_end")["end"])}
+                    value = f.add(15, "number", "number", a=f.labels["number"], d=1)
+                    f.rows[3].update(kind=7 if mutable else 6, a=f.labels["binding"], b=ty, c=value)
+                    expected = {"kind": "Let", "mutable": mutable, "name": f.at("binding"),
+                                "annotation": expected_type, "init": 0,
+                                "span": observation.span(f.at("let")["start"], f.at("semi")["end"])}
+                    self.assertEqual(f.decode()["ast"]["functions"][0]["blocks"][0]["body"], [expected])
+                    for field, bad_value in [("a", f.labels["function"]), ("b", 4), ("c", 0),
+                                             ("c", 4), ("d", 1), ("next", 4),
+                                             ("kind", 6 if mutable else 7),
+                                             ("start", f.at("binding")["start"]),
+                                             ("end", f.at("number")["end"])]:
+                        bad = copy.deepcopy(f)
+                        bad.rows[3][field] = bad_value
+                        self.reject(bad)
+                    if ty:
+                        for field, bad_value in [("next", 4), ("b", 1), ("d", 1), ("start", 0)]:
+                            bad = copy.deepcopy(f)
+                            bad.rows[ty - 1][field] = bad_value
+                            self.reject(bad)
+                        bad = copy.deepcopy(f)
+                        bad.rows[3]["b"] = 0
+                        self.reject(bad)
+
+    def test_assignment_exact_target_operator_value_and_no_semantic_resolution(self):
+        f = Fixture([token("target", "Ident", "unknown"), token("space_before", "Trivia", " /*x*/ "),
+                     token("equal", "Equal", "="), token("space_after", "Trivia", " "),
+                     token("value", "True", "true"), token("semi", "Semi", ";")], statements=True)
+        value = f.add(17, "value", "value", d=1)
+        f.rows[3].update(kind=8, a=f.labels["target"], b=f.labels["equal"], c=value)
+        got = f.decode()["ast"]
+        self.assertEqual(got["functions"][0]["blocks"][0]["body"], [
+            {"kind": "Assign", "name": f.at("target"), "operator_span": f.at("equal"), "value": 0,
+             "span": observation.span(f.at("target")["start"], f.at("semi")["end"])},
+        ])
+        self.assertEqual(got["expressions"], [{"id": 0, "kind": "Bool", "value": True, "span": f.at("value")}])
+        for field, bad_value in [("a", 0), ("a", f.labels["function"]), ("b", 0),
+                                 ("b", f.labels["target"]), ("c", 0), ("c", 4),
+                                 ("d", 1), ("next", 4), ("start", f.at("equal")["start"]),
+                                 ("end", f.at("equal")["end"])]:
+            with self.subTest(field=field, value=bad_value):
+                bad = copy.deepcopy(f)
+                bad.rows[3][field] = bad_value
+                self.reject(bad)
+        bad = copy.deepcopy(f)
+        bad.name("target")
+        self.reject(bad, "orphan active rows")
+
+    def test_bindings_and_assignments_keep_global_expression_postorder_across_statements(self):
+        f = Fixture([token("let", "Let", "let"), token("space", "Trivia", " "),
+                     token("binding", "Ident", "x"), token("let_equal", "Equal", "="),
+                     token("a", "Ident", "a"), token("plus", "Plus", "+"), token("two", "Number", "2"),
+                     token("let_semi", "Semi", ";"), token("target", "Ident", "x"),
+                     token("assign_equal", "Equal", "="), token("g", "Ident", "g"),
+                     token("open", "LParen", "("), token("argument", "Ident", "x"),
+                     token("close", "RParen", ")"), token("assign_semi", "Semi", ";"),
+                     token("return", "Return", "return"), token("return_space", "Trivia", " "),
+                     token("returned", "Ident", "x"), token("return_semi", "Semi", ";")], statements=True)
+        a = f.name("a")
+        number = f.add(15, "two", "two", a=f.labels["two"], d=1)
+        binary = f.add(24, "a", "two", a=a, b=number, c=f.labels["plus"], d=2)
+        assign = f.add(8, "target", "assign_semi", a=f.labels["target"], b=f.labels["assign_equal"], c=9, next=11)
+        f.add(20, "g", "close", a=f.labels["g"], b=10, d=2)
+        f.name("argument")
+        f.add(10, "return", "return_semi", a=12)
+        f.name("returned")
+        f.rows[3].update(kind=6, a=f.labels["binding"], c=binary, end=f.at("let_semi")["end"], next=assign)
+        got = f.decode()["ast"]
+        self.assertEqual([e["kind"] for e in got["expressions"]], ["Name", "Number", "Arithmetic", "Name", "Call", "Name"])
+        self.assertEqual(got["expressions"][4]["args"], [3])
+        statements = got["functions"][0]["blocks"][0]["body"]
+        self.assertEqual([(s["kind"], s.get("init", s.get("value"))) for s in statements],
+                         [("Let", 2), ("Assign", 4), ("Return", 5)])
+        for row, field, bad_value in [(3, "next", 0), (3, "next", 11), (7, "c", binary),
+                                      (7, "next", 4), (10, "a", binary), (6, "next", assign)]:
+            bad = copy.deepcopy(f)
+            bad.rows[row][field] = bad_value
+            self.reject(bad)
+
+    def test_binding_delimiters_and_initializer_cannot_be_omitted(self):
+        for missing in ("equal", "semi", "number"):
+            pieces = [token("let", "Let", "let"), token("space", "Trivia", " "), token("binding", "Ident", "x")]
+            pieces += [piece for piece in [token("equal", "Equal", "="), token("number", "Number", "1"),
+                                           token("semi", "Semi", ";")] if piece[0] != missing]
+            f = Fixture(pieces, statements=True)
+            value = f.add(15, "number", "number", a=f.labels["number"], d=1) if missing != "number" else 0
+            f.rows[3].update(kind=6, a=f.labels["binding"], c=value)
+            self.reject(f)
+
     def test_expression_diagnostics_preserve_complete_first_diagnostic(self):
         for detail, source, start, end, message in [
             (22, b"fn f()->(){(a;}", 13, 14, "grouping requires `)`"),
             (23, b"fn f()->(){a<b<c;}", 14, 15,
              "comparison operators cannot be chained; use parentheses"),
             (24, b"fn f()->(){g(a;}", 14, 15, "call requires `)`"),
+            (25, b"fn f()->(){let =1;}", 15, 16, "expected binding name"),
+            (26, b"fn f()->(){let x;}", 16, 17, "binding requires an initializer"),
         ]:
             with self.subTest(detail=detail):
                 raw = b"OPA1" + bytes([1, detail, start, end, 0, 0, len(source)])

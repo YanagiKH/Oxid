@@ -35,6 +35,8 @@ MESSAGES = {
     22: "grouping requires `)`",
     23: "comparison operators cannot be chained; use parentheses",
     24: "call requires `)`",
+    25: "expected binding name",
+    26: "binding requires an initializer",
 }
 FAMILIES = {1: "module", 2: "import", 3: "record", 4: "enum",
             5: "reference_type", 6: "array_type", 7: "qualified_type",
@@ -42,7 +44,7 @@ FAMILIES = {1: "module", 2: "import", 3: "record", 4: "enum",
             11: "field_index_length", 12: "indexing", 13: "record_literal",
             14: "borrow_argument"}
 EXPRESSION_KINDS = set(range(15, 37))
-IMPLEMENTED = {1, 2, 3, 4, 5, 9, 10, 11, 12} | EXPRESSION_KINDS
+IMPLEMENTED = set(range(1, 13)) | EXPRESSION_KINDS
 # Local shape constraints validate the supplied tree; they never select a parse
 # from tokens or supply expected AST facts in a differential comparison.
 BINARY = {
@@ -319,18 +321,37 @@ def project_ast(wire, source, tokens):
         zero(row, "c", "d")
         first, body, statement = take("LBrace"), [], row["b"]
         while statement:
-            current = claim(statement, {9, 10, 11, 12}, linked=True)
-            zero(current, "b", "c", "d")
+            current = claim(statement, set(range(6, 13)), linked=True)
+            zero(current, "d")
             tag = current["kind"]
-            if tag == 9:
+            if tag in (6, 7):
+                start = take("Let")
+                if tag == 7:
+                    take("Mut")
+                name = take("Ident", current["a"])
+                annotation = None
+                if current["b"]:
+                    take("Colon")
+                    annotation = ty(current["b"])
+                take("Equal")
+                fields = {"kind": "Let", "mutable": tag == 7, "name": name,
+                          "annotation": annotation, "init": expression(current["c"])}
+            elif tag == 8:
+                start = take("Ident", current["a"])
+                operator = take("Equal", current["b"])
+                fields = {"kind": "Assign", "name": start, "operator_span": operator,
+                          "value": expression(current["c"])}
+            elif tag == 9:
+                zero(current, "b", "c")
                 value = expression(current["a"])
                 start = expressions[value]["span"]
                 fields = {"kind": "Expr", "value": value}
             elif tag == 10:
+                zero(current, "b", "c")
                 start = take("Return")
                 fields = {"kind": "Return", "value": expression(current["a"]) if current["a"] else None}
             else:
-                zero(current, "a")
+                zero(current, "a", "b", "c")
                 name = "Break" if tag == 11 else "Continue"
                 start, fields = take(name), {"kind": name}
             end = take("Semi")
