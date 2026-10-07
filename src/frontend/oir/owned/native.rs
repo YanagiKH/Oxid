@@ -43,6 +43,9 @@ const OUTPUT_CAPACITY_INVARIANT: &str =
 // Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
 // resolution and composite emission never retain an expanded leaf collection.
 const EMITTER_TRANSIENT_BYTES: usize = 32_768;
+// The borrowed native plan and its fixed checking/mapping carriers occupy this
+// part of the inherited envelope; no retained table or new reserve is added.
+const _: () = assert!(plan::native_storage::FIXED_CARRIER_ALLOWANCE <= EMITTER_TRANSIENT_BYTES);
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct NativeMetrics {
@@ -2256,38 +2259,21 @@ fn emit_function(
         .unwrap();
         // Only slice views retain lengths. Exact references keep their single
         // pointer layout and array owners retain their existing payload layout.
-        let mut slot = 0;
-        for (i, reference) in f.references.iter().enumerate() {
+        for mapping in storage.slice_mappings() {
             if out.exceeded {
                 return;
             }
             out.ordinary_visits += 1;
-            if matches!(reference.referent(), BorrowedTy::ScalarSlice(_)) {
+            if let Some(offset) = mapping.offset {
+                let prefix = if mapping.loan { "ll" } else { "rl" };
                 writeln!(
                     out,
-                    "  %rl{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
-                    storage.slice_offset(slot)
+                    "  %{prefix}{} = getelementptr i8, ptr %slice_lengths, i64 {offset}",
+                    mapping.logical
                 )
                 .unwrap();
-                slot += 1;
             }
         }
-        for (i, loan) in f.loans.iter().enumerate() {
-            if out.exceeded {
-                return;
-            }
-            out.ordinary_visits += 1;
-            if matches!(loan.referent(), BorrowedTy::ScalarSlice(_)) {
-                writeln!(
-                    out,
-                    "  %ll{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
-                    storage.slice_offset(slot)
-                )
-                .unwrap();
-                slot += 1;
-            }
-        }
-        debug_assert_eq!(slot, slice_slots);
     }
     for i in 0..slots {
         if out.exceeded {

@@ -3,6 +3,11 @@
 use super::*;
 use std::ops::Range;
 
+// Subdivision of the existing 32768-byte emitter transient envelope, not an
+// additional resource charge or changed ceiling. Tests measure every new fixed
+// descriptor/return/iterator role plus a conservative scalar-counter reserve.
+pub(in super::super) const FIXED_CARRIER_ALLOWANCE: usize = 1024;
+
 pub(in super::super) struct NativeStoragePlan<'p, 'w> {
     execution: &'p ExecutionPlan<'w>,
     guarded: bool,
@@ -17,6 +22,52 @@ pub(in super::super) struct NativeFunctionStorage<'p, 'w> {
     owner_bytes: usize,
     reference_slots: usize,
     slice_slots: usize,
+}
+
+/// Dense physical length slots retain the original logical declaration names.
+/// Exact references/loans yield an empty offset so emitter visit order is stable.
+pub(in super::super) struct NativeSliceMapping {
+    pub(in super::super) loan: bool,
+    pub(in super::super) logical: usize,
+    pub(in super::super) offset: Option<usize>,
+}
+
+pub(in super::super) struct NativeSliceMappings<'w> {
+    function: &'w RawOwnedFunction,
+    pointer: usize,
+    length: usize,
+}
+
+impl Iterator for NativeSliceMappings<'_> {
+    type Item = NativeSliceMapping;
+    fn next(&mut self) -> Option<Self::Item> {
+        let (loan, logical, referent) = if self.pointer < self.function.references.len() {
+            (
+                false,
+                self.pointer,
+                self.function.references[self.pointer].referent(),
+            )
+        } else {
+            let logical = self.pointer - self.function.references.len();
+            (true, logical, self.function.loans.get(logical)?.referent())
+        };
+        self.pointer += 1;
+        let offset = if matches!(referent, BorrowedTy::ScalarSlice(_)) {
+            let offset = self
+                .length
+                .checked_mul(4)
+                .expect("checked native length offsets");
+            self.length += 1;
+            Some(offset)
+        } else {
+            None
+        };
+        Some(NativeSliceMapping {
+            loan,
+            logical,
+            offset,
+        })
+    }
 }
 
 fn require(ok: bool) -> Result<(), AdmissionFailure> {
@@ -215,7 +266,66 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         }
         require(slices == self.slice_slots)?;
         require(self.native_bytes()? == u.native_bytes)?;
-        Ok(())
+        // Keep the common physical accounting and logical fuel representation
+        // independently reconciled, without replacing their admission policy.
+        let scalar = add(u.scalar_slots, arguments)?;
+        let mut expanded = add(scalar, cells)?;
+        let mut reference_bytes = add(mul(scalar, size_of::<Option<Scalar>>())?, end)?;
+        for (count, width, bytes) in [
+            (f.owners.len(), 4, size_of::<OwnerRuntime>()),
+            (f.references.len(), 10, size_of::<ReferenceHandle>()),
+            (f.loans.len(), 14, size_of::<LoanRuntime>()),
+            (f.calls.len(), 2, size_of::<CallRuntime>()),
+        ] {
+            expanded = add(expanded, mul(count, width)?)?;
+            reference_bytes = add(reference_bytes, mul(count, bytes)?)?;
+        }
+        require(u.expanded_cells == expanded && u.reference_bytes == reference_bytes)?;
+        self.check_slice_mappings(self.slice_mappings())
+    }
+
+    fn check_slice_mappings(
+        &self,
+        mut mappings: NativeSliceMappings<'_>,
+    ) -> Result<(), AdmissionFailure> {
+        require(
+            std::ptr::eq(mappings.function, self.raw())
+                && mappings.pointer == 0
+                && mappings.length == 0,
+        )?;
+        let mut next = 0;
+        for (loan, count) in [
+            (false, self.raw().references.len()),
+            (true, self.raw().loans.len()),
+        ] {
+            for logical in 0..count {
+                let ty = if loan {
+                    self.raw().loans[logical].referent()
+                } else {
+                    self.raw().references[logical].referent()
+                };
+                let expected = if matches!(ty, BorrowedTy::ScalarSlice(_)) {
+                    let offset = mul(next, 4)?;
+                    next = add(next, 1)?;
+                    Some(offset)
+                } else {
+                    None
+                };
+                let row = mappings
+                    .next()
+                    .ok_or_else(|| AdmissionFailure::new("native slice mapping", None))?;
+                require(row.loan == loan && row.logical == logical && row.offset == expected)?;
+            }
+        }
+        require(mappings.next().is_none() && next == self.slice_slots)
+    }
+
+    pub(in super::super) fn slice_mappings(&self) -> NativeSliceMappings<'w> {
+        NativeSliceMappings {
+            function: self.raw(),
+            pointer: 0,
+            length: 0,
+        }
     }
 
     pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w> {
@@ -253,10 +363,6 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         assert!(slot < self.reference_slots);
         slot * 8
     }
-    pub(in super::super) fn slice_offset(&self, slot: usize) -> usize {
-        assert!(slot < self.slice_slots);
-        slot * 4
-    }
     pub(in super::super) fn owner_offset(&self, owner: OwnerPlaceId) -> usize {
         self.execution.functions[self.id.0].owner_offsets[owner.0]
     }
@@ -280,3 +386,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         p.usage.scalar_slots + p.calls[call.0].argument_start + argument
     }
 }
+
+#[cfg(test)]
+#[path = "native_storage_tests.rs"]
+mod tests;
