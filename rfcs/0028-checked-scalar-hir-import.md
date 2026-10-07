@@ -327,3 +327,41 @@ Local bounded-profile qualification passed 1,570 unit tests with 55 intentionall
 ignored tests, strict all-target lint and formatting. Public-project positives
 are Linux-only under the existing loader policy. Hosted current-source binding
 qualification and private Run/Emit activation remain separate gates.
+
+## Accepted private Run precursor
+
+Status: denied implementation and measurement stage only. Private Verify remains
+available; Run execution is not yet enabled, and Emit/provider integration is
+outside this stage.
+
+A finite private request may select Verify or Run inside the same checked
+construction terminal. Run must first pass complete source/OPA/resolved-HIR and
+supplied type/flow comparison, genuine checking, ordinary lowering, source
+association and independent OIR verification. Only then may it call the existing
+immutable `VerifiedProgram::run`. Drop that owner before returning the fixed
+scalar/runtime result. No arbitrary entry index, owner, callback or witness may
+cross the request boundary.
+
+Derive original-root main solely from the bound root source/AST and the complete
+checked candidate function correspondence. Retain only its optional DefId before
+moving candidate HIR into the checker. Compare this projection with the genuine
+project declaration index for public, helper-before-main and library cases.
+Missing main and wrong arity retain the existing runtime entry diagnostics.
+
+The existing reference engine keeps its default 1,000,000 logical fuel, 1,024
+frames and 200,000 live slots, arithmetic behavior and failure order. No custom
+fuel interface or interpreter rewrite is introduced. Runtime fuel is separate
+from the shared compile meter. Prepay the bounded root-entry scan on that meter;
+new request/result/call carriers must use measured complete types and the same
+unchanged private storage ceilings. Any resulting admission delta is explicit.
+
+Inherited runtime allocation remains the ordinary engine's behavior: its frame
+vector, each frame's slot/place vectors and temporary call argument values.
+Measure actual layouts and retained capacities in their owning implementation
+with test-only fixed observations. This is separate from new importer storage
+and does not establish a general heap/RSS/stack limit or new allocator policy.
+
+Keep the Run entrance hard denied until complete carrier measurement and an
+independent boundary review pass. Then separately qualify fixed results, entry
+identity, arithmetic/runtime failures, fuel/frame limits and owner cleanup
+against the ordinary source route before considering further activation.
