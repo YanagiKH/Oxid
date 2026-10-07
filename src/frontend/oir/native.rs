@@ -14,6 +14,11 @@ use private_emit::{Failure as EmitFailure, OutputMode, RenderLimit};
 #[path = "native_emit_work.rs"]
 pub(super) mod emit_work;
 
+// Passive body-work bound; the importer has no connected Emit consumer.
+#[allow(dead_code)]
+#[path = "native_emit_cost.rs"]
+pub(super) mod emit_cost;
+
 #[cfg(test)]
 #[path = "native_private_emit_tests.rs"]
 mod private_emit_tests;
