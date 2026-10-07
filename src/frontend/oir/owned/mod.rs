@@ -525,3 +525,23 @@ mod enum_formatter_allocation_tests;
 mod enum_index_allocation_tests;
 #[cfg(test)]
 mod enum_query_allocation_tests;
+
+// Narrow test-only forwarding for contained scalar HIR cleanup controls. The
+// action cannot return an owner; only primitive observer facts cross this seam.
+#[cfg(test)]
+pub(in crate::frontend::oir) fn hir_import_measure_allocations(
+    action: impl FnOnce(),
+) -> (usize, usize, isize, isize) {
+    assert!(
+        hir_import_allocation_observers_idle(),
+        "nested HIR allocation observer"
+    );
+    let (((), (calls, live, peak)), attempts) = reviewer_origins::integration_counted(|| {
+        source::reviewer_source::integration_measured(action)
+    });
+    (attempts, calls, live, peak)
+}
+#[cfg(test)]
+pub(in crate::frontend::oir) fn hir_import_allocation_observers_idle() -> bool {
+    !reviewer_origins::integration_enabled() && !source::reviewer_source::integration_enabled()
+}

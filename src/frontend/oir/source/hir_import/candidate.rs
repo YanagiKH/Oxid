@@ -1,5 +1,5 @@
-//! Disconnected, contained scalar candidate comparison. The parent compiles
-//! its layouts; construction tests and consumers await complete caller review.
+//! Contained scalar candidate comparison. The private paid leaf compares and
+//! drops the owner; no default compiler caller or typed authority is connected.
 //!
 //! Values come from source/OPA correspondence and supplied resolution column 3.
 //! Canonical HIR is used only by Session for shape and by the equality oracle.

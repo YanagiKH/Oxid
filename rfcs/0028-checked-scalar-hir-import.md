@@ -233,3 +233,29 @@ variant; a plausible but wrong supplied literal returns the mismatch rejection.
 Logical reserve failures and exact shared-work boundaries are tested separately
 from the required independent allocator-null and live-byte cleanup evidence.
 Type checking, lowering and executable authority remain unavailable.
+
+### Candidate-only cleanup observation
+
+The first actual paid group passes 45 focused controls, including all seven
+original-source producer cases and 16 logical reserve-failure positions. Full
+mismatch and failure cleanup now receives an independent candidate-only heap
+window using the existing test allocator observers. Canonical resolution and its
+allocator trace finish before that window; candidate vectors are dropped inside
+it. Trace backing is prepared separately. The forwarding action returns no
+owner and reports only primitive attempt/success/live/peak values.
+
+This instrumentation exists only in test builds. Its fixed thread-local last
+observation is reset at every leaf entry, including early admission failure.
+Nested observer scopes are rejected. Existing guards reset during unwinding;
+panic-hook allocations may precede that reset, so unwind controls assert recovery
+rather than numeric panic-path counts. No production allocator field or hook is
+introduced. Instrumentation is excluded from the affected production ledger.
+
+The rich fixture's independent 16-request oracle totals 2,241 bytes. A successful
+comparison or full mismatch should show 16 attempts, 16 successful allocations,
+zero live bytes and a 2,241-byte peak. A real-null failure at request k should show
+k attempts, k-1 successful calls, zero live bytes and only the preceding request
+bytes at peak. Logical failure differs: it makes no kth GlobalAlloc attempt.
+These are explicit expectations for the new controls, not claimed results before
+execution. Wrong-binding/callee/loop/annotation controls mutate only resolved
+facts, while source and OPA remain intact; type/flow import is still closed.

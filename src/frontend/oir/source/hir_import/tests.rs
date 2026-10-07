@@ -406,7 +406,7 @@ fn checked_hir_import_scan_preflight_bounds_mutable_arenas() {
         let (sources, mut program) = parsed(text);
         match kind {
             0 => {
-                let token = program.tokens[0].clone();
+                let token = program.tokens[0];
                 program.tokens.resize(CELLS + 1, token);
             }
             1 => program.items.resize(MAX_ROWS + 1, ast::ItemId::Function(0)),
@@ -467,4 +467,50 @@ fn checked_hir_import_total_source_work_is_distinct_from_visit_counter() {
         source_work_bound().unwrap()
             < crate::frontend::declaration_index::IndexLimits::default().work
     );
+}
+
+#[test]
+fn checked_hir_import_public_candidate_uses_genuine_project_and_stays_denied() {
+    let text = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/public-source.txt"
+    ));
+    let wire = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/public-success.bin"
+    ));
+    let project = project(text);
+    let owner = SourceOwner::project(&project);
+    let mut allocator = crate::frontend::project::budget::Allocator::default();
+    allocator.observer_trace_bound(32).unwrap();
+    let Err(leaf::Rejected::Compared(facts)) = leaf::denied(
+        owner,
+        text.as_bytes(),
+        wire,
+        &mut allocator,
+        crate::frontend::declaration_index::IndexLimits::default(),
+    ) else {
+        panic!("public producer must compare through genuine project ownership");
+    };
+    assert!(facts.candidate.equal);
+    assert_eq!(allocator.attempts, 16);
+    assert_eq!(leaf::take_candidate_observation(), Some((16, 16, 0, 2241)));
+    let original = SourceOwner::original(
+        owner.file(ModuleId(0)).unwrap(),
+        owner.ast(ModuleId(0)).unwrap(),
+        SourceView::Map(project.sources()),
+    )
+    .unwrap();
+    assert!(matches!(
+        leaf::denied(
+            original,
+            text.as_bytes(),
+            wire,
+            &mut allocator,
+            crate::frontend::declaration_index::IndexLimits::default()
+        ),
+        Err(leaf::Rejected::Boundary(Boundary::Source))
+    ));
+    assert_eq!(allocator.attempts, 16);
+    assert!(leaf::take_candidate_observation().is_none());
 }

@@ -1,4 +1,4 @@
-//! Uninvoked still-denied comparison leaf. No default caller is connected.
+//! Private still-denied comparison leaf. No default caller is connected.
 //! Only fixed facts can leave after candidate and canonical owners are dropped.
 use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
 use crate::frontend::{
@@ -12,6 +12,20 @@ use std::{
     convert::Infallible,
     mem::{size_of, size_of_val},
 };
+
+// Validation instrumentation only. No production field, allocation hook or
+// caller-controlled owner is added. Reset at every entry, including preflight
+// failure, so stale observations cannot qualify a later request.
+#[cfg(test)]
+type AllocationObservation = (usize, usize, isize, isize);
+#[cfg(test)]
+thread_local! {
+    static LAST_CANDIDATE_OBSERVATION: std::cell::Cell<Option<AllocationObservation>> = const { std::cell::Cell::new(None) };
+}
+#[cfg(test)]
+pub(super) fn take_candidate_observation() -> Option<AllocationObservation> {
+    LAST_CANDIDATE_OBSERVATION.with(|slot| slot.take())
+}
 
 #[derive(Debug)]
 pub(super) struct Facts {
@@ -48,6 +62,7 @@ struct SourcePlan {
     source_work: u64,
 }
 impl SourcePlan {
+    #[allow(clippy::result_large_err)] // Fixed denial facts are deliberately prepaid, never boxed.
     fn calculate(limits: IndexLimits) -> Result<Self, Rejected> {
         let outside_fixed_bytes = outer_named_bytes()?
             .checked_add(ast_compare::named_bytes()?)
@@ -75,8 +90,9 @@ impl SourcePlan {
     }
 }
 
-/// Not called by any production/default path. Construction tests stay ignored
-/// until complete actual-carrier and boundary review has cleared this leaf.
+/// Not called by any production/default path. Paid controls exercise only
+/// contained comparison and fixed denial facts, with no typed authority.
+#[allow(clippy::result_large_err)] // Preserve fixed paid transports without an error allocation.
 pub(super) fn denied(
     owner: SourceOwner<'_>,
     captured_source: &[u8],
@@ -84,6 +100,8 @@ pub(super) fn denied(
     candidate_allocator: &mut Allocator,
     limits: IndexLimits,
 ) -> Result<Infallible, Rejected> {
+    #[cfg(test)]
+    LAST_CANDIDATE_OBSERVATION.with(|slot| slot.set(None));
     let plan = SourcePlan::calculate(limits)?;
     if owner.count() != 1 {
         return Err(Rejected::Boundary(Boundary::Domain));
@@ -125,6 +143,7 @@ pub(super) fn denied(
     };
     // Session admits observed Hc + exact Hn + this complete fixed envelope
     // before the first candidate reserve; its work includes the builder.
+    #[cfg(not(test))]
     let candidate_result = candidate::compare_candidate(
         &syntax,
         &canonical,
@@ -132,6 +151,23 @@ pub(super) fn denied(
         plan.outside_fixed_bytes,
         remaining,
     );
+    #[cfg(test)]
+    let candidate_result = {
+        let mut result = None;
+        let observed = crate::frontend::oir::owned::hir_import_measure_allocations(|| {
+            result = Some(candidate::compare_candidate(
+                &syntax,
+                &canonical,
+                candidate_allocator,
+                plan.outside_fixed_bytes,
+                remaining,
+            ));
+        });
+        // The existing observer guards have reset before publishing fixed
+        // statistics or interpreting any failure. The candidate has dropped.
+        LAST_CANDIDATE_OBSERVATION.with(|slot| slot.set(Some(observed)));
+        result.expect("candidate observation invokes its action exactly once")
+    };
     let candidate = candidate_result?;
     // Admission already checked this against the same remaining allowance.
     // No intervening callback can use or replace the private meter.

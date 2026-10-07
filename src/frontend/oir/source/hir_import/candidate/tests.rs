@@ -35,6 +35,7 @@ const SCALARS: &[(&str, &[u8])] = &[
 ];
 
 // Only fixed rejection facts leave the fully paid, still-denied source leaf.
+#[allow(clippy::result_large_err)] // Fixed facts preserve the paid leaf return model.
 fn compare_fixture(
     text: &str,
     bytes: &[u8],
@@ -223,3 +224,8 @@ fn checked_hir_import_candidate_layout_only() {
     assert!(builder_named_bytes().unwrap() >= size_of::<hir::Program>());
     assert!(work_bound(MAX_ROWS).unwrap() < IndexLimits::default().work);
 }
+
+#[path = "cleanup_controls.rs"]
+mod cleanup_controls;
+#[path = "resolution_controls.rs"]
+mod resolution_controls;
