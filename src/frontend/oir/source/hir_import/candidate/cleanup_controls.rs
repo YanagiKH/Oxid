@@ -111,15 +111,15 @@ fn checked_hir_import_candidate_actual_null_failure_prefix_cleanup() {
             element_bytes: width,
             layout: Layout::from_size_align(slots * width, align).unwrap(),
         };
-        let (result, report) =
+        let (allocation_failed, report) =
             real_null_observer::with_selected(&mut selected, target, |selected| {
-                compare_fixture(RICH.0, RICH.1, selected, IndexLimits::default())
+                matches!(
+                    compare_fixture(RICH.0, RICH.1, selected, IndexLimits::default()),
+                    Err(leaf::Rejected::Candidate(Failure::Allocation))
+                )
             })
             .unwrap();
-        assert!(matches!(
-            result,
-            Err(leaf::Rejected::Candidate(Failure::Allocation))
-        ));
+        assert!(allocation_failed);
         assert!(report.selected && report.matched && report.fired);
         assert_eq!(report.rejection, None);
         let actual = report.actual.unwrap();
@@ -203,14 +203,15 @@ fn checked_hir_import_candidate_null_target_preserves_preused_allocator_history(
         element_bytes: 56,
         layout: Layout::from_size_align(112, 8).unwrap(),
     };
-    let (result, report) = real_null_observer::with_selected(&mut selected, target, |selected| {
-        compare_fixture(RICH.0, RICH.1, selected, IndexLimits::default())
-    })
-    .unwrap();
-    assert!(matches!(
-        result,
-        Err(leaf::Rejected::Candidate(Failure::Allocation))
-    ));
+    let (allocation_failed, report) =
+        real_null_observer::with_selected(&mut selected, target, |selected| {
+            matches!(
+                compare_fixture(RICH.0, RICH.1, selected, IndexLimits::default()),
+                Err(leaf::Rejected::Candidate(Failure::Allocation))
+            )
+        })
+        .unwrap();
+    assert!(allocation_failed);
     assert!(report.selected && report.matched && report.fired);
     assert_eq!(report.target.attempt, 17);
     assert_eq!(report.rejection, None);
