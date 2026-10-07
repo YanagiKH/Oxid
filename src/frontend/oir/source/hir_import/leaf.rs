@@ -1,5 +1,5 @@
 //! Private comparison and fixed-facts Verify entries. No default caller is
-//! connected. Verify/Run keep fixed facts; private Emit returns owned text.
+//! connected. The experimental facade uses fixed Verify/Run facts or owned text.
 use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
@@ -178,7 +178,7 @@ impl SourcePlan {
 }
 
 /// Private fixed-facts Verify entry. Admission is compile-time only; no caller
-/// flag, default source route, or cfg(test) bypass exists.
+/// flag inside this leaf, default source route, or cfg(test) bypass exists.
 #[allow(clippy::result_large_err)]
 pub(super) fn verify(
     owner: SourceOwner<'_>,
@@ -230,8 +230,8 @@ pub(super) fn run(
     }
 }
 
-/// Compiled owned-text transport only. Every internal seam also hard denies
-/// Emit; no supplied input, caller flag, or test configuration can enable it.
+/// Owned-text transport through the compiled paid terminal. No supplied fact
+/// or caller flag can skip source binding, checking, comparison or admission.
 #[allow(clippy::result_large_err)]
 pub(super) fn emit(
     owner: SourceOwner<'_>,

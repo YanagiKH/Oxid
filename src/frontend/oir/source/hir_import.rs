@@ -1,5 +1,5 @@
-//! Denied, source-bound observation probe. Framing is not semantic validation.
-//! No candidate constructor, checker, lowerer or executable consumer is called.
+//! Source-bound checked observation import. Framing alone is never authority.
+//! The explicit experimental facade uses the complete paid Verify/Run/Emit leaves.
 use crate::frontend::{
     ast,
     declaration_index::SourceOwner,
@@ -9,14 +9,16 @@ use crate::frontend::{
 };
 use std::{convert::Infallible, mem::size_of};
 
-// Complete source/OPA comparison remains disconnected from candidate construction.
+// Complete source/OPA comparison precedes candidate construction.
 mod ast_compare;
 // Prepaid vector helper remains disconnected from any candidate Program builder.
 mod allocation;
-// Contained candidate helper is compiled for layout review; consumers remain disconnected.
+// Only the contained candidate helper reaches the genuine checked consumers.
 mod candidate;
-// Still-denied complete comparison leaf is uninvoked pending boundary review.
+// Paid leaves retain source ownership and fully compare untrusted observations.
 mod leaf;
+mod public_facade;
+pub(in crate::frontend) use public_facade::{import_checked, Imported, IMPORT_BYTES};
 
 const CELLS: usize = 129;
 const MAX_ROWS: usize = 128;

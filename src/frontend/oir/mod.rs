@@ -9,7 +9,9 @@ mod source;
 mod verify;
 
 pub(in crate::frontend) use owned::process;
-pub(super) use source::{check_source, CheckedSourceProgram, ProcessFailure};
+pub(super) use source::{
+    check_source, import_checked, CheckedSourceProgram, Imported, ProcessFailure, IMPORT_BYTES,
+};
 
 use super::{
     diagnostic::Diagnostic,

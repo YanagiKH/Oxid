@@ -25,3 +25,13 @@ row kinds. Tests use genuine original source ownership and the disconnected OPA
 comparator; they do not assume project or canonical admission on another host.
 Changed row-kind controls and split whitespace/comment trivia tapes must reject.
 These observations confer no candidate, typed-program, or executable authority.
+
+## Public bridge arithmetic controls
+
+`synthetic-overflow-{source.txt,success.bin}` and
+`synthetic-division-{source.txt,success.bin}` are the exact existing hand-authored
+arithmetic row tables from `emit_tests::arithmetic_frames`, exported by the
+private native qualification at 6022477. They are explicitly synthetic untrusted
+observations, not producer-execution or compiler-generated fact evidence. They
+exist so the separate public CLI integration test can replay those same fixed
+inputs and compare complete ordinary and imported runtime diagnostics.

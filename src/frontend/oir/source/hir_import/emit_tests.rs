@@ -390,6 +390,35 @@ fn arithmetic_frames() -> [(&'static str, [u8; super::SUCCESS_BYTES]); 2] {
 #[test]
 fn checked_hir_import_emit_synthetic_arithmetic_is_inert_llvm_text() {
     let [(overflow, overflow_wire), (division, division_wire)] = arithmetic_frames();
+    assert_eq!(
+        overflow.as_bytes(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/synthetic-overflow-source.txt"
+        ))
+    );
+    assert_eq!(
+        &overflow_wire,
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/synthetic-overflow-success.bin"
+        ))
+    );
+    assert_eq!(
+        division.as_bytes(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/synthetic-division-source.txt"
+        ))
+    );
+    assert_eq!(
+        &division_wire,
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/synthetic-division-success.bin"
+        ))
+    );
+
     let overflow = original_text_parity(overflow, &overflow_wire);
     assert!(overflow
         .artifact
