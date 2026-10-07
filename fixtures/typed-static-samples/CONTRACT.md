@@ -30,7 +30,12 @@ source spellings. All functions exist before body resolution; active locals and
 parameters cannot shadow one another or any function. Let initializers resolve
 before their new binding; assignment/call target lookup precedes their children.
 Locals and HIR expression IDs restart per function; DefIds follow function order.
-The nearest while-body block identifies loop transfers. Resolution includes
+Parameters receive LocalIds first, followed by depth-first lets (then before
+else); IDs are never recycled after scope exit. Expressions use completed
+postorder within each function, retaining Group nodes, while statement roots
+follow depth-first traversal. Blocks use per-function preorder. These canonical
+IDs are distinct from physical AST row references. The nearest while-body block
+identifies loop transfers. Resolution includes
 unreachable statements and both arms. Literal conversion is exact checked i32,
 including MIN and leading zeroes; range errors precede all type checking.
 
@@ -105,10 +110,10 @@ this bounded canonical domain. Source spans are half-open and bounded by input.
 
 Diagnostic kinds bind exact canonical code/stage/message templates:
 
-1. E0200/resolve: ``unknown local `{name}```
-2. E0200/resolve: ``unknown direct function `{name}```
+1. E0200/resolve: `` unknown local `{name}` ``
+2. E0200/resolve: `` unknown direct function `{name}` ``
 3. E0201/resolve: `duplicate binding; shadowing is unavailable in typed-preview`
-4. E0202/resolve: ``unknown type `{name}``` (public owned-name display rule)
+4. E0202/resolve: `` unknown type `{name}` `` (public owned-name display rule)
 5. E0203/resolve: `decimal literal is outside the i32 range [-2147483648, 2147483647]`
 6. E0204/resolve: `` `break` requires an enclosing while in the same function ``
 7. E0204/resolve: `` `continue` requires an enclosing while in the same function ``
