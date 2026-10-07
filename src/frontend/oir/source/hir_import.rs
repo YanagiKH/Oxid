@@ -9,6 +9,9 @@ use crate::frontend::{
 };
 use std::{convert::Infallible, mem::size_of};
 
+// Complete source/OPA comparison remains disconnected from candidate construction.
+mod ast_compare;
+
 const CELLS: usize = 129;
 const MAX_ROWS: usize = 128;
 const OPA_BYTES: usize = 1559;

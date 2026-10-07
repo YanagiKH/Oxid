@@ -131,3 +131,24 @@ Eleven focused tests cover real producer framing, wrong source/owner routes,
 excluded source domains, reserved cells, overflow and passive capacity counts.
 Complete import validation, named coexistence accounting and actual candidate
 reserve/failure evidence remain separate requirements before private success.
+
+## Accepted still-denied comparison stage
+
+The next private stage may completely compare source/OPA rows and reconstruct
+candidate-owned resolved HIR only inside a closed comparison leaf. Before any
+candidate reserve, admit its exact nested vector requests, actual canonical
+capacities, comparator maps/scratch and complete affected coexistence carriers.
+Use existing fallible exact reserves, reject observed capacity mismatch, guard
+all fills and prove failure cleanup. Source/AST/input ownership is the explicit
+already-owned baseline; this is an affected-storage model, not process RSS.
+
+Candidate fields must come from validated observation data, never repaired from
+canonical values. Compare the entire candidate with genuine source resolution,
+then drop it before returning fixed denial facts. The enclosing result stays
+uninhabited on success. Type checking, lowering, verification, execution, native
+emission, public provider selection and candidate escape remain prohibited.
+
+A private fixed-storage source/OPA comparison module is the first implementation
+checkpoint of this stage. It is compiled but is not yet connected to candidate
+allocation. Its actual event/map/result/caller layouts and bounded work must be
+measured and charged before consumption; a source file alone is not admission.
