@@ -42,6 +42,13 @@ fn observe_case(label: &str, owner: SourceOwner<'_>, sources: &SourceMap) {
     drop(typed);
     let associated =
         association::scalar(&raw, sources, association::Declarations::Original(root)).unwrap();
+    // Both allocation-free visitors coexist inside scalar(). Counts is embedded
+    // in Visitor; the caller's Declarations/BindUsage/Result are already priced
+    // in verify_terminal::named_bytes and are not added again here.
+    let association_visitors = std::mem::size_of::<association::Visitor<'_>>()
+        .checked_mul(2)
+        .unwrap();
+    let association_phase = raw_payload.bytes.checked_add(association_visitors).unwrap();
     let verify_guard = verify::measurement::begin();
     let verified = verify::verify(raw, sources).unwrap();
     let verify_scratch = verify_guard.finish();
@@ -56,7 +63,7 @@ fn observe_case(label: &str, owner: SourceOwner<'_>, sources: &SourceMap) {
     if !root.functions.is_empty() {
         assert!(type_scratch.frame_bytes > 0);
     }
-    println!("HIR_INHERITED {label} hir={hir_payload} typed={typed_payload:?} type_scratch={type_scratch:?} raw={raw_payload:?} lower_scratch={lower_scratch:?} verifier={verify_scratch:?} phases={type_phase}/{lower_phase}/{verify_phase}");
+    println!("HIR_INHERITED {label} hir={hir_payload} typed={typed_payload:?} type_scratch={type_scratch:?} raw={raw_payload:?} lower_scratch={lower_scratch:?} verifier={verify_scratch:?} phases={type_phase}/{lower_phase}/{association_phase}/{verify_phase} association_visitors={association_visitors}");
     drop(verified);
 }
 
@@ -67,6 +74,16 @@ fn checked_hir_import_ordinary_pass_layouts_and_capacity_envelopes() {
         typeck::measurement::layout(),
         lower::measurement::layout(),
         verify::measurement::layout()
+    );
+    println!(
+        "HIR_INHERITED_ASSOCIATION visitor={} counts={} declarations={} usage={} result={}",
+        std::mem::size_of::<association::Visitor<'_>>(),
+        std::mem::size_of::<association::Counts>(),
+        std::mem::size_of::<association::Declarations<'_, '_>>(),
+        std::mem::size_of::<association::BindUsage>(),
+        std::mem::size_of::<
+            Result<association::BindUsage, Box<crate::frontend::diagnostic::Diagnostic>>,
+        >(),
     );
     for (label, text) in [
         ("empty", ""),

@@ -400,6 +400,43 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
 mod tests {
     use super::*;
     #[test]
+    fn checked_hir_import_verify_denies_before_source_work_or_allocation() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        let text = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/rich-source.txt"
+        ));
+        let wire = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import/rich-success.bin"
+        ));
+        let mut sources = SourceMap::new();
+        let id = sources.add("denied.ox".to_owned(), text.to_owned());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        for (observation, limits) in [
+            (wire.as_slice(), IndexLimits::default()),
+            (
+                b"invalid".as_slice(),
+                IndexLimits {
+                    retained: 0,
+                    scratch: 0,
+                    work: 0,
+                },
+            ),
+        ] {
+            let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+            let mut allocator = Allocator::default();
+            assert!(matches!(
+                verify(owner, text.as_bytes(), observation, &mut allocator, limits),
+                Err(VerifyRejected::Disabled)
+            ));
+            assert_eq!(allocator.attempts, 0);
+            assert!(allocator.trace.is_empty());
+        }
+    }
+
+    #[test]
     fn checked_hir_import_leaf_layout_and_preflight_only() {
         let limits = IndexLimits::default();
         let plan = SourcePlan::calculate(limits).unwrap();

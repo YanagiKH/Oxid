@@ -109,6 +109,7 @@ pub(super) fn body_finished(
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // All fields are emitted by the immutable Debug measurement report.
 pub(in crate::frontend) struct Layout {
     pub typed_program: usize,
     pub typed_body: usize,

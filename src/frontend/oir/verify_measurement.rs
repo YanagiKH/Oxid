@@ -11,6 +11,7 @@ use std::{cell::Cell, marker::PhantomData, mem::size_of, rc::Rc};
 /// the complete sample from that function; maxima of individual columns are
 /// never added together. Slots use the locally measured element layouts below.
 #[derive(Clone, Copy, Debug, Default)]
+#[allow(dead_code)] // Cell counts are emitted by the immutable Debug measurement report.
 pub(in crate::frontend::oir) struct PhaseSample {
     pub blocks: usize,
     pub edges: usize,
@@ -327,6 +328,7 @@ pub(super) fn dominance_tree(
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // All fields are emitted by the immutable Debug measurement report.
 pub(in crate::frontend::oir) struct Layout {
     pub definition: usize,
     pub option_definition: usize,
