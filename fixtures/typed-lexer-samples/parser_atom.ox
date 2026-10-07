@@ -1,5 +1,4 @@
-// Initial primary-expression slice. Planned expression families have explicit
-// stage-pending results; they are not refusals in the completed grammar.
+// Primary/prefix entry. Calls retain an explicit stage-pending result.
 fn reject(state: &mut crate::parser_state::State, error: i32, detail: i32, token: i32) -> () {
     state.error = error;
     state.detail = detail;
@@ -47,12 +46,46 @@ fn name_tail(codes: &[i32], tokens: &[i32], state: &mut crate::parser_state::Sta
     return;
 }
 
-pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], state: &mut crate::parser_state::State) -> () {
+pub fn postfix(codes: &[i32], tokens: &[i32], state: &mut crate::parser_state::State) -> () {
+    let trailing = tokens[state.cursor];
+    if trailing % 64 == 11 || bracket(&*codes, trailing) {
+        // Canonical arrays.rs checks this before primary height/construction.
+        reject(&mut *state, 2, 3, trailing);
+    }
+    return;
+}
+
+fn signed_number(tokens: &[i32], state: &crate::parser_state::State) -> bool {
+    let mut next = state.cursor + 1;
+    while next < state.limit && tokens[next] % 64 == 1 { next = next + 1; }
+    return next < state.limit && tokens[next] % 64 == 3;
+}
+
+fn prefix(tokens: &[i32], headers: &mut [i32], ab: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> () {
+    let token = tokens[state.cursor];
+    let operator = crate::parser_state::bump(&*tokens, &mut *state);
+    let mut tag = 23;
+    if token % 64 == 40 { tag = 22; }
+    let node = crate::parser_state::row(&mut *headers, &mut *state, tag, crate::parser_state::lo(token), crate::parser_state::hi(token));
+    if state.error != 0 { return; }
+    crate::parser_state::high(&mut *ab, node, operator);
+    let aux = crate::parser_state::expression_aux(&*state);
+    crate::parser_state::push(&mut *frames, &mut *state, 13, node, aux);
+    state.depth = state.depth + 1;
+    state.floor = 6;
+    return;
+}
+
+pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> () {
     let token = tokens[state.cursor];
     let kind = token % 64;
     // The canonical depth gate precedes primary dispatch and family refusal.
     if state.depth >= 64 {
         reject(&mut *state, 3, 1, token);
+        return;
+    }
+    if kind == 32 || (kind == 40 && !signed_number(&*tokens, &*state)) {
+        prefix(&*tokens, &mut *headers, &mut *ab, &mut *frames, &mut *state);
         return;
     }
     let start = crate::parser_state::lo(token);
@@ -69,10 +102,6 @@ pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32],
         if kind == 40 {
             negative = 1;
             crate::parser_state::bump(&*tokens, &mut *state);
-            if tokens[state.cursor] % 64 != 3 {
-                reject(&mut *state, 5, 22, token);
-                return;
-            }
         }
         let digits = tokens[state.cursor];
         payload = crate::parser_state::bump(&*tokens, &mut *state);
@@ -96,15 +125,18 @@ pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32],
     } else { if kind == 22 {
         crate::parser_state::bump(&*tokens, &mut *state);
         if tokens[state.cursor] % 64 != 23 {
-            reject(&mut *state, 5, 21, token);
+            let group = crate::parser_state::row(&mut *headers, &mut *state, 21, start, end);
+            if state.error != 0 { return; }
+            let aux = crate::parser_state::expression_aux(&*state);
+            crate::parser_state::push(&mut *frames, &mut *state, 14, group, aux);
+            state.depth = state.depth + 1;
+            state.context = 0;
+            state.floor = 0;
             return;
         }
         tag = 18;
         end = crate::parser_state::hi(tokens[state.cursor]);
         crate::parser_state::bump(&*tokens, &mut *state);
-    } else { if kind == 32 {
-        reject(&mut *state, 5, 23, token);
-        return;
     } else { if bracket(&*codes, token) {
         reject(&mut *state, 4, 9, token);
         return;
@@ -112,14 +144,9 @@ pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32],
         crate::parser_state::fail(&*codes, &*tokens, &mut *state, 13);
         return;
     }
-    } } } } }
-    let trailing = tokens[state.cursor];
-    if trailing % 64 == 11 || bracket(&*codes, trailing) {
-        // E0101/parse: unsupported typed-preview construct `{spelling}`.
-        // Canonical arrays.rs checks this before pushing the expression/height.
-        reject(&mut *state, 2, 3, trailing);
-        return;
-    }
+    } } } }
+    postfix(&*codes, &*tokens, &mut *state);
+    if state.error != 0 { return; }
     let node = crate::parser_state::row(&mut *headers, &mut *state, tag, start, end);
     if state.error != 0 { return; }
     crate::parser_state::low(&mut *ab, node, payload);

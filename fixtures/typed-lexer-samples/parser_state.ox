@@ -1,4 +1,4 @@
-// Early parser control/storage. Complete grammar remains an explicit later gate.
+// Fixed parser control/storage. Complete grammar remains an explicit later gate.
 pub struct State {
     pub cursor: i32, pub limit: i32, pub used: i32,
     pub rows: i32, pub stack: i32, pub items: i32, pub tail: i32,
@@ -73,4 +73,15 @@ pub fn pop(frames: &mut [i32], state: &mut State) -> i32 {
     let frame = frames[state.stack];
     frames[state.stack] = 0;
     return frame;
+}
+pub fn expression_aux(state: &State) -> i32 {
+    return state.depth + 128 * state.context + 256 * state.floor;
+}
+pub fn restore_expression(state: &mut State, frame: i32) -> () {
+    // Only the low frame word contains aux; the high word is the owning row.
+    let aux = frame % 65536 / 32;
+    state.depth = aux % 128;
+    state.context = aux / 128 % 2;
+    state.floor = aux / 256;
+    return;
 }

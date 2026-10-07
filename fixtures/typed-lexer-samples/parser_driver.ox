@@ -81,13 +81,6 @@ fn block(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd:
     return;
 }
 fn expression_done(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> () {
-    let token = tokens[state.cursor];
-    let kind = token % 64;
-    if kind == 40 || kind == 41 || kind == 42 || kind == 43 || kind == 44 || (kind >= 30 && kind <= 38) {
-        state.error = 5; state.detail = 24;
-        state.start = crate::parser_state::lo(token); state.end = crate::parser_state::hi(token);
-        return;
-    }
     let semi = crate::parser_state::expect(&*codes, &*tokens, &mut *state, 28, 17);
     if state.error != 0 { return; }
     let frame = frames[state.stack - 1];
@@ -128,10 +121,13 @@ pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32],
     while tokens[state.cursor] % 64 == 1 { state.cursor = state.cursor + 1; }
     while state.error == 0 && state.mode != 9 {
         if state.mode == 1 {
-            crate::parser_atom::parse(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *state);
+            crate::parser_atom::parse(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
         } else {
             if state.mode == 2 {
-                expression_done(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
+                let returned = crate::parser_expression::resume(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
+                if returned && state.error == 0 {
+                    expression_done(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
+                }
             } else {
                 if state.mode == 3 { block_done(&mut *headers, &mut *cd, &mut *frames, &mut *state); }
                 else {

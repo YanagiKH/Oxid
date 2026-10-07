@@ -1,5 +1,24 @@
 # Carrier admission experiment
 
+## Current native admission
+
+[RFC 0027](../../rfcs/0027-native-admission-inventories.md) replaces the native
+reference-expanded-cell gates with independently checked compiler inventories.
+The unchanged initial parser at `8f1fe203` has I = 4,646 and W = 2,571, with
+48,864 explicit native bytes including the Process wrapper. It passes ordinary
+native compilation and its existing 54 reference/native cases. The remaining
+inventory headroom is 3,546 items and 5,621 width cells; every later grammar
+increment must still pass all native gates. This is intentional admission
+broadening, not allocation reduction. Reference storage and logical fuel remain
+unchanged.
+
+The experiments below preserve the earlier representation and X-limit results.
+Their 1,200-cell engineering target was superseded by the explicit inventory
+contract; it is not an additional current parser limit. Full grammar, exact
+canonical projection and independent decoder validation remain unfinished.
+
+## Historical carrier experiments
+
 The first probe shares the existing lexer modules and source bound. Its entry is
 `../typed-lexer-samples/parser_admission.ox`; it constructs synthetic full-width
 banks, checks push/resume/pop and duplicate/limit behavior, poisons an unused row,
@@ -87,7 +106,7 @@ and 12 synthetic carrier observations pass in reference/native execution.
 The carrier controller is reproducible with:
 
 ```sh
-python 3 scripts/verify_parser_carrier_admission.py --oxid target/debug/oxid \
+python3 scripts/verify_parser_carrier_admission.py --oxid target/debug/oxid \
   --output /tmp/parser-carrier-proof --native
 ```
 

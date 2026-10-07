@@ -1,4 +1,13 @@
-# Early control implementation checkpoint
+# Staged scalar parser
+
+The native inventory successor in RFC 0027 is qualified. The unchanged parked
+parser at `8f1fe203` passed ordinary native compilation and 54 retained
+reference/native cases, plus 41 separate strict-decoder controls. These comprise
+35 canonical comparisons, 11 domain refusals and eight pending grammar cases.
+The full scalar grammar remains unfinished. Expression continuations are the
+next implementation increment; no provider activation is included.
+
+## Historical initial control checkpoint
 
 The canonical parser observer copies unchanged Rust sources and projects full
 scalar AST facts or the first diagnostic. Its standalone build and focused
