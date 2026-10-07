@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""Authored OPA1 controls, independent of candidate/compiler execution.
+
+These fixtures prescribe token records, rows and expected syntax directly. They
+are decoder checks, not a lexer oracle or candidate/canonical parity evidence.
+"""
+import copy
+import unittest
+
+import parser_ast_observation as observation
+
+
+def token(label, kind, spelling):
+    return label, kind, spelling.encode("ascii")
+
+
+class Fixture:
+    """An explicitly authored single-return function and its logical row table."""
+
+    def __init__(self, expression_tokens):
+        pieces = [token("fn", "Fn", "fn"), token("space", "Trivia", " "),
+                  token("function", "Ident", "f"), token("params", "LParen", "("),
+                  token("params_end", "RParen", ")"), token("arrow", "Arrow", "->"),
+                  token("type", "LParen", "("), token("type_end", "RParen", ")"),
+                  token("block", "LBrace", "{"), token("return", "Return", "return"),
+                  token("value_space", "Trivia", " ")]
+        pieces += expression_tokens
+        pieces += [token("semi", "Semi", ";"), token("end", "RBrace", "}")]
+        self.source, self.tokens, self.labels = b"", [], {}
+        for label, kind, spelling in pieces:
+            start = len(self.source)
+            self.source += spelling
+            self.tokens.append({"id": observation.KINDS.index(kind) + 1, "kind": kind,
+                                "file_id": 0, "start": start, "end": len(self.source)})
+            self.labels[label] = len(self.tokens)
+        self.tokens.append({"id": 47, "kind": "Eof", "file_id": 0,
+                            "start": len(self.source), "end": len(self.source)})
+        self.rows = []
+        self.add(1, "function", "function", c=2, d=3)
+        self.add(4, "type", "type_end")
+        self.add(5, "block", "end", a=self.labels["end"], b=4)
+        self.add(10, "return", "semi")
+
+    def at(self, label):
+        t = self.tokens[self.labels[label] - 1]
+        return observation.span(t["start"], t["end"])
+
+    def add(self, kind, first, last, **fields):
+        self.rows.append({"kind": kind, "start": self.at(first)["start"],
+                          "end": self.at(last)["end"], "a": 0, "b": 0,
+                          "c": 0, "d": 0, "next": 0, **fields})
+        return len(self.rows)
+
+    def name(self, label):
+        return self.add(19, label, label, a=self.labels[label], d=1)
+
+    def select(self, root):
+        self.rows[3]["a"] = root
+        return self
+
+    def wire(self):
+        result = bytearray(b"OPA1" + bytes([0, 0, 0, 0, len(self.rows), 1, len(self.source)]))
+        columns = [[], [], []]
+        for r in self.rows:
+            columns[0].append(r["kind"] + (r["start"] << 6) + (r["end"] << 14) + (r["next"] << 22))
+            columns[1].append(r["a"] + (r["b"] << 8))
+            columns[2].append(r["c"] + (r["d"] << 8))
+        for column in columns:
+            column += [0] * (129 - len(column))
+            for plane in range(4):
+                result.extend((value >> (8 * plane)) & 255 for value in column)
+        return bytes(result)
+
+    def decode(self):
+        return observation.decode(self.wire(), self.source, self.tokens)
+
+
+def simple_binary(kind=24, token_kind="Plus", spelling="+"):
+    f = Fixture([token("a", "Ident", "a"), token("op", token_kind, spelling),
+                 token("b", "Ident", "b")])
+    # Parent-before-child physical order deliberately differs from canonical IDs.
+    root = f.add(kind, "a", "b", a=6, b=7, c=f.labels["op"], d=2)
+    f.name("a")
+    f.name("b")
+    return f.select(root)
+
+
+class ProjectionExpressionTests(unittest.TestCase):
+    def reject(self, fixture, pattern=None):
+        if pattern:
+            with self.assertRaisesRegex(observation.ObservationError, pattern):
+                fixture.decode()
+        else:
+            with self.assertRaises(observation.ObservationError):
+                fixture.decode()
+
+    def test_every_binary_operator_has_exact_fields_and_postorder_ids(self):
+        cases = [
+            (24, "Plus", "+", "Arithmetic", "Add"),
+            (25, "Minus", "-", "Arithmetic", "Subtract"),
+            (26, "Star", "*", "Arithmetic", "Multiply"),
+            (27, "Slash", "/", "Arithmetic", "Divide"),
+            (28, "Percent", "%", "Arithmetic", "Remainder"),
+            (29, "EqualEqual", "==", "Comparison", "Equal"),
+            (30, "NotEqual", "!=", "Comparison", "NotEqual"),
+            (31, "Less", "<", "Comparison", "Less"),
+            (32, "LessEqual", "<=", "Comparison", "LessEqual"),
+            (33, "Greater", ">", "Comparison", "Greater"),
+            (34, "GreaterEqual", ">=", "Comparison", "GreaterEqual"),
+            (35, "AndAnd", "&&", "Logical", "And"),
+            (36, "OrOr", "||", "Logical", "Or"),
+        ]
+        for kind, token_kind, spelling, family, op in cases:
+            with self.subTest(op=op):
+                f = simple_binary(kind, token_kind, spelling)
+                got = f.decode()["ast"]
+                self.assertEqual(got["expressions"], [
+                    {"id": 0, "kind": "Name", "name": f.at("a"), "span": f.at("a")},
+                    {"id": 1, "kind": "Name", "name": f.at("b"), "span": f.at("b")},
+                    {"id": 2, "kind": family, "op": op, "left": 0, "right": 1,
+                     "operator_span": f.at("op"),
+                     "span": observation.span(f.at("a")["start"], f.at("b")["end"])},
+                ])
+                self.assertEqual(got["functions"][0]["blocks"][0]["body"][0]["value"], 2)
+                for field, value in [("d", 1), ("d", 3), ("c", f.labels["a"]),
+                                     ("a", 0), ("a", 5), ("b", 6), ("next", 6),
+                                     ("start", f.at("op")["start"]),
+                                     ("end", f.at("op")["end"])]:
+                    bad = copy.deepcopy(f)
+                    bad.rows[4][field] = value
+                    self.reject(bad)
+
+    def test_group_prefixes_signed_literal_and_trivia(self):
+        f = Fixture([token("not", "Not", "!"), token("negate", "Minus", "-"),
+                     token("open", "LParen", "("), token("sign", "Minus", "-"),
+                     token("comment", "Trivia", " /*x*/ "), token("digits", "Number", "007"),
+                     token("close", "RParen", ")")])
+        f.add(23, "not", "close", a=6, b=f.labels["not"], d=4)
+        f.add(22, "negate", "close", a=7, b=f.labels["negate"], d=3)
+        f.add(21, "open", "close", a=8, d=2)
+        f.add(15, "sign", "digits", a=f.labels["digits"], b=1, d=1)
+        f.select(5)
+        got = f.decode()["ast"]["expressions"]
+        expected = [
+            {"id": 0, "kind": "Number", "digits": f.at("digits"), "negative": True,
+             "span": observation.span(f.at("sign")["start"], f.at("digits")["end"])},
+            {"id": 1, "kind": "Group", "operand": 0,
+             "span": observation.span(f.at("open")["start"], f.at("close")["end"])},
+            {"id": 2, "kind": "Negate", "operand": 1, "operator_span": f.at("negate"),
+             "span": observation.span(f.at("negate")["start"], f.at("close")["end"])},
+            {"id": 3, "kind": "Not", "operand": 2, "operator_span": f.at("not"),
+             "span": observation.span(f.at("not")["start"], f.at("close")["end"])},
+        ]
+        self.assertEqual(got, expected)
+        for row in (4, 5, 6):
+            for field, value in [("c", 1), ("next", 8), ("d", 0), ("d", 64),
+                                 ("a", row + 1), ("a", 128), ("start", 0), ("end", 0)]:
+                with self.subTest(row=row, field=field, value=value):
+                    bad = copy.deepcopy(f)
+                    bad.rows[row][field] = value
+                    self.reject(bad)
+        for row in (4, 5, 6):
+            bad = copy.deepcopy(f)
+            bad.rows[row]["b"] = f.labels["digits"]
+            self.reject(bad)
+
+    def test_negate_positive_number_is_not_a_canonical_signed_literal(self):
+        f = Fixture([token("minus", "Minus", "-"), token("digit", "Number", "1")])
+        f.add(22, "minus", "digit", a=6, b=f.labels["minus"], d=2)
+        f.add(15, "digit", "digit", a=f.labels["digit"], d=1)
+        self.reject(f.select(5), "signed Number")
+
+    def test_negate_negative_number_is_admitted(self):
+        f = Fixture([token("negate", "Minus", "-"), token("sign", "Minus", "-"),
+                     token("digits", "Number", "1")])
+        f.add(22, "negate", "digits", a=6, b=f.labels["negate"], d=2)
+        f.add(15, "sign", "digits", a=f.labels["digits"], b=1, d=1)
+        result = f.select(5).decode()["ast"]["expressions"]
+        self.assertTrue(result[0]["negative"])
+        self.assertEqual(result[1]["kind"], "Negate")
+
+    def test_unparenthesized_precedence_associativity_and_comparison_chains(self):
+        cases = [
+            (26, "Star", "*", 24, "Plus", "+", True),
+            (24, "Plus", "+", 36, "OrOr", "||", False),
+            (25, "Minus", "-", 25, "Minus", "-", False),
+            (31, "Less", "<", 31, "Less", "<", True),
+            (31, "Less", "<", 31, "Less", "<", False),
+            (35, "AndAnd", "&&", 35, "AndAnd", "&&", False),
+        ]
+        for outer, outer_token, outer_spelling, inner, inner_token, inner_spelling, left_inner in cases:
+            with self.subTest(outer=outer, inner=inner, left_inner=left_inner):
+                ops = [(inner_token, inner_spelling), (outer_token, outer_spelling)] if left_inner else [
+                    (outer_token, outer_spelling), (inner_token, inner_spelling)]
+                f = Fixture([token("a", "Ident", "a"), token("op1", *ops[0]),
+                             token("b", "Ident", "b"), token("op2", *ops[1]), token("c", "Ident", "c")])
+                a, b, c = f.name("a"), f.name("b"), f.name("c")
+                child = f.add(inner, "a" if left_inner else "b", "b" if left_inner else "c",
+                              a=a if left_inner else b, b=b if left_inner else c,
+                              c=f.labels["op1" if left_inner else "op2"], d=2)
+                root = f.add(outer, "a", "c", a=child if left_inner else a,
+                             b=c if left_inner else child, c=f.labels["op2" if left_inner else "op1"], d=3)
+                self.reject(f.select(root), "precedence or associativity")
+
+    def test_parenthesized_comparison_and_left_associativity(self):
+        f = Fixture([token("open", "LParen", "("), token("a", "Ident", "a"),
+                     token("lt", "Less", "<"), token("b", "Ident", "b"),
+                     token("close", "RParen", ")"), token("eq", "EqualEqual", "=="),
+                     token("c", "Ident", "c")])
+        a, b, c = f.name("a"), f.name("b"), f.name("c")
+        compare = f.add(31, "a", "b", a=a, b=b, c=f.labels["lt"], d=2)
+        group = f.add(21, "open", "close", a=compare, d=3)
+        root = f.add(29, "open", "c", a=group, b=c, c=f.labels["eq"], d=4)
+        self.assertEqual([e["kind"] for e in f.select(root).decode()["ast"]["expressions"]],
+                         ["Name", "Name", "Comparison", "Group", "Name", "Comparison"])
+        f = Fixture([token("a", "Ident", "a"), token("op1", "Minus", "-"),
+                     token("b", "Ident", "b"), token("op2", "Minus", "-"), token("c", "Ident", "c")])
+        a, b, c = f.name("a"), f.name("b"), f.name("c")
+        left = f.add(25, "a", "b", a=a, b=b, c=f.labels["op1"], d=2)
+        root = f.add(25, "a", "c", a=left, b=c, c=f.labels["op2"], d=3)
+        result = f.select(root).decode()["ast"]["expressions"]
+        self.assertEqual((result[-1]["left"], result[-1]["right"]), (2, 3))
+
+    def test_unary_operand_cannot_implicitly_group_a_binary(self):
+        f = Fixture([token("not", "Not", "!"), token("a", "Ident", "a"),
+                     token("op", "Plus", "+"), token("b", "Ident", "b")])
+        a, b = f.name("a"), f.name("b")
+        binary = f.add(24, "a", "b", a=a, b=b, c=f.labels["op"], d=2)
+        root = f.add(23, "not", "b", a=binary, b=f.labels["not"], d=3)
+        self.reject(f.select(root), "precedence or associativity")
+
+    def test_height_64_boundary_is_recomputed(self):
+        for count in (63, 64):
+            f = Fixture([token(str(i), "Not", "!") for i in range(count)] + [token("a", "Ident", "a")])
+            root = f.name("a")
+            for i in reversed(range(count)):
+                root = f.add(23, str(i), "a", a=root, b=f.labels[str(i)], d=count - i + 1)
+            f.select(root)
+            if count == 63:
+                self.assertEqual(len(f.decode()["ast"]["expressions"]), 64)
+            else:
+                self.reject(f, "computed expression height")
+
+    def test_missing_group_close_cannot_be_silently_omitted(self):
+        f = Fixture([token("open", "LParen", "("), token("a", "Ident", "a")])
+        child = f.name("a")
+        root = f.add(21, "open", "a", a=child, d=2)
+        self.reject(f.select(root), "expected RParen")
+
+    def test_call_remains_explicitly_unsupported(self):
+        f = simple_binary()
+        f.rows[4]["kind"] = 20
+        with self.assertRaises(observation.ProjectionUnsupported):
+            f.decode()
+
+    def test_expression_diagnostics_preserve_complete_first_diagnostic(self):
+        for detail, source, start, end, message in [
+            (22, b"fn f()->(){(a;}", 13, 14, "grouping requires `)`"),
+            (23, b"fn f()->(){a<b<c;}", 14, 15,
+             "comparison operators cannot be chained; use parentheses"),
+        ]:
+            with self.subTest(detail=detail):
+                raw = b"OPA1" + bytes([1, detail, start, end, 0, 0, len(source)])
+                got = observation.decode(raw, source)
+                self.assertEqual(got, {
+                    "status": "diagnostic", "projection": "first_parser_diagnostic",
+                    "diagnostic": {"schema_version": 1, "edition": "typed-preview", "kind": "diagnostic",
+                                   "severity": "error", "code": "E0100", "stage": "parse", "message": message,
+                                   "primary": {"file_id": 0, "start": start, "end": end, "path": "stdin.ox",
+                                               "line": 1, "column": start + 1, "end_line": 1, "end_column": end + 1},
+                                   "secondary": [], "notes": []},
+                })
+
+
+if __name__ == "__main__":
+    unittest.main()

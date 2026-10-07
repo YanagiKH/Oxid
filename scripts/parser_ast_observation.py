@@ -32,13 +32,33 @@ MESSAGES = {
     13: "expected a bool, i32 or unit expression",
     17: "statement requires `;`",
     21: "loop transfer requires `;`; values and labels are unavailable",
+    22: "grouping requires `)`",
+    23: "comparison operators cannot be chained; use parentheses",
 }
 FAMILIES = {1: "module", 2: "import", 3: "record", 4: "enum",
             5: "reference_type", 6: "array_type", 7: "qualified_type",
             8: "match", 9: "array_literal", 10: "qualified_value_or_call",
             11: "field_index_length", 12: "indexing", 13: "record_literal",
             14: "borrow_argument"}
-IMPLEMENTED = {1, 2, 3, 4, 5, 9, 10, 11, 12, 15, 16, 17, 18, 19}
+EXPRESSION_KINDS = set(range(15, 37)) - {20}  # Call remains a separate stage.
+IMPLEMENTED = {1, 2, 3, 4, 5, 9, 10, 11, 12} | EXPRESSION_KINDS
+# Local shape constraints validate the supplied tree; they never select a parse
+# from tokens or supply expected AST facts in a differential comparison.
+BINARY = {
+    24: ("Arithmetic", "Add", "Plus", 4),
+    25: ("Arithmetic", "Subtract", "Minus", 4),
+    26: ("Arithmetic", "Multiply", "Star", 5),
+    27: ("Arithmetic", "Divide", "Slash", 5),
+    28: ("Arithmetic", "Remainder", "Percent", 5),
+    29: ("Comparison", "Equal", "EqualEqual", 3),
+    30: ("Comparison", "NotEqual", "NotEqual", 3),
+    31: ("Comparison", "Less", "Less", 3),
+    32: ("Comparison", "LessEqual", "LessEqual", 3),
+    33: ("Comparison", "Greater", "Greater", 3),
+    34: ("Comparison", "GreaterEqual", "GreaterEqual", 3),
+    35: ("Logical", "And", "AndAnd", 2),
+    36: ("Logical", "Or", "OrOr", 1),
+}
 
 
 class ObservationError(ValueError):
@@ -180,7 +200,7 @@ def project_failure(wire, source, tokens=None):
 
 def project_ast(wire, source, tokens):
     validate_tokens(tokens, source)
-    rows, claimed, cursor, expressions = wire["rows"], set(), 0, []
+    rows, claimed, cursor, expressions, heights = wire["rows"], set(), 0, [], []
 
     def take(kind, ref=None):
         nonlocal cursor
@@ -221,11 +241,13 @@ def project_ast(wire, source, tokens):
         first, last = take("LParen"), take("RParen")
         return {"kind": "TypeUnit", "span": extent(row, first, last)}
 
-    def expression(ref):
-        row = claim(ref, set(range(15, 20)))
-        zero(row, "c")
-        require(row["d"] == 1, "leaf expression height must be one")
-        kind, fields = row["kind"], {}
+    def expression(ref, floor=0):
+        row = claim(ref, EXPRESSION_KINDS)
+        kind, fields, height = row["kind"], {}, 1
+        require(kind not in BINARY or BINARY[kind][3] >= floor,
+                "expression tree violates precedence or associativity")
+        if kind not in BINARY:
+            zero(row, "c")
         if kind == 15:
             require(row["b"] in (0, 1), "invalid Number negative flag")
             first = take("Minus") if row["b"] else None
@@ -241,12 +263,40 @@ def project_ast(wire, source, tokens):
             zero(row, "a", "b")
             first, last = take("LParen"), take("RParen")
             fields = {"kind": "Unit"}
-        else:
+        elif kind == 19:
             zero(row, "b")
             first = last = take("Ident", row["a"])
             fields = {"kind": "Name", "name": first}
+        elif kind == 21:
+            zero(row, "b")
+            first = take("LParen")
+            operand = expression(row["a"])
+            last = take("RParen")
+            fields = {"kind": "Group", "operand": operand}
+            height += heights[operand]
+        elif kind in (22, 23):
+            first = take("Minus" if kind == 22 else "Not", row["b"])
+            operand = expression(row["a"], floor=6)
+            child = expressions[operand]
+            require(kind != 22 or child["kind"] != "Number" or child["negative"],
+                    "minus followed by digits must be a signed Number")
+            last = child["span"]
+            fields = {"kind": "Negate" if kind == 22 else "Not",
+                      "operand": operand, "operator_span": first}
+            height += heights[operand]
+        else:
+            family, op, token, precedence = BINARY[kind]
+            left = expression(row["a"], floor=precedence + (family == "Comparison"))
+            operator = take(token, row["c"])
+            right = expression(row["b"], floor=precedence + 1)
+            first, last = expressions[left]["span"], expressions[right]["span"]
+            fields = {"kind": family, "op": op, "left": left, "right": right,
+                      "operator_span": operator}
+            height += max(heights[left], heights[right])
+        require(row["d"] == height and height <= 64, "invalid computed expression height")
         expression_id = len(expressions)
         expressions.append({"id": expression_id, "span": extent(row, first, last), **fields})
+        heights.append(height)
         return expression_id
 
     def block(ref):
