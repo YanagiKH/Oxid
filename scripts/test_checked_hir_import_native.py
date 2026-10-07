@@ -1,5 +1,4 @@
 """Driver controls only; fake commands do not qualify LLVM or native execution."""
-import os
 from pathlib import Path
 import sys
 import tempfile
@@ -33,6 +32,30 @@ class DriverTests(unittest.TestCase):
         receipt = json.loads((self.root / "probe.json").read_text())
         self.assertTrue(receipt["timed_out"])
         self.assertEqual(receipt["status"], -9)
+
+    def test_timeout_kills_spawned_descendant(self):
+        import time
+        child = "import os, pathlib, time; pathlib.Path('descendant.pid').write_text(str(os.getpid())); time.sleep(30)"
+        leader = f"import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', {child!r}]); time.sleep(30)"
+        with self.assertRaisesRegex(RuntimeError, "exceeded"):
+            self.run_python(leader, seconds=0.5)
+        pid = int((self.root / "descendant.pid").read_text())
+        state = Path(f"/proc/{pid}/stat")
+        for _ in range(100):
+            try:
+                # A killed orphan can briefly remain a zombie for host init.
+                if state.read_text().split(") ", 1)[1].split()[0] == "Z":
+                    break
+            except FileNotFoundError:
+                break
+            time.sleep(0.01)
+        else:
+            self.fail("timed-out descendant is still running")
+
+    def test_evidence_rejects_even_ignored_in_tree_destinations(self):
+        with self.assertRaisesRegex(RuntimeError, "outside the checkout"):
+            gate.evidence_destination(gate.ROOT / "target" / "native-gate-evidence")
+        self.assertEqual(gate.evidence_destination(self.root), self.root.resolve())
 
     def test_no_stdin_or_ambient_environment(self):
         result = self.run_python("import os, sys; assert sys.stdin.read() == ''; assert 'HOME' not in os.environ")

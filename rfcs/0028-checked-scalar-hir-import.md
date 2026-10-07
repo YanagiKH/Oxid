@@ -1,8 +1,7 @@
 # RFC 0028: private checked scalar HIR import
 
-Status: **private Verify, Run and LLVM-text Emit enabled and locally qualified**.
-Public provider integration and external native-tool execution remain outside
-the enabled scope.
+Status: **private Verify, Run, LLVM-text Emit and bounded external native execution locally qualified**.
+Public provider integration remains outside the enabled scope.
 Updated 2026-10-07.
 
 ## Outcome and boundary
@@ -549,3 +548,22 @@ Local validation at the qualified source includes 18 focused Emit controls,
 and formatting checks. This is bounded-debug Linux evidence on Rust 1.99.0,
 not hosted or standard-profile qualification. No external LLVM tool or native
 executable ran in this step; no public provider/default source route changed.
+
+
+### Local external native qualification
+
+The opt-in [private native gate](../docs/architecture/private-hir-import-native-gate.md)
+now consumes the unchanged owned leaf artifact after actual source/AST teardown.
+At local test checkpoint `4a0c1e2`, LLVM/Clang/LLD 19.1.7 assembled, independently
+verified and compiled both private and ordinary rich/overflow/division artifacts
+into six Linux x86_64 O0 PIE executables. Every status/stdout/stderr result matched
+the ordinary source reference and fixed value/error expectations. Three disposable
+malformed LLVM controls were rejected by the real external verifier.
+
+The genuine rich producer capture remains distinct from explicitly hand-authored
+arithmetic controls. This is a private test-only artifact gate, not production
+CLI/publication, public provider, hosted or current-source binding qualification.
+Standard tests never invoke the gate. Clean local regression at this checkpoint
+passed 1,649 unit tests (56 intentionally ignored), the 18 focused Emit controls,
+strict all-target Clippy and formatting. The bounded-debug Rust 1.99.0 profile
+and inherited resource exclusions remain unchanged.

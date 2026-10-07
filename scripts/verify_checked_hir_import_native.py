@@ -90,12 +90,19 @@ def verify_elf(path: Path) -> None:
         raise RuntimeError("expected little-endian x86_64 ELF64 PIE")
 
 
+def evidence_destination(path: Path) -> Path:
+    resolved = path.resolve()
+    if resolved.is_relative_to(ROOT.resolve()):
+        raise RuntimeError("evidence directory must be outside the checkout")
+    return resolved
+
+
 def qualify(binary: Path, llvm: Path, root: Path) -> None:
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise RuntimeError("private native gate is qualified only for Linux x86_64")
     binary, llvm = binary.resolve(strict=True), llvm.resolve(strict=True)
+    root = evidence_destination(root)
     root.mkdir()  # fresh, no overwrite or deletion of old evidence
-    root = root.resolve()
     env = {"PATH": f"{llvm}:/usr/bin:/bin", "LC_ALL": "C"}
     metadata: dict[str, object] = {"test_binary": str(binary), "test_binary_sha256": digest(binary),
                                  "llvm_bin": str(llvm), "scope": "private test-only; not public provider qualification"}

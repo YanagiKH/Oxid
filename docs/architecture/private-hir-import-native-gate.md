@@ -55,9 +55,9 @@ runtime dependencies, not OS filesystem sandboxing. A disposable malformed LLVM
 copy must be rejected by opt with a real diagnostic; the original remains intact.
 
 Every command uses argv directly, never a shell. Export, tool and runtime steps
-have explicit timeouts; a timeout kills/reaps the process group and fails the gate.
+have explicit timeouts; a timeout kills the process group, reaps its leader and fails the gate.
 Child-created files have a 64 MiB per-file limit and core dumps are disabled.
-Streams are retained on disk, and in-process reads are capped at 1 MiB. These are
+Streams are retained on disk, and in-process reads of process streams are capped at 1 MiB. These are
 qualification-runner controls, not a process-wide memory/disk or compiler-work
 bound. Tool failures, unexpected streams, signals and timeout results never count
 as expected language errors. The manifest hashes retained inputs, outputs,
