@@ -11,6 +11,8 @@ use std::{convert::Infallible, mem::size_of};
 
 // Complete source/OPA comparison remains disconnected from candidate construction.
 mod ast_compare;
+// Prepaid vector helper remains disconnected from any candidate Program builder.
+mod allocation;
 
 const CELLS: usize = 129;
 const MAX_ROWS: usize = 128;
