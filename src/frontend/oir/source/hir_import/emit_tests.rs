@@ -136,6 +136,42 @@ fn original_native_rejection(text: &str, wire: &[u8]) -> Box<Diagnostic> {
         .iter()
         .any(|event| event.kind == "private LLVM text"));
     assert!(!allocator.observer_trace_overflow);
+    // Source/AST, both prior diagnostics and the prepared trace are baseline.
+    // A complete failed import drops its returned diagnostic in this interval.
+    let mut cleanup_allocator = Allocator::default();
+    cleanup_allocator.observer_trace_bound(32).unwrap();
+    let trace_capacity = cleanup_allocator.trace.capacity();
+    let mut same = false;
+    let cleanup = owned::hir_import_measure_allocations(|| {
+        let result = leaf::emit(
+            owner,
+            text.as_bytes(),
+            wire,
+            &mut cleanup_allocator,
+            IndexLimits::default(),
+        );
+        same = matches!(&result,
+            Err(leaf::VerifyRejected::Terminal(candidate::VerifyRejected::Native(private_emit::Failure::Diagnostic(error))))
+                if error.code == actual.code && error.stage == actual.stage
+                    && error.message == actual.message && error.primary == actual.primary
+                    && error.secondary == actual.secondary && error.notes == actual.notes);
+        drop(result);
+    });
+    assert!(same);
+    assert_eq!(cleanup.2, 0);
+    assert_eq!(cleanup_allocator.attempts, allocator.attempts);
+    assert_eq!(cleanup_allocator.trace.capacity(), trace_capacity);
+    assert!(!cleanup_allocator.observer_trace_overflow);
+    assert!(cleanup_allocator
+        .trace
+        .iter()
+        .all(|row| row.kind != "private LLVM text"));
+    assert!(owned::hir_import_allocation_observers_idle());
+    println!(
+        "HIR_IMPORT_EMIT_NATIVE_ERROR_DROP code={} source_bytes={} allocation={cleanup:?}",
+        actual.code,
+        text.len()
+    );
     // Rendering was compared while the genuine source map still existed.
     // Only the authentic owned diagnostic leaves this helper.
     actual

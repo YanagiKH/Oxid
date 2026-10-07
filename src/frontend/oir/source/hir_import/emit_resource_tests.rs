@@ -180,43 +180,60 @@ fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints() {
 }
 
 #[test]
-fn checked_hir_import_emit_conservative_long_path_rejects_before_final_reserve() {
-    let mut sources = SourceMap::new();
-    let id = sources.add("x".repeat(3_366), TEXT.into());
-    let source = sources.get(id);
-    let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
-    let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
-    let mut allocator = Allocator::default();
-    allocator.observer_trace_bound(32).unwrap();
-    let mut matched = false;
-    let observed = owned::hir_import_measure_allocations(|| {
-        matched = matches!(
-            leaf::emit(
+fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints() {
+    for path_bytes in [3_365, 3_366] {
+        let mut sources = SourceMap::new();
+        let id = sources.add("x".repeat(path_bytes), TEXT.into());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+        // Both ordinary outputs are baseline and succeed under default policy.
+        let ordinary = super::super::check_source(source, &ast, &sources)
+            .unwrap()
+            .native_module()
+            .unwrap();
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(32).unwrap();
+        let mut matched = false;
+        let observed = owned::hir_import_measure_allocations(|| {
+            let result = leaf::emit(
                 owner,
                 TEXT.as_bytes(),
                 WIRE,
                 &mut allocator,
-                IndexLimits::default()
-            ),
-            Err(leaf::VerifyRejected::Terminal(
-                candidate::VerifyRejected::EmitWork(emit_work::Failure::Work)
-            ))
+                IndexLimits::default(),
+            );
+            matched = match (path_bytes, result) {
+                (3_365, Ok(output)) => {
+                    assert_eq!(output.total_work, 255_928_515);
+                    assert_eq!(output.artifact.text, ordinary);
+                    assert_eq!(output.artifact.bytes, output.artifact.capacity);
+                    drop(output);
+                    true
+                }
+                (
+                    3_366,
+                    Err(leaf::VerifyRejected::Terminal(candidate::VerifyRejected::EmitWork(
+                        emit_work::Failure::Work,
+                    ))),
+                ) => true,
+                other => panic!("unexpected actual long-path endpoint: {other:?}"),
+            };
+        });
+        assert!(matched);
+        assert_eq!(
+            allocator.attempts,
+            if path_bytes == 3_365 { 17 } else { 16 }
         );
-    });
-    assert!(matched);
-    assert_eq!(allocator.attempts, 16);
-    assert!(allocator
-        .trace
-        .iter()
-        .all(|row| row.kind != "private LLVM text"));
-    assert_eq!(observed.2, 0);
-    let ordinary = super::super::check_source(source, &ast, &sources)
-        .unwrap()
-        .native_module()
-        .unwrap();
-    assert!(!ordinary.is_empty());
-    println!(
-        "HIR_IMPORT_EMIT_LONG_PATH private_work_rejected ordinary_bytes={} allocation={observed:?}",
-        ordinary.len()
-    );
+        assert_eq!(
+            allocator
+                .trace
+                .iter()
+                .filter(|row| row.kind == "private LLVM text")
+                .count(),
+            usize::from(path_bytes == 3_365)
+        );
+        assert_eq!(observed.2, 0);
+        println!("HIR_IMPORT_EMIT_LONG_PATH bytes={path_bytes} private_admitted={} ordinary_bytes={} allocation={observed:?}", path_bytes == 3_365, ordinary.len());
+    }
 }
