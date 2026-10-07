@@ -1,7 +1,6 @@
 //! Private Verify terminal. Only candidate's single construction body calls it.
-//! The public/default source path remains disconnected. Only fixed verification
-//! facts escape after all candidate, typed and verified owners are dropped.
-//! The owned Emit alternative is compiled but unconditionally denied.
+//! The public/default source path remains disconnected. Fixed facts or owned
+//! LLVM text escape after candidate, typed and verified owners are dropped.
 use super::super::{Counts, MAX_ROWS};
 use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, Request};
 use crate::frontend::{

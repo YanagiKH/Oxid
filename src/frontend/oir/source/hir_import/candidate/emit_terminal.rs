@@ -1,4 +1,4 @@
-//! Hard-denied private Emit connection, reachable only from its genuine parent
+//! Private LLVM-text Emit connection, reachable only from its genuine parent
 //! terminal. The caller has prepaid CONNECTION_WORK and the complete fixed bank.
 //! Inherited compiler/native heap payloads are outside that named-carrier bank.
 use super::super::{ComparedSyntax, Failure};

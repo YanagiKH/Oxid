@@ -3,18 +3,18 @@
 use super::*;
 use std::fmt::Write;
 
-// This precursor is deliberately disconnected from default source consumers.
+// Private text admission remains separate from default source consumers.
 #[allow(dead_code)]
 #[path = "native_private_emit.rs"]
 pub(super) mod private_emit;
 use private_emit::{Failure as EmitFailure, OutputMode, RenderLimit};
 
-// Disconnected paid-dimension precursor; no native/importer consumer yet.
+// Paid immutable dimensions for the private importer only.
 #[allow(dead_code)]
 #[path = "native_emit_work.rs"]
 pub(super) mod emit_work;
 
-// Passive body-work bound; the importer has no connected Emit consumer.
+// Passive checked body-work bound; payment stays with the private importer.
 #[allow(dead_code)]
 #[path = "native_emit_cost.rs"]
 pub(super) mod emit_cost;

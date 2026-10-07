@@ -1,5 +1,5 @@
 //! Contained scalar candidate comparison and private Verify construction.
-//! No default compiler caller is connected. Emit transport is hard denied.
+//! No default compiler caller is connected. Private Emit returns owned text.
 //!
 //! Values come from source/OPA correspondence and supplied resolution column 3.
 //! Canonical HIR is used only by Session for shape and by the equality oracle.
@@ -30,7 +30,7 @@ pub(super) use verify_terminal::{
 pub(super) const VERIFY_ADMITTED: bool = true;
 // Run's fixed entry/runtime boundary is separately measured and qualified.
 pub(super) const RUN_ADMITTED: bool = true;
-// Compiled connection only. No caller/test switch can enable private emission.
+// Enabled after denied-carrier review; no caller/test enablement switch exists.
 pub(super) const EMIT_ADMITTED: bool = true;
 // Paid on the original Emit meter before its new fixed-bank calculations.
 // The private terminal documents the complete finite source-event tariff.

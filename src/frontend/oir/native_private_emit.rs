@@ -1,6 +1,6 @@
-//! Denied scalar Emit output-buffer precursor. No importer/default route enters
-//! this mode. Shared compile-work prepayment and the outside carrier inventory
-//! are separate gates; this module must remain denied until their review.
+//! Private scalar Emit output-buffer admission. The reviewed importer prepays
+//! compile work and the complete outside carrier inventory; default routes keep
+//! their original allocation and diagnostic behavior.
 //!
 //! Only the final LLVM String request is controlled here. Existing native graph
 //! metadata, diagnostics, labels and formatting temporaries remain inherited
@@ -147,7 +147,7 @@ impl VerifiedProgram {
         sources: &SourceMap,
         admission: Admission<'_>,
     ) -> Result<String, Failure> {
-        // Literal hard denial precedes entry checks, native graph admission,
+        // The fixed private gate precedes entry checks, native graph admission,
         // diagnostics, count, final reserve and render. Tests cannot enable it.
         if !PRIVATE_EMIT_ADMITTED {
             return Err(Failure::Disabled);

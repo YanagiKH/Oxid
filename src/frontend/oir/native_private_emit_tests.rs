@@ -1,19 +1,26 @@
-//! Local descriptor/sink/denial controls only. No positive private Program
-//! emission and no native tool invocation belongs to this denied precursor.
+//! Local descriptor/sink and negative native-boundary controls. Successful
+//! imported emission is tested through the paid source leaf; no native tools.
 use super::private_emit::{named_bytes, Admission, Failure, OutputMode};
 use super::*;
 use crate::frontend::project::budget::Allocator;
 
 #[test]
-fn private_emit_entry_is_denied_before_native_consumers() {
+fn private_emit_native_entry_errors_precede_final_text_admission() {
     let (program, sources) = super::tests::verified_with_sources("fn main()->i32 { return 7; }");
     for entry in [None, Some(hir::DefId(0)), Some(hir::DefId(usize::MAX))] {
         let mut allocator = Allocator::default();
         let admission = Admission::new(0, 0, usize::MAX, &mut allocator).unwrap();
-        assert!(matches!(
-            program.native_module_private(entry, &sources, admission),
-            Err(Failure::Disabled)
-        ));
+        let result = program.native_module_private(entry, &sources, admission);
+        if entry == Some(hir::DefId(0)) {
+            assert!(matches!(result, Err(Failure::Budget)));
+        } else {
+            let expected = program.native_module(entry, &sources).unwrap_err();
+            let Err(Failure::Diagnostic(actual)) = result else {
+                panic!("expected authentic native entry diagnostic");
+            };
+            assert_eq!(actual.code, if entry.is_none() { "E0700" } else { "E0500" });
+            assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+        }
         assert_eq!(allocator.attempts, 0);
         assert!(allocator.trace.is_empty());
     }

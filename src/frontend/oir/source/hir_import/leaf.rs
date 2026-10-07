@@ -1,5 +1,5 @@
 //! Private comparison and fixed-facts Verify entries. No default caller is
-//! connected. Verify/Run keep fixed facts; the Emit transport is hard denied.
+//! connected. Verify/Run keep fixed facts; private Emit returns owned text.
 use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
@@ -618,7 +618,7 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
     })
 }
 
-/// Only the denied Emit plan adds these actual additional outer roles. Shared
+/// Only the private Emit plan adds these actual additional outer roles. Shared
 /// Requested/Outcome growth is already fully paid by the ordinary private bank.
 fn emit_outer_named_bytes() -> Result<usize, Boundary> {
     let roles = [
@@ -868,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn checked_hir_import_emit_leaf_and_dispatch_stay_denied() {
+    fn checked_hir_import_emit_leaf_and_dispatch_reject_before_consumers() {
         use crate::frontend::{lexer, oir::owned, parser, source::SourceMap, typeck};
 
         let mut sources = SourceMap::new();
@@ -892,23 +892,27 @@ mod tests {
                 let checker = typeck::measurement::begin();
                 let mut denied = false;
                 let observed = owned::hir_import_measure_allocations(|| {
-                    denied = if direct {
-                        matches!(
-                            requested(
-                                candidate::Request::Emit,
-                                owner,
-                                b"wrong",
-                                b"bad",
-                                &mut allocator,
-                                limits
-                            ),
-                            Err(VerifyRejected::Disabled)
+                    let result = if direct {
+                        requested(
+                            candidate::Request::Emit,
+                            owner,
+                            b"wrong",
+                            b"bad",
+                            &mut allocator,
+                            limits,
                         )
                     } else {
-                        matches!(
-                            emit(owner, b"wrong", b"bad", &mut allocator, limits),
-                            Err(VerifyRejected::Disabled)
-                        )
+                        emit(owner, b"wrong", b"bad", &mut allocator, limits)
+                            .map(Requested::Emitted)
+                    };
+                    denied = match result {
+                        Err(VerifyRejected::Source(Rejected::Boundary(Boundary::Source))) => {
+                            limits.work != 0
+                        }
+                        Err(VerifyRejected::Terminal(candidate::VerifyRejected::EmitWork(
+                            emit_work::Failure::Work,
+                        ))) => limits.work == 0,
+                        _ => false,
                     };
                 });
                 assert!(denied);
@@ -1011,7 +1015,7 @@ mod tests {
             ));
             assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
         }
-        println!("HIR_IMPORT_EMIT_PLAN denied outer={} terminal={} outside={} fixed={} common_fixed={} glue={} source_work={} artifact={} outcome={} requested={} result={}",
+        println!("HIR_IMPORT_EMIT_PLAN private outer={} terminal={} outside={} fixed={} common_fixed={} glue={} source_work={} artifact={} outcome={} requested={} result={}",
             emit_outer_named_bytes().unwrap(), candidate::emit_named_bytes().unwrap(),
             plan.outside_fixed_bytes, plan.fixed_bytes, fixed.fixed_bytes,
             candidate::EMIT_CONNECTION_WORK, plan.source_work, size_of::<candidate::EmitArtifact>(),

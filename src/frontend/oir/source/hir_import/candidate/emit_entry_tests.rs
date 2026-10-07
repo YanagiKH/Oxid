@@ -1,4 +1,5 @@
-//! Direct seam controls cannot enable the compiled Emit transport.
+//! Direct negative seams reject before consumers; positive emission uses only
+//! the complete paid source leaf. Historical literal-denial receipts are retained.
 use super::super::{ast_compare, BoundObservation, OPA_BYTES, SUCCESS_BYTES};
 use super::*;
 use crate::frontend::{
@@ -11,7 +12,7 @@ use crate::frontend::{
 };
 
 #[test]
-fn checked_hir_import_emit_all_candidate_seams_deny_before_consumers() {
+fn checked_hir_import_emit_candidate_boundaries_reject_before_consumers() {
     let mut sources = SourceMap::new();
     let id = sources.add("empty-denied-emit.ox".into(), String::new());
     let source = sources.get(id);
@@ -26,7 +27,7 @@ fn checked_hir_import_emit_all_candidate_seams_deny_before_consumers() {
     let syntax = ast_compare::compare(&bound).unwrap();
     for seam in 0..3 {
         let canonical = hir::resolve_sources(owner).unwrap();
-        let comparison = compare_candidate(
+        let mut comparison = compare_candidate(
             &syntax,
             &canonical,
             &mut Allocator::default(),
@@ -40,6 +41,11 @@ fn checked_hir_import_emit_all_candidate_seams_deny_before_consumers() {
             Request::Emit,
         )
         .unwrap();
+        // A direct terminal cannot rely on a claimed successful comparison.
+        // Only the actual construction body supplies equal=true in production.
+        if seam == 2 {
+            comparison.equal = false;
+        }
         let work = WorkMeter::new(0);
         let context = verify_terminal::Context {
             request: Request::Emit,
@@ -71,7 +77,7 @@ fn checked_hir_import_emit_all_candidate_seams_deny_before_consumers() {
                         &work,
                         source.span(0, 0)
                     ),
-                    Err(VerifyRejected::Disabled)
+                    Err(VerifyRejected::Candidate(Failure::Admission))
                 ),
                 1 => matches!(
                     construct(
@@ -81,7 +87,7 @@ fn checked_hir_import_emit_all_candidate_seams_deny_before_consumers() {
                         0,
                         limits
                     ),
-                    Err(VerifyRejected::Disabled)
+                    Err(VerifyRejected::Candidate(Failure::Admission))
                 ),
                 _ => matches!(
                     verify_terminal::run(
@@ -93,7 +99,7 @@ fn checked_hir_import_emit_all_candidate_seams_deny_before_consumers() {
                         &mut allocator,
                         limits
                     ),
-                    Err(VerifyRejected::Disabled)
+                    Err(VerifyRejected::Candidate(Failure::Shape))
                 ),
             };
         });

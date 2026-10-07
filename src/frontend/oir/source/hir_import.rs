@@ -420,3 +420,6 @@ mod run_execution_tests;
 
 #[cfg(test)]
 mod emit_measurements;
+
+#[cfg(test)]
+mod emit_tests;
