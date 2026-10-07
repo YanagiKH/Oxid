@@ -216,3 +216,20 @@ comparison bank is added separately. Named envelopes conservatively add roles
 across phases and are not claims about optimized stack size. No construction
 execution or full failure-cleanup qualification follows from compiling these
 carriers; those remain the next measured gate.
+
+### First paid construction controls
+
+The combined leaf's 64-bit test-build measurement is 72,700 named fixed bytes:
+42,073 for source/OPA comparison, 18,784 for allocation support, 7,259 for the
+candidate builder and 4,584 for the outer leaf. The outer facts/rejection/result
+carriers are 192/200/200 bytes. Forty focused controls passed before construction
+was exercised. These figures include conservative transport roles across phases,
+not allocator overhead or optimized stack usage.
+
+The first construction controls now call that complete leaf, including source
+prepayment and the same canonical resolver meter. They no longer call the builder
+with a zero outside charge. A structural match still returns a fixed rejection
+variant; a plausible but wrong supplied literal returns the mismatch rejection.
+Logical reserve failures and exact shared-work boundaries are tested separately
+from the required independent allocator-null and live-byte cleanup evidence.
+Type checking, lowering and executable authority remain unavailable.
