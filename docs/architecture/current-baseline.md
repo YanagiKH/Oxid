@@ -257,8 +257,9 @@ hosted CI are still required; these local results are not a release or v1.0 clai
 The [Oxid-written scalar parser](../../fixtures/typed-parser-samples/README.md)
 implements the bounded scalar-function syntax over the existing token interface.
 Its independent decoder preserves exact AST fields, spans, global expression IDs,
-per-function block IDs and first diagnostics. The fixed 139-input matrix compares
-reference and native results against the unchanged canonical Rust parser.
+per-function block IDs and first diagnostics. The fixed matrix checks
+118 canonical AST/first-diagnostic comparisons and 21 authored site refusals
+per reference/native mode against their distinct expectations.
 This component does not switch production providers or perform semantic checking;
 its input remains at most 128 ASCII bytes. Hosted qualification is recorded
 separately from local results.
