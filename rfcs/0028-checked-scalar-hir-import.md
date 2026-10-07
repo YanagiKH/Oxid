@@ -1,0 +1,105 @@
+# RFC 0028: private checked scalar HIR import
+
+Status: **accepted private architecture; denied precursor only**.
+Updated 2026-10-07.
+
+## Outcome and boundary
+
+Connect the bounded Oxid scalar frontend to the compiler's real scalar pipeline
+without treating an observation as executable authority. Keep the existing
+OPA1/STF1 bytes, single-file 128-byte ASCII grammar and all compiler limits.
+The initial implementation is a private, permanently denied decoder/source-owner
+and storage precursor. It cannot construct HIR, a typed program, checked source
+program, verified OIR or native artifact. Positive private import requires a
+separate measured-boundary review; public provider selection is not included.
+
+The complete proposed bridge would reconstruct candidate-owned resolved HIR,
+compare every field with genuine source resolution, then pass that candidate
+value through the existing `typeck::check`. Compare all supplied type and flow
+facts before ordinary lowering, source association and independent OIR
+verification. The existing checker and sealing leaf retain exclusive witness
+construction. Never repair missing or disagreeing facts, substitute canonical
+HIR on mismatch, or expose an unchecked owner/callback API.
+
+## Source identity and supported requests
+
+Use the actual immutable `SourceOwner`: the original adapter must retain parser
+allocation/map identity, and public syntax must use genuine root-only
+`ProjectSources`. No fake project, guessed source-file ID, reopened path or digest
+can substitute for the source owner. A request carries the exact bytes captured
+from that owner; byte equality alone does not manufacture parser provenance.
+
+OPA1/STF1 does not contain a full source copy. The private entry must bind its
+borrowed observation to the same retained source/AST and validate complete
+source/AST correspondence before any future import. Only a complete successful
+transport and the exact 2,607-byte tag-0 form can become a success candidate.
+First-diagnostic, pending/probe, refusal and transport-failure forms grant no
+import authority. The initial decoder's framing checks are explicitly not a
+complete AST or semantic validation result.
+
+The source domain remains the entire existing bounded scalar grammar, including
+public functions, library input and recursion. Root-only project syntax is
+supported without enabling multi-file imports, aggregates or new syntax.
+Existing production diagnostics, including multiple diagnostics across
+functions, remain canonical. The observation's first-diagnostic projection is
+not a replacement public diagnostic list.
+
+## Passive storage plan
+
+Before future candidate allocation, count all retained HIR vectors and nested
+parameter, statement and call-argument vectors. Use checked arithmetic, exact
+planned capacities and actual element/carrier layouts. Price any coexistence of
+source AST, canonical HIR, candidate HIR, row maps, continuation state, typed
+results and enclosing return/call carriers. Distinguish retained canonical
+capacity from the candidate's planned reserve. No unchecked wire count grants
+allocation permission.
+
+The first plan is passive and cannot authorize construction. Record actual
+layouts and observed allocation behavior before private success is enabled.
+All new reserves must later be fallible and accounted before allocation, with
+cleanup controls. This is an affected-importer model, not a whole scalar-HIR,
+stack, allocator or RSS cap. Do not broaden inherited accounting internals.
+
+Keep the default path and existing owner layouts unchanged. If a new carrier
+changes default admission, stop and document that exact effect for explicit
+review. Do not hide new bytes or raise any ceiling. The existing Oxid consumer's
+I = 7,741 / W = 3,907 remains its own measured admission; it does not price new
+compiler code or a separate Oxid lowerer.
+
+## Denied precursor invariants
+
+- Private entry returns a result with an uninhabited success type
+- No call to HIR construction, the checker, lowerer, verifier or native emitter
+- Genuine source-owner and captured-source checks precede frame interpretation
+- Exact frame lengths, tags, row counts and bounded checked reads are enforced
+- Basic framing or a passive plan never implies complete source/AST validation
+- No public option, process launcher, retained checked-owner field or alternate
+  witness is introduced
+- Existing public/default behavior, fuel, ABI, error order and limits remain
+  unchanged; no default consumer calls the precursor
+
+## Enablement evidence
+
+First save the denied implementation, measured complete carriers and passive
+allocation plan. Check actual original and genuine public-source paths, empty
+and nonempty programs, wrong captured source, stale/same-content replacement
+owners, every framing boundary, checked arithmetic and unchanged default
+carriers. Independently review the absence of construction authority and the
+allocation/coexistence model before deciding to enable a private success path.
+
+That later gate must reject structurally plausible wrong bindings, callees,
+literals, types, flow masks, loop targets and source relations; retain authentic
+checker construction from the candidate-owned value; and use the existing
+sealed lower/associate/verify sequence. Actual reference/native output must
+match the canonical route where admitted. Library entry, recursion, host,
+arithmetic, fuel and later native-limit rejections stay distinct failures.
+
+## Compatibility and delivery
+
+No public language, wire version, provider switch or ABI changes in this
+precursor. Production Rust changes require a current-source qualification
+successor before publication as a completed capability; historical authorities
+and failures remain immutable. First use focused denial/layout tests and a
+bounded independent review, followed by one coherent qualification milestone.
+The supported native target remains the existing Linux x86_64/LLVM 19.1.7 scope;
+portable framing tests do not claim native support on other hosts.
