@@ -280,6 +280,9 @@ fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
     let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
     let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
     let mut allocator = Allocator::default();
+    // Caller-retained validation trace is prepared outside the owner interval.
+    allocator.observer_trace_bound(32).unwrap();
+    let trace_capacity = allocator.trace.capacity();
     let mut result = None;
     let observed = owned::hir_import_measure_allocations(|| {
         result = Some(leaf::run(
@@ -300,6 +303,8 @@ fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
     assert_eq!(facts.verified.entry_work, 33_792);
     assert_eq!(facts.total_work, 1_310_659);
     assert_eq!(allocator.attempts, 16);
+    assert_eq!(allocator.trace.capacity(), trace_capacity);
+    assert!(!allocator.observer_trace_overflow);
     assert_eq!(observed.2, 0);
     assert!(observed.0 > 16 && observed.3 > 147_456);
     println!("HIR_IMPORT_PRIVATE_RUN {facts:?} allocations={observed:?}");
