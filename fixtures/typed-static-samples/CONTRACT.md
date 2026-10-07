@@ -1,0 +1,151 @@
+# Bounded scalar static frontend: precursor contract
+
+Status: accepted scope for an isolated carrier/control precursor only. The full
+semantic implementation and provider activation are not enabled. Input remains
+one source of at most 128 ASCII bytes, with the existing lexer and scalar parser.
+
+## Semantic endpoint
+
+The intended endpoint is complete scalar resolution followed by scalar typing:
+exact signatures, bindings, literal values, HIR references, types and block flows,
+or the first canonical static diagnostic. Resolution of the entire program must
+finish before any typing begins. Library checking accepts empty input, recursion,
+no main, and parameterized main. Entry admission, OIR, execution, constant folding,
+runtime arithmetic errors and production source-association authority are later
+concerns. No partial facts are published as a typed result after failure.
+
+Unknown simple type names select the actual public owned-resolution route. Since
+this grammar has no nominal declarations, that route necessarily fails before
+body resolution. Preserve its diagnostic-only schedule: all global declaration
+conflicts first; functions in order; parameter types, result, then let annotations
+in canonical block-vector order. Unknown types use E0202/resolve and the existing
+64-byte name-display rule. No ownership semantics are added by this branch.
+
+Primitive-only inputs use scalar resolution and typing. Names are exact original
+source spellings. All functions exist before body resolution; active locals and
+parameters cannot shadow one another or any function. Let initializers resolve
+before their new binding; assignment/call target lookup precedes their children.
+Locals and HIR expression IDs restart per function; DefIds follow function order.
+The nearest while-body block identifies loop transfers. Resolution includes
+unreachable statements and both arms. Literal conversion is exact checked i32,
+including MIN and leading zeroes; range errors precede all type checking.
+
+Typing checks a statement's reachability before its expressions, then expression
+children before parent operand/arity/mutability constraints. Let annotation and
+assignment type equality are exact. All functions require an explicit return on
+all conservative paths, including unit functions. While retains fallthrough even
+for literal true. Flow bits are F=1, R=2, B=4, C=8; branches union exits, sequencing
+substitutes the next summary only on F, and while consumes its own B/C exits.
+
+## Facts indexed by immutable AST row
+
+Keep the existing OPA1 rows, source and token tape. Two new 129-cell i32 columns
+hold facts; the last cell remains zero. Physical row references are one-based.
+The role is determined by the existing AST kind, not by a tagged dynamic value.
+
+| AST row | Resolution column | Semantic column |
+| --- | --- | --- |
+| Function | DefId + 1 | result type |
+| Parameter / Let / LetMut | LocalId + 1 | fixed local type |
+| TypeName / TypeUnit | primitive type | 0 |
+| Block | 0 | complete F/R/B/C mask |
+| Assign | referenced declaration row | 0 |
+| Break / Continue | nearest while-body Block row | 0 |
+| Number | exact signed i32 value | i32 type |
+| Name | referenced Parameter/Let/LetMut row | fixed type |
+| Call | referenced Function row | result type |
+| Bool / Unit / Group / unary / binary | 0 | inferred type |
+| Other statements | 0 | 0 |
+
+Type codes are bool=1, i32=2, unit=3; zero is absent only where specified. On static
+success all active expression/local/type roles are populated, IDs are dense in
+their proper namespace, references have the required kind/function ownership,
+root block flows equal R, and all inactive rows/unused fields are zero. Number
+zero and MIN are values, not absent/sentinel codes. AST and observed columns must
+project complete HIR facts; the host must not fill missing candidate bindings,
+values, types or flows by recomputing semantics.
+
+## Observation framing
+
+This is a bounded test/component observation, not a public compiler ABI.
+Retain the complete existing OPA1 observation first. A lexical/parser failure is
+its existing 11-byte frame with no static suffix. Syntax success is the existing
+1,559-byte OPA1 frame followed by an STF1 suffix. This keeps syntax and semantic
+acceptance distinct without inventing an alternate AST input protocol.
+
+The suffix header is exactly 16 bytes:
+
+| Byte | Field |
+| --- | --- |
+| 0..3 | ASCII STF1 |
+| 4 | tag: 0 static success, 1 static diagnostic, 2 precursor probe only |
+| 5 | AST row count, matching OPA1 |
+| 6 | diagnostic kind below, otherwise 0 |
+| 7..8 | primary start/end |
+| 9..10 | secondary start/end |
+| 11 | secondary label: 0 none, 1 first declared, 2 function declared, 3 binding declared, 4 immutable binding declared |
+| 12..13 | expected/actual primitive type, otherwise 0 |
+| 14..15 | expected/actual argument count, otherwise 0 |
+
+Static success appends the two columns in the same byte-plane order as OPA1:
+four planes of 129 bytes for each column, signed i32 encoded as exact little-
+endian two's-complement bits. Total combined success size is 2,607 bytes. All
+success diagnostic fields are zero. A static diagnostic appends no columns:
+total combined size is 1,575 bytes. Header fields unused by its diagnostic kind
+are zero. Secondary labels are ordered singleton-or-empty; notes are empty in
+this bounded canonical domain. Source spans are half-open and bounded by input.
+
+Diagnostic kinds bind exact canonical code/stage/message templates:
+
+1. E0200/resolve: `unknown local `{name}``
+2. E0200/resolve: `unknown direct function `{name}``
+3. E0201/resolve: `duplicate binding; shadowing is unavailable in typed-preview`
+4. E0202/resolve: `unknown type `{name}`` (public owned-name display rule)
+5. E0203/resolve: `decimal literal is outside the i32 range [-2147483648, 2147483647]`
+6. E0204/resolve: `` `break` requires an enclosing while in the same function ``
+7. E0204/resolve: `` `continue` requires an enclosing while in the same function ``
+8. E0300/type: `type mismatch: expected {expected}, found {actual}`
+9. E0300/type: `equality requires i32 or bool operands, found ()`
+10. E0301/type: `wrong argument count: expected {expected}, found {actual}`
+11. E0302/type: `function requires an explicit terminal return`
+12. E0303/type: `statement after terminal return is unavailable in typed-preview`
+13. E0303/type: `statement after terminal control transfer is unavailable in typed-preview`
+14. E0304/type: `assignment requires a mutable local`
+
+The quoted templates, source-derived name spelling and context-specific spans
+are checked against the unchanged canonical observer before semantic activation.
+Type displays are exactly `bool`, `i32` and `()`. Secondary labels are exactly
+`first declared here`, `function declared here`, `binding declared here` and
+`immutable binding declared here` for labels 1 through 4. Process status 0 means
+a complete observation, not semantic acceptance; inherited transport statuses
+64/74 and internal failure 70 remain distinct. Incomplete output is rejected.
+The precursor must not emit tags 0 or 1. Its only successful suffix is tag 2,
+with zero diagnostic fields and full-width synthetic probe columns. Those
+columns need not obey semantic row roles; a semantic consumer rejects tag 2
+before reading them as typed facts. Their last cell remains zero. Probe success
+is never static acceptance, a TypedProgram or a source-association witness.
+
+## Carrier/control precursor
+
+Add the two fact columns and a separate 129-cell active-local stack. Reuse the
+existing parser frame buffer only after successful parser completion: mode 9,
+stack 1, root marker in slot 0 and all other slots clear. Consume/reset that root
+marker before the new phase; no parser continuation or loan remains live.
+Use a small explicit scalar State record. Do not overwrite immutable AST rows.
+
+Exercise all 128 usable fact/local/continuation positions, clearing popped and
+inactive storage; repeated in-place resumes; actual bounded source-name lookup;
+exact i32 MIN/MAX and out-of-range decimal controls; and representative four-bit
+flow operations. Serialize both complete fact columns, including signed values,
+and reject malformed/boundary conditions without overflowing the component.
+No runtime recursion, callback framework, dynamic table, source fusion, new
+input framing or cap increase is authorized to make the probe fit.
+
+Measure the whole actual combined program, including constructor/return/binding
+copies and output helpers. Existing parser baseline is I = 6,460, W = 2,571, F = 87,
+blocks = 1,485 and explicit bytes = 63,384. Three additional arrays model 774 owner-width
+cells before the new State and output/control temporaries; this is not measured
+successor admission. Existing I/W ceilings are 8,192 each and all other gates stay.
+Passing just below the ceiling does not authorize broad implementation: report
+per-function costs, genuinely removable probe-only code and credible remaining
+headroom. Preserve failures rather than silently narrowing the semantic scope.
