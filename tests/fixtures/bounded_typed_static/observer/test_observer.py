@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Focused fact/schema and public diagnostic parity checks, not candidate qualification."""
 import argparse
+import copy
 import hashlib
 import json
 from pathlib import Path
 import sys
 import unittest
 
-from observe import observe, public_check, run
+from observe import observe, public_check, run, validate_observation
 
 
 OPTIONS = None
@@ -23,6 +24,17 @@ class ObserverTests(unittest.TestCase):
         value = observe(OPTIONS.observer, OPTIONS.canonical, data, evidence)
         RECORDS[-1]["status"] = value["status"]
         self.assertEqual(value["schema"], "canonical-static-observation-1")
+        if OPTIONS.typed_reference:
+            prior = run([str(OPTIONS.typed_reference)], evidence, "typed-reference", data)
+            self.assertEqual(prior.returncode, 0)
+            self.assertEqual(prior.stderr, b"")
+            self.assertEqual(prior.stdout, (evidence / "observer.stdout").read_bytes())
+            if (evidence / "project-observer.stdout").is_file():
+                prior = run([str(OPTIONS.typed_reference), "--project-source"], evidence,
+                            "project-typed-reference", data)
+                self.assertEqual(prior.returncode, 0)
+                self.assertEqual(prior.stderr, b"")
+                self.assertEqual(prior.stdout, (evidence / "project-observer.stdout").read_bytes())
         if value["status"] in ("ok", "diagnostic") and value.get("phase") not in ("parse", "lex"):
             if value.get("route") == "public_owned":
                 records = [json.loads(line) for line in (evidence / "public.stdout").read_text().splitlines()]
@@ -49,6 +61,123 @@ class ObserverTests(unittest.TestCase):
         value = self.observe(source)
         self.assertEqual(value["status"], "ok", value)
         return value["typed_hir"]["functions"]
+
+    def resolve(self, source):
+        data = source.encode("ascii")
+        self.assertLessEqual(len(data), 128)
+        evidence = OPTIONS.evidence / f"case-{len(RECORDS):03d}"
+        RECORDS.append({"source": source, "evidence": str(evidence), "mode": "resolve_only"})
+        value = observe(OPTIONS.observer, OPTIONS.canonical, data, evidence, resolve_only=True)
+        RECORDS[-1]["status"] = value["status"]
+        self.assertEqual(value["schema"], "canonical-resolution-observation-1")
+        self.assertNotIn("typed_hir", value)
+        if value["status"] == "resolved":
+            self.assertEqual(value["phase"], "resolve")
+            self.assertEqual(value["typing"], "pending")
+            for function in value["resolved_hir"]["functions"]:
+                for key in ("locals", "expressions"):
+                    for item in function[key]:
+                        self.assertNotIn("ty", item)
+                for block in function["blocks"]:
+                    self.assertNotIn("flow", block)
+        elif value["status"] == "diagnostic" and value["phase"] == "resolve":
+            self.assertNotIn("resolved_hir", value)
+            if value.get("route") == "public_owned":
+                diagnostics = [json.loads(line) for line in (evidence / "public.stdout").read_text().splitlines()][:-1]
+            else:
+                diagnostics, _ = public_check(OPTIONS.canonical, evidence)
+            self.assertEqual(value["diagnostic"], diagnostics[0])
+        return value
+
+    def test_resolution_precedes_type_checking(self):
+        source = "fn f(x:i32)->i32{return true;}fn g()->i32{let mut y:i32=-2147483648;y=f(y);return y;}"
+        typed = self.observe(source)
+        self.assertEqual((typed["phase"], typed["diagnostic"]["code"]), ("type", "E0300"))
+        resolved = self.resolve(source)
+        self.assertEqual(resolved["status"], "resolved")
+        first, later = resolved["resolved_hir"]["functions"]
+        self.assertEqual([first["id"], later["id"]], [0, 1])
+        self.assertEqual(first["signature"]["params"], ["i32"])
+        self.assertEqual(first["expressions"][0]["value"], True)
+        self.assertEqual(later["locals"][0]["annotation"], "i32")
+        self.assertTrue(later["locals"][0]["mutable"])
+        self.assertEqual(later["expressions"][0]["value"], -2147483648)
+        self.assertEqual([(x["target"], x["args"]) for x in later["expressions"] if x["kind"] == "Call"], [(0, [1])])
+        self.assertEqual([x["kind"] for x in later["blocks"][later["body"]]["body"]], ["Let", "Assign", "Return"])
+        for source in ("fn f()->i32{}", "fn f()->(){return;1;}",
+                       "fn f()->(){let x=0;x=1;return;}",
+                       "fn f()->(){return;}fn g()->(){f(1);return;}"):
+            self.assertEqual(self.observe(source)["phase"], "type")
+            self.assertEqual(self.resolve(source)["status"], "resolved")
+
+    def test_resolution_waits_for_later_errors(self):
+        for source, code in [
+            ("fn a()->i32{return true;}fn b()->(){missing;return;}", "E0200"),
+            ("fn a()->i32{return true;}fn b()->(){let x=2147483648;return;}", "E0203"),
+            ("fn a()->i32{return true;}fn b()->(){break;return;}", "E0204"),
+            ("fn f()->(){return;missing;}", "E0200"),
+            ("pub fn a()->i32{return true;}fn b()->(){missing;return;}", "E0200"),
+        ]:
+            value = self.resolve(source)
+            self.assertEqual((value["status"], value["phase"], value["diagnostic"]["code"]),
+                             ("diagnostic", "resolve", code))
+            self.assertNotIn("resolved_hir", value)
+
+    def test_resolution_preserves_complete_hir_fields(self):
+        for source in ["", " " * 128,
+                       "fn f(x:i32)->i32{return g(x);}fn g(y:i32)->i32{return f(y);}",
+                       "fn f(a:bool)->(){while a{if a{return;}if a{break;}if a{continue;}}return;}",
+                       "fn f(a:i32,b:bool)->bool{return (!(a<0)&&b)||(a==1);}",
+                       "fn f(a:i32)->i32{return -(a+2*3-4/2%2);}",
+                       "fn f(u:())->(){u;();return;}",
+                       "fn f(x:bool)->(){if x{let y=0;}else{let y=true;}return;}",
+                       "pub fn f(x:i32)->i32{return -2147483648+x;}"]:
+            typed = self.observe(source)
+            resolved = self.resolve(source)
+            self.assertEqual(resolved["status"], "resolved")
+            projected = copy.deepcopy(typed["typed_hir"])
+            for function in projected["functions"]:
+                for key in ("locals", "expressions"):
+                    for item in function[key]:
+                        del item["ty"]
+                for block in function["blocks"]:
+                    del block["flow"]
+            self.assertEqual(resolved["resolved_hir"], projected)
+            self.assertEqual(resolved["ast"], typed["ast"])
+
+    def test_resolution_public_routes(self):
+        value = self.resolve("pub fn f()->i32{return true;}")
+        self.assertEqual((value["status"], value["route"]), ("resolved", "project_scalar"))
+        evidence = Path(RECORDS[-1]["evidence"])
+        receipt = json.loads((evidence / "project-observer.receipt.json").read_text())
+        self.assertEqual(receipt["argv"][1:], ["--project-source", "--resolve-only"])
+        self.assertEqual(value["resolved_hir"]["functions"][0]["expressions"][0]["value"], True)
+        for source, code in [("pub fn f(x:T)->(){return;}", "E0202"),
+                             ("fn f(x:T)->(){return;}fn f()->(){return;}", "E0201"),
+                             ("fn a()->i32{return true;}fn b()->(){let x:T=missing;return;}", "E0202")]:
+            value = self.resolve(source)
+            self.assertEqual((value["status"], value["route"], value["diagnostic"]["code"]),
+                             ("diagnostic", "public_owned", code))
+            evidence = Path(RECORDS[-1]["evidence"])
+            self.assertTrue((evidence / "public.receipt.json").is_file())
+        evidence = OPTIONS.evidence / "resolve-owned-without-cli"
+        with self.assertRaisesRegex(ValueError, "externally qualified"):
+            observe(OPTIONS.observer, None, b"fn f(x:T)->(){return;}", evidence, resolve_only=True)
+
+    def test_resolution_grammar_and_schema_boundaries(self):
+        self.assertEqual(self.resolve("/*")["status"], "lexical_diagnostic")
+        self.assertEqual(self.resolve("fn f(")["phase"], "parse")
+        self.assertEqual(self.resolve("struct S{x:i32}")["status"], "outside_subset")
+        for value in [
+            {"schema": "canonical-static-observation-1", "status": "ok"},
+            {"schema": "canonical-resolution-observation-1", "status": "ok", "typed_hir": {}},
+            {"schema": "canonical-resolution-observation-1", "status": "ok", "resolved_hir": {}},
+            {"schema": "canonical-resolution-observation-1", "status": "resolved", "phase": "resolve", "resolved_hir": {}},
+            {"schema": "canonical-resolution-observation-1", "status": "diagnostic", "phase": "type"},
+            {"schema": "canonical-resolution-observation-1", "status": "diagnostic", "resolved_hir": {}},
+        ]:
+            with self.assertRaises(ValueError):
+                validate_observation(value, True)
 
     def test_library_semantics_and_namespace_restart(self):
         self.assertEqual(self.success(""), [])
@@ -80,14 +209,15 @@ class ObserverTests(unittest.TestCase):
 
     def test_project_file_identity_and_source_bytes(self):
         source = b"pub fn f()->(){return;}"
-        for name, content in [("missing", None), ("different", b"pub fn g()->(){return;}")]:
-            evidence = OPTIONS.evidence / ("project-file-" + name)
-            evidence.mkdir()
-            if content is not None:
-                (evidence / "stdin.ox").write_bytes(content)
-            result = run([str(OPTIONS.observer), "--project-source"], evidence, "observer", source)
-            self.assertEqual(result.returncode, 70)
-            self.assertEqual(result.stdout, b"")
+        for mode_args in ([], ["--resolve-only"]):
+            for name, content in [("missing", None), ("different", b"pub fn g()->(){return;}")]:
+                evidence = OPTIONS.evidence / ("project-file-" + name + ("-resolve" if mode_args else ""))
+                evidence.mkdir()
+                if content is not None:
+                    (evidence / "stdin.ox").write_bytes(content)
+                result = run([str(OPTIONS.observer), "--project-source", *mode_args], evidence, "observer", source)
+                self.assertEqual(result.returncode, 70)
+                self.assertEqual(result.stdout, b"")
 
     def test_local_declarations_literals_types_and_references(self):
         function = self.success("fn f(x:i32)->i32{let mut y:i32=-2147483648;y=x;return y;}")[0]
@@ -196,10 +326,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--observer", type=Path, required=True)
     parser.add_argument("--canonical", type=Path, required=True)
+    parser.add_argument("--typed-reference", type=Path,
+                        help="prior reviewed observer for exact default-mode output regression")
     parser.add_argument("--evidence", type=Path, required=True)
     OPTIONS = parser.parse_args()
     OPTIONS.observer = OPTIONS.observer.resolve()
     OPTIONS.canonical = OPTIONS.canonical.resolve()
+    if OPTIONS.typed_reference:
+        OPTIONS.typed_reference = OPTIONS.typed_reference.resolve()
     OPTIONS.evidence = OPTIONS.evidence.resolve()
     OPTIONS.evidence.mkdir(parents=True, exist_ok=False)
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(ObserverTests))
@@ -208,6 +342,7 @@ def main():
         "failures": len(result.failures), "errors": len(result.errors),
         "observer_sha256": hashlib.sha256(OPTIONS.observer.read_bytes()).hexdigest(),
         "canonical_sha256": hashlib.sha256(OPTIONS.canonical.read_bytes()).hexdigest(),
+        "typed_reference_sha256": hashlib.sha256(OPTIONS.typed_reference.read_bytes()).hexdigest() if OPTIONS.typed_reference else None,
         "cases": RECORDS,
     }, indent=2) + "\n")
     return 0 if result.wasSuccessful() else 1

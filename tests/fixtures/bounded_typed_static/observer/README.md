@@ -83,7 +83,8 @@ python3 tests/fixtures/bounded_typed_static/observer/observe.py \
 
 ## Observation schema
 
-All objects have `schema: "canonical-static-observation-1"`. Status variants:
+Default typed observations have `schema: "canonical-static-observation-1"`.
+Their existing complete output and behavior are unchanged. Status variants:
 
 - `ok`: `route: "scalar" | "project_scalar"`, complete inherited `ast`, and `typed_hir`
 - `diagnostic`: `phase: "parse" | "resolve" | "type"`, exact `diagnostic`
@@ -100,6 +101,42 @@ static observation. It never emits partial typed facts after a failing
 phase. The lexical/parser boundary and all accepted/excluded AST families remain
 the existing parser observer's boundary. Diagnostic fields are exactly
 `Diagnostic::render_json`, including complete primary/secondary spans and notes.
+
+### Explicit resolution-only observation
+
+Both the executable and controller accept `--resolve-only`. This selects the
+separate `schema: "canonical-resolution-observation-1"` on every output, including
+route markers and earlier lexical/parser diagnostics. Resolution success has
+`status: "resolved"`, `phase: "resolve"`, `typing: "pending"`,
+`route: "scalar" | "project_scalar"`, the
+complete inherited `ast`, and `resolved_hir`. It does not invoke `typeck::check`.
+
+`resolved_hir.functions` has exactly the HIR fields described below except the
+checked `locals[].ty`, checked `expressions[].ty`, and `blocks[].flow` fields are
+absent. Function signatures and local annotations remain, because these are
+actual resolved HIR fields. Every actual `hir::Program` signature is serialized
+beside its corresponding function after checking the canonical count and DefId
+invariants; no signature is omitted. Every expression, block, and statement is
+serialized using the same exhaustive variant projection as typed mode.
+
+The entire program must resolve successfully before any resolved HIR is emitted.
+A type error therefore does not hide resolved facts, while a resolver error in a
+later function still yields only the exact first resolver diagnostic. The public
+function route retains the genuine `ProjectSources` load, retained source checks,
+and `SourceOwner::project`; the controller propagates `--resolve-only` on its
+`--project-source` invocation. Unknown simple types still require the actual
+qualified public diagnostic-only route. A different schema, checked fact, or
+type-check diagnostic in resolution mode is rejected by the controller.
+
+```
+python3 tests/fixtures/bounded_typed_static/observer/observe.py \
+  --resolve-only --observer FRESH_BUILD/canonical-static-observer \
+  --canonical QUALIFIED_OXID --evidence FRESH_CASE < source.ox
+```
+
+Neither schema represents partial typing, semantic recomputation, a fabricated
+TypedProgram or source owner, or a native provider capability. Resolver-only
+observation is comparison tooling for the separate resolution stage.
 
 `typed_hir.functions` is actual definition order. Each object has:
 
@@ -179,3 +216,13 @@ This is focused schema validation, not exhaustive semantic qualification. The
 public-function test detected the initial route defect and remains a regression
 check for the corrected project route. Source mismatch/missing-file controls
 ensure the project route cannot silently observe different bytes.
+
+Resolution checks additionally cover whole-program facts despite earlier type
+errors; later resolution diagnostics winning; exact equality to successful typed
+HIR with only the three checked fields removed; project/owned route preservation;
+missing/different project files in both modes; and wrong-mode schema rejection.
+Optional `--typed-reference PRIOR_REVIEWED_OBSERVER` compares every focused typed
+input's raw output byte-for-byte, including authentic project re-observation,
+against a retained prior observer. Receipts preserve both executable hashes and
+all process streams. This guards the default mode independently of the newly
+factored serialization code.

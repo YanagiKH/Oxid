@@ -3,7 +3,12 @@ use super::{ast, declaration_index::SourceOwner, diagnostic, hir, lexer, parser,
 use super::{comma, program_json, span};
 use std::io::Read;
 
-pub(crate) fn observe_static(text: String, project_source: bool) {
+fn schema(resolve_only: bool) -> &'static str {
+    if resolve_only { "canonical-resolution-observation-1" } else { "canonical-static-observation-1" }
+}
+
+pub(crate) fn observe_static(text: String, project_source: bool, resolve_only: bool) {
+    let schema = schema(resolve_only);
     let mut sources = source::SourceMap::new();
     let mut allocator = project::budget::Allocator::default();
     let id = sources.try_add("stdin.ox".into(), text, &mut allocator)
@@ -11,17 +16,17 @@ pub(crate) fn observe_static(text: String, project_source: bool) {
     let source = sources.get(id);
     let tokens = match lexer::lex_with_limit(source, lexer::MAX_TOKENS) {
         Ok(tokens) => tokens,
-        Err(error) => { diagnostic_json("lexical_diagnostic", "lex", &error, &sources); return; }
+        Err(error) => { diagnostic_json("lexical_diagnostic", "lex", &error, &sources, resolve_only); return; }
     };
     let ast = match parser::parse_typed_counted(
         source, tokens, parser::SourceMode::ProjectCandidate, parser::MAX_NODES,
         &mut allocator, &mut parser::SyntaxStorage::default(),
     ) {
         Ok((ast, _)) => ast,
-        Err(errors) => { diagnostic_json("diagnostic", "parse", &errors[0], &sources); return; }
+        Err(errors) => { diagnostic_json("diagnostic", "parse", &errors[0], &sources, resolve_only); return; }
     };
     if let Some((family, at)) = super::outside_subset(&ast) {
-        print!("{{\"schema\":\"canonical-static-observation-1\",\"status\":\"outside_subset\",\"family\":\"{family}\",\"span\":");
+        print!("{{\"schema\":\"{schema}\",\"status\":\"outside_subset\",\"family\":\"{family}\",\"span\":");
         span(at);
         println!("}}");
         return;
@@ -29,16 +34,16 @@ pub(crate) fn observe_static(text: String, project_source: bool) {
     // This is the exact production selector, not a spelling approximation or a
     // forced scalar resolver. No owned semantic implementation is linked here.
     if ast.uses_owned_syntax(source) {
-        print!("{{\"schema\":\"canonical-static-observation-1\",\"status\":\"public_route_required\",\"route\":\"owned\",\"purpose\":\"diagnostic_only\",\"source_name\":\"stdin.ox\",\"ast\":");
+        print!("{{\"schema\":\"{schema}\",\"status\":\"public_route_required\",\"route\":\"owned\",\"purpose\":\"diagnostic_only\",\"source_name\":\"stdin.ox\",\"ast\":");
         program_json(&ast);
         println!("}}");
         return;
     }
     if ast.uses_project_syntax() {
         if project_source {
-            observe_project(source.text());
+            observe_project(source.text(), resolve_only);
         } else {
-            print!("{{\"schema\":\"canonical-static-observation-1\",\"status\":\"public_route_required\",\"route\":\"project_scalar\",\"purpose\":\"scalar_project_facts\",\"source_name\":\"stdin.ox\",\"ast\":");
+            print!("{{\"schema\":\"{schema}\",\"status\":\"public_route_required\",\"route\":\"project_scalar\",\"purpose\":\"scalar_project_facts\",\"source_name\":\"stdin.ox\",\"ast\":");
             program_json(&ast);
             println!("}}");
         }
@@ -47,14 +52,18 @@ pub(crate) fn observe_static(text: String, project_source: bool) {
     if project_source {
         internal_failure("--project-source requires parsed scalar project syntax");
     }
-    // Resolve the entire program first. No typed facts survive either failure.
+    // Resolve the entire program first. No partial facts survive resolution failure.
     let resolved = match hir::resolve(source, &ast) {
         Ok(program) => program,
-        Err(errors) => { diagnostic_json("diagnostic", "resolve", &errors[0], &sources); return; }
+        Err(errors) => { diagnostic_json("diagnostic", "resolve", &errors[0], &sources, resolve_only); return; }
     };
+    if resolve_only {
+        resolved_json(&resolved, source, &ast, "scalar");
+        return;
+    }
     let typed = match typeck::check(resolved) {
         Ok(program) => program,
-        Err(errors) => { diagnostic_json("diagnostic", "type", &errors[0], &sources); return; }
+        Err(errors) => { diagnostic_json("diagnostic", "type", &errors[0], &sources, false); return; }
     };
     typed_json(&typed, source, &ast, "scalar");
 }
@@ -64,7 +73,7 @@ fn internal_failure(message: &str) -> ! {
     std::process::exit(70);
 }
 
-fn observe_project(expected_text: &str) {
+fn observe_project(expected_text: &str, resolve_only: bool) {
     // Only the controller's fresh stdin.ox is accepted. Check before loading,
     // then check the loader's genuine retained source again before resolution.
     let mut bytes = Vec::new();
@@ -91,11 +100,15 @@ fn observe_project(expected_text: &str) {
     // No owner/index fields, source identities or syntax flags are fabricated.
     let resolved = match hir::resolve_sources(SourceOwner::project(&project)) {
         Ok(program) => program,
-        Err(errors) => { diagnostic_json("diagnostic", "resolve", &errors[0], sources); return; }
+        Err(errors) => { diagnostic_json("diagnostic", "resolve", &errors[0], sources, resolve_only); return; }
     };
+    if resolve_only {
+        resolved_json(&resolved, source, ast, "project_scalar");
+        return;
+    }
     let typed = match typeck::check(resolved) {
         Ok(program) => program,
-        Err(errors) => { diagnostic_json("diagnostic", "type", &errors[0], sources); return; }
+        Err(errors) => { diagnostic_json("diagnostic", "type", &errors[0], sources, false); return; }
     };
     typed_json(&typed, source, ast, "project_scalar");
 }
@@ -106,13 +119,32 @@ fn typed_json(typed: &typeck::TypedProgram, source: &source::SourceFile, ast: &a
     print!(",\"typed_hir\":{{\"functions\":[");
     for (index, view) in typed.functions().enumerate() {
         comma(index);
-        function_json(&view, source);
+        function_json(view.hir(), view.signature(), Some(&view), source);
     }
     println!("]}}}}");
 }
 
-fn diagnostic_json(status: &str, phase: &str, error: &diagnostic::Diagnostic, sources: &source::SourceMap) {
-    println!("{{\"schema\":\"canonical-static-observation-1\",\"status\":\"{status}\",\"phase\":\"{phase}\",\"diagnostic\":{}}}", error.render_json(sources));
+fn resolved_json(resolved: &hir::Program, source: &source::SourceFile, ast: &ast::Program, route: &str) {
+    // Each actual signature is represented once beside its actual function.
+    // Assert canonical identity/count invariants rather than dropping fields.
+    if resolved.signatures.len() != resolved.functions.len()
+        || resolved.functions.iter().enumerate().any(|(index, function)| function.id.0 != index)
+    {
+        internal_failure("canonical resolved program function/signature identity drifted");
+    }
+    print!("{{\"schema\":\"canonical-resolution-observation-1\",\"status\":\"resolved\",\"phase\":\"resolve\",\"typing\":\"pending\",\"route\":\"{route}\",\"ast\":");
+    program_json(ast);
+    print!(",\"resolved_hir\":{{\"functions\":[");
+    for (index, function) in resolved.functions.iter().enumerate() {
+        comma(index);
+        function_json(function, &resolved.signatures[index], None, source);
+    }
+    println!("]}}}}");
+}
+
+fn diagnostic_json(status: &str, phase: &str, error: &diagnostic::Diagnostic, sources: &source::SourceMap, resolve_only: bool) {
+    let schema = schema(resolve_only);
+    println!("{{\"schema\":\"{schema}\",\"status\":\"{status}\",\"phase\":\"{phase}\",\"diagnostic\":{}}}", error.render_json(sources));
 }
 
 fn ty_json(ty: hir::Ty) {
@@ -123,9 +155,7 @@ fn optional_id(id: Option<usize>) {
     match id { Some(id) => print!("{id}"), None => print!("null") }
 }
 
-fn function_json(view: &typeck::TypedFunction<'_>, source: &source::SourceFile) {
-    let function = view.hir();
-    let signature = view.signature();
+fn function_json(function: &hir::Function, signature: &hir::Signature, view: Option<&typeck::TypedFunction<'_>>, source: &source::SourceFile) {
     print!("{{\"id\":{},\"name\":{},\"signature\":{{\"span\":", function.id.0, diagnostic::json_string(source.text_at(signature.span)));
     span(signature.span);
     print!(",\"params\":[");
@@ -141,21 +171,25 @@ fn function_json(view: &typeck::TypedFunction<'_>, source: &source::SourceFile) 
         span(local.span);
         print!(",\"annotation\":");
         match local.annotation { Some(ty) => ty_json(ty), None => print!("null") }
-        print!(",\"ty\":");
-        ty_json(view.local_ty(hir::LocalId(index)));
+        if let Some(view) = view {
+            print!(",\"ty\":");
+            ty_json(view.local_ty(hir::LocalId(index)));
+        }
         print!("}}");
     }
     print!("],\"expressions\":[");
     for (index, expression) in function.expressions.iter().enumerate() {
         comma(index);
-        expression_json(index, expression, view.expression_ty(hir::ExprId(index)));
+        expression_json(index, expression, view.map(|view| view.expression_ty(hir::ExprId(index))));
     }
     print!("],\"blocks\":[");
     for (index, block) in function.blocks.iter().enumerate() {
         comma(index);
         print!("{{\"id\":{index},\"span\":"); span(block.span);
         print!(",\"end\":"); span(block.end);
-        print!(",\"flow\":"); flow_json(view.block_flow(hir::BodyBlockId(index)));
+        if let Some(view) = view {
+            print!(",\"flow\":"); flow_json(view.block_flow(hir::BodyBlockId(index)));
+        }
         print!(",\"body\":[");
         for (index, statement) in block.body.iter().enumerate() { comma(index); statement_json(statement); }
         print!("]}}");
@@ -163,10 +197,10 @@ fn function_json(view: &typeck::TypedFunction<'_>, source: &source::SourceFile) 
     print!("]}}");
 }
 
-fn expression_json(index: usize, expression: &hir::Expr, ty: hir::Ty) {
+fn expression_json(index: usize, expression: &hir::Expr, ty: Option<hir::Ty>) {
     use hir::ExprKind::*;
     print!("{{\"id\":{index},\"span\":"); span(expression.span);
-    print!(",\"ty\":"); ty_json(ty);
+    if let Some(ty) = ty { print!(",\"ty\":"); ty_json(ty); }
     match &expression.kind {
         Bool(value) => print!(",\"kind\":\"Bool\",\"value\":{value}"),
         I32(value) => print!(",\"kind\":\"I32\",\"value\":{value}"),
