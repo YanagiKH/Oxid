@@ -1,5 +1,5 @@
-//! Ordinary canonical-pass observations only. The importer Verify gate stays
-//! denied; these measurements do not create or execute imported typed authority.
+//! Ordinary canonical-pass observations only. These measurements do not use
+//! the private importer Verify leaf or execute imported typed authority.
 use super::*;
 use crate::frontend::{
     lexer,
@@ -10,7 +10,6 @@ use crate::frontend::{
 };
 
 fn observe_case(label: &str, owner: SourceOwner<'_>, sources: &SourceMap) {
-    const { assert!(!candidate::VERIFY_ADMITTED) };
     let root = owner.ast(ModuleId(0)).unwrap();
     let canonical = hir::resolve_sources(owner).unwrap();
     let hir_payload = StoragePlan::describe(&canonical)
@@ -131,5 +130,4 @@ fn checked_hir_import_ordinary_pass_layouts_and_capacity_envelopes() {
         SourceOwner::project(&project),
         project.sources(),
     );
-    const { assert!(!candidate::VERIFY_ADMITTED) };
 }

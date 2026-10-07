@@ -25,7 +25,7 @@ pub(super) use verify_terminal::{Facts as VerifyFacts, Rejected as VerifyRejecte
 
 // A source edit after carrier measurement and independent boundary review is
 // required to admit success. There is no caller-controlled enablement flag.
-pub(super) const VERIFY_ADMITTED: bool = false;
+pub(super) const VERIFY_ADMITTED: bool = true;
 
 enum CanonicalInput<'h, 'm> {
     Observe(&'h hir::Program),

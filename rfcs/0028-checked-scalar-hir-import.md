@@ -262,7 +262,8 @@ facts, while source and OPA remain intact; type/flow import is still closed.
 
 ## Accepted private Verify phase
 
-Status: accepted design; new success execution is not yet enabled. The existing
+Status: private Verify success entry is enabled after the closed layout and
+independent boundary review. Execution qualification is pending. The existing
 still-denied comparison controls remain the predecessor evidence.
 
 Add a closed Verify-only request that owns the newly constructed candidate HIR.

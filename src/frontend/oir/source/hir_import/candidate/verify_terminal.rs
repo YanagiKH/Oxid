@@ -1,6 +1,6 @@
-//! Closed Verify terminal. Only candidate's single construction body calls it.
-//! The public/default source path is disconnected and its private entry stays
-//! hard-denied until actual carrier measurement and independent boundary review.
+//! Private Verify terminal. Only candidate's single construction body calls it.
+//! The public/default source path remains disconnected. Only fixed verification
+//! facts escape after all candidate, typed and verified owners are dropped.
 use super::super::{Counts, MAX_ROWS};
 use super::{hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure};
 use crate::frontend::{

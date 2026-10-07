@@ -402,3 +402,6 @@ mod tests;
 
 #[cfg(test)]
 mod pass_measurements;
+
+#[cfg(test)]
+mod verify_tests;
