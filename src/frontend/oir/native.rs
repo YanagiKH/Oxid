@@ -9,6 +9,11 @@ use std::fmt::Write;
 pub(super) mod private_emit;
 use private_emit::{Failure as EmitFailure, OutputMode, RenderLimit};
 
+// Disconnected paid-dimension precursor; no native/importer consumer yet.
+#[allow(dead_code)]
+#[path = "native_emit_work.rs"]
+pub(super) mod emit_work;
+
 #[cfg(test)]
 #[path = "native_private_emit_tests.rs"]
 mod private_emit_tests;
