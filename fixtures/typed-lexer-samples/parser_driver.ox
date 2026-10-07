@@ -1,9 +1,9 @@
 // First real dispatcher. Error 5 explicitly marks planned grammar not wired yet.
-fn link_statement(headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], block: i32, statement: i32) -> () {
-    let tail = cd[block - 1] % 256;
-    if tail == 0 { crate::parser_state::high(&mut *ab, block, statement); }
+fn link_statement(headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], block_id: i32, statement: i32) -> () {
+    let tail = cd[block_id - 1] % 256;
+    if tail == 0 { crate::parser_state::high(&mut *ab, block_id, statement); }
     else { crate::parser_state::link(&mut *headers, tail, statement); }
-    crate::parser_state::low(&mut *cd, block, statement);
+    crate::parser_state::low(&mut *cd, block_id, statement);
     return;
 }
 fn family(codes: &[i32], token: i32) -> i32 {

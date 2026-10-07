@@ -21,23 +21,23 @@ fn qualified(tokens: &[i32], state: &mut crate::parser_state::State) -> () {
 
 pub fn ty(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], state: &mut crate::parser_state::State) -> i32 {
     let token = tokens[state.cursor];
-    let start = crate::parser_state::lo(token);
-    if token % 64 == 45 && crate::parser_state::hi(token) == start + 1 && codes[start] == 91 {
+    let origin = crate::parser_state::lo(token);
+    if token % 64 == 45 && crate::parser_state::hi(token) == origin + 1 && codes[origin] == 91 {
         refuse(&*tokens, &mut *state, 6);
         return 0;
     }
     if token % 64 == 22 {
         crate::parser_state::bump(&*tokens, &mut *state);
-        let node = crate::parser_state::row(&mut *headers, &mut *state, 4, start, crate::parser_state::hi(token));
+        let node = crate::parser_state::row(&mut *headers, &mut *state, 4, origin, crate::parser_state::hi(token));
         if state.error != 0 { return 0; }
         let close = crate::parser_state::expect(&*codes, &*tokens, &mut *state, 23, 6);
         if state.error != 0 { return 0; }
-        crate::parser_state::span(&mut *headers, node, start, crate::parser_state::hi(tokens[close - 1]));
+        crate::parser_state::span(&mut *headers, node, origin, crate::parser_state::hi(tokens[close - 1]));
         return node;
     }
     let name = crate::parser_state::expect(&*codes, &*tokens, &mut *state, 2, 5);
     if state.error != 0 { return 0; }
-    let node = crate::parser_state::row(&mut *headers, &mut *state, 3, start, crate::parser_state::hi(token));
+    let node = crate::parser_state::row(&mut *headers, &mut *state, 3, origin, crate::parser_state::hi(token));
     if state.error != 0 { return 0; }
     crate::parser_state::low(&mut *ab, node, name);
     qualified(&*tokens, &mut *state);
