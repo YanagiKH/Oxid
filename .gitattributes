@@ -10,3 +10,9 @@ tests/fixtures/bounded_stack_artifact/fixtures/** -text
 
 # Preserved malformed parser observation controls are byte-bound across hosts.
 tests/fixtures/bounded_typed_parser/corruption_controls.py -text
+
+# Static qualification rosters and calibrated controls retain their published bytes.
+tests/fixtures/bounded_typed_static/cases.json -text
+tests/fixtures/bounded_typed_static/malformed_controls.py -text
+tests/fixtures/bounded_typed_static/stdout_prefix_eio.c -text
+tests/fixtures/bounded_typed_static/calibrate_stdout_prefix.c -text

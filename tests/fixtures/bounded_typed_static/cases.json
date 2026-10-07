@@ -1,0 +1,410 @@
+{
+  "scope": "Complete typed facts or first diagnostic across genuine two-stage execution",
+  "cases": [
+    {
+      "name": "empty",
+      "source": "",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "capacity_whitespace",
+      "source": "                                                                                                                                ",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "forward_recursion",
+      "source": "fn f(x:i32)->i32{return g(x);}fn g(y:i32)->i32{return f(y);}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "main_signature_is_library",
+      "source": "fn main(x:i32)->i32{return main(x);}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "public_function",
+      "source": "pub fn f(x:i32)->i32{return x;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "declarations_and_min",
+      "source": "fn f(x:i32)->i32{let mut y:i32=-2147483648;y=x;return y;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "sibling_ids",
+      "source": "fn f(x:bool)->(){if x{let y=0;}else{let y=true;}return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "scope_ends",
+      "source": "fn f()->(){if true{let x=1;}x;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "local_ids_restart",
+      "source": "fn f(x:i32)->i32{return x;}fn g(y:bool)->bool{return y;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "primitive_value_names",
+      "source": "fn bool(i32:i32)->i32{return i32;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "parameter_duplicate",
+      "source": "fn f(x:i32,x:bool)->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "function_duplicate",
+      "source": "fn f()->(){return;}fn f()->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "parameter_function_conflict",
+      "source": "fn f(g:i32)->(){return;}fn g()->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "later_function_conflict",
+      "source": "fn f()->(){let g=1;return;}fn g()->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "local_duplicate",
+      "source": "fn f(x:i32)->(){let x=0;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "initializer_precedes_duplicate",
+      "source": "fn f(x:i32)->(){let x=missing;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "self_initializer",
+      "source": "fn f()->(){let x=x;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "unknown_local",
+      "source": "fn f()->(){missing;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "call_target_first",
+      "source": "fn f()->(){absent(missing);return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "assignment_target_first",
+      "source": "fn f()->(){absent=missing;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "arguments_left_first",
+      "source": "fn f(a:i32,b:i32)->(){return;}fn g()->(){f(left,right);return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "later_resolution_before_type",
+      "source": "fn a()->i32{return true;}fn b()->(){missing;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "unreachable_resolution",
+      "source": "fn f()->(){return;missing;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "false_loop_resolution",
+      "source": "fn f()->(){while false{missing;}return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "logical_rhs_resolution",
+      "source": "fn f()->bool{return false&&missing;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "nested_transfers",
+      "source": "fn f()->(){while true{while false{continue;}break;}return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "branch_transfers",
+      "source": "fn f(x:bool)->(){while x{if x{break;}else{continue;}}return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "break_placement",
+      "source": "fn f()->(){break;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "continue_placement",
+      "source": "fn f()->(){continue;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "arithmetic_surface",
+      "source": "fn f(a:i32)->i32{return -(a+2*3-4/2%2);}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "logical_surface",
+      "source": "fn f(a:i32,b:bool)->bool{return (!(a<0)&&b)||(a==1);}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "unit_surface",
+      "source": "fn f(u:())->(){u;();return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "positive_max",
+      "source": "fn f()->i32{return 2147483647;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "negative_min_trivia",
+      "source": "fn f()->i32{return - /*x*/ 2147483648;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "positive_range",
+      "source": "fn f()->i32{return 2147483648;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "negative_range",
+      "source": "fn f()->i32{return -2147483649;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "leading_zeroes",
+      "source": "fn f()->i32{return 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "unknown_type_before_body",
+      "source": "fn f()->(){let x:T=missing;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "global_duplicate_before_type",
+      "source": "fn f(x:T)->(){return;}fn f()->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "annotation_block_order",
+      "source": "fn f()->(){if true{let x:A=0;}let y:B=0;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "parameter_type_before_result",
+      "source": "fn f(x:T)->U{return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "public_unknown_type",
+      "source": "pub fn f(x:T)->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "type_display_64",
+      "source": "fn f(x:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "type_display_65",
+      "source": "fn f(x:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)->(){return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "pending_bad_return",
+      "source": "fn f()->i32{return true;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "pending_immutable_assignment",
+      "source": "fn f()->(){let x=0;x=1;return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "pending_wrong_arity",
+      "source": "fn f()->(){return;}fn g()->(){f(1);return;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "pending_missing_return",
+      "source": "fn f()->(){}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "pending_unreachable",
+      "source": "fn f()->(){return;1;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "pending_no_constant_folding",
+      "source": "fn f()->i32{return 1/0;}",
+      "origin": "resolver roster"
+    },
+    {
+      "name": "canonical-000",
+      "source": "fn f(a:bool)->(){while a{if a{return;}if a{break;}if a{continue;}}return;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-012",
+      "source": "fn f()->bool{return ()==();}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-016",
+      "source": "fn f()->(){while true{break;1;}return;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-021",
+      "source": "fn f()->(){let x=0;x=true;return;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-029",
+      "source": "fn f()->i32{return 2147483647+1;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-031",
+      "source": "fn f()->i32{return 0000000000000;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-032",
+      "source": "fn f()->i32{return -0000000;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-036",
+      "source": "/*",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-037",
+      "source": "@",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-038",
+      "source": "fn f(",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-039",
+      "source": "struct S{x:i32}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-040",
+      "source": "pub fn f()->i32{return 1/0;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-041",
+      "source": "pub fn main(x:i32)->i32{return main(x);}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-042",
+      "source": "pub fn f(x:bool)->(){while x{if x{break;}else{continue;}}return;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-043",
+      "source": "pub fn f()->i32{return true;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-044",
+      "source": "pub fn f()->(){missing;return;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-045",
+      "source": "pub fn f()->(){return;}fn f()->(){return;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-054",
+      "source": "fn f(x:i32)->i32{return true;}fn g()->i32{let mut y:i32=-2147483648;y=f(y);return y;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-056",
+      "source": "fn f()->i32{}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "canonical-080",
+      "source": "pub fn f(x:i32)->i32{return -2147483648+x;}",
+      "origin": "reviewed canonical observer roster"
+    },
+    {
+      "name": "rhs_before_immutable",
+      "source": "fn f()->(){let x=0;x=1+true;return;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "inner_before_unit_equality",
+      "source": "fn f()->bool{return ()==(1+true);}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "argument_inner_before_arity",
+      "source": "fn f(a:i32)->(){return;}fn g()->(){f(true,1+false);return;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "first_argument_type",
+      "source": "fn f(a:i32,b:bool)->(){return;}fn g()->(){f(false,1);return;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "first_function_completion",
+      "source": "fn a()->(){}fn b()->i32{return true;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "unreachable_before_inner_type",
+      "source": "fn f()->(){return;1+true;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "mixed_loop_return",
+      "source": "fn f(x:bool)->(){while x{if x{break;}else{return;}}return;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "unit_call_return",
+      "source": "fn f()->(){return;}fn g()->(){return f();}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "ordered_bool_mismatch",
+      "source": "fn f()->bool{return true<false;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "bool_equality",
+      "source": "fn f()->bool{return true==false;}",
+      "origin": "authored type ordering"
+    },
+    {
+      "name": "initializer_before_annotation",
+      "source": "fn f()->(){let x:bool=1+true;return;}",
+      "origin": "authored type ordering"
+    }
+  ]
+}

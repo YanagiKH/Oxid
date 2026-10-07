@@ -144,3 +144,5 @@ Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指�
 另有以 Oxid 撰寫的[有界 typed-preview 詞法元件](fixtures/typed-lexer-samples/README.md)，保留最多 128 個 ASCII 來源位元組的詞元、空白註解與位元組範圍，並與既有 Rust 詞法器比對，以同一個原生 ELF 執行。此元件不切換正式編譯器供應者，也不宣稱支援 Unicode。
 
 另有以 Oxid 撰寫的[有界純量 typed-preview 語法元件](fixtures/typed-parser-samples/README.md)，使用上述詞元介面，解析最多 128 個 ASCII 位元組的純量函式、運算式、呼叫、綁定與控制流程。獨立投影會與既有 Rust 語法器比對完整 AST、位元組範圍與第一個診斷；正式供應者切換及名稱／型別語意檢查仍在範圍之外。
+
+另有以 Oxid 撰寫的[有界純量靜態前端](fixtures/typed-static-samples/README.md)，先完整驗證精確來源與語法器 AST，再對最多 128 個 ASCII 位元組進行名稱解析、型別與流程檢查。它使用既有語法器及獨立的 AST1 消費元件，主機只負責位元組封裝與轉送。本機參考／原生驗證涵蓋 77 組語意比對（29 組完整型別事實、48 組第一個診斷，涵蓋全部 14 種）；產生端的 4 個失敗／範圍外拒絕另行計數。所有限制維持不變。目前原始碼的整合驗證與精確版本的託管 CI 仍待完成；正式供應者切換、編譯器擁有的 TypedProgram／OIR 結果及自我託管不在此元件範圍內。

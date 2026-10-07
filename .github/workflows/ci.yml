@@ -186,6 +186,9 @@ jobs:
         run: |
           python -B -m unittest discover -s scripts -p test_bounded_typed_parser.py -v
           python -B -m unittest discover -s scripts -p test_parser_ast_observation.py -v
+          python -B -m unittest discover -s scripts -p test_static_resolution_observation.py -v
+          python -B -m unittest discover -s scripts -p test_static_typed_observation.py -v
+          python -B -m unittest discover -s scripts -p test_bounded_typed_static.py -v
 
       - name: Run Oxid language tests
         run: cargo run --release --locked -- test
@@ -739,6 +742,39 @@ jobs:
             ${{ runner.temp }}/typed-lexer-observer
             ${{ runner.temp }}/typed-parser-proof-debug
             ${{ runner.temp }}/typed-parser-proof-release
+      - name: Verify bounded scalar static frontend and untrusted AST boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts -p test_static_resolution_observation.py -v
+          python3 -B -m unittest discover -s scripts -p test_static_typed_observation.py -v
+          python3 -B -m unittest discover -s scripts -p test_bounded_typed_static.py -v
+          python3 -B scripts/build_typed_static_observer.py \
+            --output "$RUNNER_TEMP/typed-static-observer"
+          for profile in debug release; do
+            python3 -B tests/fixtures/bounded_typed_static/observer/test_observer.py \
+              --observer "$RUNNER_TEMP/typed-static-observer/canonical-static-observer" \
+              --canonical "target/$profile/oxid" \
+              --evidence "$RUNNER_TEMP/typed-static-observer-tests-$profile"
+            python3 -B scripts/verify_bounded_typed_static.py \
+              --oxid "target/$profile/oxid" \
+              --static-observer "$RUNNER_TEMP/typed-static-observer/canonical-static-observer" \
+              --lexer-observer "$RUNNER_TEMP/typed-lexer-observer/canonical-lexer-observer" \
+              --output "$RUNNER_TEMP/typed-static-proof-$profile" --native
+          done
+      - name: Retain bounded static inputs, streams, identities and native ELFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-typed-static-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-static-observer
+            ${{ runner.temp }}/typed-static-observer-tests-debug
+            ${{ runner.temp }}/typed-static-observer-tests-release
+            ${{ runner.temp }}/typed-static-proof-debug
+            ${{ runner.temp }}/typed-static-proof-release
       - name: Verify production source CLI and source-free ELF outcomes
         run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment projected-array-slices-v1 --jobs 2
       - name: Verify owned-source native budgets, stores, guards, and artifact identities

@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -42,6 +43,92 @@ class SelectionTests(unittest.TestCase):
                     gate.save(path, manifest)
                     with self.assertRaises(ValueError):
                         gate.load_cases(path)
+
+
+class SourceMembershipTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.fixture_source = self.root / "fixtures"
+        shutil.copytree(gate.ROOT / "fixtures/typed-lexer-samples", self.fixture_source)
+        self.snapshot = self.root / "snapshot"
+        self.snapshot.mkdir()
+
+    def test_static_siblings_preserve_exact_historical_snapshot_and_parser_closure(self):
+        self.assertEqual(len(gate.MEMBERS), 21)
+        self.assertEqual(len(gate.PARSER_MEMBERS), 13)
+        self.assertTrue((self.fixture_source / "ast_static_main.ox").is_file())
+        gate.copy_parser_sources(self.fixture_source, self.snapshot)
+        self.assertEqual(set(gate.inventory(self.snapshot)), set(gate.MEMBERS))
+        self.assertEqual(gate.inventory(self.snapshot),
+                         {name: gate.digest(self.fixture_source / name) for name in gate.MEMBERS})
+
+    def test_unrelated_sibling_is_not_silently_added_to_snapshot(self):
+        (self.fixture_source / "unregistered.ox").write_text("invalid candidate\n")
+        gate.copy_parser_sources(self.fixture_source, self.snapshot)
+        self.assertEqual(set(gate.inventory(self.snapshot)), set(gate.MEMBERS))
+
+    def test_missing_or_symlinked_historical_source_fails_before_copy(self):
+        for name in gate.MEMBERS:
+            with self.subTest(name=name):
+                source = self.fixture_source / name
+                body = source.read_bytes()
+                source.unlink()
+                with self.assertRaisesRegex(ValueError, "missing or not regular"):
+                    gate.copy_parser_sources(self.fixture_source, self.snapshot)
+                self.assertEqual(list(self.snapshot.iterdir()), [])
+                source.write_bytes(body)
+        source = self.fixture_source / "buffers.ox"
+        target = self.root / "buffers.ox"
+        source.rename(target)
+        try:
+            source.symlink_to(target)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+        with self.assertRaisesRegex(ValueError, "missing or not regular"):
+            gate.copy_parser_sources(self.fixture_source, self.snapshot)
+
+    def test_historical_registration_cannot_expand_or_drop_members(self):
+        prefix = "fixtures/typed-lexer-samples/"
+        for root, members in (("main.ox", (prefix + "static_main.ox",)),
+                              ("main.ox", ()),
+                              ("parser_main.ox", (prefix + "parser_main.ox",)),
+                              ("parser_main.ox", gate.verify_repo.TYPED_PROJECTS[prefix + "parser_main.ox"]
+                               + (prefix + "tape.ox",))):
+            registry = dict(gate.verify_repo.TYPED_PROJECTS)
+            registry[prefix + root] = members
+            with self.subTest(root=root, members=members), \
+                    patch.object(gate.verify_repo, "TYPED_PROJECTS", registry):
+                with self.assertRaisesRegex(ValueError, "registration changed"):
+                    gate.copy_parser_sources(self.fixture_source, self.snapshot)
+
+    def test_missing_duplicate_and_unregistered_parser_imports_are_rejected(self):
+        root = self.fixture_source / "parser_main.ox"
+        original = root.read_text()
+        for changed in (original.replace("mod keywords;", ""),
+                        original + "\nmod keywords;\n",
+                        original + "\nmod ast_static_main;\n",
+                        original + "\nmod unregistered;\n",
+                        original + "\nmod /* comment */ unregistered /* comment */ ;\n"):
+            with self.subTest(changed=changed):
+                root.write_text(changed)
+                with self.assertRaisesRegex(ValueError, "module closure changed"):
+                    gate.copy_parser_sources(self.fixture_source, self.snapshot)
+                self.assertEqual(list(self.snapshot.iterdir()), [])
+
+    def test_child_imports_cannot_expand_the_flat_parser_closure(self):
+        source = self.fixture_source / "parser_state.ox"
+        source.write_text(source.read_text() + "\npub mod /* nested */ unregistered;\n")
+        with self.assertRaisesRegex(ValueError, "unexpected parser child module"):
+            gate.copy_parser_sources(self.fixture_source, self.snapshot)
+        self.assertEqual(list(self.snapshot.iterdir()), [])
+
+    def test_comment_trivia_cannot_change_declared_membership(self):
+        root = self.fixture_source / "parser_main.ox"
+        root.write_text(root.read_text().replace("mod keywords;", "mod /* comment */ keywords; ")
+                        + "\n// mod unregistered;\n/* mod static_main; */\n")
+        gate.copy_parser_sources(self.fixture_source, self.snapshot)
 
 
 class ExecutionTests(unittest.TestCase):

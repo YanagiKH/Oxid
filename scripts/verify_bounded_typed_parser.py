@@ -11,12 +11,14 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 
 import build_typed_lexer_observer as lexer_builder
 import build_typed_parser_observer as parser_builder
+import verify_repo
 from verify_bounded_typed_lexer import digest, run
 
 
@@ -30,6 +32,10 @@ MEMBERS = tuple(name + ".ox" for name in (
     "parser_banks parser_call parser_control parser_driver parser_expression parser_main "
     "parser_output parser_probe_output parser_signature parser_state parser_statement "
     "tape transcript").split())
+HISTORICAL_ROOTS = ("main.ox", "admission.ox", "parser_admission.ox", "parser_main.ox")
+PARSER_MEMBERS = tuple(name + ".ox" for name in (
+    "parser_main buffers lexer_core keywords parser_state parser_signature parser_atom "
+    "parser_call parser_expression parser_statement parser_control parser_driver parser_output").split())
 
 
 def require(condition, message):
@@ -100,6 +106,46 @@ def inventory(directory):
             for path in sorted(directory.rglob("*")) if path.is_file()}
 
 
+def fixture_modules(path):
+    """Read only this fixture's flat declarations; never admit discovered modules."""
+    text = path.read_text(encoding="utf-8")
+    # Comments may separate declaration tokens. Ignore strings and comments so
+    # their contents cannot manufacture or conceal a declaration in this check.
+    text = re.sub(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\])*"', " ", text, flags=re.DOTALL)
+    tokens = re.findall(r"[A-Za-z_][A-Za-z_0-9]*|[^\s]", text)
+    modules = []
+    for index, token in enumerate(tokens):
+        if token == "mod":
+            require(index + 2 < len(tokens)
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", tokens[index + 1])
+                    and tokens[index + 2] == ";", "unexpected fixture module declaration")
+            modules.append(tokens[index + 1] + ".ox")
+    return modules
+
+
+def copy_parser_sources(fixture_source, sources):
+    """Preserve the historical snapshot while excluding unrelated static siblings."""
+    prefix = "fixtures/typed-lexer-samples/"
+    registered = set()
+    for root in HISTORICAL_ROOTS:
+        members = verify_repo.TYPED_PROJECTS.get(prefix + root, ())
+        require(members and len(members) == len(set(members)), "historical fixture registration changed")
+        registered.update(members)
+    require(registered == {prefix + name for name in MEMBERS}, "historical fixture registration changed")
+    require(verify_repo.TYPED_PROJECTS[prefix + "parser_main.ox"]
+            == tuple(prefix + name for name in PARSER_MEMBERS), "parser root registration changed")
+    for name in MEMBERS:
+        path = fixture_source / name
+        require(path.is_file() and not path.is_symlink(), "historical fixture source missing or not regular: " + name)
+    modules = fixture_modules(fixture_source / "parser_main.ox")
+    require(len(modules) == len(set(modules)) and set(modules) == set(PARSER_MEMBERS[1:]),
+            "parser root module closure changed")
+    for name in PARSER_MEMBERS[1:]:
+        require(not fixture_modules(fixture_source / name), "unexpected parser child module declaration: " + name)
+    for name in MEMBERS:
+        shutil.copyfile(fixture_source / name, sources / name)
+
+
 def check_execution(result, remaining, data, transport=False):
     require(result.returncode == (64 if transport else 0), "unexpected process exit status")
     require(not result.stderr, "unexpected process stderr")
@@ -147,9 +193,7 @@ def qualify(compiler, parser_observer, lexer_observer, output, native=False):
         empty.mkdir()
         sources.mkdir()
         fixture_source = ROOT / "fixtures/typed-lexer-samples"
-        require({p.name for p in fixture_source.glob("*.ox")} == set(MEMBERS), "fixture source membership changed")
-        for name in MEMBERS:
-            shutil.copyfile(fixture_source / name, sources / name)
+        copy_parser_sources(fixture_source, sources)
         shutil.copyfile(ROOT / "scripts/parser_ast_observation.py", sources / "parser_ast_observation.py")
         shutil.copyfile(FIXTURES / "corruption_controls.py", sources / "corruption_controls.py")
         shutil.copyfile(FIXTURES / "cases.json", output / "cases.json")
