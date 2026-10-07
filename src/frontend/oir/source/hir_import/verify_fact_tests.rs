@@ -106,6 +106,7 @@ fn reject_changed_fact(
     baseline: &Allocator,
     cell: usize,
     value: i32,
+    emit: bool,
 ) {
     let changed = changed_fact(fixture, cell, value);
     let mut observed = allocator();
@@ -114,13 +115,25 @@ fn reject_changed_fact(
     let lower_guard = lower::measurement::begin();
     let verify_guard = verify::measurement::begin();
     let runtime_guard = execute::measurement::begin();
-    let result = mode.call(
-        owner,
-        fixture.source.as_bytes(),
-        &changed,
-        &mut observed,
-        IndexLimits::default(),
-    );
+    let result = if emit {
+        leaf::emit(
+            owner,
+            fixture.source.as_bytes(),
+            &changed,
+            &mut observed,
+            IndexLimits::default(),
+        )
+        .map(|_| ())
+    } else {
+        mode.call(
+            owner,
+            fixture.source.as_bytes(),
+            &changed,
+            &mut observed,
+            IndexLimits::default(),
+        )
+        .map(|_| ())
+    };
     let typed = type_guard.finish();
     let lowered = lower_guard.finish();
     let verified = verify_guard.finish();
@@ -130,7 +143,7 @@ fn reject_changed_fact(
             cells,
         })) => assert_eq!(cells, fixture.rows, "{} cell {cell}", fixture.name),
         other => panic!(
-            "{mode:?} {} fact cell {cell} changed to {value} must reach complete typed comparison: {other:?}",
+            "emit={emit} {mode:?} {} fact cell {cell} changed to {value} must reach complete typed comparison: {other:?}",
             fixture.name
         ),
     }
@@ -263,7 +276,7 @@ fn exercise_fixture(
                 // a function, local nor expression fact may be substituted.
                 for value in 1..=3 {
                     if value != supplied {
-                        reject_changed_fact(mode, fixture, owner, &baseline, cell, value);
+                        reject_changed_fact(mode, fixture, owner, &baseline, cell, value, false);
                         coverage.mutations += 1;
                     }
                 }
@@ -276,7 +289,7 @@ fn exercise_fixture(
                 // changes that preserve fallthrough but flip exit outcomes.
                 for value in 0..=15 {
                     if value != supplied {
-                        reject_changed_fact(mode, fixture, owner, &baseline, cell, value);
+                        reject_changed_fact(mode, fixture, owner, &baseline, cell, value, false);
                         coverage.mutations += 1;
                         coverage.flow_masks[usize::try_from(value).unwrap()] = true;
                     }
@@ -285,7 +298,7 @@ fn exercise_fixture(
             3 | 4 | 8..=14 => {
                 assert_eq!(supplied, 0);
                 coverage.unused += 1;
-                reject_changed_fact(mode, fixture, owner, &baseline, cell, 1);
+                reject_changed_fact(mode, fixture, owner, &baseline, cell, 1, false);
                 coverage.mutations += 1;
             }
             _ => panic!("unexpected scalar row kind {kind}"),
@@ -293,7 +306,7 @@ fn exercise_fixture(
         // Wire words are signed and planar. Every active role also rejects
         // high-plane/sign changes; comparing only a low byte cannot pass.
         for value in [256, -1, i32::MIN, i32::MAX] {
-            reject_changed_fact(mode, fixture, owner, &baseline, cell, value);
+            reject_changed_fact(mode, fixture, owner, &baseline, cell, value, false);
             coverage.mutations += 1;
         }
     }
@@ -354,4 +367,82 @@ fn checked_hir_import_verify_and_run_public_project_facts_reject_before_lower_an
         );
         assert_eq!(coverage.mutations, 230);
     }
+}
+
+// The shared complete comparison already has the exhaustive Verify/Run value
+// matrix above. Emit independently mutates every active cell twice, including
+// every unused fact and a high plane, and proves rejection before lowering.
+fn exercise_emit_rejections(fixture: Fixture, owner: SourceOwner<'_>) -> usize {
+    let wire = Wire::decode(fixture.bytes, fixture.source.len()).unwrap();
+    let mut baseline = allocator();
+    let facts = leaf::verify(
+        owner,
+        fixture.source.as_bytes(),
+        fixture.bytes,
+        &mut baseline,
+        IndexLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(facts.verified.typed_cells, fixture.rows);
+    assert_eq!(baseline.attempts, fixture.reserves);
+    for cell in 0..fixture.rows {
+        let kind = wire.word(0, cell).unwrap() & 63;
+        let supplied = wire.word(4, cell).unwrap();
+        let replacement = match kind {
+            1 | 2 | 6 | 7 | 15..=36 => {
+                if supplied == 1 {
+                    2
+                } else {
+                    1
+                }
+            }
+            5 => (supplied + 1) % 16,
+            3 | 4 | 8..=14 => 1,
+            _ => panic!("unexpected scalar row kind {kind}"),
+        };
+        for value in [replacement, supplied ^ 256] {
+            reject_changed_fact(
+                LeafMode::Verify,
+                fixture,
+                owner,
+                &baseline,
+                cell,
+                value,
+                true,
+            );
+        }
+    }
+    println!(
+        "HIR_IMPORT_FACTS Emit {} rows={} mutations={} no_native_final_reserve=true",
+        fixture.name,
+        fixture.rows,
+        2 * fixture.rows
+    );
+    2 * fixture.rows
+}
+
+#[test]
+fn checked_hir_import_emit_every_active_fact_rejects_before_lowering() {
+    let mut mutations = 0;
+    for &fixture in ORIGINALS {
+        let mut sources = SourceMap::new();
+        let id = sources.add("emit-facts.ox".into(), fixture.source.into());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+        mutations += exercise_emit_rejections(fixture, owner);
+    }
+    assert_eq!(mutations, 268);
+}
+
+#[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "genuine ProjectSources admission is Linux-only; public Emit host denial is tested separately"
+)]
+fn checked_hir_import_emit_public_facts_reject_before_lowering() {
+    let fixture = fixture!("public", 29, 16);
+    let project = super::tests::project(fixture.source);
+    let owner = SourceOwner::project(&project);
+    assert_eq!(exercise_emit_rejections(fixture, owner), 58);
 }

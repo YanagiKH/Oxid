@@ -423,3 +423,9 @@ mod emit_measurements;
 
 #[cfg(test)]
 mod emit_tests;
+
+#[cfg(test)]
+mod emit_resource_tests;
+
+#[cfg(test)]
+mod emit_failure_tests;

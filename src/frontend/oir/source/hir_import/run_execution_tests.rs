@@ -168,7 +168,7 @@ fn checked_hir_import_run_genuine_public_capture_matches_project() {
 
 // Encode only the explicit hand-authored rows below. The parser, resolver,
 // checker and canonical HIR never supply or repair any observation cell.
-fn hand_authored_frame(text: &str, rows: &[([u8; 8], i32, i32)]) -> [u8; SUCCESS_BYTES] {
+pub(super) fn hand_authored_frame(text: &str, rows: &[([u8; 8], i32, i32)]) -> [u8; SUCCESS_BYTES] {
     assert!(text.is_ascii() && text.len() <= MAX_ROWS && rows.len() <= MAX_ROWS);
     let mut bytes = [0; SUCCESS_BYTES];
     bytes[..4].copy_from_slice(b"OPA1");
