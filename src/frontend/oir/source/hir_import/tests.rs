@@ -362,3 +362,39 @@ fn checked_hir_import_complete_result_layout_observations() {
     let plan = StoragePlan::describe(&canonical).unwrap();
     println!("HIR_IMPORT_RETAINED {:?}", plan);
 }
+
+#[test]
+fn checked_hir_import_original_route_rejects_stale_public_summary() {
+    let text = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/public-source.txt"
+    ));
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/public-success.bin"
+    ));
+    let mut sources = SourceMap::new();
+    let id = sources.add("stale-public-summary.ox".into(), text.into());
+    let file = sources.get(id);
+    let genuine = lexer::lex(file).unwrap();
+    let mut altered = genuine.clone();
+    for token in &mut altered {
+        if token.kind == lexer::Kind::Pub {
+            token.kind = lexer::Kind::Trivia;
+        }
+    }
+    let mut program = parser::parse(file, altered).unwrap();
+    assert!(!program.uses_project_syntax());
+    program.functions[0].public = Some(
+        genuine
+            .iter()
+            .find(|t| t.kind == lexer::Kind::Pub)
+            .unwrap()
+            .span,
+    );
+    program.tokens = genuine;
+    assert!(matches!(
+        BoundObservation::bind(original(&sources, &program), text.as_bytes(), bytes),
+        Err(Boundary::Source)
+    ));
+}

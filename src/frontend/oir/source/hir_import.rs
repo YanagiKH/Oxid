@@ -202,6 +202,17 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
             return Err(Boundary::Domain);
         }
         bounded_ast_domain(ast)?;
+        // Public fields are mutable inside the compiler; a parser-owned AST
+        // can have a stale cached syntax summary. The bounded scalar scan must
+        // independently retain the genuine project-route requirement.
+        if owner.flavor() == SyntaxFlavor::OriginalSingleFile
+            && ast
+                .functions
+                .iter()
+                .any(|function| function.public.is_some())
+        {
+            return Err(Boundary::Source);
+        }
         let wire = Wire::decode(bytes, captured_source.len())?;
         Ok(Self {
             owner,

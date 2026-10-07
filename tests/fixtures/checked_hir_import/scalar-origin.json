@@ -1,0 +1,283 @@
+{
+  "scope": "Six source-bound scalar grammar observations, independently produced by the retained native Oxid parser and static consumer",
+  "framing": "AST1 + one unsigned source-length byte + exact source bytes + unchanged parser stdout",
+  "cases": [
+    {
+      "name": "arithmetic",
+      "source_sha256": "45426a4f69ab245011785fc5ffa2c188ec84d1fa1f92c703978fd133e9677d11",
+      "observation_sha256": "a4f09ea7f3143a3dd0711643e9c345b4612a10047f5fb4e4bfa1710dd47a8bbf",
+      "source_bytes": 40,
+      "observation_bytes": 2607,
+      "row_count": 19,
+      "item_head": 1,
+      "row_kinds": [
+        1,
+        2,
+        3,
+        5,
+        10,
+        15,
+        19,
+        21,
+        22,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+      "commands": [
+        {
+          "command": [
+            "parser"
+          ],
+          "status": 0,
+          "input_sha256": "45426a4f69ab245011785fc5ffa2c188ec84d1fa1f92c703978fd133e9677d11",
+          "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+          "stdout_sha256": "efd2d2f94a940d146c6f5877a95eb5211779bd46246e959057b287bf8fa7f785",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "command": [
+            "consumer"
+          ],
+          "status": 0,
+          "input_sha256": "18ab57b9e42aba9fc529713e52f9f40c916d776a2ea1a25d4b7cc957f7a77b49",
+          "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+          "stdout_sha256": "a4f09ea7f3143a3dd0711643e9c345b4612a10047f5fb4e4bfa1710dd47a8bbf",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "Actual unchanged Oxid parser and static consumer output; the host transports AST1 framing only"
+    },
+    {
+      "name": "boolean",
+      "source_sha256": "62d9083f423cf86ee8d3c5cf17328ebdca4eeeb35cf28a1d6c10e345201c98d0",
+      "observation_sha256": "8b5158aad56e24ed5aaf16aacde46c305df5dfff74151dec230d87a67f01da8f",
+      "source_bytes": 49,
+      "observation_bytes": 2607,
+      "row_count": 15,
+      "item_head": 1,
+      "row_kinds": [
+        1,
+        2,
+        3,
+        5,
+        10,
+        16,
+        19,
+        21,
+        23,
+        35,
+        36
+      ],
+      "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+      "commands": [
+        {
+          "command": [
+            "parser"
+          ],
+          "status": 0,
+          "input_sha256": "62d9083f423cf86ee8d3c5cf17328ebdca4eeeb35cf28a1d6c10e345201c98d0",
+          "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+          "stdout_sha256": "7192e361196be6c5213bd165c7dc6f07f02f032bdeb4739a929cb3f82bf29186",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "command": [
+            "consumer"
+          ],
+          "status": 0,
+          "input_sha256": "121d683eaef497986832911e61bd8879b45111bb0cca6b24bbe61b64fec64a65",
+          "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+          "stdout_sha256": "8b5158aad56e24ed5aaf16aacde46c305df5dfff74151dec230d87a67f01da8f",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "Actual unchanged Oxid parser and static consumer output; the host transports AST1 framing only"
+    },
+    {
+      "name": "comparison",
+      "source_sha256": "4ecd3203de480fd90db18b79ec2fe1488f7d5a9bd16b474b209be4be1b5c4b17",
+      "observation_sha256": "21aa0ebd769e1a512156da0d1c211d30d5ce8376fa0b03dee0130d71301e7ad6",
+      "source_bytes": 65,
+      "observation_bytes": 2607,
+      "row_count": 31,
+      "item_head": 1,
+      "row_kinds": [
+        1,
+        2,
+        3,
+        5,
+        10,
+        19,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+      "commands": [
+        {
+          "command": [
+            "parser"
+          ],
+          "status": 0,
+          "input_sha256": "4ecd3203de480fd90db18b79ec2fe1488f7d5a9bd16b474b209be4be1b5c4b17",
+          "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+          "stdout_sha256": "fa3a883d6d014bfcb7f7949908df94e2549d03e11168ad33c81fa8acd91db8b4",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "command": [
+            "consumer"
+          ],
+          "status": 0,
+          "input_sha256": "20b6d630ca68f447e55bde2ec9f174a14b965607bf8335dd80f190946c860be6",
+          "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+          "stdout_sha256": "21aa0ebd769e1a512156da0d1c211d30d5ce8376fa0b03dee0130d71301e7ad6",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "Actual unchanged Oxid parser and static consumer output; the host transports AST1 framing only"
+    },
+    {
+      "name": "unit",
+      "source_sha256": "6f577d023451219fa71acb94a38b5d0d9a9ca4a881f7d4c43e24544fa1ef2570",
+      "observation_sha256": "f521d526e3565116ada4f5f5a034e2e81295f2e5e63638ebf56ed86632a74812",
+      "source_bytes": 40,
+      "observation_bytes": 2607,
+      "row_count": 13,
+      "item_head": 1,
+      "row_kinds": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        9,
+        10,
+        18,
+        19
+      ],
+      "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+      "commands": [
+        {
+          "command": [
+            "parser"
+          ],
+          "status": 0,
+          "input_sha256": "6f577d023451219fa71acb94a38b5d0d9a9ca4a881f7d4c43e24544fa1ef2570",
+          "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+          "stdout_sha256": "a7eab887465dca29191824f26bd1f239eb185acdbaeb2a91d14f6eec3aeac7dd",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "command": [
+            "consumer"
+          ],
+          "status": 0,
+          "input_sha256": "19e31b1c6d621971b04e62d3cf5f01dcd66306d925f2e8d3b6d57477bb1f9dd1",
+          "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+          "stdout_sha256": "f521d526e3565116ada4f5f5a034e2e81295f2e5e63638ebf56ed86632a74812",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "Actual unchanged Oxid parser and static consumer output; the host transports AST1 framing only"
+    },
+    {
+      "name": "loop",
+      "source_sha256": "ee822fb34204aa7a35cc51a88485884f3e0c333a2ba7120ee4afe514f687873b",
+      "observation_sha256": "7db60e88f053890b3c3b28dea3c6fac4f0cae461fbd71b388e07e4742d3ea30c",
+      "source_bytes": 61,
+      "observation_bytes": 2607,
+      "row_count": 15,
+      "item_head": 1,
+      "row_kinds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        10,
+        11,
+        12,
+        13,
+        14,
+        19
+      ],
+      "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+      "commands": [
+        {
+          "command": [
+            "parser"
+          ],
+          "status": 0,
+          "input_sha256": "ee822fb34204aa7a35cc51a88485884f3e0c333a2ba7120ee4afe514f687873b",
+          "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+          "stdout_sha256": "1a7dcb2d1d0be9ac9f4ff2af1f60e76345f8f11567102e85ef58527dbdbb232d",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "command": [
+            "consumer"
+          ],
+          "status": 0,
+          "input_sha256": "0bc2b83894f01af95253aed5baf3c8fe3bea560ada17e8f2c2a24ec8df7d03b3",
+          "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+          "stdout_sha256": "7db60e88f053890b3c3b28dea3c6fac4f0cae461fbd71b388e07e4742d3ea30c",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "Actual unchanged Oxid parser and static consumer output; the host transports AST1 framing only"
+    },
+    {
+      "name": "assignment",
+      "source_sha256": "069ced25a829737d0a5fa0b22afff5e0ff6bf125f40e97782ac5585969b827dc",
+      "observation_sha256": "67266a6ffcfc8936de9168268ebc97eee08a993b0bf821bb785556e93d9a75f3",
+      "source_bytes": 66,
+      "observation_bytes": 2607,
+      "row_count": 12,
+      "item_head": 1,
+      "row_kinds": [
+        1,
+        2,
+        3,
+        5,
+        7,
+        8,
+        10,
+        15,
+        19
+      ],
+      "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+      "commands": [
+        {
+          "command": [
+            "parser"
+          ],
+          "status": 0,
+          "input_sha256": "069ced25a829737d0a5fa0b22afff5e0ff6bf125f40e97782ac5585969b827dc",
+          "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+          "stdout_sha256": "93a0dfd22ab41a4c12e885b9eb9b1a382ca10bfdc9557e9b518ce53dbdea4044",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "command": [
+            "consumer"
+          ],
+          "status": 0,
+          "input_sha256": "a53a5bf5bb639cc65003b1fd3a3d927e801a648c9c7c60d4ec0565273086b7ad",
+          "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+          "stdout_sha256": "67266a6ffcfc8936de9168268ebc97eee08a993b0bf821bb785556e93d9a75f3",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "Actual unchanged Oxid parser and static consumer output; the host transports AST1 framing only"
+    }
+  ]
+}

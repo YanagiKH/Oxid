@@ -15,6 +15,40 @@ const WIRE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/checked_hir_import/rich-success.bin"
 ));
+macro_rules! scalar_fixture {
+    ($name:literal, $kinds:expr) => {
+        (
+            $name,
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/checked_hir_import/scalar-",
+                $name,
+                "-source.txt"
+            )),
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/checked_hir_import/scalar-",
+                $name,
+                "-success.bin"
+            )) as &[u8],
+            $kinds,
+        )
+    };
+}
+const SCALAR_FIXTURES: &[(&str, &str, &[u8], &[u8])] = &[
+    scalar_fixture!(
+        "arithmetic",
+        &[1, 2, 3, 5, 10, 15, 19, 21, 22, 24, 25, 26, 27, 28]
+    ),
+    scalar_fixture!("boolean", &[1, 2, 3, 5, 10, 16, 19, 21, 23, 35, 36]),
+    scalar_fixture!(
+        "comparison",
+        &[1, 2, 3, 5, 10, 19, 29, 30, 31, 32, 33, 34, 35]
+    ),
+    scalar_fixture!("unit", &[1, 2, 4, 5, 6, 9, 10, 18, 19]),
+    scalar_fixture!("loop", &[1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 19]),
+    scalar_fixture!("assignment", &[1, 2, 3, 5, 7, 8, 10, 15, 19]),
+];
 fn parsed(text: &str) -> (SourceMap, ast::Program) {
     let mut sources = SourceMap::new();
     let id = sources.add("opa-comparison.ox".into(), text.into());
@@ -74,6 +108,98 @@ fn checked_hir_import_source_opa_actual_producer_rows_match() {
     assert!(compared.block_location(1).is_err());
     assert!(compared.function_row(MAX_ROWS).is_err());
     assert!(compared.visits() <= MAX_WORK);
+}
+#[test]
+fn checked_hir_import_source_opa_scalar_producer_grammar_matches() {
+    let mut covered = [false; 37];
+    for &(name, text, bytes, expected_kinds) in SCALAR_FIXTURES {
+        assert!(text.is_ascii() && text.len() <= MAX_ROWS, "{name}");
+        let (sources, program) = parsed(text);
+        // Original scalar ownership is available on every ordinary test host.
+        // These controls need neither project admission nor canonical HIR.
+        let bound = BoundObservation::bind(owner(&sources, &program), text.as_bytes(), bytes)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        let compared = compare(&bound).unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        let mut kinds = [false; 37];
+        for reference in 1..=bound.wire.rows {
+            let row = compared.row(reference).unwrap();
+            kinds[usize::from(row.kind)] = true;
+            covered[usize::from(row.kind)] = true;
+        }
+        for kind in 1..=36 {
+            assert_eq!(
+                kinds[usize::from(kind)],
+                expected_kinds.contains(&kind),
+                "{name}: row kind {kind}"
+            );
+        }
+        assert_eq!(compared.function_row(0).unwrap(), 1, "{name}");
+        for (index, expression) in program.expressions.iter().enumerate() {
+            let row = compared
+                .row(compared.expr_row(ast::ExprId(index)).unwrap())
+                .unwrap();
+            assert_eq!(
+                (usize::from(row.start), usize::from(row.end)),
+                (expression.span.start, expression.span.end),
+                "{name}: expression {index}"
+            );
+        }
+        assert!(compared.visits() <= MAX_WORK, "{name}");
+    }
+    let (sources, program) = parsed(SOURCE);
+    let bound = BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), WIRE).unwrap();
+    let compared = compare(&bound).unwrap();
+    for reference in 1..=bound.wire.rows {
+        covered[usize::from(compared.row(reference).unwrap().kind)] = true;
+    }
+    assert!(covered[1..].iter().all(|present| *present));
+}
+#[test]
+fn checked_hir_import_source_opa_scalar_producer_changed_row_kinds_reject() {
+    for &(name, text, bytes, _) in SCALAR_FIXTURES {
+        let (sources, program) = parsed(text);
+        let wire = Wire::decode(bytes, text.len()).unwrap();
+        for reference in 1..=wire.rows {
+            let mut changed = bytes.to_vec();
+            let mut row = Row::read(wire, reference).unwrap();
+            row.kind = row.kind % 36 + 1;
+            encode_row(&mut changed, reference, row);
+            let bound =
+                BoundObservation::bind(owner(&sources, &program), text.as_bytes(), &changed)
+                    .unwrap();
+            assert!(compare(&bound).is_err(), "{name}: row {reference}");
+        }
+    }
+}
+#[test]
+fn checked_hir_import_source_opa_bounded_split_trivia_tape_rejects() {
+    for &(name, text, bytes, _) in SCALAR_FIXTURES
+        .iter()
+        .filter(|fixture| matches!(fixture.0, "unit" | "assignment"))
+    {
+        let (sources, mut program) = parsed(text);
+        {
+            let bound =
+                BoundObservation::bind(owner(&sources, &program), text.as_bytes(), bytes).unwrap();
+            assert!(compare(&bound).is_ok(), "{name}");
+        }
+        let index = program
+            .tokens
+            .iter()
+            .position(|token| token.kind == Kind::Trivia && token.span.end - token.span.start > 1)
+            .unwrap();
+        let mut second = program.tokens[index];
+        let split = second.span.start + 1;
+        program.tokens[index].span.end = split;
+        second.span.start = split;
+        program.tokens.insert(index + 1, second);
+        // Preserve the complete byte coverage and stay below the tape bound;
+        // rejection must distinguish real lexer trivia extents from split ones.
+        assert!(program.tokens.len() <= MAX_ROWS + 1);
+        let bound =
+            BoundObservation::bind(owner(&sources, &program), text.as_bytes(), bytes).unwrap();
+        assert!(compare(&bound).is_err(), "{name}");
+    }
 }
 #[test]
 fn checked_hir_import_source_opa_public_producer_matches_project() {
