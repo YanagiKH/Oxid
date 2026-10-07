@@ -89,16 +89,35 @@ TYPED_PROJECTS = {
         "fixtures/typed-expression-samples/artifact_load.ox",
         "fixtures/typed-expression-samples/artifact_reader.ox",
     ),
+    "fixtures/typed-lexer-samples/main.ox": (
+        "fixtures/typed-lexer-samples/main.ox",
+        "fixtures/typed-lexer-samples/tape.ox",
+        "fixtures/typed-lexer-samples/transcript.ox",
+        "fixtures/typed-lexer-samples/lexer.ox",
+        "fixtures/typed-lexer-samples/keywords.ox",
+    ),
+    "fixtures/typed-lexer-samples/admission.ox": (
+        "fixtures/typed-lexer-samples/admission.ox",
+        "fixtures/typed-lexer-samples/tape.ox",
+        "fixtures/typed-lexer-samples/transcript.ox",
+    ),
 }
 # Effectful projects retain exact module inventories, but only their roots are
 # checked here. Dedicated controllers supply input and choose the entry mode.
 TYPED_CHECK_ONLY_PROJECTS = (
     "fixtures/typed-expression-samples/artifact_main.ox",
     "fixtures/typed-expression-samples/artifact_load.ox",
+    "fixtures/typed-lexer-samples/main.ox",
+    "fixtures/typed-lexer-samples/admission.ox",
 )
 # Only these exact pairs of roots share these exact modules. Neither roots nor
 # standalone/check-only files may overlap, and members are counted only once.
 TYPED_PROJECT_SHARED_MEMBERS = {
+    frozenset(("fixtures/typed-lexer-samples/main.ox",
+               "fixtures/typed-lexer-samples/admission.ox")): (
+        "fixtures/typed-lexer-samples/tape.ox",
+        "fixtures/typed-lexer-samples/transcript.ox",
+    ),
     frozenset(("fixtures/typed-expression-samples/main.ox",
                "fixtures/typed-expression-samples/stack_main.ox")): (
         "fixtures/typed-expression-samples/arena.ox",

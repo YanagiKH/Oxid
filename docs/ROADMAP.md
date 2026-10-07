@@ -54,6 +54,14 @@ source and exact-head hosted qualification, not another instruction-set demo.
 General file management, a production compiler provider and self-hosting remain
 separate roadmap work.
 
+The [bounded typed-preview lexer](../fixtures/typed-lexer-samples/README.md) is an
+Oxid-written frontend component for at most 128 ASCII source bytes. Its token
+columns preserve trivia and byte spans, and its transcript distinguishes complete
+lexical diagnostics from transport failures. Canonical Rust comparison and
+reference/native execution are separate checks. It does not switch production
+providers or extend the contract to Unicode; the next consumer can use this token
+interface for a real typed-preview parser.
+
 ## Native AI work
 
 Native AI support needs typed buffers and CPU tensors first, followed by automatic differentiation, optimizers, and complete training loops. GPU execution, tensor compilation, multi-device training, and resumable checkpoints add separate hardware and correctness requirements. Calling an external framework through a process adapter does not satisfy these milestones.

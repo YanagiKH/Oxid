@@ -669,6 +669,29 @@ jobs:
           path: |
             ${{ runner.temp }}/stack-component
             ${{ runner.temp }}/stack-stdin
+      - name: Verify bounded typed lexer against the canonical lexer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for source in main tape transcript lexer keywords admission; do
+            target/debug/oxid fmt --edition typed-preview --check "fixtures/typed-lexer-samples/$source.ox"
+          done
+          python3 -B scripts/build_typed_lexer_observer.py \
+            --output "$RUNNER_TEMP/typed-lexer-observer"
+          python3 -B scripts/verify_bounded_typed_lexer.py \
+            --oxid target/debug/oxid \
+            --observer "$RUNNER_TEMP/typed-lexer-observer/canonical-lexer-observer" \
+            --output "$RUNNER_TEMP/typed-lexer-proof" --native
+      - name: Retain bounded typed lexer transcripts and observer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-typed-lexer-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-lexer-observer
+            ${{ runner.temp }}/typed-lexer-proof
       - name: Verify production source CLI and source-free ELF outcomes
         run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment projected-array-slices-v1 --jobs 2
       - name: Verify owned-source native budgets, stores, guards, and artifact identities
