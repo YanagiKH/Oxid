@@ -174,10 +174,12 @@ No runtime recursion, callback framework, dynamic table, source fusion, new
 input framing or cap increase is authorized to make the probe fit.
 
 Measure the whole actual combined program, including constructor/return/binding
-copies and output helpers. The measured tag-2 carrier has I = 7,404, W = 3,645,
+copies and output helpers. The initial measured tag-2 carrier had I = 7,404, W = 3,645,
 103 functions, 1,747 blocks and 75,020 explicit native bytes including the process
-wrapper. Its 788 remaining I items do not establish full semantic feasibility.
-Replacing its 313-item synthetic driver would make at most 1,101 items available
+wrapper. That left 788 I items. The exact-table keyword successor has I = 6,536,
+W = 3,925, 96 functions, 1,429 blocks and 69,124 explicit native bytes. Its
+1,656 remaining I items do not establish full semantic feasibility. Replacing
+the 313-item probe driver would make at most 1,969 items available
 for all replacement semantic code; future control/diagnostic state is not yet
 priced. Existing parser baseline is I = 6,460, W = 2,571, F = 87,
 blocks = 1,485 and explicit bytes = 63,384. Three additional arrays model 774 owner-width
