@@ -23,6 +23,10 @@ pub(super) mod emit_cost;
 #[path = "native_private_emit_tests.rs"]
 mod private_emit_tests;
 
+#[cfg(test)]
+#[path = "native_emit_observation.rs"]
+mod emit_observation;
+
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_LOCALS: usize = 256;
@@ -228,12 +232,16 @@ impl VerifiedProgram {
                 )
             })
             .transpose()?;
+        #[cfg(test)]
+        emit_observation::retained(&bounds, diagnostics.as_ref());
         // Count the exact emitted UTF-8 bytes without allocating the final LLVM
         // text buffer. Inherited native metadata/temporary Strings still allocate.
         let mut count = Emission {
             policy,
             ..Emission::default()
         };
+        #[cfg(test)]
+        emit_observation::start_pass(false, &count);
         emit(
             &self.program,
             id,
@@ -243,10 +251,14 @@ impl VerifiedProgram {
             fuel,
             &mut count,
         );
+        #[cfg(test)]
+        emit_observation::finish_pass(false, &count);
         if guarded || policy == EntryPolicy::Process {
             limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
         }
         let mut output = mode.allocate(count.len, policy)?;
+        #[cfg(test)]
+        emit_observation::start_pass(true, &output);
         emit(
             &self.program,
             id,
@@ -256,6 +268,8 @@ impl VerifiedProgram {
             fuel,
             &mut output,
         );
+        #[cfg(test)]
+        emit_observation::finish_pass(true, &output);
         output.finish(count.len)
     }
 
@@ -504,6 +518,8 @@ enum FailureKind {
 }
 impl FailureKind {
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
+        #[cfg(test)]
+        emit_observation::event(emit_observation::Event::Construct, 1);
         if self == Self::ProcessStatus {
             return Diagnostic::new(
                 "E0600",
@@ -579,20 +595,34 @@ impl GuardedDiagnostics {
         let mut count = LimitedCount { len: 0, maximum };
         let mut add = |kind: FailureKind, span: Span| -> Result<(), Box<Diagnostic>> {
             let key = (kind, span.file.0, span.start, span.end);
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::Contains, 1);
             if result.ids.contains_key(&key) {
                 return Ok(());
             }
             let diagnostic = kind.diagnostic(span, sources);
             // The renderer streams escaped paths while counting: no oversize
             // intermediate diagnostic is allocated before this preflight.
+            #[cfg(test)]
+            let before = count.len;
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::HumanCount, 1);
             diagnostic.write_human(sources, &mut count).map_err(|_| {
                 reject(
                     format!("native preview guarded diagnostic bytes limit exceeded ({maximum})"),
                     Some(span),
                 )
             })?;
+            #[cfg(test)]
+            emit_observation::human_bytes(false, count.len - before);
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::Insert, 1);
             result.ids.insert(key, result.messages.len());
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::HumanRender, 1);
             result.messages.push(diagnostic.render_human(sources));
+            #[cfg(test)]
+            emit_observation::human_bytes(true, result.messages.last().unwrap().len());
             Ok(())
         };
         if guarded {
@@ -632,6 +662,8 @@ impl GuardedDiagnostics {
         Ok(result)
     }
     fn get(&self, kind: FailureKind, span: Span) -> (usize, &str) {
+        #[cfg(test)]
+        emit_observation::event(emit_observation::Event::Get, 1);
         let id = self.ids[&(kind, span.file.0, span.start, span.end)];
         (id, &self.messages[id])
     }
@@ -687,7 +719,11 @@ fn emit_arithmetic_failure(
         .unwrap();
     } else {
         let symbol = kind.arithmetic_symbol();
+        #[cfg(test)]
+        emit_observation::event(emit_observation::Event::HumanRender, 1);
         let length = kind.diagnostic(span, sources).render_human(sources).len();
+        #[cfg(test)]
+        emit_observation::human_bytes(true, length);
         writeln!(
             out,
             "  call void @{failure}(ptr @{symbol}_{function}_{destination}, i64 {length})"
@@ -719,8 +755,12 @@ fn emit(
                 message.len()
             )
             .unwrap();
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::Escape, 1);
             for byte in message.bytes() {
                 write!(out, "\\{byte:02X}").unwrap();
+                #[cfg(test)]
+                emit_observation::event(emit_observation::Event::EscapedByte, 1);
             }
             out.push_str("\"\n");
         }
@@ -734,9 +774,13 @@ fn emit(
                     }
                     for &kind in failures {
                         let symbol = kind.arithmetic_symbol();
+                        #[cfg(test)]
+                        emit_observation::event(emit_observation::Event::HumanRender, 1);
                         let message = kind
                             .diagnostic(operator_span, sources)
                             .render_human(sources);
+                        #[cfg(test)]
+                        emit_observation::human_bytes(true, message.len());
                         write!(
                             out,
                             "@{symbol}_{}_{} = private unnamed_addr constant [{} x i8] c\"",
@@ -745,8 +789,12 @@ fn emit(
                             message.len()
                         )
                         .unwrap();
+                        #[cfg(test)]
+                        emit_observation::event(emit_observation::Event::Escape, 1);
                         for byte in message.bytes() {
                             write!(out, "\\{byte:02X}").unwrap();
+                            #[cfg(test)]
+                            emit_observation::event(emit_observation::Event::EscapedByte, 1);
                         }
                         out.push_str("\"\n");
                     }
@@ -799,6 +847,8 @@ fn emit(
                     )
             })
             .collect();
+        #[cfg(test)]
+        emit_observation::labels(&exits);
         for (i, b) in f.blocks.iter().enumerate() {
             writeln!(out, "b{i}:").unwrap();
             if let Some(merge) = &b.merge {
