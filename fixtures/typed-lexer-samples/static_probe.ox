@@ -14,41 +14,6 @@ pub fn sequence(first: i32, next: i32) -> i32 {
     return union(first - 1, next);
 }
 pub fn loop_flow(body: i32) -> i32 { return 1 + 2 * (body / 2 % 2); }
-pub fn same_name(codes: &[i32], left: i32, right: i32, used: i32) -> bool {
-    let a = crate::parser_state::lo(left);
-    let b = crate::parser_state::lo(right);
-    let end = crate::parser_state::hi(left);
-    let other = crate::parser_state::hi(right);
-    if a >= end || b >= other || end > used || other > used || end - a != other - b { return false; }
-    let mut i = 0;
-    while i < end - a { if codes[a + i] != codes[b + i] { return false; } i = i + 1; }
-    return true;
-}
-pub fn find_function(codes: &[i32], headers: &[i32], name: i32, rows: i32, used: i32) -> i32 {
-    let mut i = 0;
-    while i < rows {
-        if headers[i] % 64 == 1 && same_name(&*codes, headers[i], name, used) { return i + 1; }
-        i = i + 1;
-    }
-    return 0;
-}
-pub fn decimal(codes: &[i32], token: i32, negative: i32, used: i32, state: &mut crate::static_state::State) -> bool {
-    let mut i = crate::parser_state::lo(token);
-    let end = crate::parser_state::hi(token);
-    state.value = 0;
-    if i >= end || end > used || negative < 0 || negative > 1 { return false; }
-    let mut value = 0;
-    let limit = 7 + negative;
-    while i < end {
-        let digit = codes[i] - 48;
-        if digit < 0 || digit > 9 || value < -214748364 || (value == -214748364 && digit > limit) { return false; }
-        value = value * 10 - digit;
-        i = i + 1;
-    }
-    if negative == 0 { value = -value; }
-    state.value = value;
-    return true;
-}
 pub fn run(codes: &[i32], tokens: &[i32], headers: &[i32], ab: &[i32], resolved: &mut [i32], semantic: &mut [i32], locals: &mut [i32], frames: &mut [i32], rows: i32, used: i32) -> bool {
     let mut state = crate::static_state::State { stack: 0, locals: 0, value: 0 };
     let mut i = 0;
@@ -74,11 +39,11 @@ pub fn run(codes: &[i32], tokens: &[i32], headers: &[i32], ab: &[i32], resolved:
         if kind == 1 || kind == 19 || kind == 20 {
             let mut name = headers[i];
             if kind != 1 { name = tokens[ab[i] % 256 - 1]; }
-            resolved[i] = find_function(&*codes, &*headers, name, rows, used);
+            resolved[i] = crate::static_common::find_function(&*codes, &*headers, name, rows, used);
             semantic[i] = 16;
         }
         if kind == 15 {
-            let valid = decimal(&*codes, tokens[ab[i] % 256 - 1], ab[i] / 256, used, &mut state);
+            let valid = crate::static_common::decimal(&*codes, tokens[ab[i] % 256 - 1], ab[i] / 256, used, &mut state);
             resolved[i] = state.value;
             semantic[i] = 18;
             if valid { semantic[i] = 17; }
