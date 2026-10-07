@@ -26,11 +26,11 @@ fn column(values: &[i32]) -> i32 {
     while i < 129 { bytes[i] = values[i] / 16777216; i = i + 1; }
     return write(&bytes);
 }
-pub fn emit(rows: &crate::parser_banks::Rows) -> i32 {
-    if !crate::parser_banks::valid(&*rows) { return 70; }
+pub fn emit(headers: &[i32], ab: &[i32], cd: &[i32], count: i32) -> i32 {
+    if !crate::parser_banks::valid(&*headers, &*ab, &*cd, count) { return 70; }
     let header = [80, 65, 66, 51, 128];
     let h = write(&header); if h != 0 { return h; }
-    let a = column(&*rows.header_links); if a != 0 { return a; }
-    let b = column(&*rows.ab); if b != 0 { return b; }
-    return column(&*rows.cd);
+    let a = column(&*headers); if a != 0 { return a; }
+    let b = column(&*ab); if b != 0 { return b; }
+    return column(&*cd);
 }

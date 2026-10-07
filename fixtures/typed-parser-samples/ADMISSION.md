@@ -39,3 +39,31 @@ domains. That does not imply native admission: all three candidates were rejecte
 under the unchanged compiler. Broad parser work is stopped pending attribution of
 the actual aggregate accounting. A future diagnostic observer must preserve the
 same admission refusal and remain separate from production compiler authority.
+
+## Separate array owners: admitted carrier, limited headroom
+
+The same three packed AST columns and single continuation column now live in
+separate array locals, with only row/stack counts in a two-scalar record. Helpers
+receive borrowed column views. This removes constructor staging copies while
+preserving every logical field and the full 128-row/129-frame capacities.
+
+An isolated diagnostic observer of the unchanged admission calculation measured
+8385 expanded cells for the prior nominal-bank candidate and 7845 for the separate
+arrays:347 cells remain under 8192. Owner payload decreased by 1032 cells; extra
+views/arguments, helper calls and stricter frame decoding offset 492 of that
+saving. The observer changed only logging before the original limit; production
+compiler limits and authority were unchanged. The original compiler also admits
+and builds the separate-array probe.
+
+Six input/control scenarios pass in both reference and native execution. The
+successful cases fill all 128 rows, exercise maximum stack depth and in-place
+resumptions, reject duplicate/full/root-pop operations, detect an unused-row
+poison, and produce exactly 1553 independently checked bytes. These are synthetic
+storage/control results, not AST parsing or a complete parser-control budget.
+
+347 cells of headroom is not sufficient evidence for broad parser implementation.
+The next proposed reuse boundary is a lexer core operating on caller-owned token
+columns, preserving the existing Tape API through a wrapper. It can avoid the
+1197-cell tape constructor in a parser executable. This requires separate review,
+lexical parity and actual admission before claiming additional headroom. No
+compiler lifetime/accounting change or reduced grammar is part of this probe.

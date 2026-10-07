@@ -74,7 +74,9 @@ by an admitted/excluded declaration trigger follows the canonical error path.
 
 Logical AST capacity is 128 rows. Candidate physical columns are either 128 or 129
 cells; the latter reuses the existing zero-array helper, and row 129 is permanently
-unused and zero. There are seven i32 columns: kind, span, a, b, c, d, next.
+unused and zero. There are seven logical i32 fields: kind, span, a, b, c, d, next.
+The admitted carrier packs them losslessly as described in ADMISSION.md; the
+logical row table below remains the contract.
 Spans use `start + 256 * end`, with checked 0 <= start <= end <= 128. References
 are one-based, zero meaning absent. No source text is copied into row storage.
 
