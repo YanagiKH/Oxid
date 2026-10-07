@@ -363,34 +363,89 @@ fn native_storage_named_fixed_roles_fit_existing_transient_partition() {
     let function = storage.function(hir::DefId(0));
     let raw = function.raw();
     let fp = execution.function(raw.id);
-    // Sum even disjoint return/iterator lifetimes conservatively. The 32 scalar
-    // words cover the new checker's bounded counters/references/temporary sizes.
-    // Inherited formatter internals, diagnostics and machine stack are outside
-    // this named fixed-carrier model, as in the original emitter envelope.
-    let roles = [
+    // All phases coexist with these named descriptors, returns and the copied
+    // usage. The 32-word reserve covers checker counters, borrowed references
+    // and arithmetic result temporaries. It is not a machine-stack/RSS bound.
+    let common = [
         size_of::<NativeStoragePlan<'_, '_>>(),
         size_of::<NativeFunctionStorage<'_, '_>>(),
         size_of::<Result<NativeStoragePlan<'_, '_>, AdmissionFailure>>(),
         size_of::<Result<NativeFunctionStorage<'_, '_>, AdmissionFailure>>(),
         size_of::<Result<(), AdmissionFailure>>(),
-        size_of::<NativeSliceMappings<'_>>(),
-        size_of::<NativeSliceMapping>(),
-        size_of::<Option<NativeSliceMapping>>(),
-        size_of::<[(bool, usize, Option<Range<usize>>); 2]>(),
-        size_of::<std::array::IntoIter<(bool, usize, Option<Range<usize>>), 2>>(),
+        size_of::<FrameUsage>(),
         std::mem::size_of_val(&witness.functions().iter().enumerate()),
-        std::mem::size_of_val(&raw.owners.iter().enumerate()),
-        std::mem::size_of_val(&raw.calls.iter().zip(&fp.calls)),
-        size_of::<std::slice::Iter<'_, ArgumentSlot>>(),
-        std::mem::size_of_val(
-            &raw.references
-                .iter()
-                .map(|r| r.referent())
-                .chain(raw.loans.iter().map(|l| l.referent())),
-        ),
         size_of::<[usize; 32]>(),
+    ]
+    .iter()
+    .sum::<usize>();
+    let layout_result = witness
+        .declarations()
+        .aggregate_layout(raw.owners[0].aggregate());
+    let width_result = witness
+        .declarations()
+        .aggregate_width(raw.owners[0].aggregate());
+    // Arrays and their owning iterators are both counted conservatively, even
+    // though iteration moves the array. These phases are sequential in check().
+    let phases = [
+        (
+            "descriptor derivation",
+            std::mem::size_of_val(
+                &raw.references
+                    .iter()
+                    .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_))),
+            ) + std::mem::size_of_val(
+                &raw.loans
+                    .iter()
+                    .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_))),
+            ),
+        ),
+        (
+            "owner layouts",
+            std::mem::size_of_val(&raw.owners.iter().enumerate())
+                + std::mem::size_of_val(&layout_result)
+                + std::mem::size_of_val(layout_result.as_ref().unwrap())
+                + std::mem::size_of_val(&width_result),
+        ),
+        (
+            "builtin suffixes",
+            size_of::<[(bool, usize, Option<Range<usize>>); 2]>()
+                + size_of::<std::array::IntoIter<(bool, usize, Option<Range<usize>>), 2>>()
+                + size_of::<(bool, usize, Option<Range<usize>>)>()
+                + size_of::<Option<Range<usize>>>(),
+        ),
+        (
+            "call partitions",
+            std::mem::size_of_val(&raw.calls.iter().zip(&fp.calls))
+                + size_of::<std::slice::Iter<'_, ArgumentSlot>>()
+                + std::mem::size_of_val(&width_result),
+        ),
+        (
+            "usage reconciliation",
+            size_of::<[(usize, usize, usize); 4]>()
+                + size_of::<std::array::IntoIter<(usize, usize, usize), 4>>()
+                + size_of::<(usize, usize, usize)>(),
+        ),
+        (
+            "slice count",
+            std::mem::size_of_val(
+                &raw.references
+                    .iter()
+                    .map(|r| r.referent())
+                    .chain(raw.loans.iter().map(|l| l.referent())),
+            ),
+        ),
+        (
+            "slice identity",
+            size_of::<[(bool, usize); 2]>()
+                + size_of::<std::array::IntoIter<(bool, usize), 2>>()
+                + size_of::<(bool, usize)>()
+                + size_of::<NativeSliceMappings<'_>>()
+                + size_of::<NativeSliceMapping>()
+                + size_of::<Option<NativeSliceMapping>>(),
+        ),
     ];
-    let total: usize = roles.iter().sum();
-    println!("native storage fixed roles {roles:?}; conservative total {total}; allowance {FIXED_CARRIER_ALLOWANCE}");
-    assert!(total <= FIXED_CARRIER_ALLOWANCE);
+    for (name, phase) in phases {
+        println!("native storage fixed {name}: common={common} phase={phase} total={} allowance={FIXED_CARRIER_ALLOWANCE}", common + phase);
+        assert!(common + phase <= FIXED_CARRIER_ALLOWANCE, "{name}");
+    }
 }

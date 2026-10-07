@@ -1,6 +1,6 @@
 # RFC 0026: explicit owned native storage plan
 
-Status: **accepted Phase 1 contract; implementation pending**.
+Status: **accepted Phase 1 contract; implementation under qualification**.
 Updated 2026-10-07.
 
 ## Outcome
@@ -62,3 +62,20 @@ layouts without conferring an alternate execution capability.
 
 The bounded typed parser remains a rejected witness under the existing expanded
 cell gate. No parser LLVM or executable is produced in this phase.
+
+## Fixed-carrier accounting
+
+The description borrows existing tables; construction makes no allocation
+attempt and changes no retained plan layout. On the qualified 64-bit host,
+module/function descriptors measure 16/48 bytes, their complete result wrappers
+48/56 bytes, and the slice iterator/item 24/32 bytes. A 1024-byte subdivision of
+the existing 32768-byte emitter transient allowance covers the new fixed roles.
+Tests use phase-specific maxima for the sequential owner, scratch, call, usage
+and slice checks, explicitly including copied FrameUsage, loop arrays/iterators,
+return carriers and bounded counters. This is a named carrier model, not a
+whole compiler stack or RSS limit. Existing maximum-arity emission controls also
+check coexistence with this subdivision. No extra metadata charge or ceiling
+increase is introduced.
+
+The original expanded-cell gate still rejects the staged parser inventory of
+12559 cells against 8192. This phase does not reinterpret that metric.
