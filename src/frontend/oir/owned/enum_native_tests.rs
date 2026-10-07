@@ -574,8 +574,8 @@ fn native_enums_native_limits_and_real_reservation_failures_remain_closed() {
         blocks: 2,
         depth: 1,
         cost: schedule.fuel(),
-        cells: 7,
-        live_cells: 7,
+        inventory_items: 2,
+        owner_width: 2,
         bytes: 16,
         live_bytes: 16,
         diagnostic_bytes: metrics.message_bytes,
@@ -594,7 +594,20 @@ fn native_enums_native_limits_and_real_reservation_failures_remain_closed() {
         module
     );
     for (limits, marker) in [
-        (Limits { cells: 6, ..exact }, "expanded cells"),
+        (
+            Limits {
+                inventory_items: 1,
+                ..exact
+            },
+            "compiler inventory",
+        ),
+        (
+            Limits {
+                owner_width: 1,
+                ..exact
+            },
+            "owner width",
+        ),
         (Limits { bytes: 15, ..exact }, "storage bytes"),
         (
             Limits {

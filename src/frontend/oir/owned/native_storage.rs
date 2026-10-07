@@ -387,16 +387,13 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     }
 }
 
-// Phase 2 counting precursor. These fixed facts are test-only until the
-// independently reviewed admission successor is enabled. They confer no
-// emission authority and do not change the production X gate.
-#[cfg(test)]
+// Whole-program compiler-work inventories. These fixed facts confer no
+// emission authority; native byte prechecks and final storage proof still apply.
 pub(in super::super) struct NativeInventories {
     items: usize,
     owner_width: usize,
 }
 
-#[cfg(test)]
 impl NativeInventories {
     pub(in super::super) fn checked(
         execution: &ExecutionPlan<'_>,

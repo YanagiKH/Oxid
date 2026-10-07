@@ -44,7 +44,7 @@ fn source_native_scalar_plus_owner_slots_256_are_inclusive_257_is_denied() {
 }
 
 #[test]
-fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
+fn source_native_historical_x_chain_has_explicit_inventory_successor() {
     let case = source::checked(&source::native_cell_chain(false));
     let plan = ExecutionPlan::build(&case.witness).unwrap();
     for (
@@ -91,19 +91,19 @@ fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
         (32, 7345, 8192, 59512)
     );
     assert!(!bounds[0].cyclic);
-    // Default aggregate8192 necessarily precedes path8193. Isolate the path
-    // check at its own lowered seam using the same unmodified source witness.
+    // The unchanged X observations above remain reference/fuel data.
+    // I=234+30*233+247=7471 and W=2 now have independent native work gates.
     denial(
         &admit(
             &plan,
             Limits {
-                live_cells: 8191,
+                inventory_items: 7470,
                 ..Limits::DEFAULT
             },
         )
         .unwrap_err(),
-        "live expanded cells",
-        8191,
+        "aggregate compiler inventory items",
+        7470,
         case.name("main"),
     );
 
@@ -121,12 +121,11 @@ fn source_native_8192_aggregate_and_path_cells_are_inclusive() {
             .sum::<usize>(),
         8193
     );
-    denial(
-        &admit(&over_plan, Limits::DEFAULT).unwrap_err(),
-        "aggregate expanded cells",
-        8192,
-        over.name("main"),
-    );
+    // This exact source was formerly denied at X8193; I7472/W2 now fit.
+    let counts = plan::native_storage::NativeInventories::checked(&over_plan).unwrap();
+    assert_eq!((counts.items(), counts.owner_width()), (7472, 2));
+    let over_bounds = admit(&over_plan, Limits::DEFAULT).unwrap();
+    assert_eq!((over_bounds[0].cells, over_bounds[0].bytes), (8193, 59520));
 }
 
 #[test]
@@ -134,11 +133,12 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
     let case = source::checked(source::OWNER_CLASSES);
     let plan = ExecutionPlan::build(&case.witness).unwrap();
     source::assert_owner_classes(&plan);
-    // Physical views: aggregate X10+11+42=63 and native D8+16+56=80.
+    // Retained common X10+11+42=63; native I2+2+11=15 and W2+0+4=6.
+    // Physical bytes remain D8+16+56=80.
     // Read now maximizes path cells (42+11=53) and native bytes (56+16=72).
     let limits = Limits {
-        cells: 63,
-        live_cells: 53,
+        inventory_items: 15,
+        owner_width: 6,
         bytes: 80,
         live_bytes: 72,
         ..Limits::DEFAULT
@@ -156,21 +156,21 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
     for (lowered, name, maximum, origin) in [
         (
             Limits {
-                cells: 62,
+                inventory_items: 14,
                 ..limits
             },
-            "aggregate expanded cells",
-            62,
+            "aggregate compiler inventory items",
+            14,
             case.name("relay"),
         ),
         (
             Limits {
-                live_cells: 52,
+                owner_width: 5,
                 ..limits
             },
-            "live expanded cells",
-            52,
-            case.name("main"),
+            "aggregate owner width cells",
+            5,
+            case.name("relay"),
         ),
         (
             Limits {

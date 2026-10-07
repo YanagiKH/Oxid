@@ -1,25 +1,28 @@
-//! Shared admission analysis only: the production wrapper still selects X.
-//! No proposed-policy control calls LLVM emission or creates an executable.
+//! Production admission controls for the explicit inventory successor.
+//! Predecessor X denials are retained as historical data, not a hidden policy.
 use super::super::consumer_fixtures as fixtures;
 use super::*;
 use plan::native_storage::inventory_tests::{item_boundary, width_boundary};
 
-fn proposed(
+fn current(
     plan: &ExecutionPlan<'_>,
     limits: Limits,
     caps: (usize, usize),
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
-    admit_inventory_rule_accounted(
+    let limits = Limits {
+        inventory_items: limits.inventory_items.min(caps.0),
+        owner_width: limits.owner_width.min(caps.1),
+        ..limits
+    }
+    .bounded();
+    admit_policy_accounted(
         plan,
-        limits.bounded(),
+        limits,
         NativeEntryPolicy::Result,
         &mut Accounting::default(),
-        AdmissionInventoryRule::NativeInventories {
-            items: caps.0,
-            owner_width: caps.1,
-        },
     )
 }
+
 fn denied(result: Result<Vec<Bound>, Box<Diagnostic>>, name: &str, maximum: usize) {
     let error = result.err().unwrap();
     assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
@@ -77,13 +80,13 @@ fn native_inventory_shared_earlier_gates_precede_new_policy() {
         ),
     ] {
         // I/W zero would also fail; the retained earlier gate must win.
-        denied(proposed(&plan, limits, (0, 0)), name, maximum);
+        denied(current(&plan, limits, (0, 0)), name, maximum);
     }
     let (sources, raw, _) = fixtures::empty_record();
     let witness = verified::verify_owned(raw, &sources).unwrap();
     let plan = ExecutionPlan::build(&witness).unwrap();
     denied(
-        proposed(
+        current(
             &plan,
             Limits {
                 function_slots: 1,
@@ -101,13 +104,15 @@ fn native_inventory_shared_former_x_reaches_exact_byte_gates() {
     let (sources, raw) = width_boundary(false);
     let witness = verified::verify_owned(raw, &sources).unwrap();
     let plan = ExecutionPlan::build(&witness).unwrap();
-    denied(
-        admit(&plan, Limits::DEFAULT),
-        "aggregate expanded cells",
-        8192,
+    assert!(
+        plan.functions()
+            .iter()
+            .map(|f| f.usage().expanded_cells)
+            .sum::<usize>()
+            > 8192
     );
     let exact = 8 + 8192 * 4; // one scalar and eight 1024-i32 owners
-    proposed(
+    current(
         &plan,
         Limits {
             bytes: exact,
@@ -118,7 +123,7 @@ fn native_inventory_shared_former_x_reaches_exact_byte_gates() {
     )
     .unwrap();
     denied(
-        proposed(
+        current(
             &plan,
             Limits {
                 bytes: exact - 1,
@@ -130,7 +135,7 @@ fn native_inventory_shared_former_x_reaches_exact_byte_gates() {
         exact - 1,
     );
     denied(
-        proposed(
+        current(
             &plan,
             Limits {
                 live_bytes: exact - 1,
@@ -141,17 +146,30 @@ fn native_inventory_shared_former_x_reaches_exact_byte_gates() {
         "live storage bytes",
         exact - 1,
     );
-    // Only the explicit successor skips the former aggregate/live X gates.
-    proposed(
-        &plan,
-        Limits {
-            cells: 0,
-            live_cells: 0,
-            ..Limits::DEFAULT
-        },
-        (8192, 8192),
-    )
-    .unwrap();
+    denied(
+        current(
+            &plan,
+            Limits {
+                inventory_items: 8,
+                ..Limits::DEFAULT
+            },
+            (8192, 8192),
+        ),
+        "aggregate compiler inventory items",
+        8,
+    );
+    denied(
+        current(
+            &plan,
+            Limits {
+                owner_width: 8191,
+                ..Limits::DEFAULT
+            },
+            (8192, 8192),
+        ),
+        "aggregate owner width cells",
+        8191,
+    );
 }
 
 fn invoke_block(call: usize, target: usize, span: Span) -> OwnedBlock {
@@ -225,12 +243,14 @@ fn native_inventory_shared_former_x_keeps_unused_graph_depth_and_recursion() {
         let witness = verified::verify_owned(raw, &sources).unwrap();
         let plan = ExecutionPlan::build(&witness).unwrap();
         native_inventory_fits(&plan);
-        denied(
-            admit(&plan, Limits::DEFAULT),
-            "aggregate expanded cells",
-            8192,
+        assert!(
+            plan.functions()
+                .iter()
+                .map(|f| f.usage().expanded_cells)
+                .sum::<usize>()
+                > 8192
         );
-        let result = proposed(&plan, Limits::DEFAULT, (8192, 8192));
+        let result = current(&plan, Limits::DEFAULT, (8192, 8192));
         if recursive {
             let error = result.err().unwrap();
             assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
@@ -252,7 +272,7 @@ fn native_inventory_shared_former_x_keeps_default_static_cost_gate() {
     raw.functions.push(leaf(1, span));
     // An unused, acyclic doubling DAG has linear compiler inventory. Each
     // callee's bound is reused twice by the unchanged static-cost recurrence.
-    // C_0=3, C_n=11+2*C_(n-1); C_13=114677 exceeds100000 at depth14.
+    // C_0=3, C_n=11+2*C_(n-1); C_13=114677 exceeds 100000 at depth 14.
     for id in 2..15 {
         let mut f = fixtures::function(id, ValueTy::Scalar(hir::Ty::I32), span);
         f.locals = vec![fixtures::scalar(hir::Ty::I32, span); 2];
@@ -267,37 +287,35 @@ fn native_inventory_shared_former_x_keeps_default_static_cost_gate() {
     let witness = verified::verify_owned(raw, &sources).unwrap();
     let plan = ExecutionPlan::build(&witness).unwrap();
     native_inventory_fits(&plan);
-    denied(
-        admit(&plan, Limits::DEFAULT),
-        "aggregate expanded cells",
-        8192,
+    assert!(
+        plan.functions()
+            .iter()
+            .map(|f| f.usage().expanded_cells)
+            .sum::<usize>()
+            > 8192
     );
     denied(
-        proposed(&plan, Limits::DEFAULT, (8192, 8192)),
+        current(&plan, Limits::DEFAULT, (8192, 8192)),
         "reference fuel upper bound",
         100000,
     );
 }
 
 #[test]
-fn native_inventory_shared_mixed_endpoint_retains_bound_layout_and_legacy_wrapper() {
+fn native_inventory_shared_mixed_endpoint_retains_bound_layout_and_current_wrapper() {
     let (sources, raw) = item_boundary(false, true, false);
     let witness = verified::verify_owned(raw, &sources).unwrap();
     let plan = ExecutionPlan::build(&witness).unwrap();
-    let bounds = proposed(&plan, Limits::DEFAULT, (8192, 8192)).unwrap();
+    let bounds = current(&plan, Limits::DEFAULT, (8192, 8192)).unwrap();
     assert_eq!(bounds.len(), 32);
     for (f, bound) in witness.functions().iter().zip(&bounds) {
         assert_eq!(bound.cells, plan.function(f.id).usage().expanded_cells);
         assert_eq!(bound.bytes, 255 * 8 + 256 * 4);
         assert_eq!(bound.depth, 1);
     }
-    let error = native_module(&witness, Some(hir::DefId(0)), &sources)
-        .err()
-        .unwrap();
-    assert_eq!(
-        error.message,
-        "native owned aggregate expanded cells limit exceeded (8192)"
-    );
+    assert!(!native_module(&witness, Some(hir::DefId(0)), &sources)
+        .unwrap()
+        .is_empty());
     assert_eq!(size_of::<Limits>(), 112);
     assert_eq!(size_of::<Bound>(), 48);
     assert_eq!(size_of::<NativeControl>(), 136);
@@ -316,7 +334,6 @@ fn native_inventory_shared_fixed_roles_include_actual_caller() {
     type Caller<'p, 'w> = (
         Limits,
         NativeEntryPolicy,
-        AdmissionInventoryRule,
         &'p ExecutionPlan<'w>,
         &'p mut Accounting,
         &'w [RawOwnedFunction],
@@ -324,14 +341,13 @@ fn native_inventory_shared_fixed_roles_include_actual_caller() {
         Vec<Vec<usize>>,
         Vec<usize>,
         usize,
-        [usize; 4],
+        [usize; 3],
     );
     let caller = size_of::<Caller<'_, '_>>();
     println!(
-        "native inventory caller={caller} limits={} policy={} rule={} bound={} control={}",
+        "native inventory caller={caller} limits={} policy={} bound={} control={}",
         size_of::<Limits>(),
         size_of::<NativeEntryPolicy>(),
-        size_of::<AdmissionInventoryRule>(),
         size_of::<Bound>(),
         size_of::<NativeControl>()
     );

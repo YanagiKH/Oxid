@@ -1,6 +1,6 @@
-//! Phase 2 counting/policy controls only. Large fixtures are raw OIR, not
-//! source-admission claims. They traverse the ordinary raw proof and plan; the
-//! unchanged production consumer must reject them before counting/rendering IR.
+//! Current native inventory controls. Large fixtures are raw OIR, not source
+//! admission claims. Ordinary verification, policy, storage proof and emission
+//! remain mandatory; historical X refusals are documented as named successors.
 use super::super::super::{
     consumer_fixtures as fixtures, enum_consumer_fixtures as enums, native, reviewer_origins,
     source::resource_fixtures as source,
@@ -206,8 +206,8 @@ fn check_boundary(sources: SourceMap, raw: RawOwnedProgram, expected: [usize; 6]
         );
     }
 
-    // These controls intentionally exceed old X. No source, execution, or LLVM
-    // authority is obtained through the proposed policy helper.
+    // These exact raw controls were denied by the predecessor's coupled X.
+    // Current admission is intentionally broader when both independent guards fit.
     let old_x = expected[0]
         + expected[1]
         + width
@@ -222,17 +222,26 @@ fn check_boundary(sources: SourceMap, raw: RawOwnedProgram, expected: [usize; 6]
         &sources,
         native::NativeControl::default(),
     );
-    let error = observed.result.err().unwrap();
-    assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
-    assert_eq!(
-        error.message,
-        "native owned aggregate expanded cells limit exceeded (8192)"
-    );
-    assert_eq!(
-        (observed.metrics.count_bytes, observed.metrics.render_bytes),
-        (0, 0)
-    );
-    assert_eq!(observed.metrics.allocation_attempts, 0);
+    if items <= CAP && width <= CAP {
+        assert!(!observed.result.unwrap().is_empty());
+        assert!(observed.metrics.count_bytes > 0);
+        assert_eq!(observed.metrics.count_bytes, observed.metrics.render_bytes);
+    } else {
+        let error = observed.result.err().unwrap();
+        let name = if items > CAP {
+            "aggregate compiler inventory items"
+        } else {
+            "aggregate owner width cells"
+        };
+        assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+        assert_eq!(
+            error.message,
+            format!("native owned {name} limit exceeded (8192)")
+        );
+        assert_eq!(observed.metrics.count_bytes, 0);
+        assert_eq!(observed.metrics.render_bytes, 0);
+        assert_eq!(observed.metrics.allocation_attempts, 0);
+    }
 }
 
 #[test]

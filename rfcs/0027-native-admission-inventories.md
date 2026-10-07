@@ -1,6 +1,6 @@
 # RFC 0027: native byte admission and compiler inventories
 
-Status: **accepted contract; production rule remains closed**.
+Status: **accepted contract; production activation under qualification**.
 Updated 2026-10-07. This is an explicit admission successor to RFC 0026.
 
 ## Contract
