@@ -84,6 +84,13 @@ PARSER_ADDED_FILES = (
     "fixtures/typed-lexer-samples/parser_driver.ox",
     "fixtures/typed-lexer-samples/parser_output.ox",
 )
+STATIC_ROOTS = tuple("fixtures/typed-lexer-samples/" + name + ".ox" for name in (
+    "static_main resolver_main typed_main ast_consumer_probe ast_static_main").split())
+STATIC_ADDED_FILES = tuple("fixtures/typed-lexer-samples/" + name + ".ox" for name in (
+    "ast_block ast_consumer_probe ast_expression ast_input ast_output ast_statement "
+    "ast_static_main ast_validate resolver_driver resolver_main resolver_names resolver_output "
+    "static_column static_common static_main static_output static_probe static_state "
+    "typed_diagnostic typed_driver typed_expression typed_main typed_output typed_statement").split())
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -125,9 +132,27 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS,
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[:-5],
                          (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
                           LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[-5:], STATIC_ROOTS)
+        self.assertEqual([name for name in language if name in STATIC_ADDED_FILES], sorted(STATIC_ADDED_FILES))
+        self.assertEqual([row for row in check_inventory if row[0] in STATIC_ADDED_FILES],
+                         [(root, True) for root in STATIC_ROOTS])
+        self.assertFalse(any(row[0] in STATIC_ADDED_FILES for row in run_inventory))
+        self.assertTrue(all(root / name not in data_sources for name in STATIC_ADDED_FILES))
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (195, 142, 75, 74, 8))
+        # Remove only the exact 24 static additions and five check-only roots.
+        # The complete parser predecessor and every older fingerprint survive.
+        language = [name for name in language if name not in STATIC_ADDED_FILES]
+        check_inventory = [row for row in check_inventory if row[0] not in STATIC_ADDED_FILES]
+        typed_members -= len(STATIC_ADDED_FILES)
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (171, 137, 75, 50, 8))
+        self.assertEqual(fingerprint(language), "46eaccd1162463c996d4dbe2bc1ccff2fdbdb4d143980eb22de7d1222f34e8c9")
+        self.assertEqual(fingerprint(check_inventory), "3e09782ec358fcf00b56b31676adc6c8ec63c2a22842649610f2001418df3a36")
+        self.assertEqual(fingerprint(run_inventory), "4d05786c555a004ab645edb9daf8c8f811201cfdb60c9ed3e516d11aaec181f4")
         self.assertEqual([name for name in language if name in PARSER_ADDED_FILES], sorted(PARSER_ADDED_FILES))
         self.assertEqual([row for row in check_inventory if row[0] in PARSER_ADDED_FILES],
                          [(PARSER_MAIN_ENTRY, True)])
@@ -243,14 +268,14 @@ class PublishedRegistrationTests(unittest.TestCase):
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
         for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
-                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY):
+                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS:
             stdin_root = str(verify_repo.ROOT / relative)
             self.assertEqual([command for command in commands if stdin_root in command],
                              [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
         added_roots = {str(verify_repo.ROOT / name) for name in
                        (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
                         ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY,
-                        PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY)}
+                        PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS}
         predecessor_commands = [command for command in commands if not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
         self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
@@ -265,12 +290,12 @@ class PublishedRegistrationTests(unittest.TestCase):
                     self.assertFalse(any(str(verify_repo.ROOT / child) in command for command in commands))
         self.assertFalse(any("fixed_array_source_unit3" in arg
                              for call in run.call_args_list for arg in call.args[0]))
-        for relative in PARSER_ADDED_FILES[1:]:
+        for relative in PARSER_ADDED_FILES[1:] + tuple(name for name in STATIC_ADDED_FILES if name not in STATIC_ROOTS):
             self.assertFalse(any(str(verify_repo.ROOT / relative) in command for command in commands))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
-                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES)
+                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES)
         self.assertIn(f"{146 + len(additional_members)} language sources, "
                       f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS)} checks, 75 runnable programs", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
@@ -337,6 +362,12 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        static_files = {self.root / name for name in STATIC_ADDED_FILES}
+        self.assertEqual([row for row in checks if row[0] in static_files],
+                         [(self.root / root, True) for root in STATIC_ROOTS])
+        self.assertFalse(any(entry in static_files for entry in entries))
+        checks = [row for row in checks if row[0] not in static_files]
+        count -= len(STATIC_ADDED_FILES)
         parser_files = {self.root / name for name in PARSER_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in parser_files],
                          [(self.root / PARSER_MAIN_ENTRY, True)])

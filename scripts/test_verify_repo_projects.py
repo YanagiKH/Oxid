@@ -77,6 +77,15 @@ PARSER_ADDED_FILES = (
 )
 PARSER_MEMBERS = (PARSER_MAIN_ENTRY,) + PARSER_LEXER_SHARED_MEMBERS + PARSER_ADDED_FILES[1:]
 
+STATIC_ROOTS = tuple("fixtures/typed-lexer-samples/" + name + ".ox" for name in (
+    "static_main resolver_main typed_main ast_consumer_probe ast_static_main").split())
+STATIC_ADDED_FILES = tuple("fixtures/typed-lexer-samples/" + name + ".ox" for name in (
+    "ast_block ast_consumer_probe ast_expression ast_input ast_output ast_statement "
+    "ast_static_main ast_validate resolver_driver resolver_main resolver_names resolver_output "
+    "static_column static_common static_main static_output static_probe static_state "
+    "typed_diagnostic typed_driver typed_expression typed_main typed_output typed_statement").split())
+
+
 class ProjectRegistrationTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -90,8 +99,17 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]
         self.members = sorted(set(self.members))
 
+    def assert_static_addition(self, checks, entries, count):
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[-5:], STATIC_ROOTS)
+        added = {self.root / name for name in STATIC_ADDED_FILES}
+        self.assertEqual([row for row in checks if row[0] in added],
+                         [(self.root / root, True) for root in STATIC_ROOTS])
+        self.assertFalse(any(entry in added for entry in entries))
+        return [row for row in checks if row[0] not in added], entries, count - len(STATIC_ADDED_FILES)
+
     def assert_parser_addition(self, checks, entries, count):
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS,
+        checks, entries, count = self.assert_static_addition(checks, entries, count)
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[:-5],
                          (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
                           LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[PARSER_MAIN_ENTRY], PARSER_MEMBERS)
@@ -142,7 +160,8 @@ class ProjectRegistrationTests(unittest.TestCase):
         checks, entries, count = self.assert_artifact_addition(checks, entries, count)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_MEMBERS)
-        self.assertEqual(verify_repo.TYPED_PROJECT_SHARED_MEMBERS, {
+        self.assertEqual({pair: members for pair, members in verify_repo.TYPED_PROJECT_SHARED_MEMBERS.items()
+                          if not pair.intersection(STATIC_ROOTS)}, {
             frozenset((LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY)):
                 LEXER_SHARED_MEMBERS + (LEXER_CORE_ADDED_FILES[1],),
             frozenset((LEXER_MAIN_ENTRY, PARSER_ADMISSION_ENTRY)): PARSER_LEXER_SHARED_MEMBERS,
@@ -293,6 +312,59 @@ class ProjectRegistrationTests(unittest.TestCase):
             pending.extend(source.with_name(module + '.ox') for module in modules)
         self.assertEqual(declared, set(PARSER_MEMBERS))
         self.assertEqual(set(verify_repo.TYPED_PROJECTS[PARSER_MAIN_ENTRY]), declared)
+
+    def test_static_roots_match_exact_flat_closures_and_added_inventory(self):
+        historical = {member for root in (LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY,
+                                         PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY)
+                      for member in verify_repo.TYPED_PROJECTS[root]}
+        static_members = set()
+        for entry, size in zip(STATIC_ROOTS, (18, 20, 23, 21, 21), strict=True):
+            with self.subTest(entry=entry):
+                root = verify_repo.ROOT / entry
+                children = re.findall(r'\bmod\s+([A-Za-z_]\w*)\s*;', root.read_text())
+                declared = (entry,) + tuple(root.with_name(name + '.ox').relative_to(verify_repo.ROOT).as_posix()
+                                             for name in children)
+                self.assertEqual(len(declared), size)
+                self.assertEqual(len(set(declared)), size)
+                self.assertEqual(verify_repo.TYPED_PROJECTS[entry], declared)
+                for child in declared[1:]:
+                    self.assertNotRegex((verify_repo.ROOT / child).read_text(), r'\bmod\s+')
+                static_members.update(declared)
+        self.assertEqual(static_members - historical, set(STATIC_ADDED_FILES))
+        self.assertEqual(len(STATIC_ADDED_FILES), 24)
+        admitted = set(verify_repo.TYPED_PROJECTS[PARSER_MAIN_ENTRY]) | set(verify_repo.TYPED_PROJECTS[STATIC_ROOTS[-1]])
+        self.assertEqual(len(admitted), 30)
+
+    def test_static_shared_pairs_are_exact_and_required(self):
+        expected = {}
+        for entry in STATIC_ROOTS:
+            for other in verify_repo.TYPED_PROJECTS:
+                pair = frozenset((entry, other))
+                shared = set(verify_repo.TYPED_PROJECTS[entry]) & set(verify_repo.TYPED_PROJECTS[other])
+                if len(pair) == 2 and shared:
+                    expected[pair] = shared
+        registered = {pair: set(members) for pair, members in verify_repo.TYPED_PROJECT_SHARED_MEMBERS.items()
+                      if pair.intersection(STATIC_ROOTS)}
+        self.assertEqual(len(expected), 30)
+        self.assertEqual(registered, expected)
+        for pair in expected:
+            for changed in (None, ('fixtures/typed-lexer-samples/unregistered.ox',)):
+                inventory = dict(verify_repo.TYPED_PROJECT_SHARED_MEMBERS)
+                if changed is None:
+                    del inventory[pair]
+                else:
+                    inventory[pair] = changed
+                with self.subTest(pair=pair, changed=changed), \
+                        patch.object(verify_repo, 'TYPED_PROJECT_SHARED_MEMBERS', inventory):
+                    with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
+                        verify_repo.source_plan(self.members + self.data_sources, self.root)
+
+    def test_static_consumer_cannot_admit_a_parser_sibling(self):
+        inventory = dict(verify_repo.TYPED_PROJECTS)
+        inventory[STATIC_ROOTS[-1]] += ('fixtures/typed-lexer-samples/parser_output.ox',)
+        with patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
+            with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
+                verify_repo.source_plan(self.members + self.data_sources, self.root)
 
     def test_parser_cannot_import_synthetic_carrier_or_legacy_modules(self):
         for extra in LEXER_SHARED_MEMBERS + ('fixtures/typed-lexer-samples/lexer.ox',) + PARSER_ADMISSION_ADDED_FILES:
