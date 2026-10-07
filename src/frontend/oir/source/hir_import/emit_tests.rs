@@ -353,12 +353,11 @@ fn checked_hir_import_emit_synthetic_entry_and_recursion_match_native_errors() {
     );
 }
 
-#[test]
-fn checked_hir_import_emit_synthetic_arithmetic_is_inert_llvm_text() {
+fn arithmetic_frames() -> [(&'static str, [u8; super::SUCCESS_BYTES]); 2] {
     use super::run_execution_tests::hand_authored_frame;
 
-    // These same synthetic Run controls would fail at execution. Here the only
-    // result is owned LLVM text; neither an interpreter nor native code runs.
+    // Reuse these explicit synthetic controls for inert text checks and the
+    // separately ignored native gate; no compiler-derived wire fact generator.
     let overflow = "fn main()->i32{return 2147483647+1;}";
     let overflow_wire = hand_authored_frame(
         overflow,
@@ -372,12 +371,6 @@ fn checked_hir_import_emit_synthetic_arithmetic_is_inert_llvm_text() {
             ([15, 33, 34, 0, 13, 0, 0, 1], 1, 2),
         ],
     );
-    let overflow = original_text_parity(overflow, &overflow_wire);
-    assert!(overflow
-        .artifact
-        .text
-        .contains("@llvm.sadd.with.overflow.i32"));
-
     let division = "fn main()->i32{return 1/0;}";
     let division_wire = hand_authored_frame(
         division,
@@ -391,6 +384,17 @@ fn checked_hir_import_emit_synthetic_arithmetic_is_inert_llvm_text() {
             ([15, 24, 25, 0, 13, 0, 0, 1], 0, 2),
         ],
     );
+    [(overflow, overflow_wire), (division, division_wire)]
+}
+
+#[test]
+fn checked_hir_import_emit_synthetic_arithmetic_is_inert_llvm_text() {
+    let [(overflow, overflow_wire), (division, division_wire)] = arithmetic_frames();
+    let overflow = original_text_parity(overflow, &overflow_wire);
+    assert!(overflow
+        .artifact
+        .text
+        .contains("@llvm.sadd.with.overflow.i32"));
     let division = original_text_parity(division, &division_wire);
     assert!(division.artifact.text.contains("sdiv i32"));
 }
@@ -505,3 +509,6 @@ fn checked_hir_import_emit_synthetic_bool_and_unit_text_match_result_abi() {
     let unit_output = original_text_parity(unit, &unit_wire);
     assert!(unit_output.artifact.text.contains("define i32 @main"));
 }
+
+#[path = "emit_native_tests.rs"]
+mod native_tests;
