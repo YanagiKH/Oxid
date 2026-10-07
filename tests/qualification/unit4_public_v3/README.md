@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact 262-input stdout compiler manifest, the reviewed 263-input
+`authority.py` pins the exact 264-input native storage compiler manifest, the reviewed 265-input
 lifecycle overlay map and the current additive patch successor. Four exact
 enum-era substitutions preserve the logical collection, parser and owned-route
 hooks in the current execution bodies. The current `observer-stdin-v1.patch`
@@ -191,7 +191,7 @@ logical event. No frozen observer or contract is edited.
 
 The qualified-values descriptor and helper remain unchanged. Its semantic source
 authority is the exact retained 237-input `enum-source.json`; execution source
-is the 262-input `current-source.json`. The public amendment receipt records
+is the 264-input `current-source.json`. The public amendment receipt records
 both roles separately. Current executions cannot use the old compiler authority,
 and the frozen semantic amendment cannot be rebound to the new compiler. The
 final join independently validates both exact hashes and their roles.
@@ -202,3 +202,10 @@ The bounded-stdout successor binds checkpoint
 unchanged. Its predecessor reversals, logical hooks, selected LLVM runtime
 identity, semantic amendments and frozen public contracts remain unchanged.
 Stdout-specific public execution belongs to the separate bounded-stdout gate.
+
+The native storage successor binds checkpoint
+`983dad1f21bdc9d37cf0d1364b58aad219e553d0`, 264 current inputs and a
+265-member lifecycle view. Its six source changes do not overlap the lifecycle
+patch, so `observer-stdin-v1.patch` remains byte-identical. The retained stdout
+source authority and all older semantic, resource and lifecycle authorities keep
+their original checkpoint identities.

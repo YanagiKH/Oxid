@@ -62,3 +62,8 @@ current-source qualification and exact-head hosted CI remain separate pending
 gates. The [two-file scanner](../tests/fixtures/bounded_enum_scanner/main.ox)
 returns 115 from fixed integer-code input, without a compiler-provider or
 self-hosting claim.
+
+[RFC 0026](0026-owned-native-storage-plan.md) makes the existing owned LLVM
+allocation layout an explicit checked, witness-bound description. Phase 1
+preserves admission, representation, ABI and fuel; native-specific admission
+remains a separate proposal.

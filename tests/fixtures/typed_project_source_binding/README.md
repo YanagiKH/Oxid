@@ -1,30 +1,31 @@
-# Bounded stdout current-source successor
+# Native storage plan current-source successor
 
 The active `current-source.json` binds compiler checkpoint
-`63db2c290031d76b5925fdd672c38eac2ca50578`, full tree
-`f01525a95f2e4b3dfa69237108cfbc67a1f43eab`: 262 inputs, comprising all
-204 `src/` and `native/` members and 58 retained non-source inputs. Including
-Cargo/build inputs gives 207 compiler bodies. Its exact SHA-256 is
-`3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936`.
+`983dad1f21bdc9d37cf0d1364b58aad219e553d0`, full tree
+`4380d906e868ad992d97ffc652e657773f1c2947`: 264 inputs, comprising all
+206 `src/` and `native/` members and 58 retained non-source inputs. Including
+Cargo/build inputs gives 209 compiler bodies. Its exact SHA-256 is
+`0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303`.
 
-`stdin-source.json` preserves the complete previous 252-member manifest,
-48,300 bytes, SHA-256
-`bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f`.
-The new stdout authority and exact transition patch bind 53 changed paths:
-43 retained members and ten additions, with no removals. Admission verifies
+`stdout-source.json` preserves the previous 262-member manifest byte-for-byte:
+50,310 bytes, SHA-256
+`3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936`.
+The native storage authority and exact transition patch bind six paths:
+four changed members and two additions, with no removals. Admission verifies
 all current bytes and modes, complete compiler/build membership, literal
 checkpoint and tree, full Git blob identities and exact before/after rosters.
-The first inverse recovers every byte of the retained stdin input view before
-the unchanged stdin → enum → projected → unary → composition → slices →
+The first inverse recovers every byte of the retained stdout input view before
+the unchanged stdout → stdin → enum → projected → unary → composition → slices →
 division → combined → formatter → predecessor → archive chain runs.
 The final 117 archived members and every frozen oracle remain unchanged.
 
-`inputs` and `current` expose stdout; `stdin_inputs` and `stdin_source` expose
-its byte-identical historical predecessor. Current Unit2 executes the stdout
-compiler, preserving six observer controls, 3,603 semantic cases and 21 logical
-resource tests per profile. Existing enum semantic expectations remain bound
-to `enum-source.json`. Admission and archive preparation execute no compiler;
-they do not establish a semantic, native, or both-profile execution pass.
+`inputs` and `current` expose native storage; `stdout_inputs` and `stdout_source`
+expose its byte-identical historical predecessor. Current Unit2 executes the
+native storage compiler, preserving six observer controls, 3,603 semantic cases
+and 21 logical resource tests per profile. Existing enum semantic expectations
+remain bound to `enum-source.json`. This transition has no semantic or resource
+amendment. Admission and archive preparation execute no compiler; they do not
+establish a semantic, native, or both-profile execution pass.
 
 The following sections describe retained historical transitions.
 

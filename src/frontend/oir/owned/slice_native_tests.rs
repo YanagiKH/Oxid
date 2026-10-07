@@ -135,7 +135,11 @@ fn native_slices_length_sidecars_are_the_only_added_frame_storage() {
         observation.metrics.count_call_scratch_peak,
         observation.metrics.render_call_scratch_peak
     );
-    assert!(observation.metrics.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
+    assert!(
+        observation.metrics.render_call_scratch_peak
+            + plan::native_storage::FIXED_CARRIER_ALLOWANCE
+            <= EMITTER_TRANSIENT_BYTES
+    );
     assert!(native_module_limits(
         &slice.witness,
         Some(slice.entry),
@@ -180,7 +184,11 @@ fn native_slices_keep_sixty_four_source_parameters_with_bounded_flattening() {
         if count == 64 {
             let module = observation.result.unwrap();
             assert!(module.contains("ptr %arg63, i32 %arg63_length"));
-            assert!(observation.metrics.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
+            assert!(
+                observation.metrics.render_call_scratch_peak
+                    + plan::native_storage::FIXED_CARRIER_ALLOWANCE
+                    <= EMITTER_TRANSIENT_BYTES
+            );
             assert_eq!(
                 observation.metrics.count_call_scratch_peak,
                 observation.metrics.render_call_scratch_peak

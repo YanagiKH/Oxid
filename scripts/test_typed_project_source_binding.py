@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 262)
+        self.assertEqual(len(captured["inputs"]), 264)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,19 +107,134 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_native_storage_inverse_restores_complete_stdout_and_archive(self):
+        restored, touched = binding.inverse_native_storage_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["native-storage-transition.patch"])
+        self.assertEqual(restored, self.captured["stdout_inputs"])
+        binding.check_bytes(restored, self.captured["stdout_source"]["files"])
+        self.assertEqual(touched, list(binding.NATIVE_STORAGE_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.NATIVE_STORAGE_ADDITIONS)), (6, 262, 2))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.NATIVE_STORAGE_ADDITIONS))
+        self.assertEqual(len([name for name in self.captured["inputs"]
+                              if name.startswith(("src/", "native/"))]), 206)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], binding.NATIVE_STORAGE_HEAD)
+        self.assertEqual(self.captured["current"]["source_only_tree"], binding.NATIVE_STORAGE_TREE)
+        output = self.root / "native-storage-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["native_storage_inverse_touched"], list(binding.NATIVE_STORAGE_PATHS))
+        self.assertEqual(receipt["native_storage_inverse_patch_sha256"], binding.NATIVE_STORAGE_PATCH_SHA)
+        self.assertEqual(receipt["stdout_source_sha256"], binding.STDOUT_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_native_storage_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-stdout"
+        binding.materialize(source, self.captured["stdout_inputs"])
+        patch_path = self.package / "native-storage-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+
+    def test_native_storage_members_bound_before_any_inverse(self):
+        for name in binding.NATIVE_STORAGE_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.NATIVE_STORAGE_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+            source.chmod(0o644)
+        (self.repo / "src/extra.rs").write_bytes(b"")
+        with patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_native_storage_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "native-storage-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.STDOUT_HEAD), ("source_only_tree", binding.STDOUT_TREE),
+                           ("current_source_members", 262), ("compiler_source_members", 204),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("stdout_authority_sha256", "0" * 64),
+                           ("stdout_source_sha256", "0" * 64)):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale native storage authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_native_storage_predecessor_and_patch_tampering_reject(self):
+        for name, error in (("stdout-source.json", "unapproved stdout source manifest"),
+                            ("native-storage-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "native-storage-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_native_storage_inverse_context_wrong_stage_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["native-storage-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 6)
+        for name, section in zip(binding.NATIVE_STORAGE_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_native_storage_patch(inputs, original)
+        for stage in ("stdout_inputs", "stdin_inputs", "archived"):
+            with self.subTest(stage=stage), self.assertRaises(binding.BindingError):
+                binding.inverse_native_storage_patch(self.captured[stage], original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_stdout_patch(self.captured["inputs"], self.captured["package_bytes"]["stdout-transition.patch"])
+
+    def test_native_storage_inverse_scope_order_duplicates_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["native-storage-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.NATIVE_STORAGE_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.NATIVE_STORAGE_PATHS)
+
     def test_stdout_inverse_restores_exact_stdin_predecessor_and_complete_chain(self):
         restored, touched = binding.inverse_stdout_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["stdout-transition.patch"])
+            self.captured["stdout_inputs"], self.captured["package_bytes"]["stdout-transition.patch"])
         self.assertEqual(restored, self.captured["stdin_inputs"])
         binding.check_bytes(restored, self.captured["stdin_source"]["files"])
         self.assertEqual(touched, list(binding.STDOUT_PATHS))
         self.assertEqual((len(touched), len(restored), len(binding.STDOUT_ADDITIONS)), (53, 252, 10))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.STDOUT_ADDITIONS))
-        compiler_paths = [name for name in self.captured["inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(set(self.captured["stdout_inputs"]) - set(restored), set(binding.STDOUT_ADDITIONS))
+        compiler_paths = [name for name in self.captured["stdout_inputs"] if name.startswith(("src/", "native/"))]
         self.assertEqual(len(compiler_paths), 204)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(self.captured["stdout_source"]["reviewed_source_head"],
                          "63db2c290031d76b5925fdd672c38eac2ca50578")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["stdout_source"]["source_only_tree"],
                          "f01525a95f2e4b3dfa69237108cfbc67a1f43eab")
         self.assertEqual(binding.digest(self.captured["package_bytes"]["stdin-source.json"]),
                          "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f")
@@ -140,7 +255,7 @@ class SourceBindingTests(unittest.TestCase):
                                      'apply', *extra, str(patch_path)], cwd=source,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        binding.check_entries(source, self.captured["stdout_source"]["files"], exact=True)
 
     def test_stdout_members_required_byte_and_mode_bound_before_inverse(self):
         for name in binding.STDOUT_PATHS:
@@ -201,7 +316,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(sections), 53)
         for name, section in zip(binding.STDOUT_PATHS, sections):
             with self.subTest(name=name):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["stdout_inputs"])
                 hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[name].splitlines(keepends=True)
@@ -219,7 +334,7 @@ class SourceBindingTests(unittest.TestCase):
         for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
                         original + sections[0], original + unknown, original + b"unexpected tail\n"):
             with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["stdout_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.STDOUT_PATHS)
 
     def test_stdin_inverse_restores_exact_enum_predecessor_and_complete_chain(self):
@@ -2085,7 +2200,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (262, 185, 185, 133, 129, 117))
+                         (264, 185, 185, 133, 129, 117))
         self.assertEqual(plan["stdin_source_members"], 252)
         self.assertEqual(plan["enum_source_members"], 237)
         self.assertEqual(prepared["stdout_authority_sha256"], binding.STDOUT_AUTHORITY_SHA)

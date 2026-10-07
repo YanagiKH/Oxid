@@ -856,9 +856,9 @@
       "sha256": "994b271b1e828e77344e717dc3d8ac41dd27f4c9e3feb4e84725c55c0ec6f511"
     },
     {
-      "bytes": 139813,
+      "bytes": 139687,
       "path": "src/frontend/oir/owned/native.rs",
-      "sha256": "23758bac1ec3c8d6826af0936e7325489cea24ee7fbe5c7eecb3481421ee5309"
+      "sha256": "dd33be3f6b3a04959c8c1f10a6816fb0126992b8ae52d34d776d56e7fa1474b7"
     },
     {
       "bytes": 25498,
@@ -866,9 +866,19 @@
       "sha256": "e8534ff9ac0ff275970de0bc0b8bfc59605a395bba7f96bd093c5b91e22fc4b2"
     },
     {
-      "bytes": 85335,
+      "bytes": 14980,
+      "path": "src/frontend/oir/owned/native_storage.rs",
+      "sha256": "04848c1ca1e7484dff9e07db8d0f7b3714eeaa976ca57ee6abf9271ad6d6d9ba"
+    },
+    {
+      "bytes": 17001,
+      "path": "src/frontend/oir/owned/native_storage_tests.rs",
+      "sha256": "12c3e0d6202a46f3c58b9462c781e80a484118f34ddee8075e38d5bebfa6afc1"
+    },
+    {
+      "bytes": 85392,
       "path": "src/frontend/oir/owned/native_tests.rs",
-      "sha256": "c71aeb864875661ce74aebfd15b008b074dd160a3cc445776c69eca81de5500a"
+      "sha256": "968b4ad46ae4ae02719aa04354c6b4b5f8df12fcd4507e2ebd26330ed28daece"
     },
     {
       "bytes": 13503,
@@ -891,9 +901,9 @@
       "sha256": "23da6c55e1d22e4eb8c4d3d596aae1280e291301ec37fb412c44eb1fe921f720"
     },
     {
-      "bytes": 21610,
+      "bytes": 21672,
       "path": "src/frontend/oir/owned/plan.rs",
-      "sha256": "abe3a1307ad73711e2b41d5090503fcabaa97de22cd11d8be8757fae644cc15d"
+      "sha256": "1885bc3bfaff7e7de8c7b74084b2bf44f3e6d0609b71c62dab16560c7275f093"
     },
     {
       "bytes": 2896,
@@ -941,9 +951,9 @@
       "sha256": "d6c6ffa2e1c35d5f726ce98fb8e00a83dde0e7a8d52bd0ab4090aa32c294e214"
     },
     {
-      "bytes": 12584,
+      "bytes": 12790,
       "path": "src/frontend/oir/owned/slice_native_tests.rs",
-      "sha256": "6734a3ba8199833fc921244fb7a2bbe7ea666b3c47699fe42a22f866a9da2784"
+      "sha256": "0fadb3ee8154810ab825b2993e35db3489bc30da6fd65d71be374b8e671a81ce"
     },
     {
       "bytes": 18087,
@@ -2156,7 +2166,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "799f75d76dea41a34d1bc7a2fb5b38a64a418fb46058ba7d5707e82894cb42fa",
+  "current_candidate_source_manifest_sha256": "955db3e76e49bb2ac527836267481fc4b43dac9b81a551ea39481e6171ccf523",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2254,9 +2264,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 74211,
+      "bytes": 74569,
       "path": "candidate-source-manifest.json",
-      "sha256": "799f75d76dea41a34d1bc7a2fb5b38a64a418fb46058ba7d5707e82894cb42fa"
+      "sha256": "955db3e76e49bb2ac527836267481fc4b43dac9b81a551ea39481e6171ccf523"
     },
     {
       "bytes": 1583,
@@ -2994,9 +3004,9 @@
       "sha256": "994b271b1e828e77344e717dc3d8ac41dd27f4c9e3feb4e84725c55c0ec6f511"
     },
     {
-      "bytes": 139813,
+      "bytes": 139687,
       "path": "src/frontend/oir/owned/native.rs",
-      "sha256": "23758bac1ec3c8d6826af0936e7325489cea24ee7fbe5c7eecb3481421ee5309"
+      "sha256": "dd33be3f6b3a04959c8c1f10a6816fb0126992b8ae52d34d776d56e7fa1474b7"
     },
     {
       "bytes": 25498,
@@ -3004,9 +3014,19 @@
       "sha256": "e8534ff9ac0ff275970de0bc0b8bfc59605a395bba7f96bd093c5b91e22fc4b2"
     },
     {
-      "bytes": 85335,
+      "bytes": 14980,
+      "path": "src/frontend/oir/owned/native_storage.rs",
+      "sha256": "04848c1ca1e7484dff9e07db8d0f7b3714eeaa976ca57ee6abf9271ad6d6d9ba"
+    },
+    {
+      "bytes": 17001,
+      "path": "src/frontend/oir/owned/native_storage_tests.rs",
+      "sha256": "12c3e0d6202a46f3c58b9462c781e80a484118f34ddee8075e38d5bebfa6afc1"
+    },
+    {
+      "bytes": 85392,
       "path": "src/frontend/oir/owned/native_tests.rs",
-      "sha256": "c71aeb864875661ce74aebfd15b008b074dd160a3cc445776c69eca81de5500a"
+      "sha256": "968b4ad46ae4ae02719aa04354c6b4b5f8df12fcd4507e2ebd26330ed28daece"
     },
     {
       "bytes": 13503,
@@ -3029,9 +3049,9 @@
       "sha256": "23da6c55e1d22e4eb8c4d3d596aae1280e291301ec37fb412c44eb1fe921f720"
     },
     {
-      "bytes": 21610,
+      "bytes": 21672,
       "path": "src/frontend/oir/owned/plan.rs",
-      "sha256": "abe3a1307ad73711e2b41d5090503fcabaa97de22cd11d8be8757fae644cc15d"
+      "sha256": "1885bc3bfaff7e7de8c7b74084b2bf44f3e6d0609b71c62dab16560c7275f093"
     },
     {
       "bytes": 2896,
@@ -3079,9 +3099,9 @@
       "sha256": "d6c6ffa2e1c35d5f726ce98fb8e00a83dde0e7a8d52bd0ab4090aa32c294e214"
     },
     {
-      "bytes": 12584,
+      "bytes": 12790,
       "path": "src/frontend/oir/owned/slice_native_tests.rs",
-      "sha256": "6734a3ba8199833fc921244fb7a2bbe7ea666b3c47699fe42a22f866a9da2784"
+      "sha256": "0fadb3ee8154810ab825b2993e35db3489bc30da6fd65d71be374b8e671a81ce"
     },
     {
       "bytes": 18087,
@@ -4396,9 +4416,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 74211,
+      "bytes": 74569,
       "path": "candidate-source-manifest.json",
-      "sha256": "799f75d76dea41a34d1bc7a2fb5b38a64a418fb46058ba7d5707e82894cb42fa"
+      "sha256": "955db3e76e49bb2ac527836267481fc4b43dac9b81a551ea39481e6171ccf523"
     },
     {
       "bytes": 1583,
@@ -5136,9 +5156,9 @@
       "sha256": "994b271b1e828e77344e717dc3d8ac41dd27f4c9e3feb4e84725c55c0ec6f511"
     },
     {
-      "bytes": 139813,
+      "bytes": 139687,
       "path": "src/frontend/oir/owned/native.rs",
-      "sha256": "23758bac1ec3c8d6826af0936e7325489cea24ee7fbe5c7eecb3481421ee5309"
+      "sha256": "dd33be3f6b3a04959c8c1f10a6816fb0126992b8ae52d34d776d56e7fa1474b7"
     },
     {
       "bytes": 25498,
@@ -5146,9 +5166,19 @@
       "sha256": "e8534ff9ac0ff275970de0bc0b8bfc59605a395bba7f96bd093c5b91e22fc4b2"
     },
     {
-      "bytes": 85335,
+      "bytes": 14980,
+      "path": "src/frontend/oir/owned/native_storage.rs",
+      "sha256": "04848c1ca1e7484dff9e07db8d0f7b3714eeaa976ca57ee6abf9271ad6d6d9ba"
+    },
+    {
+      "bytes": 17001,
+      "path": "src/frontend/oir/owned/native_storage_tests.rs",
+      "sha256": "12c3e0d6202a46f3c58b9462c781e80a484118f34ddee8075e38d5bebfa6afc1"
+    },
+    {
+      "bytes": 85392,
       "path": "src/frontend/oir/owned/native_tests.rs",
-      "sha256": "c71aeb864875661ce74aebfd15b008b074dd160a3cc445776c69eca81de5500a"
+      "sha256": "968b4ad46ae4ae02719aa04354c6b4b5f8df12fcd4507e2ebd26330ed28daece"
     },
     {
       "bytes": 13503,
@@ -5171,9 +5201,9 @@
       "sha256": "23da6c55e1d22e4eb8c4d3d596aae1280e291301ec37fb412c44eb1fe921f720"
     },
     {
-      "bytes": 21610,
+      "bytes": 21672,
       "path": "src/frontend/oir/owned/plan.rs",
-      "sha256": "abe3a1307ad73711e2b41d5090503fcabaa97de22cd11d8be8757fae644cc15d"
+      "sha256": "1885bc3bfaff7e7de8c7b74084b2bf44f3e6d0609b71c62dab16560c7275f093"
     },
     {
       "bytes": 2896,
@@ -5221,9 +5251,9 @@
       "sha256": "d6c6ffa2e1c35d5f726ce98fb8e00a83dde0e7a8d52bd0ab4090aa32c294e214"
     },
     {
-      "bytes": 12584,
+      "bytes": 12790,
       "path": "src/frontend/oir/owned/slice_native_tests.rs",
-      "sha256": "6734a3ba8199833fc921244fb7a2bbe7ea666b3c47699fe42a22f866a9da2784"
+      "sha256": "0fadb3ee8154810ab825b2993e35db3489bc30da6fd65d71be374b8e671a81ce"
     },
     {
       "bytes": 18087,
@@ -6442,9 +6472,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 50310,
+    "bytes": 50842,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936"
+    "sha256": "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -6546,6 +6576,16 @@
     "path": "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py",
     "sha256": "cbbd81c6461dc26498fa1551efacb23b219d0fed78048e4ead5929154b823eed"
   },
+  "native_storage_authority": {
+    "bytes": 102974,
+    "path": "tests/fixtures/typed_project_source_binding/native-storage-authority.json",
+    "sha256": "1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da"
+  },
+  "native_storage_transition_patch": {
+    "bytes": 53819,
+    "path": "tests/fixtures/typed_project_source_binding/native-storage-transition.patch",
+    "sha256": "9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c"
+  },
   "observer_initializer_adapter": {
     "derived": {
       "bytes": 20052,
@@ -6583,7 +6623,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "63db2c290031d76b5925fdd672c38eac2ca50578",
+  "reviewed_source_head": "983dad1f21bdc9d37cf0d1364b58aad219e553d0",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -6596,9 +6636,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 152263,
+    "bytes": 159625,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "946d1fd7b5fda02d9a052dd5010140965afb01d12c4d8a692a4783cae731a049"
+    "sha256": "0cde409cce83a6c1f5d3fa576239c0662aec15a67571d442fdea00f3e4378db1"
   },
   "source_delta": [
     {
@@ -7381,9 +7421,9 @@
     },
     {
       "after": {
-        "bytes": 139813,
+        "bytes": 139687,
         "path": "src/frontend/oir/owned/native.rs",
-        "sha256": "23758bac1ec3c8d6826af0936e7325489cea24ee7fbe5c7eecb3481421ee5309"
+        "sha256": "dd33be3f6b3a04959c8c1f10a6816fb0126992b8ae52d34d776d56e7fa1474b7"
       },
       "before": {
         "bytes": 43267,
@@ -7407,9 +7447,27 @@
     },
     {
       "after": {
-        "bytes": 85335,
+        "bytes": 14980,
+        "path": "src/frontend/oir/owned/native_storage.rs",
+        "sha256": "04848c1ca1e7484dff9e07db8d0f7b3714eeaa976ca57ee6abf9271ad6d6d9ba"
+      },
+      "before": null,
+      "path": "src/frontend/oir/owned/native_storage.rs"
+    },
+    {
+      "after": {
+        "bytes": 17001,
+        "path": "src/frontend/oir/owned/native_storage_tests.rs",
+        "sha256": "12c3e0d6202a46f3c58b9462c781e80a484118f34ddee8075e38d5bebfa6afc1"
+      },
+      "before": null,
+      "path": "src/frontend/oir/owned/native_storage_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 85392,
         "path": "src/frontend/oir/owned/native_tests.rs",
-        "sha256": "c71aeb864875661ce74aebfd15b008b074dd160a3cc445776c69eca81de5500a"
+        "sha256": "968b4ad46ae4ae02719aa04354c6b4b5f8df12fcd4507e2ebd26330ed28daece"
       },
       "before": {
         "bytes": 84109,
@@ -7464,9 +7522,9 @@
     },
     {
       "after": {
-        "bytes": 21610,
+        "bytes": 21672,
         "path": "src/frontend/oir/owned/plan.rs",
-        "sha256": "abe3a1307ad73711e2b41d5090503fcabaa97de22cd11d8be8757fae644cc15d"
+        "sha256": "1885bc3bfaff7e7de8c7b74084b2bf44f3e6d0609b71c62dab16560c7275f093"
       },
       "before": {
         "bytes": 16156,
@@ -7578,9 +7636,9 @@
     },
     {
       "after": {
-        "bytes": 12584,
+        "bytes": 12790,
         "path": "src/frontend/oir/owned/slice_native_tests.rs",
-        "sha256": "6734a3ba8199833fc921244fb7a2bbe7ea666b3c47699fe42a22f866a9da2784"
+        "sha256": "0fadb3ee8154810ab825b2993e35db3489bc30da6fd65d71be374b8e671a81ce"
       },
       "before": null,
       "path": "src/frontend/oir/owned/slice_native_tests.rs"
@@ -8894,7 +8952,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "f01525a95f2e4b3dfa69237108cfbc67a1f43eab",
+  "source_only_tree": "4380d906e868ad992d97ffc652e657773f1c2947",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",
@@ -8914,6 +8972,11 @@
     "bytes": 132738,
     "path": "tests/fixtures/typed_project_source_binding/stdout-authority.json",
     "sha256": "3015dfb1237578b4903b5a865f3ae7daf7819485c3399c2bfd589b8749d4066e"
+  },
+  "stdout_source_manifest": {
+    "bytes": 50310,
+    "path": "tests/fixtures/typed_project_source_binding/stdout-source.json",
+    "sha256": "3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936"
   },
   "stdout_transition_patch": {
     "bytes": 527951,
