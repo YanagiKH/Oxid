@@ -182,9 +182,8 @@ fn return_block(local: usize, span: Span) -> OwnedBlock {
         ),
     }
 }
-fn call_decl(id: usize, target: usize, local: usize, span: Span) -> CallDecl {
+fn call_decl(target: usize, local: usize, span: Span) -> CallDecl {
     CallDecl {
-        id: CallSiteId(id),
         target: hir::DefId(target),
         parent: None,
         arguments: vec![],
@@ -203,7 +202,7 @@ fn leaf(id: usize, span: Span) -> RawOwnedFunction {
 fn single_call(id: usize, target: usize, span: Span) -> RawOwnedFunction {
     let mut f = fixtures::function(id, ValueTy::Scalar(hir::Ty::I32), span);
     f.locals.push(fixtures::scalar(hir::Ty::I32, span));
-    f.calls.push(call_decl(0, target, 0, span));
+    f.calls.push(call_decl(target, 0, span));
     f.blocks
         .extend([invoke_block(0, 1, span), return_block(0, span)]);
     f
@@ -257,7 +256,7 @@ fn native_inventory_shared_former_x_keeps_default_static_cost_gate() {
     for id in 2..15 {
         let mut f = fixtures::function(id, ValueTy::Scalar(hir::Ty::I32), span);
         f.locals = vec![fixtures::scalar(hir::Ty::I32, span); 2];
-        f.calls = vec![call_decl(0, id - 1, 0, span), call_decl(1, id - 1, 1, span)];
+        f.calls = vec![call_decl(id - 1, 0, span), call_decl(id - 1, 1, span)];
         f.blocks = vec![
             invoke_block(0, 1, span),
             invoke_block(1, 2, span),
