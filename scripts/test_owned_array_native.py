@@ -599,7 +599,10 @@ class ProcessTests(unittest.TestCase):
         self.assertTrue(row["cleanup"]["stopped"])
 
     def descendant_script(self, exit_code):
-        writer = ("import pathlib,time; p=pathlib.Path('ready'); p.write_text('ready'); "
+        # Readiness certifies completed I/O, so cleanup may run immediately after
+        # observing it without racing the first artifact creation.
+        writer = ("import pathlib,time; pathlib.Path('artifact-marker').write_text('x'); "
+                  "print('writing',flush=True); pathlib.Path('ready').write_text('ready'); "
                   "exec(\"while True:\\n print('writing',flush=True); open('artifact-marker','a').write('x'); time.sleep(.01)\")")
         return ("import pathlib,subprocess,sys,time; "
                 "subprocess.Popen([sys.executable,'-c'," + repr(writer) + "]); "
@@ -637,6 +640,8 @@ class ProcessTests(unittest.TestCase):
             deadline = time.monotonic() + 3
             while not (self.root / "ready").exists() and time.monotonic() < deadline:
                 time.sleep(.005)
+            if not (self.root / "ready").exists():
+                raise RuntimeError("descendant readiness deadline exceeded")
             raise RuntimeError("synthetic exception")
         with self.assertRaises(admission.ChildFailure):
             self.run_python(self.descendant_script(0), _after_launch=injected)
