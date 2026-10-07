@@ -5,7 +5,7 @@ use super::*;
 use crate::frontend::ast;
 pub(in crate::frontend::oir) mod association;
 mod sealed;
-// Deliberately disconnected: every request terminates in denial.
+// Private importer leaves are disconnected from every default source route.
 #[allow(dead_code)]
 mod hir_import;
 pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;

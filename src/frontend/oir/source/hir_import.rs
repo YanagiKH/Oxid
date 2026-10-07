@@ -411,3 +411,6 @@ mod verify_fact_tests;
 
 #[cfg(test)]
 mod verify_diagnostic_tests;
+
+#[cfg(test)]
+mod run_measurements;
