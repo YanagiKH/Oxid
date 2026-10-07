@@ -586,6 +586,7 @@ fn construct(
     let equal = same_program(&candidate, canonical);
     // Session owns a canonical borrow and allocator borrow. Release both before
     // the owning input is moved, and before canonical HIR can be dropped.
+    #[allow(clippy::drop_non_drop)] // Explicitly end the admitted borrow phase.
     drop(session);
     let charged_work = builder_work
         .checked_add(allocation.helper_work)
