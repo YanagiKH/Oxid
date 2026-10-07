@@ -51,6 +51,9 @@ fn check_trace(allocator: &Allocator, count: usize) {
             (kind(name), slots, width)
         );
     }
+    assert!(allocator.trace[..count.saturating_sub(1)]
+        .iter()
+        .all(|event| event.success));
     assert!(!allocator.observer_trace_overflow);
 }
 
@@ -79,6 +82,7 @@ fn checked_hir_import_candidate_actual_logical_failure_prefix_cleanup() {
     let mut prefix = 0isize;
     for (index, &(_, slots, width, _)) in REQUESTS.iter().enumerate() {
         let mut selected = allocator();
+        let trace_capacity = selected.trace.capacity();
         selected.fail_at = Some(index + 1);
         assert!(matches!(
             compare_fixture(RICH.0, RICH.1, &mut selected, IndexLimits::default()),
@@ -87,6 +91,7 @@ fn checked_hir_import_candidate_actual_logical_failure_prefix_cleanup() {
         // Logical failure increments Allocator.attempts but never calls GlobalAlloc.
         assert_eq!(observation(), (index, index, 0, prefix));
         check_trace(&selected, index + 1);
+        assert_eq!(selected.trace.capacity(), trace_capacity);
         assert!(!selected.trace[index].success);
         prefix += (slots * width) as isize;
     }
@@ -98,6 +103,7 @@ fn checked_hir_import_candidate_actual_null_failure_prefix_cleanup() {
     let mut prefix = 0isize;
     for (index, &(name, slots, width, align)) in REQUESTS.iter().enumerate() {
         let mut selected = allocator();
+        let trace_capacity = selected.trace.capacity();
         let target = Target {
             attempt: index + 1,
             kind: kind(name),
@@ -122,6 +128,7 @@ fn checked_hir_import_candidate_actual_null_failure_prefix_cleanup() {
         assert_eq!(actual.new_size, None);
         assert_eq!(observation(), (index + 1, index, 0, prefix));
         check_trace(&selected, index + 1);
+        assert_eq!(selected.trace.capacity(), trace_capacity);
         assert!(!selected.trace[index].success);
         prefix += (slots * width) as isize;
     }
@@ -181,4 +188,37 @@ fn checked_hir_import_candidate_observer_nesting_unwind_and_thread_isolation() {
         size_of::<std::cell::Cell<Option<(usize, usize, isize, isize)>>>(),
         size_of::<Option<Result<ComparisonFacts, Failure>>>()
     );
+}
+
+#[test]
+fn checked_hir_import_candidate_null_target_preserves_preused_allocator_history() {
+    let mut selected = allocator();
+    let trace_capacity = selected.trace.capacity();
+    compare_fixture(RICH.0, RICH.1, &mut selected, IndexLimits::default()).unwrap();
+    assert_eq!(observation(), (16, 16, 0, 2241));
+    let target = Target {
+        attempt: 17,
+        kind: kind("signatures"),
+        slots: 2,
+        element_bytes: 56,
+        layout: Layout::from_size_align(112, 8).unwrap(),
+    };
+    let (result, report) = real_null_observer::with_selected(&mut selected, target, |selected| {
+        compare_fixture(RICH.0, RICH.1, selected, IndexLimits::default())
+    })
+    .unwrap();
+    assert!(matches!(
+        result,
+        Err(leaf::Rejected::Candidate(Failure::Allocation))
+    ));
+    assert!(report.selected && report.matched && report.fired);
+    assert_eq!(report.target.attempt, 17);
+    assert_eq!(report.rejection, None);
+    assert_eq!(observation(), (1, 0, 0, 0));
+    assert_eq!(selected.attempts, 17);
+    assert_eq!(selected.trace.len(), 17);
+    assert!(selected.trace[..16].iter().all(|event| event.success));
+    assert!(!selected.trace[16].success);
+    assert_eq!(selected.trace.capacity(), trace_capacity);
+    assert!(!selected.observer_trace_overflow);
 }
