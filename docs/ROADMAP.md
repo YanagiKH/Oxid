@@ -62,16 +62,15 @@ reference/native execution are separate checks. It does not switch production
 providers or extend the contract to Unicode; the next consumer can use this token
 interface for a real typed-preview parser.
 
-The unchanged partial typed parser at `8f1fe20` now compiles through normal native
-CLI gates under the accepted [native admission inventories](../rfcs/0027-native-admission-inventories.md).
-Its 54 reference/native corpus cases match, with 41 separate malformed
-strict-decoder controls. The successor intentionally broadens admission while
-retaining 1 MiB aggregate/live explicit
-bytes, other caps, storage and logical fuel; it is not an allocation optimization.
-[Local evidence](../rfcs/0027-native-admission-inventories.md#local-evidence-and-remaining-gates)
-does not complete the full grammar, capability qualification or exact-head
-hosted CI. Parser expansion remains behind that qualification gate; compiler
-provider dispatch and self-hosting are still separate work.
+The [bounded scalar typed-preview parser](../fixtures/typed-parser-samples/README.md)
+now consumes that token interface in Oxid. It implements scalar functions,
+expressions, calls, bindings and control flow for at most 128 ASCII source bytes,
+with exact AST/spans and first diagnostics compared against the unchanged Rust
+parser. Its fixed reference/native roster has 139 inputs and zero pending grammar
+families. Native admission uses the separately qualified inventory contract;
+physical storage and language fuel are unchanged. Hosted qualification, provider
+selection, source provenance and broader grammar remain distinct gates. This is
+a reusable frontend component, not a compiler self-rebuild claim.
 
 ## Native AI work
 

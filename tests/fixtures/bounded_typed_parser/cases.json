@@ -1,0 +1,955 @@
+{
+  "schema_version": 1,
+  "scope": "128 ASCII bytes; full canonical AST or first diagnostic; authored grammar-site refusals are separate",
+  "cases": [
+    {
+      "name": "empty",
+      "input_hex": "",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "trivia128",
+      "input_hex": "2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "function",
+      "input_hex": "666e206128292d3e28297b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "full_initial_stage",
+      "input_hex": "70756220666e206128783a6933322c793a2829292d3e6933327b72657475726e202d3030373b627265616b3b636f6e74696e75653b783b747275653b66616c73653b28293b72657475726e3b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "multiple_functions",
+      "input_hex": "666e206128292d3e28297b72657475726e2030303b7d666e206228783a776174292d3e7761747b72657475726e20783b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "max_decimal",
+      "input_hex": "666e206628292d3e28297b72657475726e203939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "trivia_spans",
+      "input_hex": "2f2a686561642a2f207075620d0a666e2066202878203a207761742c20793a28202f2a782a2f202929202d3e20282029207b2072657475726e202d202f2a612a2f20303037203b2028202f2a622a2f20293b207d202f2f656e64",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "nul",
+      "input_hex": "00",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "top_bool",
+      "input_hex": "74727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_name",
+      "input_hex": "666e2028",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_open",
+      "input_hex": "666e20662074727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_param_name",
+      "input_hex": "666e2066283a",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_param_colon",
+      "input_hex": "666e2066286129",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_param_type",
+      "input_hex": "666e206628613a29",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "type_unit_close",
+      "input_hex": "666e206628613a2874727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_close",
+      "input_hex": "666e206628613a6933322074727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_arrow",
+      "input_hex": "666e206628292074727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_result",
+      "input_hex": "666e206628292d3e74727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_body",
+      "input_hex": "666e206628292d3e28292074727565",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "block_eof",
+      "input_hex": "666e206628292d3e28297b",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_semi",
+      "input_hex": "666e206628292d3e28297b72657475726e20317d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_semi_crlf",
+      "input_hex": "666e206628292d3e28297b0d0a72657475726e20310d0a7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "primary_eof",
+      "input_hex": "666e206628292d3e28297b72657475726e",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "invalid_primary",
+      "input_hex": "666e206628292d3e28297b403b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "unsupported",
+      "input_hex": "666f72",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "unsupported_at_name",
+      "input_hex": "666e2031",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "unsupported_primary",
+      "input_hex": "666e206628292d3e28297b226f6b223b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "bad_number",
+      "input_hex": "666e206628292d3e28297b2d203031783b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "bad_number_float",
+      "input_hex": "666e206628292d3e28297b312e303b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "post_number_array",
+      "input_hex": "666e206628292d3e28297b315b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "post_unit_dot",
+      "input_hex": "666e206628292d3e28297b28292e3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "break_value",
+      "input_hex": "666e206628292d3e28297b627265616b20313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "continue_bad",
+      "input_hex": "666e206628292d3e28297b636f6e74696e756520666f723b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "lex_string",
+      "input_hex": "6261640d0a22",
+      "role": "comparison",
+      "parser_status": "lexical_diagnostic"
+    },
+    {
+      "name": "lex_comment",
+      "input_hex": "6261640d0a2f2a",
+      "role": "comparison",
+      "parser_status": "lexical_diagnostic"
+    },
+    {
+      "name": "pending_group",
+      "input_hex": "666e206628292d3e28297b2831293b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "pending_negate",
+      "input_hex": "666e206628292d3e28297b2d783b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "pending_not",
+      "input_hex": "666e206628292d3e28297b21747275653b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "pending_binary",
+      "input_hex": "666e206628292d3e28297b312b323b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "all_operator_spellings",
+      "input_hex": "666e206628292d3e28297b612b623b612d623b612a623b612f623b6125623b613d3d623b61213d623b613c623b613c3d623b613e623b613e3d623b612626623b617c7c623b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "arithmetic_associativity",
+      "input_hex": "666e206628292d3e28297b612d622d632b613b612f622a6325642f663b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "logical_precedence_associativity",
+      "input_hex": "666e206628292d3e28297b617c7c622626633b612626622626633b617c7c627c7c633b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "group_overrides_precedence",
+      "input_hex": "666e206628292d3e28297b28612b62292a633b612d28622d63293b612f28622f63293b28617c7c62292626633b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "raw_signed_spellings",
+      "input_hex": "666e206628292d3e28297b2d202f2a782a2f203030303030303030373b2d2d3030313b612d2d303030313b212d303030303b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "signed_decimal128",
+      "input_hex": "666e206628292d3e28297b2d2039393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "expression_spans_crlf",
+      "input_hex": "666e206628292d3e28297b0d0a2072657475726e202120282061202f2a6761702a2f202b202d203030372029203b0d0a7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "global_postorder_across_functions",
+      "input_hex": "666e206128292d3e28297b72657475726e202128782b79293b7d666e206228292d3e28297b2d7a3b72657475726e20612a622b633b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "height64_signed_success",
+      "input_hex": "666e206628292d3e28297b2121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212d313b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "depth64_array_guard",
+      "input_hex": "666e206628292d3e28297b212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121215b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "depth64_signed_guard",
+      "input_hex": "666e206628292d3e28297b212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212d313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_depth64_guard",
+      "input_hex": "666e206628292d3e28297b2121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212861293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "height65_group_failure",
+      "input_hex": "666e206628292d3e28297b282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "height65_prefix_failure",
+      "input_hex": "666e206628292d3e28297b212821212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "chain_before_height",
+      "input_hex": "666e206628292d3e28297b212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121613c623c633b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "missing_rhs_before_chain",
+      "input_hex": "666e206628292d3e28297b613c3d3d623b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_close_before_height",
+      "input_hex": "666e206628292d3e28297b282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b623b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_unsupported_close_before_height",
+      "input_hex": "666e206628292d3e28297b282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b6220666f723b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_dot_before_height",
+      "input_hex": "666e206628292d3e28297b282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62292e3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_bracket_before_height",
+      "input_hex": "666e206628292d3e28297b282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62295b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_missing_close_eof",
+      "input_hex": "666e206628292d3e28297b2861",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_close_before_later_refusal",
+      "input_hex": "666e206628292d3e28297b28612062293b5b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "generic_borrow_is_error",
+      "input_hex": "666e206628292d3e28297b2126613b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "malformed_digits_before_postfix",
+      "input_hex": "666e206628292d3e28297b213031785b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "unit_postfix_bracket",
+      "input_hex": "666e206628292d3e28297b28295b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "prefix_signed_postfix_dot",
+      "input_hex": "666e206628292d3e28297b212d31202e3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "group_qualified_suffix_is_error",
+      "input_hex": "666e206628292d3e28297b2861293a3a623b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "name_separated_colons_is_error",
+      "input_hex": "666e206628292d3e28297b28613a203a62293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "rhs_error_before_later_refusal",
+      "input_hex": "666e206628292d3e28297b612b3b5b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "pending_call",
+      "input_hex": "666e206628292d3e28297b6128293b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "call_nested_global_order",
+      "input_hex": "666e206128292d3e28297b6628782c6728292c6828792c7a2b3129293b7d666e206228292d3e28297b72657475726e206a282d322c6b28217129293b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "call_trivia_spans",
+      "input_hex": "666e206628292d3e28297b72657475726e2061202f2a63616c6c2a2f2028202d202f2a7369676e2a2f20303037202c2028747275652920293b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "call_trailing_comma",
+      "input_hex": "666e206628292d3e28297b6628612c293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_leading_comma",
+      "input_hex": "666e206628292d3e28297b66282c293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_missing_close_eof",
+      "input_hex": "666e206628292d3e28297b662861",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_depth_before_borrow",
+      "input_hex": "666e206628292d3e28297b21212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212166282661293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_height64_success",
+      "input_hex": "666e206628292d3e28297b6628212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212161293b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "call_height65_failure",
+      "input_hex": "666e206628292d3e28297b66282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_close_before_height",
+      "input_hex": "666e206628292d3e28297b66282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b623b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_later_bad_argument_before_height",
+      "input_hex": "666e206628292d3e28297b66282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b622c3b293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_dot_before_height",
+      "input_hex": "666e206628292d3e28297b66282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62292e3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_bracket_before_height",
+      "input_hex": "666e206628292d3e28297b66282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b62295b3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_nested_argument_chain_error",
+      "input_hex": "666e206628292d3e28297b6628612c6728623c633c64292c65293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_callee_separated_colons_error",
+      "input_hex": "666e206628292d3e28297b613a203a6228293b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "call_unsupported_close_before_height",
+      "input_hex": "666e206628292d3e28297b66282121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121612b6220666f723b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "pending_let",
+      "input_hex": "666e206628292d3e28297b6c657420783d313b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "bindings_syntax_only",
+      "input_hex": "666e206628783a776174292d3e7761747b6c6574206d757420783a7761743d672879292b2d3030373b6c6574206d7574207a3d28293b6c657420783d2128783c33293b783d672878293b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "assignment_trivia_equals",
+      "input_hex": "666e206628292d3e28297b61202f2a7461726765742a2f0d0a203d202f2a76616c75652a2f20662828312b32292c2d20303037293b613d3d623b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "let_missing_name",
+      "input_hex": "666e206628292d3e28297b6c6574203d313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "let_unsupported_name",
+      "input_hex": "666e206628292d3e28297b6c657420666f723d313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "let_bad_annotation",
+      "input_hex": "666e206628292d3e28297b6c657420783a203d313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "let_missing_equals",
+      "input_hex": "666e206628292d3e28297b6c6574207820313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "let_missing_initializer",
+      "input_hex": "666e206628292d3e28297b6c657420783d3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "let_missing_semicolon",
+      "input_hex": "666e206628292d3e28297b6c657420783d317d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "assignment_missing_value",
+      "input_hex": "666e206628292d3e28297b613d3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "assignment_missing_semicolon",
+      "input_hex": "666e206628292d3e28297b613d317d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "binding_error_before_match",
+      "input_hex": "666e206628292d3e28297b6c657420783d3b6d6174636820617b7d3b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "return_match_unsupported",
+      "input_hex": "666e206628292d3e28297b72657475726e206d617463683b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "let_mut_missing_name",
+      "input_hex": "666e206628292d3e28297b6c6574206d7574203d313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "pending_if",
+      "input_hex": "666e206628292d3e28297b696620747275657b7d7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "pending_while",
+      "input_hex": "666e206628292d3e28297b7768696c6520747275657b7d7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "complete_helper128",
+      "input_hex": "666e206128783a693332292d3e6933327b72657475726e20782b313b7d666e2066286e3a693332292d3e6933327b6c6574206d757420783d303b6c657420633d333b7768696c6520783c6e7b696620783d3d637b627265616b3b7d656c73657b783d612878293b636f6e74696e75653b7d7d2878293b72657475726e20783b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "nested_block_statement_order",
+      "input_hex": "666e206628292d3e28297b696620617b7768696c6520627b696620637b313b7d656c73657b323b7d7d333b7d656c73657b343b7d353b7d666e206728292d3e28297b696620647b363b7d7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "condition_root_context",
+      "input_hex": "666e206628292d3e28297b69662021617b7d7768696c6520612b627b7d696620662861297b7d7768696c65202861297b7d7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "else_if_shorthand_error",
+      "input_hex": "666e206628292d3e28297b696620617b7d656c736520696620627b7d7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "if_wrong_body",
+      "input_hex": "666e206628292d3e28297b6966206120313b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "while_missing_body_eof",
+      "input_hex": "666e206628292d3e28297b7768696c652061",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "nested_missing_close_eof",
+      "input_hex": "666e206628292d3e28297b696620617b313b",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "dangling_else_error",
+      "input_hex": "666e206628292d3e28297b656c73657b7d7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "else_missing_body_eof",
+      "input_hex": "666e206628292d3e28297b696620617b7d656c7365",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "outside_loop_transfers_syntax",
+      "input_hex": "666e206628292d3e28297b627265616b3b636f6e74696e75653b7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "control_error_before_match",
+      "input_hex": "666e206628292d3e28297b6966206120313b6d6174636820787b7d7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "reachable_if_depth19",
+      "input_hex": "666e206628292d3e28297b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b696620617b7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+      "role": "comparison",
+      "parser_status": "ok"
+    },
+    {
+      "name": "if_missing_condition",
+      "input_hex": "666e206628292d3e28297b6966207b7d7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "while_missing_condition",
+      "input_hex": "666e206628292d3e28297b7768696c65207b7d7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "refusal_module",
+      "input_hex": "6d6f6420783b",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 3,
+        "family": "module",
+        "start": 0
+      }
+    },
+    {
+      "name": "refusal_pub_record",
+      "input_hex": "707562202f2a782a2f2073747275637420587b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 16,
+        "family": "record",
+        "start": 10
+      }
+    },
+    {
+      "name": "refusal_enum",
+      "input_hex": "656e756d20457b417d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 4,
+        "family": "enum",
+        "start": 0
+      }
+    },
+    {
+      "name": "refusal_reference",
+      "input_hex": "666e206628613a2654292d3e28297b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 8,
+        "family": "reference_type",
+        "start": 7
+      }
+    },
+    {
+      "name": "refusal_array_type",
+      "input_hex": "666e206628292d3e5b6933323b325d7b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 9,
+        "family": "array_type",
+        "start": 8
+      }
+    },
+    {
+      "name": "refusal_qualified_type",
+      "input_hex": "666e206628292d3e613a3a627b7d",
+      "role": "refusal",
+      "parser_status": "diagnostic",
+      "refusal": {
+        "end": 10,
+        "family": "qualified_type",
+        "start": 9
+      }
+    },
+    {
+      "name": "refusal_array_literal",
+      "input_hex": "666e206628292d3e28297b5b3b7d",
+      "role": "refusal",
+      "parser_status": "diagnostic",
+      "refusal": {
+        "end": 12,
+        "family": "array_literal",
+        "start": 11
+      }
+    },
+    {
+      "name": "refusal_qualified_value",
+      "input_hex": "666e206628292d3e28297b613a3a623b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 13,
+        "family": "qualified_value_or_call",
+        "start": 12
+      }
+    },
+    {
+      "name": "refusal_field",
+      "input_hex": "666e206628292d3e28297b612e783b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 13,
+        "family": "field_index_length",
+        "start": 12
+      }
+    },
+    {
+      "name": "refusal_index",
+      "input_hex": "666e206628292d3e28297b615b3b7d",
+      "role": "refusal",
+      "parser_status": "diagnostic",
+      "refusal": {
+        "end": 13,
+        "family": "indexing",
+        "start": 12
+      }
+    },
+    {
+      "name": "refusal_record_literal",
+      "input_hex": "666e206628292d3e28297b417b783a317d3b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 13,
+        "family": "record_literal",
+        "start": 12
+      }
+    },
+    {
+      "name": "prefix_array_refusal",
+      "input_hex": "666e206628292d3e28297b215b3b7d",
+      "role": "refusal",
+      "parser_status": "diagnostic",
+      "refusal": {
+        "end": 13,
+        "family": "array_literal",
+        "start": 12
+      }
+    },
+    {
+      "name": "prefix_name_index_refusal",
+      "input_hex": "666e206628292d3e28297b2d615b3b7d",
+      "role": "refusal",
+      "parser_status": "diagnostic",
+      "refusal": {
+        "end": 14,
+        "family": "indexing",
+        "start": 13
+      }
+    },
+    {
+      "name": "group_name_qualified_refusal",
+      "input_hex": "666e206628292d3e28297b28613a3a62293b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 14,
+        "family": "qualified_value_or_call",
+        "start": 13
+      }
+    },
+    {
+      "name": "group_record_refusal",
+      "input_hex": "666e206628292d3e28297b28417b783a317d293b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 14,
+        "family": "record_literal",
+        "start": 13
+      }
+    },
+    {
+      "name": "call_qualified_callee_refusal",
+      "input_hex": "666e206628292d3e28297b613a3a6228293b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 13,
+        "family": "qualified_value_or_call",
+        "start": 12
+      }
+    },
+    {
+      "name": "call_grouped_record_argument_refusal",
+      "input_hex": "666e206628292d3e28297b662828417b783a317d29293b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 16,
+        "family": "record_literal",
+        "start": 15
+      }
+    },
+    {
+      "name": "call_borrow_argument_refusal",
+      "input_hex": "666e206628292d3e28297b66282661293b7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 14,
+        "family": "borrow_argument",
+        "start": 13
+      }
+    },
+    {
+      "name": "statement_match_refusal",
+      "input_hex": "666e206628292d3e28297b6d6174636820617b7d7d",
+      "role": "refusal",
+      "parser_status": "diagnostic",
+      "refusal": {
+        "end": 16,
+        "family": "match",
+        "start": 11
+      }
+    },
+    {
+      "name": "if_grouped_record_refusal",
+      "input_hex": "666e206628292d3e28297b69662028417b783a317d297b7d7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 17,
+        "family": "record_literal",
+        "start": 16
+      }
+    },
+    {
+      "name": "while_call_argument_record_refusal",
+      "input_hex": "666e206628292d3e28297b7768696c65206628417b783a317d297b7d7d",
+      "role": "refusal",
+      "parser_status": "outside_subset",
+      "refusal": {
+        "end": 21,
+        "family": "record_literal",
+        "start": 20
+      }
+    },
+    {
+      "name": "pub_eof",
+      "input_hex": "707562",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "pub_use_error",
+      "input_hex": "7075622075736520783b",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "pub_unexpected_name",
+      "input_hex": "707562206e6f6e73656e7365",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    },
+    {
+      "name": "pub_repeated_before_function",
+      "input_hex": "707562202f2a782a2f2070756220666e206628292d3e28297b7d",
+      "role": "comparison",
+      "parser_status": "diagnostic"
+    }
+  ],
+  "transport": [
+    {
+      "name": "ascii129",
+      "input_hex": "202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020"
+    },
+    {
+      "name": "non_ascii_byte",
+      "input_hex": "ff"
+    }
+  ]
+}

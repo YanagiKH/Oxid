@@ -182,6 +182,11 @@ jobs:
       - name: Verify exact typed formatter goldens
         run: python scripts/verify_typed_formatter.py ${{ matrix.binary }}
 
+      - name: Test bounded parser selection and strict decoder controls
+        run: |
+          python -B -m unittest discover -s scripts -p test_bounded_typed_parser.py -v
+          python -B -m unittest discover -s scripts -p test_parser_ast_observation.py -v
+
       - name: Run Oxid language tests
         run: cargo run --release --locked -- test
 
@@ -685,7 +690,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for source in main tape transcript lexer keywords admission; do
+          for source in main tape transcript lexer keywords admission buffers lexer_core; do
             target/debug/oxid fmt --edition typed-preview --check "fixtures/typed-lexer-samples/$source.ox"
           done
           python3 -B scripts/build_typed_lexer_observer.py \
@@ -704,6 +709,36 @@ jobs:
           path: |
             ${{ runner.temp }}/typed-lexer-observer
             ${{ runner.temp }}/typed-lexer-proof
+      - name: Verify bounded scalar parser against complete canonical observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts -p test_bounded_typed_parser.py -v
+          python3 -B -m unittest discover -s scripts -p test_parser_ast_observation.py -v
+          python3 -B scripts/build_typed_parser_observer.py \
+            --output "$RUNNER_TEMP/typed-parser-observer"
+          python3 -B tests/fixtures/bounded_typed_parser/observer/test_observer.py \
+            --observer "$RUNNER_TEMP/typed-parser-observer/canonical-parser-observer" \
+            --report "$RUNNER_TEMP/typed-parser-observer/projection-tests.json"
+          for profile in debug release; do
+            python3 -B scripts/verify_bounded_typed_parser.py \
+              --oxid "target/$profile/oxid" \
+              --parser-observer "$RUNNER_TEMP/typed-parser-observer/canonical-parser-observer" \
+              --lexer-observer "$RUNNER_TEMP/typed-lexer-observer/canonical-lexer-observer" \
+              --output "$RUNNER_TEMP/typed-parser-proof-$profile" --native
+          done
+      - name: Retain bounded parser inputs, streams, identities and native ELFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-typed-parser-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-parser-observer
+            ${{ runner.temp }}/typed-lexer-observer
+            ${{ runner.temp }}/typed-parser-proof-debug
+            ${{ runner.temp }}/typed-parser-proof-release
       - name: Verify production source CLI and source-free ELF outcomes
         run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment projected-array-slices-v1 --jobs 2
       - name: Verify owned-source native budgets, stores, guards, and artifact identities

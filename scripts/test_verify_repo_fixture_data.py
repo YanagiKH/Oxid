@@ -61,6 +61,29 @@ LEXER_ADDED_FILES = (
     "fixtures/typed-lexer-samples/keywords.ox",
     LEXER_ADMISSION_ENTRY,
 )
+LEXER_CORE_ADDED_FILES = (
+    "fixtures/typed-lexer-samples/lexer_core.ox",
+    "fixtures/typed-lexer-samples/buffers.ox",
+)
+PARSER_ADMISSION_ENTRY = "fixtures/typed-lexer-samples/parser_admission.ox"
+PARSER_ADMISSION_ADDED_FILES = (
+    PARSER_ADMISSION_ENTRY,
+    "fixtures/typed-lexer-samples/parser_banks.ox",
+    "fixtures/typed-lexer-samples/parser_probe_output.ox",
+)
+PARSER_MAIN_ENTRY = "fixtures/typed-lexer-samples/parser_main.ox"
+PARSER_ADDED_FILES = (
+    PARSER_MAIN_ENTRY,
+    "fixtures/typed-lexer-samples/parser_state.ox",
+    "fixtures/typed-lexer-samples/parser_signature.ox",
+    "fixtures/typed-lexer-samples/parser_atom.ox",
+    "fixtures/typed-lexer-samples/parser_call.ox",
+    "fixtures/typed-lexer-samples/parser_expression.ox",
+    "fixtures/typed-lexer-samples/parser_statement.ox",
+    "fixtures/typed-lexer-samples/parser_control.ox",
+    "fixtures/typed-lexer-samples/parser_driver.ox",
+    "fixtures/typed-lexer-samples/parser_output.ox",
+)
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -103,7 +126,39 @@ class PublishedRegistrationTests(unittest.TestCase):
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS,
-                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY))
+                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
+                          LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY))
+        self.assertEqual([name for name in language if name in PARSER_ADDED_FILES], sorted(PARSER_ADDED_FILES))
+        self.assertEqual([row for row in check_inventory if row[0] in PARSER_ADDED_FILES],
+                         [(PARSER_MAIN_ENTRY, True)])
+        self.assertFalse(any(row[0] in PARSER_ADDED_FILES for row in run_inventory))
+        self.assertTrue(all(root / name not in data_sources for name in PARSER_ADDED_FILES))
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (161 + len(PARSER_ADDED_FILES), 136 + 1, 75, 40 + len(PARSER_ADDED_FILES), 8))
+        # The real parser adds ten files and one check-only root. Capture its
+        # exact predecessor independently, preserving the synthetic carrier,
+        # every old language/check/run identity, and all frozen fixture data.
+        language = [name for name in language if name not in PARSER_ADDED_FILES]
+        check_inventory = [row for row in check_inventory if row[0] not in PARSER_ADDED_FILES]
+        typed_members -= len(PARSER_ADDED_FILES)
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (161, 136, 75, 40, 8))
+        self.assertEqual(fingerprint(language), "cc2c9cf7e672dab9f5adb7f936b9a77c494af7e6e526848fd0a2af4d7c58f4c7")
+        self.assertEqual(fingerprint(check_inventory), "36348af0b0d0985d7fc9a706b2dd278c362147b882ff4c87d59544cb213d0f57")
+        self.assertEqual(fingerprint(run_inventory), "4d05786c555a004ab645edb9daf8c8f811201cfdb60c9ed3e516d11aaec181f4")
+        added_names = LEXER_CORE_ADDED_FILES + PARSER_ADMISSION_ADDED_FILES
+        self.assertEqual([name for name in language if name in added_names], sorted(added_names))
+        self.assertEqual([row for row in check_inventory if row[0] in added_names],
+                         [(PARSER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(row[0] in added_names for row in run_inventory))
+        self.assertTrue(all(root / name not in data_sources for name in added_names))
+        # Preserve the original lexer roster by subtracting only the two
+        # extracted modules and three synthetic carrier files. No parser claim.
+        language = [name for name in language if name not in added_names]
+        check_inventory = [row for row in check_inventory if row[0] not in added_names]
+        typed_members -= len(added_names)
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (156, 135, 75, 35, 8))
         self.assertEqual([name for name in language if name in LEXER_ADDED_FILES], sorted(LEXER_ADDED_FILES))
         self.assertEqual([row for row in check_inventory if row[0] in LEXER_ADDED_FILES],
                          [(LEXER_MAIN_ENTRY, True), (LEXER_ADMISSION_ENTRY, True)])
@@ -188,13 +243,14 @@ class PublishedRegistrationTests(unittest.TestCase):
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
         for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
-                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY):
+                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY):
             stdin_root = str(verify_repo.ROOT / relative)
             self.assertEqual([command for command in commands if stdin_root in command],
                              [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
         added_roots = {str(verify_repo.ROOT / name) for name in
                        (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
-                        ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY)}
+                        ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY,
+                        PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY)}
         predecessor_commands = [command for command in commands if not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
         self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
@@ -209,12 +265,16 @@ class PublishedRegistrationTests(unittest.TestCase):
                     self.assertFalse(any(str(verify_repo.ROOT / child) in command for command in commands))
         self.assertFalse(any("fixed_array_source_unit3" in arg
                              for call in run.call_args_list for arg in call.args[0]))
+        for relative in PARSER_ADDED_FILES[1:]:
+            self.assertFalse(any(str(verify_repo.ROOT / relative) in command for command in commands))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn(f"{146 + len(ARTIFACT_ADDED_FILES) + len(LEXER_ADDED_FILES)} language sources, "
+        additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
+                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES)
+        self.assertIn(f"{146 + len(additional_members)} language sources, "
                       f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS)} checks, 75 runnable programs", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + len(ARTIFACT_ADDED_FILES) + len(LEXER_ADDED_FILES)} typed source members / "
+                      f"{25 + len(additional_members)} typed source members / "
                       "8 typed entry runs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
@@ -277,6 +337,19 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        parser_files = {self.root / name for name in PARSER_ADDED_FILES}
+        self.assertEqual([row for row in checks if row[0] in parser_files],
+                         [(self.root / PARSER_MAIN_ENTRY, True)])
+        self.assertFalse(any(entry in parser_files for entry in entries))
+        checks = [row for row in checks if row[0] not in parser_files]
+        count -= len(PARSER_ADDED_FILES)
+        added_names = LEXER_CORE_ADDED_FILES + PARSER_ADMISSION_ADDED_FILES
+        added = {self.root / name for name in added_names}
+        self.assertEqual([row for row in checks if row[0] in added],
+                         [(self.root / PARSER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(entry in added for entry in entries))
+        checks = [row for row in checks if row[0] not in added]
+        count -= len(added_names)
         lexer_files = {self.root / name for name in LEXER_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in lexer_files],
                          [(self.root / LEXER_MAIN_ENTRY, True), (self.root / LEXER_ADMISSION_ENTRY, True)])

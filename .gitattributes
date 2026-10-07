@@ -7,3 +7,6 @@ tests/fixtures/fixed_array_source_unit3/typing-replay-v1/** -text
 tests/fixtures/fixed_array_source_unit3/lowering-contracts-v1/** -text
 # Independently authored wire bytes and exact stdin specimens.
 tests/fixtures/bounded_stack_artifact/fixtures/** -text
+
+# Preserved malformed parser observation controls are byte-bound across hosts.
+tests/fixtures/bounded_typed_parser/corruption_controls.py -text

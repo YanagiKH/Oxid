@@ -1,10 +1,11 @@
+mod buffers;
 mod tape;
 mod transcript;
 mod lexer;
+mod lexer_core;
 mod keywords;
 use std::io::read_stdin;
 use std::io::ReadStatus;
-
 fn observe(codes: &[i32], used: i32) -> i32 {
     let mut i = 0;
     while i < used {
@@ -25,7 +26,6 @@ fn observe(codes: &[i32], used: i32) -> i32 {
         },
     }
 }
-
 fn main() -> i32 {
     let mut codes = crate::tape::zeros();
     let result = read_stdin(&mut codes);
