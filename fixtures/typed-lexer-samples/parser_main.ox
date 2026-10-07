@@ -1,5 +1,5 @@
 mod buffers; mod lexer_core; mod keywords;
-mod parser_state; mod parser_signature; mod parser_atom; mod parser_call; mod parser_expression; mod parser_statement; mod parser_driver; mod parser_output;
+mod parser_state; mod parser_signature; mod parser_atom; mod parser_call; mod parser_expression; mod parser_statement; mod parser_control; mod parser_driver; mod parser_output;
 use std::io::read_stdin;
 use std::io::ReadStatus;
 fn pack(kinds: &mut [i32], starts: &[i32], ends: &[i32], count: i32) -> () {

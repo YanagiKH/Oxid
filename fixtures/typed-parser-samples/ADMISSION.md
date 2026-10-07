@@ -33,6 +33,12 @@ At `40898984`, ordinary native admission passes with I = 5,660, W = 2,571,
 Calls add 402 inventory items and no owner width. Remaining I/W headroom is
 2,532/5,621; all other native gates still apply.
 
+## Binding increment
+
+At `6aff6597`, ordinary native admission passes with I = 6,027, W = 2,571,
+83 functions, 1,420 blocks and 59,864 explicit bytes including the wrapper.
+Bindings add 367 items and no owner width; remaining I/W headroom is 2,165/5,621.
+
 ## Historical carrier experiments
 
 The first probe shares the existing lexer modules and source bound. Its entry is

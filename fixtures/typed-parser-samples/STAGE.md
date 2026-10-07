@@ -36,6 +36,20 @@ mutation now rejects as a malformed callee token instead of an unsupported row
 kind. Its exact named successor remains a rejection. Let/assignment and control
 flow are the next increments; this is not full statement-contract acceptance.
 
+## Bindings and assignment
+
+At `6aff6597`, Let/LetMut and bare-name assignment preserve annotations, token
+and operator spans, expression IDs and exact first diagnostics. Statement-site
+match has its contracted domain refusal; expression-site match remains a
+canonical unsupported-construct error. Paired replay passes 119 inputs per mode:
+98 complete comparisons, 19 refusals and two control-flow pending cases.
+Twenty authored decoder methods pass. The retained corruption lineage is
+39 unchanged expectations plus exact Call and Let successors.
+
+The next source checkpoint wires If/Else-block and While transitions and removes
+production StagePending paths. Full grammar parity and final qualification are
+still required before claiming complete acceptance.
+
 ## Historical initial control checkpoint
 
 The canonical parser observer copies unchanged Rust sources and projects full

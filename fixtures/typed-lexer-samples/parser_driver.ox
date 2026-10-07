@@ -1,4 +1,4 @@
-// First real dispatcher. Error 5 explicitly marks planned grammar not wired yet.
+// Scalar grammar dispatcher. Helpers return transitions to this acyclic driver.
 fn link_statement(headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], block_id: i32, statement: i32) -> () {
     let tail = cd[block_id - 1] % 256;
     if tail == 0 { crate::parser_state::high(&mut *ab, block_id, statement); }
@@ -53,6 +53,10 @@ fn block(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd:
     if kind == 47 { crate::parser_state::fail(&*codes, &*tokens, &mut *state, 11); return; }
     let binding = crate::parser_statement::start(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *frames, &mut *state);
     if binding { return; }
+    if kind == 17 || kind == 18 {
+        crate::parser_control::start(&*tokens, &mut *headers, &mut *frames, &mut *state);
+        return;
+    }
     if kind == 14 || kind == 15 || kind == 16 {
         let at = crate::parser_state::bump(&*tokens, &mut *state);
         let tag = kind - 4;
@@ -71,11 +75,6 @@ fn block(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd:
         }
         crate::parser_state::push(&mut *frames, &mut *state, 7, statement, 0);
     } else {
-        if kind == 17 || kind == 18 {
-            state.error = 5; state.detail = 100 + kind;
-            state.start = crate::parser_state::lo(token); state.end = crate::parser_state::hi(token);
-            return;
-        }
         // Reuse this Block frame; ExprStmt is allocated only after its semicolon.
         frames[state.stack - 1] = frame - 4 + 18;
     }
@@ -83,10 +82,14 @@ fn block(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd:
     return;
 }
 fn expression_done(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> () {
-    let semi = crate::parser_state::expect(&*codes, &*tokens, &mut *state, 28, 17);
-    if state.error != 0 { return; }
     let frame = frames[state.stack - 1];
     let phase = frame % 32;
+    if phase == 8 || phase == 11 {
+        crate::parser_control::condition_done(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *frames, &mut *state);
+        return;
+    }
+    let semi = crate::parser_state::expect(&*codes, &*tokens, &mut *state, 28, 17);
+    if state.error != 0 { return; }
     let node = frame / 65536;
     let value = state.value;
     if phase == 5 || phase == 6 || phase == 7 {
@@ -108,9 +111,15 @@ fn expression_done(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut 
     state.mode = 0;
     return;
 }
-fn block_done(headers: &mut [i32], cd: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> () {
+fn block_done(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> () {
     let frame = frames[state.stack - 1];
-    if frame % 32 != 3 { state.error = 9; return; }
+    if frame % 32 != 3 {
+        let completed = crate::parser_control::body_done(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
+        if completed && state.error == 0 {
+            link_statement(&mut *headers, &mut *ab, &mut *cd, frames[state.stack - 1] / 65536, state.value);
+        }
+        return;
+    }
     let function = frame / 65536;
     crate::parser_state::high(&mut *cd, function, state.value);
     let finished = crate::parser_state::pop(&mut *frames, &mut *state);
@@ -132,7 +141,7 @@ pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32],
                     expression_done(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
                 }
             } else {
-                if state.mode == 3 { block_done(&mut *headers, &mut *cd, &mut *frames, &mut *state); }
+                if state.mode == 3 { block_done(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state); }
                 else {
                     if frames[state.stack - 1] % 32 == 1 { root(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state); }
                     else { block(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state); }
