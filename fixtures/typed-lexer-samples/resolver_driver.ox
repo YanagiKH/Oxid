@@ -1,6 +1,33 @@
 // One finite traversal of every body, including unreachable and untaken arms.
 // Frames own distinct AST rows. Blocks add distinct scope-marker rows to the
 // local bank; lookup skips those markers. Neither bank can exceed 128 rows.
+// Resolve leaf facts and statement targets before the controller enters children.
+// False is a complete resolution diagnostic; validated AST inputs need no bank
+// mutation or new continuation here.
+fn reference(codes: &[i32], tokens: &[i32], headers: &[i32], ab: &[i32], resolved: &mut [i32], locals: &[i32], frames: &[i32], state: &mut crate::static_state::State, node: i32, used: i32) -> bool {
+    let kind = headers[node - 1] % 64;
+    let a = ab[node - 1] % 256;
+    if kind == 8 || kind == 19 {
+        let target = tokens[a - 1];
+        let found = crate::resolver_names::local(&*codes, &*tokens, &*headers, &*ab, &*locals, target, state.locals, used);
+        if found == 0 { crate::resolver_names::fail(&mut *state, 1, target, 0); return false; }
+        resolved[node - 1] = found;
+    } else { if kind == 11 || kind == 12 {
+        let mut at = state.stack - 1;
+        let mut target = 0;
+        while at > 0 && target == 0 {
+            at = at - 1;
+            let owner = frames[at] / 16;
+            if headers[owner - 1] % 64 == 14 && frames[at] % 16 == 2 { target = ab[owner - 1] / 256; }
+        }
+        if target == 0 { crate::resolver_names::fail(&mut *state, kind - 5, headers[node - 1], 0); return false; }
+        resolved[node - 1] = target;
+    } else {
+        if !crate::static_common::decimal(&*codes, tokens[a - 1], ab[node - 1] / 256, used, &mut *state) { crate::resolver_names::fail(&mut *state, 5, headers[node - 1], 0); return false; }
+        resolved[node - 1] = state.value;
+    } }
+    return true;
+}
 fn body(codes: &[i32], tokens: &[i32], headers: &[i32], ab: &[i32], cd: &[i32], resolved: &mut [i32], locals: &mut [i32], frames: &mut [i32], state: &mut crate::static_state::State, rows: i32, used: i32, first_local: i32) -> bool {
     let mut local_id = first_local;
     while state.stack > 0 {
@@ -40,37 +67,21 @@ fn body(codes: &[i32], tokens: &[i32], headers: &[i32], ab: &[i32], cd: &[i32], 
                 if binding != 1 { return binding == 2; }
                 local_id = local_id + 1; resolved[node - 1] = local_id;
             }
-        } else { if kind == 8 || kind == 19 {
+        } else { if kind == 8 || kind == 19 || kind == 11 || kind == 12 || kind == 15 {
             if phase == 0 {
-                let target = tokens[a - 1];
-                let found = crate::resolver_names::local(&*codes, &*tokens, &*headers, &*ab, &*locals, target, state.locals, used);
-                if found == 0 { crate::resolver_names::fail(&mut *state, 1, target, 0); return true; }
-                resolved[node - 1] = found;
+                if !reference(&*codes, &*tokens, &*headers, &*ab, &mut *resolved, &*locals, &*frames, &mut *state, node, used) { return true; }
                 if kind == 8 { child = cd[node - 1] % 256; }
             }
-        } else { if kind == 11 || kind == 12 {
-            let mut at = state.stack - 1;
-            let mut target = 0;
-            while at > 0 && target == 0 {
-                at = at - 1;
-                let owner = frames[at] / 16;
-                if headers[owner - 1] % 64 == 14 && frames[at] % 16 == 2 { target = ab[owner - 1] / 256; }
-            }
-            if target == 0 { crate::resolver_names::fail(&mut *state, kind - 5, headers[node - 1], 0); return true; }
-            resolved[node - 1] = target;
         } else { if kind == 13 || kind == 14 {
             if phase == 0 { child = a; }
             if phase == 1 { child = b; }
             if phase == 2 && kind == 13 { child = cd[node - 1] % 256; }
-        } else { if kind == 15 {
-            if !crate::static_common::decimal(&*codes, tokens[a - 1], b, used, &mut *state) { crate::resolver_names::fail(&mut *state, 5, headers[node - 1], 0); return true; }
-            resolved[node - 1] = state.value;
         } else {
             if kind == 9 || kind == 10 || kind >= 21 {
                 if phase == 0 { child = a; }
                 if phase == 1 && kind >= 24 { child = b; }
             }
-        } } } } } }
+        } } } }
         if child != 0 {
             if !crate::static_state::resume(&mut *frames, &*state, next_phase) || !crate::static_state::push(&mut *frames, &mut *state, child, 0) { return false; }
         } else {
