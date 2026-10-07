@@ -26,6 +26,13 @@ fn root(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: 
         while next < state.limit && tokens[next] % 64 == 1 { next = next + 1; }
         let candidate = family(&*codes, tokens[next]);
         if candidate == 1 || candidate == 3 || candidate == 4 { rejected = candidate; starter = tokens[next]; }
+        else {
+            // Invalid public item starts fail at the unconsumed original pub.
+            if tokens[next] % 64 != 5 {
+                crate::parser_state::fail(&*codes, &*tokens, &mut *state, 1);
+                return;
+            }
+        }
     }
     if rejected != 0 {
         state.error = 4; state.detail = rejected;
