@@ -24,9 +24,9 @@ def source_binding():
 
 @contextmanager
 def admitted_composition_view():
-    """Validate current stdout inputs, then expose the exact sealed predecessor.
+    """Validate current native inventory inputs, then expose the exact sealed predecessor.
 
-    This is an archived adapter control, not a current stdout runtime observation. The
+    This is an archived adapter control, not a current native inventory runtime observation. The
     binding checks the complete current source roster and reversible transition.
     Admission deliberately happens in normal Python, before any -O child.
     """
@@ -81,7 +81,7 @@ class RecordObserverPackageControls(unittest.TestCase):
 
     def test_normal_and_optimized_reversal_and_scope_controls(self):
         with admitted_composition_view() as (view, captured):
-            self.assertEqual(len(captured['inputs']), 262)
+            self.assertEqual(len(captured['inputs']), 266)
             self.assertEqual(len(captured['enum_inputs']), 237)
             self.assertEqual(len(captured['projected_inputs']), 201)
             self.assertEqual(len(captured['composition_inputs']), 196)
@@ -93,7 +93,7 @@ class RecordObserverPackageControls(unittest.TestCase):
                     self.assertIn('Ran 13 tests', result.stderr)
                     self.assertIn('OK', result.stderr)
 
-    def test_predecessor_view_is_explicit_and_current_stdout_inputs_remain_bound(self):
+    def test_predecessor_view_is_explicit_and_current_native_inventory_inputs_remain_bound(self):
         with admitted_composition_view() as (view, captured):
             path = 'src/frontend/oir/owned/execute.rs'
             self.assertEqual((view / path).read_bytes(), captured['composition_inputs'][path])

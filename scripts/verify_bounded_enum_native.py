@@ -40,10 +40,10 @@ SCANNER_HASHES = {
     "scanner.ox": "d13847eaecd69667031e54bb6f3f329365427a483e0bff537d0b28882516ac14",
 }
 ELF_ENV = {"PATH": "/no-tools"}
-# Reviewed stdout successor executes the unchanged enum roster. The exact
+# Reviewed native inventory successor executes the unchanged enum roster. The exact
 # 237-member enum predecessor remains in enum-source.json; current execution
-# uses the complete 262-member authority, never a caller-supplied subset.
-REVIEWED_SOURCE_SHA256 = '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936'
+# uses the complete 266-member authority, never a caller-supplied subset.
+REVIEWED_SOURCE_SHA256 = '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842'
 
 
 def require(condition, message):

@@ -62,6 +62,17 @@ reference/native execution are separate checks. It does not switch production
 providers or extend the contract to Unicode; the next consumer can use this token
 interface for a real typed-preview parser.
 
+The unchanged partial typed parser at `8f1fe20` now compiles through normal native
+CLI gates under the accepted [native admission inventories](../rfcs/0027-native-admission-inventories.md).
+Its 54 reference/native corpus cases match, with 41 separate malformed
+strict-decoder controls. The successor intentionally broadens admission while
+retaining 1 MiB aggregate/live explicit
+bytes, other caps, storage and logical fuel; it is not an allocation optimization.
+[Local evidence](../rfcs/0027-native-admission-inventories.md#local-evidence-and-remaining-gates)
+does not complete the full grammar, capability qualification or exact-head
+hosted CI. Parser expansion remains behind that qualification gate; compiler
+provider dispatch and self-hosting are still separate work.
+
 ## Native AI work
 
 Native AI support needs typed buffers and CPU tensors first, followed by automatic differentiation, optimizers, and complete training loops. GPU execution, tensor compilation, multi-device training, and resumable checkpoints add separate hardware and correctness requirements. Calling an external framework through a process adapter does not satisfy these milestones.

@@ -139,9 +139,9 @@ def candidate_binding(path):
     manifest = load(cfg['source_manifest']['path'])
     files_sha = sha(json.dumps(manifest['files'], sort_keys=True, separators=(',', ':')).encode())
     if cfg['kind'] == 'unit4-public-v3-candidate':
-        need(cfg['source_manifest']['sha256'] == CURRENT_SOURCE_SHA and files_sha == CURRENT_FILES_SHA and len(manifest['files']) == 262, 'unapproved current compiler source authority')
+        need(cfg['source_manifest']['sha256'] == CURRENT_SOURCE_SHA and files_sha == CURRENT_FILES_SHA and len(manifest['files']) == 266, 'unapproved current compiler source authority')
     else:
-        need(files_sha == OBSERVER_FILES_SHA and len(manifest['files']) == 263, 'unapproved lifecycle observer bodies')
+        need(files_sha == OBSERVER_FILES_SHA and len(manifest['files']) == 267, 'unapproved lifecycle observer bodies')
         need(manifest['base_source_manifest_sha256'] == cfg['base_source_manifest_sha256'] == CURRENT_SOURCE_SHA, 'observer exact approved base')
         need(cfg['observer_patch']['sha256'] == manifest['observer_patch']['sha256'] == LIFECYCLE_PATCH_SHA, 'observer exact approved overlay')
         verify(cfg['observer_patch']['path'], cfg['observer_patch'])

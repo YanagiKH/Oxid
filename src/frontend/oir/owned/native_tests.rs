@@ -152,8 +152,8 @@ fn native_owned_caps_are_inclusive_and_account_exact_arenas() {
         blocks: 1,
         depth: 1,
         cost: 17,
-        cells: 6,
-        live_cells: 6,
+        inventory_items: 2,
+        owner_width: 1,
         bytes: 12,
         live_bytes: 12,
         ..Limits::DEFAULT
@@ -190,13 +190,19 @@ fn native_owned_caps_are_inclusive_and_account_exact_arenas() {
         ),
         (Limits { depth: 0, ..limits }, "depth"),
         (Limits { cost: 16, ..limits }, "fuel upper bound"),
-        (Limits { cells: 5, ..limits }, "aggregate expanded"),
         (
             Limits {
-                live_cells: 5,
+                inventory_items: 1,
                 ..limits
             },
-            "live expanded",
+            "compiler inventory",
+        ),
+        (
+            Limits {
+                owner_width: 0,
+                ..limits
+            },
+            "owner width",
         ),
         (
             Limits {
@@ -326,9 +332,9 @@ fn native_owned_guarded_table_has_independent_costs_and_origins() {
     }
 }
 
-struct Scratch(std::path::PathBuf);
+pub(super) struct Scratch(std::path::PathBuf);
 impl Scratch {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let stamp = std::time::SystemTime::now()
@@ -342,7 +348,7 @@ impl Scratch {
         std::fs::create_dir(&root).unwrap();
         Self(root)
     }
-    fn compile(&self, module: &str, name: &str) -> std::path::PathBuf {
+    pub(super) fn compile(&self, module: &str, name: &str) -> std::path::PathBuf {
         let assembler = std::env::var_os("OXID_LLVM_BIN").map_or_else(
             || std::path::PathBuf::from("llvm-as-19"),
             |p| std::path::PathBuf::from(p).join("llvm-as"),
@@ -385,7 +391,7 @@ impl Scratch {
         }
         output
     }
-    fn run(&self, output: &std::path::Path, args: &[String]) -> std::process::Output {
+    pub(super) fn run(&self, output: &std::path::Path, args: &[String]) -> std::process::Output {
         std::process::Command::new(output)
             .args(args)
             .current_dir(&self.0)
@@ -531,9 +537,10 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
     assert_eq!(bounds[0].depth, 3);
     assert_eq!(bounds[0].scalar_slots, 30);
     assert!(bounds[0].cyclic);
+    // Per-function I:38,5,10,7,4,1,8; W:20,0,0,0,0,4,4.
     let exact = Limits {
-        cells: 216,
-        live_cells: 166,
+        inventory_items: 73,
+        owner_width: 28,
         bytes: 600,
         live_bytes: 440,
         ..Limits::DEFAULT
@@ -542,17 +549,17 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
     for (limits, message) in [
         (
             Limits {
-                cells: 215,
+                inventory_items: 72,
                 ..exact
             },
-            "aggregate expanded",
+            "compiler inventory",
         ),
         (
             Limits {
-                live_cells: 165,
+                owner_width: 27,
                 ..exact
             },
-            "live expanded",
+            "owner width",
         ),
         (
             Limits {
@@ -1592,7 +1599,7 @@ fn expanded_depth_boundary(extra_field: bool) -> (SourceMap, RawOwnedProgram) {
 }
 
 #[test]
-fn native_owned_actual_expanded_cell_boundary_is_inclusive() {
+fn native_owned_historical_x_boundary_has_explicit_inventory_successor() {
     for extra in [false, true] {
         let (sources, raw) = expanded_depth_boundary(extra);
         let witness = verified::verify_owned(raw, &sources).unwrap();
@@ -1604,18 +1611,18 @@ fn native_owned_actual_expanded_cell_boundary_is_inclusive() {
             .sum();
         assert_eq!(actual_cells, 8_192 + usize::from(extra));
         let result = native_module(&witness, Some(hir::DefId(31)), &sources);
-        if extra {
-            assert!(result
-                .unwrap_err()
-                .message
-                .contains("aggregate expanded cells"));
-        } else {
-            let bounds = admit(&plan, Limits::DEFAULT).unwrap();
-            assert_eq!(bounds[31].depth, 32);
-            assert_eq!(bounds[31].cells, 8_192);
-            assert_eq!(bounds[31].bytes, 32_264);
-            assert!(result.is_ok());
-        }
+        // Historical native X8193 was denied. The explicit successor admits
+        // both I=127 / W=7938 or7939 while retaining common X for fuel.
+        let counts = plan::native_storage::NativeInventories::checked(&plan).unwrap();
+        assert_eq!(
+            (counts.items(), counts.owner_width()),
+            (127, 7938 + usize::from(extra))
+        );
+        let bounds = admit(&plan, Limits::DEFAULT).unwrap();
+        assert_eq!(bounds[31].depth, 32);
+        assert_eq!(bounds[31].cells, 8192 + usize::from(extra));
+        assert_eq!(bounds[31].bytes, 32264 + 4 * usize::from(extra));
+        assert!(result.is_ok());
     }
 }
 
@@ -2310,11 +2317,11 @@ fn native_owned_count_pass_stops_wide_expansion_at_the_byte_cap() {
         let mut visits = vec![];
         for cap in [1_024, 4_096, 65_536] {
             let mut count = Emission::count(cap);
+            let storage = NativeStoragePlan::checked(&plan, true).unwrap();
             emit(
-                &plan,
+                &storage,
                 hir::DefId(0),
                 &diagnostics,
-                true,
                 plan::MAX_FUEL,
                 &mut count,
             );

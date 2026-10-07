@@ -158,7 +158,7 @@ failure; current-source qualification and exact-head hosted CI are separate.
 The entire call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
 The following inclusive bounds are the scalar-only native restrictions. Owned
-modules retain them and add the expanded-storage restrictions below; the scalar
+modules retain them and add the inventory and byte restrictions below; the scalar
 slot/cost formulas and examples in this section apply to scalar-only modules.
 
 | Resource | Maximum |
@@ -215,8 +215,8 @@ requires:
 | Owned resource | Inclusive maximum |
 | --- | ---: |
 | Scalar slots plus all owner slots per function, `S + O` | 256 |
-| Sum of admitted expanded cells Xphysical over all functions | 8,192 |
-| Maximum call-path sum of Xphysical | 8,192 |
+| Whole-program compiler inventory items, `I` | 8,192 |
+| Whole-program logical owner-width cells, `W` | 8,192 |
 | Sum of explicit native arena bytes, including any wrapper fuel cell | 1 MiB |
 | Maximum call-path explicit arena bytes, including any wrapper fuel cell | 1 MiB |
 | Owned diagnostic data, including acyclic overflow diagnostics | 16 MiB |
@@ -228,45 +228,60 @@ P the sum of checked recursive owner widths: records use
 `max(1, sum(field widths))`, fixed arrays use `max(1, N)` (including empty and
 unit arrays), and enums use 2. B is the aligned owner arena including parameter, local, temporary, staged-argument and result
 storage, with inter-owner padding. Let Q count slice references and slice loans,
-and I be 1024 for the canonical input builtin and 0 otherwise. On the qualified
-x86_64 representation:
+and T be 1024 scratch bytes for each canonical input or output builtin and 0
+for other functions. On the qualified x86_64 representation:
 
 ```text
+I = sum_functions(S + A + O + R + L + C)
+W = sum_functions(P)
 X = S + A + P + 4O + 8R + 12L + 2C
 Xphysical = X + 2(R+L)
-Dnative = 8(S+A) + 8(R+L) + 4Q + align4(B+I)
+Dnative = 8(S+A) + 8(R+L) + 4Q + align4(B+T)
 ```
 
-X is logical activation fuel; Xphysical includes the existing view metadata
-used for expanded-cell admission. Slice-length slots and input scratch add
-physical bytes, not logical activation fuel. The input scratch is a suffix of
-the builtin's entry allocation, reused through retries and unreachable through
-ordinary owner extents. Its result, scratch, reference pointer and length total
-1,044 native bytes; no-input functions reserve no scratch.
+Under [RFC 0027](../rfcs/0027-native-admission-inventories.md), I and W replace
+the former aggregate and live Xphysical native gates. I includes all call
+argument positions, including owned/borrow holes; W counts every declared owner.
+These independent inventories intentionally broaden admission. They do not
+optimize allocations or change reference storage, Xphysical, logical activation
+fuel X, LLVM representation or ABI. Aggregate scalar/block checks still precede
+I, then W; every other native gate remains. The reference consumer retains its
+expanded-cell limits.
 
-Byte sums/path sums use Dnative and add one 8-byte wrapper fuel cell when any
-function has cyclic or input-dependent cost. The cell is added once to each
-whole-module/path bound, not once per function. Scalar field layout is declaration order, bool
-and unit 1-byte size/alignment, i32 4-byte size/alignment, with checked natural
+Slice-length slots and builtin scratch add physical bytes, not logical fuel.
+Each builtin's scratch is a separate suffix of its entry allocation, reused
+through retries and unreachable through ordinary owner extents. Its result,
+scratch, reference pointer and length total 1,044 native bytes; ordinary
+functions reserve no builtin scratch.
+
+Aggregate bytes are `sum_functions(Dnative) + Fwrapper`; live bytes are the
+maximum acyclic call-path sum of Dnative plus Fwrapper. Fwrapper is 8 bytes for
+Process entry or when any function has cyclic or I/O-dependent cost, otherwise
+0. It is added once to each whole-module/path bound, not once per function.
+Both limits remain 1 MiB.
+The immutable NativeStoragePlan independently reconciles these allocations with
+the verified execution plan before LLVM counting/rendering. Scalar field layout
+is declaration order, bool and unit 1-byte size/alignment, i32 4-byte
+size/alignment, with checked natural
 padding. An empty struct has one private identity byte. Arrays use element
 stride 1 for bool/unit and 4 for i32, with positive size
 `align_up(max(1, N * stride), alignment)`. Zero-array sentinel bytes and unit
-storage are initialized and never exposed as invalid elements. Since B ≤ 4P
-and Q ≤ R+L, Dnative ≤ 8Xphysical + I on this representation. With at most one
-canonical builtin and no recursive call paths, the existing cell ceiling bounds
-total explicit native storage by 65,544 bytes without input scratch, or 66,568
-with it, including the guarded fuel cell. The separate 1 MiB byte checks remain
-unchanged as defenses against representation changes. These figures exclude LLVM spills, ABI stack use, machine code, tool memory and RSS.
+storage are initialized and never exposed as invalid elements. Explicit bytes
+include builtin scratch and wrapper storage; an 8,192-word byte substitute is
+not the contract. These figures exclude LLVM spills, ABI stack use, machine
+code, tool memory and RSS. [Local successor evidence](../rfcs/0027-native-admission-inventories.md#local-evidence-and-remaining-gates)
+records the tested compiler identity; historical qualification ledgers keep
+their original source and admission identities.
 
 For a transitively acyclic function, start its conservative cost at X, then
 sum every merge, statement and terminator using the owned ledger in
 [typed preview](typed-preview.md#owned-verification-execution-and-accounting).
 At each Invoke substitute the callee's total cost for the callee-X term already
 included in the Invoke charge. Require `1 + cost(F) <= 100,000`. Both conditional
-arms and every call site are included. A cyclic CFG, input builtin or transitive
+arms and every call site are included. A cyclic CFG, I/O builtin or transitive
 callee with either property has unknown static cost; it does not gain a guessed
-finite bound. If any function is cyclic or input-dependent, all functions share
-the 1,000,000-operation guarded budget. An unused input import enables guards
+finite bound. If any function is cyclic or I/O-dependent, all functions share
+the 1,000,000-operation guarded budget. An unused I/O function import enables guards
 but does not exempt unrelated acyclic functions from static cost admission.
 Guarding uses these owned costs, including expanded transfers and normal-edge release,
 rather than the scalar-only call/root/return formulas below.

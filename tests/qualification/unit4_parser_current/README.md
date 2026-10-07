@@ -1,8 +1,8 @@
 # Current-source Unit4 parser qualification
 
-This adapter admits bounded-stdout feature source checkpoint
-`63db2c290031d76b5925fdd672c38eac2ca50578`, full tree
-`f01525a95f2e4b3dfa69237108cfbc67a1f43eab`, while retaining the byte-identical
+This adapter admits native inventory admission source checkpoint
+`ffa2e00543b7a1958321b719677ed3b48f42bc74`, full tree
+`8a717f36016d86130ad5acc28a23f87852c76064`, while retaining the byte-identical
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` package.
 
 The replay uses the historical `parse_counted` entry, whose current implementation
@@ -15,11 +15,11 @@ must not be represented as positive public enum parser coverage.
 ## Exact source and preparation boundaries
 
 The historical authority binds 283 base inputs, 113 compiler bodies and two
-286-member derived views. Current source admission binds 262 inputs, including
-204 `src/` and `native/` members, 56 retained non-source inputs and both scanner
-fixtures. The historical-to-current override has 220 members: 78 changed
-historical inputs and 142 additions. The current parser binds 425 base inputs,
-207 compiler bodies and two 428-member derived views. These inventories have
+286-member derived views. Current source admission binds 266 inputs, including
+208 `src/` and `native/` members, 56 retained non-source inputs and both scanner
+fixtures. The historical-to-current override has 224 members: 78 changed
+historical inputs and 146 additions. The current parser binds 429 base inputs,
+211 compiler bodies and two 432-member derived views. These inventories have
 different purposes and must not be substituted for one another.
 
 `authority.json` pins the complete current maps, source checkpoint, immutable
@@ -29,11 +29,17 @@ Unknown members, missing inputs, compiler deletions, reordered paths, changed
 bytes and coherently rehashed input tails remain rejected. Scanner include
 closure belongs to the separately pinned source-binding authority.
 
+The native inventory transition binds current execution source to the exact
+264-input Phase1 `native-storage-source.json`. Its seven source changes have no
+observer or control instrumentation overlap, so no new instrumentation adapter
+is introduced. The preserved native storage authority then binds that Phase1
+source to the retained 262-input `stdout-source.json`; its transition and
+zero-overlap invariant remain unchanged.
 The stdout transition overlaps observer/control instrumentation only at parser.
 Its exact patch section first restores the retained 252-input stdin parser.
 The stdin transition then overlaps only at AST and parser; its exact sections
 restore their preserved 237-input enum-source identities. The stdout authority
-binds current execution source. The separately pinned stdin and enum authorities
+binds the retained stdout predecessor. The separately pinned stdin and enum authorities
 keep their own original checkpoints. No initializer or closed-policy semantic
 projection changes are introduced by stdout.
 
@@ -116,8 +122,8 @@ builds, 12 ordinary passivity pairs and all 638 frozen observations across
 248 sources. Every build, collection, passivity and comparison rechecks the
 checkout, derived bodies, historical provenance and current transition binding.
 The compact capsule retains all 14 generated provenance artifacts. Each current
-derived view includes a generated candidate manifest; its other 427 members and
-the four executables may be full-archive-only, for 858 identities total.
+derived view includes a generated candidate manifest; its other 431 members and
+the four executables may be full-archive-only, for 866 identities total.
 
 Run bounded controls from the repository root:
 
