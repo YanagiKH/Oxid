@@ -1,7 +1,7 @@
 # RFC 0028: private checked scalar HIR import
 
-Status: **private Verify enabled and locally qualified**.
-Run, Emit and public provider integration remain outside the enabled scope.
+Status: **private Verify and Run enabled and locally qualified**.
+Emit and public provider integration remain outside the enabled scope.
 Updated 2026-10-07.
 
 ## Outcome and boundary
@@ -331,7 +331,7 @@ qualification and private Run/Emit activation remain separate gates.
 ## Accepted private Run precursor
 
 Status: private Run is enabled after complete carrier measurement and independent
-boundary review; focused execution qualification is pending. Emit/provider
+boundary review; focused execution qualification has passed. Emit/provider
 integration remains outside this stage.
 
 A finite private request may select Verify or Run inside the same checked
@@ -389,3 +389,26 @@ failed partial construction and realloc transients. They do not replace the new
 importer ledger or establish a total memory bound. The 86 focused entry/denial, admission, comparison and Verify controls passed,
 and independent review cleared the corrected accounting boundary. Private Run is now enabled for its separately authorized focused execution
 qualification.
+
+## Private Run execution evidence
+
+Imported and ordinary original/project execution agree on scalar results and
+complete runtime diagnostics, including spans and rendered JSON. Controls cover
+genuine rich/public/library captures and explicitly synthetic bool/unit,
+entry-error, arithmetic-error, fuel-exhaustion and frame-exhaustion inputs. Both
+modes reject all 1,178 supplied-fact mutations before runtime. Ordinary limits,
+entry policy, arithmetic and runtime fuel are unchanged.
+
+Rich Run's shared compile work is 1,310,659, including a 33,792-unit root-entry
+scan. Exact work/storage thresholds pass; each minus-one rejects before candidate
+reserves, checking or runtime. Its imported-leaf allocation interval has 148
+successful allocations, zero live bytes at return and a 155,224-byte peak.
+Existing arithmetic/fuel/frame failure controls also return fixed errors after
+zero-live owner cleanup. Source/AST/capture and prepared validation trace remain
+outside those intervals; no general OOM or total-memory guarantee is claimed.
+
+The final clean local successor passed strict all-target lint, formatting and
+1,594 unit tests, with 55 intentionally ignored tests. Independent review verified
+the receipts and closed the requested Run boundary/execution scope. Emit,
+public/provider integration and current-source hosted qualification remain
+separate gates.
