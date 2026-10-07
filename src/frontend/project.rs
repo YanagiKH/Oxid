@@ -265,6 +265,21 @@ impl ProjectSources {
             ProjectEnumSyntax::BuiltinCandidate,
         )
     }
+    #[cfg(test)]
+    pub(super) fn load_output_candidate(
+        entry: &str,
+        limits: ProjectLimits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            allocator,
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::OutputCandidate,
+        )
+    }
     fn load_with_arrays(
         entry: &str,
         limits: ProjectLimits,
@@ -614,6 +629,8 @@ fn io_error(error: io::Error, display: &str, origin: Option<Span>) -> Box<Diagno
 #[derive(Clone, Copy)]
 enum ProjectEnumSyntax {
     #[cfg(test)]
+    OutputCandidate,
+    #[cfg(test)]
     BuiltinCandidate,
     #[cfg(test)]
     StdClosed,
@@ -880,6 +897,15 @@ impl SourceSetBuilder<'_> {
         let (program, nodes) = match self.enums {
             #[cfg(test)]
             ProjectEnumSyntax::StdClosed => parser::parse_typed_closed_std_counted(
+                source,
+                tokens,
+                self.mode,
+                remaining_nodes,
+                self.allocator,
+                &mut Default::default(),
+            )?,
+            #[cfg(test)]
+            ProjectEnumSyntax::OutputCandidate => parser::parse_output_candidate_counted(
                 source,
                 tokens,
                 self.mode,

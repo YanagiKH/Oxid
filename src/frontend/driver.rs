@@ -2,14 +2,26 @@ use super::{
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
     oir,
-    options::{self, Operation, Route},
+    options::{self, EntryPolicy, Operation, Route},
     project::{budget::Allocator, ProjectLimits, ProjectSources, SyntaxFlavor},
     source::SourceMap,
 };
 
 /// None returns an untouched/default or explicitly legacy command to the old CLI.
 pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
-    match options::route(args) {
+    dispatch_route(options::route(args), args)
+}
+
+fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
+    match route {
+        Route::ProcessError { message } => Some(process_option_error(&message)),
+        Route::TypedRun {
+            json: true,
+            entry_policy: EntryPolicy::Process,
+            ..
+        } => Some(process_option_error(
+            "process-mode run does not support --message-format=json",
+        )),
         Route::Legacy(legacy) => {
             *args = legacy;
             None
@@ -26,11 +38,36 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         )),
         Route::FormatError { message } => Some(super::format_cli::cli_error(&message)),
         Route::TypedFormat { path, check } => Some(super::format_cli::process_file(&path, check)),
-        Route::TypedCheck { path, json } => Some(process_file(&path, json, Operation::Check, None)),
-        Route::TypedRun { path, json } => Some(process_file(&path, json, Operation::Run, None)),
-        Route::TypedCompile { path, json, output } => {
-            Some(process_file(&path, json, Operation::Compile, Some(&output)))
-        }
+        Route::TypedCheck { path, json } => Some(process_file(
+            &path,
+            json,
+            Operation::Check,
+            None,
+            EntryPolicy::Result,
+        )),
+        Route::TypedRun {
+            path,
+            json,
+            entry_policy,
+        } => Some(process_file(
+            &path,
+            json,
+            Operation::Run,
+            None,
+            entry_policy,
+        )),
+        Route::TypedCompile {
+            path,
+            json,
+            output,
+            entry_policy,
+        } => Some(process_file(
+            &path,
+            json,
+            Operation::Compile,
+            Some(&output),
+            entry_policy,
+        )),
     }
 }
 enum Summary {
@@ -106,16 +143,71 @@ fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
     }
 }
 
-fn process_file(path: &str, json: bool, operation: Operation, output: Option<&str>) -> i32 {
-    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
-        Ok(project) => project,
-        Err(failure) => {
-            return report(
-                &failure.sources,
-                failure.diagnostics,
+/// Process errors never use the ordinary JSON/scalar stdout reporter. Callers
+/// establish terminal safety before constructing or rendering any diagnostics.
+fn report_process(sources: &SourceMap, diagnostics: &[Diagnostic]) -> i32 {
+    for diagnostic in diagnostics {
+        if oir::process::diagnostic(diagnostic.render_human(sources).as_bytes()) != 1 {
+            return 74;
+        }
+    }
+    1
+}
+
+fn process_option_error(message: &str) -> i32 {
+    if !oir::process::setup() {
+        return 74;
+    }
+    report_process(
+        &SourceMap::new(),
+        &[*Diagnostic::new("E0001", "cli", message, None)],
+    )
+}
+
+fn process_file(
+    path: &str,
+    json: bool,
+    operation: Operation,
+    output: Option<&str>,
+    entry_policy: EntryPolicy,
+) -> i32 {
+    let process_run = operation == Operation::Run && entry_policy == EntryPolicy::Process;
+    // Pure argv classification already finished. Setup must precede even source
+    // loading, because all subsequent failures use the process stderr channel.
+    if process_run && !oir::process::setup() {
+        return 74;
+    }
+    if entry_policy == EntryPolicy::Process && !oir::process::supported_host() {
+        let diagnostic = *Diagnostic::new(
+            "E0608",
+            "oir-run",
+            "process execution requires Linux x86_64",
+            None,
+        );
+        return if process_run {
+            report_process(&SourceMap::new(), &[diagnostic])
+        } else {
+            report(
+                &SourceMap::new(),
+                vec![diagnostic],
                 json,
                 Summary::empty(operation),
             )
+        };
+    }
+    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return if process_run {
+                report_process(&failure.sources, &failure.diagnostics)
+            } else {
+                report(
+                    &failure.sources,
+                    failure.diagnostics,
+                    json,
+                    Summary::empty(operation),
+                )
+            }
         }
     };
     let executable = match project.syntax_flavor() {
@@ -133,6 +225,21 @@ fn process_file(path: &str, json: bool, operation: Operation, output: Option<&st
             oir::project::check_project_executable(&project, limits, &work, &mut allocator)
         }
     };
+    if process_run {
+        return match executable {
+            Ok(verified) => match verified.run_process() {
+                Ok(status) => status,
+                Err(oir::ProcessFailure::Setup) => 74,
+                Err(oir::ProcessFailure::Diagnostic(diagnostic)) => {
+                    report_process(project.sources(), &[*diagnostic])
+                }
+            },
+            Err(diagnostics) => report_process(project.sources(), &diagnostics),
+        };
+    }
+    if entry_policy == EntryPolicy::Process {
+        return process_compile_loaded(&project, json, output, executable);
+    }
     process_loaded(&project, json, operation, output, executable)
 }
 
@@ -167,9 +274,50 @@ fn process_loaded(
     }
 }
 
+/// Compile reporting remains the ordinary build protocol and never performs
+/// terminal setup or source execution, including for a Process executable.
+fn process_compile_loaded(
+    project: &ProjectSources,
+    json: bool,
+    output: Option<&str>,
+    executable: Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>>,
+) -> i32 {
+    let result = (|| {
+        let verified = executable?;
+        let module = verified.native_process_module().map_err(|e| vec![*e])?;
+        let output = output.expect("compile route validates output");
+        super::native::compile(&module, output).map_err(|e| vec![*e])?;
+        Ok(Summary::Compile(Some(output.to_string())))
+    })();
+    match result {
+        Ok(summary) => report(project.sources(), Vec::new(), json, summary),
+        Err(diagnostics) => report(project.sources(), diagnostics, json, Summary::Compile(None)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn process_dispatch_is_typed_and_cannot_reach_legacy_arguments() {
+        // Classification is safe to test on every host without changing the
+        // test harness signal policy. Public subprocess tests cover execution.
+        for values in [
+            &[
+                "run",
+                "missing.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+            ][..],
+            &["unknown", "--entry-mode=process"],
+            &["run", "--edition=typed-preview", "--entry-mode="],
+        ] {
+            let arguments: Vec<String> = values.iter().map(|s| (*s).into()).collect();
+            assert!(!matches!(options::route(&arguments), Route::Legacy(_)));
+        }
+    }
+
     #[test]
     fn diagnostic_exit_status_preserves_source_errors_and_distinguishes_oir_internal_errors() {
         assert_eq!(exit_status(&[]), 0);

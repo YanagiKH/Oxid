@@ -1,5 +1,6 @@
 //! The sealed boundary. Sibling consumers cannot construct or mutate fields.
 use super::*;
+use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 
 #[derive(Debug)]
 pub(super) struct VerifiedOwnedProgram {
@@ -12,18 +13,46 @@ pub(super) struct VerifiedOwnedProgram {
 struct OwnershipSeal;
 impl VerifiedOwnedProgram {
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
-        if self.program.builtins == BuiltinOrigins::ReadStdin {
-            self.program.functions.len().checked_sub(1).map(hir::DefId)
-        } else {
-            None
-        }
+        let rank = self
+            .program
+            .builtins
+            .function_rank(BuiltinFunction::ReadStdin)?;
+        self.program
+            .functions
+            .len()
+            .checked_sub(self.program.builtins.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
     }
     pub(super) fn builtin_enumeration(&self) -> Option<EnumId> {
-        if self.program.builtins != BuiltinOrigins::None {
-            self.program.enums.len().checked_sub(1).map(EnumId)
-        } else {
-            None
-        }
+        let rank = self.program.builtins.enum_rank(BuiltinEnum::ReadStatus)?;
+        self.program
+            .enums
+            .len()
+            .checked_sub(self.program.builtins.extra_enums())?
+            .checked_add(rank)
+            .map(EnumId)
+    }
+    pub(super) fn builtin_output_function(&self) -> Option<hir::DefId> {
+        let rank = self
+            .program
+            .builtins
+            .function_rank(BuiltinFunction::WriteStdout)?;
+        self.program
+            .functions
+            .len()
+            .checked_sub(self.program.builtins.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
+    }
+    pub(super) fn builtin_output_enumeration(&self) -> Option<EnumId> {
+        let rank = self.program.builtins.enum_rank(BuiltinEnum::WriteStatus)?;
+        self.program
+            .enums
+            .len()
+            .checked_sub(self.program.builtins.extra_enums())?
+            .checked_add(rank)
+            .map(EnumId)
     }
     pub(super) fn has_builtin_origins(&self) -> bool {
         self.program.builtins != BuiltinOrigins::None
@@ -136,6 +165,20 @@ fn validate_proof(
 /// declarations or consumer callback exposed.
 #[cfg(test)]
 pub(super) fn probe_enum_validation(
+    raw: &RawOwnedProgram,
+    sources: &SourceMap,
+    limits: budget::Limits,
+) -> Result<OwnershipUsage, OwnedFailure> {
+    let (mut usage, declarations, mut meter) = prepare(raw, sources, limits)?;
+    inventory_carriers(raw, &mut meter)?;
+    validate_proof(raw, &declarations, sources, &mut usage, &mut meter)?;
+    Ok(usage)
+}
+
+/// Closed output observation shares the authoritative proof, but returns only
+/// inert usage. It cannot construct a witness or enable an effect consumer.
+#[cfg(test)]
+pub(super) fn probe_output_validation(
     raw: &RawOwnedProgram,
     sources: &SourceMap,
     limits: budget::Limits,

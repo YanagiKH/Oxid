@@ -215,3 +215,19 @@ LLVM/Clang/LLD 19.1.7 at O0 native qualification boundary are unchanged. The
 their presence does not establish current exact-head hosted CI. Older
 source-bound validation ledgers qualify their recorded compiler identities,
 not this successor. No stable ABI, self-hosting or completed milestone is claimed.
+
+## Bounded process output and persistent artifacts
+
+The implemented [stdout/process contract](../../rfcs/0025-bounded-stdout-process-entry.md)
+adds explicit Process Run/Compile and whole-view byte output on Linux x86_64.
+Default Result behavior and resource ceilings remain; named physical admission
+successors are documented in the RFC. Process setup/reporting has its own host
+boundary, including the current Windows silent-74 limitation.
+
+The [OXS1 component](../../fixtures/typed-expression-samples/README.md) has a
+producer, independent Oxid loader and independent external decoder. Local public
+CLI/reference/native checks cover exact bytes/statuses, 39/63 from unchanged
+executables, malformed framing, capacity, overflow and failed publication. The
+[controller](../../scripts/verify_bounded_stack_artifact.py) retains inputs,
+partial outputs and executable identities. Current-source rebinding and exact-head
+hosted CI are still required; these local results are not a release or v1.0 claim.

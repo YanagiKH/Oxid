@@ -15,6 +15,16 @@ pub(in crate::frontend::oir) mod typeck;
 pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
 mod diagnostic;
 
+/// Test subprocesses reuse the authoritative denial presentation. This exposes
+/// no source producer, owner, proof or execution capability.
+#[cfg(test)]
+pub(super) fn raw_verification_diagnostic(
+    error: &super::OwnedFailure,
+    sources: &super::SourceMap,
+) -> Box<super::Diagnostic> {
+    diagnostic::verify(error, sources)
+}
+
 #[cfg(test)]
 mod diagnostic_tests;
 
@@ -56,3 +66,6 @@ mod projected_slice_raw_tests;
 mod builtin_source_tests;
 #[cfg(test)]
 mod enum_native_source_tests;
+
+#[cfg(test)]
+mod output_source_tests;

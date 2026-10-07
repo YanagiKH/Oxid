@@ -8,7 +8,8 @@ pub(super) mod project;
 mod source;
 mod verify;
 
-pub(super) use source::{check_source, CheckedSourceProgram};
+pub(in crate::frontend) use owned::process;
+pub(super) use source::{check_source, CheckedSourceProgram, ProcessFailure};
 
 use super::{
     diagnostic::Diagnostic,

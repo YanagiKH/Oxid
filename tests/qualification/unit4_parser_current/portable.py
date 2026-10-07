@@ -50,6 +50,7 @@ ENUM_AST_SCHEMA_ADAPTER = {
     "semantic_predicate_handlers_changed": False,
 }
 HISTORICAL_AUTHORITY_SHA = "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0"
+STDIN_SOURCE_SHA = "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f"
 CURRENT_PATHS = (
     'fixtures/typed-record-composition-samples/main.ox',
     'fixtures/typed-record-composition-samples/model.ox',
@@ -96,6 +97,11 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/builtin_input_native_tests.rs',
     'src/frontend/oir/owned/builtin_input_tests.rs',
     'src/frontend/oir/owned/builtin_origin_tests.rs',
+    'src/frontend/oir/owned/builtin_output_descriptor_tests.rs',
+    'src/frontend/oir/owned/builtin_output_fixtures.rs',
+    'src/frontend/oir/owned/builtin_output_native_tests.rs',
+    'src/frontend/oir/owned/builtin_output_process_tests.rs',
+    'src/frontend/oir/owned/builtin_output_reference_tests.rs',
     'src/frontend/oir/owned/builtins.rs',
     'src/frontend/oir/owned/cfg.rs',
     'src/frontend/oir/owned/composition_native_tests.rs',
@@ -126,7 +132,9 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/negation_raw_tests.rs',
     'src/frontend/oir/owned/oracle_tests.rs',
     'src/frontend/oir/owned/origin_tests.rs',
+    'src/frontend/oir/owned/output.rs',
     'src/frontend/oir/owned/plan.rs',
+    'src/frontend/oir/owned/process.rs',
     'src/frontend/oir/owned/projected_slice_native_tests.rs',
     'src/frontend/oir/owned/reviewer_allocator.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
@@ -162,6 +170,9 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/source/lower.rs',
     'src/frontend/oir/owned/source/mod.rs',
     'src/frontend/oir/owned/source/native_resource_tests.rs',
+    'src/frontend/oir/owned/source/output_lower_tests.rs',
+    'src/frontend/oir/owned/source/output_source_tests.rs',
+    'src/frontend/oir/owned/source/output_typing_tests.rs',
     'src/frontend/oir/owned/source/program.rs',
     'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
     'src/frontend/oir/owned/source/resolve.rs',
@@ -289,6 +300,11 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/builtin_input_native_tests.rs',
     'src/frontend/oir/owned/builtin_input_tests.rs',
     'src/frontend/oir/owned/builtin_origin_tests.rs',
+    'src/frontend/oir/owned/builtin_output_descriptor_tests.rs',
+    'src/frontend/oir/owned/builtin_output_fixtures.rs',
+    'src/frontend/oir/owned/builtin_output_native_tests.rs',
+    'src/frontend/oir/owned/builtin_output_process_tests.rs',
+    'src/frontend/oir/owned/builtin_output_reference_tests.rs',
     'src/frontend/oir/owned/builtins.rs',
     'src/frontend/oir/owned/composition_native_tests.rs',
     'src/frontend/oir/owned/composition_reference_tests.rs',
@@ -305,6 +321,8 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/enum_reference_tests.rs',
     'src/frontend/oir/owned/input.rs',
     'src/frontend/oir/owned/negation_raw_tests.rs',
+    'src/frontend/oir/owned/output.rs',
+    'src/frontend/oir/owned/process.rs',
     'src/frontend/oir/owned/projected_slice_native_tests.rs',
     'src/frontend/oir/owned/reviewer_array_observer_tests.rs',
     'src/frontend/oir/owned/reviewer_array_reference_tests.rs',
@@ -324,6 +342,9 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/source/enum_type_tests.rs',
     'src/frontend/oir/owned/source/hir_budget.rs',
     'src/frontend/oir/owned/source/hir_budget_tests.rs',
+    'src/frontend/oir/owned/source/output_lower_tests.rs',
+    'src/frontend/oir/owned/source/output_source_tests.rs',
+    'src/frontend/oir/owned/source/output_typing_tests.rs',
     'src/frontend/oir/owned/source/projected_slice_raw_tests.rs',
     'src/frontend/oir/owned/source/resolver_enum_tests.rs',
     'src/frontend/oir/owned/source/resolver_inventory_tests.rs',
@@ -405,7 +426,7 @@ PROJECTED_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.r
 ENUM_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/declaration_index/resource.rs",
                               "src/frontend/parser.rs",
                               "src/frontend/project/budget.rs", "src/frontend/source.rs")
-AUTHORITY_SHA = '880861ae5c1e33bb6734cbb6d07f2b8ad3c5253b3170f073bdf0454a74bbecc8'
+AUTHORITY_SHA = 'ea5c424c532faee332521f01e60e5f78b904ed1f119099bdc7b4238e3650cc6a'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -513,7 +534,7 @@ def authority():
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
-    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["unary_transition_patch"], active["composition_source_manifest"], active["projected_transition_patch"], active["unary_source_manifest"], active["enum_transition_patch"], active["projected_source_manifest"], active["enum_authority"], active["stdin_transition_patch"], active["enum_source_manifest"], active["stdin_authority"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
+    verify_map(REPOSITORY, [active["historical_authority"], active["historical_portable"], active["current_source_manifest"], active["formatter_transition_patch"], active["combined_transition_patch"], active["combined_source_manifest"], active["division_transition_patch"], active["division_source_manifest"], active["slices_transition_patch"], active["composition_transition_patch"], active["slices_source_manifest"], active["unary_transition_patch"], active["composition_source_manifest"], active["projected_transition_patch"], active["unary_source_manifest"], active["enum_transition_patch"], active["projected_source_manifest"], active["enum_authority"], active["stdin_transition_patch"], active["enum_source_manifest"], active["stdin_authority"], active["stdout_transition_patch"], active["stdin_source_manifest"], active["stdout_authority"], active["source_binding_runner"], active["composition_parser_amendment"], active["composition_parser_amendment_module"]])
     same(active["historical_authority"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/authority.json", "historical authority path")
     same(active["historical_portable"]["path"], "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py", "historical adapter path")
     same(active["current_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/current-source.json", "current source authority path")
@@ -525,7 +546,7 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 252, "complete current source count")
+    same(len(current["files"]), 262, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     enum_authority = read(REPOSITORY / active["enum_authority"]["path"])
@@ -539,18 +560,34 @@ def authority():
     same(active["enum_source_manifest"]["sha256"], enum_authority["current_source_sha256"], "enum predecessor manifest identity")
     stdin_authority = read(REPOSITORY / active["stdin_authority"]["path"])
     same(active["stdin_authority"]["path"], "tests/fixtures/typed_project_source_binding/stdin-authority.json", "stdin authority path")
-    same(stdin_authority["reviewed_source_head"], current["reviewed_source_head"], "stdin authority source checkpoint")
-    same(stdin_authority["current_source_sha256"], active["current_source_manifest"]["sha256"], "stdin current source identity")
+    same(active["stdin_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/stdin-source.json", "stdin predecessor path")
+    same(active["stdin_source_manifest"]["sha256"], STDIN_SOURCE_SHA, "exact retained stdin source identity")
+    stdin_source = read(REPOSITORY / active["stdin_source_manifest"]["path"])
+    same(len(stdin_source["files"]), 252, "complete retained stdin source count")
+    same(stdin_authority["reviewed_source_head"], stdin_source["reviewed_source_head"], "stdin authority source checkpoint")
+    same(stdin_authority["current_source_sha256"], active["stdin_source_manifest"]["sha256"], "stdin predecessor source identity")
     same(stdin_authority["enum_source_sha256"], active["enum_source_manifest"]["sha256"], "stdin exact enum predecessor")
     same(sorted(set(stdin_authority["transition_paths"]).intersection(row["path"] for row in result["instrumentation"])),
          list(STDIN_INSTRUMENTATION_PATHS), "exact stdin observer overlap roster")
     same(sorted(set(stdin_authority["transition_paths"]).intersection(row["path"] for row in result["control_instrumentation"])),
          list(STDIN_INSTRUMENTATION_PATHS), "exact stdin control overlap roster")
+    stdout_authority = read(REPOSITORY / active["stdout_authority"]["path"])
+    same(active["stdout_authority"]["path"], "tests/fixtures/typed_project_source_binding/stdout-authority.json", "stdout authority path")
+    same(stdout_authority["reviewed_source_head"], current["reviewed_source_head"], "stdout authority source checkpoint")
+    same(stdout_authority["source_only_tree"], current["source_only_tree"], "stdout authority source tree")
+    same(stdout_authority["current_source_sha256"], active["current_source_manifest"]["sha256"], "stdout current source identity")
+    same(stdout_authority["stdin_source_sha256"], active["stdin_source_manifest"]["sha256"], "stdout exact stdin predecessor")
+    same(stdout_authority["stdin_authority_sha256"], active["stdin_authority"]["sha256"], "stdout exact stdin authority")
+    same(stdout_authority["transition_patch_sha256"], active["stdout_transition_patch"]["sha256"], "stdout exact transition patch")
+    same(sorted(set(stdout_authority["transition_paths"]).intersection(row["path"] for row in result["instrumentation"])),
+         list(STDOUT_INSTRUMENTATION_PATHS), "exact stdout observer overlap roster")
+    same(sorted(set(stdout_authority["transition_paths"]).intersection(row["path"] for row in result["control_instrumentation"])),
+         list(STDOUT_INSTRUMENTATION_PATHS), "exact stdout control overlap roster")
     same(active["enum_ast_schema_adapter"], ENUM_AST_SCHEMA_ADAPTER, "unapproved enum AST schema adapter")
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 252, "duplicate current member")
+    same(len(after), 262, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -566,7 +603,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 415, "current base count")
+    same(len(base), 425, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -597,7 +634,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 418, "current derived count")
+        same(len(ordered), 428, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -938,6 +975,37 @@ def restore_enum_source(a, name, raw):
 
 
 STDIN_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
+STDOUT_INSTRUMENTATION_PATHS = ("src/frontend/parser.rs",)
+
+
+def restore_stdout_source(a, name, raw):
+    """Recover the exact stdin parser before the unchanged predecessor chain."""
+    require(name in STDOUT_INSTRUMENTATION_PATHS, "unapproved stdout instrumentation path")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current stdout identity")
+    runner, transition, predecessor = (active[key] for key in
+        ("source_binding_runner", "stdout_transition_patch", "stdin_source_manifest"))
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/stdout-transition.patch", "stdout transition path")
+    same(predecessor["path"], "tests/fixtures/typed_project_source_binding/stdin-source.json", "stdin predecessor path")
+    same(predecessor["sha256"], STDIN_SOURCE_SHA, "exact retained stdin source identity")
+    verify_map(REPOSITORY, [runner, transition, predecessor])
+    module = types.ModuleType("unit4_stdout_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact stdout instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact stdout instrumentation inverse scope")
+    expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
+         "stdout transition must recover exact stdin source")
+    return original
 
 
 def restore_stdin_source(a, name, raw):
@@ -946,12 +1014,18 @@ def restore_stdin_source(a, name, raw):
     active = a["current"]
     current = next(row for row in active["source_delta"] if row["path"] == name)
     same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current stdin identity")
-    runner, transition, predecessor = (active[key] for key in
-        ("source_binding_runner", "stdin_transition_patch", "enum_source_manifest"))
+    runner, transition, predecessor, stdin_source = (active[key] for key in
+        ("source_binding_runner", "stdin_transition_patch", "enum_source_manifest", "stdin_source_manifest"))
     same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
     same(transition["path"], "tests/fixtures/typed_project_source_binding/stdin-transition.patch", "stdin transition path")
     same(predecessor["path"], "tests/fixtures/typed_project_source_binding/enum-source.json", "enum predecessor path")
-    verify_map(REPOSITORY, [runner, transition, predecessor])
+    same(stdin_source["path"], "tests/fixtures/typed_project_source_binding/stdin-source.json", "stdin predecessor path")
+    same(stdin_source["sha256"], STDIN_SOURCE_SHA, "exact retained stdin source identity")
+    verify_map(REPOSITORY, [runner, transition, predecessor, stdin_source])
+    stdin_raw = restore_stdout_source(a, name, raw) if name in STDOUT_INSTRUMENTATION_PATHS else raw
+    expected_stdin = next(row for row in read(REPOSITORY / stdin_source["path"])["files"] if row["path"] == name)
+    same({"path": name, "bytes": len(stdin_raw), "sha256": sha(stdin_raw)}, expected_stdin,
+         "composition retained stdin identity")
     module = types.ModuleType("unit4_stdin_source_binding")
     module.__file__ = str(REPOSITORY / runner["path"])
     exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
@@ -960,7 +1034,7 @@ def restore_stdin_source(a, name, raw):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact stdin instrumentation source section")
     patch = selected[0]
-    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    restored, touched = module.apply_inverse_patch({name: stdin_raw}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact stdin instrumentation inverse scope")
     expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
     original = restored[name]
@@ -1085,7 +1159,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 197, "current compiler body count")
+    same(len(wanted), 207, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

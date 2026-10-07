@@ -132,7 +132,9 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
-        OwnedInstruction::ReadStdin { .. } => unreachable!("builtin input source gate"),
+        OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => {
+            unreachable!("builtin effect source gate")
+        }
         OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
             unreachable!("enum source gate")
         }

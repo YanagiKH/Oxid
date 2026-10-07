@@ -2063,6 +2063,19 @@ pub(super) fn lower_with_limits(
     typed: &TypedOwnedProgram<'_>,
     limits: budget::Limits,
 ) -> Result<RawOwnedProgram> {
+    if (typed.index().builtin_set() != BuiltinOrigins::None || {
+        #[cfg(test)]
+        {
+            typed.index().is_output_candidate_pipeline()
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }) && !typed.admission().allows_paid_source(typed.index())
+    {
+        return Err(invariant(typed.index().sources().eof()));
+    }
     let expected = budget::preflight(typed, limits)?;
     let enum_count = typed.index().enum_count();
     let mut enums = if enum_count == 0 {
@@ -2235,17 +2248,21 @@ pub(super) fn lower_with_limits(
         )?;
     }
     if typed.index().builtin_set().extra_functions() != 0 {
-        let function = super::builtin_lower::function(typed.index())?;
-        bytes = budget::add(
-            bytes,
-            budget::function_bytes(super::builtin_lower::counts())?,
-        )?;
-        budget::append(
-            &mut functions,
-            function,
-            typed.index().function_count(),
-            typed.index().sources().eof(),
-        )?;
+        for kind in crate::frontend::builtin_catalog::BuiltinFunction::ALL {
+            if typed.index().builtin_set().contains_function(kind) {
+                let function = super::builtin_lower::function(typed.index(), kind)?;
+                bytes = budget::add(
+                    bytes,
+                    budget::function_bytes(super::builtin_lower::counts())?,
+                )?;
+                budget::append(
+                    &mut functions,
+                    function,
+                    typed.index().function_count(),
+                    typed.index().sources().eof(),
+                )?;
+            }
+        }
     }
     if bytes != expected.raw_bytes {
         let mut error = OwnedFailure::resource("source count mismatch");
@@ -2340,6 +2357,10 @@ pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
 /// Nested raw payload is separately priced by source::budget::function_bytes.
 #[allow(dead_code)]
 struct InvocationControls {
+    // Preflight and direct emission each perform the provenance/admission
+    // predicate before the first raw reservation. Keep both complete roles.
+    admission_guards: [super::resolve::PaidSourceAdmissionCarriers; 2],
+    inventory_guards: [(BuiltinOrigins, bool, bool); 2],
     // Caller-held preflight/count results and the standalone per-block cache
     // header coexist with Walk. Result envelopes include their inline payload.
     source_program: &'static TypedOwnedProgram<'static>,

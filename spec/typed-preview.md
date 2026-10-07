@@ -425,6 +425,64 @@ E0604. These scalar values use the existing result printer. Full current-source
 qualification and exact-head hosted CI remain separate acceptance gates. See
 [RFC 0024](../rfcs/0024-bounded-stdin-input.md) for the complete effect contract.
 
+## Bounded stdout and process entry
+
+The individual imports `std::io::write_stdout` and `std::io::WriteStatus` join
+the closed builtin catalog, with ordinary aliases and no implicit prelude.
+`write_stdout(bytes: &[i32]) -> WriteStatus` consumes no owner: it borrows the
+complete existing view, whose capacity is 0..1024. Every cell must be 0..255.
+The operation validates and stages all bytes before writing any of them; there
+is no encoding conversion, terminator, subslice or used-prefix argument.
+
+`WriteStatus` has `Complete`, `InvalidInput`, and `IoError(i32)` variants.
+InvalidInput writes nothing. IoError(n) records bytes already accepted, not
+recipient delivery or durability. Empty views return Complete without touching
+stdout. One-byte attempts retry EINTR after another fuel debit; zero progress
+and other errors stop with IoError. The core cost is `4 + C + A`, including
+validation/staging and every attempted write. Borrow/activation/call/return
+costs remain separate. The result commit cannot fail after output begins.
+
+```sh
+oxid run program.ox --edition=typed-preview --entry-mode=process
+oxid compile program.ox --edition=typed-preview --entry-mode=process --backend=llvm --output=program
+```
+
+Process entry requires the original root `fn main() -> i32` with no parameters.
+Run and Compile share this signature gate (E0600/oir-run); Check remains
+library-capable. Values 0..255 become exact process statuses, with no scalar or
+JSON stdout trailer. Other values produce E0600 and status 1 if the diagnostic
+finishes, otherwise 74. Ordinary calls to main retain normal i32 semantics.
+Default `--entry-mode=result` keeps prior output, status and body fuel behavior.
+A stdout-function import requires Process for Run/Compile even if unused or
+aliased: Result rejects it with E0609/oir-owned-run before effects or emission.
+A WriteStatus-only import has no such requirement.
+
+Process Run rejects JSON reporting with E0001 on safe stderr before loading.
+Valid Process intent remains sticky for argv errors; missing/unknown entry-mode
+values on typed Run also use that text-only channel. `--` and script forwarding
+retain their existing boundaries. Compile JSON remains a compiler build report;
+Check, Fmt and Compile never establish process signal policy or execute I/O.
+
+Runtime execution is qualified on Linux x86_64. Process Run establishes ignored
+SIGPIPE before source loading, diagnostic rendering, activation or fuel checks.
+Setup failure returns silent 74. Terminal stderr retries Interrupted/positive
+short writes and returns 74 on zero/error, preserving any prefix without a
+recursive report or stdout fallback. macOS x86_64/arm64 has diagnostic capability
+only and reports E0608/oir-run before loading. Windows Process Run and process
+option errors currently return silent 74 before formatting/loading because
+synchronous inherited stderr has not been established; Process Compile uses
+ordinary E0608 reporting. Other unqualified terminal targets also fail silently.
+Default-mode host behavior is unchanged. Hosted checks remain necessary for
+platform-specific claims.
+
+Earlier output cannot be rolled back if a later operation, return or fuel check
+fails. The [OXS1 artifact component](../fixtures/typed-expression-samples/README.md)
+uses one producer executable and a separate loader plus independent decoder.
+Callers publish saved output only after successful production and validation.
+See [RFC 0025](../rfcs/0025-bounded-stdout-process-entry.md) for resource-admission
+successors and the complete effect contract; no general file API or self-hosting
+capability is implied.
+
 ## Single-file formatting
 
 ```sh
@@ -485,7 +543,7 @@ package search, alternate `mod.ox`, implicit directory discovery or import alias
 chasing. Crate imports target original functions and/or nominal types; module
 imports, reexports, grouped/glob imports and `self::`/`super::` relative paths
 are absent. A function and a nominal type can share a spelling and import together
-atomically. The two individual `std::io` imports described above are a closed
+atomically. The four individual `std::io` imports described above are a closed
 compiler-owned exception; they perform no source-file discovery.
 
 A private declaration is accessible to its declaring module and descendants.
@@ -527,7 +585,7 @@ file           := item*
 item           := function | struct_decl | enum_decl | module_decl | import_decl
 module_decl    := "pub"? "mod" name ";"
 import_decl    := "use" import_path ("as" name)? ";"
-import_path    := absolute_path | "std" "::" "io" "::" ("read_stdin" | "ReadStatus")
+import_path    := absolute_path | "std" "::" "io" "::" ("read_stdin" | "ReadStatus" | "write_stdout" | "WriteStatus")
 absolute_path  := "crate" "::" name ("::" name)*
 item_path      := name | absolute_path
 function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
@@ -879,7 +937,7 @@ adaptation's 1,086 fuel is not its cost.
 
 Strings, null, package imports, module initialization, macros, heap containers, for/loop and other
 control flow, other operators, async, closures, generics, FFI, host I/O beyond
-the bounded stdin operation, and undeclared builtins are unavailable. Recognized
+the bounded stdin/stdout operations, and undeclared builtins are unavailable. Recognized
 unsupported syntax produces E0101; other invalid syntax produces E0100 or a
 resolution error. There is no
 silent approximation or legacy execution of these features. Now-recognized if/else/while/break/continue
@@ -899,7 +957,7 @@ resolved HIR → typed HIR → verified OIR. The source integration selects one
 route for the entire parsed project. Any struct or enum declaration, non-scalar named
 type annotation/signature, reference parameter, struct literal, field access,
 borrow argument, fixed-array type/literal, indexing, length access, enum
-construction, match or either admitted compiler-owned `std::io` import selects
+construction, match or any admitted compiler-owned `std::io` import selects
 owned HIR and owned OIR for every function. This includes unused declarations
 and statically skipped paths; comments containing owned spellings do not select
 that route. Unknown nominal names also select it
@@ -1090,7 +1148,8 @@ characters instead of emitting source-controlled terminal commands.
 | E0607 | Checked i32 division or remainder by zero at its operator |
 | E0605 | Owned execution-plan, expanded-cell, requested-byte or allocation limit (oir-owned-run stage) |
 | E0606 | Signed array/slice index out of bounds at the complete access or store target (oir-owned-run stage) |
-| E0608 | Bounded stdin execution requires Linux x86_64, before activation (oir-owned-run stage) |
+| E0608 | Unsupported bounded I/O or Process execution host, before activation; see the distinct entry/terminal policies above |
+| E0609 | Stdout-function inventory requires Process entry (oir-owned-run stage) |
 
 For check, exit 0 means successful type checking, lowering and OIR verification of this
 subset; for run it additionally means a bool/i32/unit result (including false, zero and negatives); ordinary source/CLI/resource failures still exit 1. Scalar lowering budget errors use E0400 with stage `oir-lower`; owned source
@@ -1137,7 +1196,7 @@ verified signature instead of reconstructing names from OIR spans. On unsupporte
 hosts, a program importing `read_stdin` reports E0608 before these entry checks
 or any activation, even when the import is unused.
 
-On text success stdout is exactly `true\n`, `false\n`, `()\n` or a canonical
+In default Result mode, text success stdout is exactly `true\n`, `false\n`, `()\n` or a canonical
 signed decimal i32 followed by newline; each exits 0. Numeric results are never
 used as process exit codes.
 Failure writes no partial result. JSON replaces the check-summary with one
@@ -1245,6 +1304,7 @@ as defined above (2 for an enum), and r be the call's number of borrowed argumen
 | Array/slice index read/write, after all operands | `1` before bounds and load/store |
 | Array/slice length | `1` before consumer validation and result |
 | Bounded stdin core, capacity C and A attempted reads | `4 + C + A`; result construction and commit prepaid |
+| Bounded stdout core, capacity C and A attempted writes | `4 + C + A`; validation/staging and infallible result commit prepaid |
 | Whole replacement | `1 + 2w` |
 | OpenCall | `1 + owned_argument_count` |
 | Invoke | `1 + argc + X(callee) + sum(owned_argument_widths) + r(r-1)/2` |

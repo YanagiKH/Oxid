@@ -32,6 +32,21 @@ struct Bound {
     slots: usize,
 }
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+enum EntryPolicy {
+    #[default]
+    Result,
+    Process,
+}
+impl EntryPolicy {
+    fn failure_symbol(self) -> &'static str {
+        match self {
+            Self::Result => "__oxid_overflow",
+            Self::Process => "__oxid_process_failure",
+        }
+    }
+}
+
 impl VerifiedProgram {
     pub(in crate::frontend) fn native_module(
         &self,
@@ -39,6 +54,38 @@ impl VerifiedProgram {
         sources: &SourceMap,
     ) -> Result<String, Box<Diagnostic>> {
         self.native_module_fuel(entry, sources, execute::MAX_FUEL)
+    }
+
+    pub(in crate::frontend) fn native_process_module(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits(
+            entry,
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            EntryPolicy::Process,
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn native_process_module_with_fuel(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        fuel: usize,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits(
+            Some(entry),
+            sources,
+            fuel.min(execute::MAX_FUEL),
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            EntryPolicy::Process,
+        )
     }
 
     #[cfg(test)]
@@ -74,6 +121,25 @@ impl VerifiedProgram {
         diagnostic_limit: usize,
         ir_limit: usize,
     ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits(
+            entry,
+            sources,
+            fuel,
+            diagnostic_limit,
+            ir_limit,
+            EntryPolicy::Result,
+        )
+    }
+
+    fn native_module_policy_limits(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
+        policy: EntryPolicy,
+    ) -> Result<String, Box<Diagnostic>> {
         let id = entry.ok_or_else(|| {
             reject(
                 "native compile requires a declared zero-argument main",
@@ -99,33 +165,53 @@ impl VerifiedProgram {
                 Some(root.span),
             ));
         }
+        if policy == EntryPolicy::Process && root.result != hir::Ty::I32 {
+            return Err(reject("process main must return i32", Some(root.span)));
+        }
         let bounds = self.admit()?;
         let guarded = bounds.iter().any(|bound| bound.cyclic);
-        let diagnostics = guarded
-            .then(|| GuardedDiagnostics::new(&self.program, id, sources, diagnostic_limit))
+        // Process diagnostics use the same bounded table even for acyclic
+        // bodies. This does not change their ABI or introduce fuel guards.
+        let diagnostics = (guarded || policy == EntryPolicy::Process)
+            .then(|| {
+                GuardedDiagnostics::new_policy(
+                    &self.program,
+                    id,
+                    sources,
+                    diagnostic_limit,
+                    guarded,
+                    policy,
+                )
+            })
             .transpose()?;
         // Count the exact emitted UTF-8 bytes without allocating LLVM text.
-        let mut count = Emission::default();
-        emit(
-            &self.program,
-            id,
-            sources,
-            diagnostics.as_ref(),
-            fuel,
-            &mut count,
-        );
-        if guarded {
-            limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
-        }
-        let mut output = Emission {
-            len: 0,
-            text: Some(String::with_capacity(count.len)),
+        let mut count = Emission {
+            policy,
+            ..Emission::default()
         };
         emit(
             &self.program,
             id,
             sources,
             diagnostics.as_ref(),
+            guarded,
+            fuel,
+            &mut count,
+        );
+        if guarded || policy == EntryPolicy::Process {
+            limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
+        }
+        let mut output = Emission {
+            len: 0,
+            text: Some(String::with_capacity(count.len)),
+            policy,
+        };
+        emit(
+            &self.program,
+            id,
+            sources,
+            diagnostics.as_ref(),
+            guarded,
             fuel,
             &mut output,
         );
@@ -258,8 +344,8 @@ impl VerifiedProgram {
         Ok(bounds)
     }
 }
-// Guarded modules retain all old OIR/source/native dimensions, and additionally
-// bound their expanded representation. Loop-free modules keep old admission.
+// Guarded and Process modules retain all old OIR/source/native dimensions and
+// additionally bound expanded representation. Loop-free Result stays unchanged.
 const MAX_GUARDED_DIAGNOSTIC_BYTES: usize = 16 * 1024 * 1024;
 const MAX_GUARDED_IR_BYTES: usize = 64 * 1024 * 1024;
 
@@ -311,6 +397,7 @@ fn successors(kind: &TerminatorKind) -> impl Iterator<Item = BlockId> {
 struct Emission {
     len: usize,
     text: Option<String>,
+    policy: EntryPolicy,
 }
 impl Emission {
     fn push_str(&mut self, text: &str) {
@@ -347,13 +434,23 @@ enum FailureKind {
     Fuel,
     Overflow,
     DivisionByZero,
+    ProcessStatus,
 }
 impl FailureKind {
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
+        if self == Self::ProcessStatus {
+            return Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return a status in 0..255",
+                Some(span).filter(|span| sources.is_valid_span(*span)),
+            );
+        }
         match self {
             Self::Fuel => RunFailure::Fuel(span),
             Self::Overflow => RunFailure::Overflow(span),
             Self::DivisionByZero => RunFailure::DivisionByZero(span),
+            Self::ProcessStatus => unreachable!("process status handled above"),
         }
         .diagnostic(sources)
     }
@@ -361,7 +458,7 @@ impl FailureKind {
         match self {
             Self::Overflow => "__oxid_error",
             Self::DivisionByZero => "__oxid_division_error",
-            Self::Fuel => unreachable!("arithmetic failure kind"),
+            Self::Fuel | Self::ProcessStatus => unreachable!("arithmetic failure kind"),
         }
     }
 }
@@ -392,11 +489,22 @@ struct GuardedDiagnostics {
     ids: std::collections::BTreeMap<DiagnosticKey, usize>,
 }
 impl GuardedDiagnostics {
+    #[cfg(test)]
     fn new(
         program: &Program,
         entry: hir::DefId,
         sources: &SourceMap,
         maximum: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        Self::new_policy(program, entry, sources, maximum, true, EntryPolicy::Result)
+    }
+    fn new_policy(
+        program: &Program,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        maximum: usize,
+        guarded: bool,
+        policy: EntryPolicy,
     ) -> Result<Self, Box<Diagnostic>> {
         let mut result = Self {
             messages: Vec::new(),
@@ -421,14 +529,20 @@ impl GuardedDiagnostics {
             result.messages.push(diagnostic.render_human(sources));
             Ok(())
         };
-        add(FailureKind::Fuel, program.functions[entry.0].span)?;
+        if guarded {
+            add(FailureKind::Fuel, program.functions[entry.0].span)?;
+        }
         for function in &program.functions {
             for block in &function.blocks {
-                if let Some(merge) = &block.merge {
-                    add(FailureKind::Fuel, merge.span)?;
+                if guarded {
+                    if let Some(merge) = &block.merge {
+                        add(FailureKind::Fuel, merge.span)?;
+                    }
                 }
                 for statement in &block.statements {
-                    add(FailureKind::Fuel, statement.span())?;
+                    if guarded {
+                        add(FailureKind::Fuel, statement.span())?;
+                    }
                     if let Some((failures, operator_span)) = statement
                         .as_assignment()
                         .and_then(|assign| checked_failures(&assign.value))
@@ -438,11 +552,16 @@ impl GuardedDiagnostics {
                         }
                     }
                 }
-                add(
-                    FailureKind::Fuel,
-                    block.terminator.as_ref().expect("verified terminator").span,
-                )?;
+                if guarded {
+                    add(
+                        FailureKind::Fuel,
+                        block.terminator.as_ref().expect("verified terminator").span,
+                    )?;
+                }
             }
+        }
+        if policy == EntryPolicy::Process {
+            add(FailureKind::ProcessStatus, program.functions[entry.0].span)?;
         }
         Ok(result)
     }
@@ -470,7 +589,8 @@ fn emit_guard(
         "  br i1 %{name}_exhausted, label %{name}_error, label %{name}_ok"
     )
     .unwrap();
-    writeln!(out, "{name}_error:\n  call void @__oxid_overflow(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable", message.len()).unwrap();
+    let failure = out.policy.failure_symbol();
+    writeln!(out, "{name}_error:\n  call void @{failure}(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable", message.len()).unwrap();
     writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
 }
 
@@ -490,11 +610,12 @@ fn emit_arithmetic_failure(
     function: usize,
     destination: usize,
 ) {
+    let failure = out.policy.failure_symbol();
     if let Some(diagnostics) = guarded {
         let (id, message) = diagnostics.get(kind, span);
         writeln!(
             out,
-            "  call void @__oxid_overflow(ptr @__oxid_guard_error_{id}, i64 {})",
+            "  call void @{failure}(ptr @__oxid_guard_error_{id}, i64 {})",
             message.len()
         )
         .unwrap();
@@ -503,7 +624,7 @@ fn emit_arithmetic_failure(
         let length = kind.diagnostic(span, sources).render_human(sources).len();
         writeln!(
             out,
-            "  call void @__oxid_overflow(ptr @{symbol}_{function}_{destination}, i64 {length})"
+            "  call void @{failure}(ptr @{symbol}_{function}_{destination}, i64 {length})"
         )
         .unwrap();
     }
@@ -513,14 +634,18 @@ fn emit(
     program: &Program,
     entry: hir::DefId,
     sources: &SourceMap,
-    guarded: Option<&GuardedDiagnostics>,
+    diagnostics: Option<&GuardedDiagnostics>,
+    guarded: bool,
     fuel: usize,
     out: &mut Emission,
 ) {
     out.push_str("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
     // Diagnostics are pre-rendered with the reference renderer. Every UTF-8
     // byte is escaped as LLVM constant data; no source path can become syntax.
-    if let Some(diagnostics) = guarded {
+    if out.policy == EntryPolicy::Process {
+        out.push_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n");
+    }
+    if let Some(diagnostics) = diagnostics {
         for (id, message) in diagnostics.messages.iter().enumerate() {
             write!(
                 out,
@@ -538,7 +663,7 @@ fn emit(
         for b in &f.blocks {
             for a in b.statements.iter().filter_map(Statement::as_assignment) {
                 if let Some((failures, operator_span)) = checked_failures(&a.value) {
-                    if guarded.is_some() {
+                    if diagnostics.is_some() {
                         continue;
                     }
                     for &kind in failures {
@@ -573,11 +698,11 @@ fn emit(
             f.id.0
         )
         .unwrap();
-        if guarded.is_some() {
+        if guarded {
             out.push_str("ptr %fuel");
         }
         for (i, p) in f.locals.iter().take(f.param_count).enumerate() {
-            if i != 0 || guarded.is_some() {
+            if i != 0 || guarded {
                 out.push_str(", ");
             }
             write!(out, "{} %v{i}", ty(p.ty)).unwrap();
@@ -594,7 +719,7 @@ fn emit(
             .iter()
             .enumerate()
             .map(|(i, b)| {
-                if guarded.is_some() {
+                if guarded {
                     return format!("g{i}_{}_ok", b.statements.len() + 1);
                 }
                 b.statements
@@ -623,11 +748,13 @@ fn emit(
                 )
                 .unwrap();
             }
-            if let (Some(diagnostics), Some(merge)) = (guarded, &b.merge) {
+            if let (true, Some(merge)) = (guarded, &b.merge) {
+                let diagnostics = diagnostics.expect("guarded diagnostics");
                 emit_guard(out, diagnostics, &format!("g{i}_0"), 1, merge.span);
             }
             for (j, statement) in b.statements.iter().enumerate() {
-                if let Some(diagnostics) = guarded {
+                if guarded {
+                    let diagnostics = diagnostics.expect("guarded diagnostics");
                     emit_guard(
                         out,
                         diagnostics,
@@ -720,7 +847,7 @@ fn emit(
                         writeln!(out, "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok\noverflow{n}_error:").unwrap();
                         emit_arithmetic_failure(
                             out,
-                            guarded,
+                            diagnostics,
                             FailureKind::Overflow,
                             operator_span,
                             sources,
@@ -749,7 +876,7 @@ fn emit(
                                 writeln!(out, "  %division{n}_zero = icmp eq i32 %v{}, 0\n  br i1 %division{n}_zero, label %division{n}_error, label %division{n}_nonzero\ndivision{n}_error:", right.local.0).unwrap();
                                 emit_arithmetic_failure(
                                     out,
-                                    guarded,
+                                    diagnostics,
                                     FailureKind::DivisionByZero,
                                     operator_span,
                                     sources,
@@ -780,7 +907,7 @@ fn emit(
                         writeln!(out, "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok\noverflow{n}_error:").unwrap();
                         emit_arithmetic_failure(
                             out,
-                            guarded,
+                            diagnostics,
                             FailureKind::Overflow,
                             operator_span,
                             sources,
@@ -819,7 +946,8 @@ fn emit(
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
             }
             let terminator = b.terminator.as_ref().expect("verified terminator");
-            if let Some(diagnostics) = guarded {
+            if guarded {
+                let diagnostics = diagnostics.expect("guarded diagnostics");
                 let cost = match &terminator.kind {
                     TerminatorKind::Call { target, args, .. } => {
                         1 + args.len() + program.functions[target.0].slot_count()
@@ -867,11 +995,11 @@ fn emit(
                         target.0
                     )
                     .unwrap();
-                    if guarded.is_some() {
+                    if guarded {
                         out.push_str("ptr %fuel");
                     }
                     for (j, arg) in args.iter().enumerate() {
-                        if j != 0 || guarded.is_some() {
+                        if j != 0 || guarded {
                             out.push_str(", ");
                         }
                         write!(out, "{} %v{}", ty(f.locals[arg.local.0].ty), arg.local.0).unwrap();
@@ -884,7 +1012,11 @@ fn emit(
     }
     let result = program.functions[entry.0].result;
     out.push_str("\ndefine i32 @main() {\nentry:\n");
-    if let Some(diagnostics) = guarded {
+    if out.policy == EntryPolicy::Process {
+        out.push_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n");
+    }
+    if guarded {
+        let diagnostics = diagnostics.expect("guarded diagnostics");
         writeln!(out, "  %fuel = alloca i64\n  store i64 {}, ptr %fuel", fuel).unwrap();
         let root = &program.functions[entry.0];
         emit_guard(out, diagnostics, "root", 1 + root.slot_count(), root.span);
@@ -894,9 +1026,17 @@ fn emit(
         "  %value = call {} @__oxid_fn_{}({})",
         ty(result),
         entry.0,
-        if guarded.is_some() { "ptr %fuel" } else { "" }
+        if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
+    if out.policy == EntryPolicy::Process {
+        let diagnostics = diagnostics.expect("process diagnostics");
+        let (id, message) =
+            diagnostics.get(FailureKind::ProcessStatus, program.functions[entry.0].span);
+        out.push_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_done, label %status_error\nstatus_error:\n");
+        writeln!(out, "  call void @__oxid_process_failure(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable\nprocess_done:\n  ret i32 %value\n}}", message.len()).unwrap();
+        return;
+    }
     match result {
         hir::Ty::Bool => out.push_str(
             "  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n",
@@ -925,6 +1065,268 @@ mod tests {
     fn verified(text: &str) -> VerifiedProgram {
         verified_with_sources(text).0
     }
+
+    #[test]
+    fn result_entry_retains_exact_default_module_bytes() {
+        let (program, sources) = verified_with_sources("fn main()->i32 { return 39; }");
+        let module = program
+            .native_module(Some(hir::DefId(0)), &sources)
+            .unwrap();
+        assert_eq!(
+            module,
+            concat!(
+                "; Oxid experimental scalar native ABI 1\n",
+                "source_filename = \"oxid-native\"\n",
+                "target triple = \"x86_64-unknown-linux-gnu\"\n\n",
+                "declare i32 @__oxid_print_bool(i32)\n",
+                "declare i32 @__oxid_print_i32(i32)\n",
+                "declare i32 @__oxid_print_unit()\n",
+                "declare void @__oxid_overflow(ptr, i64) noreturn\n",
+                "declare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\n",
+                "declare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\n",
+                "declare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n",
+                "\ndefine internal i32 @__oxid_fn_0() noinline {\nentry:\n",
+                "  br label %b0\nb0:\n  %v0 = or i32 39, 0\n  ret i32 %v0\n}\n",
+                "\ndefine i32 @main() {\nentry:\n",
+                "  %value = call i32 @__oxid_fn_0()\n",
+                "  %status = call i32 @__oxid_print_i32(i32 %value)\n",
+                "  ret i32 %status\n}\n",
+            )
+        );
+    }
+
+    #[test]
+    fn process_entry_independently_requires_valid_zero_argument_i32_root() {
+        for (text, expected) in [
+            (
+                "fn main(x:i32)->i32 { return x; }",
+                "native main must have no parameters",
+            ),
+            (
+                "fn main()->bool { return false; }",
+                "process main must return i32",
+            ),
+            ("fn main()->() { return; }", "process main must return i32"),
+        ] {
+            let (program, sources) = verified_with_sources(text);
+            let error = program
+                .native_process_module(Some(hir::DefId(0)), &sources)
+                .unwrap_err();
+            assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+            assert_eq!(error.message, expected);
+            assert_eq!(error.primary, Some(program.program.functions[0].span));
+        }
+        let (program, sources) = verified_with_sources("fn main()->i32 { return 0; }");
+        assert_eq!(
+            program
+                .native_process_module(None, &sources)
+                .unwrap_err()
+                .code,
+            "E0700"
+        );
+        assert_eq!(
+            program
+                .native_process_module(Some(hir::DefId(1)), &sources)
+                .unwrap_err()
+                .code,
+            "E0500"
+        );
+    }
+
+    #[test]
+    fn process_setup_precedes_root_and_status_is_checked_only_in_c_main() {
+        for value in [-256, -1, 0, 1, 255, 256] {
+            let (program, sources) =
+                verified_with_sources(&format!("fn main()->i32 {{ return {value}; }}"));
+            let module = program
+                .native_process_module(Some(hir::DefId(0)), &sources)
+                .unwrap();
+            assert_eq!(program.run(Some(hir::DefId(0))), Ok(Scalar::I32(value)));
+            let main = module.split("define i32 @main()").nth(1).unwrap();
+            assert!(main.starts_with(" {\nentry:\n  %setup = call i32 @__oxid_process_setup()\n"));
+            assert!(main.contains(
+                "setup_error:\n  ret i32 74\nprocess_ready:\n  %value = call i32 @__oxid_fn_0()\n"
+            ));
+            assert!(main.contains("%status_valid = icmp ule i32 %value, 255\n"));
+            assert!(
+                main.contains("br i1 %status_valid, label %process_done, label %status_error\n")
+            );
+            assert!(main.ends_with("process_done:\n  ret i32 %value\n}\n"));
+            assert_eq!(
+                module.matches("call i32 @__oxid_process_setup()").count(),
+                1
+            );
+            assert_eq!(
+                module.matches("call void @__oxid_process_failure(").count(),
+                1
+            );
+            assert!(!module.contains("call i32 @__oxid_print_"));
+            assert!(!module.contains("ptr %fuel"));
+            let expected = FailureKind::ProcessStatus
+                .diagnostic(program.program.functions[0].span, &sources)
+                .render_human(&sources);
+            let encoded = expected
+                .bytes()
+                .map(|byte| format!("\\{byte:02X}"))
+                .collect::<String>();
+            assert!(module.contains(&format!("[{} x i8] c\"{encoded}\"", expected.len())));
+        }
+        // The internal source function named main may return any i32 to an
+        // ordinary caller. Only the selected C-facing root checks its status.
+        let (program, sources) = verified_with_sources(
+            "fn main()->i32 { return 256; } fn caller()->i32 { main(); return 63; }",
+        );
+        let module = program
+            .native_process_module(Some(hir::DefId(1)), &sources)
+            .unwrap();
+        let bodies = module.split("define i32 @main()").next().unwrap();
+        assert!(bodies.contains("call i32 @__oxid_fn_0()"));
+        assert!(!bodies.contains("%status_valid"));
+        assert_eq!(program.run(Some(hir::DefId(1))), Ok(Scalar::I32(63)));
+    }
+
+    #[test]
+    fn process_preserves_scalar_bodies_call_abi_and_exact_fuel_schedule() {
+        fn bodies(module: &str) -> String {
+            module[module.find("\ndefine internal ").unwrap()
+                ..module.find("\ndefine i32 @main()").unwrap()]
+                .lines()
+                .map(|line| {
+                    if line.contains("call void @__oxid_overflow(")
+                        || line.contains("call void @__oxid_process_failure(")
+                    {
+                        "  terminal failure"
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        for (text, guarded) in [
+            ("fn leaf(x:i32)->i32 { return -x/2%3; } fn main()->i32 { if true && 1<2 { leaf(4); } return 0; }", false),
+            ("fn leaf(x:i32)->i32 { return -x/2%3; } fn main()->i32 { let mut n=0; while n<2 && n+1<4 { n=n+1; leaf(n); } return 0; }", true),
+        ] {
+            let (program, sources) = verified_with_sources(text);
+            let entry = hir::DefId(1);
+            for fuel in [0, 1, 17, execute::MAX_FUEL, execute::MAX_FUEL + 1] {
+                let result = program.native_module_with_fuel(entry, &sources, fuel).unwrap();
+                let process = program.native_process_module_with_fuel(entry, &sources, fuel).unwrap();
+                assert_eq!(bodies(&result), bodies(&process));
+                assert_eq!(process.contains("ptr %fuel"), guarded);
+                assert_eq!(process.matches("call void @__oxid_process_failure(").count(), result.matches("call void @__oxid_overflow(").count() + 1);
+                assert!(!process.contains("call void @__oxid_overflow("));
+                if guarded {
+                    let main = process.split("define i32 @main()").nth(1).unwrap();
+                    assert!(main.find("call i32 @__oxid_process_setup()").unwrap() < main.find("%fuel = alloca i64").unwrap());
+                    assert!(main.contains(&format!("store i64 {}, ptr %fuel", fuel.min(execute::MAX_FUEL))));
+                    let result_main = result.split("define i32 @main()").nth(1).unwrap();
+                    let root = |main: &str| main[main.find("  %fuel = alloca i64").unwrap()..main.find("  %value = call ").unwrap()].replace("__oxid_process_failure", "__oxid_overflow");
+                    assert_eq!(root(main), root(result_main));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn process_representation_preflights_status_arithmetic_and_llvm_at_exact_caps() {
+        for (text, guarded) in [
+            ("fn main()->i32 { return 0; }", false),
+            ("fn main()->i32 { return 4/2; }", false),
+            ("fn main()->i32 { while false {} return 4/2; }", true),
+        ] {
+            let (program, sources) = verified_at("process\n雪\t.ox", text);
+            let entry = hir::DefId(0);
+            let diagnostics = GuardedDiagnostics::new_policy(
+                &program.program,
+                entry,
+                &sources,
+                MAX_GUARDED_DIAGNOSTIC_BYTES,
+                guarded,
+                EntryPolicy::Process,
+            )
+            .unwrap();
+            let bytes: usize = diagnostics.messages.iter().map(String::len).sum();
+            assert_eq!(
+                diagnostics.ids.keys().any(|key| key.0 == FailureKind::Fuel),
+                guarded
+            );
+            assert_eq!(
+                diagnostics
+                    .ids
+                    .keys()
+                    .filter(|key| key.0 == FailureKind::ProcessStatus)
+                    .count(),
+                1
+            );
+            let module = program
+                .native_process_module(Some(entry), &sources)
+                .unwrap();
+            assert_eq!(
+                program
+                    .native_module_policy_limits(
+                        Some(entry),
+                        &sources,
+                        execute::MAX_FUEL,
+                        bytes,
+                        module.len(),
+                        EntryPolicy::Process
+                    )
+                    .unwrap(),
+                module
+            );
+            for (data, ir, marker) in [
+                (bytes - 1, module.len(), "diagnostic bytes"),
+                (bytes, module.len() - 1, "LLVM bytes"),
+            ] {
+                let error = program
+                    .native_module_policy_limits(
+                        Some(entry),
+                        &sources,
+                        execute::MAX_FUEL,
+                        data,
+                        ir,
+                        EntryPolicy::Process,
+                    )
+                    .unwrap_err();
+                assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+                assert!(error.message.contains(marker));
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+    fn process_native_changed_carriers_have_measured_finite_layouts() {
+        use std::mem::{align_of, size_of};
+        // This is the actual local emitter carrier, not a stack-size claim.
+        // Its old len + Option<String> layout was 32 bytes; policy adds 8.
+        assert_eq!(
+            (size_of::<EntryPolicy>(), align_of::<EntryPolicy>()),
+            (1, 1)
+        );
+        assert_eq!((size_of::<Emission>(), align_of::<Emission>()), (40, 8));
+        assert_eq!(
+            (size_of::<FailureKind>(), align_of::<FailureKind>()),
+            (1, 1)
+        );
+        assert_eq!(
+            (size_of::<DiagnosticKey>(), align_of::<DiagnosticKey>()),
+            (32, 8)
+        );
+        assert_eq!(
+            (
+                size_of::<GuardedDiagnostics>(),
+                align_of::<GuardedDiagnostics>()
+            ),
+            (48, 8)
+        );
+        assert_eq!(
+            (MAX_GUARDED_DIAGNOSTIC_BYTES, MAX_GUARDED_IR_BYTES),
+            (16 * 1024 * 1024, 64 * 1024 * 1024)
+        );
+    }
+
     #[test]
     fn conservative_cost_counts_both_arms_and_repeated_calls() {
         let p = verified("fn identity(x: bool) -> bool { return x; } fn main() -> bool { if true { identity(false); } else { identity(true); } return false; }");

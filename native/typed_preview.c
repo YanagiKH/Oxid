@@ -16,6 +16,34 @@ int32_t __oxid_read_stdin_byte(uint8_t *byte) {
     return errno == EINTR ? -1 : -2;
 }
 
+/* Private process-mode setup. Call before any diagnostic or source effect.
+ * Failure is handled by a silent status 74 exit, never another write. */
+int32_t __oxid_process_setup(void) {
+    return signal(SIGPIPE, SIG_IGN) == SIG_ERR ? -1 : 0;
+}
+
+/* Exactly one attempt. The verified caller stages and validates the byte,
+ * counts partial progress, and pays for every retry before calling again. */
+int32_t __oxid_write_stdout_byte(const uint8_t *byte) {
+    ssize_t done = write(STDOUT_FILENO, byte, 1);
+    if (done == 1) return 1;
+    if (done < 0 && errno == EINTR) return -1;
+    return -2;
+}
+
+/* Setup has already succeeded. This terminal diagnostic never writes stdout,
+ * changes signal policy again, or recursively reports a reporting failure. */
+_Noreturn void __oxid_process_failure(const char *message, uint64_t length) {
+    while (length != 0) {
+        ssize_t done = write(STDERR_FILENO, message, (size_t)length);
+        if (done < 0 && errno == EINTR) continue;
+        if (done <= 0 || (uint64_t)done > length) _exit(74);
+        message += (size_t)done;
+        length -= (uint64_t)done;
+    }
+    _exit(1);
+}
+
 static int output(int fd, const char *bytes, size_t length) {
     /* Broken pipes are reported as EX_IOERR, not an asynchronous SIGPIPE exit. */
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) return 74;

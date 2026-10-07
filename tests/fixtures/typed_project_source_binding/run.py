@@ -60,8 +60,19 @@ COMPOSITION_SOURCE_BYTES = 37404
 UNARY_SOURCE_BYTES = 38090
 ENUM_SOURCE_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 ENUM_SOURCE_BYTES = 45493
-CURRENT_SOURCE_SHA = 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f'
-CURRENT_SOURCE_BYTES = 48300
+STDIN_SOURCE_SHA = 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f'
+STDIN_SOURCE_BYTES = 48300
+CURRENT_SOURCE_SHA = '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936'
+CURRENT_SOURCE_BYTES = 50310
+STDOUT_AUTHORITY_SHA = '3015dfb1237578b4903b5a865f3ae7daf7819485c3399c2bfd589b8749d4066e'
+STDOUT_AUTHORITY_BYTES = 132738
+STDOUT_PATCH_SHA = '80dad62cc0e9fa87b026753401b3e5bb59e0bc200696b1fa825676cd662fb1ea'
+STDOUT_PATCH_BYTES = 527951
+STDOUT_BASE = 'c1d73740268d64d4e908ad86ed9dabaa48dd1c23'
+STDOUT_HEAD = '63db2c290031d76b5925fdd672c38eac2ca50578'
+STDOUT_TREE = 'f01525a95f2e4b3dfa69237108cfbc67a1f43eab'
+STDOUT_PATHS = ('native/typed_preview.c', 'src/frontend/builtin_catalog.rs', 'src/frontend/declaration_index.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/declaration_index/enum_query_tests.rs', 'src/frontend/declaration_index/enum_views.rs', 'src/frontend/declaration_index/sealed.rs', 'src/frontend/driver.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/array_native_resource_tests.rs', 'src/frontend/oir/owned/array_observe.rs', 'src/frontend/oir/owned/builtin_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_input_tests.rs', 'src/frontend/oir/owned/builtin_origin_tests.rs', 'src/frontend/oir/owned/builtin_output_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_output_fixtures.rs', 'src/frontend/oir/owned/builtin_output_native_tests.rs', 'src/frontend/oir/owned/builtin_output_process_tests.rs', 'src/frontend/oir/owned/builtin_output_reference_tests.rs', 'src/frontend/oir/owned/builtins.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/flow.rs', 'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/plan.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/shape.rs', 'src/frontend/oir/owned/source/array_pipeline_rows.rs', 'src/frontend/oir/owned/source/association.rs', 'src/frontend/oir/owned/source/budget.rs', 'src/frontend/oir/owned/source/builtin_lower.rs', 'src/frontend/oir/owned/source/candidate_adapter.rs', 'src/frontend/oir/owned/source/candidate_native.rs', 'src/frontend/oir/owned/source/hir_budget.rs', 'src/frontend/oir/owned/source/hir_budget_tests.rs', 'src/frontend/oir/owned/source/lower.rs', 'src/frontend/oir/owned/source/mod.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/oir/owned/source/program.rs', 'src/frontend/oir/owned/source/resolve.rs', 'src/frontend/oir/owned/source/typeck.rs', 'src/frontend/oir/owned/verified.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/sealed.rs', 'src/frontend/options.rs', 'src/frontend/parser.rs', 'src/frontend/parser/builtin_tests.rs', 'src/frontend/project.rs')
+STDOUT_ADDITIONS = ('src/frontend/oir/owned/builtin_output_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_output_fixtures.rs', 'src/frontend/oir/owned/builtin_output_native_tests.rs', 'src/frontend/oir/owned/builtin_output_process_tests.rs', 'src/frontend/oir/owned/builtin_output_reference_tests.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs')
 STDIN_AUTHORITY_SHA = 'ff9f806e0211367c8c31d1084ce5aa80f3175b0e65c54a0d3860df0ced8cac08'
 STDIN_AUTHORITY_BYTES = 150228
 STDIN_PATCH_SHA = '3bebb1cb45dab0cc5a24c6d1f7aac0b011ef543f35cab984b51fa2dd91e518e8'
@@ -892,6 +903,11 @@ def inverse_enum_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, ENUM_PATCH_SHA, ENUM_PATCH_BYTES, ENUM_PATHS)
 
 
+def inverse_stdout_patch(inputs, patch):
+    """Restore exactly the frozen bounded-stdin source view."""
+    return apply_inverse_patch(inputs, patch, STDOUT_PATCH_SHA, STDOUT_PATCH_BYTES, STDOUT_PATHS)
+
+
 def inverse_stdin_patch(inputs, patch):
     """Restore exactly the frozen bounded-enum source view."""
     return apply_inverse_patch(inputs, patch, STDIN_PATCH_SHA, STDIN_PATCH_BYTES, STDIN_PATHS)
@@ -1142,6 +1158,12 @@ def preflight(repo, package=PACKAGE):
     require(digest(package_bytes["current-source.json"]) == CURRENT_SOURCE_SHA
             and len(package_bytes["current-source.json"]) == CURRENT_SOURCE_BYTES,
             "unapproved current source manifest")
+    require(digest(package_bytes["stdin-source.json"]) == STDIN_SOURCE_SHA
+            and len(package_bytes["stdin-source.json"]) == STDIN_SOURCE_BYTES,
+            "unapproved stdin source manifest")
+    require(digest(package_bytes["stdout-authority.json"]) == STDOUT_AUTHORITY_SHA
+            and len(package_bytes["stdout-authority.json"]) == STDOUT_AUTHORITY_BYTES,
+            "stale stdout authority")
     require(digest(package_bytes["enum-source.json"]) == ENUM_SOURCE_SHA
             and len(package_bytes["enum-source.json"]) == ENUM_SOURCE_BYTES,
             "unapproved enum source manifest")
@@ -1345,7 +1367,69 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    stdin_current = json.loads(package_bytes["current-source.json"])
+    stdout_current = json.loads(package_bytes["current-source.json"])
+    stdin_current = json.loads(package_bytes["stdin-source.json"])
+    stdout_authority = json.loads(package_bytes["stdout-authority.json"])
+    require(stdout_authority["schema"] == "oxid-bounded-stdout-source-transition-v1"
+            and stdout_authority["base_head"] == stdout_current["stdout_base_head"] == STDOUT_BASE == STDIN_HEAD
+            and stdout_authority["reviewed_source_head"] == stdout_current["reviewed_source_head"] == STDOUT_HEAD
+            and stdout_authority["source_only_tree"] == stdout_current["source_only_tree"] == STDOUT_TREE
+            and stdout_authority["recipe"] == SOURCE_DELTA_RECIPE
+            and stdout_authority["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and stdout_authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and stdout_authority["stdin_source_sha256"] == stdout_current["stdin_source_sha256"] == STDIN_SOURCE_SHA
+            and stdout_authority["stdin_source_bytes"] == STDIN_SOURCE_BYTES
+            and stdout_authority["stdin_authority_sha256"] == STDIN_AUTHORITY_SHA
+            and stdout_authority["transition_patch_sha256"] == STDOUT_PATCH_SHA
+            and stdout_authority["transition_patch_bytes"] == STDOUT_PATCH_BYTES
+            and stdout_authority["transition_paths"] == list(STDOUT_PATHS)
+            and stdout_authority["additions"] == list(STDOUT_ADDITIONS)
+            and stdout_authority["removed_paths"] == []
+            and (stdout_authority["current_source_members"], stdout_authority["stdin_source_members"],
+                 stdout_authority["compiler_source_members"], stdout_authority["compiler_bodies"]) == (262, 252, 204, 207),
+            "stale stdout transition authority")
+    require({key: value for key, value in stdout_current.items()
+             if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree",
+                            "stdout_base_head", "stdin_source_sha256")}
+            == {key: value for key, value in stdin_current.items()
+                if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
+            "stale stdout checkpoint provenance")
+    stdout_inputs = check_entries(repo, stdout_current["files"])
+    stdin_rows = {row["path"]: row for row in stdin_current["files"]}
+    require(set(stdout_inputs) == set(stdin_rows) | set(STDOUT_ADDITIONS),
+            "unexpected stdout source membership")
+    require([row["path"] for row in stdout_current["files"] if row != stdin_rows.get(row["path"])]
+            == list(STDOUT_PATHS), "unexpected stdout source delta")
+    require(stdout_authority["current_input_git_modes"] == [
+        {"path": row["path"], "mode": "100644"} for row in stdout_current["files"]],
+        "unexpected stdout input modes")
+    stdout_identities = []
+    for name, data in stdout_inputs.items():
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, "changed input mode: " + name)
+        stdout_identities.append({**entry(name, data), "mode": "100644",
+            "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
+    require(stdout_authority["current_input_identities"] == stdout_identities,
+            "stale stdout complete input identities")
+    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
+    expected = [name for name in stdout_inputs if name.startswith(("src/", "native/"))]
+    require(len(expected) == 204 and sorted(actual) == sorted(expected),
+            "missing or extra compiler source member")
+    require(len([name for name in stdout_inputs if name.startswith(("src/", "native/"))
+                 or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 207,
+            "unexpected stdout compiler/build closure")
+    stdin_inputs, stdout_touched = inverse_stdout_patch(stdout_inputs, package_bytes["stdout-transition.patch"])
+    check_bytes(stdin_inputs, stdin_current["files"])
+    stdout_transition = []
+    for name in STDOUT_PATHS:
+        identities = {"path": name}
+        for label, source_inputs in (("before", stdin_inputs), ("after", stdout_inputs)):
+            data = source_inputs.get(name)
+            identities[label] = None if data is None else {
+                **entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        stdout_transition.append(identities)
+    require(stdout_authority["transition_inputs"] == stdout_transition,
+            "stale stdout transition input identities")
     enum_current = json.loads(package_bytes["enum-source.json"])
     stdin_authority = json.loads(package_bytes["stdin-authority.json"])
     require(stdin_authority["schema"] == "oxid-bounded-stdin-source-transition-v1"
@@ -1353,8 +1437,8 @@ def preflight(repo, package=PACKAGE):
             and stdin_authority["reviewed_source_head"] == stdin_current["reviewed_source_head"] == STDIN_HEAD
             and stdin_authority["source_only_tree"] == stdin_current["source_only_tree"] == STDIN_TREE
             and stdin_authority["recipe"] == SOURCE_DELTA_RECIPE
-            and stdin_authority["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and stdin_authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and stdin_authority["current_source_sha256"] == STDIN_SOURCE_SHA
+            and stdin_authority["current_source_bytes"] == STDIN_SOURCE_BYTES
             and stdin_authority["enum_source_sha256"] == stdin_current["enum_source_sha256"] == ENUM_SOURCE_SHA
             and stdin_authority["enum_source_bytes"] == ENUM_SOURCE_BYTES
             and stdin_authority["enum_authority_sha256"] == ENUM_AUTHORITY_SHA
@@ -1372,7 +1456,6 @@ def preflight(repo, package=PACKAGE):
             == {key: value for key, value in enum_current.items()
                 if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
             "stale stdin checkpoint provenance")
-    stdin_inputs = check_entries(repo, stdin_current["files"])
     enum_rows = {row["path"]: row for row in enum_current["files"]}
     require(set(stdin_inputs) == set(enum_rows) | set(STDIN_ADDITIONS),
             "unexpected stdin source membership")
@@ -1573,7 +1656,7 @@ def preflight(repo, package=PACKAGE):
     require([x["path"] for x in current["files"] if x["path"] in COMBINED_FIXTURE_ADDITIONS]
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
-    expected = [x for x in stdin_inputs if x.startswith(("src/", "native/"))]
+    expected = [x for x in stdout_inputs if x.startswith(("src/", "native/"))]
     require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
@@ -1727,7 +1810,9 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": stdin_current, "enum_source": enum_current, "enum_inputs": enum_inputs,
+    return {"current": stdout_current, "stdin_source": stdin_current, "stdin_inputs": stdin_inputs,
+            "stdout_authority": stdout_authority, "stdout_touched": stdout_touched,
+            "enum_source": enum_current, "enum_inputs": enum_inputs,
             "enum_authority": enumeration, "enum_touched": enum_touched,
             "stdin_authority": stdin_authority, "stdin_touched": stdin_touched,
             "projected_source": projected_current, "projected_inputs": projected_inputs, "unary_source": unary_current,
@@ -1737,7 +1822,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": stdin_inputs, "archived": reconstructed, "references": references,
+            "inputs": stdout_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -1790,6 +1875,11 @@ def prepare_archived(output, captured):
             "division_inverse_patch_sha256": DIVISION_PATCH_SHA,
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
+            "current_source_sha256": CURRENT_SOURCE_SHA,
+            "stdout_authority_sha256": STDOUT_AUTHORITY_SHA,
+            "stdout_inverse_patch_sha256": STDOUT_PATCH_SHA,
+            "stdout_inverse_touched": captured["stdout_touched"],
+            "stdin_source_sha256": STDIN_SOURCE_SHA,
             "stdin_inverse_patch_sha256": STDIN_PATCH_SHA,
             "stdin_inverse_touched": captured["stdin_touched"],
             "enum_source_sha256": ENUM_SOURCE_SHA,
@@ -2038,6 +2128,9 @@ def main():
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,
                       combined_authority_sha256=COMBINED_AUTHORITY_SHA,
                       formatter_source_sha256=FORMATTER_SOURCE_SHA,
+                      stdout_authority_sha256=STDOUT_AUTHORITY_SHA,
+                      stdout_inverse_patch_sha256=STDOUT_PATCH_SHA,
+                      stdin_source_sha256=STDIN_SOURCE_SHA,
                       stdin_authority_sha256=STDIN_AUTHORITY_SHA,
                       enum_source_sha256=ENUM_SOURCE_SHA,
                       enum_authority_sha256=ENUM_AUTHORITY_SHA,
@@ -2056,6 +2149,7 @@ def main():
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
                 "current_source_members": len(captured["inputs"]),
+                "stdin_source_members": len(captured["stdin_inputs"]),
                 "enum_source_members": len(captured["enum_inputs"]),
                 "projected_source_members": len(captured["projected_inputs"]),
                 "enum_scanner_fixture_members": 2, "enum_scanner_fixture_references": 4,

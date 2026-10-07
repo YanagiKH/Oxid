@@ -1281,6 +1281,8 @@ fn builtin_current_formatter_preserves_structural_ast_and_fixed_point() {
         "use std::io::read_stdin as input;use std::io::ReadStatus as S;fn main()->i32{let mut bytes=[-1,0];let status=input(&mut bytes);match status{S::Eof(n)=>{return n;},S::Full=>{return 2;},S::IoError=>{return -1;},}}",
         "mod absent;use std/*root*/::/*edge*/io::ReadStatus as S;use crate::std::ReadStatus as User;fn f(s:S)->(){match s{S/*type*/::Full=>{return;},S::IoError=>{},S::Eof(n)=>{n;},}}",
         "// input\r\nuse std :: io :: read_stdin as read;\r\nfn f(b:&mut [i32])->(){read(&mut *b);return;}\r\n",
+        "use std::io::write_stdout as output;use std::io::WriteStatus as W;fn main()->i32{let bytes=[0,255];let status=output(&bytes);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}",
+        "mod absent;use std/*root*/::/*edge*/io::WriteStatus as W;use std::io::read_stdin as input;fn f(s:W)->(){match s{W::Complete=>{return;},W::InvalidInput=>{},W::IoError(n)=>{n;},}}",
     ] {
         let mut sources = SourceMap::new();
         let id = sources.add("stdin-format.ox".into(), text.into());

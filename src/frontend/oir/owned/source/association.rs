@@ -1,6 +1,7 @@
 //! The owned source association walk; raw ownership/shape verification is unchanged.
 use super::super::*;
 use crate::frontend::{
+    builtin_catalog::{BuiltinEnum, BuiltinFunction},
     declaration_index::DeclarationIndex,
     oir::source::association::{bad, BindUsage, Visitor},
 };
@@ -40,7 +41,7 @@ fn function(
     function: &RawOwnedFunction,
     visitor: &mut Visitor<'_>,
     allow_enums: bool,
-    allow_input: bool,
+    builtin: Option<BuiltinFunction>,
 ) -> Result<(), Box<Diagnostic>> {
     if !allow_enums && !function.matches.is_empty() {
         return Err(bad());
@@ -82,8 +83,13 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
+                OwnedInstruction::WriteStdout { .. } => {
+                    if builtin != Some(BuiltinFunction::WriteStdout) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::ReadStdin { .. } => {
-                    if !allow_input {
+                    if builtin != Some(BuiltinFunction::ReadStdin) {
                         return Err(bad());
                     }
                 }
@@ -208,10 +214,13 @@ pub(super) fn check_builtin_candidate(
     check_impl(raw, index, sources, true, true)
 }
 
-// Only new builtin identity/anchor transports, not inherited Visitor internals.
+// Only builtin identity/anchor transports, not inherited Visitor internals.
+// Selectors, iterator/next, checked-rank results, projected-ID results, receiver
+// borrows and retained first-function identity are separate roles: no lifetime reuse.
 // The private caller pays this complete envelope before source lowering.
 #[allow(dead_code)]
 struct BuiltinAssociationCarriers {
+    output_origin_guard: OutputOriginGuardCarriers,
     ids_return: Result<builtins::BuiltinIds, OwnedFailure>,
     normalized_ids: Result<builtins::BuiltinIds, Box<Diagnostic>>,
     ids: builtins::BuiltinIds,
@@ -226,9 +235,78 @@ struct BuiltinAssociationCarriers {
     function_row_return: Result<&'static RawOwnedFunction, Box<Diagnostic>>,
     set: BuiltinOrigins,
     iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
+    enumeration_kind: BuiltinEnum,
+    function_kind: BuiltinFunction,
+    enumeration_rank: Option<usize>,
+    function_rank: Option<usize>,
+    family_iteration: std::array::IntoIter<BuiltinEnum, 2>,
+    next_family: Option<BuiltinEnum>,
+    enumeration_id_return: Option<EnumId>,
+    function_id_return: Option<hir::DefId>,
+    first_function: Option<hir::DefId>,
+    enumeration_ids_borrow: &'static builtins::BuiltinIds,
+    function_ids_borrow: &'static builtins::BuiltinIds,
+    // The old single retained function slot now holds the first admitted
+    // builtin function. Only builtin inventories enter the finite classifier;
+    // the source walk's old bool parameter becomes a one-byte exact-kind option.
+    first_function_kind: BuiltinFunction,
+    first_function_set_receiver: BuiltinOrigins,
+    first_function_selector: BuiltinFunction,
+    first_function_lookup_kind: BuiltinFunction,
+    first_function_has_input: bool,
+    classifier_set: BuiltinOrigins,
+    classifier_first: hir::DefId,
+    classifier_current: hir::DefId,
+    classifier_rank: usize,
+    classifier_rank_return: Option<usize>,
+    classifier_input: bool,
+    classifier_output: bool,
+    classifier_set_receivers: [BuiltinOrigins; 2],
+    classifier_kind_arguments: [BuiltinFunction; 2],
+    classifier_choice: (bool, bool, usize),
+    classifier_return: Option<BuiltinFunction>,
+    count_permission: Option<BuiltinFunction>,
+    validation_permission: Option<BuiltinFunction>,
+    function_permission: Option<BuiltinFunction>,
+}
+#[allow(dead_code)]
+struct OutputOriginGuardCarriers {
+    index_receiver: &'static DeclarationIndex<'static>,
+    source_inventory: BuiltinOrigins,
+    raw_inventory: BuiltinOrigins,
+    source_has_output: bool,
+    raw_has_output: bool,
+    current_receiver: &'static DeclarationIndex<'static>,
+    current_result: bool,
+    output_receiver: &'static DeclarationIndex<'static>,
+    output_result: bool,
+    origin_allowed: bool,
+    rejected: bool,
 }
 pub(super) const fn builtin_carrier_bytes() -> usize {
     std::mem::size_of::<BuiltinAssociationCarriers>()
+}
+
+#[cfg(test)]
+#[path = "output_lower_tests.rs"]
+mod output_lower_tests;
+
+/// The descriptor and index identity checks already establish independent
+/// canonical function ranks. Classify only that at-most-two-function suffix.
+/// This does not grant any ordinary source function an opcode permission.
+fn builtin_kind(
+    set: BuiltinOrigins,
+    first: hir::DefId,
+    current: hir::DefId,
+) -> Option<BuiltinFunction> {
+    let rank = current.0.checked_sub(first.0)?;
+    let input = set.contains_function(BuiltinFunction::ReadStdin);
+    let output = set.contains_function(BuiltinFunction::WriteStdout);
+    match (input, output, rank) {
+        (true, _, 0) => Some(BuiltinFunction::ReadStdin),
+        (false, true, 0) | (true, true, 1) => Some(BuiltinFunction::WriteStdout),
+        _ => None,
+    }
 }
 
 fn check_impl(
@@ -238,45 +316,73 @@ fn check_impl(
     allow_enums: bool,
     allow_builtins: bool,
 ) -> Result<BindUsage, Box<Diagnostic>> {
-    if allow_builtins {
+    // Public association already requires Current. The shared helper retains
+    // an independent exact-origin check for output claims; the older private
+    // input candidate may never acquire output merely by changing raw shapes.
+    if (raw.builtins.has_output() || index.builtin_set().has_output())
+        && (!allow_builtins
+            || !(index.is_current_source_pipeline() || {
+                #[cfg(test)]
+                {
+                    index.is_output_candidate_pipeline()
+                }
+                #[cfg(not(test))]
+                {
+                    false
+                }
+            }))
+    {
+        return Err(bad());
+    }
+    let first_function = if allow_builtins {
         if raw.builtins != index.builtin_set() {
             return Err(bad());
         }
         let ids = builtins::check(raw).map_err(|_| bad())?;
-        if let Some(id) = ids.enumeration {
-            use crate::frontend::builtin_catalog::BuiltinEnum;
-            if id
-                != index
-                    .builtin_enum_id(BuiltinEnum::ReadStatus)
-                    .map_err(|_| bad())?
-                || raw.enums.get(id.0).ok_or_else(bad)?.span
+        // Enum and function suffixes have independent family ranks. A status
+        // without a function must never shift another family's function ID.
+        for enumeration_kind in BuiltinEnum::ALL {
+            let function_kind = match enumeration_kind {
+                BuiltinEnum::ReadStatus => BuiltinFunction::ReadStdin,
+                BuiltinEnum::WriteStatus => BuiltinFunction::WriteStdout,
+            };
+            if let Some(id) = ids.enumeration(enumeration_kind) {
+                if id != index.builtin_enum_id(enumeration_kind).map_err(|_| bad())?
+                    || raw.enums.get(id.0).ok_or_else(bad)?.span
+                        != index
+                            .builtin_enum_anchor(enumeration_kind)
+                            .map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
+            }
+            if let Some(id) = ids.function(function_kind) {
+                if id
                     != index
-                        .builtin_enum_anchor(BuiltinEnum::ReadStatus)
+                        .builtin_function_id(function_kind)
                         .map_err(|_| bad())?
-            {
-                return Err(bad());
+                    || raw.functions.get(id.0).ok_or_else(bad)?.span
+                        != index
+                            .builtin_function_anchor(function_kind)
+                            .map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
             }
         }
-        if let Some(id) = ids.function {
-            use crate::frontend::builtin_catalog::BuiltinFunction;
-            if id
-                != index
-                    .builtin_function_id(BuiltinFunction::ReadStdin)
-                    .map_err(|_| bad())?
-                || raw.functions.get(id.0).ok_or_else(bad)?.span
-                    != index
-                        .builtin_function_anchor(BuiltinFunction::ReadStdin)
-                        .map_err(|_| bad())?
-            {
-                return Err(bad());
-            }
-        }
+        let first_kind = if raw.builtins.contains_function(BuiltinFunction::ReadStdin) {
+            BuiltinFunction::ReadStdin
+        } else {
+            BuiltinFunction::WriteStdout
+        };
+        ids.function(first_kind)
     } else {
         raw.builtins.require_none().map_err(|_| bad())?;
         if index.builtin_set() != BuiltinOrigins::None {
             return Err(bad());
         }
-    }
+        None
+    };
     if !allow_enums && (!raw.enums.is_empty() || index.enum_count() != 0) {
         return Err(bad());
     }
@@ -292,7 +398,11 @@ fn check_impl(
             declaration,
             &mut count,
             allow_enums,
-            allow_builtins && ordinal == index.source_function_count(),
+            if let Some(first) = first_function {
+                builtin_kind(raw.builtins, first, hir::DefId(ordinal))
+            } else {
+                None
+            },
         )?;
     }
     let mut visitor = Visitor::validate(sources);
@@ -360,7 +470,16 @@ fn check_impl(
                 return Err(bad());
             }
             visitor.file(declaration.span.file);
-            function(declaration, &mut visitor, allow_enums, true)?;
+            function(
+                declaration,
+                &mut visitor,
+                allow_enums,
+                if let Some(first) = first_function {
+                    builtin_kind(raw.builtins, first, id)
+                } else {
+                    None
+                },
+            )?;
             continue;
         }
         let (key, module) = index.function(id).map_err(|_| bad())?;
@@ -370,15 +489,299 @@ fn check_impl(
             return Err(bad());
         }
         visitor.file(original.name.file);
-        function(declaration, &mut visitor, allow_enums, false)?;
+        function(declaration, &mut visitor, allow_enums, None)?;
     }
     visitor.finish(count)
+}
+
+/// Preserve the RFC 0025 predecessor/candidate layout evidence alongside the
+/// actual closed transport. None of these model types supplies a witness.
+#[cfg(test)]
+#[allow(dead_code)]
+mod output_layout_feasibility {
+    use super::*;
+    use std::mem::{align_of, size_of};
+
+    // Preserve the predecessor's singleton fields and their declaration order.
+    struct BaselineIds {
+        enumeration: Option<EnumId>,
+        function: Option<hir::DefId>,
+    }
+
+    // Each family is absent, status-only, or function plus required status.
+    // These nine states encode dependency closure, but prove no provenance.
+    enum Inventory {
+        None,
+        ReadStatus,
+        ReadStdin,
+        WriteStatus,
+        ReadStatusWriteStatus,
+        ReadStdinWriteStatus,
+        WriteStdout,
+        ReadStatusWriteStdout,
+        ReadStdinWriteStdout,
+    }
+    struct ExplicitIds {
+        read_enumeration: Option<EnumId>,
+        read_function: Option<hir::DefId>,
+        write_enumeration: Option<EnumId>,
+        write_function: Option<hir::DefId>,
+    }
+    // Independent enum/function suffix bases; Inventory determines which
+    // family exists and each family's rank within its own suffix. A future
+    // validator must prove bounds, canonical order and source association.
+    struct SuffixIds {
+        enumeration_base: EnumId,
+        function_base: hir::DefId,
+        inventory: Inventory,
+    }
+    enum Family {
+        Input,
+        Output,
+    }
+    enum Enumeration {
+        ReadStatus,
+        WriteStatus,
+    }
+    enum Function {
+        ReadStdin,
+        WriteStdout,
+    }
+
+    // Complete predecessor envelope, in its original declaration order.
+    // Candidate and current models append the named extra roles below.
+    macro_rules! carriers {
+        ($name:ident, $ids:ty, $inventory:ty; $($extra:tt)*) => {
+            struct $name {
+                ids_return: Result<$ids, OwnedFailure>,
+                normalized_ids: Result<$ids, Box<Diagnostic>>,
+                ids: $ids,
+                enum_id: EnumId,
+                function_id: hir::DefId,
+                enum_lookup: Result<EnumId, Box<Diagnostic>>,
+                function_lookup: Result<hir::DefId, Box<Diagnostic>>,
+                anchor_lookup: Result<Span, Box<Diagnostic>>,
+                enum_row: Option<&'static RawEnumDecl>,
+                function_row: Option<&'static RawOwnedFunction>,
+                enum_row_return: Result<&'static RawEnumDecl, Box<Diagnostic>>,
+                function_row_return: Result<&'static RawOwnedFunction, Box<Diagnostic>>,
+                set: $inventory,
+                iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
+                $($extra)*
+            }
+        };
+    }
+    carriers!(BaselineCarriers, BaselineIds, BuiltinOrigins;);
+    carriers!(ExplicitSubstitutionCarriers, ExplicitIds, Inventory;);
+    carriers!(SuffixSubstitutionCarriers, SuffixIds, Inventory;);
+
+    // Price a concrete finite-family walk separately from ID substitution.
+    // All named roles coexist in this model; no padding or lifetime reuse is
+    // assumed. This does not assert that future control flow needs only these.
+    macro_rules! family_carriers {
+        ($name:ident, $ids:ty) => {
+            carriers!($name, $ids, Inventory;
+                family: Family,
+                enumeration: Enumeration,
+                function: Function,
+                enumeration_rank: Option<usize>,
+                function_rank: Option<usize>,
+                family_iteration: std::array::IntoIter<Family, 2>,
+                next_family: Option<Family>,
+            );
+        };
+    }
+    family_carriers!(ExplicitFamilyCarriers, ExplicitIds);
+    family_carriers!(SuffixFamilyCarriers, SuffixIds);
+    carriers!(ClosedTransportCarriers, builtins::BuiltinIds, BuiltinOrigins;
+        enumeration_kind: BuiltinEnum,
+        function_kind: BuiltinFunction,
+        enumeration_rank: Option<usize>,
+        function_rank: Option<usize>,
+        family_iteration: std::array::IntoIter<BuiltinEnum, 2>,
+        next_family: Option<BuiltinEnum>,
+        enumeration_id_return: Option<EnumId>,
+        function_id_return: Option<hir::DefId>,
+        input_function: Option<hir::DefId>,
+        enumeration_ids_borrow: &'static builtins::BuiltinIds,
+        function_ids_borrow: &'static builtins::BuiltinIds,
+    );
+    carriers!(ClosedSourceCarriers, builtins::BuiltinIds, BuiltinOrigins;
+        enumeration_kind: BuiltinEnum,
+        function_kind: BuiltinFunction,
+        enumeration_rank: Option<usize>,
+        function_rank: Option<usize>,
+        family_iteration: std::array::IntoIter<BuiltinEnum, 2>,
+        next_family: Option<BuiltinEnum>,
+        enumeration_id_return: Option<EnumId>,
+        function_id_return: Option<hir::DefId>,
+        first_function: Option<hir::DefId>,
+        enumeration_ids_borrow: &'static builtins::BuiltinIds,
+        function_ids_borrow: &'static builtins::BuiltinIds,
+        first_function_kind: BuiltinFunction,
+        first_function_set_receiver: BuiltinOrigins,
+        first_function_selector: BuiltinFunction,
+        first_function_lookup_kind: BuiltinFunction,
+        first_function_has_input: bool,
+        classifier_set: BuiltinOrigins,
+        classifier_first: hir::DefId,
+        classifier_current: hir::DefId,
+        classifier_rank: usize,
+        classifier_rank_return: Option<usize>,
+        classifier_input: bool,
+        classifier_output: bool,
+        classifier_set_receivers: [BuiltinOrigins; 2],
+        classifier_kind_arguments: [BuiltinFunction; 2],
+        classifier_choice: (bool, bool, usize),
+        classifier_return: Option<BuiltinFunction>,
+        count_permission: Option<BuiltinFunction>,
+        validation_permission: Option<BuiltinFunction>,
+        function_permission: Option<BuiltinFunction>,
+    );
+
+    fn same_layout<T, U>() {
+        assert_eq!(size_of::<T>(), size_of::<U>());
+        assert_eq!(align_of::<T>(), align_of::<U>());
+    }
+    fn report<T>(name: &str) {
+        println!(
+            "OUTPUT_ASSOCIATION_LAYOUT {name} bytes={} align={}",
+            size_of::<T>(),
+            align_of::<T>()
+        );
+    }
+    fn candidate<T>(name: &str) {
+        println!(
+            "OUTPUT_ASSOCIATION_CANDIDATE {name} historical_carriers={} \
+             candidate_carriers={} delta={} admission=NOT_ESTABLISHED",
+            size_of::<BaselineCarriers>(),
+            size_of::<T>(),
+            size_of::<T>() as i128 - size_of::<BaselineCarriers>() as i128,
+        );
+    }
+
+    #[test]
+    fn bounded_stdout_association_disconnected_layout_feasibility() {
+        same_layout::<SuffixIds, builtins::BuiltinIds>();
+        // Retain the closed predecessor as a distinct measured receipt; the
+        // activated association adds its complete independent origin guard.
+        assert_eq!(
+            size_of::<BuiltinAssociationCarriers>(),
+            size_of::<ClosedSourceCarriers>() + size_of::<OutputOriginGuardCarriers>()
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(size_of::<ClosedTransportCarriers>(), 568);
+        same_layout::<Result<SuffixIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
+        );
+        same_layout::<
+            Result<SuffixIds, Box<Diagnostic>>,
+            Result<builtins::BuiltinIds, Box<Diagnostic>>,
+        >();
+        assert_eq!(
+            builtin_carrier_bytes(),
+            size_of::<BuiltinAssociationCarriers>()
+        );
+
+        macro_rules! layouts {
+            ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
+        }
+        macro_rules! id_transports {
+            ($ids:ty) => {
+                layouts!(
+                    $ids,
+                    Result<$ids, OwnedFailure>,
+                    Result<$ids, Box<Diagnostic>>,
+                );
+            };
+        }
+        layouts!(
+            EnumId,
+            hir::DefId,
+            Option<EnumId>,
+            Option<hir::DefId>,
+            OwnedFailure,
+            Box<Diagnostic>,
+            BuiltinOrigins,
+            Inventory,
+            Family,
+            Enumeration,
+            Function,
+            Option<usize>,
+            std::array::IntoIter<Family, 2>,
+            Option<Family>,
+            BuiltinAssociationCarriers,
+            BaselineCarriers,
+            ExplicitSubstitutionCarriers,
+            SuffixSubstitutionCarriers,
+            ExplicitFamilyCarriers,
+            SuffixFamilyCarriers,
+            ClosedTransportCarriers,
+            ClosedSourceCarriers,
+            OutputOriginGuardCarriers,
+        );
+        id_transports!(builtins::BuiltinIds);
+        id_transports!(BaselineIds);
+        id_transports!(ExplicitIds);
+        id_transports!(SuffixIds);
+        candidate::<ExplicitSubstitutionCarriers>("four_optional_ids_substitution_only");
+        candidate::<SuffixSubstitutionCarriers>("suffix_bases_substitution_only");
+        candidate::<ExplicitFamilyCarriers>("four_optional_ids_with_family_roles");
+        candidate::<SuffixFamilyCarriers>("suffix_bases_with_family_roles");
+        println!(
+            "OUTPUT_ASSOCIATION_INTEGRATED historical_carriers={} actual_carriers={} \
+             delta={} selectors_ranks_iteration_values_results=PAID public_output_admission=CURRENT_EXECUTABLE",
+            size_of::<BaselineCarriers>(),
+            builtin_carrier_bytes(),
+            builtin_carrier_bytes() as i128 - size_of::<BaselineCarriers>() as i128,
+        );
+    }
 }
 
 #[cfg(test)]
 mod array_tests {
     use super::*;
     use crate::frontend::{lexer, parser};
+
+    #[test]
+    fn builtin_association_output_claims_are_denied_before_the_source_walk() {
+        let mut sources = SourceMap::new();
+        let text = "struct C {} fn main()->(){let c=C{};return;}";
+        let file = sources.add("closed-output-association.ox".into(), text.into());
+        let source = sources.get(file);
+        let ast = parser::parse_with_mode(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let typed =
+            super::super::typeck::check(super::super::resolve::resolve(source, &ast).unwrap())
+                .unwrap();
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        assert!(check(&raw, typed.index(), &sources).is_ok());
+        for origin in [
+            BuiltinOrigins::WriteStatus,
+            BuiltinOrigins::WriteStdout,
+            BuiltinOrigins::ReadStatusWriteStatus,
+            BuiltinOrigins::ReadStatusWriteStdout,
+            BuiltinOrigins::ReadStdinWriteStatus,
+            BuiltinOrigins::ReadStdinWriteStdout,
+        ] {
+            raw.builtins = origin;
+            // Even the private builtin-allowed continuation cannot admit these
+            // raw claims without the exact output source marker. No traversal or proof allocation
+            // occurs; only the existing boxed diagnostic is allocated.
+            let (denied, allocations) =
+                super::super::super::reviewer_origins::integration_counted(|| {
+                    check_impl(&raw, typed.index(), &sources, true, true)
+                });
+            let error = denied.unwrap_err();
+            assert_eq!(error.code, "E0500");
+            assert_eq!(error.stage, "oir-project-bind");
+            assert_eq!(allocations, 2);
+            assert!(check(&raw, typed.index(), &sources).is_err());
+        }
+    }
 
     #[test]
     fn unit2b_association_walks_every_array_operand_in_both_passes() {
@@ -648,7 +1051,16 @@ mod enum_tests {
         assert_eq!(usage.count, usage.validation);
         assert_eq!((usage.count.declarations, usage.count.spans), (7, 17));
         assert_eq!(usage.dimensions, 4);
-        for origin in [BuiltinOrigins::ReadStatus, BuiltinOrigins::ReadStdin] {
+        for origin in [
+            BuiltinOrigins::ReadStatus,
+            BuiltinOrigins::ReadStdin,
+            BuiltinOrigins::WriteStatus,
+            BuiltinOrigins::WriteStdout,
+            BuiltinOrigins::ReadStatusWriteStatus,
+            BuiltinOrigins::ReadStatusWriteStdout,
+            BuiltinOrigins::ReadStdinWriteStatus,
+            BuiltinOrigins::ReadStdinWriteStdout,
+        ] {
             raw.builtins = origin;
             let (denied, allocations) =
                 super::super::super::reviewer_origins::integration_counted(|| {

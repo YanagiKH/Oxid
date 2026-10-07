@@ -5,6 +5,7 @@ use super::{
     verified::VerifiedOwnedProgram,
     *,
 };
+use crate::frontend::options::EntryPolicy;
 use std::mem::size_of;
 
 const DEAD: u64 = 0;
@@ -21,6 +22,12 @@ pub(super) enum OwnedRunFailure {
     EntryResult(Span),
     Bounds(Span),
     InputHost(Span),
+    OutputHost(Span),
+    OutputEntry(Span),
+    ProcessHost,
+    ProcessSetup,
+    ProcessEntry(Span),
+    ProcessResult(Span),
     Resource(plan::AdmissionFailure),
     Invariant(&'static str, Option<Span>),
 }
@@ -62,6 +69,45 @@ impl OwnedRunFailure {
                 "E0608",
                 "oir-owned-run",
                 "bounded stdin execution requires Linux x86_64",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::OutputHost(span) => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "bounded stdout execution requires Linux x86_64",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::OutputEntry(span) => Diagnostic::new(
+                "E0609",
+                "oir-owned-run",
+                "bounded stdout execution requires process entry mode",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::ProcessHost => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "process execution requires Linux x86_64",
+                None,
+            ),
+            // Process drivers must intercept this and exit 74 silently. This
+            // fallback identifies a violated internal reporting contract; it
+            // must never itself be sent to a potentially unsafe descriptor.
+            Self::ProcessSetup => Diagnostic::new(
+                "E0500",
+                "oir-owned-run",
+                "internal compiler error: process setup failure requires silent exit 74",
+                None,
+            ),
+            Self::ProcessEntry(span) => Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return i32",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::ProcessResult(span) => Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return a status in 0..255",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::Resource(e) => Diagnostic::new(
@@ -1442,6 +1488,152 @@ impl<'p, 'w> Machine<'p, 'w> {
         result.state = AVAILABLE;
         Ok(())
     }
+    fn write_stdout(
+        &mut self,
+        frame: usize,
+        buffer: ReferenceParamId,
+        destination: OwnerPlaceId,
+        span: Span,
+    ) -> Result<()> {
+        let active = self
+            .frames
+            .get(frame)
+            .ok_or_else(|| bad("output activation", span))?;
+        let function = self
+            .plan
+            .witness()
+            .functions()
+            .get(active.function.0)
+            .filter(|function| function.id == active.function)
+            .ok_or_else(|| bad("output function identity", span))?;
+        if self.plan.witness().builtin_output_function() != Some(function.id)
+            || buffer != ReferenceParamId(0)
+            || destination != OwnerPlaceId(0)
+        {
+            return Err(bad("output builtin identity", span));
+        }
+        if !output::supported_host() {
+            return Err(OwnedRunFailure::OutputHost(span));
+        }
+        function
+            .references
+            .get(buffer.0)
+            .filter(|reference| {
+                reference.kind == BorrowKind::Shared
+                    && reference.referent() == BorrowedTy::ScalarSlice(hir::Ty::I32)
+            })
+            .ok_or_else(|| bad("output reference type", span))?;
+        // Revalidate live owner/loan epochs, readable authority, nominal
+        // projection provenance and the complete view before reading any cell.
+        let (root, array, relative) =
+            self.array_base(frame, AccessBase::Parameter(buffer), Access::Read, span)?;
+        if matches!(self.aggregate(root, span)?, AggregateTy::Enum(_)) {
+            return Err(bad("output buffer type", span));
+        }
+        if array.element() != hir::Ty::I32 || array.length() > 1024 {
+            return Err(bad("output capacity", span));
+        }
+        let capacity = array.length();
+        let root_frame = index(root.frame, span)?;
+        if root_frame >= frame {
+            return Err(bad("output buffer activation", span));
+        }
+        let buffer_extent = self.owner_extent(root, span)?;
+        let buffer_start = buffer_extent
+            .start
+            .checked_add(relative)
+            .ok_or_else(|| bad("output buffer offset", span))?;
+        let buffer_end = capacity
+            .checked_mul(4)
+            .and_then(|bytes| buffer_start.checked_add(bytes))
+            .filter(|end| *end <= buffer_extent.end)
+            .ok_or_else(|| bad("output buffer extent", span))?;
+
+        self.expect_owner(frame, destination, &[UNINITIALIZED], span)?;
+        let result_key = self.raw_key(frame, destination);
+        let enumeration = self
+            .plan
+            .witness()
+            .builtin_output_enumeration()
+            .ok_or_else(|| bad("output result identity", span))?;
+        if result_key.generation == 0
+            || function.owners[destination.0].kind != OwnerKind::Temporary
+            || self.aggregate(result_key, span)? != AggregateTy::Enum(enumeration)
+        {
+            return Err(bad("output result owner", span));
+        }
+        let generation = epoch(result_key.generation, span)?;
+        let variants = self
+            .plan
+            .witness()
+            .declarations()
+            .enums()
+            .variants(enumeration)
+            .map_err(|_| bad("output result variants", span))?;
+        if variants.len() != 3
+            || variants[0].payload().is_some()
+            || variants[1].payload().is_some()
+            || variants[2].payload() != Some(hir::Ty::I32)
+        {
+            return Err(bad("output result variants", span));
+        }
+        let result_extent = self.owner_extent(result_key, span)?;
+        let tag_offset = scalar_offset(result_extent.clone(), 0, hir::Ty::I32, span)?;
+        let count_offset = scalar_offset(result_extent.clone(), 4, hir::Ty::I32, span)?;
+        let scratch = self
+            .plan
+            .output_scratch_range(function.id)
+            .filter(|scratch| {
+                scratch.len() == 1024
+                    && scratch.end == self.frames[frame].payload.len()
+                    && result_extent.end <= scratch.start
+            })
+            .ok_or_else(|| bad("output scratch extent", span))?;
+
+        // Result materialization and the entire scan/stage are prepaid. The
+        // activation already admitted its fixed scratch allocation. No source
+        // byte is read until all runtime authority and storage checks succeed.
+        self.charge(4 + capacity, span)?;
+        let valid = {
+            let (ancestors, current) = self.frames.split_at_mut(frame);
+            stage_stdout(
+                &ancestors[root_frame].payload[buffer_start..buffer_end],
+                &mut current[0].payload[scratch.start..scratch.start + capacity],
+            )
+        };
+        let mut tag = if valid { 0u32 } else { 1u32 };
+        let mut accepted = 0usize;
+        // An invalid last cell cannot leak the earlier staged prefix. Empty
+        // views also skip fd 1 entirely. Each attempt, including EINTR, pays
+        // one immediately before the single unbuffered syscall.
+        while valid && accepted < capacity {
+            self.charge(1, span)?;
+            let byte = self.frames[frame].payload[scratch.start + accepted];
+            match output::write_one(byte) {
+                output::Attempt::Accepted => accepted += 1,
+                output::Attempt::Interrupted => {}
+                output::Attempt::Error => {
+                    tag = 2;
+                    break;
+                }
+            }
+        }
+
+        // All offsets, authority and next generation were checked before the
+        // first write. The builtin cannot invoke or mutate ownership mid-call.
+        // Materialization is infallible and allocation/fuel-free. Nullary
+        // variants never inspect or initialize their inactive payload bytes.
+        let current = &mut self.frames[frame];
+        current.payload[tag_offset..tag_offset + 4].copy_from_slice(&tag.to_le_bytes());
+        if tag == 2 {
+            current.payload[count_offset..count_offset + 4]
+                .copy_from_slice(&(accepted as i32).to_le_bytes());
+        }
+        let result = &mut current.owners[destination.0];
+        result.generation = generation;
+        result.state = AVAILABLE;
+        Ok(())
+    }
     fn statement(
         &mut self,
         frame: usize,
@@ -1455,6 +1647,12 @@ impl<'p, 'w> Machine<'p, 'w> {
                 destination,
             } => {
                 self.read_stdin(frame, *buffer, *destination, span)?;
+            }
+            OwnedInstruction::WriteStdout {
+                buffer,
+                destination,
+            } => {
+                self.write_stdout(frame, *buffer, *destination, span)?;
             }
             OwnedInstruction::ConstructEnum {
                 destination,
@@ -2267,7 +2465,10 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
             if let Some(statement) = b.statements.get(self.frames[frame].next) {
                 let span = plan::instruction_span(statement);
-                if !matches!(statement.kind, OwnedInstruction::ReadStdin { .. }) {
+                if !matches!(
+                    statement.kind,
+                    OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. }
+                ) {
                     self.charge(self.plan.statement_cost(f.id, &statement.kind), span)?;
                 }
                 #[cfg(test)]
@@ -2477,6 +2678,32 @@ pub(super) fn run_limits(
     )
 }
 fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<hir::DefId> {
+    checked_entry_policy(witness, entry, EntryPolicy::Result)
+}
+fn checked_entry_policy(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    policy: EntryPolicy,
+) -> Result<hir::DefId> {
+    if policy == EntryPolicy::Result {
+        if let Some(function) = witness.builtin_output_function() {
+            // The ordinary result-mode route must deny even an unused output
+            // function before planning, activation, source effects or fuel debits.
+            return Err(OwnedRunFailure::OutputEntry(
+                witness.functions()[function.0].span,
+            ));
+        }
+    }
+    if !output::supported_host() {
+        if let Some(function) = witness.builtin_output_function() {
+            return Err(OwnedRunFailure::OutputHost(
+                witness.functions()[function.0].span,
+            ));
+        }
+        if policy == EntryPolicy::Process {
+            return Err(OwnedRunFailure::ProcessHost);
+        }
+    }
     if !input::supported_host() {
         if let Some(function) = witness.builtin_function() {
             return Err(OwnedRunFailure::InputHost(
@@ -2493,6 +2720,9 @@ fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> R
     if !f.parameters.is_empty() {
         return Err(RunFailure::Entry(Some(f.span)).into());
     }
+    if policy == EntryPolicy::Process && f.result != ValueTy::Scalar(hir::Ty::I32) {
+        return Err(OwnedRunFailure::ProcessEntry(f.span));
+    }
     if matches!(f.result, ValueTy::Owned(_)) {
         return Err(OwnedRunFailure::EntryResult(f.span));
     }
@@ -2508,6 +2738,7 @@ fn execute_plan(
         plan,
         entry,
         limits,
+        EntryPolicy::Result,
         #[cfg(test)]
         events,
         #[cfg(test)]
@@ -2520,10 +2751,14 @@ fn execute_plan_inner(
     plan: &ExecutionPlan<'_>,
     entry: hir::DefId,
     limits: Limits,
+    policy: EntryPolicy,
     #[cfg(test)] events: Option<&mut Vec<Event>>,
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<Scalar> {
+    // All callers share entry validation. Every sealed Process caller
+    // establishes host support and signal policy before reaching this point.
+    checked_entry_policy(plan.witness(), Some(entry), policy)?;
     let limits = limits.bounded();
     let f = &plan.witness().functions()[entry.0];
     let mut machine = Machine {
@@ -2544,6 +2779,12 @@ fn execute_plan_inner(
             .map(|observer| std::mem::take(*observer))
             .unwrap_or_default(),
     };
+    #[cfg(test)]
+    if policy == EntryPolicy::Process {
+        // Process effects cannot trigger test-only event Vec allocations after
+        // the first write. The private process seam has no observation sink.
+        machine.observer.silent = true;
+    }
     let result = (|| {
         machine.activation_preflight(
             entry,
@@ -2579,7 +2820,46 @@ fn execute_plan_inner(
     if let Some(events) = events {
         *events = machine.events;
     }
-    result
+    if policy == EntryPolicy::Process {
+        match result? {
+            scalar @ Scalar::I32(0..=255) => Ok(scalar),
+            _ => Err(OwnedRunFailure::ProcessResult(f.span)),
+        }
+    } else {
+        result
+    }
+}
+/// Sealed process execution. Only a scalar result or failure escapes;
+/// machine storage and all owners are dropped inside the ordinary executor.
+/// SIGPIPE setup precedes entry diagnostics, planning and the activation guard.
+/// Every driver must turn ProcessSetup into a silent status 74.
+pub(super) fn run_process_limits(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    limits: Limits,
+) -> Result<Scalar> {
+    // This host-only check intentionally precedes setup and does not validate
+    // the entry, inspect source cells, allocate a plan or debit source fuel.
+    if !output::supported_host() {
+        return Err(OwnedRunFailure::ProcessHost);
+    }
+    if !process::setup() {
+        return Err(OwnedRunFailure::ProcessSetup);
+    }
+    let entry = checked_entry_policy(witness, entry, EntryPolicy::Process)?;
+    let plan = ExecutionPlan::build(witness)?;
+    execute_plan_inner(
+        &plan,
+        entry,
+        limits,
+        EntryPolicy::Process,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+    )
 }
 #[cfg(test)]
 pub(super) fn run_observed(
@@ -2622,6 +2902,7 @@ pub(super) fn run_array_observed(
             &plan,
             entry,
             limits,
+            EntryPolicy::Result,
             Some(&mut events),
             Some(&mut observer),
             Some(&mut remaining_fuel),
@@ -2640,6 +2921,27 @@ pub(super) fn run_array_observed(
 #[cfg(test)]
 #[path = "execute_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "builtin_output_reference_tests.rs"]
+mod output_tests;
+
+/// Pure staging over already-preflighted physical storage. This has no access
+/// to a machine, witness, owner, syscall or external effect. It returns false
+/// for any non-byte cell; the caller cannot emit the partially staged prefix.
+fn stage_stdout(source: &[u8], staged: &mut [u8]) -> bool {
+    if staged.len() > 1024 || source.len() != staged.len() * 4 {
+        return false;
+    }
+    for (cell, destination) in source.as_chunks::<4>().0.iter().zip(staged) {
+        let value = i32::from_le_bytes(*cell);
+        let Ok(byte) = u8::try_from(value) else {
+            return false;
+        };
+        *destination = byte;
+    }
+    true
+}
 
 fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
     match aggregate {

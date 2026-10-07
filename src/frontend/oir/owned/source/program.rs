@@ -145,6 +145,7 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<Scalar, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
         execute::run(&self.witness, entry).map_err(|error| error.diagnostic(sources))
     }
 
@@ -153,7 +154,66 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<String, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
         native::native_module(&self.witness, entry, sources)
+    }
+
+    /// Only fixed signature facts escape; the verified function stays sealed.
+    pub(in crate::frontend::oir) fn entry_signature(
+        &self,
+        id: hir::DefId,
+    ) -> Option<(usize, bool, crate::frontend::source::Span)> {
+        self.witness
+            .functions()
+            .get(id.0)
+            .filter(|function| function.id == id)
+            .map(|function| {
+                (
+                    function.parameters.len(),
+                    function.result == ValueTy::Scalar(hir::Ty::I32),
+                    function.span,
+                )
+            })
+    }
+
+    fn require_result_entry_policy(&self, sources: &SourceMap) -> Result<(), Box<Diagnostic>> {
+        if let Some(id) = self.witness.builtin_output_function() {
+            return Err(
+                execute::OwnedRunFailure::OutputEntry(self.witness.functions()[id.0].span)
+                    .diagnostic(sources),
+            );
+        }
+        Ok(())
+    }
+
+    pub(in crate::frontend::oir) fn run_process(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+    ) -> Result<Scalar, crate::frontend::oir::ProcessFailure> {
+        execute::run_process_limits(&self.witness, Some(entry), execute::Limits::default()).map_err(
+            |error| match error {
+                execute::OwnedRunFailure::ProcessSetup => {
+                    crate::frontend::oir::ProcessFailure::Setup
+                }
+                error => {
+                    crate::frontend::oir::ProcessFailure::Diagnostic(error.diagnostic(sources))
+                }
+            },
+        )
+    }
+
+    pub(in crate::frontend::oir) fn native_process_module(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+    ) -> Result<String, Box<Diagnostic>> {
+        native::native_process_module_with_fuel(
+            &self.witness,
+            entry,
+            sources,
+            super::super::plan::MAX_FUEL,
+        )
     }
 }
 
@@ -219,6 +279,233 @@ pub(super) fn run_builtin_source(
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
     observe_private_pipeline(&typed, request)
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum OutputPipelineMode {
+    Run,
+    Emit,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(super) struct OutputPipelineRequest {
+    pub(super) mode: OutputPipelineMode,
+    pub(super) fuel: usize,
+}
+#[cfg(test)]
+#[derive(Debug)]
+pub(super) enum OutputPipelineOutput {
+    Run(Result<Scalar, execute::OwnedRunFailure>),
+    Emit(Result<String, Box<Diagnostic>>),
+}
+
+/// One fresh paid source continuation. Emission never runs the reference
+/// consumer. Neither an index, typed owner nor executable witness can escape.
+#[cfg(test)]
+pub(super) fn run_output_source(
+    owner: SourceOwner<'_>,
+    request: OutputPipelineRequest,
+) -> Result<OutputPipelineOutput, Vec<Diagnostic>> {
+    const OUTPUT_SOURCE_ENABLED: bool = true;
+    if !OUTPUT_SOURCE_ENABLED {
+        return Err(vec![*Diagnostic::new(
+            "E0101",
+            "resolve",
+            "output source pipeline is not enabled",
+            Some(owner.eof()),
+        )]);
+    }
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let facts =
+        index::collect_output_candidate(owner, IndexLimits::default(), &work, &mut allocator)
+            .map_err(|error| vec![*error])?;
+    let index = facts.finish(&work, &mut allocator)?;
+    index
+        .require_output_candidate_pipeline()
+        .map_err(|error| vec![*error])?;
+    let typed = resolve::type_builtin_source(&index, &work, &mut allocator)?;
+    if typed.admission() != resolve::SourceAdmission::BuiltinPipeline {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    };
+    let entry = index.root_original_main();
+    if typed.entry() != entry {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let seed_before = typed
+        .source_storage_bytes()
+        .ok_or_else(|| vec![*crate::frontend::oir::source::association::bad()])?;
+    let source_usage = super::budget::preflight(&typed, super::budget::Limits::DEFAULT)
+        .map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    let raw = lower::lower(&typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
+    let raw_usage = super::super::budget::preflight(&raw, super::super::budget::Limits::DEFAULT)
+        .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    if source_usage.analysis != raw_usage {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    super::association::check_builtin_candidate(&raw, &index, sources)
+        .map_err(|error| vec![*error])?;
+    let witness = verified::verify_owned(raw, sources)
+        .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
+    let seed_after = typed
+        .source_storage_bytes()
+        .ok_or_else(|| vec![*crate::frontend::oir::source::association::bad()])?;
+    if seed_before != seed_after {
+        return Err(vec![*crate::frontend::oir::source::association::bad()]);
+    }
+    let entry = checked_output_entry(&witness, entry).map_err(|error| vec![*error])?;
+    let output = match request.mode {
+        OutputPipelineMode::Run => OutputPipelineOutput::Run(execute::run_process_limits(
+            &witness,
+            Some(entry),
+            execute::Limits {
+                fuel: request.fuel,
+                ..execute::Limits::default()
+            },
+        )),
+        OutputPipelineMode::Emit => OutputPipelineOutput::Emit(
+            native::native_process_module_with_fuel(&witness, entry, sources, request.fuel),
+        ),
+    };
+    drop(witness);
+    Ok(output)
+}
+
+/// Shared source-level process signature rule, before either consumer. The
+/// entry identity came from the original-root index and full source association.
+#[cfg(test)]
+fn checked_output_entry(
+    witness: &verified::VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+) -> Result<hir::DefId, Box<Diagnostic>> {
+    let function = match entry {
+        Some(id) => match witness.functions().get(id.0) {
+            Some(function) if function.id == id => Some(function),
+            _ => None,
+        },
+        None => None,
+    };
+    match function {
+        Some(function)
+            if function.parameters.is_empty()
+                && function.result == ValueTy::Scalar(hir::Ty::I32) =>
+        {
+            Ok(function.id)
+        }
+        _ => Err(Diagnostic::new(
+            "E0600",
+            "oir-run",
+            "process entry requires original-root fn main() -> i32 with no parameters",
+            function.map(|function| function.span),
+        )),
+    }
+}
+
+// Complete new named caller surface, in addition to existing HIR/raw/analysis
+// banks. Index collection/finish storage is independently admitted by IndexPlan.
+// This is not a claim to model inherited helpers, diagnostics, stack or RSS.
+#[cfg(test)]
+#[allow(dead_code)]
+struct OutputProgramCarriers {
+    owner: SourceOwner<'static>,
+    request: OutputPipelineRequest,
+    mode: OutputPipelineMode,
+    work: WorkMeter,
+    allocator: Allocator,
+    index: index::DeclarationIndex<'static>,
+    index_borrows: [&'static index::DeclarationIndex<'static>; 4],
+    work_borrow: &'static WorkMeter,
+    allocator_borrow: &'static mut Allocator,
+    marker: bool,
+    gate: Result<(), Box<Diagnostic>>,
+    gate_normalized: Result<(), Vec<Diagnostic>>,
+    typed_return: Result<typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    typed: typeck::TypedOwnedProgram<'static>,
+    typed_borrows: [&'static typeck::TypedOwnedProgram<'static>; 3],
+    source_view: crate::frontend::source::SourceView<'static>,
+    sources: &'static SourceMap,
+    source_captures: [&'static SourceMap; 4],
+    entries: [Option<hir::DefId>; 2],
+    selected_entry: hir::DefId,
+    entry_return: Result<hir::DefId, Box<Diagnostic>>,
+    entry_normalized: Result<hir::DefId, Vec<Diagnostic>>,
+    entry_function: Option<&'static RawOwnedFunction>,
+    entry_predicate: hir::DefId,
+    entry_span: Option<crate::frontend::source::Span>,
+    seed_options: [Option<usize>; 2],
+    seed_returns: [Result<usize, Vec<Diagnostic>>; 2],
+    seeds: [usize; 2],
+    source_return: Result<super::budget::Usage, OwnedFailure>,
+    source_normalized: Result<super::budget::Usage, Vec<Diagnostic>>,
+    source_usage: super::budget::Usage,
+    raw_return: Result<RawOwnedProgram, OwnedFailure>,
+    raw_normalized: Result<RawOwnedProgram, Vec<Diagnostic>>,
+    raw: RawOwnedProgram,
+    raw_borrows: [&'static RawOwnedProgram; 2],
+    raw_usage_return: Result<OwnershipUsage, OwnedFailure>,
+    raw_usage_normalized: Result<OwnershipUsage, Vec<Diagnostic>>,
+    raw_usage: OwnershipUsage,
+    association_return:
+        Result<crate::frontend::oir::source::association::BindUsage, Box<Diagnostic>>,
+    association_normalized:
+        Result<crate::frontend::oir::source::association::BindUsage, Vec<Diagnostic>>,
+    witness_return: Result<verified::VerifiedOwnedProgram, OwnedFailure>,
+    witness_normalized: Result<verified::VerifiedOwnedProgram, Vec<Diagnostic>>,
+    witness: verified::VerifiedOwnedProgram,
+    witness_borrows: [&'static verified::VerifiedOwnedProgram; 3],
+    limits: execute::Limits,
+    execution_return: Result<Scalar, execute::OwnedRunFailure>,
+    native_return: Result<String, Box<Diagnostic>>,
+    lower_identity_normalized: Result<(), OwnedFailure>,
+    output: OutputPipelineOutput,
+    returned: Result<OutputPipelineOutput, Vec<Diagnostic>>,
+}
+#[cfg(test)]
+pub(super) const fn output_program_carrier_bytes() -> usize {
+    std::mem::size_of::<OutputProgramCarriers>() + super::association::builtin_carrier_bytes()
+}
+#[test]
+fn bounded_output_source_caller_layout_and_emit_has_no_reference_effects() {
+    println!(
+        "OUTPUT_SOURCE_CALLER caller={} request={} output={} returned={}",
+        output_program_carrier_bytes(),
+        std::mem::size_of::<OutputPipelineRequest>(),
+        std::mem::size_of::<OutputPipelineOutput>(),
+        std::mem::size_of::<Result<OutputPipelineOutput, Vec<Diagnostic>>>()
+    );
+    let mut sources = SourceMap::new();
+    let file = sources.add(
+        "closed-output.ox".into(),
+        "fn main()->i32{return 0;}".into(),
+    );
+    let source = sources.get(file);
+    let ast = crate::frontend::parser::parse(source, crate::frontend::lexer::lex(source).unwrap())
+        .unwrap();
+    let owner = SourceOwner::original(
+        source,
+        &ast,
+        crate::frontend::source::SourceView::Map(&sources),
+    )
+    .unwrap();
+    let output = run_output_source(
+        owner,
+        OutputPipelineRequest {
+            mode: OutputPipelineMode::Emit,
+            fuel: 0,
+        },
+    )
+    .unwrap();
+    let OutputPipelineOutput::Emit(module) = output else {
+        panic!("emission must not select the reference consumer");
+    };
+    let module = module.unwrap();
+    assert!(module.contains("@__oxid_process_setup"));
+    assert!(module.contains("store i64 0"));
+    assert!(!module.contains("call i32 @__oxid_print_i32"));
 }
 
 #[cfg(test)]

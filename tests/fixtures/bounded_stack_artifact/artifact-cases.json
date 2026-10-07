@@ -1,0 +1,559 @@
+{
+  "schema": 1,
+  "provenance": "Hand-authored literal OXS1 bytes; no Oxid execution or producer-generated expectation",
+  "loader_entry_mode": "result",
+  "producer_entry_mode": "process",
+  "cases": [
+    {
+      "name": "sample-39",
+      "file": "fixtures/sample-39.oxs",
+      "bytes": 80,
+      "hex": "4f58533107010c00000001030000000104000000010500000002000000000300000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "7ec41c2ad48697ba7ec6cde11158b78ff571d588f9a0bbcda416879b5580e5a8",
+      "expected": {
+        "kind": "value",
+        "count": 7,
+        "value": 39,
+        "loader_status": 0,
+        "loader_stdout": "39\n",
+        "rows": [
+          [
+            1,
+            12
+          ],
+          [
+            1,
+            3
+          ],
+          [
+            1,
+            4
+          ],
+          [
+            1,
+            5
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            2,
+            0
+          ]
+        ]
+      },
+      "producer_input": "fixtures/sample-39.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "sample-63",
+      "file": "fixtures/sample-63.oxs",
+      "bytes": 80,
+      "hex": "4f58533105010700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "7994c12777bb488a93f245aeee39c55d64b3ad6479c0667cbe5b6e2a70bee854",
+      "expected": {
+        "kind": "value",
+        "count": 5,
+        "value": 63,
+        "loader_status": 0,
+        "loader_stdout": "63\n",
+        "rows": [
+          [
+            1,
+            7
+          ],
+          [
+            1,
+            8
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ]
+        ]
+      },
+      "producer_input": "fixtures/sample-63.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "zero-push",
+      "file": "fixtures/zero-push.oxs",
+      "bytes": 80,
+      "hex": "4f58533101010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "9c72008a28ef6ec7f6b09904cbd4a799bc1fa2572a71f3b11d3fbff4f60350a7",
+      "expected": {
+        "kind": "value",
+        "count": 1,
+        "value": 0,
+        "loader_status": 0,
+        "loader_stdout": "0\n",
+        "rows": [
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "producer_input": "fixtures/zero-push.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "maximum-i32-push",
+      "file": "fixtures/maximum-i32-push.oxs",
+      "bytes": 80,
+      "hex": "4f5853310101ffffff7f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "06dc09122000b0a96a0bf2adcc2b770246aec9a8cf7b0042c714dbfff7708866",
+      "expected": {
+        "kind": "value",
+        "count": 1,
+        "value": 2147483647,
+        "loader_status": 0,
+        "loader_stdout": "2147483647\n",
+        "rows": [
+          [
+            1,
+            2147483647
+          ]
+        ]
+      },
+      "producer_input": "fixtures/maximum-i32-push.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "little-endian-mixed-bytes",
+      "file": "fixtures/little-endian-mixed-bytes.oxs",
+      "bytes": 80,
+      "hex": "4f58533101010403020100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "bb962d5aef3ab2f38dd30d4611d864e48bfab75a7e20bd35dc16e212d079be15",
+      "expected": {
+        "kind": "value",
+        "count": 1,
+        "value": 16909060,
+        "loader_status": 0,
+        "loader_stdout": "16909060\n",
+        "rows": [
+          [
+            1,
+            16909060
+          ]
+        ]
+      },
+      "producer_input": "fixtures/little-endian-mixed-bytes.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "fifteen-row-capacity",
+      "file": "fixtures/fifteen-row-capacity.oxs",
+      "bytes": 80,
+      "hex": "4f5853310f010100000001020000000200000000010300000002000000000104000000020000000001050000000200000000010600000002000000000107000000020000000001080000000200000000",
+      "sha256": "3acc8370f16a3552c680a7611367908e4db62f02104d5b650531a0a0386f9088",
+      "expected": {
+        "kind": "value",
+        "count": 15,
+        "value": 36,
+        "loader_status": 0,
+        "loader_stdout": "36\n",
+        "rows": [
+          [
+            1,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            3
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            4
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            5
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            6
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            7
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            8
+          ],
+          [
+            2,
+            0
+          ]
+        ]
+      },
+      "producer_input": "fixtures/fifteen-row-capacity.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "empty",
+      "file": "fixtures/empty.oxs",
+      "bytes": 0,
+      "hex": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expected": {
+        "kind": "invalid",
+        "reason": "length",
+        "offset": -1,
+        "loader_status": 0,
+        "loader_stdout": "-4\n"
+      }
+    },
+    {
+      "name": "truncated-79",
+      "file": "fixtures/truncated-79.oxs",
+      "bytes": 79,
+      "hex": "4f585331050107000000010800000001010000000200000000030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "1dc2d26b714ae48798275ae95bf7740bdda7e1786256ba2a7c0d09ef65dc6b5f",
+      "expected": {
+        "kind": "invalid",
+        "reason": "length",
+        "offset": -1,
+        "loader_status": 0,
+        "loader_stdout": "-4\n"
+      }
+    },
+    {
+      "name": "trailing-81",
+      "file": "fixtures/trailing-81.oxs",
+      "bytes": 81,
+      "hex": "4f5853310501070000000108000000010100000002000000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "1a747dc2c234e6b48a23c6a853573c8da0a00e6c3c4057c599c8760b7503e993",
+      "expected": {
+        "kind": "invalid",
+        "reason": "length",
+        "offset": -1,
+        "loader_status": 0,
+        "loader_stdout": "-4\n"
+      }
+    },
+    {
+      "name": "trailing-82",
+      "file": "fixtures/trailing-82.oxs",
+      "bytes": 82,
+      "hex": "4f5853310501070000000108000000010100000002000000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a5",
+      "sha256": "458ce66c4014028742675753e50a6bc4eaa9559e76c880ff894b55a4ad6ebbae",
+      "expected": {
+        "kind": "invalid",
+        "reason": "length",
+        "offset": -1,
+        "loader_status": 0,
+        "loader_stdout": "-4\n"
+      }
+    },
+    {
+      "name": "wrong-magic",
+      "file": "fixtures/wrong-magic.oxs",
+      "bytes": 80,
+      "hex": "0058533105010700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "a0d0297ffb7896452e380e87208625ddbf2a9e69fb746e936d9896cd42585755",
+      "expected": {
+        "kind": "invalid",
+        "reason": "magic",
+        "offset": 0,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "wrong-version",
+      "file": "fixtures/wrong-version.oxs",
+      "bytes": 80,
+      "hex": "4f58533205010700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "9b82ec8e2a42d12f90c2e53a403efdc10a8fc4211f6d8f03b1c41fa1ed66279b",
+      "expected": {
+        "kind": "invalid",
+        "reason": "magic",
+        "offset": 3,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "count-zero",
+      "file": "fixtures/count-zero.oxs",
+      "bytes": 80,
+      "hex": "4f58533100010700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "e1c8c8f915fe7af04efc38fbcc582458c88880ec70c24f119d55232252f99927",
+      "expected": {
+        "kind": "invalid",
+        "reason": "count",
+        "offset": 4,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "count-sixteen",
+      "file": "fixtures/count-sixteen.oxs",
+      "bytes": 80,
+      "hex": "4f58533110010700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "cf37014d20274d41d7af4d2185905381c1f56b13cbf9ad73d78fdd2be806b8b6",
+      "expected": {
+        "kind": "invalid",
+        "reason": "count",
+        "offset": 4,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "zero-used-opcode",
+      "file": "fixtures/zero-used-opcode.oxs",
+      "bytes": 80,
+      "hex": "4f58533105000700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "3fcffe82bed0fa1195720a26756fac93239b2dbc9d3ad3b34841e9446d5b1415",
+      "expected": {
+        "kind": "invalid",
+        "reason": "opcode",
+        "offset": 5,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "unknown-used-opcode",
+      "file": "fixtures/unknown-used-opcode.oxs",
+      "bytes": 80,
+      "hex": "4f58533105040700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "3c194556e59b6f7118c60cf447ada64f1d6b4b6bb7813366062fa57012ba76e3",
+      "expected": {
+        "kind": "invalid",
+        "reason": "opcode",
+        "offset": 5,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "high-bit-operand",
+      "file": "fixtures/high-bit-operand.oxs",
+      "bytes": 80,
+      "hex": "4f58533105010700008001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "a78a313c3df5dd85fcb17a86e038cb08e6453065677fa153da85f51fa6217aa1",
+      "expected": {
+        "kind": "invalid",
+        "reason": "high-bit",
+        "offset": 9,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "nonzero-operator-operand",
+      "file": "fixtures/nonzero-operator-operand.oxs",
+      "bytes": 80,
+      "hex": "4f58533105010700000001080000000101000000020100000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "17745ce9a692ed700e62f2e08e2aeac097d178d632bf8690dfb8ef7d37735673",
+      "expected": {
+        "kind": "invalid",
+        "reason": "operator-operand",
+        "offset": 21,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "stack-underflow",
+      "file": "fixtures/stack-underflow.oxs",
+      "bytes": 80,
+      "hex": "4f58533101020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "2cc25248606dd81cd02776a7852d0017430979f2bc895de4a0122c0894b43f36",
+      "expected": {
+        "kind": "invalid",
+        "reason": "stack-underflow",
+        "offset": 5,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "residual-stack",
+      "file": "fixtures/residual-stack.oxs",
+      "bytes": 80,
+      "hex": "4f58533102010700000001080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "1d7ac9584e54b0c6813bd3d62f871dc7d06d2fcf1ead511891c0930e9c8939a7",
+      "expected": {
+        "kind": "invalid",
+        "reason": "stack-residual",
+        "offset": 4,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "first-unused-byte-nonzero",
+      "file": "fixtures/first-unused-byte-nonzero.oxs",
+      "bytes": 80,
+      "hex": "4f58533105010700000001080000000101000000020000000003000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "89fb8261253c45d9aa0308784015af956ca2fe38d6ea23002e0e2d3c704b2434",
+      "expected": {
+        "kind": "invalid",
+        "reason": "tail",
+        "offset": 30,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "last-byte-nonzero",
+      "file": "fixtures/last-byte-nonzero.oxs",
+      "bytes": 80,
+      "hex": "4f58533105010700000001080000000101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "sha256": "01eb4f263f9f6c03891e96b4fec505fdf18b13cfb97862b7bdea68b63c314e30",
+      "expected": {
+        "kind": "invalid",
+        "reason": "tail",
+        "offset": 79,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "later-opcode-before-overflow",
+      "file": "fixtures/later-opcode-before-overflow.oxs",
+      "bytes": 80,
+      "hex": "4f5853310401ffffff7f01010000000200000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "1c89345ff8557756d386d10c4954b93a38d3dc295afc25eabfd765fa3dee99d8",
+      "expected": {
+        "kind": "invalid",
+        "reason": "opcode",
+        "offset": 20,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "residual-before-overflow",
+      "file": "fixtures/residual-before-overflow.oxs",
+      "bytes": 80,
+      "hex": "4f5853310401ffffff7f01010000000200000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "faf1e44ab9667dfd6a3cc1f0845de8ea5ddb003465cf907f184653cfaaf52b5c",
+      "expected": {
+        "kind": "invalid",
+        "reason": "stack-residual",
+        "offset": 4,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "last-byte-before-overflow",
+      "file": "fixtures/last-byte-before-overflow.oxs",
+      "bytes": 80,
+      "hex": "4f5853310301ffffff7f01010000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "sha256": "27e42df1902930489f54dc5441b2e8ebad400043a11ddc23dc0ea8792bfd3d2b",
+      "expected": {
+        "kind": "invalid",
+        "reason": "tail",
+        "offset": 79,
+        "loader_status": 0,
+        "loader_stdout": "-6\n"
+      }
+    },
+    {
+      "name": "checked-addition-overflow",
+      "file": "fixtures/checked-addition-overflow.oxs",
+      "bytes": 80,
+      "hex": "4f5853310301ffffff7f01010000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "d1de6c7c9d64ba8640cba7ad1c926441f77db3794b61a875f711d72d73d5154c",
+      "expected": {
+        "kind": "overflow",
+        "row": 2,
+        "loader_status": 1,
+        "loader_stdout": "",
+        "loader_diagnostic": "E0604"
+      },
+      "producer_input": "fixtures/checked-addition-overflow.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "checked-multiplication-overflow",
+      "file": "fixtures/checked-multiplication-overflow.oxs",
+      "bytes": 80,
+      "hex": "4f585331030105b500000105b500000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "56a0882619b3c731f7c21ff428f50b7dadf876a0d27801b8fc8fefe37e552372",
+      "expected": {
+        "kind": "overflow",
+        "row": 2,
+        "loader_status": 1,
+        "loader_stdout": "",
+        "loader_diagnostic": "E0604"
+      },
+      "producer_input": "fixtures/checked-multiplication-overflow.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    },
+    {
+      "name": "no-multiply-short-circuit",
+      "file": "fixtures/no-multiply-short-circuit.oxs",
+      "bytes": 80,
+      "hex": "4f58533105010000000001ffffff7f0101000000020000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "68469e3d76cd6b6978140fb819e570995f6d959e94dcf4284b51afb26b3b93eb",
+      "expected": {
+        "kind": "overflow",
+        "row": 3,
+        "loader_status": 1,
+        "loader_stdout": "",
+        "loader_diagnostic": "E0604"
+      },
+      "producer_input": "fixtures/no-multiply-short-circuit.input",
+      "producer_status": 0,
+      "producer_stderr": ""
+    }
+  ]
+}

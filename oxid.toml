@@ -43,6 +43,8 @@ discord = true
 
 # Exact compiler source data and explicitly registered typed test projects.
 # Typed projects are checked/run separately with --edition=typed-preview.
+# Effectful artifact projects under fixtures/ are exact check-only projects in
+# scripts/verify_repo.py. Their binary OXS1 corpus requires no .ox exclusion.
 # Other .ox files under tests/ and examples/ remain runnable language tests.
 [test-fixtures]
 "tests/fixtures/bounded_enum_scanner/main.ox" = true

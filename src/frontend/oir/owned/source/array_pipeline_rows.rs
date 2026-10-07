@@ -933,7 +933,9 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
-            I::ReadStdin { .. } => unreachable!("builtin input source gate"),
+            I::ReadStdin { .. } | I::WriteStdout { .. } => {
+                unreachable!("builtin effect source gate")
+            }
             I::ConstructEnum { .. } | I::ConsumeVariant { .. } => unreachable!("enum source gate"),
             I::ConstructComposite {
                 destination,

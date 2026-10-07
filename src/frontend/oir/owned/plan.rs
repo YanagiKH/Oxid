@@ -164,14 +164,28 @@ impl<'a> ExecutionPlan<'a> {
         let start = end.checked_sub(builtins::INPUT_SCRATCH_BYTES)?;
         Some(start..end)
     }
+    /// Output staging belongs only to its own canonical activation, even when
+    /// an input activation is present in the same program. This is physical
+    /// scratch, outside the language result owner's nominal extent.
+    pub(super) fn output_scratch_range(
+        &self,
+        function: hir::DefId,
+    ) -> Option<std::ops::Range<usize>> {
+        if self.witness.builtin_output_function() != Some(function) {
+            return None;
+        }
+        let end = self.functions.get(function.0)?.usage.payload_bytes;
+        let start = end.checked_sub(builtins::OUTPUT_SCRATCH_BYTES)?;
+        Some(start..end)
+    }
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
     }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
-            // The consumer charges the validated capacity and each read attempt.
-            OwnedInstruction::ReadStdin { .. } => 0,
+            // The consumer charges the validated capacity and each I/O attempt.
+            OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
             }
@@ -368,6 +382,22 @@ fn usage(
     witness: &VerifiedOwnedProgram,
     f: &RawOwnedFunction,
 ) -> Result<FrameUsage, AdmissionFailure> {
+    let mut scratch_bytes = 0;
+    if witness.builtin_function() == Some(f.id) {
+        scratch_bytes = add(scratch_bytes, builtins::INPUT_SCRATCH_BYTES)?;
+    }
+    if witness.builtin_output_function() == Some(f.id) {
+        scratch_bytes = add(scratch_bytes, builtins::OUTPUT_SCRATCH_BYTES)?;
+    }
+    frame_usage(witness.declarations(), f, scratch_bytes)
+}
+
+/// Physical accounting over declarations established by the plan's witness.
+fn frame_usage(
+    declarations: &Declarations,
+    f: &RawOwnedFunction,
+    scratch_bytes: usize,
+) -> Result<FrameUsage, AdmissionFailure> {
     let mut u = FrameUsage {
         scalar_slots: add(f.locals.len(), f.places.len())?,
         owners: f.owners.len(),
@@ -379,17 +409,19 @@ fn usage(
     for c in &f.calls {
         u.arguments = add(u.arguments, c.arguments.len())?;
     }
-    for (index, owner) in f.owners.iter().enumerate() {
-        let layout = witness
-            .declarations()
+    for owner in &f.owners {
+        let layout = declarations
             .aggregate_layout(owner.aggregate())
             .expect("verified record");
-        u.owner_cells = add(u.owner_cells, width(witness, f, OwnerPlaceId(index)))?;
+        u.owner_cells = add(
+            u.owner_cells,
+            declarations
+                .aggregate_width(owner.aggregate())
+                .expect("verified record"),
+        )?;
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
     }
-    if witness.builtin_function() == Some(f.id) {
-        u.payload_bytes = add(u.payload_bytes, builtins::INPUT_SCRATCH_BYTES)?;
-    }
+    u.payload_bytes = add(u.payload_bytes, scratch_bytes)?;
     u.expanded_cells = add(add(u.scalar_slots, u.arguments)?, u.owner_cells)?;
     u.reference_bytes = add(
         mul(
@@ -429,6 +461,7 @@ fn usage(
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
     Ok(u)
 }
+
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {
         OwnedInstruction::Scalar(s) => s.span(),

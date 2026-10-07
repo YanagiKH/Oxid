@@ -67,7 +67,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 252)
+        self.assertEqual(len(captured["inputs"]), 262)
+        self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
         self.assertEqual(len(captured["division_inputs"]), 185)
@@ -106,19 +107,134 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_stdout_inverse_restores_exact_stdin_predecessor_and_complete_chain(self):
+        restored, touched = binding.inverse_stdout_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["stdout-transition.patch"])
+        self.assertEqual(restored, self.captured["stdin_inputs"])
+        binding.check_bytes(restored, self.captured["stdin_source"]["files"])
+        self.assertEqual(touched, list(binding.STDOUT_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.STDOUT_ADDITIONS)), (53, 252, 10))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.STDOUT_ADDITIONS))
+        compiler_paths = [name for name in self.captured["inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler_paths), 204)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+                         "63db2c290031d76b5925fdd672c38eac2ca50578")
+        self.assertEqual(self.captured["current"]["source_only_tree"],
+                         "f01525a95f2e4b3dfa69237108cfbc67a1f43eab")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["stdin-source.json"]),
+                         "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f")
+        output = self.root / "stdout-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["stdout_inverse_touched"], list(binding.STDOUT_PATHS))
+        self.assertEqual(receipt["stdout_inverse_patch_sha256"], binding.STDOUT_PATCH_SHA)
+        self.assertEqual(receipt["stdin_source_sha256"], binding.STDIN_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_stdout_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-stdin"
+        binding.materialize(source, self.captured["stdin_inputs"])
+        patch_path = self.package / "stdout-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+
+    def test_stdout_members_required_byte_and_mode_bound_before_inverse(self):
+        for name in binding.STDOUT_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_stdout_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.STDOUT_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.STDOUT_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_stdout_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+
+    def test_stdout_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "stdout-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.STDIN_HEAD), ("source_only_tree", binding.STDIN_TREE),
+                           ("current_source_members", 252), ("compiler_source_members", 194),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("stdin_authority_sha256", "0" * 64),
+                           ("stdin_source_sha256", "0" * 64)):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale stdout authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_stdout_stdin_manifest_and_patch_coherent_tampering_reject(self):
+        for name, error in (("stdin-source.json", "unapproved stdin source manifest"),
+                            ("stdout-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "stdout-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_stdout_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["stdout-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 53)
+        for name, section in zip(binding.STDOUT_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_stdout_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_stdout_patch(self.captured["stdin_inputs"], original)
+
+    def test_stdout_inverse_scope_order_duplicates_unknown_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["stdout-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.STDOUT_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.STDOUT_PATHS)
+
     def test_stdin_inverse_restores_exact_enum_predecessor_and_complete_chain(self):
         restored, touched = binding.inverse_stdin_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["stdin-transition.patch"])
+            self.captured["stdin_inputs"], self.captured["package_bytes"]["stdin-transition.patch"])
         self.assertEqual(restored, self.captured["enum_inputs"])
         binding.check_bytes(restored, self.captured["enum_source"]["files"])
         self.assertEqual(touched, list(binding.STDIN_PATHS))
         self.assertEqual((len(touched), len(restored), len(binding.STDIN_ADDITIONS)), (82, 237, 15))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.STDIN_ADDITIONS))
-        compiler_paths = [name for name in self.captured["inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(set(self.captured["stdin_inputs"]) - set(restored), set(binding.STDIN_ADDITIONS))
+        compiler_paths = [name for name in self.captured["stdin_inputs"] if name.startswith(("src/", "native/"))]
         self.assertEqual(len(compiler_paths), 194)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(self.captured["stdin_source"]["reviewed_source_head"],
                          "c1d73740268d64d4e908ad86ed9dabaa48dd1c23")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["stdin_source"]["source_only_tree"],
                          "b19991275b22426397d708ac0afa1874e6511b00")
         self.assertEqual(binding.digest(self.captured["package_bytes"]["enum-source.json"]),
                          "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669")
@@ -139,7 +255,7 @@ class SourceBindingTests(unittest.TestCase):
                                      'apply', *extra, str(patch_path)], cwd=source,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        binding.check_entries(source, self.captured["stdin_source"]["files"], exact=True)
 
     def test_stdin_members_required_byte_and_mode_bound_before_inverse(self):
         for name in binding.STDIN_PATHS:
@@ -199,7 +315,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(sections), 82)
         for name, section in zip(binding.STDIN_PATHS, sections):
             with self.subTest(name=name):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["stdin_inputs"])
                 hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[name].splitlines(keepends=True)
@@ -217,7 +333,7 @@ class SourceBindingTests(unittest.TestCase):
         for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
                         original + sections[0], original + unknown, original + b"unexpected tail\n"):
             with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["stdin_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.STDIN_PATHS)
 
     def test_stdin_semantic_redirect_is_reversible_and_preserves_enum_authority(self):
@@ -1969,8 +2085,11 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (252, 185, 185, 133, 129, 117))
+                         (262, 185, 185, 133, 129, 117))
+        self.assertEqual(plan["stdin_source_members"], 252)
         self.assertEqual(plan["enum_source_members"], 237)
+        self.assertEqual(prepared["stdout_authority_sha256"], binding.STDOUT_AUTHORITY_SHA)
+        self.assertEqual(prepared["stdin_source_sha256"], binding.STDIN_SOURCE_SHA)
         self.assertEqual(prepared["stdin_authority_sha256"], binding.STDIN_AUTHORITY_SHA)
         self.assertEqual(prepared["enum_source_sha256"], binding.ENUM_SOURCE_SHA)
         self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))

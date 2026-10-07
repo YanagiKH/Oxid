@@ -181,6 +181,18 @@ fn check_project<'s>(
     }))
 }
 
+/// Process setup failure is kept out of ordinary diagnostic rendering.
+#[derive(Debug)]
+pub(in crate::frontend) enum ProcessFailure {
+    Setup,
+    Diagnostic(Box<Diagnostic>),
+}
+impl From<Box<Diagnostic>> for ProcessFailure {
+    fn from(diagnostic: Box<Diagnostic>) -> Self {
+        Self::Diagnostic(diagnostic)
+    }
+}
+
 impl CheckedSourceProgram<'_> {
     pub(in crate::frontend) fn function_count(&self) -> usize {
         match &self.body {
@@ -202,6 +214,89 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => program.native_module(self.entry, self.sources),
         }
     }
+    /// A single source-owned signature rule serves both public process consumers.
+    fn checked_process_entry(&self) -> Result<(hir::DefId, Span), Box<Diagnostic>> {
+        let signature = match self.entry {
+            Some(id) => {
+                let facts = match &self.body {
+                    CheckedBody::Scalar(program) => program
+                        .program
+                        .functions
+                        .get(id.0)
+                        .filter(|function| function.id == id)
+                        .map(|function| {
+                            (
+                                function.param_count,
+                                function.result == hir::Ty::I32,
+                                function.span,
+                            )
+                        }),
+                    CheckedBody::Owned(program) => program.entry_signature(id),
+                }
+                .ok_or_else(association::bad)?;
+                Some((id, facts))
+            }
+            None => None,
+        };
+        match signature {
+            Some((id, (0, true, span))) => Ok((id, span)),
+            other => Err(Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process entry requires original-root fn main() -> i32 with no parameters",
+                other.map(|(_, (_, _, span))| span),
+            )),
+        }
+    }
+
+    fn require_process_host(&self) -> Result<(), Box<Diagnostic>> {
+        if super::super::process::supported_host() {
+            Ok(())
+        } else {
+            Err(Diagnostic::new(
+                "E0608",
+                "oir-run",
+                "process execution requires Linux x86_64",
+                None,
+            ))
+        }
+    }
+
+    pub(in crate::frontend) fn run_process(&self) -> Result<i32, ProcessFailure> {
+        self.require_process_host()?;
+        if !super::super::process::setup() {
+            return Err(ProcessFailure::Setup);
+        }
+        let (entry, span) = self.checked_process_entry()?;
+        let value = match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run(Some(entry))
+                .map_err(|error| error.diagnostic(self.sources))?,
+            CheckedBody::Owned(program) => program.run_process(entry, self.sources)?,
+        };
+        match value {
+            Scalar::I32(status @ 0..=255) => Ok(status),
+            _ => Err(Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return a status in 0..255",
+                Some(span),
+            )
+            .into()),
+        }
+    }
+
+    pub(in crate::frontend) fn native_process_module(&self) -> Result<String, Box<Diagnostic>> {
+        self.require_process_host()?;
+        let (entry, _) = self.checked_process_entry()?;
+        match &self.body {
+            CheckedBody::Scalar(program) => {
+                program.native_process_module(Some(entry), self.sources)
+            }
+            CheckedBody::Owned(program) => program.native_process_module(entry, self.sources),
+        }
+    }
+
     #[cfg(test)]
     pub(in crate::frontend) fn route(&self) -> ProjectRoute {
         match self.body {
@@ -279,5 +374,53 @@ fn bounded_enum_production_facade_caller_layout() {
         std::mem::size_of::<CheckedBody>(),
         std::mem::size_of::<CheckedSourceProgram<'_>>(),
         std::mem::size_of::<Checked<'_>>()
+    );
+}
+
+#[test]
+fn public_process_signature_is_shared_and_keeps_checked_owner_inline() {
+    use crate::frontend::{lexer, parser};
+    use std::mem::{align_of, size_of};
+    for (text, accepted) in [
+        ("fn main()->i32{return 37;}", true),
+        ("fn main()->bool{return true;}", false),
+        ("fn main()->(){return;}", false),
+        ("fn main(x:i32)->i32{return x;}", false),
+        ("fn helper()->i32{return 37;}", false),
+        (
+            "struct C{n:i32} fn main()->i32{let c=C{n:37};return c.n;}",
+            true,
+        ),
+        ("struct C{} fn main()->C{return C{};}", false),
+    ] {
+        let mut sources = SourceMap::new();
+        let file = sources.add("process-signature.ox".into(), text.into());
+        let source = sources.get(file);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let checked = check_source(source, &ast, &sources).unwrap();
+        let entry = checked.checked_process_entry();
+        assert_eq!(entry.is_ok(), accepted, "{text}");
+        if let Err(error) = entry {
+            assert_eq!((error.code, error.stage), ("E0600", "oir-run"));
+            assert_eq!(
+                error.message,
+                "process entry requires original-root fn main() -> i32 with no parameters"
+            );
+            if super::super::process::supported_host() {
+                let emitted = checked.native_process_module().unwrap_err();
+                assert_eq!(emitted.render_json(&sources), error.render_json(&sources));
+            }
+        }
+    }
+    println!(
+        "PROCESS_SOURCE_CARRIERS failure={}/{} result={}/{} signature={}/{} checked={}/{} owner_policy_fields=0",
+        size_of::<ProcessFailure>(),
+        align_of::<ProcessFailure>(),
+        size_of::<Result<i32, ProcessFailure>>(),
+        align_of::<Result<i32, ProcessFailure>>(),
+        size_of::<Result<(hir::DefId, Span), Box<Diagnostic>>>(),
+        align_of::<Result<(hir::DefId, Span), Box<Diagnostic>>>(),
+        size_of::<CheckedSourceProgram<'static>>(),
+        align_of::<CheckedSourceProgram<'static>>()
     );
 }

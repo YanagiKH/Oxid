@@ -62,6 +62,12 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
         FailureKind::InputCapacity => {
             execute::OwnedRunFailure::Invariant("input capacity", Some(origin)).diagnostic(sources)
         }
+        FailureKind::OutputCapacity => {
+            execute::OwnedRunFailure::Invariant("output capacity", Some(origin)).diagnostic(sources)
+        }
+        FailureKind::ProcessStatus => {
+            execute::OwnedRunFailure::ProcessResult(origin).diagnostic(sources)
+        }
     }
     .render_human(sources)
 }

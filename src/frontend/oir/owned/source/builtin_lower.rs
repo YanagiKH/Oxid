@@ -40,15 +40,20 @@ pub(super) fn check_capacity<T>(values: &Vec<T>, count: usize) -> Result<(), Own
 /// Called only after the complete source output and invocation preflight. Each
 /// nonempty nested vector uses the same observed fallible reservation boundary
 /// as ordinary source lowering; empty lanes allocate nothing.
-pub(super) fn function(index: &DeclarationIndex<'_>) -> Result<RawOwnedFunction, OwnedFailure> {
-    let id = index
-        .builtin_function_id(BuiltinFunction::ReadStdin)
-        .map_err(|_| bad(index))?;
+pub(super) fn function(
+    index: &DeclarationIndex<'_>,
+    kind: BuiltinFunction,
+) -> Result<RawOwnedFunction, OwnedFailure> {
+    let enumeration_kind = match kind {
+        BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
+        BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
+    };
+    let id = index.builtin_function_id(kind).map_err(|_| bad(index))?;
     let enumeration = index
-        .builtin_enum_id(BuiltinEnum::ReadStatus)
+        .builtin_enum_id(enumeration_kind)
         .map_err(|_| bad(index))?;
     let span = index
-        .builtin_function_anchor(BuiltinFunction::ReadStdin)
+        .builtin_function_anchor(kind)
         .map_err(|_| bad(index))?;
     let mut raw = RawOwnedFunction {
         id,
@@ -85,7 +90,10 @@ pub(super) fn function(index: &DeclarationIndex<'_>) -> Result<RawOwnedFunction,
         &mut raw.references,
         ReferenceDecl {
             referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::I32))?,
-            kind: BorrowKind::Exclusive,
+            kind: match kind {
+                BuiltinFunction::ReadStdin => BorrowKind::Exclusive,
+                BuiltinFunction::WriteStdout => BorrowKind::Shared,
+            },
             position: 0,
             span,
         },
@@ -115,9 +123,15 @@ pub(super) fn function(index: &DeclarationIndex<'_>) -> Result<RawOwnedFunction,
     budget::append(
         &mut block.statements,
         OwnedStatement {
-            kind: OwnedInstruction::ReadStdin {
-                buffer: ReferenceParamId(0),
-                destination: OwnerPlaceId(0),
+            kind: match kind {
+                BuiltinFunction::ReadStdin => OwnedInstruction::ReadStdin {
+                    buffer: ReferenceParamId(0),
+                    destination: OwnerPlaceId(0),
+                },
+                BuiltinFunction::WriteStdout => OwnedInstruction::WriteStdout {
+                    buffer: ReferenceParamId(0),
+                    destination: OwnerPlaceId(0),
+                },
             },
             span,
             diagnostic_origins: None,
@@ -168,6 +182,32 @@ struct Carriers {
     aggregate: Result<AggregateSlot, DeclarationError>,
     referent: Result<BorrowedSlot, DeclarationError>,
     inventory: raw_budget::FunctionCounts,
+    // The finite family selector is passed to the producer and each existing
+    // index lookup. The selected enum is an independent nominal identity.
+    function_kind: BuiltinFunction,
+    enumeration_kind: BuiltinEnum,
+    function_lookup_kind: BuiltinFunction,
+    enumeration_lookup_kind: BuiltinEnum,
+    anchor_lookup_kind: BuiltinFunction,
+    function_lookup_receiver: &'static DeclarationIndex<'static>,
+    enumeration_lookup_receiver: &'static DeclarationIndex<'static>,
+    anchor_lookup_receiver: &'static DeclarationIndex<'static>,
+    // Preflight and emission have separate iterator, next, and selected-key
+    // roles. Their complete envelopes are charged without phase-reuse credit.
+    finite_iterations: [FiniteFunctionIterationCarriers; 2],
+}
+
+#[allow(dead_code)]
+struct FiniteFunctionIterationCarriers {
+    iteration: std::array::IntoIter<BuiltinFunction, 2>,
+    next: Option<BuiltinFunction>,
+    kind: BuiltinFunction,
+    predicate_kind: BuiltinFunction,
+    typed_receiver: &'static super::typeck::TypedOwnedProgram<'static>,
+    index_receiver: &'static DeclarationIndex<'static>,
+    inventory: BuiltinOrigins,
+    predicate_receiver: BuiltinOrigins,
+    present: bool,
 }
 pub(super) const fn carrier_bytes() -> usize {
     size_of::<Carriers>()
