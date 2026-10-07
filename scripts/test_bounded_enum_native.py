@@ -349,12 +349,12 @@ class BoundedEnumNativeControls(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         original = repo / "tests/fixtures/typed_project_source_binding/current-source.json"
         manifest = gate.read_reviewed_manifest(original)
-        self.assertEqual(len(manifest["files"]), 264)
+        self.assertEqual(len(manifest["files"]), 266)
         reduced = dict(manifest, files=[row for row in manifest["files"]
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
-        self.assertEqual(len(reduced["files"]), 211)
-        self.assertEqual(reduced["reviewed_source_head"], "983dad1f21bdc9d37cf0d1364b58aad219e553d0")
+        self.assertEqual(len(reduced["files"]), 213)
+        self.assertEqual(reduced["reviewed_source_head"], "ffa2e00543b7a1958321b719677ed3b48f42bc74")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")

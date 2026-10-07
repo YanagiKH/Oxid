@@ -387,6 +387,95 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     }
 }
 
+// Whole-program compiler-work inventories. These fixed facts confer no
+// emission authority; native byte prechecks and final storage proof still apply.
+pub(in super::super) struct NativeInventories {
+    items: usize,
+    owner_width: usize,
+}
+
+impl NativeInventories {
+    pub(in super::super) fn checked(
+        execution: &ExecutionPlan<'_>,
+    ) -> Result<Self, AdmissionFailure> {
+        let mut inventory = Self {
+            items: 0,
+            owner_width: 0,
+        };
+        for function in &execution.functions {
+            let usage = function.usage;
+            for count in [
+                usage.scalar_slots,
+                usage.arguments,
+                usage.owners,
+                usage.references,
+                usage.loans,
+                usage.calls,
+            ] {
+                inventory.items = add(inventory.items, count)?;
+            }
+            inventory.owner_width = add(inventory.owner_width, usage.owner_cells)?;
+        }
+        inventory.check(execution)?;
+        Ok(inventory)
+    }
+
+    // Independently count the immutable declarations, not another combination
+    // of cached FrameUsage fields. The whole-program totals include unused and
+    // untaken declarations; an argument descriptor counts even when its native
+    // scalar arena position is an owned/borrow hole.
+    fn check(&self, execution: &ExecutionPlan<'_>) -> Result<(), AdmissionFailure> {
+        require(execution.functions.len() == execution.witness.functions().len())?;
+        let (mut items, mut owner_width) = (0, 0);
+        for (index, function) in execution.witness.functions().iter().enumerate() {
+            require(function.id == hir::DefId(index))?;
+            for count in [
+                function.locals.len(),
+                function.places.len(),
+                function.owners.len(),
+                function.references.len(),
+                function.loans.len(),
+                function.calls.len(),
+            ] {
+                items = add(items, count)?;
+            }
+            for call in &function.calls {
+                items = add(items, call.arguments.len())?;
+            }
+            for owner in &function.owners {
+                owner_width = add(
+                    owner_width,
+                    execution
+                        .witness
+                        .declarations()
+                        .aggregate_width(owner.aggregate())
+                        .map_err(|_| {
+                            AdmissionFailure::new("native inventory owner width", Some(owner.span))
+                        })?,
+                )?;
+            }
+        }
+        if (self.items, self.owner_width) != (items, owner_width) {
+            return Err(AdmissionFailure::new(
+                "native compiler inventory mismatch",
+                None,
+            ));
+        }
+        Ok(())
+    }
+
+    pub(in super::super) fn items(&self) -> usize {
+        self.items
+    }
+    pub(in super::super) fn owner_width(&self) -> usize {
+        self.owner_width
+    }
+}
+
+#[cfg(test)]
+#[path = "native_inventory_tests.rs"]
+pub(in super::super) mod inventory_tests;
+
 #[cfg(test)]
 #[path = "native_storage_tests.rs"]
 mod tests;

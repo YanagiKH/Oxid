@@ -9,6 +9,8 @@ const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_SLOTS: usize = 256;
 const MAX_SLOTS: usize = 8_192;
+const MAX_NATIVE_INVENTORY_ITEMS: usize = 8_192;
+const MAX_NATIVE_OWNER_WIDTH: usize = 8_192;
 const MAX_BLOCKS: usize = 4_096;
 const MAX_DEPTH: usize = 32;
 const MAX_COST: usize = 100_000;
@@ -163,8 +165,8 @@ struct Limits {
     blocks: usize,
     depth: usize,
     cost: usize,
-    cells: usize,
-    live_cells: usize,
+    inventory_items: usize,
+    owner_width: usize,
     bytes: usize,
     live_bytes: usize,
     diagnostic_bytes: usize,
@@ -180,8 +182,8 @@ impl Limits {
         blocks: MAX_BLOCKS,
         depth: MAX_DEPTH,
         cost: MAX_COST,
-        cells: MAX_SLOTS,
-        live_cells: MAX_SLOTS,
+        inventory_items: MAX_NATIVE_INVENTORY_ITEMS,
+        owner_width: MAX_NATIVE_OWNER_WIDTH,
         bytes: MAX_NATIVE_BYTES,
         live_bytes: MAX_NATIVE_BYTES,
         diagnostic_bytes: MAX_DIAGNOSTIC_BYTES,
@@ -198,8 +200,8 @@ impl Limits {
             blocks: self.blocks.min(d.blocks),
             depth: self.depth.min(d.depth),
             cost: self.cost.min(d.cost),
-            cells: self.cells.min(d.cells),
-            live_cells: self.live_cells.min(d.live_cells),
+            inventory_items: self.inventory_items.min(d.inventory_items),
+            owner_width: self.owner_width.min(d.owner_width),
             bytes: self.bytes.min(d.bytes),
             live_bytes: self.live_bytes.min(d.live_bytes),
             diagnostic_bytes: self.diagnostic_bytes.min(d.diagnostic_bytes),
@@ -216,6 +218,8 @@ struct Bound {
     cyclic: bool,
     depth: usize,
     scalar_slots: usize,
+    // Common reference inventory retained for accounting observations, not
+    // a native storage/admission limit. Logical fuel still uses the same X.
     cells: usize,
     bytes: usize,
 }
@@ -540,7 +544,7 @@ fn admit_policy_accounted(
         mul(remaining.capacity(), size_of::<usize>())?,
     )?;
     accounting.admission_peak(early_scratch)?;
-    let (mut scalar_slots, mut blocks, mut cells, mut bytes) = (0, 0, 0, 0);
+    let (mut scalar_slots, mut blocks, mut bytes) = (0, 0, 0);
     for f in functions {
         let u = plan.function(f.id).usage();
         limit(
@@ -571,7 +575,6 @@ fn admit_policy_accounted(
         )?;
         scalar_slots = add(scalar_slots, u.scalar_slots)?;
         blocks = add(blocks, f.blocks.len())?;
-        cells = add(cells, u.expanded_cells)?;
         bytes = add(bytes, u.native_bytes)?;
         for b in &f.blocks {
             if let OwnedTerminatorKind::Invoke { call, .. } =
@@ -596,7 +599,9 @@ fn admit_policy_accounted(
         origin,
     )?;
     limit(blocks, limits.blocks, "aggregate blocks", origin)?;
-    limit(cells, limits.cells, "aggregate expanded cells", origin)?;
+    // Independent compiler inventories replace reference-runtime X here.
+    // Fixed count facts end before graph, diagnostic and emission phases.
+    admit_inventory_policy(plan, (limits.inventory_items, limits.owner_width))?;
     let mut ready: Vec<_> = remaining
         .iter()
         .enumerate()
@@ -694,12 +699,6 @@ fn admit_policy_accounted(
             bound.scalar_slots,
             limits.scalar_slots,
             "live scalar slots",
-            f.span,
-        )?;
-        limit(
-            bound.cells,
-            limits.live_cells,
-            "live expanded cells",
             f.span,
         )?;
         bounds[i] = bound;
@@ -1967,6 +1966,33 @@ fn transfer_leaves(
         let output = field_pointer(out, &format!("{name}_out{i}"), destination, leaf.offset);
         writeln!(out, "  %{name}_field{i} = load {}, ptr {input}, align 1\n  store {} %{name}_field{i}, ptr {output}, align 1", ty(leaf.ty), ty(leaf.ty)).unwrap();
     }
+}
+
+// Independently checked compiler-work facts; no native allocation, witness,
+// or emitter capability escapes. The caller discards them after the guards.
+pub(super) fn admit_inventory_policy(
+    execution: &ExecutionPlan<'_>,
+    limits: (usize, usize),
+) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    let counts = plan::native_storage::NativeInventories::checked(execution)
+        .map_err(|failure| reject(failure.name, failure.span))?;
+    // An empty library has zero inventory but is not an executable entry.
+    // Existing entry validation remains a separate, earlier native gate.
+    if let Some(function) = execution.witness().functions().first() {
+        limit(
+            counts.items(),
+            limits.0.min(MAX_NATIVE_INVENTORY_ITEMS),
+            "aggregate compiler inventory items",
+            function.span,
+        )?;
+        limit(
+            counts.owner_width(),
+            limits.1.min(MAX_NATIVE_OWNER_WIDTH),
+            "aggregate owner width cells",
+            function.span,
+        )?;
+    }
+    Ok(counts)
 }
 
 fn emit(
@@ -3630,3 +3656,7 @@ mod division_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_inventory_admission_tests.rs"]
+mod inventory_admission_tests;

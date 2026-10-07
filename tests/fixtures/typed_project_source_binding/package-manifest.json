@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 24696,
+      "bytes": 27067,
       "path": "README.md",
-      "sha256": "746faff1aeb34839097ecebe1b30aa0c6b3ded12a986832838a9284c49dc5e2c"
+      "sha256": "e814ac8c066267e530486caeb4dd570431e6a5a598274b592cae40e12786085f"
     },
     {
       "bytes": 9916,
@@ -41,9 +41,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 50842,
+      "bytes": 51412,
       "path": "current-source.json",
-      "sha256": "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303"
+      "sha256": "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842"
     },
     {
       "bytes": 29723,
@@ -106,9 +106,24 @@
       "sha256": "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4"
     },
     {
+      "bytes": 104690,
+      "path": "native-inventory-authority.json",
+      "sha256": "7c8edaeea1a69abce66b40f7b59bd29584c4927584fbb3f05a633b0ebdb8ca58"
+    },
+    {
+      "bytes": 61893,
+      "path": "native-inventory-transition.patch",
+      "sha256": "4be68264904f4c059d98f49fb86de16dc9f9af6332801a175b0e118bf2277f76"
+    },
+    {
       "bytes": 102974,
       "path": "native-storage-authority.json",
       "sha256": "1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da"
+    },
+    {
+      "bytes": 50842,
+      "path": "native-storage-source.json",
+      "sha256": "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303"
     },
     {
       "bytes": 53819,
@@ -136,9 +151,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 159625,
+      "bytes": 167571,
       "path": "run.py",
-      "sha256": "0cde409cce83a6c1f5d3fa576239c0662aec15a67571d442fdea00f3e4378db1"
+      "sha256": "1b52d498e053b6400f9f7b03440010b8cf3d2bfc2041e8e02270d40bd3018e38"
     },
     {
       "bytes": 55961,

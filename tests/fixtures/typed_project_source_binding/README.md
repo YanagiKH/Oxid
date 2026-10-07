@@ -1,4 +1,43 @@
-# Native storage plan current-source successor
+# Native inventory admission current-source successor
+
+The active `current-source.json` binds reviewed compiler checkpoint
+`ffa2e00543b7a1958321b719677ed3b48f42bc74`, full tree
+`8a717f36016d86130ad5acc28a23f87852c76064`: 266 inputs, comprising all
+208 `src/` and `native/` members and 58 retained non-source inputs. Including
+Cargo/build inputs gives 211 compiler bodies. Its exact SHA-256 is
+`52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842`.
+
+`native-storage-source.json` preserves the entire previous Phase1 manifest
+byte-for-byte: 50,842 bytes, 264 members, SHA-256
+`0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303`.
+Its original checkpoint and tree remain unchanged. The new transition uses
+merged Phase1 base `cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050`, full tree
+`4c315696f1e7d324dcf3f00f077fbf9e17f9a722`, whose complete selected input
+bytes match that preserved manifest.
+
+`native-inventory-authority.json` and `native-inventory-transition.patch`
+bind exactly seven compiler paths: five changes and two additions, no removals.
+Admission verifies all current bytes, modes, Git blob identities, complete
+compiler/build membership, literal checkpoint/tree and before/after rosters
+before applying an inverse. The first inverse must recover every byte of the
+preserved Phase1 view before the unchanged native-storage → stdout → stdin →
+enum → projected → unary → composition → slices → division → combined →
+formatter → predecessor → archive chain runs. Every existing frozen authority,
+transition patch and oracle stays unchanged, including the final 117-member
+archive. The old native-storage patch cannot be applied directly to Phase2.
+
+`inputs` and `current` expose the activated inventory admission compiler;
+`native_storage_inputs` and `native_storage_source` expose the exact historical
+Phase1 view. Current Unit2 executes the activated source. Native admission now
+checks independently bounded inventory items and owner width, while reference
+runtime, fuel and LLVM contracts retain their own authorities. This package
+adds no semantic normalization or frozen expected-result amendment. Source
+admission and archive preparation execute no compiler and do not establish a
+semantic, native, resource or both-profile execution pass.
+
+The following sections describe retained historical transitions.
+
+## Historical native storage plan source successor
 
 The active `current-source.json` binds compiler checkpoint
 `983dad1f21bdc9d37cf0d1364b58aad219e553d0`, full tree

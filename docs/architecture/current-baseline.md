@@ -161,7 +161,7 @@ call-only borrows and explicit nested reborrows. Run/native entry still requires
 a scalar zero-argument main. Stored/returned references, partial moves,
 field-disjoint borrowing, nested owned fields, heap/destructors, unsafe/FFI
 ownership and a complete static-memory model remain open. Native remains Linux
-x86_64 with LLVM 19.1.7 at O0, under its existing and expanded storage restrictions.
+x86_64 with LLVM 19.1.7 at O0, under its inventory and explicit-byte restrictions.
 This is one experimental ownership-foundations capability, with no M2 or v1.0
 completion claim. See [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
 [the typed contract](../../spec/typed-preview.md),
@@ -170,6 +170,25 @@ completion claim. See [RFC 0014](../../rfcs/0014-owned-structs-call-borrows.md),
 [raw verifier validation](owned-verifier-validation.md),
 [historical raw-consumer validation](owned-consumers-validation.md), and
 [source qualification](owned-source-validation.md).
+
+The accepted [native admission successor](../../rfcs/0027-native-admission-inventories.md)
+replaces only native aggregate/live reference-expanded-cell guards with independent
+whole-program inventories `I = S + A + O + R + L + C` and owner width W, each at
+most 8,192. Aggregate/live explicit storage remains capped at 1 MiB, including
+canonical input/output scratch and the conditional wrapper fuel cell. This
+intentionally broadens admission; it does not optimize allocation or change
+reference storage, logical fuel, LLVM, ABI or other caps.
+
+[Local successor evidence](../../rfcs/0027-native-admission-inventories.md#local-evidence-and-remaining-gates)
+records activation `189cbed`, tested compiler source `ffa2e00`, unchanged LLVM
+controls and an ordinary source case formerly rejected by the expanded-cell
+gate. The unchanged partial parser at `8f1fe20` now compiles through normal
+native CLI gates, with 54 matching reference/native corpus cases and 41 separate
+malformed strict-decoder controls. Full grammar and capability/hosted
+qualification remain unfinished.
+Historical ledgers and oracles retain their recorded identities. Source-free
+execution here means a working directory containing only the ELF and a controlled
+environment, not filesystem isolation or an OS sandbox.
 
 
 Fixed scalar arrays are now an experimental public typed-preview capability.
