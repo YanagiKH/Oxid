@@ -259,3 +259,43 @@ bytes at peak. Logical failure differs: it makes no kth GlobalAlloc attempt.
 These are explicit expectations for the new controls, not claimed results before
 execution. Wrong-binding/callee/loop/annotation controls mutate only resolved
 facts, while source and OPA remain intact; type/flow import is still closed.
+
+## Accepted private Verify phase
+
+Status: accepted design; new success execution is not yet enabled. The existing
+still-denied comparison controls remain the predecessor evidence.
+
+Add a closed Verify-only request that owns the newly constructed candidate HIR.
+After complete resolved-HIR equality, release its allocation Session and drop
+canonical HIR before calling the genuine `typeck::check(candidate)`. That pass
+remains the sole TypedProgram constructor. Compare every supplied STF1 type and
+flow cell through immutable typed views before any lowering. Expose the existing
+four flow booleans read-only and test all 16 combinations; do not parse Debug text
+or change flow representation. A mismatch rejects without repair or fallback.
+
+Then use ordinary scalar lowering, source association and independent raw OIR
+verification, in that order, entirely inside the terminal leaf. Return only
+fixed verification facts after every HIR, typed and OIR owner has dropped. No
+candidate/typed/verified owner, callback, source owner or reusable witness may
+escape. Do not add a provider option, change the sealed checked-source owner,
+connect a default caller, or enable Run/Emit in this phase.
+
+For one genuine root module without imports, `Declarations::Original(root_ast)`
+is permitted solely as the bound AST count/order/name projection for association.
+It does not construct an original-flavor SourceOwner or fabricated index. Review
+and test that projection against the genuine project index, including public
+functions and a helper before main. Source maps come only from the bound owner;
+no independently supplied replacement map is accepted.
+
+Retain ordinary downstream passes' inherited allocation behavior and limits,
+and measure their coexistence separately. All new importer storage remains
+prepaid/fallible under the accepted affected-storage model. The old HIR-pair
+subtotal does not price typechecking, lowering or verification. Drop predecessor
+owners at the documented phase boundaries; add complete actual request/result,
+typed-comparison and consumer carriers before execution. Prepay new compile work
+on the shared meter before downstream operations. Runtime fuel is unchanged.
+
+First compile and measure the complete new layouts, then obtain independent
+boundary review before executing Verify success. Run is a later gate after
+Verify proof review. Emit additionally requires a private pre-allocation final
+text bound. Current-source qualification and public integration remain separate.
