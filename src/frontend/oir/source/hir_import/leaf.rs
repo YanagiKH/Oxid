@@ -159,8 +159,8 @@ pub(super) fn verify(
     )
 }
 
-/// The private Run precursor is denied before source work or allocation. No
-/// test-only switch or caller-supplied entry can bypass the literal gate.
+/// Private Run uses the same complete checked terminal. No test-only switch,
+/// caller-supplied entry, or default source route exists.
 #[allow(clippy::result_large_err)]
 pub(super) fn run(
     owner: SourceOwner<'_>,

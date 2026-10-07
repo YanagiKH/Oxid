@@ -1,4 +1,4 @@
-//! Denied-Run controls. No test bypasses RUN_ADMITTED or executes imported Run.
+//! Private Run entry, compile-budget and candidate execution controls.
 use super::super::{ast_compare, leaf, BoundObservation, OPA_BYTES, SUCCESS_BYTES};
 use super::*;
 use crate::frontend::{
@@ -20,7 +20,7 @@ const RICH_WIRE: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
-fn checked_hir_import_run_outer_denial_precedes_every_allocation() {
+fn checked_hir_import_run_outer_budget_precedes_every_allocation() {
     let mut sources = SourceMap::new();
     let id = sources.add("run-denial.ox".into(), RICH_SOURCE.into());
     let source = sources.get(id);
@@ -31,14 +31,11 @@ fn checked_hir_import_run_outer_denial_precedes_every_allocation() {
         (RICH_SOURCE.as_bytes(), &[][..]),
         (&[][..], RICH_WIRE),
     ] {
-        for limits in [
-            IndexLimits::default(),
-            IndexLimits {
-                retained: 0,
-                scratch: 0,
-                work: 0,
-            },
-        ] {
+        for limits in [IndexLimits {
+            retained: 0,
+            scratch: 0,
+            work: 0,
+        }] {
             let mut allocator = Allocator {
                 fail_at: Some(1),
                 ..Allocator::default()
@@ -49,7 +46,7 @@ fn checked_hir_import_run_outer_denial_precedes_every_allocation() {
             let observed = owned::hir_import_measure_allocations(|| {
                 disabled = matches!(
                     leaf::run(owner, capture, wire, &mut allocator, limits),
-                    Err(leaf::VerifyRejected::Disabled)
+                    Err(leaf::VerifyRejected::Source(leaf::Rejected::Budget))
                 );
             });
             assert!(disabled);
@@ -62,7 +59,7 @@ fn checked_hir_import_run_outer_denial_precedes_every_allocation() {
 }
 
 #[test]
-fn checked_hir_import_run_candidate_denial_precedes_reserves_and_work() {
+fn checked_hir_import_run_candidate_zero_work_precedes_reserves() {
     let mut sources = SourceMap::new();
     let id = sources.add("empty-run-denial.ox".into(), String::new());
     let source = sources.get(id);
@@ -102,7 +99,7 @@ fn checked_hir_import_run_candidate_denial_precedes_reserves_and_work() {
                 &work,
                 source.span(0, 0)
             ),
-            Err(VerifyRejected::Disabled)
+            Err(VerifyRejected::Candidate(Failure::Admission))
         );
     });
     assert!(disabled);
@@ -273,4 +270,37 @@ fn checked_hir_import_run_work_and_complete_carriers_only() {
         size_of::<Request>(), size_of::<CanonicalInput<'_, '_>>(), size_of::<Completion>(), size_of::<Result<Completion, VerifyRejected>>(),
         size_of::<verify_terminal::Context<'_>>(), size_of::<verify_terminal::WorkPlan>(), size_of::<VerifyFacts>(), size_of::<VerifyRejected>(), size_of::<Result<VerifyFacts, VerifyRejected>>(),
         builder_named_bytes().unwrap(), verify_terminal::named_bytes().unwrap(), verify_named_bytes().unwrap());
+}
+
+#[test]
+fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
+    let mut sources = SourceMap::new();
+    let id = sources.add("private-run.ox".into(), RICH_SOURCE.into());
+    let source = sources.get(id);
+    let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+    let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+    let mut allocator = Allocator::default();
+    let mut result = None;
+    let observed = owned::hir_import_measure_allocations(|| {
+        result = Some(leaf::run(
+            owner,
+            RICH_SOURCE.as_bytes(),
+            RICH_WIRE,
+            &mut allocator,
+            IndexLimits::default(),
+        ));
+    });
+    let facts = result.unwrap().unwrap();
+    assert_eq!(
+        facts.verified.runtime.as_ref(),
+        Some(&Ok(crate::frontend::oir::Scalar::I32(1)))
+    );
+    assert_eq!(facts.verified.functions, 2);
+    assert_eq!(facts.verified.typed_cells, 29);
+    assert_eq!(facts.verified.entry_work, 33_792);
+    assert_eq!(facts.total_work, 1_310_659);
+    assert_eq!(allocator.attempts, 16);
+    assert_eq!(observed.2, 0);
+    assert!(observed.0 > 16 && observed.3 > 147_456);
+    println!("HIR_IMPORT_PRIVATE_RUN {facts:?} allocations={observed:?}");
 }

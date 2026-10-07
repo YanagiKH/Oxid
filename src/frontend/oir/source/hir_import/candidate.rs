@@ -28,7 +28,7 @@ pub(super) use verify_terminal::{Facts as VerifyFacts, Rejected as VerifyRejecte
 pub(super) const VERIFY_ADMITTED: bool = true;
 // Run remains a compiled, hard-denied precursor until its complete carrier and
 // entry/runtime boundary has been measured and independently reviewed.
-pub(super) const RUN_ADMITTED: bool = false;
+pub(super) const RUN_ADMITTED: bool = true;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Request {

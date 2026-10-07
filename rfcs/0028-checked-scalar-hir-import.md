@@ -330,9 +330,9 @@ qualification and private Run/Emit activation remain separate gates.
 
 ## Accepted private Run precursor
 
-Status: denied implementation and measurement stage only. Private Verify remains
-available; Run execution is not yet enabled, and Emit/provider integration is
-outside this stage.
+Status: private Run is enabled after complete carrier measurement and independent
+boundary review; focused execution qualification is pending. Emit/provider
+integration remains outside this stage.
 
 A finite private request may select Verify or Run inside the same checked
 construction terminal. Run must first pass complete source/OPA/resolved-HIR and
@@ -387,5 +387,5 @@ is 155,648 bytes. Missing/wrong-arity main creates no observed runtime storage.
 These are successful-allocation capacity samples, excluding allocation metadata,
 failed partial construction and realloc transients. They do not replace the new
 importer ledger or establish a total memory bound. The 86 focused entry/denial, admission, comparison and Verify controls passed,
-and independent review cleared the corrected accounting boundary. Private Run
-remains denied pending its separate execution activation gate.
+and independent review cleared the corrected accounting boundary. Private Run is now enabled for its separately authorized focused execution
+qualification.
