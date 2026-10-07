@@ -412,3 +412,33 @@ The final clean local successor passed strict all-target lint, formatting and
 the receipts and closed the requested Run boundary/execution scope. Emit,
 public/provider integration and current-source hosted qualification remain
 separate gates.
+
+## Accepted private Emit feasibility precursor
+
+Status: feasibility and denied implementation only. Verify/Run remain qualified;
+private Emit success, public/provider integration and native-tool invocation are
+not enabled by this stage.
+
+Reuse the scalar emitter's authoritative count/render passes. Add only a fixed
+private admission mode at the existing count/allocation seam. Preserve default
+emitter bytes, errors, limits, Result ABI and runtime fuel; do not add another
+serializer or use a post-allocation length check as admission.
+
+Before the final output String reserve, admit its exact counted byte length plus
+complete new importer/carrier coexistence under the unchanged private retained
+ceiling. Use one fallible reserve and reject unexpected capacity or render growth.
+The eventual artifact may be the one admitted owned LLVM String, returned only
+after all compiler/verified owners drop; no source or witness reference escapes.
+The String payload remains one allocation across moves, while all complete
+request/result/enum/call transports must be measured and priced.
+
+Counting does allocate inherited native metadata and temporary diagnostic/label
+Strings. Observe those separately; the final-buffer preflight is not a claim of
+allocation-free counting or a whole-memory cap. Display paths are not bounded by
+the 128-byte source domain. A checked path-dependent compile-work allowance must
+be prepaid on the same meter before native admission/count/render, with practical
+headroom shown under the existing ceiling.
+
+Keep Emit hard denied until complete carrier pricing, the work bound, default
+behavior preservation and private no-growth checks have independent review.
+LLVM invocation and executable publication require a later explicit stage.
