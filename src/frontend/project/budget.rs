@@ -6,6 +6,10 @@ use std::path::PathBuf;
 #[path = "budget_real_null_observer.rs"]
 pub(in crate::frontend) mod real_null_observer;
 
+#[cfg(test)]
+#[path = "budget_string_null_tests.rs"]
+mod string_null_tests;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum ReserveFailure {
     Overflow,
@@ -164,7 +168,19 @@ impl Allocator {
             .checked_add(additional)
             .ok_or(ReserveFailure::Overflow)?;
         let injected = self.request(length, 1)?;
-        let result = string.try_reserve_exact(if injected { usize::MAX } else { additional });
+        let result = {
+            #[cfg(test)]
+            let _guard = real_null_observer::enter_exact::<u8>(
+                real_null_observer::identity(self),
+                self.attempts,
+                kind,
+                string.len(),
+                string.capacity(),
+                additional,
+                self.fail_at.is_some(),
+            );
+            string.try_reserve_exact(if injected { usize::MAX } else { additional })
+        };
         self.record(kind, length, 1, result.is_ok());
         result.map_err(|_| ReserveFailure::Allocation)
     }
