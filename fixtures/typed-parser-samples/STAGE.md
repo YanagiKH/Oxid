@@ -1,82 +1,50 @@
-# Staged scalar parser
+# Scalar parser implementation and qualification
 
-The native inventory successor in RFC 0027 is qualified. The unchanged parked
-parser at `8f1fe203` passed ordinary native compilation and 54 retained
-reference/native cases, plus 41 separate strict-decoder controls. These comprise
-35 canonical comparisons, 11 domain refusals and eight pending grammar cases.
-The full scalar grammar remains unfinished; no provider activation is included.
+The agreed scalar-function grammar is implemented, with exact canonical AST,
+byte spans and first-diagnostic projection. Production StagePending transitions
+are gone. Providers, semantic name/type checking, Unicode and compiler
+self-rebuilds remain outside this component.
 
-## Expression continuations
+The repository controller at `60f8c33` passed 139 inputs in both reference and
+native modes: 118 complete canonical comparisons and 21 site refusals per mode,
+with zero pending. Both modes also passed two transport-domain probes and all
+41 malformed-observation controls. Native compilation is ordinary public CLI
+compilation on Linux x86_64 with LLVM/Clang/LLD 19.1.7 at O0. Twenty-seven authored
+decoder methods, six controller tests and 51 registry tests pass separately.
+Exact-head hosted debug/release CI remains a separate gate.
 
-Source checkpoint `c9a5d733` and strict projection checkpoint `00545401` implement
-Group/Unit, signed and general prefixes, arithmetic, comparisons and logical
-operators. Ordinary native admission passes with I = 5,258, W = 2,571,
-76 functions, 1,281 blocks and 53,776 explicit bytes including the wrapper.
-The existing arrays and State layout are unchanged.
+## Preserved development evidence
 
-Paired reference/native replay passes 87 inputs: 68 complete canonical AST or
-first-diagnostic comparisons, 15 site refusals and four explicit pending cases
-per mode. The 41 retained corruption controls pass in each mode; 11 authored
-decoder test methods cover the new row families. Calls, let, if and while remain
-pending at this checkpoint. Bare assignment and match still use unfinished
-generic-error paths and are not claimed as contract-complete. Calls are the next
-increment.
+| Checkpoint | Scope | Paired input count |
+| --- | --- | ---: |
+| `8f1fe203` | Initial signatures, blocks and leaves | 54 |
+| `00545401` | Prefixes, grouping and all operator tiers | 87 |
+| `40898984` | Calls and linked arguments | 105 |
+| `6aff6597` | Let/LetMut, assignment and match-site refusal | 119 |
+| `bc8e719b` | If/Else-block and While | 135 |
+| `0bb3bbb` source / `60f8c33` controller | Reviewed public-prefix diagnostic correction | 139 |
 
-## Call continuations
+The original expanded-cell native gate rejected the initial real dispatcher at
+12,559 cells. The separately qualified native inventory successor allowed the
+unchanged source through ordinary gates. [ADMISSION.md](ADMISSION.md) keeps the
+failed layouts, exact measurements and distinction from allocation reduction.
 
-At `40898984`, calls preserve exact callee and argument spans, source-ordered
-postorder expression IDs, linked argument ownership and deferred close/postfix/
-height diagnostics. Ordinary native admission passes with I = 5,660, W = 2,571,
-80 functions, 1,343 blocks and 56,964 explicit bytes including the wrapper.
+Independent full-grammar review then found a diagnostic-priority defect not
+covered by the initial 135 inputs: non-declaration `pub` was consumed too early.
+The seven-line root guard now reports the canonical diagnostic at the original
+`pub`, while preserving public functions and declaration-family refusals. All
+four reproductions are fixed roster cases; nine focused reference/native
+neighbors pass. Original failed outputs remain separate from the corrected
+qualification.
 
-Paired replay passes 105 inputs per mode: 84 complete canonical comparisons,
-18 refusals and three pending cases. Sixteen authored decoder methods pass.
-Forty retained corruption expectations remain unchanged; the old Number-to-Call
-mutation now rejects as a malformed callee token instead of an unsupported row
-kind. Its exact named successor remains a rejection. Let/assignment and control
-flow are the next increments; this is not full statement-contract acceptance.
+The retained 41 corruption controls have 39 unchanged expectations and two exact
+successors: Number-to-Call and statement-to-Let mutations now reject malformed
+token kinds rather than unsupported row kinds. No successful corruption is
+accepted and no broad exception normalization is used.
 
-## Bindings and assignment
-
-At `6aff6597`, Let/LetMut and bare-name assignment preserve annotations, token
-and operator spans, expression IDs and exact first diagnostics. Statement-site
-match has its contracted domain refusal; expression-site match remains a
-canonical unsupported-construct error. Paired replay passes 119 inputs per mode:
-98 complete comparisons, 19 refusals and two control-flow pending cases.
-Twenty authored decoder methods pass. The retained corruption lineage is
-39 unchanged expectations plus exact Call and Let successors.
-
-The next source checkpoint wires If/Else-block and While transitions and removes
-production StagePending paths. Full grammar parity and final qualification are
-still required before claiming complete acceptance.
-
-## Historical initial control checkpoint
-
-The canonical parser observer copies unchanged Rust sources and projects full
-scalar AST facts or the first diagnostic. Its standalone build and focused
-observer checks are separate from the Oxid implementation below.
-
-The initial Oxid dispatcher covers function headers, parameters, named/unit type
-syntax, simple blocks, return/loop-transfer/expression statements and expression
-atoms. Planned grammar that is not wired yet has an explicit stage-pending result
-(error tag 5), never a claim of canonical rejection. Full agreed scalar grammar
-and native admission remain required before this component can be qualified.
-
-The first integration attempt failed on unsupported else-if source shorthand;
-the next reached two name-shadowing errors. Both results are retained. This
-checkpoint has no successful parser native execution or AST comparison claim.
-The primitive storage/controller interfaces and partial implementation are saved
-for recovery before those narrow corrections and the next admission measurement.
-
-After the two naming corrections, the first real dispatcher reaches native
-admission but is rejected at 12559 expanded cells against 8192. Additional loan
-and reference inventories account for 4020 of its 5756-cell increase over the
-synthetic carrier. Further grammar expansion is paused; no limit is relaxed.
-
-The independent decoder `scripts/parser_ast_observation.py` checks OPA1 transport,
-row ownership and spans, then projects the currently implemented syntax to the
-canonical JSON shape. Reference-only validation includes 35 exact AST/diagnostic
-comparisons,11 authored family refusals,8 explicit stage-pending cases and 41
-malformed observation controls. This does not establish native admission or full
-planned grammar coverage. Unimplemented row families are explicitly rejected by
-the current projection instead of silently dropping fields.
+A 128-byte combined two-function input exercises the grammar as syntax; its
+counter is not evaluated. Real input covers 19 nested If blocks, not the
+unreachable 64-block endpoint under the source bound. Prefix chains exercise
+expression depth and height boundaries. Native execution uses a cleared
+environment and empty working directory with copied sources hidden; it makes
+no filesystem-sandbox claim.

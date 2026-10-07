@@ -142,3 +142,5 @@ Windows、リリースアーカイブ、Cargo インストール、Docker につ
 実験的な[上限付き標準出力とプロセス入口](spec/typed-preview.md#bounded-stdout-and-process-entry)は、既存の共有 i32 バイトスライスを受け取る `write_stdout` と、明示的な `--entry-mode=process` を追加します。0..255 をそのまま終了状態にし、標準出力にスカラーや JSON の結果を追加しません。[永続化スタックコンポーネント](fixtures/typed-expression-samples/README.md)は 80 バイトの OXS1 ファイルを生成し、独立した Oxid ローダーと外部デコーダーが検証します。同じ生成器 ELF で 39 と 63 の入力を処理できます。実行対象は Linux x86_64 です。現在のソースの検証とホスト型 CI は別の関門であり、Windows の Process Run は現在、出力せず状態 74 で終了します。既定モードは変わりません。
 
 Oxid で記述した独立の[上限付き typed-preview 字句解析コンポーネント](fixtures/typed-lexer-samples/README.md)は、最大 128 バイトの ASCII ソースについてトークン、空白・コメント、バイト範囲を保持します。既存の Rust 字句解析器と比較し、同じネイティブ ELF で実行します。本番コンパイラの実装切り替えと Unicode 対応は対象外です。
+
+Oxid で記述した[上限付きスカラー typed-preview 構文解析コンポーネント](fixtures/typed-parser-samples/README.md)は、このトークンインターフェースを使い、最大 128 バイトの ASCII で関数、式、呼び出し、束縛、制御フローを解析します。独立した投影で完全な AST、バイト範囲、最初の診断を既存の Rust パーサーと比較します。本番の実装切り替えや名前・型の意味解析は対象外です。

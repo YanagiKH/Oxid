@@ -142,3 +142,5 @@ Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指�
 實驗性的[有界標準輸出與行程入口](spec/typed-preview.md#bounded-stdout-and-process-entry)加入對既有共用 i32 位元組切片的 `write_stdout`，以及明確指定的 `--entry-mode=process`：0..255 直接作為結束狀態，標準輸出不再附加純量或 JSON 結果。[持久化堆疊元件](fixtures/typed-expression-samples/README.md)輸出 80 位元組的 OXS1 成品，由獨立的 Oxid 載入器與外部解碼器驗證；同一個產生器 ELF 可處理結果為 39 與 63 的輸入。目前執行限 Linux x86_64，完整原始碼驗證與託管 CI 仍是獨立關卡；Windows 的 Process Run 暫時以狀態 74 靜默結束，預設模式不變。
 
 另有以 Oxid 撰寫的[有界 typed-preview 詞法元件](fixtures/typed-lexer-samples/README.md)，保留最多 128 個 ASCII 來源位元組的詞元、空白註解與位元組範圍，並與既有 Rust 詞法器比對，以同一個原生 ELF 執行。此元件不切換正式編譯器供應者，也不宣稱支援 Unicode。
+
+另有以 Oxid 撰寫的[有界純量 typed-preview 語法元件](fixtures/typed-parser-samples/README.md)，使用上述詞元介面，解析最多 128 個 ASCII 位元組的純量函式、運算式、呼叫、綁定與控制流程。獨立投影會與既有 Rust 語法器比對完整 AST、位元組範圍與第一個診斷；正式供應者切換及名稱／型別語意檢查仍在範圍之外。

@@ -1,9 +1,10 @@
-# Bounded scalar-function parser: admission contract
+# Bounded scalar-function parser contract
 
-This is a proposed component layout and grammar, not an implemented parser.
-Input is the existing complete token tape for at most 128 ASCII bytes. The
-production parser, providers, syntax, resource caps and source-provenance rules
-are unchanged. Admission must pass before broad parser implementation begins.
+This bounded component is implemented over the existing complete token tape for
+at most 128 ASCII bytes. Local canonical/reference/native qualification is
+recorded in [STAGE.md](STAGE.md); exact-head hosted qualification is separate.
+The component changes no production provider, language syntax, resource cap or
+source-provenance rule.
 
 ## Grammar
 
@@ -140,8 +141,8 @@ context and a bounded precedence threshold. A candidate encoding is depth +
 control modes live in the explicit state tag. Lists use row links, not duplicate
 operand/argument/statement arrays. Preserve the separate computed tree height.
 
-The capacity argument is conditional on those state transitions. Before parser
-implementation, review the complete finite transition inventory and use the
+The capacity argument relies on those state transitions. Review the complete
+finite transition inventory and use the
 carrier probe to exercise pushes, in-place resumes, reductions, list linking,
 maximum rows, exhaustion checks and complete output validation. Acyclic helpers
 are mandatory: current native admission rejects cyclic call graphs. No runtime

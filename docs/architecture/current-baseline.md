@@ -184,8 +184,9 @@ records activation `189cbed`, tested compiler source `ffa2e00`, unchanged LLVM
 controls and an ordinary source case formerly rejected by the expanded-cell
 gate. The unchanged partial parser at `8f1fe20` now compiles through normal
 native CLI gates, with 54 matching reference/native corpus cases and 41 separate
-malformed strict-decoder controls. Full grammar and capability/hosted
-qualification remain unfinished.
+malformed strict-decoder controls. Those receipts establish the historical initial
+stage; the completed scalar parser and its separate qualification are described
+below.
 Historical ledgers and oracles retain their recorded identities. Source-free
 execution here means a working directory containing only the ELF and a controlled
 environment, not filesystem isolation or an OS sandbox.
@@ -250,3 +251,14 @@ executables, malformed framing, capacity, overflow and failed publication. The
 [controller](../../scripts/verify_bounded_stack_artifact.py) retains inputs,
 partial outputs and executable identities. Current-source rebinding and exact-head
 hosted CI are still required; these local results are not a release or v1.0 claim.
+
+## Bounded scalar parser component
+
+The [Oxid-written scalar parser](../../fixtures/typed-parser-samples/README.md)
+implements the bounded scalar-function syntax over the existing token interface.
+Its independent decoder preserves exact AST fields, spans, global expression IDs,
+per-function block IDs and first diagnostics. The fixed 139-input matrix compares
+reference and native results against the unchanged canonical Rust parser.
+This component does not switch production providers or perform semantic checking;
+its input remains at most 128 ASCII bytes. Hosted qualification is recorded
+separately from local results.

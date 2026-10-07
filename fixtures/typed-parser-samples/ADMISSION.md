@@ -2,6 +2,13 @@
 
 ## Current native admission
 
+The completed parser at `0bb3bbb` passes ordinary native admission with
+I = 6,460, W = 2,571, 87 functions, 1,485 blocks and 63,384 explicit native bytes
+including the Process wrapper. Remaining I/W headroom is 1,732/5,621. The fixed
+carrier is unchanged; current syntax evidence is in [STAGE.md](STAGE.md).
+
+### Earlier initial parser
+
 [RFC 0027](../../rfcs/0027-native-admission-inventories.md) replaces the native
 reference-expanded-cell gates with independently checked compiler inventories.
 The unchanged initial parser at `8f1fe203` has I = 4,646 and W = 2,571, with
@@ -14,8 +21,8 @@ unchanged.
 
 The experiments below preserve the earlier representation and X-limit results.
 Their 1,200-cell engineering target was superseded by the explicit inventory
-contract; it is not an additional current parser limit. Full grammar, exact
-canonical projection and independent decoder validation remain unfinished.
+contract; it is not an additional current parser limit. The completed grammar and exact canonical projection are now locally qualified;
+the historical experiments below do not establish that result by themselves.
 
 ## First expression increment
 
