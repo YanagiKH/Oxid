@@ -126,6 +126,32 @@ fn checked_hir_import_candidate_empty_valid_source_stays_contained() {
     assert_eq!(facts.candidate.allocation.vectors, 2);
     assert_eq!(facts.candidate.allocation.reserves, 0);
     assert_eq!(allocator.attempts, 0);
+    assert_eq!(leaf::take_candidate_observation(), Some((0, 0, 0, 0)));
     assert!(allocator.trace.is_empty());
     assert!(!allocator.observer_trace_overflow);
+}
+
+#[test]
+fn checked_hir_import_canonical_type_failure_precedes_candidate_reserve() {
+    // Equal-length identifier replacement preserves the entire OPA syntax wire.
+    // The fresh real source owner carries the changed type spelling; canonical
+    // resolution must reject it before trusting the stale supplied type facts.
+    let source = RICH.0.replace("i32", "xyz");
+    assert_eq!(source.len(), RICH.0.len());
+    let mut selected = allocator();
+    let Err(leaf::Rejected::Canonical(diagnostics)) =
+        compare_fixture(&source, RICH.1, &mut selected, IndexLimits::default())
+    else {
+        panic!("unknown source type must fail genuine canonical resolution");
+    };
+    assert!(!diagnostics.is_empty());
+    assert_eq!(
+        (diagnostics[0].code, diagnostics[0].stage),
+        ("E0202", "resolve")
+    );
+    let span = diagnostics[0].primary.unwrap();
+    assert_eq!((span.start, span.end), (7, 10));
+    assert_eq!(selected.attempts, 0);
+    assert!(selected.trace.is_empty());
+    assert!(leaf::take_candidate_observation().is_none());
 }
