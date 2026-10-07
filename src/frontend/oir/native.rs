@@ -3,6 +3,16 @@
 use super::*;
 use std::fmt::Write;
 
+// This precursor is deliberately disconnected from default source consumers.
+#[allow(dead_code)]
+#[path = "native_private_emit.rs"]
+pub(super) mod private_emit;
+use private_emit::{Failure as EmitFailure, OutputMode, RenderLimit};
+
+#[cfg(test)]
+#[path = "native_private_emit_tests.rs"]
+mod private_emit_tests;
+
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_LOCALS: usize = 256;
@@ -140,6 +150,33 @@ impl VerifiedProgram {
         ir_limit: usize,
         policy: EntryPolicy,
     ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits_mode(
+            entry,
+            sources,
+            fuel,
+            diagnostic_limit,
+            ir_limit,
+            policy,
+            OutputMode::Default,
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            // Only the closed Private mode can produce a fixed failure.
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn native_module_policy_limits_mode(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
+        policy: EntryPolicy,
+        mode: OutputMode<'_>,
+    ) -> Result<String, EmitFailure> {
         let id = entry.ok_or_else(|| {
             reject(
                 "native compile requires a declared zero-argument main",
@@ -160,13 +197,10 @@ impl VerifiedProgram {
                 )
             })?;
         if root.param_count != 0 {
-            return Err(reject(
-                "native main must have no parameters",
-                Some(root.span),
-            ));
+            return Err(reject("native main must have no parameters", Some(root.span)).into());
         }
         if policy == EntryPolicy::Process && root.result != hir::Ty::I32 {
-            return Err(reject("process main must return i32", Some(root.span)));
+            return Err(reject("process main must return i32", Some(root.span)).into());
         }
         let bounds = self.admit()?;
         let guarded = bounds.iter().any(|bound| bound.cyclic);
@@ -184,7 +218,8 @@ impl VerifiedProgram {
                 )
             })
             .transpose()?;
-        // Count the exact emitted UTF-8 bytes without allocating LLVM text.
+        // Count the exact emitted UTF-8 bytes without allocating the final LLVM
+        // text buffer. Inherited native metadata/temporary Strings still allocate.
         let mut count = Emission {
             policy,
             ..Emission::default()
@@ -201,11 +236,7 @@ impl VerifiedProgram {
         if guarded || policy == EntryPolicy::Process {
             limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
         }
-        let mut output = Emission {
-            len: 0,
-            text: Some(String::with_capacity(count.len)),
-            policy,
-        };
+        let mut output = mode.allocate(count.len, policy)?;
         emit(
             &self.program,
             id,
@@ -215,8 +246,7 @@ impl VerifiedProgram {
             fuel,
             &mut output,
         );
-        debug_assert_eq!(output.len, count.len);
-        Ok(output.text.expect("render pass"))
+        output.finish(count.len)
     }
 
     fn admit(&self) -> Result<Vec<Bound>, Box<Diagnostic>> {
@@ -398,9 +428,35 @@ struct Emission {
     len: usize,
     text: Option<String>,
     policy: EntryPolicy,
+    private: Option<RenderLimit>,
 }
 impl Emission {
     fn push_str(&mut self, text: &str) {
+        if let Some(limit) = &mut self.private {
+            // Existing serializer callers unwrap fmt::Result. Latch a fixed
+            // private failure and suppress writes, rather than panic or grow.
+            if limit.failed {
+                return;
+            }
+            let next = self.len.checked_add(text.len());
+            let Some(buffer) = self.text.as_mut() else {
+                limit.failed = true;
+                return;
+            };
+            match next {
+                Some(next)
+                    if next <= limit.expected
+                        && next <= buffer.capacity()
+                        && buffer.capacity() == limit.expected
+                        && buffer.len() == self.len =>
+                {
+                    buffer.push_str(text);
+                    self.len = next;
+                }
+                _ => limit.failed = true,
+            }
+            return;
+        }
         // Saturation cannot admit an overflow: the guarded count is compared
         // with 64MiB before allocation, and unguarded inputs retain old bounds.
         self.len = self.len.saturating_add(text.len());
@@ -1051,7 +1107,7 @@ fn emit(
 mod tests {
     use super::*;
     use crate::frontend::{lexer, parser};
-    fn verified_with_sources(text: &str) -> (VerifiedProgram, SourceMap) {
+    pub(super) fn verified_with_sources(text: &str) -> (VerifiedProgram, SourceMap) {
         verified_at("native-unit.ox", text)
     }
     fn verified_at(path: &str, text: &str) -> (VerifiedProgram, SourceMap) {
@@ -1300,12 +1356,13 @@ mod tests {
     fn process_native_changed_carriers_have_measured_finite_layouts() {
         use std::mem::{align_of, size_of};
         // This is the actual local emitter carrier, not a stack-size claim.
-        // Its old len + Option<String> layout was 32 bytes; policy adds 8.
+        // Its old len + Option<String> layout was 32 bytes; policy added 8.
+        // The denied private render guard adds a complete measured carrier.
         assert_eq!(
             (size_of::<EntryPolicy>(), align_of::<EntryPolicy>()),
             (1, 1)
         );
-        assert_eq!((size_of::<Emission>(), align_of::<Emission>()), (40, 8));
+        assert_eq!((size_of::<Emission>(), align_of::<Emission>()), (56, 8));
         assert_eq!(
             (size_of::<FailureKind>(), align_of::<FailureKind>()),
             (1, 1)
