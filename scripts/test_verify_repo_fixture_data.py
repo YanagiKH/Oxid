@@ -61,6 +61,16 @@ LEXER_ADDED_FILES = (
     "fixtures/typed-lexer-samples/keywords.ox",
     LEXER_ADMISSION_ENTRY,
 )
+LEXER_CORE_ADDED_FILES = (
+    "fixtures/typed-lexer-samples/lexer_core.ox",
+    "fixtures/typed-lexer-samples/buffers.ox",
+)
+PARSER_ADMISSION_ENTRY = "fixtures/typed-lexer-samples/parser_admission.ox"
+PARSER_ADMISSION_ADDED_FILES = (
+    PARSER_ADMISSION_ENTRY,
+    "fixtures/typed-lexer-samples/parser_banks.ox",
+    "fixtures/typed-lexer-samples/parser_probe_output.ox",
+)
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -103,7 +113,21 @@ class PublishedRegistrationTests(unittest.TestCase):
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS,
-                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY))
+                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
+                          LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY))
+        added_names = LEXER_CORE_ADDED_FILES + PARSER_ADMISSION_ADDED_FILES
+        self.assertEqual([name for name in language if name in added_names], sorted(added_names))
+        self.assertEqual([row for row in check_inventory if row[0] in added_names],
+                         [(PARSER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(row[0] in added_names for row in run_inventory))
+        self.assertTrue(all(root / name not in data_sources for name in added_names))
+        # Preserve the original lexer roster by subtracting only the two
+        # extracted modules and three synthetic carrier files. No parser claim.
+        language = [name for name in language if name not in added_names]
+        check_inventory = [row for row in check_inventory if row[0] not in added_names]
+        typed_members -= len(added_names)
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (156, 135, 75, 35, 8))
         self.assertEqual([name for name in language if name in LEXER_ADDED_FILES], sorted(LEXER_ADDED_FILES))
         self.assertEqual([row for row in check_inventory if row[0] in LEXER_ADDED_FILES],
                          [(LEXER_MAIN_ENTRY, True), (LEXER_ADMISSION_ENTRY, True)])
@@ -188,13 +212,13 @@ class PublishedRegistrationTests(unittest.TestCase):
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
         for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
-                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY):
+                         LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY):
             stdin_root = str(verify_repo.ROOT / relative)
             self.assertEqual([command for command in commands if stdin_root in command],
                              [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
         added_roots = {str(verify_repo.ROOT / name) for name in
                        (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
-                        ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY)}
+                        ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY)}
         predecessor_commands = [command for command in commands if not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
         self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
@@ -211,10 +235,12 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for call in run.call_args_list for arg in call.args[0]))
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
-        self.assertIn(f"{146 + len(ARTIFACT_ADDED_FILES) + len(LEXER_ADDED_FILES)} language sources, "
+        additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
+                              + PARSER_ADMISSION_ADDED_FILES)
+        self.assertIn(f"{146 + len(additional_members)} language sources, "
                       f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS)} checks, 75 runnable programs", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + len(ARTIFACT_ADDED_FILES) + len(LEXER_ADDED_FILES)} typed source members / "
+                      f"{25 + len(additional_members)} typed source members / "
                       "8 typed entry runs", output.getvalue())
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
@@ -277,6 +303,13 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        added_names = LEXER_CORE_ADDED_FILES + PARSER_ADMISSION_ADDED_FILES
+        added = {self.root / name for name in added_names}
+        self.assertEqual([row for row in checks if row[0] in added],
+                         [(self.root / PARSER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(entry in added for entry in entries))
+        checks = [row for row in checks if row[0] not in added]
+        count -= len(added_names)
         lexer_files = {self.root / name for name in LEXER_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in lexer_files],
                          [(self.root / LEXER_MAIN_ENTRY, True), (self.root / LEXER_ADMISSION_ENTRY, True)])

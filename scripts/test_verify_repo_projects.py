@@ -46,6 +46,21 @@ LEXER_MEMBERS = (LEXER_MAIN_ENTRY,) + LEXER_SHARED_MEMBERS + (
     "fixtures/typed-lexer-samples/keywords.ox",
 )
 LEXER_ADDED_FILES = LEXER_MEMBERS + (LEXER_ADMISSION_ENTRY,)
+LEXER_CORE_ADDED_FILES = (
+    "fixtures/typed-lexer-samples/lexer_core.ox",
+    "fixtures/typed-lexer-samples/buffers.ox",
+)
+PARSER_ADMISSION_ENTRY = "fixtures/typed-lexer-samples/parser_admission.ox"
+PARSER_ADMISSION_ADDED_FILES = (
+    PARSER_ADMISSION_ENTRY,
+    "fixtures/typed-lexer-samples/parser_banks.ox",
+    "fixtures/typed-lexer-samples/parser_probe_output.ox",
+)
+PARSER_LEXER_SHARED_MEMBERS = (
+    "fixtures/typed-lexer-samples/buffers.ox",
+    "fixtures/typed-lexer-samples/lexer_core.ox",
+    "fixtures/typed-lexer-samples/keywords.ox",
+)
 
 class ProjectRegistrationTests(unittest.TestCase):
     def setUp(self):
@@ -60,16 +75,30 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]
         self.members = sorted(set(self.members))
 
-    def assert_lexer_addition(self, checks, entries, count):
+    def assert_synthetic_carrier_addition(self, checks, entries, count):
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS,
-                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY))
+                         (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
+                          LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY))
+        added_names = LEXER_CORE_ADDED_FILES + PARSER_ADMISSION_ADDED_FILES
+        added = {self.root / name for name in added_names}
+        self.assertEqual([row for row in checks if row[0] in added],
+                         [(self.root / PARSER_ADMISSION_ENTRY, True)])
+        self.assertFalse(any(entry in added for entry in entries))
+        self.assertEqual(verify_repo.TYPED_PROJECTS[PARSER_ADMISSION_ENTRY],
+                         (PARSER_ADMISSION_ENTRY,) + PARSER_LEXER_SHARED_MEMBERS + PARSER_ADMISSION_ADDED_FILES[1:])
+        self.assertEqual(verify_repo.TYPED_PROJECTS[LEXER_MAIN_ENTRY], LEXER_MEMBERS + LEXER_CORE_ADDED_FILES)
+        self.assertEqual(verify_repo.TYPED_PROJECTS[LEXER_ADMISSION_ENTRY],
+                         (LEXER_ADMISSION_ENTRY,) + LEXER_SHARED_MEMBERS + (LEXER_CORE_ADDED_FILES[1],))
+        # The extraction adds two modules; the synthetic carrier adds three.
+        # Neither changes the original lexer roots or their ordinary run roster.
+        return [row for row in checks if row[0] not in added], entries, count - len(added_names)
+
+    def assert_lexer_addition(self, checks, entries, count):
+        checks, entries, count = self.assert_synthetic_carrier_addition(checks, entries, count)
         lexer_added = {self.root / name for name in LEXER_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in lexer_added],
                          [(self.root / LEXER_MAIN_ENTRY, True), (self.root / LEXER_ADMISSION_ENTRY, True)])
         self.assertFalse(any(entry in lexer_added for entry in entries))
-        self.assertEqual(verify_repo.TYPED_PROJECTS[LEXER_MAIN_ENTRY], LEXER_MEMBERS)
-        self.assertEqual(verify_repo.TYPED_PROJECTS[LEXER_ADMISSION_ENTRY],
-                         (LEXER_ADMISSION_ENTRY,) + LEXER_SHARED_MEMBERS)
         return [row for row in checks if row[0] not in lexer_added], entries, count - len(LEXER_ADDED_FILES)
 
     def assert_artifact_addition(self, checks, entries, count):
@@ -88,7 +117,10 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_MEMBERS)
         self.assertEqual(verify_repo.TYPED_PROJECT_SHARED_MEMBERS, {
-            frozenset((LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY)): LEXER_SHARED_MEMBERS,
+            frozenset((LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY)):
+                LEXER_SHARED_MEMBERS + (LEXER_CORE_ADDED_FILES[1],),
+            frozenset((LEXER_MAIN_ENTRY, PARSER_ADMISSION_ENTRY)): PARSER_LEXER_SHARED_MEMBERS,
+            frozenset((LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY)): (LEXER_CORE_ADDED_FILES[1],),
             frozenset((EXPRESSION_MEMBERS[0], STACK_MAIN_ENTRY)): EXPRESSION_MEMBERS[1:],
             frozenset((EXPRESSION_MEMBERS[0], ARTIFACT_MAIN_ENTRY)): EXPRESSION_MEMBERS[1:],
             frozenset((STACK_MAIN_ENTRY, ARTIFACT_MAIN_ENTRY)): EXPRESSION_MEMBERS[1:] + STACK_ADDED_FILES[1:3],
@@ -208,6 +240,14 @@ class ProjectRegistrationTests(unittest.TestCase):
         with patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
             with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
                 verify_repo.source_plan(self.members + self.data_sources, self.root)
+
+    def test_synthetic_carrier_cannot_import_the_tape_or_legacy_wrapper(self):
+        for extra in (LEXER_SHARED_MEMBERS[0], 'fixtures/typed-lexer-samples/lexer.ox'):
+            inventory = dict(verify_repo.TYPED_PROJECTS)
+            inventory[PARSER_ADMISSION_ENTRY] += (extra,)
+            with self.subTest(extra=extra), patch.object(verify_repo, 'TYPED_PROJECTS', inventory):
+                with self.assertRaisesRegex(RuntimeError, 'overlapping typed source inventories'):
+                    verify_repo.source_plan(self.members + self.data_sources, self.root)
 
     def test_missing_member_fails_before_commands(self):
         for member in self.members:

@@ -673,7 +673,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for source in main tape transcript lexer keywords admission; do
+          for source in main tape transcript lexer keywords admission buffers lexer_core; do
             target/debug/oxid fmt --edition typed-preview --check "fixtures/typed-lexer-samples/$source.ox"
           done
           python3 -B scripts/build_typed_lexer_observer.py \

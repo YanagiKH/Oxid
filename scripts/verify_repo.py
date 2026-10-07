@@ -95,11 +95,23 @@ TYPED_PROJECTS = {
         "fixtures/typed-lexer-samples/transcript.ox",
         "fixtures/typed-lexer-samples/lexer.ox",
         "fixtures/typed-lexer-samples/keywords.ox",
+        "fixtures/typed-lexer-samples/lexer_core.ox",
+        "fixtures/typed-lexer-samples/buffers.ox",
     ),
     "fixtures/typed-lexer-samples/admission.ox": (
         "fixtures/typed-lexer-samples/admission.ox",
         "fixtures/typed-lexer-samples/tape.ox",
         "fixtures/typed-lexer-samples/transcript.ox",
+        "fixtures/typed-lexer-samples/buffers.ox",
+    ),
+    # Synthetic bank/carrier admission only; this does not implement a parser.
+    "fixtures/typed-lexer-samples/parser_admission.ox": (
+        "fixtures/typed-lexer-samples/parser_admission.ox",
+        "fixtures/typed-lexer-samples/buffers.ox",
+        "fixtures/typed-lexer-samples/lexer_core.ox",
+        "fixtures/typed-lexer-samples/keywords.ox",
+        "fixtures/typed-lexer-samples/parser_banks.ox",
+        "fixtures/typed-lexer-samples/parser_probe_output.ox",
     ),
 }
 # Effectful projects retain exact module inventories, but only their roots are
@@ -109,6 +121,7 @@ TYPED_CHECK_ONLY_PROJECTS = (
     "fixtures/typed-expression-samples/artifact_load.ox",
     "fixtures/typed-lexer-samples/main.ox",
     "fixtures/typed-lexer-samples/admission.ox",
+    "fixtures/typed-lexer-samples/parser_admission.ox",
 )
 # Only these exact pairs of roots share these exact modules. Neither roots nor
 # standalone/check-only files may overlap, and members are counted only once.
@@ -117,6 +130,17 @@ TYPED_PROJECT_SHARED_MEMBERS = {
                "fixtures/typed-lexer-samples/admission.ox")): (
         "fixtures/typed-lexer-samples/tape.ox",
         "fixtures/typed-lexer-samples/transcript.ox",
+        "fixtures/typed-lexer-samples/buffers.ox",
+    ),
+    frozenset(("fixtures/typed-lexer-samples/main.ox",
+               "fixtures/typed-lexer-samples/parser_admission.ox")): (
+        "fixtures/typed-lexer-samples/buffers.ox",
+        "fixtures/typed-lexer-samples/lexer_core.ox",
+        "fixtures/typed-lexer-samples/keywords.ox",
+    ),
+    frozenset(("fixtures/typed-lexer-samples/admission.ox",
+               "fixtures/typed-lexer-samples/parser_admission.ox")): (
+        "fixtures/typed-lexer-samples/buffers.ox",
     ),
     frozenset(("fixtures/typed-expression-samples/main.ox",
                "fixtures/typed-expression-samples/stack_main.ox")): (

@@ -96,7 +96,7 @@ def main():
     empty.mkdir()
     sources = output / "source"
     sources.mkdir()
-    members = ("main.ox", "tape.ox", "transcript.ox", "lexer.ox", "keywords.ox")
+    members = ("main.ox", "tape.ox", "transcript.ox", "lexer.ox", "keywords.ox", "lexer_core.ox", "buffers.ox")
     for name in members:
         shutil.copyfile(ROOT / "fixtures/typed-lexer-samples" / name, sources / name)
     entry, binary = sources / "main.ox", output / "lexer"

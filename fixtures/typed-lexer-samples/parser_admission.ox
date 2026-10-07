@@ -1,12 +1,12 @@
-mod tape; mod lexer; mod keywords; mod parser_banks; mod parser_probe_output;
+mod buffers; mod lexer_core; mod keywords; mod parser_banks; mod parser_probe_output;
 use std::io::read_stdin;
 use std::io::ReadStatus;
 
 fn probe() -> i32 {
-    let mut header = crate::tape::zeros();
-    let mut ab = crate::tape::zeros();
-    let mut cd = crate::tape::zeros();
-    let mut stack = crate::tape::zeros();
+    let mut header = crate::buffers::zeros();
+    let mut ab = crate::buffers::zeros();
+    let mut cd = crate::buffers::zeros();
+    let mut stack = crate::buffers::zeros();
     let mut counts = crate::parser_banks::Counts { rows: 0, stack: 0 };
     if crate::parser_banks::pack_header(63, 128, 128, 128) != 538976319 { return 88; }
     if crate::parser_banks::pack_header(0, 0, 0, 0) != -1 { return 89; }
@@ -47,19 +47,21 @@ fn probe() -> i32 {
 fn observe(codes: &[i32], used: i32) -> i32 {
     let mut i = 0;
     while i < used { if codes[i] > 127 { return 64; } i = i + 1; }
-    let mut tokens = crate::tape::new_tape();
-    let scanned = crate::lexer::scan(&*codes, used, &mut tokens);
+    let mut kinds = crate::buffers::zeros();
+    let mut starts = crate::buffers::zeros();
+    let mut ends = crate::buffers::zeros();
+    let scanned = crate::lexer_core::scan(&*codes, used, &mut kinds, &mut starts, &mut ends);
     match scanned {
-        crate::lexer::LexResult::Complete => {
-            if tokens.count < 1 || tokens.end[tokens.count - 1] != used { return 87; }
+        crate::lexer_core::ScanResult::Complete(count) => {
+            if count < 1 || count > 129 || ends[count - 1] != used { return 87; }
             return probe();
         },
-        crate::lexer::LexResult::UnterminatedString(start) => { return 65; },
-        crate::lexer::LexResult::UnterminatedComment(start) => { return 65; },
+        crate::lexer_core::ScanResult::UnterminatedString(start) => { return 65; },
+        crate::lexer_core::ScanResult::UnterminatedComment(start) => { return 65; },
     }
 }
 fn main() -> i32 {
-    let mut codes = crate::tape::zeros();
+    let mut codes = crate::buffers::zeros();
     let input = read_stdin(&mut codes);
     match input {
         ReadStatus::Eof(used) => { return observe(&codes, used); },

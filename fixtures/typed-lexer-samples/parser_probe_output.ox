@@ -9,7 +9,7 @@ fn write(bytes: &[i32]) -> i32 {
     }
 }
 fn column(values: &[i32]) -> i32 {
-    let mut bytes = crate::tape::zeros();
+    let mut bytes = crate::buffers::zeros();
     let mut i = 0;
     while i < 129 { bytes[i] = values[i] % 256; i = i + 1; }
     let low = write(&bytes);

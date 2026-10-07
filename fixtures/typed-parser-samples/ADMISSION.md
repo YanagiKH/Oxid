@@ -67,3 +67,35 @@ columns, preserving the existing Tape API through a wrapper. It can avoid the
 1197-cell tape constructor in a parser executable. This requires separate review,
 lexical parity and actual admission before claiming additional headroom. No
 compiler lifetime/accounting change or reduced grammar is part of this probe.
+
+## Shared column lexer core
+
+The lexer now has one column-view core. Existing `lexer::scan` and Tape remain
+compatible through temporary columns and scalar copy-back. The direct projected
+adapter was rejected by E0311: current borrowing locks a whole record even when
+its fields are disjoint. That rule and its existing regression remain unchanged.
+The parser carrier owns its token columns directly and does not load the Tape
+constructor or compatibility wrapper into its executable.
+
+The complete compatibility executable measures 6446 expanded cells (1746 free).
+The complete direct-column carrier measures 6803 (1389 free), saving 1042 versus
+the preceding carrier. Removing tape::new_tape saves 1197; new core/view costs add
+155. These whole-inventory measurements retain the same 8192 gate. The original
+compiler admits both programs, and the integrated existing 400 lexer observations
+and 12 synthetic carrier observations pass in reference/native execution.
+
+The carrier controller is reproducible with:
+
+```sh
+python 3 scripts/verify_parser_carrier_admission.py --oxid target/debug/oxid \
+  --output /tmp/parser-carrier-proof --native
+```
+
+This remains an admission checkpoint. The 1389-cell remainder is actual headroom,
+not a measurement of the unwritten parser. A practical next implementation budget
+is at most 1200 net additional expanded cells for the first complete control and
+diagnostic handlers, leaving 189 as a reserve. That is an engineering target, not
+a proof they fit; every coherent parser stage must still pass the original
+native admission. The synthetic fill/check driver can be replaced by real parser
+logic, but its existing charge must not be counted as free until the measured
+whole inventory actually removes it. No broad parser implementation is included.

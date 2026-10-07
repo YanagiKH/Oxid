@@ -58,3 +58,9 @@ the copied source project away from its build-time location. These runs succeed 
 original copied source path absent. Files and executables elsewhere remain
 accessible; filesystem and process activity were not traced.
 Compiler provider dispatch and Unicode support remain separate work.
+
+The scanner implementation is shared as `lexer_core::scan` over three mutable
+column views. The original `lexer::scan`/Tape API uses temporary columns and
+copy-back, preserving its result and error contract under the existing whole-record
+borrowing rule. Direct column owners let later consumers avoid record-constructor
+copies. Both routes remain subject to the ordinary native admission limits.
