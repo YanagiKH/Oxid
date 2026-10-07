@@ -28,6 +28,26 @@ fn original<'s>(sources: &'s SourceMap, ast: &'s crate::frontend::ast::Program) 
     .unwrap()
 }
 
+fn project(text: &str) -> ProjectSources {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory =
+        std::env::temp_dir().join(format!("oxid-hir-import-{}-{stamp}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(directory.clone());
+    let file = directory.join("main.ox");
+    std::fs::write(&file, text).unwrap();
+    ProjectSources::load_typed(file.to_str().unwrap(), ProjectLimits::default()).unwrap()
+}
+
 #[test]
 fn checked_hir_import_empty_valid_success_still_denied() {
     let (sources, ast) = parsed("");
@@ -188,24 +208,7 @@ fn checked_hir_import_public_source_uses_genuine_project_owner() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/checked_hir_import/public-success.bin"
     ));
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let directory =
-        std::env::temp_dir().join(format!("oxid-hir-import-{}-{stamp}", std::process::id()));
-    std::fs::create_dir(&directory).unwrap();
-    struct Cleanup(std::path::PathBuf);
-    impl Drop for Cleanup {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-    let _cleanup = Cleanup(directory.clone());
-    let file = directory.join("main.ox");
-    std::fs::write(&file, &text).unwrap();
-    let project =
-        ProjectSources::load_typed(file.to_str().unwrap(), ProjectLimits::default()).unwrap();
+    let project = project(text);
     assert_eq!(project.syntax_flavor(), SyntaxFlavor::ProjectSyntax);
     let owner = SourceOwner::project(&project);
     let source = owner.file(ModuleId(0)).unwrap();
@@ -307,13 +310,55 @@ fn checked_hir_import_excluded_ast_domains_do_not_reach_resolution() {
         "fn f()->(){let x=[1];return;}",
         "fn f()->(){let x=1;g(&x);return;}",
     ] {
-        let (sources, ast) = parsed(text);
+        let project = project(text);
         assert!(
             matches!(
-                denied_probe(original(&sources, &ast), text.as_bytes(), b""),
+                denied_probe(SourceOwner::project(&project), text.as_bytes(), b""),
                 Err(Rejection::Boundary(Boundary::Domain))
             ),
             "{text}"
         );
     }
+}
+
+#[test]
+fn checked_hir_import_complete_result_layout_observations() {
+    use std::mem::align_of;
+    macro_rules! layout {
+        ($name:literal, $ty:ty) => {
+            println!(
+                "HIR_IMPORT_CARRIER {} size={} align={}",
+                $name,
+                size_of::<$ty>(),
+                align_of::<$ty>()
+            );
+        };
+    }
+    layout!("wire-result", Result<Wire<'static>, Boundary>);
+    layout!(
+        "bound-result",
+        Result<BoundObservation<'static, 'static>, Boundary>
+    );
+    layout!("canonical-result", Result<hir::Program, Vec<Diagnostic>>);
+    layout!("mapped-canonical-result", Result<hir::Program, Rejection>);
+    layout!(
+        "owner-file-result",
+        Result<&'static crate::frontend::source::SourceFile, Box<Diagnostic>>
+    );
+    layout!(
+        "owner-ast-result",
+        Result<&'static crate::frontend::ast::Program, Box<Diagnostic>>
+    );
+    layout!("plan-result", Result<StoragePlan, Boundary>);
+    layout!("word-result", Result<i32, Boundary>);
+    layout!("scalar-result", Result<usize, Boundary>);
+    layout!("probe-result", Result<Infallible, Rejection>);
+    layout!(
+        "existing-checked-source",
+        crate::frontend::oir::source::CheckedSourceProgram<'static>
+    );
+    let (sources, ast) = parsed(RICH);
+    let canonical = hir::resolve_sources(original(&sources, &ast)).unwrap();
+    let plan = StoragePlan::describe(&canonical).unwrap();
+    println!("HIR_IMPORT_RETAINED {:?}", plan);
 }
