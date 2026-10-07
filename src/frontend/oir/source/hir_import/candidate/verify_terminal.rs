@@ -214,11 +214,8 @@ impl WorkPlan {
             plan.entry_work = mul(256, add(add(functions, source_bytes)?, 2)?)?;
             plan.total = add(plan.total, plan.entry_work)?;
         }
-        if request == Request::Emit {
-            // Connection setup/transport is paid before candidate reserves and
-            // every genuine pass. Scan, formula and native body pay separately.
-            plan.total = add(plan.total, emit_terminal::CONNECTION_WORK)?;
-        }
+        // Emit's fixed connection setup is already paid by its original leaf
+        // meter before its source-plan banks are computed. Never debit it again.
         Ok(plan)
     }
 }

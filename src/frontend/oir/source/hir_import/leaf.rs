@@ -5,6 +5,7 @@ use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
     diagnostic::Diagnostic,
     hir,
+    oir::native::emit_work,
     project::{budget::Allocator, ModuleId},
     source::{SourceFile, SourceView, Span},
 };
@@ -277,21 +278,34 @@ fn requested(
     if request == candidate::Request::Emit && !candidate::EMIT_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
-    let plan = match request {
-        candidate::Request::Emit => SourcePlan::calculate_emit(limits),
-        candidate::Request::Verify | candidate::Request::Run => {
-            SourcePlan::calculate_verify(limits)
+    let (plan, work, origin) = if request == candidate::Request::Emit {
+        // Explicit unmetered, constant-time bootstrap: inspect the genuine
+        // owner's count/view, look up root file 0 to obtain its real empty span,
+        // cap the requested work limit, and construct the original meter. No
+        // bank calculation, source/path walk or compiler consumer occurs here.
+        if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
+            return Err(Boundary::Domain.into());
         }
-    }
-    .map_err(VerifyRejected::Source)?;
-    if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
-        return Err(Boundary::Domain.into());
-    }
-    let origin = owner
-        .file(ModuleId(0))
-        .map_err(|_| Boundary::Source)?
-        .span(0, 0);
-    let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
+        let origin = owner
+            .file(ModuleId(0))
+            .map_err(|_| Boundary::Source)?
+            .span(0, 0);
+        let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
+        let plan = metered_emit_plan(limits, &work, origin)?;
+        (plan, work, origin)
+    } else {
+        // Preserve Verify/Run's existing preflight/error order and work cost.
+        let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
+        if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
+            return Err(Boundary::Domain.into());
+        }
+        let origin = owner
+            .file(ModuleId(0))
+            .map_err(|_| Boundary::Source)?
+            .span(0, 0);
+        let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
+        (plan, work, origin)
+    };
     work.debit(
         plan.source_work,
         origin,
@@ -309,9 +323,18 @@ fn requested(
     let canonical = canonical_result
         .map_err(Rejected::Canonical)
         .map_err(VerifyRejected::Source)?;
+    let connection_work = if request == candidate::Request::Emit {
+        candidate::EMIT_CONNECTION_WORK
+    } else {
+        0
+    };
+    let paid_source = plan
+        .source_work
+        .checked_add(connection_work)
+        .ok_or(Boundary::Overflow)?;
     let canonical_work = work
         .used()
-        .checked_sub(plan.source_work)
+        .checked_sub(paid_source)
         .ok_or(Boundary::Overflow)?;
     let remaining = IndexLimits {
         retained: limits.retained.min(IndexLimits::default().retained),
@@ -323,8 +346,8 @@ fn requested(
     };
     // Canonical ownership is moved into the one candidate construction body.
     // Its admitted metadata prepays candidate/helper + genuine compiler passes
-    // on this meter before the first reserve. Emit prepays fixed connection
-    // glue there too, then separately pays its scan/formula/native phases.
+    // on this meter before the first reserve. Emit's fixed connection glue is
+    // already paid; its scan/formula/native phases separately use this meter.
     let outcome_result = candidate::request_candidate(
         request,
         &syntax,
@@ -352,6 +375,31 @@ fn requested(
             outside_fixed_bytes: plan.outside_fixed_bytes,
         })),
     }
+}
+
+/// Fixed planning only: no source inspection, compiler owner, native call or
+/// callback. The caller retains this same meter even when admission fails.
+#[allow(clippy::result_large_err)]
+fn metered_emit_plan(
+    limits: IndexLimits,
+    work: &WorkMeter,
+    origin: Span,
+) -> Result<SourcePlan, VerifyRejected> {
+    emit_work::debit(
+        work,
+        candidate::EMIT_CONNECTION_WORK,
+        origin,
+        "private Emit fixed connection and banks",
+    )
+    .map_err(candidate::VerifyRejected::from)?;
+    let remaining = IndexLimits {
+        work: work
+            .limit()
+            .checked_sub(work.used())
+            .ok_or(Boundary::Overflow)?,
+        ..limits
+    };
+    SourcePlan::calculate_emit(remaining).map_err(VerifyRejected::Source)
 }
 
 /// Not called by any production/default path. Paid controls exercise only
@@ -533,6 +581,9 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
         copies(size_of::<candidate::Request>(), 3)?,
         size_of::<SourceView<'_>>(),
         copies(size_of::<SourcePlan>(), 2)?,
+        // Complete common branch tuple and destructuring transport. This moves
+        // the original meter; it does not replace or reset its used counter.
+        copies(size_of::<(SourcePlan, WorkMeter, Span)>(), 2)?,
         copies(size_of::<Result<SourcePlan, Rejected>>(), 2)?,
         size_of::<Result<SourcePlan, VerifyRejected>>(),
         size_of::<Result<hir::Program, VerifyRejected>>(),
@@ -552,6 +603,9 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
         copies(size_of::<candidate::VerifyRejected>(), 2)?,
         copies(size_of::<VerifyRejected>(), 2)?,
         copies(size_of::<u64>(), 4)?,
+        copies(size_of::<u64>(), 2)?,
+        size_of::<Option<u64>>(),
+        size_of::<Result<u64, Boundary>>(),
         copies(size_of::<usize>(), 4)?,
         copies(size_of::<Result<usize, Boundary>>(), 3)?,
     ];
@@ -593,6 +647,24 @@ fn emit_outer_named_bytes() -> Result<usize, Boundary> {
         size_of::<VerifyRejected>(),
         // Complete added source-plan input/local/result/forwarding carriers.
         size_of::<[IndexLimits; 2]>(),
+        // Emit bootstrap's additional local plan/meter/origin and complete
+        // metered-plan call/return/conversion roles, prior to new bank use.
+        size_of::<SourcePlan>(),
+        size_of::<WorkMeter>(),
+        size_of::<Span>(),
+        size_of::<[(IndexLimits, &WorkMeter, Span); 2]>(),
+        size_of::<(IndexLimits, &WorkMeter, Span)>(),
+        size_of::<Result<SourcePlan, VerifyRejected>>(),
+        size_of::<Result<SourcePlan, VerifyRejected>>(),
+        size_of::<(&WorkMeter, u64, Span, &'static str)>(),
+        size_of::<Result<(), emit_work::Failure>>(),
+        size_of::<Result<(), candidate::VerifyRejected>>(),
+        size_of::<Result<(), VerifyRejected>>(),
+        size_of::<IndexLimits>(),
+        size_of::<[(&WorkMeter,); 2]>(),
+        size_of::<[u64; 2]>(),
+        size_of::<Option<u64>>(),
+        size_of::<Result<u64, Boundary>>(),
         size_of::<[SourcePlan; 2]>(),
         size_of::<[Result<SourcePlan, Rejected>; 2]>(),
         size_of::<Result<SourcePlan, VerifyRejected>>(),
@@ -614,6 +686,7 @@ fn emit_outer_named_bytes() -> Result<usize, Boundary> {
     ];
     let bank = size_of_val(&roles)
         .checked_mul(2)
+        .and_then(|bytes| bytes.checked_add(size_of_val(&roles.into_iter())))
         .and_then(|bytes| bytes.checked_add(size_of_val(&roles.into_iter())))
         .ok_or(Boundary::Overflow)?;
     roles.into_iter().try_fold(bank, |total, bytes| {
@@ -844,5 +917,104 @@ mod tests {
                 assert_eq!(checker.finish().frame_bytes, 0);
             }
         }
+    }
+
+    #[test]
+    fn checked_hir_import_emit_glue_precedes_even_zero_byte_bank_admission() {
+        use crate::frontend::{oir::owned, source::SourceMap};
+
+        let mut sources = SourceMap::new();
+        let id = sources.add("emit-preflight.ox".into(), String::new());
+        let origin = sources.get(id).span(0, 0);
+        for available in [0, 32_767, 32_768] {
+            let limits = IndexLimits {
+                retained: 0,
+                scratch: 0,
+                work: available,
+            };
+            let work = WorkMeter::new(available);
+            let mut result = None;
+            let observed = owned::hir_import_measure_allocations(|| {
+                result = Some(metered_emit_plan(limits, &work, origin));
+            });
+            if available < candidate::EMIT_CONNECTION_WORK {
+                assert!(matches!(
+                    result.unwrap(),
+                    Err(VerifyRejected::Terminal(
+                        candidate::VerifyRejected::EmitWork(emit_work::Failure::Work)
+                    ))
+                ));
+                assert_eq!(work.used(), 0);
+            } else {
+                assert!(matches!(
+                    result.unwrap(),
+                    Err(VerifyRejected::Source(Rejected::Budget))
+                ));
+                assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
+            }
+            assert_eq!(observed, (0, 0, 0, 0));
+        }
+    }
+
+    #[test]
+    fn checked_hir_import_emit_plan_layout_and_exact_boundaries_only() {
+        use crate::frontend::source::SourceMap;
+
+        let mut sources = SourceMap::new();
+        let id = sources.add("emit-plan.ox".into(), String::new());
+        let origin = sources.get(id).span(0, 0);
+        let work = WorkMeter::default();
+        let plan = metered_emit_plan(IndexLimits::default(), &work, origin).unwrap();
+        let fixed = SourcePlan::calculate_verify(IndexLimits::default()).unwrap();
+        assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
+        assert_eq!(
+            plan.fixed_bytes - fixed.fixed_bytes,
+            emit_outer_named_bytes().unwrap() + candidate::emit_named_bytes().unwrap()
+        );
+        assert_eq!(
+            plan.fixed_bytes,
+            plan.outside_fixed_bytes
+                + candidate::builder_named_bytes().unwrap()
+                + allocation::helper_named_bytes().unwrap()
+        );
+        let exact = IndexLimits {
+            retained: plan.fixed_bytes as u64,
+            scratch: plan.fixed_bytes as u64,
+            work: candidate::EMIT_CONNECTION_WORK + plan.source_work,
+        };
+        let work = WorkMeter::new(exact.work);
+        assert!(metered_emit_plan(exact, &work, origin).is_ok());
+        assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
+        for limits in [
+            IndexLimits {
+                retained: exact.retained - 1,
+                ..exact
+            },
+            IndexLimits {
+                scratch: exact.scratch - 1,
+                ..exact
+            },
+            IndexLimits {
+                work: exact.work - 1,
+                ..exact
+            },
+            // Qualified first transport envelope, not the larger successor.
+            IndexLimits {
+                scratch: 102_157,
+                ..exact
+            },
+        ] {
+            let work = WorkMeter::new(limits.work);
+            assert!(matches!(
+                metered_emit_plan(limits, &work, origin),
+                Err(VerifyRejected::Source(Rejected::Budget))
+            ));
+            assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
+        }
+        println!("HIR_IMPORT_EMIT_PLAN denied outer={} terminal={} outside={} fixed={} common_fixed={} glue={} source_work={} artifact={} outcome={} requested={} result={}",
+            emit_outer_named_bytes().unwrap(), candidate::emit_named_bytes().unwrap(),
+            plan.outside_fixed_bytes, plan.fixed_bytes, fixed.fixed_bytes,
+            candidate::EMIT_CONNECTION_WORK, plan.source_work, size_of::<candidate::EmitArtifact>(),
+            size_of::<candidate::Outcome>(), size_of::<Requested>(), size_of::<Result<EmitOutput, VerifyRejected>>());
     }
 }

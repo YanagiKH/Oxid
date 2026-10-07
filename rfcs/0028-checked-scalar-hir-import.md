@@ -471,10 +471,21 @@ Neither the importer Emit constant nor the scalar native Emit constant is
 enabled. The entire source/candidate/checker/STF/lower/associate/verify sequence
 is preserved; there is no alternate constructor, witness or public route.
 
-Emit's WorkPlan prepays a separate 32,768-unit fixed connection allowance before
-candidate reserves and genuine checking. Its enumerated 240 fixed-handler
-visits, at 128 units each, fit a 256-handler allowance; this proposed actual-code
-tariff remains subject to independent review. The immutable OIR scan pays on the
+Emit creates one original WorkMeter and pays a separate 32,768-unit fixed
+connection allowance before calculating its new source-plan/carrier banks.
+That same meter continues through source comparison, resolution, candidate and
+terminal; WorkPlan does not charge the connection allowance again. The new
+inventory work has at most 322 rows at 32 units, eight fixed prologues at 128,
+and 144 other fixed connection handlers at 128: 29,760 units within 32,768.
+This proposed actual-code tariff remains subject to independent review.
+
+An explicit unmetered constant-time bootstrap obtains the origin from the
+genuine root file, checks owner count/view, caps the work limit and constructs
+the meter. It performs no bank calculation, source/path walk or compiler
+consumer work. No fabricated owner or guessed origin supplies authority.
+Verify/Run preserve their old preflight order and compile-work amounts.
+
+The immutable OIR scan pays on the
 original meter at its existing boundaries. The actual owned root display-path
 UTF-8 length is then read without scanning or allocating. A distinct 4,096 debit
 precedes the checked formula, and its complete body cost is debited before the

@@ -16,14 +16,18 @@ use crate::frontend::{
 };
 use std::mem::{size_of, size_of_val};
 
-/// Finite connection machinery, distinct from all data-dependent traversals:
-/// at most 64 fixed setup/path/Upper handlers, 96 native inventory handlers
-/// (29 roles, 29 sum steps, bounded copies/setup), 48 budget/meter/result
-/// handlers and 32 artifact/drop/outer transport handlers. Each gets 128 units;
-/// 240 handlers use 30,720, leaving 2,048 within this 256-handler bank. There
-/// is no path-byte walk here. This is a weighted source-event tariff, not CPU,
-/// allocator-backend or physical-memory work. Re-audit if these bodies change.
-pub(super) const CONNECTION_WORK: u64 = 32_768;
+/// Finite connection work, paid in the leaf before any new bank calculation:
+/// inventory construction, array moves and checked summation receive 32 units
+/// per concrete row: at most 64 outer, 94 here, 65 scan, 41 formula, 29 native,
+/// and 29 repeated native rows = 322 rows / 10,304 units. A row's at-most-one
+/// checked copies call plus its moves/iterator/checked addition fits that 32.
+/// Eight fixed inventory/plan prologues receive 128 each. The remaining
+/// fixed handlers receive 128 each: 64 terminal/path/Upper setup, 48 budget/
+/// meter/results, and 32 artifact/drop/outer moves. Total <=29,760, below
+/// 32,768. Existing common preflight work is inherited, not charged twice.
+/// No path bytes, OIR loops, formula body, native body, allocator internals or
+/// physical-memory claim belongs here. Re-audit these concrete bodies if changed.
+const CONNECTION_WORK: u64 = super::super::EMIT_CONNECTION_WORK;
 // Independently reviewed finite formula tariff: at most 4,048 units. This is
 // paid immediately before calculate, never borrowed from scan setup or body.
 const FORMULA_WORK: u64 = 4_096;
@@ -281,7 +285,7 @@ mod tests {
     const RICH_SCAN: u64 = 8_064;
 
     #[test]
-    fn denied_emit_connection_glue_is_prepaid_without_changing_fixed_pass_work() {
+    fn denied_emit_connection_glue_is_not_charged_again_by_the_fixed_pass_plan() {
         let counts = super::super::Counts([2, 2, 1, 2, 11, 5, 7, 2]);
         let run = WorkPlan::calculate_request(counts, 29, super::super::Request::Run).unwrap();
         let emit = WorkPlan::calculate_request(counts, 29, super::super::Request::Emit).unwrap();
@@ -289,7 +293,7 @@ mod tests {
             (emit.pass_work, emit.typed_work, emit.entry_work),
             (run.pass_work, run.typed_work, run.entry_work)
         );
-        assert_eq!(emit.total.checked_sub(run.total), Some(CONNECTION_WORK));
+        assert_eq!(emit.total, run.total);
         assert_eq!((CONNECTION_WORK, FORMULA_WORK), (32_768, 4_096));
         assert_eq!(CONNECTION_WORK + FORMULA_WORK, 36_864);
     }
