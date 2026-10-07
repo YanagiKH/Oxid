@@ -37,6 +37,9 @@ MESSAGES = {
     24: "call requires `)`",
     25: "expected binding name",
     26: "binding requires an initializer",
+    27: "expected if body `{`",
+    28: "expected else body `{`",
+    29: "expected while body `{`",
 }
 FAMILIES = {1: "module", 2: "import", 3: "record", 4: "enum",
             5: "reference_type", 6: "array_type", 7: "qualified_type",
@@ -44,7 +47,7 @@ FAMILIES = {1: "module", 2: "import", 3: "record", 4: "enum",
             11: "field_index_length", 12: "indexing", 13: "record_literal",
             14: "borrow_argument"}
 EXPRESSION_KINDS = set(range(15, 37))
-IMPLEMENTED = set(range(1, 13)) | EXPRESSION_KINDS
+IMPLEMENTED = set(range(1, 15)) | EXPRESSION_KINDS
 # Local shape constraints validate the supplied tree; they never select a parse
 # from tokens or supply expected AST facts in a differential comparison.
 BINARY = {
@@ -184,8 +187,10 @@ def project_failure(wire, source, tokens=None):
                 require(source[start:end] in (b".", b"["), "unsupported punctuation/source mismatch")
             message = "unsupported typed-preview construct `" + source[start:end].decode("ascii") + "`"
     elif error == 3:
-        require(detail == 1, "unknown E0400 detail")
-        code, message = "E0400", "expression nesting limit exceeded"
+        require(detail in (1, 2), "unknown E0400 detail")
+        code = "E0400"
+        message = ("expression nesting limit exceeded" if detail == 1 else
+                   "statement block nesting limit exceeded")
     elif error == 6:
         require(detail in (1, 2) and start < end == len(source), "invalid lexical failure")
         opener = b'"' if detail == 1 else b"/*"
@@ -316,12 +321,15 @@ def project_ast(wire, source, tokens):
         heights.append(height)
         return expression_id
 
-    def block(ref):
+    def block(ref, blocks, depth=1):
+        require(depth <= 64, "statement block nesting limit exceeded in successful AST")
         row = claim(ref, {5})
         zero(row, "c", "d")
+        block_id = len(blocks)
+        blocks.append(None)  # Canonical block IDs are allocated on entry.
         first, body, statement = take("LBrace"), [], row["b"]
         while statement:
-            current = claim(statement, set(range(6, 13)), linked=True)
+            current = claim(statement, set(range(6, 15)), linked=True)
             zero(current, "d")
             tag = current["kind"]
             if tag in (6, 7):
@@ -350,15 +358,33 @@ def project_ast(wire, source, tokens):
                 zero(current, "b", "c")
                 start = take("Return")
                 fields = {"kind": "Return", "value": expression(current["a"]) if current["a"] else None}
-            else:
+            elif tag in (11, 12):
                 zero(current, "a", "b", "c")
                 name = "Break" if tag == 11 else "Continue"
                 start, fields = take(name), {"kind": name}
-            end = take("Semi")
+            else:
+                start = take("If" if tag == 13 else "While")
+                condition = expression(current["a"])
+                child = block(current["b"], blocks, depth + 1)
+                if tag == 13:
+                    otherwise = None
+                    if current["c"]:
+                        take("Else")
+                        otherwise = block(current["c"], blocks, depth + 1)
+                    fields = {"kind": "If", "condition": condition,
+                              "then_block": child, "else_block": otherwise}
+                    end = blocks[otherwise if otherwise is not None else child]["end"]
+                else:
+                    zero(current, "c")
+                    fields = {"kind": "While", "condition": condition, "body": child}
+                    end = blocks[child]["end"]
+            if tag < 13:
+                end = take("Semi")
             body.append({"span": extent(current, start, end), **fields})
             statement = current["next"]
         last = take("RBrace", row["a"])
-        return {"id": 0, "span": extent(row, first, last), "end": last, "body": body}
+        blocks[block_id] = {"id": block_id, "span": extent(row, first, last), "end": last, "body": body}
+        return block_id
 
     items, functions, item = [], [], wire["items"]
     while item:
@@ -382,12 +408,13 @@ def project_ast(wire, source, tokens):
         take("RParen")
         take("Arrow")
         result = ty(row["c"])
-        body = block(row["d"])
+        blocks = []
+        body = block(row["d"], blocks)
         function_id = len(functions)
         items.append({"kind": "Function", "id": function_id})
         functions.append({"id": function_id, "public": public, "name": name,
-                          "params": params, "result": result, "body": 0,
-                          "blocks": [body], "end": body["end"]})
+                          "params": params, "result": result, "body": body,
+                          "blocks": blocks, "end": blocks[body]["end"]})
         item = row["next"]
     take("Eof")
     require(cursor == len(tokens) and len(claimed) == len(rows), "unconsumed tokens or orphan active rows")

@@ -91,6 +91,35 @@ def simple_binary(kind=24, token_kind="Plus", spelling="+"):
     return f.select(root)
 
 
+def control_flow_fixture():
+    f = Fixture([
+        token("if", "If", "if"), token("if_space", "Trivia", " "), token("a", "Ident", "a"),
+        token("then_open", "LBrace", "{"), token("while", "While", "while"),
+        token("while_space", "Trivia", " "), token("b", "Ident", "b"),
+        token("while_open", "LBrace", "{"), token("c", "Ident", "c"), token("c_semi", "Semi", ";"),
+        token("while_close", "RBrace", "}"), token("then_close", "RBrace", "}"),
+        token("else", "Else", "else"), token("else_open", "LBrace", "{"),
+        token("d", "Ident", "d"), token("d_semi", "Semi", ";"), token("else_close", "RBrace", "}"),
+        token("last_while", "While", "while"), token("last_space", "Trivia", " "),
+        token("e", "Ident", "e"), token("last_open", "LBrace", "{"), token("last_close", "RBrace", "}"),
+    ], statements=True)
+    f.name("a")  # 5
+    f.add(5, "then_open", "then_close", a=f.labels["then_close"], b=7)
+    f.add(14, "while", "while_close", a=8, b=9)
+    f.name("b")
+    f.add(5, "while_open", "while_close", a=f.labels["while_close"], b=10)
+    f.add(9, "c", "c_semi", a=11)
+    f.name("c")
+    f.add(5, "else_open", "else_close", a=f.labels["else_close"], b=13)
+    f.add(9, "d", "d_semi", a=14)
+    f.name("d")
+    f.add(14, "last_while", "last_close", a=16, b=17)
+    f.name("e")
+    f.add(5, "last_open", "last_close", a=f.labels["last_close"])
+    f.rows[3].update(kind=13, a=5, b=6, c=12, end=f.at("else_close")["end"], next=15)
+    return f
+
+
 class ProjectionExpressionTests(unittest.TestCase):
     def reject(self, fixture, pattern=None):
         if pattern:
@@ -491,6 +520,151 @@ class ProjectionExpressionTests(unittest.TestCase):
             f.rows[3].update(kind=6, a=f.labels["binding"], c=value)
             self.reject(f)
 
+    def test_nested_blocks_have_preorder_ids_and_parse_order_expression_ids(self):
+        f = control_flow_fixture()
+        ast = f.decode()["ast"]
+        self.assertEqual(ast["expressions"], [
+            {"id": i, "kind": "Name", "name": f.at(label), "span": f.at(label)}
+            for i, label in enumerate(("a", "b", "c", "d", "e"))
+        ])
+        def extent(first, last):
+            return observation.span(f.at(first)["start"], f.at(last)["end"])
+        self.assertEqual(ast["functions"][0]["blocks"], [
+            {"id": 0, "span": extent("block", "end"), "end": f.at("end"), "body": [
+                {"kind": "If", "condition": 0, "then_block": 1, "else_block": 3,
+                 "span": extent("if", "else_close")},
+                {"kind": "While", "condition": 4, "body": 4, "span": extent("last_while", "last_close")},
+            ]},
+            {"id": 1, "span": extent("then_open", "then_close"), "end": f.at("then_close"), "body": [
+                {"kind": "While", "condition": 1, "body": 2, "span": extent("while", "while_close")},
+            ]},
+            {"id": 2, "span": extent("while_open", "while_close"), "end": f.at("while_close"), "body": [
+                {"kind": "Expr", "value": 2, "span": extent("c", "c_semi")},
+            ]},
+            {"id": 3, "span": extent("else_open", "else_close"), "end": f.at("else_close"), "body": [
+                {"kind": "Expr", "value": 3, "span": extent("d", "d_semi")},
+            ]},
+            {"id": 4, "span": extent("last_open", "last_close"), "end": f.at("last_close"), "body": []},
+        ])
+        self.assertEqual((ast["functions"][0]["body"], ast["functions"][0]["end"]), (0, f.at("end")))
+
+    def test_control_flow_rows_reject_sharing_cycles_spans_and_unused_fields(self):
+        f = control_flow_fixture()
+        mutations = [
+            (3, "a", 0), (3, "a", 8), (3, "b", 0), (3, "b", 3), (3, "c", 6),
+            (3, "c", 0), (3, "d", 1), (3, "next", 4), (3, "next", 0),
+            (3, "end", f.at("then_close")["end"]), (3, "start", f.at("a")["start"]),
+            (6, "a", 5), (6, "b", 6), (6, "c", 12), (6, "d", 1), (6, "next", 13),
+            (14, "b", 12), (14, "end", f.at("last_open")["end"]),
+            (5, "a", f.labels["while_close"]), (5, "b", 13), (5, "c", 1), (5, "d", 1),
+            (5, "next", 12), (5, "start", f.at("while")["start"]),
+            (5, "end", f.at("while_close")["end"]), (8, "b", 4), (11, "b", 10),
+            (9, "next", 10), (12, "next", 13), (4, "next", 8),
+        ]
+        for row, field, value in mutations:
+            with self.subTest(row=row, field=field, value=value):
+                bad = copy.deepcopy(f)
+                bad.rows[row][field] = value
+                self.reject(bad)
+
+    def test_if_without_else_preserves_absence_and_accepts_nonsemantic_condition(self):
+        f = Fixture([token("if", "If", "if"), token("space", "Trivia", " "),
+                     token("condition", "Number", "1"), token("open", "LBrace", "{"),
+                     token("break", "Break", "break"), token("semi", "Semi", ";"),
+                     token("close", "RBrace", "}")], statements=True)
+        condition = f.add(15, "condition", "condition", a=f.labels["condition"], d=1)
+        body = f.add(5, "open", "close", a=f.labels["close"], b=7)
+        f.add(11, "break", "semi")
+        f.rows[3].update(kind=13, a=condition, b=body)
+        blocks = f.decode()["ast"]["functions"][0]["blocks"]
+        self.assertIsNone(blocks[0]["body"][0]["else_block"])
+        self.assertEqual(blocks[1]["body"][0]["kind"], "Break")
+
+    def test_else_if_and_control_flow_trailing_semicolon_are_not_silently_admitted(self):
+        f = control_flow_fixture()
+        # Removing the Else token does not make the following block implicit.
+        bad = copy.deepcopy(f)
+        index = bad.labels["else"] - 1
+        bad.tokens[index]["id"] = 1
+        bad.tokens[index]["kind"] = "Trivia"
+        self.reject(bad, "expected Else")
+        # A row cannot reuse a statement as an else block to model `else if`.
+        bad = copy.deepcopy(f)
+        bad.rows[3]["c"] = 15
+        self.reject(bad, "wrong kind")
+        g = Fixture([token("if", "If", "if"), token("space", "Trivia", " "),
+                     token("a", "Ident", "a"), token("open", "LBrace", "{"),
+                     token("close", "RBrace", "}"), token("semi", "Semi", ";")], statements=True)
+        condition = g.name("a")
+        body = g.add(5, "open", "close", a=g.labels["close"])
+        g.rows[3].update(kind=13, a=condition, b=body, end=g.at("close")["end"])
+        self.reject(g, "expected RBrace")
+
+    def test_deep_bounded_control_flow_counts_active_blocks(self):
+        # 19 nested ifs fit the 128-byte envelope; the 64-block error branch is
+        # unreachable from valid bounded source, but its diagnostic is retained.
+        count = 19
+        pieces = []
+        for i in range(count):
+            pieces += [token(f"if{i}", "If", "if"), token(f"space{i}", "Trivia", " "),
+                       token(f"a{i}", "Ident", "a"), token(f"open{i}", "LBrace", "{")]
+        pieces += [token(f"close{i}", "RBrace", "}") for i in reversed(range(count))]
+        f = Fixture(pieces, statements=True)
+        parent_block = 3
+        for i in range(count):
+            statement = 4 if i == 0 else f.add(13, f"if{i}", f"close{i}")
+            condition = f.name(f"a{i}")
+            child = f.add(5, f"open{i}", f"close{i}", a=f.labels[f"close{i}"])
+            f.rows[statement - 1].update(kind=13, a=condition, b=child)
+            f.rows[parent_block - 1]["b"] = statement
+            parent_block = child
+        self.assertLessEqual(len(f.source), 128)
+        blocks = f.decode()["ast"]["functions"][0]["blocks"]
+        self.assertEqual([b["id"] for b in blocks], list(range(20)))
+
+    def test_block_ids_restart_per_function_while_expression_ids_remain_global(self):
+        f = Fixture([token("if", "If", "if"), token("space", "Trivia", " "), token("a", "Ident", "a"),
+                     token("open", "LBrace", "{"), token("close", "RBrace", "}")], statements=True)
+        condition = f.name("a")
+        body = f.add(5, "open", "close", a=f.labels["close"])
+        f.rows[3].update(kind=13, a=condition, b=body)
+        byte_offset, token_offset = len(f.source), len(f.tokens) - 1
+        second_rows = copy.deepcopy(f.rows)
+        for row in second_rows:
+            row["start"] += byte_offset
+            row["end"] += byte_offset
+        second_rows[0]["c"] += 6
+        second_rows[0]["d"] += 6
+        second_rows[2]["a"] += token_offset
+        second_rows[2]["b"] += 6
+        second_rows[3]["a"] += 6
+        second_rows[3]["b"] += 6
+        second_rows[4]["a"] += token_offset
+        second_rows[5]["a"] += token_offset
+        f.rows[0]["next"] = 7
+        f.rows += second_rows
+        f.source *= 2
+        f.tokens = f.tokens[:-1] + [dict(t, start=t["start"] + byte_offset, end=t["end"] + byte_offset)
+                                    for t in f.tokens]
+        ast = f.decode()["ast"]
+        self.assertEqual([[b["id"] for b in fn["blocks"]] for fn in ast["functions"]], [[0, 1], [0, 1]])
+        self.assertEqual([fn["blocks"][0]["body"][0]["condition"] for fn in ast["functions"]], [0, 1])
+        self.assertEqual([e["id"] for e in ast["expressions"]], [0, 1])
+
+    def test_block_limit_diagnostic_has_distinct_detail(self):
+        source = b"fn f()->(){if a{}}"
+        raw = b"OPA1" + bytes([3, 2, 15, 16, 0, 0, len(source)])
+        got = observation.decode(raw, source)
+        self.assertEqual(got, {
+            "status": "diagnostic", "projection": "first_parser_diagnostic",
+            "diagnostic": {"schema_version": 1, "edition": "typed-preview", "kind": "diagnostic",
+                           "severity": "error", "code": "E0400", "stage": "parse",
+                           "message": "statement block nesting limit exceeded",
+                           "primary": {"file_id": 0, "start": 15, "end": 16, "path": "stdin.ox",
+                                       "line": 1, "column": 16, "end_line": 1, "end_column": 17},
+                           "secondary": [], "notes": []},
+        })
+
     def test_expression_diagnostics_preserve_complete_first_diagnostic(self):
         for detail, source, start, end, message in [
             (22, b"fn f()->(){(a;}", 13, 14, "grouping requires `)`"),
@@ -499,6 +673,9 @@ class ProjectionExpressionTests(unittest.TestCase):
             (24, b"fn f()->(){g(a;}", 14, 15, "call requires `)`"),
             (25, b"fn f()->(){let =1;}", 15, 16, "expected binding name"),
             (26, b"fn f()->(){let x;}", 16, 17, "binding requires an initializer"),
+            (27, b"fn f()->(){if a;}", 15, 16, "expected if body `{`"),
+            (28, b"fn f()->(){if a{}else;}", 21, 22, "expected else body `{`"),
+            (29, b"fn f()->(){while a;}", 18, 19, "expected while body `{`"),
         ]:
             with self.subTest(detail=detail):
                 raw = b"OPA1" + bytes([1, detail, start, end, 0, 0, len(source)])
