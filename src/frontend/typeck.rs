@@ -42,6 +42,10 @@ impl FlowSummary {
     pub(super) fn returns_only(self) -> bool {
         self == Self::RETURN
     }
+    /// Immutable projection in fallthrough, return, break, continue order.
+    pub(super) fn outcomes(self) -> (bool, bool, bool, bool) {
+        (self.fallthrough, self.returns, self.breaks, self.continues)
+    }
     fn union(self, other: Self) -> Self {
         Self::new(
             self.fallthrough || other.fallthrough,
@@ -672,6 +676,40 @@ mod loop_flow_tests {
         let source = sources.get(id);
         let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
         super::super::hir::resolve(source, &ast).unwrap()
+    }
+
+    #[test]
+    fn outcome_projection_preserves_field_order_and_debug_for_all_forms() {
+        let expected = [
+            (false, false, false, false),
+            (true, false, false, false),
+            (false, true, false, false),
+            (true, true, false, false),
+            (false, false, true, false),
+            (true, false, true, false),
+            (false, true, true, false),
+            (true, true, true, false),
+            (false, false, false, true),
+            (true, false, false, true),
+            (false, true, false, true),
+            (true, true, false, true),
+            (false, false, true, true),
+            (true, false, true, true),
+            (false, true, true, true),
+            (true, true, true, true),
+        ];
+        for (bits, outcomes) in expected.into_iter().enumerate() {
+            let flow = FlowSummary::new(bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0);
+            assert_eq!(flow.outcomes(), outcomes, "{bits:04b}");
+            let (fallthrough, returns, breaks, continues) = outcomes;
+            assert_eq!(
+                format!("{flow:?}"),
+                format!(
+                    "FlowSummary {{ fallthrough: {fallthrough}, returns: {returns}, breaks: {breaks}, continues: {continues} }}"
+                ),
+                "{bits:04b}"
+            );
+        }
     }
 
     #[test]

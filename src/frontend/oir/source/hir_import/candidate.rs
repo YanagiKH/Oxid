@@ -18,6 +18,9 @@ use crate::frontend::{
 };
 use std::mem::{size_of, size_of_val};
 
+// Pure complete STF1 comparison is compiled; Verify consumers remain closed.
+mod typed_compare;
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ComparisonFacts {
     pub(super) allocation: Receipt,
